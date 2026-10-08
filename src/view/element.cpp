@@ -80,7 +80,7 @@ void ShapeElement::paint_impl(DisplayList& list) const {
     const auto [rect, radii] = shape_outline(spec_, frame());
 
     // A stroked shape isn't filled unless asked to be (as in SwiftUI).
-    const ShapeStyle fill = fill_.value_or(spec_.stroke ? ShapeStyle(Color::clear) : ShapeStyle(default_fill_));
+    const ShapeStyle fill = fill_.value_or(ShapeStyle(Color::clear));
     if (!spec_.stroke) {
         list.commands.push_back(RectCommand{rect, radii, fill, Color::clear, 0});
         return;
@@ -88,7 +88,7 @@ void ShapeElement::paint_impl(DisplayList& list) const {
 
     const ShapeStroke& stroke = *spec_.stroke;
     if (!stroke.centered) {
-        list.commands.push_back(RectCommand{rect, radii, fill, stroke.color, stroke.width});
+        list.commands.push_back(RectCommand{rect, radii, fill, stroke_color_, stroke.width});
         return;
     }
 
@@ -101,7 +101,7 @@ void ShapeElement::paint_impl(DisplayList& list) const {
     list.commands.push_back(RectCommand{rect.inset(-half),
                                         {grow(radii.top_left), grow(radii.top_right),
                                          grow(radii.bottom_right), grow(radii.bottom_left)},
-                                        Color::clear, stroke.color, stroke.width});
+                                        Color::clear, stroke_color_, stroke.width});
 }
 
 // --- SpacerElement ---

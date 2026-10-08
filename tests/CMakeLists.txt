@@ -6,6 +6,7 @@ find_package(Catch2 3 CONFIG REQUIRED)
 include(Catch)
 
 add_executable(elegence_tests
+        environment_tests.cpp
         reactive_tests.cpp
 )
 target_link_libraries(elegence_tests PRIVATE Elegence::Elegence Catch2::Catch2WithMain)

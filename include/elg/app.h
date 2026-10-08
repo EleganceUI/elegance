@@ -11,6 +11,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace elg {
@@ -20,7 +21,8 @@ struct WindowDesc {
     int width = 1280; // logical points
     int height = 720;
     bool resizable = true;
-    Color background = Color::white;
+    // Shown where no view draws. Default: the theme's background (ThemeColor::background).
+    std::optional<Color> background;
 };
 
 // Builds a window's root view. Called once, on the UI thread, when the window opens.

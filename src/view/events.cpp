@@ -132,14 +132,6 @@ ShapeOutline outline_of(const Shape& shape, Rect frame) {
     return shape_outline(static_cast<const ShapeNode&>(*ViewAccess::node(shape)).spec(), frame);
 }
 
-Color mix(Color a, Color b, float t) {
-    return {a.r + (b.r - a.r) * t, a.g + (b.g - a.g) * t, a.b + (b.b - a.b) * t, a.a + (b.a - a.a) * t};
-}
-
-constexpr float kButtonPaddingX = 14;
-constexpr float kButtonPaddingY = 7;
-constexpr float kButtonRadius = 8;
-
 } // namespace
 
 // --- Hit testing ---
@@ -219,69 +211,50 @@ bool DecorationElement::hit_impl(Point point, std::vector<Element*>& path) {
 
 // --- ButtonElement ---
 
-Size ButtonElement::measure(ProposedSize proposal) {
-    const auto shrink = [](std::optional<float> length, float amount) -> std::optional<float> {
-        return length ? std::optional<float>(std::max(0.f, *length - amount)) : std::nullopt;
-    };
-    const Size label = label_->size_that_fits(
-        {shrink(proposal.width, 2 * kButtonPaddingX), shrink(proposal.height, 2 * kButtonPaddingY)});
-    return {label.width + 2 * kButtonPaddingX, label.height + 2 * kButtonPaddingY};
-}
-
-void ButtonElement::arrange(Rect bounds, ProposedSize) {
-    label_->place({bounds.x + kButtonPaddingX, bounds.y + kButtonPaddingY},
-                  {bounds.width - 2 * kButtonPaddingX, bounds.height - 2 * kButtonPaddingY});
-}
-
-void ButtonElement::paint_impl(DisplayList& list) const {
-    Color fill = tint_;
-    if (pressed_ && hovered_) {
-        fill = mix(tint_, Color::black, 0.2f);
-    } else if (hovered_) {
-        fill = mix(tint_, Color::white, 0.15f);
-    }
-    list.commands.push_back(RectCommand{frame(), CornerRadii::all(kButtonRadius), fill, Color::clear, 0});
-    label_->paint(list);
-}
-
 bool ButtonElement::hit_impl(Point point, std::vector<Element*>&) {
-    return inside(point, {frame(), CornerRadii::all(kButtonRadius)});
+    return contains(frame(), point);
 }
 
 EventResult ButtonElement::pointer(const PointerEvent& event, Rect frame) {
-    if (event.button != MouseButton::left && event.kind != PointerEvent::Kind::cancel) {
+    if (event.kind == PointerEvent::Kind::cancel) {
+        down_ = false;
+        pressed_ = false;
+        return {};
+    }
+    if (event.button != MouseButton::left) {
         return {};
     }
     switch (event.kind) {
     case PointerEvent::Kind::down:
+        if (!untrack(enabled_)) {
+            return {.consumed = true}; // disabled buttons still block what's behind them
+        }
+        down_ = true;
         pressed_ = true;
-        return {.consumed = true, .redraw = true};
-    case PointerEvent::Kind::move: {
+        return {.consumed = true};
+    case PointerEvent::Kind::move:
         // Looks pressed only while the pointer is over it, like native buttons.
-        const bool over = contains(frame, event.location);
-        const bool redraw = over != hovered_;
-        hovered_ = over;
-        return {.consumed = true, .redraw = redraw};
-    }
+        if (down_) {
+            pressed_ = contains(frame, event.location);
+        }
+        return {.consumed = true};
     case PointerEvent::Kind::up: {
-        const bool fire = pressed_ && contains(frame, event.location);
+        const bool fire = down_ && contains(frame, event.location) && untrack(enabled_);
+        down_ = false;
         pressed_ = false;
         if (fire && action_) {
             action_();
         }
-        return {.consumed = true, .redraw = true};
+        return {.consumed = true};
     }
-    case PointerEvent::Kind::cancel:
-        pressed_ = false;
-        hovered_ = false;
-        return {.redraw = true};
+    case PointerEvent::Kind::cancel: break;
     }
     return {};
 }
 
 EventResult ButtonElement::hover(bool inside) {
     hovered_ = inside;
-    return {.redraw = true};
+    return {}; // the style's reactive arguments request the frame
 }
 
 } // namespace elg::detail

@@ -40,6 +40,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         view/modifiers.cpp
         view/shapes.cpp
         view/stack_layout.cpp
+        view/styles.cpp
         view/text.cpp
         view/view.cpp
 )

@@ -30,24 +30,24 @@ View TodoRow(const Todo& todo, std::function<void()> toggle, std::function<void(
     // Tapping the check circle toggles the todo.
     const View check = Circle()
                            .fill(todo.done ? palette::green : Color::clear)
-                           .stroke_border(todo.done ? palette::green : palette::outline, 2)
+                           .stroke_border(todo.done ? Prop<Color>(palette::green) : Prop<Color>(ThemeColor::outline), 2)
                            .frame(20, 20)
                            .content_shape(Rectangle())
                            .on_tap_gesture(std::move(toggle));
 
     return HStack({.spacing = 12},
                   check,
-                  Text(todo.title).foreground_style(todo.done ? palette::subtext : palette::text),
+                  Text(todo.title).foreground_style(todo.done ? ThemeColor::secondary : ThemeColor::primary),
                   Spacer(),
-                  Button("Remove", std::move(remove)).tint(palette::muted))
+                  Button("Remove", std::move(remove)).button_style(BorderedButtonStyle{}).tint(ThemeColor::danger))
         .padding(Edges::horizontal, 14)
         .padding(Edges::vertical, 10)
-        .background(palette::surface, RoundedRectangle(10));
+        .background(ThemeColor::surface, RoundedRectangle(10));
 }
 
 } // namespace
 
-View TodoWindow() {
+View TodoWindow(State<ColorScheme> scheme) {
     const auto todos = State(std::vector<Todo>{
         {1, "Design the View API", true},
         {2, "Render text with MSDF", true},
@@ -91,19 +91,21 @@ View TodoWindow() {
                                            std::erase_if(list, [](const Todo& todo) { return todo.done; });
                                        });
                                    })
-                                .tint(palette::muted)),
+                                .button_style(BorderedButtonStyle{})),
                          Button("Add", add)),
                   Text([=] {
                       const auto left = remaining();
                       return left == 0 ? std::string("All done") : std::format("{} left", left);
-                  }).foreground_style(palette::subtext),
+                  }).foreground_style(ThemeColor::secondary),
                   If([=] { return todos().empty(); },
-                     Text("Nothing to do. Add a task to get started.").foreground_style(palette::subtext).padding(Edges::top, 8)),
+                     Text("Nothing to do. Add a task to get started.").foreground_style(ThemeColor::secondary).padding(Edges::top, 8)),
                   ForEach(
                       todos, [](const Todo& todo) { return todo.id; },
                       [=](const Todo& todo) { return TodoRow(todo, toggle(todo.id), remove(todo.id)); }),
                   Spacer())
         .padding(24)
         .frame({.max_width = infinity, .max_height = infinity})
-        .foreground_style(palette::text);
+        .background(ThemeColor::background)
+        .theme(palette::theme)
+        .color_scheme(scheme);
 }

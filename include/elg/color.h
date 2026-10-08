@@ -30,6 +30,12 @@ struct Color {
     // Multiplies the alpha, e.g. Color::black.opacity(0.5f).
     constexpr Color opacity(float alpha) const noexcept { return {r, g, b, a * alpha}; }
 
+    // Blends toward `other` (in sRGB): 0 is this color, 1 is `other`.
+    constexpr Color mix(Color other, float amount) const noexcept {
+        return {r + (other.r - r) * amount, g + (other.g - g) * amount, b + (other.b - b) * amount,
+                a + (other.a - a) * amount};
+    }
+
     static const Color black;
     static const Color white;
     static const Color clear;

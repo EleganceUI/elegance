@@ -41,6 +41,7 @@ enum class EventType {
     pointer_down,
     pointer_up,
     pointer_leave,
+    system_theme_changed,
 };
 
 enum class PointerButton { left, middle, right, other };
@@ -115,6 +116,8 @@ private:
 // Per-user writable directory for Elegence data (crash reports, caches).
 std::filesystem::path pref_path();
 std::optional<std::string> environment_variable(const char* name);
+// Whether the OS is set to a dark appearance.
+bool system_prefers_dark();
 bool debugger_present() noexcept;
 void debug_break() noexcept;
 void show_error_box(const char* title, const char* message) noexcept;

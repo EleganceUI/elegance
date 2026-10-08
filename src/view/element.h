@@ -100,7 +100,7 @@ protected:
 enum class ShapeKind { rectangle, rounded_rectangle, capsule, circle };
 
 struct ShapeStroke {
-    Color color;
+    Prop<Color> color;
     float width = 1;
     bool centered = true; // false: inside the edge
 };
@@ -122,12 +122,12 @@ ShapeOutline shape_outline(const ShapeSpec& spec, Rect frame);
 
 class ShapeElement final : public Element {
 public:
-    // `default_fill` (the environment's foreground) is used when the shape sets neither a fill
-    // nor a stroke.
-    ShapeElement(ShapeSpec spec, Color default_fill) : spec_(std::move(spec)), default_fill_(default_fill) {}
+    explicit ShapeElement(ShapeSpec spec) : spec_(std::move(spec)) {}
 
-    // The resolved fill (static, or the latest value of a reactive one).
+    // The resolved fill: the shape's own (static or reactive), or for shapes with neither a fill
+    // nor a stroke, the environment's foreground.
     void set_fill(ShapeStyle fill) { fill_ = std::move(fill); }
+    void set_stroke_color(Color color) noexcept { stroke_color_ = color; }
 
 protected:
     Size measure(ProposedSize proposal) override;
@@ -137,8 +137,8 @@ protected:
 
 private:
     ShapeSpec spec_;
-    Color default_fill_;
     std::optional<ShapeStyle> fill_;
+    Color stroke_color_ = Color::clear;
 };
 
 struct TextStyle {
@@ -151,10 +151,12 @@ struct TextStyle {
 
 class TextElement final : public Element {
 public:
-    // Throws elg::ResourceError if the font can't be loaded. Content and color are set with the
-    // setters (from static values or reactive arguments).
-    TextElement(TextSystem& text, const Font& font, int line_limit, TextAlignment alignment);
+    // Font, content, and color are set with the setters (from static values or reactive
+    // arguments), font first.
+    TextElement(TextSystem& text, int line_limit, TextAlignment alignment);
 
+    // Loads the font (throws elg::ResourceError if it can't), reshapes, and invalidates layout.
+    void set_font(const Font& font);
     // Reshapes the text and invalidates layout.
     void set_content(std::string_view content);
     void set_color(Color color) noexcept { color_ = color; }
@@ -169,13 +171,14 @@ private:
     TextLayoutResult layout(ProposedSize proposal) const;
 
     TextSystem* text_;
-    const FontFace* face_;
-    float size_;
+    const FontFace* face_ = nullptr;
+    float size_ = 15;
     Color color_ = Color::black;
     int line_limit_;
     TextAlignment alignment_;
-    float ascent_;
-    float line_height_;
+    float ascent_ = 0;
+    float line_height_ = 0;
+    std::string content_;
     std::vector<ShapedParagraph> paragraphs_;
     ShapedParagraph ellipsis_;
     float ellipsis_width_ = 0;
@@ -339,32 +342,36 @@ private:
     std::unique_ptr<Element> content_;
 };
 
-// The built-in push button: its label on a tinted rounded rect that reacts to hover and press.
+// A Button: behavior here, appearance from its ButtonStyle's body (the content). Hover and press
+// are written to States the style reads, so only what the style derives from them updates.
 class ButtonElement final : public Element, private EventHandler {
 public:
-    ButtonElement(std::unique_ptr<Element> label, std::function<void()> action, Color tint)
-        : label_(std::move(label)), action_(std::move(action)), tint_(tint) {
-        adopt(*label_);
+    ButtonElement(std::unique_ptr<Element> content, std::function<void()> action, State<bool> pressed,
+                  State<bool> hovered, std::function<bool()> enabled)
+        : content_(std::move(content)), action_(std::move(action)), pressed_(std::move(pressed)),
+          hovered_(std::move(hovered)), enabled_(std::move(enabled)) {
+        adopt(*content_);
     }
 
     EventHandler* event_handler() noexcept override { return this; }
-    void for_each_child(const std::function<void(Element&)>& visit) override { visit(*label_); }
+    void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
 protected:
-    Size measure(ProposedSize proposal) override;
-    void arrange(Rect bounds, ProposedSize proposal) override;
-    void paint_impl(DisplayList& list) const override;
+    Size measure(ProposedSize proposal) override { return content_->size_that_fits(proposal); }
+    void arrange(Rect bounds, ProposedSize proposal) override { content_->place({bounds.x, bounds.y}, proposal); }
+    void paint_impl(DisplayList& list) const override { content_->paint(list); }
     bool hit_impl(Point point, std::vector<Element*>&) override;
 
 private:
     EventResult pointer(const PointerEvent& event, Rect frame) override;
     EventResult hover(bool inside) override;
 
-    std::unique_ptr<Element> label_;
+    std::unique_ptr<Element> content_;
     std::function<void()> action_;
-    Color tint_;
-    bool hovered_ = false;
-    bool pressed_ = false;
+    State<bool> pressed_;
+    State<bool> hovered_;
+    std::function<bool()> enabled_;
+    bool down_ = false; // the pointer went down on the button and hasn't come up
 };
 
 } // namespace elg::detail

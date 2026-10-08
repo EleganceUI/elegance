@@ -68,13 +68,27 @@ void bind(const Prop<T>& prop, const LowerContext& context, Apply apply) {
         apply(*value);
         return;
     }
-    effect([prop, apply = std::move(apply), needs_frame = context.needs_frame] {
-        apply(prop.get());
+    // Environment-dependent props (e.g. ThemeColor) resolve against the environment where they're
+    // used; reading it is tracked, so a theme or color scheme change re-applies them.
+    effect([prop, apply = std::move(apply), environment = context.environment, needs_frame = context.needs_frame] {
+        apply(prop.get(environment));
         if (needs_frame) {
             *needs_frame = true;
         }
     });
 }
+
+// Makes Environment<K>() work while a node is lowered (bodies, styles).
+class EnvironmentScope {
+public:
+    explicit EnvironmentScope(const EnvironmentValues& environment) noexcept;
+    ~EnvironmentScope();
+    EnvironmentScope(const EnvironmentScope&) = delete;
+    EnvironmentScope& operator=(const EnvironmentScope&) = delete;
+
+private:
+    const EnvironmentValues* previous_;
+};
 
 class ModifiedNode final : public ViewNode {
 public:

@@ -30,9 +30,9 @@ public:
     // use the environment's foreground.
     ELG_API Shape fill(Prop<ShapeStyle> style) const;
     // A line centered on the shape's edge.
-    ELG_API Shape stroke(Color color, float line_width = 1) const;
+    ELG_API Shape stroke(Prop<Color> color, float line_width = 1) const;
     // A line inside the shape's edge.
-    ELG_API Shape stroke_border(Color color, float line_width = 1) const;
+    ELG_API Shape stroke_border(Prop<Color> color, float line_width = 1) const;
 
     // Internal: created by the shape functions below.
     ELG_API explicit Shape(std::shared_ptr<const detail::ShapeNode> node);

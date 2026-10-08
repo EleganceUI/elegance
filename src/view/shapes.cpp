@@ -33,15 +33,15 @@ Shape Shape::fill(Prop<ShapeStyle> style) const {
     return make_shape(std::move(spec));
 }
 
-Shape Shape::stroke(Color color, float line_width) const {
+Shape Shape::stroke(Prop<Color> color, float line_width) const {
     ShapeSpec spec = spec_of(*this);
-    spec.stroke = detail::ShapeStroke{color, line_width, true};
+    spec.stroke = detail::ShapeStroke{std::move(color), line_width, true};
     return make_shape(std::move(spec));
 }
 
-Shape Shape::stroke_border(Color color, float line_width) const {
+Shape Shape::stroke_border(Prop<Color> color, float line_width) const {
     ShapeSpec spec = spec_of(*this);
-    spec.stroke = detail::ShapeStroke{color, line_width, false};
+    spec.stroke = detail::ShapeStroke{std::move(color), line_width, false};
     return make_shape(std::move(spec));
 }
 

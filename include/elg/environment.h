@@ -5,18 +5,163 @@
 #ifndef ELG_ENVIRONMENT_H
 #define ELG_ENVIRONMENT_H
 
+// The environment (design.md §8): values inherited down the view tree, set with modifiers like
+// .font(), .tint(), .color_scheme(), or .environment<Key>(value), and read by the views below.
+//
+// Values are typed by keys:
+//
+//   struct CompactKey {
+//       using Value = bool;
+//       static constexpr std::string_view name = "myapp.compact"; // stable and unique
+//       static bool default_value(const elg::EnvironmentValues&) { return false; }
+//   };
+//
+//   content.environment<CompactKey>(true)                     // set for everything inside
+//   const auto compact = Environment<CompactKey>();           // read in a body...
+//   .padding([=] { return compact() ? 4.f : 12.f; })          // ...reactively
+//
+// Values are reactive arguments: set one from a State and only the views reading that key update
+// when it changes.
+
 #include <elg/color.h>
+#include <elg/export.h>
 #include <elg/font.h>
+#include <elg/prop.h>
+#include <elg/theme.h>
+
+#include <memory>
+#include <string_view>
+#include <utility>
 
 namespace elg {
 
-// Values inherited down the view tree (design.md §8): set with modifiers like .font() and
-// .foreground_style(), read by the views below.
-// M1: a fixed set of static values. M3 turns this into typed, reactive keys with themes.
-struct EnvironmentValues {
-    Font font = Font::body;
-    Color foreground = Color::black; // text and unfilled shapes
-    Color tint = Color::hex(0x0A84FF); // controls' accent color (buttons)
+class ButtonStyle;
+
+class EnvironmentValues {
+public:
+    // The value for `Key`: the nearest one set above, else the key's default. A tracked read.
+    template <class Key>
+    typename Key::Value get() const {
+        for (const Entry* entry = head_.get(); entry; entry = entry->next.get()) {
+            if (entry->key == Key::name) {
+                return static_cast<const Prop<typename Key::Value>*>(entry->value.get())->get();
+            }
+        }
+        return Key::default_value(*this);
+    }
+
+    // A semantic color in this environment's theme and color scheme. A tracked read.
+    Color color(ThemeColor token) const { return detail::resolve_theme_color(*this, token); }
+
+    // Sets `Key` for this environment (and everything derived from it).
+    template <class Key>
+    void set(Prop<typename Key::Value> value) {
+        // Environment-dependent values (e.g. a ThemeColor) resolve against the environment they
+        // were set in, so a key's value never depends on itself.
+        auto resolved = std::make_shared<const Prop<typename Key::Value>>(value.resolved_in(*this));
+        head_ = std::make_shared<const Entry>(Entry{Key::name, std::move(resolved), head_});
+    }
+
+private:
+    // A persistent list: setting a key prepends, so copies made earlier are unaffected and
+    // copying is cheap.
+    struct Entry {
+        std::string_view key;
+        std::shared_ptr<const void> value; // a Prop<Key::Value>
+        std::shared_ptr<const Entry> next;
+    };
+    std::shared_ptr<const Entry> head_;
+};
+
+template <class T>
+Prop<T> Prop<T>::resolved_in(const EnvironmentValues& environment) const {
+    if (value_.index() != 2) {
+        return *this;
+    }
+    return Prop(Tag{}, [function = std::get<2>(value_), environment] { return function(environment); });
+}
+
+// --- Built-in keys ---
+
+struct FontKey {
+    using Value = Font;
+    static constexpr std::string_view name = "elg.font";
+    static Font default_value(const EnvironmentValues&) { return Font::body; }
+};
+
+struct ColorSchemeKey {
+    using Value = ColorScheme;
+    static constexpr std::string_view name = "elg.color_scheme";
+    // Windows set this from the system setting.
+    static ColorScheme default_value(const EnvironmentValues&) { return ColorScheme::light; }
+};
+
+struct ThemeKey {
+    using Value = Theme;
+    static constexpr std::string_view name = "elg.theme";
+    static Theme default_value(const EnvironmentValues&) { return Theme::standard(); }
+};
+
+// The color of text and unfilled shapes.
+struct ForegroundKey {
+    using Value = Color;
+    static constexpr std::string_view name = "elg.foreground";
+    static Color default_value(const EnvironmentValues& environment) {
+        return detail::resolve_theme_color(environment, ThemeColor::primary);
+    }
+};
+
+// The accent color of controls.
+struct TintKey {
+    using Value = Color;
+    static constexpr std::string_view name = "elg.tint";
+    static Color default_value(const EnvironmentValues& environment) {
+        return detail::resolve_theme_color(environment, ThemeColor::accent);
+    }
+};
+
+// Controls inside a disabled view don't respond to input and look disabled.
+struct DisabledKey {
+    using Value = bool;
+    static constexpr std::string_view name = "elg.disabled";
+    static bool default_value(const EnvironmentValues&) { return false; }
+};
+
+struct ButtonStyleKey {
+    using Value = std::shared_ptr<const ButtonStyle>;
+    static constexpr std::string_view name = "elg.button_style";
+    ELG_API static std::shared_ptr<const ButtonStyle> default_value(const EnvironmentValues&);
+};
+
+namespace detail {
+// The environment of the views being built, while a body or style runs; else nullptr.
+ELG_API const EnvironmentValues* current_environment() noexcept;
+} // namespace detail
+
+// Reads an environment value while views are built: in a component's body (a struct with
+// `View body() const`), a ViewModifier's body, a style's make_body, or a window's content
+// function. That's the environment where the view is placed. (A plain function that returns a
+// View runs before it's placed, so it sees its caller's environment; for values that depend on
+// placement, use a ThemeColor or a closure taking `const EnvironmentValues&` instead.)
+// The result is a reader: calling it is a tracked read, so it can be passed as a reactive
+// argument:
+//   const auto tint = Environment<TintKey>();
+//   Circle().fill([=] { return tint().opacity(0.5f); })
+template <class Key>
+class Environment {
+public:
+    Environment() {
+        const EnvironmentValues* environment = detail::current_environment();
+        if (!environment) {
+            detail::throw_no_environment();
+        }
+        environment_ = *environment;
+    }
+
+    typename Key::Value operator()() const { return environment_.template get<Key>(); }
+
+private:
+    EnvironmentValues environment_;
 };
 
 } // namespace elg

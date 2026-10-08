@@ -5,8 +5,9 @@
 // Sandbox: a real app built against the public Elegence API, used to exercise features
 // as they land. Only include public headers here, never anything from src/.
 //
-//   sandbox                  open the demo window
+//   sandbox                  open the demo windows
 //   sandbox --smoke-test     render the first frame, then exit (for automated checks)
+//   sandbox --light          start in light mode
 
 #include "palette.h"
 #include "todos.h"
@@ -23,24 +24,46 @@ namespace {
 
 using namespace elg;
 
-View TitleBar() {
+// A custom ButtonStyle: a tinted circle that deepens on hover and press.
+struct PillButtonStyle : ButtonStyle {
+    View make_body(const ButtonConfiguration& button) const override {
+        const auto tint = Environment<TintKey>();
+        return button.label.font(Font::headline)
+            .foreground_style([=] { return button.is_enabled() ? tint() : tint().opacity(0.35f); })
+            .frame(32, 32)
+            .background(
+                [=] {
+                    const float strength = !button.is_enabled() ? 0.06f
+                                           : button.is_pressed() ? 0.4f
+                                           : button.is_hovered() ? 0.24f
+                                                                 : 0.14f;
+                    return tint().opacity(strength);
+                },
+                Capsule());
+    }
+};
+
+View TitleBar(State<ColorScheme> scheme) {
+    const auto toggle = [=] { scheme = scheme.peek() == ColorScheme::dark ? ColorScheme::light : ColorScheme::dark; };
     return HStack({.alignment = VerticalAlignment::center, .spacing = 12},
                   Text("Elegence").font(Font::title2),
-                  Text("Sandbox").foreground_style(palette::subtext),
+                  Text("Sandbox").foreground_style(ThemeColor::secondary),
                   Spacer(),
+                  Button(Text([=] { return scheme() == ColorScheme::dark ? "Light mode" : "Dark mode"; }), toggle)
+                      .button_style(BorderedButtonStyle{}),
                   Circle().fill(palette::red).frame(14, 14),
                   Circle().fill(palette::peach).frame(14, 14),
                   Circle().fill(palette::green).frame(14, 14))
         .padding(Edges::horizontal, 32)
         .frame({.height = 64})
-        .background(LinearGradient({palette::mantle, Color::hex(0x2E3250)}, UnitPoint::leading, UnitPoint::trailing));
+        .background(ThemeColor::surface);
 }
 
 // A shape above its caption.
 View Captioned(View shape, std::string caption) {
     return VStack({.alignment = HorizontalAlignment::leading, .spacing = 12},
                   shape,
-                  Text(std::move(caption)).font(Font::caption).foreground_style(palette::subtext));
+                  Text(std::move(caption)).font(Font::caption).foreground_style(ThemeColor::secondary));
 }
 
 // Three equally flexible cards share the row's width.
@@ -72,7 +95,7 @@ View TextCards() {
                       .card(),
                   VStack({.alignment = HorizontalAlignment::leading, .spacing = 8},
                          Text("line_limit(2)").font(Font::headline),
-                         Text(story).line_limit(2).foreground_style(palette::subtext))
+                         Text(story).line_limit(2).foreground_style(ThemeColor::secondary))
                       .frame({.max_width = infinity, .alignment = Alignment::top_leading})
                       .card(),
                   VStack({.spacing = 6},
@@ -118,7 +141,7 @@ View EffectCards() {
                                Circle().fill(palette::green).frame(28, 28),
                                Text("Layer").font(Font::headline))
                             .padding(14)
-                            .background(palette::muted, RoundedRectangle(12))
+                            .background(ThemeColor::surface_raised, RoundedRectangle(12))
                             .shadow({.color = Color::black.opacity(0.6f), .radius = 18, .x = 0, .y = 8})
                             .frame({.height = 96});
 
@@ -137,12 +160,13 @@ void log(const char* message) {
 // A child component that edits its parent's state through a Binding.
 View Stepper(Binding<int> value) {
     return HStack({.spacing = 8},
-                  Button("-", [=] { value -= 1; }),
+                  Button("-", [=] { value -= 1; }).disabled([=] { return value() <= 0; }),
                   Text([=] { return std::to_string(value()); })
                       .font(Font::title3)
                       .multiline_text_alignment(TextAlignment::center)
                       .frame({.min_width = 32}),
-                  Button("+", [=] { value += 1; }));
+                  Button("+", [=] { value += 1; }))
+        .button_style(PillButtonStyle{});
 }
 
 // State drives the UI: each reactive argument updates exactly one property of one element.
@@ -161,11 +185,15 @@ View StateCards(std::function<void()> quit) {
     const auto hovered = State(false);
     const auto taps = State(0);
     const View hover = RoundedRectangle(12)
-                           .fill([=] { return hovered() ? palette::peach : palette::muted; })
+                           .fill([=](const EnvironmentValues& env) {
+                               return hovered() ? palette::peach : env.color(ThemeColor::surface_raised);
+                           })
                            .frame({.height = 56})
                            .overlay(Text([=] {
                                return hovered() ? std::format("Tapped {} times", taps()) : std::string("Hover or tap");
-                           }).foreground_style([=] { return hovered() ? palette::base : palette::text; }))
+                           }).foreground_style([=](const EnvironmentValues& env) {
+                               return env.color(hovered() ? ThemeColor::background : ThemeColor::primary);
+                           }))
                            .on_hover([=](bool inside) { hovered = inside; })
                            .on_tap_gesture([=] { taps += 1; });
 
@@ -182,9 +210,9 @@ View StateCards(std::function<void()> quit) {
                   Captioned(fade, "Reactive opacity").card());
 }
 
-View ContentView(std::function<void()> quit) {
+View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
     return VStack({.spacing = 0},
-                  TitleBar(),
+                  TitleBar(scheme),
                   VStack({.alignment = HorizontalAlignment::leading, .spacing = 20},
                          ShapeCards(),
                          // Like SwiftUI's .fixedSize(horizontal: false, vertical: true): take the
@@ -195,26 +223,34 @@ View ContentView(std::function<void()> quit) {
                          Spacer())
                       .padding(32))
         .frame({.max_width = infinity, .max_height = infinity, .alignment = Alignment::top})
-        .foreground_style(palette::text);
+        .background(ThemeColor::background)
+        .theme(palette::theme)
+        .color_scheme(scheme);
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-    const bool smoke_test = argc > 1 && std::string_view(argv[1]) == "--smoke-test";
+    bool smoke_test = false;
+    bool light = false;
+    for (int i = 1; i < argc; ++i) {
+        smoke_test |= std::string_view(argv[i]) == "--smoke-test";
+        light |= std::string_view(argv[i]) == "--light";
+    }
 
     try {
         App app;
-        app.window({.title = "Elegence Sandbox", .width = 1100, .height = 900, .background = palette::base},
+        // Shared by both windows: the title bar's toggle switches them together.
+        const State<ColorScheme> scheme(light ? ColorScheme::light : ColorScheme::dark);
+        app.window({.title = "Elegence Sandbox", .width = 1100, .height = 900},
                    [&] {
                        if (smoke_test) {
                            app.quit(); // still renders the first frame
                        }
-                       return ContentView([&app] { app.quit(); });
+                       return ContentView(scheme, [&app] { app.quit(); });
                    });
         // A second window: If and ForEach.
-        app.window({.title = "Elegence Todos", .width = 460, .height = 560, .background = palette::base},
-                   [] { return TodoWindow(); });
+        app.window({.title = "Elegence Todos", .width = 460, .height = 560}, [scheme] { return TodoWindow(scheme); });
         return app.run();
     } catch (const elg::Error& e) {
         std::fprintf(stderr, "sandbox: %s\n", e.what());

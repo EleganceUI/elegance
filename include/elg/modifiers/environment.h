@@ -12,37 +12,32 @@
 #include <elg/export.h>
 #include <elg/font.h>
 #include <elg/modifier.h>
+#include <elg/prop.h>
+
+#include <memory>
+#include <utility>
 
 namespace elg {
 
-class ELG_API FontModifier final : public EnvironmentModifier {
+// Sets one environment key. The built-in environment modifiers are this template; so is
+// View::environment<Key>(value).
+template <class Key>
+class EnvironmentKeyModifier final : public EnvironmentModifier {
 public:
-    explicit FontModifier(Font font) : font_(std::move(font)) {}
-    void apply(EnvironmentValues& values) const override { values.font = font_; }
+    explicit EnvironmentKeyModifier(Prop<typename Key::Value> value) : value_(std::move(value)) {}
+    void apply(EnvironmentValues& values) const override { values.template set<Key>(value_); }
 
 private:
-    ELG_PRIVATE_MEMBERS_BEGIN
-    Font font_;
-    ELG_PRIVATE_MEMBERS_END
+    Prop<typename Key::Value> value_;
 };
 
-class ELG_API ForegroundStyleModifier final : public EnvironmentModifier {
-public:
-    explicit ForegroundStyleModifier(Color color) noexcept : color_(color) {}
-    void apply(EnvironmentValues& values) const override { values.foreground = color_; }
-
-private:
-    Color color_;
-};
-
-class ELG_API TintModifier final : public EnvironmentModifier {
-public:
-    explicit TintModifier(Color color) noexcept : color_(color) {}
-    void apply(EnvironmentValues& values) const override { values.tint = color_; }
-
-private:
-    Color color_;
-};
+using FontModifier = EnvironmentKeyModifier<FontKey>;
+using ForegroundStyleModifier = EnvironmentKeyModifier<ForegroundKey>;
+using TintModifier = EnvironmentKeyModifier<TintKey>;
+using ColorSchemeModifier = EnvironmentKeyModifier<ColorSchemeKey>;
+using ThemeModifier = EnvironmentKeyModifier<ThemeKey>;
+using DisabledModifier = EnvironmentKeyModifier<DisabledKey>;
+using ButtonStyleModifier = EnvironmentKeyModifier<ButtonStyleKey>;
 
 } // namespace elg
 

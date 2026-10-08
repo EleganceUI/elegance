@@ -17,6 +17,7 @@
 #include "view/view_node.h"
 
 #include <elg/error.h>
+#include <elg/environment.h>
 #include <elg/reactive.h>
 
 #include <algorithm>
@@ -48,16 +49,20 @@ struct WindowEntry {
 // - `dirty` and `scope` exist before mounting (the tree refers to them) and the scope outlives
 //   the tree, so effects are disposed after the elements they update are gone.
 struct LiveWindow {
-    LiveWindow(WindowEntry& entry, const gpu::Instance& instance, TextSystem& text)
+    LiveWindow(WindowEntry& entry, const gpu::Instance& instance, TextSystem& text, EnvironmentValues base)
         : entry(&entry), window(entry.desc), surface(instance, window.create_surface(instance.handle())),
-          root(mount(text)) {}
+          environment(std::move(base)), root(mount(text)) {}
 
     // Builds the element tree. The body runs once (design.md §6); effects it creates belong to
     // this window's scope.
     std::unique_ptr<Element> mount(TextSystem& text) {
         Scope::Use use(scope);
-        return lower(entry->content(),
-                     LowerContext{.text = &text, .needs_frame = &dirty, .tree_changed = &tree_changed});
+        const EnvironmentScope environment_scope(environment); // Environment<K>() in the content function
+        View content = entry->content();
+        return lower(content, LowerContext{.text = &text,
+                                                    .needs_frame = &dirty,
+                                                    .tree_changed = &tree_changed,
+                                                    .environment = environment});
     }
 
     WindowEntry* entry;
@@ -65,6 +70,7 @@ struct LiveWindow {
     gpu::Surface surface;
     bool dirty = true;
     bool tree_changed = false; // If/ForEach added or removed elements
+    EnvironmentValues environment; // the root environment (system color scheme)
     Scope scope;
     std::unique_ptr<Element> root;
     EventDispatcher events{*root};
@@ -88,7 +94,8 @@ WindowFrame build_frame(LiveWindow& live) {
     frame.pixel_width = pixels.width;
     frame.pixel_height = pixels.height;
     frame.scale = live.window.scale();
-    frame.list.clear_color = live.entry->desc.background;
+    frame.list.clear_color = live.entry->desc.background.value_or(
+        resolve_theme_color(live.environment, ThemeColor::background));
     frame.list.scale = frame.scale;
 
     const Size size = live.window.logical_size();
@@ -160,9 +167,16 @@ int App::run() {
     // Fonts and glyphs, shared by all windows; outlives every element tree.
     TextSystem text;
 
+    // Every window's environment starts from the system's light/dark setting, as reactive state:
+    // when it changes, only the colors that depend on it update.
+    const auto system_scheme = [] { return platform::system_prefers_dark() ? ColorScheme::dark : ColorScheme::light; };
+    const State<ColorScheme> scheme(system_scheme());
+    EnvironmentValues base;
+    base.set<ColorSchemeKey>(scheme);
+
     std::vector<std::unique_ptr<LiveWindow>> windows;
     for (WindowEntry& entry : self.windows) {
-        windows.push_back(std::make_unique<LiveWindow>(entry, instance, text));
+        windows.push_back(std::make_unique<LiveWindow>(entry, instance, text, base));
     }
     const auto find_window = [&](std::uint32_t id) {
         return std::ranges::find_if(windows, [&](const auto& live) { return live->window.id() == id; });
@@ -261,6 +275,12 @@ int App::run() {
                 default: redraw = live.events.pointer_left(); break;
                 }
                 live.dirty |= redraw;
+            }
+            break;
+        case platform::EventType::system_theme_changed:
+            scheme = system_scheme();
+            for (const auto& live : windows) {
+                live->dirty = true; // the default window background follows the scheme
             }
             break;
         case platform::EventType::wake:

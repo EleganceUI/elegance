@@ -454,6 +454,11 @@ which is the SwiftUI equivalent of CSS inheritance:
   it for a subtree.
 - **OPEN**: Load themes from a token file (JSON/TOML) with hot reload? That gives designers a way
   to iterate without recompiling.
+- **Where the environment is read** (as built): a `ThemeColor`, or a closure taking
+  `const EnvironmentValues&`, resolves where the view is placed. `Environment<Key>()` reads the
+  environment where the code runs. That is the placement inside component bodies (structs with
+  `body()`), ViewModifier bodies, and style `make_body`. A plain function returning a View runs
+  before placement and sees its caller's environment.
 
 ### Styles (per-control appearance protocols)
 Controls separate *behavior* from *appearance*, as SwiftUI does:
@@ -1146,8 +1151,20 @@ Separate render thread from day one (decided).
   for background threads
 
 **M3: Environment & Animation**
-- [ ] Environment values, Theme, light/dark
-- [ ] `ViewModifier`, `ButtonStyle` and the other style protocols
+- [x] Environment (`elg/environment.h`): `EnvironmentValues` is a persistent map of typed keys
+  with stable string names; every value is a reactive argument. `Environment<Key>()` reads a key
+  while views are built, and `.environment<Key>(value)` sets one.
+  - Built-in keys: font, foreground, tint, color scheme, theme, disabled, button style.
+- [x] Themes (`elg/theme.h`): `Theme` with light and dark `ColorTokens`. `ThemeColor` tokens
+  work anywhere a color does and resolve where they're used. Windows follow the system light/dark
+  setting reactively; `.color_scheme()` and `.theme()` override it.
+- [x] Reactive arguments can also be closures taking `const EnvironmentValues&`, to mix state
+  with theme colors: `[=](const EnvironmentValues& env) { ... env.color(ThemeColor::outline) }`.
+- [x] `ButtonStyle` protocol (`elg/styles.h`): the button owns hover/press/enabled state; the
+  style builds its look from a `ButtonConfiguration`. Built-in styles are `Prominent` (the
+  default), `Bordered`, and `Plain`, all using only the public API. `.disabled()` is supported.
+- [ ] Other style protocols as their controls arrive (`ToggleStyle`, `TextFieldStyle`, ...);
+  theme fonts, spacing, and radii tokens; theme token files with hot reload (§8)
 - [ ] Implicit/explicit animation, transitions
 
 **M4: Controls & Input**

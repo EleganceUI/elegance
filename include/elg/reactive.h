@@ -161,6 +161,9 @@ ELG_API void begin_untracked() noexcept;
 ELG_API void end_untracked() noexcept;
 // Runs scheduled effects. The framework calls this once per frame, before layout.
 ELG_API void flush_effects();
+// Error helpers for header templates.
+[[noreturn]] ELG_API void throw_needs_environment();
+[[noreturn]] ELG_API void throw_no_environment();
 
 } // namespace detail
 

@@ -58,6 +58,8 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
         return {EventType::window_scale_changed, event.window.windowID};
     case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
         return {EventType::window_close_requested, event.window.windowID};
+    case SDL_EVENT_SYSTEM_THEME_CHANGED:
+        return {EventType::system_theme_changed};
     case SDL_EVENT_WINDOW_MOUSE_LEAVE:
         return {EventType::pointer_leave, event.window.windowID};
     case SDL_EVENT_MOUSE_MOTION: {
@@ -246,6 +248,10 @@ std::optional<std::string> environment_variable(const char* name) {
         return std::string(value);
     }
     return std::nullopt;
+}
+
+bool system_prefers_dark() {
+    return SDL_GetSystemTheme() == SDL_SYSTEM_THEME_DARK;
 }
 
 bool debugger_present() noexcept {

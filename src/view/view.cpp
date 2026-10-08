@@ -12,6 +12,7 @@
 #include <elg/modifiers/effects.h>
 #include <elg/modifiers/environment.h>
 #include <elg/modifiers/events.h>
+#include <elg/styles.h>
 #include <elg/modifiers/layout.h>
 #include <elg/shapes.h>
 #include <elg/text.h>
@@ -120,8 +121,8 @@ View View::on_hover(std::function<void(bool)> action) const {
     return modifier(HoverModifier(std::move(action)));
 }
 
-View View::tint(Color color) const {
-    return modifier(TintModifier(color));
+View View::tint(Prop<Color> color) const {
+    return modifier(TintModifier(std::move(color)));
 }
 
 View View::overlay(View view, Alignment alignment) const {
@@ -132,12 +133,32 @@ View View::border(Color color, float width) const {
     return modifier(BorderModifier(color, width));
 }
 
-View View::font(Font font) const {
+View View::font(Prop<Font> font) const {
     return modifier(FontModifier(std::move(font)));
 }
 
-View View::foreground_style(Color color) const {
-    return modifier(ForegroundStyleModifier(color));
+View View::foreground_style(Prop<Color> color) const {
+    return modifier(ForegroundStyleModifier(std::move(color)));
+}
+
+View View::color_scheme(Prop<ColorScheme> scheme) const {
+    return modifier(ColorSchemeModifier(std::move(scheme)));
+}
+
+View View::theme(Theme theme) const {
+    return modifier(ThemeModifier(theme));
+}
+
+View View::disabled(Prop<bool> disabled) const {
+    return modifier(DisabledModifier(std::move(disabled)));
+}
+
+View View::disabled() const {
+    return disabled(true);
+}
+
+View View::button_style_impl(std::shared_ptr<const ButtonStyle> style) const {
+    return modifier(ButtonStyleModifier(std::move(style)));
 }
 
 // --- Protocols ---
@@ -205,11 +226,28 @@ namespace elg::detail {
 
 // --- Lowering ---
 
+namespace {
+const EnvironmentValues* g_environment = nullptr;
+} // namespace
+
+EnvironmentScope::EnvironmentScope(const EnvironmentValues& environment) noexcept : previous_(g_environment) {
+    g_environment = &environment;
+}
+
+EnvironmentScope::~EnvironmentScope() {
+    g_environment = previous_;
+}
+
+const EnvironmentValues* current_environment() noexcept {
+    return g_environment;
+}
+
 std::unique_ptr<Element> lower(const View& view, const LowerContext& context) {
     const std::shared_ptr<const ViewNode>& node = ViewAccess::node(view);
     if (!node) {
         return std::make_unique<EmptyElement>();
     }
+    const EnvironmentScope scope(context.environment);
     return node->lower(context);
 }
 
@@ -258,34 +296,63 @@ std::unique_ptr<Element> LayoutNode::lower(const LowerContext& context) const {
 }
 
 std::unique_ptr<Element> ShapeNode::lower(const LowerContext& context) const {
-    auto element = std::make_unique<ShapeElement>(spec_, context.environment.foreground);
+    auto element = std::make_unique<ShapeElement>(spec_);
+    ShapeElement* const target = element.get();
     if (spec_.fill) {
-        bind(*spec_.fill, context, [target = element.get()](ShapeStyle fill) { target->set_fill(std::move(fill)); });
+        bind(*spec_.fill, context, [target](ShapeStyle fill) { target->set_fill(std::move(fill)); });
+    }
+    if (spec_.stroke) {
+        bind(spec_.stroke->color, context, [target](Color color) { target->set_stroke_color(color); });
+    } else if (!spec_.fill) {
+        // Unfilled, unstroked shapes use the environment's foreground.
+        const EnvironmentValues environment = context.environment;
+        bind(Prop<ShapeStyle>([environment] { return ShapeStyle(environment.get<ForegroundKey>()); }), context,
+             [target](ShapeStyle fill) { target->set_fill(std::move(fill)); });
     }
     return element;
 }
 
 std::unique_ptr<Element> TextNode::lower(const LowerContext& context) const {
     ELG_ASSERT(context.text, "lowering Text without a text system");
-    Font font = style_.font.value_or(context.environment.font);
-    if (style_.weight) {
-        font = font.weight(*style_.weight);
-    }
-    auto element = std::make_unique<TextElement>(*context.text, font, style_.line_limit, style_.alignment);
+    const EnvironmentValues environment = context.environment;
+    auto element = std::make_unique<TextElement>(*context.text, style_.line_limit, style_.alignment);
     TextElement* const target = element.get();
+
+    // The font: the Text's own, else the environment's; then any weight override.
+    Prop<Font> font = style_.font ? Prop<Font>(*style_.font)
+                                  : Prop<Font>([environment] { return environment.get<FontKey>(); });
+    if (style_.weight) {
+        font = Prop<Font>([font, weight = *style_.weight] { return font.get().weight(weight); });
+    }
+    bind(font, context, [target](const Font& value) { target->set_font(value); });
     bind(content_, context, [target](const std::string& content) { target->set_content(content); });
-    bind(style_.color.value_or(Prop<Color>(context.environment.foreground)), context,
-         [target](Color color) { target->set_color(color); });
+    bind(style_.color ? *style_.color : Prop<Color>([environment] { return environment.get<ForegroundKey>(); }),
+         context, [target](Color color) { target->set_color(color); });
     return element;
 }
 
 std::unique_ptr<Element> ButtonNode::lower(const LowerContext& context) const {
-    // Labels are drawn white on the tint, with a semibold body font unless they set their own.
-    LowerContext label_context = context.nested();
-    label_context.environment.foreground = Color::white;
-    label_context.environment.font = label_context.environment.font.weight(Weight::semibold);
-    return std::make_unique<ButtonElement>(detail::lower(label_, label_context), action_,
-                                           context.environment.tint);
+    // The button owns the interaction state; its style turns that into an appearance.
+    const State<bool> pressed(false);
+    const State<bool> hovered(false);
+    const EnvironmentValues environment = context.environment;
+    const auto enabled = [environment] { return !environment.get<DisabledKey>(); };
+    const ButtonConfiguration configuration{
+        .label = label_,
+        .is_pressed = [pressed] { return pressed(); },
+        .is_hovered = [hovered] { return hovered(); },
+        .is_enabled = enabled,
+    };
+
+    // The style is chosen when the button is built.
+    const std::shared_ptr<const ButtonStyle> style = untrack([&] { return environment.get<ButtonStyleKey>(); });
+    View body;
+    {
+        const EnvironmentScope scope(environment); // Environment<K>() in make_body
+        body = style->make_body(configuration);
+    }
+    return std::make_unique<ButtonElement>(detail::lower(body, context.nested()), action_, pressed, hovered,
+                                           enabled);
 }
 
 std::unique_ptr<Element> SpacerNode::lower(const LowerContext& context) const {

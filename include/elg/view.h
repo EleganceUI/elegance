@@ -24,12 +24,17 @@ class ViewNode;
 struct ViewAccess;
 } // namespace detail
 
+class ButtonStyle;
 class Font;
 class Modifier;
 class Shape;
 class ShapeStyle;
+struct Theme;
+enum class ColorScheme;
 template <class T>
 class Prop;
+template <class Key>
+class EnvironmentKeyModifier;
 
 inline constexpr float infinity = std::numeric_limits<float>::infinity();
 
@@ -249,11 +254,28 @@ public:
 
     // --- Environment (elg/modifiers/environment.h): inherited by everything inside. ---
 
-    ELG_API View font(Font font) const;
-    // The color of text and unfilled shapes.
-    ELG_API View foreground_style(Color color) const;
+    ELG_API View font(Prop<Font> font) const;
+    // The color of text and unfilled shapes. Also takes a ThemeColor.
+    ELG_API View foreground_style(Prop<Color> color) const;
     // The accent color of controls (e.g. Button).
-    ELG_API View tint(Color color) const;
+    ELG_API View tint(Prop<Color> color) const;
+    // Light or dark, for ThemeColor tokens inside. Windows follow the system setting by default.
+    ELG_API View color_scheme(Prop<ColorScheme> scheme) const;
+    ELG_API View theme(Theme theme) const;
+    // Controls inside stop responding and look disabled.
+    ELG_API View disabled(Prop<bool> disabled) const;
+    ELG_API View disabled() const;
+    // The style of every Button inside (elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, ButtonStyle>
+    View button_style(Style style) const {
+        return button_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    // Sets any environment key (elg/environment.h): .environment<CompactKey>(true)
+    template <class Key, class Value>
+    View environment(Value&& value) const {
+        return modifier(EnvironmentKeyModifier<Key>(std::forward<Value>(value)));
+    }
 
     // User extensions: a header of extra member declarations, set per target with
     // elegence_view_extensions() in CMake (design.md §9.4).
@@ -266,6 +288,7 @@ private:
 
     ELG_API explicit View(std::shared_ptr<const detail::ViewNode> node) noexcept;
     ELG_API View with_modifier(std::shared_ptr<const Modifier> modifier) const;
+    ELG_API View button_style_impl(std::shared_ptr<const ButtonStyle> style) const;
     ELG_API static View deferred(std::function<View()> body);
 
     std::shared_ptr<const detail::ViewNode> node_;

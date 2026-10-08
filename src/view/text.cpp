@@ -88,19 +88,28 @@ ShapedParagraph shape_ellipsis(const FontFace& face) {
 
 } // namespace
 
-TextElement::TextElement(TextSystem& text, const Font& font, int line_limit, TextAlignment alignment)
-    : text_(&text), face_(&text.fonts.resolve(font)), size_(font.size()), line_limit_(line_limit),
-      alignment_(alignment) {
+TextElement::TextElement(TextSystem& text, int line_limit, TextAlignment alignment)
+    : text_(&text), line_limit_(line_limit), alignment_(alignment) {}
+
+void TextElement::set_font(const Font& font) {
+    face_ = &text_->fonts.resolve(font);
+    size_ = font.size();
     ascent_ = face_->ascender() * size_;
     line_height_ = (face_->ascender() - face_->descender() + face_->line_gap()) * size_;
     ellipsis_ = shape_ellipsis(*face_);
+    ellipsis_width_ = 0;
     for (const ShapedGlyph& glyph : ellipsis_.glyphs) {
         ellipsis_width_ += glyph.advance * size_;
     }
+    paragraphs_ = shape_text(*face_, content_);
+    invalidate_layout();
 }
 
 void TextElement::set_content(std::string_view content) {
-    paragraphs_ = shape_text(*face_, content);
+    content_ = content;
+    if (face_) {
+        paragraphs_ = shape_text(*face_, content_);
+    }
     invalidate_layout();
 }
 
