@@ -1,0 +1,44 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "elegence",
+  "version": "0.1.0",
+  "license": "MPL-2.0",
+  "builtin-baseline": "2750401336fb7c95f6619657a46a7e798661341c",
+  "dependencies": [
+    "freetype",
+    "harfbuzz",
+    {
+      "name": "msdfgen",
+      "default-features": false
+    },
+    {
+      "name": "sdl3",
+      "features": [
+        "vulkan"
+      ]
+    },
+    "volk",
+    "vulkan-headers",
+    "vulkan-memory-allocator"
+  ],
+  "features": {
+    "tests": {
+      "description": "Build the unit tests",
+      "dependencies": [
+        "catch2"
+      ]
+    },
+    "profiling": {
+      "description": "Tracy profiler integration",
+      "dependencies": [
+        "tracy"
+      ]
+    },
+    "crash-reports": {
+      "description": "Out-of-process crash capture via crashpad",
+      "dependencies": [
+        "crashpad"
+      ]
+    }
+  }
+}

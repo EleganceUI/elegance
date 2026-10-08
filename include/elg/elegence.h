@@ -1,0 +1,33 @@
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file, You can obtain one at
+// https://mozilla.org/MPL/2.0/.
+
+#ifndef ELG_ELEGENCE_H
+#define ELG_ELEGENCE_H
+
+// Umbrella header: include this to get the whole public API.
+
+#include <elg/app.h>
+#include <elg/color.h>
+#include <elg/environment.h>
+#include <elg/error.h>
+#include <elg/events.h>
+#include <elg/font.h>
+#include <elg/geometry.h>
+#include <elg/gradient.h>
+#include <elg/graphics_context.h>
+#include <elg/layout.h>
+#include <elg/modifier.h>
+#include <elg/modifiers/decoration.h>
+#include <elg/modifiers/effects.h>
+#include <elg/modifiers/environment.h>
+#include <elg/modifiers/events.h>
+#include <elg/modifiers/layout.h>
+#include <elg/prop.h>
+#include <elg/reactive.h>
+#include <elg/shapes.h>
+#include <elg/text.h>
+#include <elg/view.h>
+#include <elg/views.h>
+
+#endif // ELG_ELEGENCE_H

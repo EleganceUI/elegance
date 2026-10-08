@@ -1,0 +1,83 @@
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file, You can obtain one at
+// https://mozilla.org/MPL/2.0/.
+
+#ifndef ELG_RENDER_DISPLAY_LIST_H
+#define ELG_RENDER_DISPLAY_LIST_H
+
+#include <elg/color.h>
+#include <elg/geometry.h>
+#include <elg/gradient.h>
+#include <elg/view.h>
+
+#include <optional>
+#include <variant>
+#include <vector>
+
+namespace elg::detail {
+
+struct RectCommand {
+    Rect rect;
+    CornerRadii radii;
+    ShapeStyle fill;
+    Color border;
+    float border_width = 0;
+};
+
+struct GlyphCommand {
+    Rect quad;           // logical points
+    Rect uv;             // normalized atlas coordinates
+    Color color;
+    float em_size = 15;  // font size in points; sets the distance field's on-screen range
+};
+
+// An analytic blurred rounded-rect shadow: the fast path for shadows of single shapes.
+struct BoxShadowCommand {
+    Rect rect; // the shape, already offset
+    CornerRadii radii;
+    Color color;
+    float blur_radius = 0; // points; sigma is half of it
+};
+
+// Clips everything until the matching PopClipCommand to a rounded rect.
+struct PushClipCommand {
+    Rect rect;
+    CornerRadii radii;
+};
+
+struct PopClipCommand {};
+
+// Renders everything until the matching PopLayerCommand offscreen, then composites it with
+// `opacity` and an optional blurred shadow of its alpha.
+struct PushLayerCommand {
+    Rect bounds; // of the layer's content, before the shadow
+    float opacity = 1;
+    std::optional<Shadow> shadow;
+};
+
+struct PopLayerCommand {};
+
+using DrawCommand = std::variant<RectCommand, GlyphCommand, BoxShadowCommand, PushClipCommand,
+                                 PopClipCommand, PushLayerCommand, PopLayerCommand>;
+
+// Immutable-once-built draw commands for one window frame, in logical points and sRGB, in
+// painter's order. Holds copies of everything, never references into app memory
+// (design.md §9.6, rule 1).
+class DisplayList {
+public:
+    Color clear_color = Color::white;
+    float scale = 1; // pixels per logical point
+    std::vector<DrawCommand> commands;
+};
+
+// --- Helpers ---
+
+bool is_clear(const ShapeStyle& style);
+ShapeStyle with_opacity(const ShapeStyle& style, float opacity);
+// The area a command can draw into, in points; nullopt for structural commands (clip, pop).
+std::optional<Rect> draw_bounds(const DrawCommand& command);
+Rect union_of(const Rect& a, const Rect& b);
+
+} // namespace elg::detail
+
+#endif // ELG_RENDER_DISPLAY_LIST_H
