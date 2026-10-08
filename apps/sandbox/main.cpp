@@ -262,6 +262,41 @@ View ControlCards() {
                   Captioned(keys, "focused + on_key_press").card());
 }
 
+// Text fields: the default rounded style, the plain style, and a disabled one.
+View TextFieldCards() {
+    const auto name = State(std::string());
+    const auto greeting = State(std::string("Type a name and press Enter"));
+    const View greeter =
+        VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
+               TextField("Your name", name.binding(),
+                         {.on_submit = [=] {
+                              greeting = name().empty() ? std::string("Type a name first") : std::format("Hello, {}!", name());
+                          }}),
+               Text([=] { return greeting(); }).foreground_style(ThemeColor::secondary))
+            .frame({.width = 260});
+
+    const auto note = State(std::string("Plain style: no box"));
+    const auto locked = State(std::string("Disabled"));
+    const View styles = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
+                               TextField("Note", note.binding()).text_field_style(PlainTextFieldStyle{}),
+                               TextField("Locked", locked.binding()).disabled())
+                            .frame({.width = 260});
+
+    // Two fields bound to the same state stay in sync.
+    const auto shared = State(std::string("Edit me in either field"));
+    const View mirrored = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
+                                 TextField("Shared", shared.binding()),
+                                 TextField("Shared", shared.binding()),
+                                 Text([=] { return std::format("{} bytes", shared().size()); })
+                                     .foreground_style(ThemeColor::secondary))
+                              .frame({.width = 260});
+
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(greeter, "TextField + on_submit").card(),
+                  Captioned(styles, "Plain style, disabled").card(),
+                  Captioned(mirrored, "One State, two fields").card());
+}
+
 View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
     return VStack({.spacing = 0},
                   TitleBar(scheme),
@@ -273,7 +308,8 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
                          TextCards().fixed_size(false, true),
                          EffectCards(),
                          StateCards(std::move(quit)),
-                         ControlCards())
+                         ControlCards(),
+                         TextFieldCards())
                       .padding(32)))
         .frame({.max_width = infinity, .max_height = infinity, .alignment = Alignment::top})
         .background(ThemeColor::background)

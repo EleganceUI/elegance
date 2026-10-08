@@ -124,12 +124,31 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
         result.x = event.button.x;
         result.y = event.button.y;
         result.clicks = event.button.clicks;
+        result.modifiers = translate_modifiers(SDL_GetModState());
         switch (event.button.button) {
         case SDL_BUTTON_LEFT: result.button = PointerButton::left; break;
         case SDL_BUTTON_MIDDLE: result.button = PointerButton::middle; break;
         case SDL_BUTTON_RIGHT: result.button = PointerButton::right; break;
         default: result.button = PointerButton::other; break;
         }
+        return result;
+    }
+    case SDL_EVENT_TEXT_INPUT: {
+        Event result{EventType::text_input, event.text.windowID};
+        result.text = event.text.text ? event.text.text : "";
+        return result;
+    }
+    case SDL_EVENT_TEXT_EDITING: {
+        Event result{EventType::text_editing, event.edit.windowID};
+        result.text = event.edit.text ? event.edit.text : "";
+        // `start` counts characters; we want bytes.
+        std::size_t byte = 0;
+        for (Sint32 chars = std::max(event.edit.start, 0); chars > 0 && byte < result.text.size(); --chars) {
+            do {
+                ++byte;
+            } while (byte < result.text.size() && (static_cast<unsigned char>(result.text[byte]) & 0xC0) == 0x80);
+        }
+        result.text_cursor = event.edit.start < 0 ? result.text.size() : byte;
         return result;
     }
     case SDL_EVENT_MOUSE_WHEEL: {
@@ -207,6 +226,45 @@ Size Window::logical_size() const {
     return {static_cast<float>(pixels.width) / s, static_cast<float>(pixels.height) / s};
 }
 
+void Window::start_text_input() {
+    SDL_StartTextInput(window_);
+}
+
+void Window::stop_text_input() {
+    SDL_StopTextInput(window_);
+}
+
+void Window::set_text_input_area(Rect area, float cursor) {
+    // Logical points -> window coordinates (the inverse of to_logical).
+    float density = SDL_GetWindowPixelDensity(window_);
+    if (density <= 0) {
+        density = 1;
+    }
+    const float factor = scale() / density;
+    const SDL_Rect rect{static_cast<int>(std::lround(area.x * factor)), static_cast<int>(std::lround(area.y * factor)),
+                        static_cast<int>(std::lround(area.width * factor)),
+                        static_cast<int>(std::lround(area.height * factor))};
+    SDL_SetTextInputArea(window_, &rect, static_cast<int>(std::lround(cursor * factor)));
+}
+
+std::string clipboard_text() {
+    char* text = SDL_GetClipboardText();
+    std::string result = text ? text : "";
+    SDL_free(text);
+    return result;
+}
+
+void set_clipboard_text(const std::string& text) {
+    SDL_SetClipboardText(text.c_str());
+}
+
+void set_text_cursor(bool text) {
+    // Created once; SDL frees them at shutdown.
+    static SDL_Cursor* const arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
+    static SDL_Cursor* const ibeam = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_TEXT);
+    SDL_SetCursor(text ? ibeam : arrow);
+}
+
 Point Window::to_logical(float x, float y) const {
     // Window coordinates -> pixels (pixel density, e.g. 2 on Retina) -> points (display scale).
     float density = SDL_GetWindowPixelDensity(window_);
@@ -235,6 +293,8 @@ Platform::Platform() {
     if (g_platform_alive) {
         throw UsageError("only one elg::App can run at a time");
     }
+    // We draw the IME's composition inline (TextField); the system shows its candidate list.
+    SDL_SetHint(SDL_HINT_IME_IMPLEMENTED_UI, "composition");
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         throw_sdl_error("failed to initialize SDL");
     }

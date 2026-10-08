@@ -38,6 +38,10 @@ EventResult EventHandler::focus(bool) {
     return {};
 }
 
+EventResult EventHandler::text_input(const TextInputEvent&) {
+    return {};
+}
+
 namespace {
 
 bool contains(const Rect& rect, Point point) {

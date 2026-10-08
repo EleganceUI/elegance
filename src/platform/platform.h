@@ -43,6 +43,8 @@ enum class EventType {
     pointer_up,
     pointer_leave,
     wheel,
+    text_input,
+    text_editing,
     key_down,
     key_up,
     system_theme_changed,
@@ -62,7 +64,10 @@ struct Event {
     float wheel_x = 0;
     float wheel_y = 0;
     bool precise = false;
-    // Key events.
+    // Text events: the text, and for editing (IME composition) the caret in bytes.
+    std::string text;
+    std::size_t text_cursor = 0;
+    // Key events (modifiers also for pointer buttons).
     Key key = Key::unknown;
     KeyModifiers modifiers = KeyModifiers::none;
     bool repeat = false;
@@ -84,6 +89,10 @@ public:
     Size logical_size() const;
     // Converts window coordinates (as in pointer events) to logical points.
     Point to_logical(float x, float y) const;
+    // Text input (IME) for this window, and where the text being edited is (logical points).
+    void start_text_input();
+    void stop_text_input();
+    void set_text_input_area(Rect area, float cursor);
 
     void show();
 
@@ -96,6 +105,11 @@ private:
 };
 
 // Owns SDL's lifetime. Construct on the main thread, which becomes the UI thread.
+std::string clipboard_text();
+void set_clipboard_text(const std::string& text);
+// The pointer's shape: the arrow, or the I-beam over text.
+void set_text_cursor(bool text);
+
 class Platform {
 public:
     using LiveResizeCallback = std::move_only_function<void(std::uint32_t window_id)>;

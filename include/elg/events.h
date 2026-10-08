@@ -10,7 +10,9 @@
 #include <elg/export.h>
 #include <elg/geometry.h>
 
+#include <cstddef>
 #include <optional>
+#include <string>
 
 namespace elg {
 
@@ -69,6 +71,18 @@ struct ScrollEvent {
     bool precise = false; // trackpad-style fine deltas (apply directly) rather than wheel notches
 };
 
+// Text from the keyboard or an input method, for views that accept text (TextField).
+struct TextInputEvent {
+    enum class Kind {
+        commit,      // insert `text`
+        composition, // an IME's in-progress text, replacing the previous one ("" ends it)
+    };
+
+    Kind kind = Kind::commit;
+    std::string text;
+    std::size_t cursor = 0; // composition: the IME's caret, in bytes into `text`
+};
+
 struct KeyEvent {
     enum class Kind { down, up };
 
@@ -90,6 +104,7 @@ struct PointerEvent {
     Point location; // window coordinates, in points
     MouseButton button = MouseButton::left;
     int click_count = 1; // 2 for the second click of a double click, ...
+    KeyModifiers modifiers = KeyModifiers::none; // held when the button went down / up
 };
 
 struct EventResult {
@@ -122,6 +137,10 @@ public:
     virtual bool focusable() const { return false; }
     // The view gained (true) or lost (false) keyboard focus.
     virtual EventResult focus(bool focused);
+
+    // Text input goes to the focused view's handler (then bubbles) while it accepts text.
+    virtual bool accepts_text_input() const { return false; }
+    virtual EventResult text_input(const TextInputEvent& event);
     // This handler's own hover delay; nullopt uses the environment's (.hover_delay()).
     virtual std::optional<HoverDelay> hover_delay() const { return std::nullopt; }
 };

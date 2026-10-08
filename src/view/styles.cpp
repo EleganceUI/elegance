@@ -5,6 +5,7 @@
 // The environment's theme resolution and the built-in button styles. The styles use only the
 // public API, like an app's own styles would (design.md §9.4, dogfooding).
 
+#include <elg/animation.h>
 #include <elg/environment.h>
 #include <elg/error.h>
 #include <elg/shapes.h>
@@ -45,6 +46,44 @@ std::shared_ptr<const ToggleStyle> ToggleStyleKey::default_value(const Environme
 }
 
 ToggleStyle::~ToggleStyle() = default;
+
+std::shared_ptr<const TextFieldStyle> TextFieldStyleKey::default_value(const EnvironmentValues&) {
+    static const auto style = std::make_shared<const RoundedBorderTextFieldStyle>();
+    return style;
+}
+
+TextFieldStyle::~TextFieldStyle() = default;
+
+View RoundedBorderTextFieldStyle::make_body(const TextFieldConfiguration& field) const {
+    constexpr float kRadius = 7;
+    const auto tint = Environment<TintKey>();
+    const auto theme = Environment<ThemeKey>();
+    const auto scheme = Environment<ColorSchemeKey>();
+    const auto colors = [=] { return theme().colors(scheme()); };
+    return field.field.padding(EdgeInsets::symmetric(10, 7))
+        .background(
+            [=] {
+                const Color base = colors().surface_raised;
+                return field.is_enabled() ? base : base.opacity(0.5f);
+            },
+            RoundedRectangle(kRadius))
+        .overlay(RoundedRectangle(kRadius).stroke_border(
+            [=] {
+                const ColorTokens c = colors();
+                return field.is_hovered() && field.is_enabled() ? c.outline.mix(c.primary, 0.25f) : c.outline;
+            },
+            1))
+        // Focus: a 2 pt ring in the tint just outside the outline.
+        .overlay(RoundedRectangle(kRadius + 2)
+                     .stroke_border(tint, 2)
+                     .padding(-2)
+                     .opacity([=] { return field.is_focused() ? 1.f : 0.f; })
+                     .animation(Animation::ease_out(0.12), field.is_focused));
+}
+
+View PlainTextFieldStyle::make_body(const TextFieldConfiguration& field) const {
+    return field.field;
+}
 
 namespace {
 

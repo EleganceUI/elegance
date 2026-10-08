@@ -29,9 +29,11 @@ public:
     EventDispatcher(Element& root, FocusManager& focus) : root_(&root), focus_(&focus) {}
 
     bool pointer_moved(Point location);
-    bool pointer_button(PointerEvent::Kind kind, Point location, MouseButton button, int click_count);
+    bool pointer_button(PointerEvent::Kind kind, Point location, MouseButton button, int click_count,
+                        KeyModifiers modifiers);
     bool pointer_left();
     bool key(const KeyEvent& event);
+    bool text_input(const TextInputEvent& event);
     bool scroll(Point location, float dx, float dy, bool precise);
     // Re-evaluates hover at the last pointer position (content may have moved under it, e.g.
     // scrolled).

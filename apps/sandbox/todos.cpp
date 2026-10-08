@@ -60,12 +60,16 @@ View TodoWindow(State<ColorScheme> scheme) {
     // Every change to the list animates: rows slide in and out, and the rest move into place.
     const auto animate = [](auto&& change) { with_animation(Animation::spring(0.4, 0.86), change); };
 
+    // What's typed in the new-task field.
+    const auto draft = State(std::string());
     const auto add = [=] {
         animate([=] {
             const int id = next_id.peek();
             next_id = id + 1;
-            todos.update([&](std::vector<Todo>& list) { list.push_back({id, std::format("New task #{}", id)}); });
+            const std::string title = draft.peek().empty() ? std::format("New task #{}", id) : draft.peek();
+            todos.update([&](std::vector<Todo>& list) { list.push_back({id, title}); });
         });
+        draft = std::string();
     };
     const auto toggle = [=](int id) {
         return [=] {
@@ -104,7 +108,10 @@ View TodoWindow(State<ColorScheme> scheme) {
                                            });
                                        });
                                    })
-                                .button_style(BorderedButtonStyle{})),
+                                .button_style(BorderedButtonStyle{}))),
+                  // Enter in the field adds the task too.
+                  HStack({.spacing = 10},
+                         TextField("New task", draft.binding(), {.on_submit = add}),
                          Button("Add", add)),
                   Text([=] {
                       const auto left = remaining();

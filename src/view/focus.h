@@ -6,6 +6,7 @@
 #define ELG_VIEW_FOCUS_H
 
 #include "view/element.h"
+#include "view/window_services.h"
 
 namespace elg::detail {
 
@@ -14,6 +15,9 @@ namespace elg::detail {
 // programmatic focus, not for clicks. Outlives the window's element tree.
 class FocusManager {
 public:
+    // `services` turns text input on while a view that accepts text has focus.
+    explicit FocusManager(WindowServices* services = nullptr) noexcept : services_(services) {}
+
     Element* focused() const noexcept { return focused_; }
     bool ring_visible() const noexcept { return visible_; }
 
@@ -24,10 +28,20 @@ public:
     void forget(const Element* element) noexcept {
         if (focused_ == element) {
             focused_ = nullptr;
+            set_text_input(false);
         }
     }
 
 private:
+    void set_text_input(bool on) noexcept {
+        if (services_ && on != text_input_) {
+            text_input_ = on;
+            on ? services_->start_text_input() : services_->stop_text_input();
+        }
+    }
+
+    WindowServices* services_;
+    bool text_input_ = false;
     Element* focused_ = nullptr;
     bool visible_ = false;
 };

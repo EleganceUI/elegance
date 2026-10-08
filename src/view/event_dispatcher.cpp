@@ -19,6 +19,7 @@ bool FocusManager::focus(Element* element, bool visible) {
     }
     Element* const previous = std::exchange(focused_, element);
     visible_ = visible;
+    set_text_input(element && element->event_handler()->accepts_text_input());
     // focused_ is already updated, so handlers (e.g. a .focused binding) see the new focus.
     if (previous) {
         previous->event_handler()->focus(false);
@@ -138,10 +139,10 @@ bool EventDispatcher::pointer_moved(Point location) {
 }
 
 bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, MouseButton button,
-                                     int click_count) {
+                                     int click_count, KeyModifiers modifiers) {
     last_location_ = location;
     pointer_inside_ = true;
-    const PointerEvent event{kind, location, button, click_count};
+    const PointerEvent event{kind, location, button, click_count, modifiers};
     const std::vector<Element*> path = path_at(location);
     bool redraw = update_hover(path);
 
@@ -225,6 +226,20 @@ bool EventDispatcher::scroll(Point location, float dx, float dy, bool precise) {
     for (auto it = path.rbegin(); it != path.rend(); ++it) {
         if (EventHandler* handler = (*it)->event_handler()) {
             const EventResult result = handler->scroll(event);
+            redraw |= result.redraw;
+            if (result.consumed) {
+                break;
+            }
+        }
+    }
+    return redraw;
+}
+
+bool EventDispatcher::text_input(const TextInputEvent& event) {
+    bool redraw = false;
+    for (Element* element = focus_->focused(); element; element = element->parent()) {
+        if (EventHandler* handler = element->event_handler()) {
+            const EventResult result = handler->text_input(event);
             redraw |= result.redraw;
             if (result.consumed) {
                 break;

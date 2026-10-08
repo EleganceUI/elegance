@@ -906,6 +906,30 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
 - Bidi, line breaking, ellipsis, max-lines, and rich text spans (inline styles and links).
 - **Text input**: caret, selection, clipboard, undo/redo, IME (candidate window positioning),
   multi-line, and password mode.
+  - Implemented (M4): single-line `TextField`. The pieces:
+    - A `TextEditor` model keeps the text in sync with the binding, plus the caret and
+      selection as byte offsets on HarfBuzz cluster boundaries, the IME composition, and undo.
+    - A `TextEditorElement` draws the text where the `TextFieldStyle` puts it.
+    - A focusable `TextFieldElement` around the style's body takes the input.
+  - Editing:
+    - Arrows; Ctrl+arrows (Alt on macOS) move by word; Home/End.
+    - Shift extends the selection; Backspace/Delete, with word variants.
+    - Ctrl/Cmd+A, C, X, V. Undo with Ctrl/Cmd+Z, where consecutive typing undoes together;
+      redo with Ctrl+Y or Shift+Ctrl/Cmd+Z.
+    - Enter runs `on_submit`.
+  - Pointer: click places the caret (Shift+click extends), drag selects, double-click selects
+    a word, triple-click selects everything. The I-beam cursor shows on hover.
+  - Tabbing into a field selects its contents; clicking doesn't.
+  - Text wider than the field scrolls to keep the caret in sight.
+  - IME:
+    - SDL text input is on while a text field has focus (the `FocusManager` toggles it).
+    - The composition is drawn inline, underlined, at the caret.
+    - The candidate window is positioned through `SDL_SetTextInputArea`.
+  - Printable keys are consumed so outer `on_key_press` handlers don't see typing.
+  - The caret blinks using timed wakes (`WindowServices::wake_at`), not continuous rendering.
+  - Still to do: multi-line `TextEditor`, `SecureField`, selectable `Text`, a context menu
+    (cut/copy/paste, §13.1), and grapheme boundaries from ICU/UAX #29 (HarfBuzz clusters
+    approximate them).
 - Selectable static text.
 - **TODO**: A large-document strategy for code-editor-scale text (rope + virtualized lines)?
   Probably out of scope for v1.
@@ -1226,7 +1250,12 @@ Separate render thread from day one (decided).
 - [x] `.offset(x, y)` is a reactive, animatable effect: it moves drawing and hit testing,
   without affecting layout. The switch knob uses it.
   - Known gap: Button/tap release-inside checks use the un-offset frame.
-- [ ] Remaining core controls (Slider, Picker, Stepper, ProgressView), TextField with IME
+- [x] `TextField(placeholder, Binding<std::string>, {.on_submit})` with `TextFieldStyle`
+  (`RoundedBorderTextFieldStyle` default, `PlainTextFieldStyle`). Details in §11.
+  - `WindowServices` gives elements text input, the clipboard, cursor shape, and timed wakes.
+  - Fix: `bind(...)` calls are qualified. Unqualified, ADL picked `std::bind` for
+    `Prop<std::string>` rvalues and silently dropped the binding.
+- [ ] Remaining core controls (Slider, Picker, Stepper, ProgressView)
 - [x] `ScrollView` / `ScrollView({.axes, .shows_indicators}, content)`:
   - Takes all the space it's offered. The content gets its ideal size along the scroll axes and
     the offered size across them (centered there), and is clipped.

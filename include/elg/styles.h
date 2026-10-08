@@ -87,6 +87,32 @@ public:
     View make_body(const ToggleConfiguration& toggle) const override;
 };
 
+// What a TextFieldStyle gets: the editable text (put it where the text goes) and its state.
+struct TextFieldConfiguration {
+    View field;
+    std::function<bool()> is_focused;
+    std::function<bool()> is_hovered;
+    std::function<bool()> is_enabled;
+};
+
+class ELG_API TextFieldStyle {
+public:
+    virtual ~TextFieldStyle();
+    virtual View make_body(const TextFieldConfiguration& field) const = 0;
+};
+
+// A raised box with an outline that turns the tint while focused. The default.
+class ELG_API RoundedBorderTextFieldStyle final : public TextFieldStyle {
+public:
+    View make_body(const TextFieldConfiguration& field) const override;
+};
+
+// Just the text.
+class ELG_API PlainTextFieldStyle final : public TextFieldStyle {
+public:
+    View make_body(const TextFieldConfiguration& field) const override;
+};
+
 } // namespace elg
 
 #endif // ELG_STYLES_H

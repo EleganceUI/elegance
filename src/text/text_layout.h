@@ -18,6 +18,7 @@ namespace elg::detail {
 // A shaped glyph; advances and offsets are in em units.
 struct ShapedGlyph {
     std::uint32_t id = 0;
+    std::uint32_t cluster = 0; // byte offset (in the paragraph) of the text it came from
     float advance = 0;
     float x_offset = 0;
     float y_offset = 0;

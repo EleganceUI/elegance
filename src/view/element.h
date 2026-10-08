@@ -83,7 +83,7 @@ public:
     // The element that owns this one (nullptr for the root). Keys bubble along it.
     Element* parent() const noexcept { return parent_; }
     // For focusable elements: the window's focus (the element draws the ring while it has visible
-    // focus, and lets go of focus when destroyed) and the ring's color.
+    // focus, and lets go of focus when destroyed) and the ring's color (empty: no ring).
     void set_focus_manager(FocusManager* focus, std::function<Color()> ring_color) {
         focus_manager_ = focus;
         focus_ring_color_ = std::move(ring_color);

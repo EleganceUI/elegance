@@ -53,6 +53,38 @@ struct WindowEntry {
     ContentFunction content;
 };
 
+// What a window's elements need from the platform beyond drawing (view/window_services.h).
+class LiveWindowServices final : public WindowServices {
+public:
+    explicit LiveWindowServices(platform::Window& window) noexcept : window_(&window) {}
+
+    void start_text_input() override { window_->start_text_input(); }
+    void stop_text_input() override { window_->stop_text_input(); }
+    void set_text_input_area(Rect area, float cursor) override { window_->set_text_input_area(area, cursor); }
+    std::string clipboard_text() override { return platform::clipboard_text(); }
+    void set_clipboard_text(const std::string& text) override { platform::set_clipboard_text(text); }
+    void set_cursor(CursorShape shape) override { platform::set_text_cursor(shape == CursorShape::text); }
+    void wake_at(double seconds) override {
+        if (!wake_ || seconds < *wake_) {
+            wake_ = seconds;
+        }
+    }
+
+    std::optional<double> wake() const noexcept { return wake_; }
+    // True (and forgets it) when the requested wake time has come.
+    bool take_due(double now) noexcept {
+        if (wake_ && *wake_ <= now) {
+            wake_.reset();
+            return true;
+        }
+        return false;
+    }
+
+private:
+    platform::Window* window_;
+    std::optional<double> wake_;
+};
+
 // A window while the app runs. Member order matters:
 // - the surface is destroyed before the window it belongs to;
 // - `dirty` and `scope` exist before mounting (the tree refers to them) and the scope outlives
@@ -72,7 +104,8 @@ struct LiveWindow {
                                                     .needs_frame = &dirty,
                                                     .tree_changed = &tree_changed,
                                                     .environment = environment,
-                                                    .focus = &focus});
+                                                    .focus = &focus,
+                                                    .services = &services});
     }
 
     WindowEntry* entry;
@@ -83,7 +116,8 @@ struct LiveWindow {
     bool animating = false;    // the last frame had animations in progress
     std::uint64_t last_frame = 0;
     EnvironmentValues environment; // the root environment (system color scheme)
-    FocusManager focus;            // outlives the tree (elements let go of it when destroyed)
+    LiveWindowServices services{window};
+    FocusManager focus{&services}; // outlives the tree (elements let go of it when destroyed)
     Scope scope;
     std::unique_ptr<Element> root;
     EventDispatcher events{*root, focus};
@@ -285,11 +319,13 @@ int App::run() {
                 case platform::EventType::pointer_move: redraw = live.events.pointer_moved(location); break;
                 case platform::EventType::pointer_down:
                     redraw = live.events.pointer_button(PointerEvent::Kind::down, location,
-                                                        to_mouse_button(event.button), event.clicks);
+                                                        to_mouse_button(event.button), event.clicks,
+                                                        event.modifiers);
                     break;
                 case platform::EventType::pointer_up:
                     redraw = live.events.pointer_button(PointerEvent::Kind::up, location,
-                                                        to_mouse_button(event.button), event.clicks);
+                                                        to_mouse_button(event.button), event.clicks,
+                                                        event.modifiers);
                     break;
                 default: redraw = live.events.pointer_left(); break;
                 }
@@ -303,6 +339,16 @@ int App::run() {
                 live.dirty |= live.events.scroll(live.window.to_logical(event.x, event.y),
                                                  event.wheel_x * kPointsPerNotch, -event.wheel_y * kPointsPerNotch,
                                                  event.precise);
+            }
+            break;
+        case platform::EventType::text_input:
+        case platform::EventType::text_editing:
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                const TextInputEvent input{event.type == platform::EventType::text_input
+                                               ? TextInputEvent::Kind::commit
+                                               : TextInputEvent::Kind::composition,
+                                           event.text, event.text_cursor};
+                (*it)->dirty |= (*it)->events.text_input(input);
             }
             break;
         case platform::EventType::key_down:
@@ -334,8 +380,10 @@ int App::run() {
             // Wake for the next pending hover change (hover delays), else sleep until an event.
             std::optional<double> deadline;
             for (const auto& live : windows) {
-                if (const std::optional<double> due = live->events.next_deadline(); due && (!deadline || *due < *deadline)) {
-                    deadline = due;
+                for (const std::optional<double> due : {live->events.next_deadline(), live->services.wake()}) {
+                    if (due && (!deadline || *due < *deadline)) {
+                        deadline = due;
+                    }
                 }
             }
             handle(deadline ? platform.wait_event(*deadline - seconds_now()) : platform.wait_event());
@@ -345,6 +393,7 @@ int App::run() {
         }
         for (const auto& live : windows) {
             live->dirty |= live->events.tick(); // hover changes whose delay has passed
+            live->dirty |= live->services.take_due(seconds_now()); // e.g. the caret blinking
         }
         if (callback_error) {
             std::rethrow_exception(callback_error);

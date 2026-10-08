@@ -40,6 +40,7 @@ using DisabledModifier = EnvironmentKeyModifier<DisabledKey>;
 using ButtonStyleModifier = EnvironmentKeyModifier<ButtonStyleKey>;
 using HoverDelayModifier = EnvironmentKeyModifier<HoverDelayKey>;
 using ToggleStyleModifier = EnvironmentKeyModifier<ToggleStyleKey>;
+using TextFieldStyleModifier = EnvironmentKeyModifier<TextFieldStyleKey>;
 
 } // namespace elg
 

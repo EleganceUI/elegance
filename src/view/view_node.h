@@ -10,6 +10,7 @@
 
 #include "view/element.h"
 #include "view/focus.h"
+#include "view/window_services.h"
 
 #include <elg/animation.h>
 #include <elg/environment.h>
@@ -43,6 +44,8 @@ struct LowerContext {
     bool animates_layout = true;
     // The window's keyboard focus.
     FocusManager* focus = nullptr;
+    // The window's text input, clipboard, cursor, and timed redraws.
+    WindowServices* services = nullptr;
 
     // The context for a view that isn't a direct child of the current layout.
     LowerContext nested() const {
@@ -178,6 +181,18 @@ public:
 private:
     ScrollViewOptions options_;
     View content_;
+};
+
+class TextFieldNode final : public ViewNode {
+public:
+    TextFieldNode(std::string placeholder, Binding<std::string> text, TextFieldOptions options)
+        : placeholder_(std::move(placeholder)), text_(std::move(text)), options_(std::move(options)) {}
+    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+
+private:
+    std::string placeholder_;
+    Binding<std::string> text_;
+    TextFieldOptions options_;
 };
 
 class ToggleNode final : public ViewNode {

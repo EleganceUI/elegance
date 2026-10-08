@@ -36,7 +36,7 @@ Element::~Element() {
 }
 
 void Element::paint_focus_ring(DisplayList& list) const {
-    if (focus_manager_->focused() != this || !focus_manager_->ring_visible()) {
+    if (!focus_ring_color_ || focus_manager_->focused() != this || !focus_manager_->ring_visible()) {
         return;
     }
     constexpr float kGap = 3;

@@ -38,6 +38,7 @@ namespace elg {
 
 class ButtonStyle;
 class ToggleStyle;
+class TextFieldStyle;
 
 class EnvironmentValues {
 public:
@@ -127,6 +128,12 @@ struct DisabledKey {
     using Value = bool;
     static constexpr std::string_view name = "elg.disabled";
     static bool default_value(const EnvironmentValues&) { return false; }
+};
+
+struct TextFieldStyleKey {
+    using Value = std::shared_ptr<const TextFieldStyle>;
+    static constexpr std::string_view name = "elg.text_field_style";
+    ELG_API static std::shared_ptr<const TextFieldStyle> default_value(const EnvironmentValues&);
 };
 
 struct ToggleStyleKey {

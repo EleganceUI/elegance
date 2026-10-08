@@ -30,7 +30,7 @@ std::unique_ptr<Element> IfNode::lower(const LowerContext& context) const {
     auto fragment = std::make_unique<FragmentElement>(context);
     FragmentElement* const target = fragment.get();
     // Each branch has a fixed key, so re-evaluating to the same branch keeps its views.
-    bind(condition_, context, [target, then_view = then_, else_view = else_](bool condition) {
+    detail::bind(condition_, context, [target, then_view = then_, else_view = else_](bool condition) {
         const View& branch = condition ? then_view : else_view;
         target->set_items({ForEachItem{static_cast<std::int64_t>(condition ? 1 : 0), nullptr, nullptr,
                                        [branch] { return branch; }}});

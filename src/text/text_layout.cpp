@@ -40,6 +40,7 @@ ShapedParagraph shape_paragraph(const FontFace& face, std::string_view text) {
         const bool space = c == ' ' || c == '\t';
         paragraph.glyphs.push_back({
             .id = infos[i].codepoint, // after shaping, this is the glyph index
+            .cluster = infos[i].cluster,
             .advance = static_cast<float>(positions[i].x_advance) / em,
             .x_offset = static_cast<float>(positions[i].x_offset) / em,
             .y_offset = static_cast<float>(positions[i].y_offset) / em,

@@ -7,6 +7,7 @@
 #include "view/view_node.h"
 
 #include "core/crash.h"
+#include "view/text_field.h"
 
 #include <elg/animation.h>
 #include <elg/modifiers/decoration.h>
@@ -210,6 +211,10 @@ View View::toggle_style_impl(std::shared_ptr<const ToggleStyle> style) const {
     return modifier(ToggleStyleModifier(std::move(style)));
 }
 
+View View::text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const {
+    return modifier(TextFieldStyleModifier(std::move(style)));
+}
+
 // --- Protocols ---
 
 Modifier::~Modifier() = default;
@@ -258,6 +263,11 @@ View Button(View label, std::function<void()> action) {
 
 View Button(std::string title, std::function<void()> action) {
     return Button(Text(std::move(title)), std::move(action));
+}
+
+View TextField(std::string placeholder, Binding<std::string> text, TextFieldOptions options) {
+    return ViewAccess::make(
+        std::make_shared<const detail::TextFieldNode>(std::move(placeholder), std::move(text), std::move(options)));
 }
 
 View ScrollView(View content) {
@@ -413,9 +423,9 @@ std::unique_ptr<Element> ModifiedNode::lower(const LowerContext& context) const 
         const Prop<float> offset_y = effects.offset_y;
         auto element = std::make_unique<EffectElement>(std::move(effects), detail::lower(content_, context));
         EffectElement* const target = element.get();
-        bind(opacity, context, [target](float value, const Animation* animation) { target->set_opacity(value, animation); });
-        bind(offset_x, context, [target](float value, const Animation* animation) { target->set_offset_x(value, animation); });
-        bind(offset_y, context, [target](float value, const Animation* animation) { target->set_offset_y(value, animation); });
+        detail::bind(opacity, context, [target](float value, const Animation* animation) { target->set_opacity(value, animation); });
+        detail::bind(offset_x, context, [target](float value, const Animation* animation) { target->set_offset_x(value, animation); });
+        detail::bind(offset_y, context, [target](float value, const Animation* animation) { target->set_offset_y(value, animation); });
         return element;
     }
     case ModifierProtocol::event:
@@ -444,16 +454,16 @@ std::unique_ptr<Element> ShapeNode::lower(const LowerContext& context) const {
     auto element = std::make_unique<ShapeElement>(spec_);
     ShapeElement* const target = element.get();
     if (spec_.fill) {
-        bind(*spec_.fill, context,
+        detail::bind(*spec_.fill, context,
              [target](ShapeStyle fill, const Animation* animation) { target->set_fill(std::move(fill), animation); });
     }
     if (spec_.stroke) {
-        bind(spec_.stroke->color, context,
+        detail::bind(spec_.stroke->color, context,
              [target](Color color, const Animation* animation) { target->set_stroke_color(color, animation); });
     } else if (!spec_.fill) {
         // Unfilled, unstroked shapes use the environment's foreground.
         const EnvironmentValues environment = context.environment;
-        bind(Prop<ShapeStyle>([environment] { return ShapeStyle(environment.get<ForegroundKey>()); }), context,
+        detail::bind(Prop<ShapeStyle>([environment] { return ShapeStyle(environment.get<ForegroundKey>()); }), context,
              [target](ShapeStyle fill, const Animation* animation) { target->set_fill(std::move(fill), animation); });
     }
     return element;
@@ -471,9 +481,9 @@ std::unique_ptr<Element> TextNode::lower(const LowerContext& context) const {
     if (style_.weight) {
         font = Prop<Font>([font, weight = *style_.weight] { return font.get().weight(weight); });
     }
-    bind(font, context, [target](const Font& value) { target->set_font(value); });
-    bind(content_, context, [target](const std::string& content) { target->set_content(content); });
-    bind(style_.color ? *style_.color : Prop<Color>([environment] { return environment.get<ForegroundKey>(); }),
+    detail::bind(font, context, [target](const Font& value) { target->set_font(value); });
+    detail::bind(content_, context, [target](const std::string& content) { target->set_content(content); });
+    detail::bind(style_.color ? *style_.color : Prop<Color>([environment] { return environment.get<ForegroundKey>(); }),
          context, [target](Color color, const Animation* animation) { target->set_color(color, animation); });
     return element;
 }
@@ -499,6 +509,56 @@ std::unique_ptr<Element> ButtonNode::lower(const LowerContext& context) const {
         body = style->make_body(configuration);
     }
     return make_button_element(body, action_, pressed, hovered, context);
+}
+
+namespace {
+
+// Where a TextField's style puts the text.
+class TextEditorNode final : public ViewNode {
+public:
+    explicit TextEditorNode(std::shared_ptr<TextEditor> editor) : editor_(std::move(editor)) {}
+    std::unique_ptr<Element> lower(const LowerContext&) const override {
+        return std::make_unique<TextEditorElement>(editor_);
+    }
+
+private:
+    std::shared_ptr<TextEditor> editor_;
+};
+
+} // namespace
+
+std::unique_ptr<Element> TextFieldNode::lower(const LowerContext& context) const {
+    ELG_ASSERT(context.text, "lowering a TextField without a text system");
+    const EnvironmentValues environment = context.environment;
+    const auto editor = std::make_shared<TextEditor>(*context.text, text_, placeholder_, options_.on_submit,
+                                                     context.services, context.focus, environment);
+    // The font follows the environment's; the text follows the binding (when changed elsewhere).
+    detail::bind(Prop<Font>([environment] { return environment.get<FontKey>(); }), context,
+         [editor](const Font& font) { editor->set_font(font); });
+    detail::bind(Prop<std::string>(text_), context,
+         [editor](const std::string& value) { editor->set_text(value); });
+
+    const State<bool> focused(false);
+    const State<bool> hovered(false);
+    const auto enabled = [environment] { return !environment.get<DisabledKey>(); };
+    const TextFieldConfiguration configuration{
+        .field = ViewAccess::make(std::make_shared<const TextEditorNode>(editor)),
+        .is_focused = [focused] { return focused(); },
+        .is_hovered = [hovered] { return hovered(); },
+        .is_enabled = enabled,
+    };
+    const std::shared_ptr<const TextFieldStyle> style = untrack([&] { return environment.get<TextFieldStyleKey>(); });
+    View body;
+    {
+        const EnvironmentScope scope(environment);
+        body = style->make_body(configuration);
+    }
+    auto element = std::make_unique<TextFieldElement>(editor, detail::lower(body, context.nested()), focused, hovered,
+                                                      enabled, context.services);
+    if (context.focus) {
+        element->set_focus_manager(context.focus, {}); // the style shows focus
+    }
+    return element;
 }
 
 std::unique_ptr<Element> ScrollNode::lower(const LowerContext& context) const {

@@ -45,6 +45,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         view/stack_layout.cpp
         view/styles.cpp
         view/text.cpp
+        view/text_field.cpp
         view/view.cpp
 )
 add_library(Elegence::Elegence ALIAS elegence)

@@ -50,6 +50,7 @@ std::function<bool()> change_watcher(Source source) {
 class Animation;
 class ButtonStyle;
 class ToggleStyle;
+class TextFieldStyle;
 struct HoverDelay;
 struct KeyEvent;
 enum class Key;
@@ -326,6 +327,12 @@ public:
     View toggle_style(Style style) const {
         return toggle_style_impl(std::make_shared<const Style>(std::move(style)));
     }
+    // The style of every TextField inside (elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, TextFieldStyle>
+    View text_field_style(Style style) const {
+        return text_field_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
     // --- Animation (elg/animation.h) ---
 
     // Changes inside this view animate with `animation` whenever `value` (a plain value, State,
@@ -359,6 +366,7 @@ private:
     ELG_API View with_modifier(std::shared_ptr<const Modifier> modifier) const;
     ELG_API View button_style_impl(std::shared_ptr<const ButtonStyle> style) const;
     ELG_API View toggle_style_impl(std::shared_ptr<const ToggleStyle> style) const;
+    ELG_API View text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const;
     ELG_API View animation_impl(const Animation& animation, std::function<bool()> changed) const;
     ELG_API static View deferred(std::function<View()> body);
 

@@ -101,6 +101,16 @@ struct ScrollViewOptions {
 ELG_API View ScrollView(View content);
 ELG_API View ScrollView(ScrollViewOptions options, View content);
 
+struct TextFieldOptions {
+    std::function<void()> on_submit; // Enter
+};
+
+// A single-line text editor bound to `text`; its look comes from the TextFieldStyle (a rounded
+// border by default). Typing, IME composition, selection (pointer, Shift+arrows, double-click
+// word, triple-click all), word movement, clipboard, and undo/redo.
+//   TextField("Name", name.binding(), {.on_submit = save})
+ELG_API View TextField(std::string placeholder, Binding<std::string> text, TextFieldOptions options = {});
+
 // An on/off control bound to `is_on`; its look comes from the ToggleStyle (a switch by default).
 // Click, Space, or Enter flips it.
 ELG_API View Toggle(View label, Binding<bool> is_on);
