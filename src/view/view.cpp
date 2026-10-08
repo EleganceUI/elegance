@@ -70,8 +70,8 @@ View View::layout_priority(float priority) const {
     return modifier(LayoutPriorityModifier(priority));
 }
 
-View View::offset(float x, float y) const {
-    return modifier(OffsetModifier(x, y));
+View View::offset(Prop<float> x, Prop<float> y) const {
+    return modifier(OffsetModifier(std::move(x), std::move(y)));
 }
 
 View View::background(View view, Alignment alignment) const {
@@ -130,6 +130,30 @@ View View::hover_delay(HoverDelay delay) const {
     return modifier(HoverDelayModifier(delay));
 }
 
+View View::focusable(bool focusable) const {
+    return modifier(FocusableModifier(focusable));
+}
+
+View View::focused(Binding<bool> is_focused) const {
+    return View(std::make_shared<const detail::FocusedNode>(*this, std::move(is_focused)));
+}
+
+View View::on_key_press(Key key, std::function<void()> action) const {
+    return on_key_press([key, action = std::move(action)](const KeyEvent& event) {
+        if (event.key != key) {
+            return false;
+        }
+        if (action) {
+            action();
+        }
+        return true;
+    });
+}
+
+View View::on_key_press(std::function<bool(const KeyEvent&)> action) const {
+    return modifier(KeyPressModifier(std::move(action)));
+}
+
 View View::tint(Prop<Color> color) const {
     return modifier(TintModifier(std::move(color)));
 }
@@ -182,6 +206,10 @@ View View::button_style_impl(std::shared_ptr<const ButtonStyle> style) const {
     return modifier(ButtonStyleModifier(std::move(style)));
 }
 
+View View::toggle_style_impl(std::shared_ptr<const ToggleStyle> style) const {
+    return modifier(ToggleStyleModifier(std::move(style)));
+}
+
 // --- Protocols ---
 
 Modifier::~Modifier() = default;
@@ -230,6 +258,14 @@ View Button(View label, std::function<void()> action) {
 
 View Button(std::string title, std::function<void()> action) {
     return Button(Text(std::move(title)), std::move(action));
+}
+
+View Toggle(View label, Binding<bool> is_on) {
+    return ViewAccess::make(std::make_shared<const detail::ToggleNode>(std::move(label), std::move(is_on)));
+}
+
+View Toggle(std::string title, Binding<bool> is_on) {
+    return Toggle(Text(std::move(title)), std::move(is_on));
 }
 
 View If(Prop<bool> condition, View then_view, View else_view) {
@@ -298,6 +334,56 @@ std::unique_ptr<Element> TransitionNode::lower(const LowerContext& context) cons
     return std::make_unique<TransitionElement>(transition_, detail::lower(content_, context));
 }
 
+namespace {
+
+std::function<HoverDelay()> environment_hover_delay(const EnvironmentValues& environment) {
+    return [environment] { return environment.get<HoverDelayKey>(); };
+}
+
+// Focusable elements draw the ring in the tint.
+void join_focus(Element& element, const LowerContext& context) {
+    if (context.focus) {
+        element.set_focus_manager(context.focus,
+                                  [environment = context.environment] { return environment.get<TintKey>(); });
+    }
+}
+
+std::unique_ptr<EventElement> make_event_element(std::unique_ptr<EventHandler> handler, const View& content,
+                                                 const LowerContext& context) {
+    auto element = std::make_unique<EventElement>(std::move(handler), detail::lower(content, context),
+                                                  environment_hover_delay(context.environment));
+    join_focus(*element, context);
+    return element;
+}
+
+// Buttons and toggles: `body` (from the style) with button behavior; `pressed` and `hovered` are
+// the States the style reads.
+std::unique_ptr<Element> make_button_element(const View& body, std::function<void()> action, State<bool> pressed,
+                                             State<bool> hovered, const LowerContext& context) {
+    const EnvironmentValues environment = context.environment;
+    auto element = std::make_unique<ButtonElement>(
+        detail::lower(body, context.nested()), std::move(action), std::move(pressed), std::move(hovered),
+        [environment] { return !environment.get<DisabledKey>(); }, environment_hover_delay(environment));
+    join_focus(*element, context);
+    return element;
+}
+
+// `.focused(binding)`: writes focus changes to the binding.
+class FocusBindingHandler final : public EventHandler {
+public:
+    explicit FocusBindingHandler(Binding<bool> binding) : binding_(std::move(binding)) {}
+    bool focusable() const override { return true; }
+    EventResult focus(bool focused) override {
+        binding_.set(focused);
+        return {};
+    }
+
+private:
+    Binding<bool> binding_;
+};
+
+} // namespace
+
 std::unique_ptr<Element> ModifiedNode::lower(const LowerContext& context) const {
     switch (modifier_->protocol()) {
     case ModifierProtocol::view:
@@ -315,17 +401,17 @@ std::unique_ptr<Element> ModifiedNode::lower(const LowerContext& context) const 
         Effects effects;
         static_cast<const EffectModifier&>(*modifier_).apply(effects);
         const Prop<float> opacity = effects.opacity;
+        const Prop<float> offset_x = effects.offset_x;
+        const Prop<float> offset_y = effects.offset_y;
         auto element = std::make_unique<EffectElement>(std::move(effects), detail::lower(content_, context));
-        bind(opacity, context,
-             [target = element.get()](float value, const Animation* animation) { target->set_opacity(value, animation); });
+        EffectElement* const target = element.get();
+        bind(opacity, context, [target](float value, const Animation* animation) { target->set_opacity(value, animation); });
+        bind(offset_x, context, [target](float value, const Animation* animation) { target->set_offset_x(value, animation); });
+        bind(offset_y, context, [target](float value, const Animation* animation) { target->set_offset_y(value, animation); });
         return element;
     }
-    case ModifierProtocol::event: {
-        const EnvironmentValues environment = context.environment;
-        return std::make_unique<EventElement>(static_cast<const EventModifier&>(*modifier_).make_handler(),
-                                              detail::lower(content_, context),
-                                              [environment] { return environment.get<HoverDelayKey>(); });
-    }
+    case ModifierProtocol::event:
+        return make_event_element(static_cast<const EventModifier&>(*modifier_).make_handler(), content_, context);
     case ModifierProtocol::environment: {
         LowerContext inner = context;
         static_cast<const EnvironmentModifier&>(*modifier_).apply(inner.environment);
@@ -404,8 +490,54 @@ std::unique_ptr<Element> ButtonNode::lower(const LowerContext& context) const {
         const EnvironmentScope scope(environment); // Environment<K>() in make_body
         body = style->make_body(configuration);
     }
-    return std::make_unique<ButtonElement>(detail::lower(body, context.nested()), action_, pressed, hovered,
-                                           enabled, [environment] { return environment.get<HoverDelayKey>(); });
+    return make_button_element(body, action_, pressed, hovered, context);
+}
+
+std::unique_ptr<Element> ToggleNode::lower(const LowerContext& context) const {
+    // A button whose action flips the binding; the ToggleStyle draws it.
+    const State<bool> pressed(false);
+    const State<bool> hovered(false);
+    const EnvironmentValues environment = context.environment;
+    const Binding<bool> is_on = is_on_;
+    const auto toggle = [is_on] {
+        with_animation(Animation::smooth(0.3), [&] { is_on.set(!untrack([&] { return is_on(); })); });
+    };
+    const ToggleConfiguration configuration{
+        .label = label_,
+        .is_on = [is_on] { return is_on(); },
+        .toggle = toggle,
+        .is_pressed = [pressed] { return pressed(); },
+        .is_hovered = [hovered] { return hovered(); },
+        .is_enabled = [environment] { return !environment.get<DisabledKey>(); },
+    };
+
+    const std::shared_ptr<const ToggleStyle> style = untrack([&] { return environment.get<ToggleStyleKey>(); });
+    View body;
+    {
+        const EnvironmentScope scope(environment);
+        body = style->make_body(configuration);
+    }
+    return make_button_element(body, toggle, pressed, hovered, context);
+}
+
+std::unique_ptr<Element> FocusedNode::lower(const LowerContext& context) const {
+    auto element = make_event_element(std::make_unique<FocusBindingHandler>(is_focused_), content_, context);
+    if (!context.focus) {
+        return element;
+    }
+    // Binding -> focus. (Focus -> binding is the handler.) The focus manager is updated before the
+    // handlers hear about it, so the binding write they cause doesn't bounce back here.
+    effect([binding = is_focused_, target = element.get(), focus = context.focus, needs_frame = context.needs_frame] {
+        const bool wanted = binding();
+        const bool has_focus = focus->focused() == target;
+        if (wanted != has_focus) {
+            focus->focus(wanted ? target : nullptr, true);
+            if (needs_frame) {
+                *needs_frame = true;
+            }
+        }
+    });
+    return element;
 }
 
 std::unique_ptr<Element> SpacerNode::lower(const LowerContext& context) const {

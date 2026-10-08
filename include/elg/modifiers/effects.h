@@ -53,6 +53,22 @@ private:
     Shadow shadow_;
 };
 
+// Moves the drawn content without affecting layout. Reactive and animatable.
+class ELG_API OffsetModifier final : public EffectModifier {
+public:
+    OffsetModifier(Prop<float> x, Prop<float> y) : x_(std::move(x)), y_(std::move(y)) {}
+    void apply(Effects& effects) const override {
+        effects.offset_x = x_;
+        effects.offset_y = y_;
+    }
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    Prop<float> x_;
+    Prop<float> y_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
 // Hit tests against a shape filling the view's bounds instead of the drawn content.
 class ELG_API ContentShapeModifier final : public EffectModifier {
 public:

@@ -58,6 +58,35 @@ public:
     View make_body(const ButtonConfiguration& button) const override;
 };
 
+// What a ToggleStyle gets to build a toggle's appearance from.
+struct ToggleConfiguration {
+    View label;
+    std::function<bool()> is_on;      // a tracked read
+    std::function<void()> toggle;     // flips it (animated)
+    std::function<bool()> is_pressed;
+    std::function<bool()> is_hovered;
+    std::function<bool()> is_enabled;
+};
+
+class ELG_API ToggleStyle {
+public:
+    virtual ~ToggleStyle();
+    // Called once per toggle when it's built, while Environment<K>() is available.
+    virtual View make_body(const ToggleConfiguration& toggle) const = 0;
+};
+
+// The label, then a sliding switch in the tint. The default.
+class ELG_API SwitchToggleStyle final : public ToggleStyle {
+public:
+    View make_body(const ToggleConfiguration& toggle) const override;
+};
+
+// A check box, then the label.
+class ELG_API CheckboxToggleStyle final : public ToggleStyle {
+public:
+    View make_body(const ToggleConfiguration& toggle) const override;
+};
+
 } // namespace elg
 
 #endif // ELG_STYLES_H

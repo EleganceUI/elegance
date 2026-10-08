@@ -217,6 +217,51 @@ View StateCards(std::function<void()> quit) {
                   Captioned(fade, "Reactive opacity").card());
 }
 
+// Toggles in both styles, and keyboard focus: Tab / Shift+Tab move between controls, Space and
+// Enter press them.
+View ControlCards() {
+    const auto wifi = State(true);
+    const auto sounds = State(false);
+    const View switches = VStack({.spacing = 10},
+                                 Toggle("Wi-Fi", wifi.binding()),
+                                 Toggle("Sounds", sounds.binding()).tint(palette::green),
+                                 Toggle("Airplane mode", Binding<bool>::constant(false)).disabled())
+                              .frame({.width = 220});
+
+    const auto remember = State(true);
+    const auto reports = State(false);
+    const View checks = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
+                               Toggle("Remember me", remember.binding()),
+                               Toggle("Send crash reports", reports.binding()))
+                            .toggle_style(CheckboxToggleStyle{});
+
+    // A focusable view with its own keys; the button focuses it through the binding.
+    const auto is_focused = State(false);
+    const auto value = State(0);
+    const View keys =
+        VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
+               Text([=] {
+                   return is_focused() ? std::format("Left/Right: {}", value()) : std::string("Click or Tab here");
+               })
+                   .padding(EdgeInsets::symmetric(12, 8))
+                   .background(ThemeColor::surface_raised, RoundedRectangle(8))
+                   .focused(is_focused.binding())
+                   .on_key_press([=](const KeyEvent& event) {
+                       switch (event.key) {
+                       case Key::left: value -= 1; return true;
+                       case Key::right: value += 1; return true;
+                       case Key::escape: is_focused = false; return true;
+                       default: return false;
+                       }
+                   }),
+               Button("Focus it", [=] { is_focused = true; }).button_style(BorderedButtonStyle{}));
+
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(switches, "Toggle (switch)").card(),
+                  Captioned(checks, "Toggle (checkbox)").card(),
+                  Captioned(keys, "focused + on_key_press").card());
+}
+
 View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
     return VStack({.spacing = 0},
                   TitleBar(scheme),
@@ -227,6 +272,7 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
                          TextCards().fixed_size(false, true),
                          EffectCards(),
                          StateCards(std::move(quit)),
+                         ControlCards(),
                          Spacer())
                       .padding(32))
         .frame({.max_width = infinity, .max_height = infinity, .alignment = Alignment::top})
@@ -249,7 +295,7 @@ int main(int argc, char** argv) {
         App app;
         // Shared by both windows: the title bar's toggle switches them together.
         const State<ColorScheme> scheme(light ? ColorScheme::light : ColorScheme::dark);
-        app.window({.title = "Elegence Sandbox", .width = 1100, .height = 900},
+        app.window({.title = "Elegence Sandbox", .width = 1100, .height = 1040},
                    [&] {
                        if (smoke_test) {
                            app.quit(); // still renders the first frame

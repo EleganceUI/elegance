@@ -44,6 +44,54 @@ bool SDLCALL on_event_watch(void* userdata, SDL_Event* event) {
     return true;
 }
 
+Key translate_key(SDL_Keycode code) {
+    if (code >= SDLK_A && code <= SDLK_Z) {
+        return static_cast<Key>(static_cast<int>(Key::a) + static_cast<int>(code - SDLK_A));
+    }
+    if (code >= SDLK_0 && code <= SDLK_9) {
+        return static_cast<Key>(static_cast<int>(Key::digit0) + static_cast<int>(code - SDLK_0));
+    }
+    if (code >= SDLK_F1 && code <= SDLK_F12) {
+        return static_cast<Key>(static_cast<int>(Key::f1) + static_cast<int>(code - SDLK_F1));
+    }
+    switch (code) {
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER: return Key::enter;
+    case SDLK_ESCAPE: return Key::escape;
+    case SDLK_BACKSPACE: return Key::backspace;
+    case SDLK_TAB: return Key::tab;
+    case SDLK_SPACE: return Key::space;
+    case SDLK_DELETE: return Key::forward_delete;
+    case SDLK_INSERT: return Key::insert;
+    case SDLK_HOME: return Key::home;
+    case SDLK_END: return Key::end;
+    case SDLK_PAGEUP: return Key::page_up;
+    case SDLK_PAGEDOWN: return Key::page_down;
+    case SDLK_LEFT: return Key::left;
+    case SDLK_RIGHT: return Key::right;
+    case SDLK_UP: return Key::up;
+    case SDLK_DOWN: return Key::down;
+    default: return Key::unknown;
+    }
+}
+
+KeyModifiers translate_modifiers(SDL_Keymod mod) {
+    KeyModifiers result = KeyModifiers::none;
+    if (mod & SDL_KMOD_SHIFT) {
+        result = result | KeyModifiers::shift;
+    }
+    if (mod & SDL_KMOD_CTRL) {
+        result = result | KeyModifiers::control;
+    }
+    if (mod & SDL_KMOD_ALT) {
+        result = result | KeyModifiers::alt;
+    }
+    if (mod & SDL_KMOD_GUI) {
+        result = result | KeyModifiers::super;
+    }
+    return result;
+}
+
 Event translate(const SDL_Event& event, std::uint32_t wake_event) {
     if (event.type == wake_event) {
         return {EventType::wake};
@@ -82,6 +130,15 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
         case SDL_BUTTON_RIGHT: result.button = PointerButton::right; break;
         default: result.button = PointerButton::other; break;
         }
+        return result;
+    }
+    case SDL_EVENT_KEY_DOWN:
+    case SDL_EVENT_KEY_UP: {
+        Event result{event.type == SDL_EVENT_KEY_DOWN ? EventType::key_down : EventType::key_up,
+                     event.key.windowID};
+        result.key = translate_key(event.key.key);
+        result.modifiers = translate_modifiers(event.key.mod);
+        result.repeat = event.key.repeat;
         return result;
     }
     default: return {};

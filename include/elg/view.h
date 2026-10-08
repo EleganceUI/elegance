@@ -49,7 +49,12 @@ std::function<bool()> change_watcher(Source source) {
 
 class Animation;
 class ButtonStyle;
+class ToggleStyle;
 struct HoverDelay;
+struct KeyEvent;
+enum class Key;
+template <class T>
+class Binding;
 class Font;
 class Transition;
 class Modifier;
@@ -239,8 +244,9 @@ public:
     ELG_API View fixed_size(bool horizontal = true, bool vertical = true) const;
     // Stacks give space to higher priorities first. Default 0.
     ELG_API View layout_priority(float priority) const;
-    // Moves the content when drawn without affecting layout.
-    ELG_API View offset(float x, float y) const;
+    // Moves the content when drawn, without affecting layout (and animates the move during
+    // animated updates). Reactive: .offset([=] { return open() ? 0.f : -200.f; }, 0)
+    ELG_API View offset(Prop<float> x, Prop<float> y) const;
 
     // --- Decoration (elg/modifiers/decoration.h) ---
 
@@ -283,6 +289,18 @@ public:
     // The hover delay for on_hover handlers and controls inside (default: enter 0.1 s, exit 0).
     ELG_API View hover_delay(HoverDelay delay) const;
 
+    // --- Keyboard and focus (design.md §10) ---
+
+    // Lets the view take keyboard focus (Tab order, clicks). Controls are focusable already.
+    ELG_API View focusable(bool focusable = true) const;
+    // Two-way focus: the binding is true while the view has focus, and setting it true focuses
+    // the view (false removes focus from it). Makes the view focusable.
+    ELG_API View focused(Binding<bool> is_focused) const;
+    // Runs `action` when `key` is pressed while the view (or something inside) has focus.
+    ELG_API View on_key_press(Key key, std::function<void()> action) const;
+    // Sees every key press while focused; return true if handled (unhandled keys bubble out).
+    ELG_API View on_key_press(std::function<bool(const KeyEvent&)> action) const;
+
     // --- Environment (elg/modifiers/environment.h): inherited by everything inside. ---
 
     ELG_API View font(Prop<Font> font) const;
@@ -301,6 +319,12 @@ public:
         requires std::derived_from<Style, ButtonStyle>
     View button_style(Style style) const {
         return button_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    // The style of every Toggle inside (elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, ToggleStyle>
+    View toggle_style(Style style) const {
+        return toggle_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     // --- Animation (elg/animation.h) ---
 
@@ -334,6 +358,7 @@ private:
     ELG_API explicit View(std::shared_ptr<const detail::ViewNode> node) noexcept;
     ELG_API View with_modifier(std::shared_ptr<const Modifier> modifier) const;
     ELG_API View button_style_impl(std::shared_ptr<const ButtonStyle> style) const;
+    ELG_API View toggle_style_impl(std::shared_ptr<const ToggleStyle> style) const;
     ELG_API View animation_impl(const Animation& animation, std::function<bool()> changed) const;
     ELG_API static View deferred(std::function<View()> body);
 

@@ -4,6 +4,7 @@
 
 #include "view/element.h"
 
+#include "view/focus.h"
 #include "view/view_node.h"
 
 #include <algorithm>
@@ -27,6 +28,23 @@ bool drawable(const Rect& r) {
 } // namespace
 
 // --- Element ---
+
+Element::~Element() {
+    if (focus_manager_) {
+        focus_manager_->forget(this);
+    }
+}
+
+void Element::paint_focus_ring(DisplayList& list) const {
+    if (focus_manager_->focused() != this || !focus_manager_->ring_visible()) {
+        return;
+    }
+    constexpr float kGap = 3;
+    constexpr float kWidth = 2;
+    constexpr float kRadius = 8;
+    list.commands.push_back(RectCommand{frame().inset(-kGap - kWidth), CornerRadii::all(kRadius + kGap),
+                                        ShapeStyle(Color::clear), focus_ring_color_(), kWidth});
+}
 
 Size Element::size_that_fits(ProposedSize proposal) {
     for (const auto& [cached_proposal, size] : size_cache_) {
@@ -284,6 +302,10 @@ void EffectElement::paint_impl(DisplayList& list) const {
     if (clips) {
         content.commands.push_back(PopClipCommand{});
     }
+    if (offset_x_.animating() || offset_y_.animating()) {
+        list.animating = true;
+    }
+    transform(content.commands, offset_x_.current(), offset_y_.current(), 1, {});
 
     if (opacity_.animating()) {
         list.animating = true;

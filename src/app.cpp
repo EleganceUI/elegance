@@ -71,7 +71,8 @@ struct LiveWindow {
         return lower(content, LowerContext{.text = &text,
                                                     .needs_frame = &dirty,
                                                     .tree_changed = &tree_changed,
-                                                    .environment = environment});
+                                                    .environment = environment,
+                                                    .focus = &focus});
     }
 
     WindowEntry* entry;
@@ -82,9 +83,10 @@ struct LiveWindow {
     bool animating = false;    // the last frame had animations in progress
     std::uint64_t last_frame = 0;
     EnvironmentValues environment; // the root environment (system color scheme)
+    FocusManager focus;            // outlives the tree (elements let go of it when destroyed)
     Scope scope;
     std::unique_ptr<Element> root;
-    EventDispatcher events{*root};
+    EventDispatcher events{*root, focus};
 };
 
 MouseButton to_mouse_button(platform::PointerButton button) {
@@ -289,6 +291,14 @@ int App::run() {
                 default: redraw = live.events.pointer_left(); break;
                 }
                 live.dirty |= redraw;
+            }
+            break;
+        case platform::EventType::key_down:
+        case platform::EventType::key_up:
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                const KeyEvent key{event.type == platform::EventType::key_down ? KeyEvent::Kind::down : KeyEvent::Kind::up,
+                                   event.key, event.modifiers, event.repeat};
+                (*it)->dirty |= (*it)->events.key(key);
             }
             break;
         case platform::EventType::system_theme_changed:

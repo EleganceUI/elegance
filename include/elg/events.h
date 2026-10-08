@@ -25,6 +25,50 @@ struct HoverDelay {
 
 enum class MouseButton { left, middle, right, other };
 
+// Keys by meaning (the layout-mapped key, not the physical position).
+enum class Key {
+    unknown,
+    a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p, q, r, s, t, u, v, w, x, y, z,
+    digit0, digit1, digit2, digit3, digit4, digit5, digit6, digit7, digit8, digit9,
+    enter, escape, backspace, tab, space, forward_delete, insert,
+    home, end, page_up, page_down, left, right, up, down,
+    f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
+};
+
+enum class KeyModifiers : unsigned {
+    none = 0,
+    shift = 1,
+    control = 2,
+    alt = 4,
+    super = 8, // Cmd on macOS, Windows key on Windows
+};
+
+constexpr KeyModifiers operator|(KeyModifiers a, KeyModifiers b) noexcept {
+    return static_cast<KeyModifiers>(static_cast<unsigned>(a) | static_cast<unsigned>(b));
+}
+
+constexpr bool has(KeyModifiers set, KeyModifiers modifier) noexcept {
+    return (static_cast<unsigned>(set) & static_cast<unsigned>(modifier)) != 0;
+}
+
+// The platform's shortcut modifier: Cmd on macOS, Ctrl elsewhere.
+constexpr KeyModifiers primary_modifier() noexcept {
+#if defined(__APPLE__)
+    return KeyModifiers::super;
+#else
+    return KeyModifiers::control;
+#endif
+}
+
+struct KeyEvent {
+    enum class Kind { down, up };
+
+    Kind kind = Kind::down;
+    Key key = Key::unknown;
+    KeyModifiers modifiers = KeyModifiers::none;
+    bool repeat = false; // auto-repeat while held
+};
+
 struct PointerEvent {
     enum class Kind {
         down,
@@ -57,6 +101,14 @@ public:
     virtual EventResult pointer(const PointerEvent& event, Rect frame);
     // The pointer entered (true) or left (false) the view, after the hover delay.
     virtual EventResult hover(bool inside);
+
+    // Keyboard (design.md §10): key events go to the focused view's handler first, then bubble
+    // to the handlers around it until consumed.
+    virtual EventResult key(const KeyEvent& event);
+    // Whether the view can take keyboard focus (Tab, clicks).
+    virtual bool focusable() const { return false; }
+    // The view gained (true) or lost (false) keyboard focus.
+    virtual EventResult focus(bool focused);
     // This handler's own hover delay; nullopt uses the environment's (.hover_delay()).
     virtual std::optional<HoverDelay> hover_delay() const { return std::nullopt; }
 };

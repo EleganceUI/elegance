@@ -9,6 +9,8 @@
 #include <elg/error.h>
 #include <elg/shapes.h>
 #include <elg/styles.h>
+#include <elg/text.h>
+#include <elg/views.h>
 
 namespace elg {
 
@@ -36,6 +38,13 @@ std::shared_ptr<const ButtonStyle> ButtonStyleKey::default_value(const Environme
 }
 
 ButtonStyle::~ButtonStyle() = default;
+
+std::shared_ptr<const ToggleStyle> ToggleStyleKey::default_value(const EnvironmentValues&) {
+    static const auto style = std::make_shared<const SwitchToggleStyle>();
+    return style;
+}
+
+ToggleStyle::~ToggleStyle() = default;
 
 namespace {
 
@@ -97,6 +106,64 @@ View PlainButtonStyle::make_body(const ButtonConfiguration& button) const {
         }
         return button.is_pressed() ? tint().opacity(0.6f) : tint();
     });
+}
+
+View SwitchToggleStyle::make_body(const ToggleConfiguration& toggle) const {
+    constexpr float kWidth = 40;
+    constexpr float kHeight = 24;
+    constexpr float kKnob = 20;
+    constexpr float kTravel = (kWidth - kHeight) / 2;
+    const auto tint = Environment<TintKey>();
+    const auto theme = Environment<ThemeKey>();
+    const auto scheme = Environment<ColorSchemeKey>();
+    const auto colors = [=] { return theme().colors(scheme()); };
+
+    View track = Capsule()
+                     .fill([=] {
+                         Color base = toggle.is_on() ? tint() : colors().outline;
+                         if (!toggle.is_enabled()) {
+                             return base.opacity(0.4f);
+                         }
+                         if (toggle.is_pressed()) {
+                             return base.mix(Color::black, 0.15f);
+                         }
+                         return toggle.is_hovered() ? base.mix(Color::white, 0.1f) : base;
+                     })
+                     .frame(kWidth, kHeight)
+                     .overlay(Circle()
+                                  .fill(Color::white)
+                                  .frame(kKnob, kKnob)
+                                  .shadow({.color = Color::black.opacity(0.25f), .radius = 3, .y = 1})
+                                  .offset([=] { return toggle.is_on() ? kTravel : -kTravel; }, 0.f));
+    return HStack(toggle.label.foreground_style([=] { return toggle.is_enabled() ? colors().primary : colors().tertiary; }),
+                  Spacer(), std::move(track));
+}
+
+View CheckboxToggleStyle::make_body(const ToggleConfiguration& toggle) const {
+    constexpr float kSize = 18;
+    constexpr float kRadius = 5;
+    const auto tint = Environment<TintKey>();
+    const auto theme = Environment<ThemeKey>();
+    const auto scheme = Environment<ColorSchemeKey>();
+    const auto colors = [=] { return theme().colors(scheme()); };
+    const auto dim = [=](Color color) { return toggle.is_enabled() ? color : color.opacity(0.4f); };
+
+    View box = RoundedRectangle(kRadius)
+                   .fill([=] {
+                       const Color base = toggle.is_on() ? tint() : colors().surface_raised;
+                       return dim(toggle.is_pressed() ? base.mix(Color::black, 0.15f) : base);
+                   })
+                   .frame(kSize, kSize)
+                   .overlay(RoundedRectangle(kRadius).stroke_border(
+                       [=] { return dim(toggle.is_on() ? tint() : colors().outline); }, 1.5f))
+                   // TODO: a check mark once vector paths land (system fonts can't be relied on
+                   // for U+2713 without font fallback).
+                   .overlay(RoundedRectangle(2)
+                                .fill(ThemeColor::on_accent)
+                                .frame(8, 8)
+                                .opacity([=] { return toggle.is_on() ? 1.f : 0.f; }));
+    return HStack(std::move(box),
+                  toggle.label.foreground_style([=] { return toggle.is_enabled() ? colors().primary : colors().tertiary; }));
 }
 
 } // namespace elg

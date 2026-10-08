@@ -9,6 +9,7 @@
 // ModifiedContent), so views are cheap to copy and share. Lowering turns nodes into elements.
 
 #include "view/element.h"
+#include "view/focus.h"
 
 #include <elg/animation.h>
 #include <elg/environment.h>
@@ -40,6 +41,8 @@ struct LowerContext {
     std::shared_ptr<ImplicitAnimation> implicit_animation;
     // false inside `.animates_layout(false)`.
     bool animates_layout = true;
+    // The window's keyboard focus.
+    FocusManager* focus = nullptr;
 
     // The context for a view that isn't a direct child of the current layout.
     LowerContext nested() const {
@@ -165,6 +168,27 @@ public:
 private:
     View label_;
     std::function<void()> action_;
+};
+
+class ToggleNode final : public ViewNode {
+public:
+    ToggleNode(View label, Binding<bool> is_on) : label_(std::move(label)), is_on_(std::move(is_on)) {}
+    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+
+private:
+    View label_;
+    Binding<bool> is_on_;
+};
+
+// `.focused(binding)`.
+class FocusedNode final : public ViewNode {
+public:
+    FocusedNode(View content, Binding<bool> is_focused) : content_(std::move(content)), is_focused_(std::move(is_focused)) {}
+    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+
+private:
+    View content_;
+    Binding<bool> is_focused_;
 };
 
 // `.animation(animation, value)`: the subtree's changes animate when the value changed.

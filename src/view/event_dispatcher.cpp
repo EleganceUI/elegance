@@ -11,6 +11,26 @@
 
 namespace elg::detail {
 
+// --- FocusManager ---
+
+bool FocusManager::focus(Element* element, bool visible) {
+    if (element == focused_) {
+        return std::exchange(visible_, visible) != visible;
+    }
+    Element* const previous = std::exchange(focused_, element);
+    visible_ = visible;
+    // focused_ is already updated, so handlers (e.g. a .focused binding) see the new focus.
+    if (previous) {
+        previous->event_handler()->focus(false);
+    }
+    if (element) {
+        element->event_handler()->focus(true);
+    }
+    return true;
+}
+
+// --- EventDispatcher ---
+
 std::vector<Element*> EventDispatcher::path_at(Point location) {
     std::vector<Element*> path;
     root_->hit_test(location, path);
@@ -125,6 +145,17 @@ bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, Mo
     const std::vector<Element*> path = path_at(location);
     bool redraw = update_hover(path);
 
+    if (kind == PointerEvent::Kind::down) {
+        // Clicking focuses what was clicked (without a ring) or, on nothing focusable, clears focus.
+        Element* target = nullptr;
+        for (auto it = path.rbegin(); it != path.rend(); ++it) {
+            if (EventHandler* handler = (*it)->event_handler(); handler && handler->focusable()) {
+                target = *it;
+                break;
+            }
+        }
+        redraw |= focus_->focus(target, false);
+    }
     if (kind == PointerEvent::Kind::up && captured_) {
         Element* target = std::exchange(captured_, nullptr);
         return redraw | target->event_handler()->pointer(event, target->frame()).redraw;
@@ -137,6 +168,48 @@ bool EventDispatcher::pointer_left() {
     // for hover.
     pointer_inside_ = false;
     return update_hover({});
+}
+
+bool EventDispatcher::key(const KeyEvent& event) {
+    bool redraw = false;
+    for (Element* element = focus_->focused(); element; element = element->parent()) {
+        if (EventHandler* handler = element->event_handler()) {
+            const EventResult result = handler->key(event);
+            redraw |= result.redraw;
+            if (result.consumed) {
+                return redraw;
+            }
+        }
+    }
+    const bool plain_tab = event.kind == KeyEvent::Kind::down && event.key == Key::tab &&
+                           !has(event.modifiers, KeyModifiers::control | KeyModifiers::alt | KeyModifiers::super);
+    if (plain_tab) {
+        redraw |= move_focus(!has(event.modifiers, KeyModifiers::shift));
+    }
+    return redraw;
+}
+
+bool EventDispatcher::move_focus(bool forward) {
+    std::vector<Element*> order;
+    std::function<void(Element&)> walk = [&](Element& element) {
+        if (EventHandler* handler = element.event_handler(); handler && handler->focusable()) {
+            order.push_back(&element);
+        }
+        element.for_each_child(walk);
+    };
+    walk(*root_);
+    if (order.empty()) {
+        return false;
+    }
+    const auto current = std::ranges::find(order, focus_->focused());
+    Element* next;
+    if (current == order.end()) {
+        next = forward ? order.front() : order.back();
+    } else {
+        const std::size_t index = static_cast<std::size_t>(current - order.begin());
+        next = order[(index + (forward ? 1 : order.size() - 1)) % order.size()];
+    }
+    return focus_->focus(next, true);
 }
 
 bool EventDispatcher::revalidate() {

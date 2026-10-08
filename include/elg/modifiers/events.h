@@ -47,6 +47,29 @@ private:
     ELG_PRIVATE_MEMBERS_END
 };
 
+// Lets the view take keyboard focus (Tab order, clicks), so key handlers on it receive keys.
+class ELG_API FocusableModifier final : public EventModifier {
+public:
+    explicit FocusableModifier(bool focusable = true) noexcept : focusable_(focusable) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    bool focusable_;
+};
+
+// Calls `action` for key presses while the view (or something inside it) has focus. `action`
+// returns true if it handled the key; unhandled keys bubble outwards.
+class ELG_API KeyPressModifier final : public EventModifier {
+public:
+    explicit KeyPressModifier(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::function<bool(const KeyEvent&)> action_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
 } // namespace elg
 
 #endif // ELG_MODIFIERS_EVENTS_H

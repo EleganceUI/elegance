@@ -131,16 +131,6 @@ void LayoutPriorityModifier::place(Rect bounds, ProposedSize proposal, const Lay
     content.place({bounds.x, bounds.y}, proposal);
 }
 
-// --- OffsetModifier ---
-
-Size OffsetModifier::size_that_fits(ProposedSize proposal, const LayoutChild& content) const {
-    return content.size_that_fits(proposal);
-}
-
-void OffsetModifier::place(Rect bounds, ProposedSize proposal, const LayoutChild& content) const {
-    content.place({bounds.x + x_, bounds.y + y_}, proposal);
-}
-
 // --- BorderModifier ---
 
 View BorderModifier::body(View content) const {

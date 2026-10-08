@@ -79,18 +79,6 @@ private:
     float priority_;
 };
 
-class ELG_API OffsetModifier final : public LayoutModifier {
-public:
-    OffsetModifier(float x, float y) noexcept : x_(x), y_(y) {}
-
-    Size size_that_fits(ProposedSize proposal, const LayoutChild& content) const override;
-    void place(Rect bounds, ProposedSize proposal, const LayoutChild& content) const override;
-
-private:
-    float x_;
-    float y_;
-};
-
 } // namespace elg
 
 #endif // ELG_MODIFIERS_LAYOUT_H

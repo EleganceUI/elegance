@@ -876,6 +876,22 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
   area.
 - **Focus management**: tab order, focus scopes and traps (modals), and a focus ring shown only
   for keyboard focus. Bind focus with `.focused(binding)`.
+  - Implemented (M4): one `FocusManager` per window. Keys go to the focused element's handler,
+    then bubble out through its ancestors until one consumes them.
+  - An unconsumed Tab / Shift+Tab moves focus through the focusable elements in tree order,
+    wrapping around.
+  - Pressing the pointer focuses the innermost focusable element under it, or clears focus.
+  - The ring (in the tint) shows for Tab and programmatic focus, not for clicks, like the web's
+    `:focus-visible`.
+  - A destroyed element lets go of focus in its destructor, so removing a focused row is safe.
+  - Controls are focusable: Enter activates a button on press; Space shows it pressed and
+    activates on release.
+  - `.focusable()`, `.focused(Binding<bool>)` (two-way), and `.on_key_press(Key, action)` /
+    `.on_key_press([](const KeyEvent&) -> bool)`.
+  - `KeyEvent` carries the layout-mapped `Key`, `KeyModifiers`, and `repeat`.
+    `primary_modifier()` is Cmd on macOS and Ctrl elsewhere.
+  - Still to do: focus scopes and traps; text input and IME (with TextField); keys while
+    nothing is focused (window-level shortcuts).
 - **Gestures**: tap, double-tap, long-press, drag, magnify, rotate, and kinetic scrolling.
   Attach them with `.gesture(...)`, compose them (`simultaneously`, `sequenced`, `exclusively`),
   and track in-progress state with `GestureState<T>`.
@@ -1197,7 +1213,20 @@ Separate render thread from day one (decided).
     item lays out on its own (vertically) instead of joining the outer stack.
 
 **M4: Controls & Input**
-- [ ] Core controls, focus/keyboard nav, TextField with IME
+- [x] Keyboard and focus:
+  - Key events, focus, Tab traversal, and a focus-visible ring (§10).
+  - Buttons respond to Space and Enter.
+  - `.focusable()`, `.focused(binding)`, and `.on_key_press(...)`.
+- [x] `Toggle(label, Binding<bool>)` with a `ToggleStyle` protocol:
+  - `SwitchToggleStyle` is the default; `CheckboxToggleStyle` is the alternative.
+  - `.toggle_style(...)` applies a style.
+  - A toggle reuses the button's behavior (click, Space, Enter), and the flip is animated.
+  - The checkbox shows a filled mark rather than a check mark until vector paths land (and
+    system fonts lack U+2713 without fallback).
+- [x] `.offset(x, y)` is a reactive, animatable effect: it moves drawing and hit testing,
+  without affecting layout. The switch knob uses it.
+  - Known gap: Button/tap release-inside checks use the un-offset frame.
+- [ ] Remaining core controls (Slider, Picker, Stepper, ProgressView), TextField with IME
 - [ ] ScrollView, Lazy stacks/List, Grid, presentations (sheet/popover)
 - [ ] Popup presentation layer (§13.1): popup windows, `context_menu`, `Menu` / `MenuItem` /
   `Submenu`, menu keyboard navigation, `.help()` tooltips; `App::menu_bar` (native on macOS)

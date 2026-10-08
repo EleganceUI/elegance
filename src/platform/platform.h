@@ -9,6 +9,7 @@
 // of platform/*.cpp, so it could be replaced without touching the rest of the framework.
 
 #include <elg/app.h>
+#include <elg/events.h>
 #include <elg/geometry.h>
 
 #include <volk.h>
@@ -41,6 +42,8 @@ enum class EventType {
     pointer_down,
     pointer_up,
     pointer_leave,
+    key_down,
+    key_up,
     system_theme_changed,
 };
 
@@ -54,6 +57,10 @@ struct Event {
     float y = 0;
     PointerButton button = PointerButton::left;
     int clicks = 1;
+    // Key events.
+    Key key = Key::unknown;
+    KeyModifiers modifiers = KeyModifiers::none;
+    bool repeat = false;
 };
 
 class Window {

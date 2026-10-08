@@ -87,6 +87,11 @@ ELG_API View Canvas(std::function<void(GraphicsContext&)> draw);
 ELG_API View Button(View label, std::function<void()> action);
 ELG_API View Button(std::string title, std::function<void()> action);
 
+// An on/off control bound to `is_on`; its look comes from the ToggleStyle (a switch by default).
+// Click, Space, or Enter flips it.
+ELG_API View Toggle(View label, Binding<bool> is_on);
+ELG_API View Toggle(std::string title, Binding<bool> is_on);
+
 // --- Structure: views that appear, disappear, and repeat with state (design.md §6) ---
 
 // Shows `then_view` while `condition` holds, otherwise `else_view` (nothing by default):

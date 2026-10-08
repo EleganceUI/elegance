@@ -37,6 +37,7 @@
 namespace elg {
 
 class ButtonStyle;
+class ToggleStyle;
 
 class EnvironmentValues {
 public:
@@ -126,6 +127,12 @@ struct DisabledKey {
     using Value = bool;
     static constexpr std::string_view name = "elg.disabled";
     static bool default_value(const EnvironmentValues&) { return false; }
+};
+
+struct ToggleStyleKey {
+    using Value = std::shared_ptr<const ToggleStyle>;
+    static constexpr std::string_view name = "elg.toggle_style";
+    ELG_API static std::shared_ptr<const ToggleStyle> default_value(const EnvironmentValues&);
 };
 
 // The hover delay for everything inside (on_hover handlers without their own, and controls).

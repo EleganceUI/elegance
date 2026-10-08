@@ -5,6 +5,7 @@
 // Hit testing, the built-in event modifiers, and the Button element (design.md §10).
 
 #include "view/element.h"
+#include "view/focus.h"
 #include "view/view_node.h"
 
 #include <elg/modifiers/events.h>
@@ -22,6 +23,14 @@ EventResult EventHandler::pointer(const PointerEvent&, Rect) {
 }
 
 EventResult EventHandler::hover(bool) {
+    return {};
+}
+
+EventResult EventHandler::key(const KeyEvent&) {
+    return {};
+}
+
+EventResult EventHandler::focus(bool) {
     return {};
 }
 
@@ -87,7 +96,39 @@ private:
     std::optional<HoverDelay> delay_;
 };
 
+class FocusableHandler final : public EventHandler {
+public:
+    explicit FocusableHandler(bool focusable) noexcept : focusable_(focusable) {}
+    bool focusable() const override { return focusable_; }
+
+private:
+    bool focusable_;
+};
+
+class KeyPressHandler final : public EventHandler {
+public:
+    explicit KeyPressHandler(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
+
+    EventResult key(const KeyEvent& event) override {
+        if (event.kind == KeyEvent::Kind::down && action_ && action_(event)) {
+            return {.consumed = true};
+        }
+        return {};
+    }
+
+private:
+    std::function<bool(const KeyEvent&)> action_;
+};
+
 } // namespace
+
+std::unique_ptr<EventHandler> FocusableModifier::make_handler() const {
+    return std::make_unique<FocusableHandler>(focusable_);
+}
+
+std::unique_ptr<EventHandler> KeyPressModifier::make_handler() const {
+    return std::make_unique<KeyPressHandler>(action_);
+}
 
 std::unique_ptr<EventHandler> TapGestureModifier::make_handler() const {
     return std::make_unique<TapHandler>(count_, action_);
@@ -194,6 +235,8 @@ bool EffectElement::hit_impl(Point point, std::vector<Element*>& path) {
     if (!effects_.allows_hit_testing) {
         return false;
     }
+    // The content is drawn offset, so it's hit there too.
+    point = {point.x - offset_x_.current(), point.y - offset_y_.current()};
     if (effects_.content_shape) {
         if (!inside(point, outline_of(*effects_.content_shape, frame()))) {
             return false;
@@ -263,6 +306,47 @@ EventResult ButtonElement::pointer(const PointerEvent& event, Rect frame) {
 EventResult ButtonElement::hover(bool inside) {
     hovered_ = inside;
     return {}; // the style's reactive arguments request the frame
+}
+
+bool ButtonElement::focusable() const {
+    return untrack(enabled_);
+}
+
+// Like native buttons: Enter activates on press; Space looks pressed while held and activates on
+// release.
+EventResult ButtonElement::key(const KeyEvent& event) {
+    if (event.key != Key::space && event.key != Key::enter) {
+        return {};
+    }
+    if (!untrack(enabled_)) {
+        return {};
+    }
+    const bool down = event.kind == KeyEvent::Kind::down;
+    if (event.key == Key::enter) {
+        if (down && !event.repeat && action_) {
+            action_();
+        }
+        return {.consumed = true};
+    }
+    if (down) {
+        if (!event.repeat) {
+            space_down_ = true;
+            pressed_ = true;
+        }
+    } else if (std::exchange(space_down_, false)) {
+        pressed_ = false;
+        if (action_) {
+            action_();
+        }
+    }
+    return {.consumed = true};
+}
+
+EventResult ButtonElement::focus(bool focused) {
+    if (!focused && std::exchange(space_down_, false)) {
+        pressed_ = false;
+    }
+    return {};
 }
 
 } // namespace elg::detail

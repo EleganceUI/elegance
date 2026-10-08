@@ -29,9 +29,11 @@
 
 namespace elg::detail {
 
+class FocusManager;
+
 class Element {
 public:
-    virtual ~Element() = default;
+    virtual ~Element();
 
     // Memoized per proposal until invalidate_layout().
     Size size_that_fits(ProposedSize proposal);
@@ -43,6 +45,9 @@ public:
             list.animating = true;
         }
         paint_impl(list);
+        if (focus_manager_) {
+            paint_focus_ring(list);
+        }
     }
 
     // Where the element is drawn now: its laid-out frame, or on the way there.
@@ -71,6 +76,15 @@ public:
     virtual HoverDelay effective_hover_delay() const { return {}; }
     // Non-null for TransitionElement (If/ForEach use a child's own transition when it has one).
     virtual class TransitionElement* as_transition() noexcept { return nullptr; }
+
+    // The element that owns this one (nullptr for the root). Keys bubble along it.
+    Element* parent() const noexcept { return parent_; }
+    // For focusable elements: the window's focus (the element draws the ring while it has visible
+    // focus, and lets go of focus when destroyed) and the ring's color.
+    void set_focus_manager(FocusManager* focus, std::function<Color()> ring_color) {
+        focus_manager_ = focus;
+        focus_ring_color_ = std::move(ring_color);
+    }
 
     // Something that affects this element's size changed (e.g. reactive text): drops the cached
     // sizes of this element and every ancestor.
@@ -115,7 +129,11 @@ protected:
     virtual void paint_impl(DisplayList& list) const = 0;
 
 private:
+    void paint_focus_ring(DisplayList& list) const;
+
     Element* parent_ = nullptr;
+    FocusManager* focus_manager_ = nullptr;
+    std::function<Color()> focus_ring_color_;
     Animated<Rect> frame_{Rect{}};
     bool placed_ = false;
     bool animates_layout_ = true;
@@ -347,6 +365,8 @@ public:
     }
 
     void set_opacity(float opacity, const Animation* animation) { opacity_.set(opacity, animation); }
+    void set_offset_x(float x, const Animation* animation) { offset_x_.set(x, animation); }
+    void set_offset_y(float y, const Animation* animation) { offset_y_.set(y, animation); }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
     float layout_priority() const noexcept override { return content_->layout_priority(); }
@@ -362,6 +382,8 @@ private:
     Effects effects_;
     std::unique_ptr<Element> content_;
     Animated<float> opacity_{1.f}; // resolved from effects_.opacity
+    Animated<float> offset_x_{0.f};
+    Animated<float> offset_y_{0.f};
 };
 
 class DecorationElement final : public Element {
@@ -448,6 +470,9 @@ protected:
 private:
     EventResult pointer(const PointerEvent& event, Rect frame) override;
     EventResult hover(bool inside) override;
+    EventResult key(const KeyEvent& event) override;
+    bool focusable() const override;
+    EventResult focus(bool focused) override;
 
     std::unique_ptr<Element> content_;
     std::function<void()> action_;
@@ -455,7 +480,8 @@ private:
     State<bool> hovered_;
     std::function<bool()> enabled_;
     std::function<HoverDelay()> hover_delay_;
-    bool down_ = false; // the pointer went down on the button and hasn't come up
+    bool down_ = false;       // the pointer went down on the button and hasn't come up
+    bool space_down_ = false; // Space went down while focused; the action runs when it comes up
 };
 
 } // namespace elg::detail
