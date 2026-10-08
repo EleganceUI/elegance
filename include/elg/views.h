@@ -11,9 +11,12 @@
 #include <elg/graphics_context.h>
 #include <elg/layout.h>
 #include <elg/prop.h>
+#include <elg/reactive.h>
 #include <elg/view.h>
 
 #include <concepts>
+#include <climits>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -110,6 +113,67 @@ struct TextFieldOptions {
 // word, triple-click all), word movement, clipboard, and undo/redo.
 //   TextField("Name", name.binding(), {.on_submit = save})
 ELG_API View TextField(std::string placeholder, Binding<std::string> text, TextFieldOptions options = {});
+
+struct SliderOptions {
+    float min = 0;
+    float max = 1;
+    float step = 0; // 0: continuous
+    // Called with true when a drag starts and false when it ends (e.g. to commit an expensive
+    // change only once).
+    std::function<void(bool)> on_editing_changed;
+};
+
+// A value in [min, max] picked by dragging a knob along a track (or with arrows, Page Up/Down,
+// Home/End while focused). Takes the width it's offered.
+//   Slider(volume.binding(), {.min = 0, .max = 100, .step = 5})
+ELG_API View Slider(Binding<float> value, SliderOptions options = {});
+
+struct StepperOptions {
+    int min = INT_MIN;
+    int max = INT_MAX;
+    int step = 1;
+};
+
+// The label, then - and + buttons that change `value` by `step` within [min, max].
+//   Stepper(Text([=] { return std::format("Guests: {}", guests()); }), guests.binding(), {.min = 1})
+ELG_API View Stepper(View label, Binding<int> value, StepperOptions options = {});
+ELG_API View Stepper(std::string title, Binding<int> value, StepperOptions options = {});
+
+// A bar filled to `fraction` (0...1); animates with the value.
+ELG_API View ProgressView(Prop<float> fraction);
+// Indeterminate: activity of unknown length. Renders continuously while shown.
+ELG_API View ProgressView();
+
+namespace detail {
+ELG_API View make_segmented_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,
+                                   std::function<void(std::size_t)> select);
+} // namespace detail
+
+// One of several options, shown as segments; `selection` is the chosen option's value.
+//   Picker(size.binding(), {{Size::small, "S"}, {Size::medium, "M"}, {Size::large, "L"}})
+// (A menu presentation comes with popups, design.md §13.1.)
+template <class T>
+    requires std::equality_comparable<T>
+View Picker(Binding<T> selection, std::vector<std::pair<T, std::string>> options) {
+    const auto shared = std::make_shared<const std::vector<std::pair<T, std::string>>>(std::move(options));
+    std::vector<std::string> labels;
+    labels.reserve(shared->size());
+    for (const auto& option : *shared) {
+        labels.push_back(option.second);
+    }
+    return detail::make_segmented_picker(
+        std::move(labels),
+        [selection, shared]() -> std::size_t {
+            const T current = selection();
+            for (std::size_t i = 0; i < shared->size(); ++i) {
+                if ((*shared)[i].first == current) {
+                    return i;
+                }
+            }
+            return shared->size(); // none
+        },
+        [selection, shared](std::size_t index) { selection.set((*shared)[index].first); });
+}
 
 // An on/off control bound to `is_on`; its look comes from the ToggleStyle (a switch by default).
 // Click, Space, or Enter flips it.

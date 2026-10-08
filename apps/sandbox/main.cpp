@@ -163,7 +163,7 @@ void log(const char* message) {
 }
 
 // A child component that edits its parent's state through a Binding.
-View Stepper(Binding<int> value) {
+View CountStepper(Binding<int> value) {
     return HStack({.spacing = 8},
                   Button("-", [=] { value -= 1; }).disabled([=] { return value() <= 0; }),
                   Text([=] { return std::to_string(value()); })
@@ -180,11 +180,11 @@ View StateCards(std::function<void()> quit) {
                                 Button("Say hello", [] { log("hello"); }),
                                 Button("Quit", std::move(quit)).tint(palette::red));
 
-    // The count lives here; Stepper changes it through a Binding.
+    // The count lives here; CountStepper changes it through a Binding.
     const auto count = State(0);
     const View counter = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
                                 Text([=] { return std::format("Count: {}", count()); }).font(Font::headline),
-                                Stepper(count.binding()));
+                                CountStepper(count.binding()));
 
     // Hover changes the fill and the label; taps update a count.
     const auto hovered = State(false);
@@ -297,6 +297,47 @@ View TextFieldCards() {
                   Captioned(mirrored, "One State, two fields").card());
 }
 
+enum class Accent { blue, green, peach };
+
+// Slider, ProgressView, Stepper, and Picker.
+View MoreControlCards() {
+    const auto volume = State(40.f);
+    const View slider = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
+                               Text([=] { return std::format("Volume: {:.0f}", volume()); }),
+                               Slider(volume.binding(), {.min = 0, .max = 100, .step = 1}),
+                               ProgressView([=] { return volume() / 100; }))
+                            .frame({.width = 220});
+
+    const auto guests = State(2);
+    const auto loading = State(false);
+    const View stepper = VStack({.alignment = HorizontalAlignment::leading, .spacing = 12},
+                                Stepper(Text([=] { return std::format("Guests: {}", guests()); }), guests.binding(),
+                                        {.min = 1, .max = 8}),
+                                Toggle("Loading", loading.binding()),
+                                // Indeterminate progress renders continuously, so it's only shown on request.
+                                If(loading, ProgressView()))
+                             .frame({.width = 220});
+
+    const auto accent = State(Accent::blue);
+    const View picker = VStack({.spacing = 14},
+                               Picker(accent.binding(), {{Accent::blue, "Blue"}, {Accent::green, "Green"}, {Accent::peach, "Peach"}}),
+                               Circle()
+                                   .fill([=] {
+                                       switch (accent()) {
+                                       case Accent::green: return palette::green;
+                                       case Accent::peach: return palette::peach;
+                                       default: return palette::blue;
+                                       }
+                                   })
+                                   .frame(44, 44))
+                            .frame({.width = 240});
+
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(slider, "Slider + ProgressView").card(),
+                  Captioned(stepper, "Stepper, indeterminate progress").card(),
+                  Captioned(picker, "Picker (segmented)").card());
+}
+
 View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
     return VStack({.spacing = 0},
                   TitleBar(scheme),
@@ -309,7 +350,8 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
                          EffectCards(),
                          StateCards(std::move(quit)),
                          ControlCards(),
-                         TextFieldCards())
+                         TextFieldCards(),
+                         MoreControlCards())
                       .padding(32)))
         .frame({.max_width = infinity, .max_height = infinity, .alignment = Alignment::top})
         .background(ThemeColor::background)

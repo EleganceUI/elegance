@@ -1255,7 +1255,22 @@ Separate render thread from day one (decided).
   - `WindowServices` gives elements text input, the clipboard, cursor shape, and timed wakes.
   - Fix: `bind(...)` calls are qualified. Unqualified, ADL picked `std::bind` for
     `Prop<std::string>` rvalues and silently dropped the binding.
-- [ ] Remaining core controls (Slider, Picker, Stepper, ProgressView)
+- [x] More core controls:
+  - `Slider(Binding<float>, {.min, .max, .step, .on_editing_changed})`:
+    - Drag anywhere on it, or use arrows, Page Up/Down and Home/End when focused (key changes
+      animate).
+    - The knob follows the binding, animated during animated updates.
+  - `Stepper(label, Binding<int>, {.min, .max, .step})`: composed from the public API; −/+ are
+    disabled at the bounds.
+  - `ProgressView(Prop<float>)` is determinate and animates with its value. `ProgressView()` is
+    indeterminate: it renders continuously while shown.
+  - `Picker(Binding<T>, {{value, "Label"}, ...})` is segmented, built from Buttons; the selection
+    change animates.
+  - Follow-ups:
+    - A menu presentation and `.picker_style(...)` (needs §13.1 popups).
+    - Stepper auto-repeat while held.
+    - Style protocols for Slider and ProgressView.
+    - A sliding selection indicator for the segmented picker (needs matched geometry).
 - [x] `ScrollView` / `ScrollView({.axes, .shows_indicators}, content)`:
   - Takes all the space it's offered. The content gets its ideal size along the scroll axes and
     the offered size across them (centered there), and is clipped.
