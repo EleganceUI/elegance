@@ -60,6 +60,15 @@ constexpr KeyModifiers primary_modifier() noexcept {
 #endif
 }
 
+// A mouse wheel or trackpad scroll. Deltas are in points, positive toward the end of the content
+// (wheel down: positive dy).
+struct ScrollEvent {
+    Point location;
+    float dx = 0;
+    float dy = 0;
+    bool precise = false; // trackpad-style fine deltas (apply directly) rather than wheel notches
+};
+
 struct KeyEvent {
     enum class Kind { down, up };
 
@@ -101,6 +110,10 @@ public:
     virtual EventResult pointer(const PointerEvent& event, Rect frame);
     // The pointer entered (true) or left (false) the view, after the hover delay.
     virtual EventResult hover(bool inside);
+
+    // Wheel and trackpad scrolling: goes to the handlers under the pointer, innermost first,
+    // until one consumes it.
+    virtual EventResult scroll(const ScrollEvent& event);
 
     // Keyboard (design.md §10): key events go to the focused view's handler first, then bubble
     // to the handlers around it until consumed.

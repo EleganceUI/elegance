@@ -20,6 +20,7 @@
 #include <elg/prop.h>
 #include <elg/text.h>
 #include <elg/view.h>
+#include <elg/views.h>
 
 #include <functional>
 #include <memory>
@@ -74,6 +75,8 @@ public:
     // For elements with a handler: how long hover takes to start and end (the handler's own
     // delay, else the environment's).
     virtual HoverDelay effective_hover_delay() const { return {}; }
+    // Scroll views: scrolls so `rect` (window points, as currently drawn) comes into sight.
+    virtual void reveal(Rect) {}
     // Non-null for TransitionElement (If/ForEach use a child's own transition when it has one).
     virtual class TransitionElement* as_transition() noexcept { return nullptr; }
 
@@ -482,6 +485,61 @@ private:
     std::function<HoverDelay()> hover_delay_;
     bool down_ = false;       // the pointer went down on the button and hasn't come up
     bool space_down_ = false; // Space went down while focused; the action runs when it comes up
+};
+
+// ScrollView (scroll.cpp).
+class ScrollElement final : public Element, private EventHandler {
+public:
+    ScrollElement(ScrollViewOptions options, std::unique_ptr<Element> content, std::function<Color()> indicator_color)
+        : options_(options), content_(std::move(content)), indicator_color_(std::move(indicator_color)) {
+        adopt(*content_);
+    }
+
+    EventHandler* event_handler() noexcept override { return this; }
+    void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
+    void reveal(Rect rect) override;
+
+protected:
+    Size measure(ProposedSize proposal) override;
+    void arrange(Rect bounds, ProposedSize proposal) override;
+    void paint_impl(DisplayList& list) const override;
+    bool hit_impl(Point point, std::vector<Element*>& path) override;
+
+private:
+    struct Thumb {
+        Rect rect;    // window points
+        float travel; // how far the thumb moves from start to end
+    };
+
+    EventResult pointer(const PointerEvent& event, Rect frame) override;
+    EventResult hover(bool inside) override;
+    EventResult scroll(const ScrollEvent& event) override;
+    EventResult key(const KeyEvent& event) override;
+
+    bool scrolls(Axis axis) const noexcept;
+    ProposedSize content_proposal(ProposedSize proposal) const noexcept;
+    Point max_offset() const noexcept;
+    Point current_offset() const { return {offset_x_.current(), offset_y_.current()}; }
+    // Scrolls to `target` (clamped to the content); false if that's where it already is.
+    bool scroll_to(Point target, const Animation* animation);
+    std::optional<Thumb> thumb(Axis axis) const;
+    std::optional<Axis> thumb_at(Point point) const;
+    void show_indicators();
+    void fade_indicators();
+
+    ScrollViewOptions options_;
+    std::unique_ptr<Element> content_;
+    std::function<Color()> indicator_color_;
+    Rect viewport_;     // from the last arrange
+    Size content_size_; // the content's ideal size there
+    Point target_;      // where the offset is heading
+    Animated<float> offset_x_{0.f};
+    Animated<float> offset_y_{0.f};
+    Animated<float> indicators_{0.f}; // scroll bar opacity
+    bool hovered_ = false;
+    std::optional<Axis> dragging_; // a scroll bar thumb being dragged
+    Point drag_start_;
+    Point drag_offset_;
 };
 
 } // namespace elg::detail

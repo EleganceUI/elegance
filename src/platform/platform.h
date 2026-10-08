@@ -42,6 +42,7 @@ enum class EventType {
     pointer_down,
     pointer_up,
     pointer_leave,
+    wheel,
     key_down,
     key_up,
     system_theme_changed,
@@ -57,6 +58,10 @@ struct Event {
     float y = 0;
     PointerButton button = PointerButton::left;
     int clicks = 1;
+    // Wheel events: notches (fractional for trackpads), positive right / away from the user.
+    float wheel_x = 0;
+    float wheel_y = 0;
+    bool precise = false;
     // Key events.
     Key key = Key::unknown;
     KeyModifiers modifiers = KeyModifiers::none;

@@ -87,6 +87,20 @@ ELG_API View Canvas(std::function<void(GraphicsContext&)> draw);
 ELG_API View Button(View label, std::function<void()> action);
 ELG_API View Button(std::string title, std::function<void()> action);
 
+enum class ScrollAxes { vertical = 1, horizontal = 2, both = 3 };
+
+struct ScrollViewOptions {
+    ScrollAxes axes = ScrollAxes::vertical;
+    bool shows_indicators = true; // scroll bars, shown while scrolling or hovered
+};
+
+// Shows `content` at its ideal size along the scroll axes, clipped to the space the scroll view
+// takes (all it's offered). Wheel, trackpad, scroll-bar drags, and keys (arrows, Page Up/Down,
+// Home/End, unhandled by the focused view) scroll it; Tab scrolls focused views into sight.
+//   ScrollView(VStack(rows...))
+ELG_API View ScrollView(View content);
+ELG_API View ScrollView(ScrollViewOptions options, View content);
+
 // An on/off control bound to `is_on`; its look comes from the ToggleStyle (a switch by default).
 // Click, Space, or Enter flips it.
 ELG_API View Toggle(View label, Binding<bool> is_on);

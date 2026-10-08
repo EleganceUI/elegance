@@ -246,6 +246,9 @@ int App::run() {
     ScopeExit clear_callback([&] { platform.set_live_resize_callback({}); });
 
     const auto handle = [&](const platform::Event& event) {
+        // Handlers may start animations (e.g. scrolling); they must start now, not at the last
+        // frame's time, which can be long ago after idling.
+        set_frame_time(seconds_now());
         switch (event.type) {
         case platform::EventType::quit:
             log_debug("quit requested by the OS");
@@ -291,6 +294,15 @@ int App::run() {
                 default: redraw = live.events.pointer_left(); break;
                 }
                 live.dirty |= redraw;
+            }
+            break;
+        case platform::EventType::wheel:
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                constexpr float kPointsPerNotch = 48;
+                LiveWindow& live = **it;
+                live.dirty |= live.events.scroll(live.window.to_logical(event.x, event.y),
+                                                 event.wheel_x * kPointsPerNotch, -event.wheel_y * kPointsPerNotch,
+                                                 event.precise);
             }
             break;
         case platform::EventType::key_down:
@@ -356,6 +368,8 @@ int App::run() {
             }
             if (live->dirty || live->animating) {
                 post_frame(*live);
+                // Content may have moved under the pointer (scrolling, animations).
+                live->dirty |= live->events.refresh_hover();
             }
         }
         for (const auto& live : windows) {

@@ -132,6 +132,16 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
         }
         return result;
     }
+    case SDL_EVENT_MOUSE_WHEEL: {
+        // x/y already follow the user's "natural scrolling" setting (direction says if flipped).
+        Event result{EventType::wheel, event.wheel.windowID};
+        result.x = event.wheel.mouse_x;
+        result.y = event.wheel.mouse_y;
+        result.wheel_x = event.wheel.x;
+        result.wheel_y = event.wheel.y;
+        result.precise = event.wheel.x != std::trunc(event.wheel.x) || event.wheel.y != std::trunc(event.wheel.y);
+        return result;
+    }
     case SDL_EVENT_KEY_DOWN:
     case SDL_EVENT_KEY_UP: {
         Event result{event.type == SDL_EVENT_KEY_DOWN ? EventType::key_down : EventType::key_up,

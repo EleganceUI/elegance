@@ -26,6 +26,10 @@ EventResult EventHandler::hover(bool) {
     return {};
 }
 
+EventResult EventHandler::scroll(const ScrollEvent&) {
+    return {};
+}
+
 EventResult EventHandler::key(const KeyEvent&) {
     return {};
 }

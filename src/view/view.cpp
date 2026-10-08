@@ -260,6 +260,14 @@ View Button(std::string title, std::function<void()> action) {
     return Button(Text(std::move(title)), std::move(action));
 }
 
+View ScrollView(View content) {
+    return ScrollView({}, std::move(content));
+}
+
+View ScrollView(ScrollViewOptions options, View content) {
+    return ViewAccess::make(std::make_shared<const detail::ScrollNode>(options, std::move(content)));
+}
+
 View Toggle(View label, Binding<bool> is_on) {
     return ViewAccess::make(std::make_shared<const detail::ToggleNode>(std::move(label), std::move(is_on)));
 }
@@ -491,6 +499,12 @@ std::unique_ptr<Element> ButtonNode::lower(const LowerContext& context) const {
         body = style->make_body(configuration);
     }
     return make_button_element(body, action_, pressed, hovered, context);
+}
+
+std::unique_ptr<Element> ScrollNode::lower(const LowerContext& context) const {
+    const EnvironmentValues environment = context.environment;
+    return std::make_unique<ScrollElement>(options_, detail::lower(content_, context.nested()),
+                                           [environment] { return environment.color(ThemeColor::secondary); });
 }
 
 std::unique_ptr<Element> ToggleNode::lower(const LowerContext& context) const {

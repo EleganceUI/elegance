@@ -110,15 +110,18 @@ View TodoWindow(State<ColorScheme> scheme) {
                       const auto left = remaining();
                       return left == 0 ? std::string("All done") : std::format("{} left", left);
                   }).foreground_style(ThemeColor::secondary),
-                  If([=] { return todos().empty(); },
-                     Text("Nothing to do. Add a task to get started.").foreground_style(ThemeColor::secondary).padding(Edges::top, 8)),
-                  ForEach(
-                      todos, [](const Todo& todo) { return todo.id; },
-                      [=](const Todo& todo) {
-                          return TodoRow(todo, toggle(todo.id), remove(todo.id))
-                              .transition(Transition::opacity().combined(Transition::move(Edges::trailing)));
-                      }),
-                  Spacer())
+                  // The header stays put; the list scrolls once it outgrows the window.
+                  ScrollView(VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
+                                    If([=] { return todos().empty(); },
+                                       Text("Nothing to do. Add a task to get started.")
+                                           .foreground_style(ThemeColor::secondary)
+                                           .padding(Edges::top, 8)),
+                                    ForEach(
+                                        todos, [](const Todo& todo) { return todo.id; },
+                                        [=](const Todo& todo) {
+                                            return TodoRow(todo, toggle(todo.id), remove(todo.id))
+                                                .transition(Transition::opacity().combined(Transition::move(Edges::trailing)));
+                                        }))))
         .padding(24)
         .frame({.max_width = infinity, .max_height = infinity})
         .background(ThemeColor::background)

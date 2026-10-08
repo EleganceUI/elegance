@@ -170,6 +170,16 @@ private:
     std::function<void()> action_;
 };
 
+class ScrollNode final : public ViewNode {
+public:
+    ScrollNode(ScrollViewOptions options, View content) : options_(options), content_(std::move(content)) {}
+    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+
+private:
+    ScrollViewOptions options_;
+    View content_;
+};
+
 class ToggleNode final : public ViewNode {
 public:
     ToggleNode(View label, Binding<bool> is_on) : label_(std::move(label)), is_on_(std::move(is_on)) {}

@@ -265,16 +265,16 @@ View ControlCards() {
 View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
     return VStack({.spacing = 0},
                   TitleBar(scheme),
-                  VStack({.alignment = HorizontalAlignment::leading, .spacing = 20},
+                  // The title bar stays put; the cards scroll under it.
+                  ScrollView(VStack({.alignment = HorizontalAlignment::leading, .spacing = 20},
                          ShapeCards(),
                          // Like SwiftUI's .fixedSize(horizontal: false, vertical: true): take the
                          // text's full height instead of an equal share against the Spacer.
                          TextCards().fixed_size(false, true),
                          EffectCards(),
                          StateCards(std::move(quit)),
-                         ControlCards(),
-                         Spacer())
-                      .padding(32))
+                         ControlCards())
+                      .padding(32)))
         .frame({.max_width = infinity, .max_height = infinity, .alignment = Alignment::top})
         .background(ThemeColor::background)
         .theme(palette::theme)
@@ -295,7 +295,7 @@ int main(int argc, char** argv) {
         App app;
         // Shared by both windows: the title bar's toggle switches them together.
         const State<ColorScheme> scheme(light ? ColorScheme::light : ColorScheme::dark);
-        app.window({.title = "Elegence Sandbox", .width = 1100, .height = 1040},
+        app.window({.title = "Elegence Sandbox", .width = 1100, .height = 860},
                    [&] {
                        if (smoke_test) {
                            app.quit(); // still renders the first frame

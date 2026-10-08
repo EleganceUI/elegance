@@ -209,7 +209,33 @@ bool EventDispatcher::move_focus(bool forward) {
         const std::size_t index = static_cast<std::size_t>(current - order.begin());
         next = order[(index + (forward ? 1 : order.size() - 1)) % order.size()];
     }
-    return focus_->focus(next, true);
+    const bool redraw = focus_->focus(next, true);
+    for (Element* ancestor = next->parent(); ancestor; ancestor = ancestor->parent()) {
+        ancestor->reveal(next->frame());
+    }
+    return redraw;
+}
+
+bool EventDispatcher::scroll(Point location, float dx, float dy, bool precise) {
+    last_location_ = location;
+    pointer_inside_ = true;
+    const ScrollEvent event{location, dx, dy, precise};
+    const std::vector<Element*> path = path_at(location);
+    bool redraw = false;
+    for (auto it = path.rbegin(); it != path.rend(); ++it) {
+        if (EventHandler* handler = (*it)->event_handler()) {
+            const EventResult result = handler->scroll(event);
+            redraw |= result.redraw;
+            if (result.consumed) {
+                break;
+            }
+        }
+    }
+    return redraw;
+}
+
+bool EventDispatcher::refresh_hover() {
+    return pointer_inside_ && update_hover(path_at(last_location_));
 }
 
 bool EventDispatcher::revalidate() {

@@ -1227,7 +1227,20 @@ Separate render thread from day one (decided).
   without affecting layout. The switch knob uses it.
   - Known gap: Button/tap release-inside checks use the un-offset frame.
 - [ ] Remaining core controls (Slider, Picker, Stepper, ProgressView), TextField with IME
-- [ ] ScrollView, Lazy stacks/List, Grid, presentations (sheet/popover)
+- [x] `ScrollView` / `ScrollView({.axes, .shows_indicators}, content)`:
+  - Takes all the space it's offered. The content gets its ideal size along the scroll axes and
+    the offered size across them (centered there), and is clipped.
+  - Wheel notches ease; trackpad (fractional) deltas apply directly. A view at its end passes
+    the scroll to an outer scroll view.
+  - Keys unhandled by the focused view scroll it: arrows, Page Up/Down, Home/End.
+  - Tab scrolls the newly focused view into sight (`Element::reveal`).
+  - Scroll bars appear while scrolling or hovered, fade after a pause, and can be dragged.
+  - Hover is re-evaluated after each frame, since content moves under the pointer.
+  - Fix: event handlers now see the current frame time, so animations they start (scrolling,
+    scroll bars) don't begin in the past.
+  - Follow-ups: programmatic scrolling (`ScrollViewReader` / scroll position binding),
+    overscroll bounce, momentum for wheel flicks, and scroll-aware synthetic input for tests.
+- [ ] Lazy stacks/List, Grid, presentations (sheet/popover)
 - [ ] Popup presentation layer (§13.1): popup windows, `context_menu`, `Menu` / `MenuItem` /
   `Submenu`, menu keyboard navigation, `.help()` tooltips; `App::menu_bar` (native on macOS)
 
