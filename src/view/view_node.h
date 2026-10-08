@@ -10,6 +10,7 @@
 
 #include "view/element.h"
 
+#include <elg/animation.h>
 #include <elg/environment.h>
 #include <elg/layout.h>
 #include <elg/modifier.h>
@@ -35,6 +36,10 @@ struct LowerContext {
     EnvironmentValues environment;
     // Set for the direct children of a layout with a spacer axis (stacks).
     std::optional<Axis> spacer_axis;
+    // The innermost `.animation(...)` around the views being built.
+    std::shared_ptr<ImplicitAnimation> implicit_animation;
+    // false inside `.animates_layout(false)`.
+    bool animates_layout = true;
 
     // The context for a view that isn't a direct child of the current layout.
     LowerContext nested() const {
@@ -62,16 +67,34 @@ std::unique_ptr<Element> lower(const View& view, const LowerContext& context);
 // Applies a reactive argument to an element (design.md §9.3): a static value is applied once; a
 // reactive one becomes an effect that re-applies it, and requests a frame, whenever the state it
 // reads changes.
+// Setters taking (value, const Animation*) are animatable: they get the animation of the update
+// that changed the value (an animated transaction's, or an implicit `.animation(...)`'s), or
+// nullptr to jump.
 template <class T, class Apply>
 void bind(const Prop<T>& prop, const LowerContext& context, Apply apply) {
+    constexpr bool animatable = std::invocable<Apply&, T, const Animation*>;
     if (const T* value = prop.static_value()) {
-        apply(*value);
+        if constexpr (animatable) {
+            apply(*value, nullptr);
+        } else {
+            apply(*value);
+        }
         return;
     }
     // Environment-dependent props (e.g. ThemeColor) resolve against the environment where they're
     // used; reading it is tracked, so a theme or color scheme change re-applies them.
-    effect([prop, apply = std::move(apply), environment = context.environment, needs_frame = context.needs_frame] {
-        apply(prop.get(environment));
+    effect([prop, apply = std::move(apply), environment = context.environment, needs_frame = context.needs_frame,
+            implicit = context.implicit_animation] {
+        T value = prop.get(environment);
+        if constexpr (animatable) {
+            const Animation* animation = current_animation();
+            if (!animation && implicit && implicit->fired()) {
+                animation = &implicit->animation;
+            }
+            apply(std::move(value), animation);
+        } else {
+            apply(std::move(value));
+        }
         if (needs_frame) {
             *needs_frame = true;
         }
@@ -144,6 +167,43 @@ private:
     std::function<void()> action_;
 };
 
+// `.animation(animation, value)`: the subtree's changes animate when the value changed.
+class AnimationNode final : public ViewNode {
+public:
+    AnimationNode(View content, Animation animation, std::function<bool()> changed)
+        : content_(std::move(content)), animation_(animation), changed_(std::move(changed)) {}
+    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+
+private:
+    View content_;
+    Animation animation_;
+    std::function<bool()> changed_;
+};
+
+class LayoutAnimationNode final : public ViewNode {
+public:
+    LayoutAnimationNode(View content, bool enabled) : content_(std::move(content)), enabled_(enabled) {}
+    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+        LowerContext inner = context;
+        inner.animates_layout = enabled_;
+        return detail::lower(content_, inner);
+    }
+
+private:
+    View content_;
+    bool enabled_;
+};
+
+class TransitionNode final : public ViewNode {
+public:
+    TransitionNode(View content, Transition transition) : content_(std::move(content)), transition_(std::move(transition)) {}
+    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+
+private:
+    View content_;
+    Transition transition_;
+};
+
 class IfNode final : public ViewNode {
 public:
     IfNode(Prop<bool> condition, View then_view, View else_view)
@@ -177,6 +237,8 @@ public:
 
     void collect_layout_children(std::vector<Element*>& out) override;
     void for_each_child(const std::function<void(Element&)>& visit) override;
+    void collect_exiting(std::vector<Element*>& out) override;
+    void prune_exiting() override;
 
 protected:
     Size measure(ProposedSize proposal) override;
@@ -191,15 +253,18 @@ private:
     struct Child {
         ItemKey key;
         std::shared_ptr<const void> value;
-        std::unique_ptr<Element> element;
+        std::unique_ptr<Element> element; // a TransitionElement
+        TransitionElement* transition = nullptr;
         std::unique_ptr<Scope> scope;
     };
 
-    Child mount(const ForEachItem& item);
+    Child mount(const ForEachItem& item, const Animation* animation);
     void rebuild_children();
 
     LowerContext context_;
     std::vector<Child> children_;
+    std::vector<Child> exiting_; // removed, animating out
+    bool initialized_ = false;
     std::vector<Element*> laid_out_;
     std::vector<LayoutChild> handles_;
     VStackLayout standalone_layout_;

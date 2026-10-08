@@ -36,6 +36,12 @@ int g_batch_depth = 0;
 std::deque<ReactiveNode*> g_pending;
 std::optional<std::thread::id> g_ui_thread;
 
+// Animated transactions (design.md §9.5).
+std::shared_ptr<const Animation> g_transaction;      // with_animation in progress
+const Animation* g_running_animation = nullptr;      // the transaction of the effect running now
+std::shared_ptr<const Animation> g_flush_animation;  // latest transaction run in a flush
+std::uint64_t g_flush = 0;
+
 // Effect runs within one flush; beyond this, effects are almost certainly re-triggering each
 // other in a cycle.
 constexpr int kMaxEffectRuns = 100'000;
@@ -51,6 +57,10 @@ void remove_one(std::vector<ReactiveNode*>& nodes, ReactiveNode* node) {
 
 struct Runtime {
     static void dequeue(ReactiveNode* node) noexcept { node->queued_ = false; }
+    static std::shared_ptr<const Animation> take_transaction(ReactiveNode* node) noexcept {
+        return std::exchange(node->transaction_, nullptr);
+    }
+    static void set_priority(ReactiveNode* node) noexcept { node->priority_ = true; }
 
     static void mark(ReactiveNode* node, int status) {
         if (node->status_ >= status || node->disposed_) {
@@ -58,9 +68,18 @@ struct Runtime {
         }
         const bool was_clean = node->status_ == clean;
         node->status_ = status;
-        if (node->kind_ == ReactiveNode::Kind::effect && !node->queued_) {
-            node->queued_ = true;
-            g_pending.push_back(node);
+        if (node->kind_ == ReactiveNode::Kind::effect) {
+            if (g_transaction) {
+                node->transaction_ = g_transaction;
+            }
+            if (!node->queued_) {
+                node->queued_ = true;
+                if (node->priority_) {
+                    g_pending.push_front(node);
+                } else {
+                    g_pending.push_back(node);
+                }
+            }
         }
         if (was_clean) {
             for (ReactiveNode* observer : node->observers_) {
@@ -183,8 +202,11 @@ Scope* current_scope() noexcept {
 
 // --- Free functions ---
 
-void start_effect(std::shared_ptr<EffectNode> effect) {
+void start_effect(std::shared_ptr<EffectNode> effect, bool priority) {
     check_ui_thread();
+    if (priority) {
+        Runtime::set_priority(effect.get());
+    }
     if (!g_scope) {
         throw UsageError("effect() must be called while building views (in a body or a reactive "
                          "argument), so it has an owner that ends it");
@@ -227,6 +249,7 @@ void flush_effects() {
     if (g_batch_depth > 0) {
         return;
     }
+    ++g_flush;
     for (int runs = 0; !g_pending.empty(); ++runs) {
         if (runs >= kMaxEffectRuns) {
             for (ReactiveNode* node : g_pending) {
@@ -239,8 +262,41 @@ void flush_effects() {
         ReactiveNode* const node = g_pending.front();
         g_pending.pop_front();
         Runtime::dequeue(node);
-        node->update();
+        // Run inside the transaction that scheduled it, so animatable properties it sets animate.
+        const std::shared_ptr<const Animation> transaction = Runtime::take_transaction(node);
+        if (transaction) {
+            g_flush_animation = transaction;
+        }
+        const Animation* const previous = std::exchange(g_running_animation, transaction.get());
+        try {
+            node->update();
+        } catch (...) {
+            g_running_animation = previous;
+            throw;
+        }
+        g_running_animation = previous;
     }
+}
+
+void begin_transaction(std::shared_ptr<const Animation> animation) {
+    check_ui_thread();
+    g_transaction = std::move(animation);
+}
+
+void end_transaction() noexcept {
+    g_transaction = nullptr;
+}
+
+const Animation* current_animation() noexcept {
+    return g_running_animation;
+}
+
+std::uint64_t current_flush() noexcept {
+    return g_flush;
+}
+
+std::shared_ptr<const Animation> take_flush_animation() noexcept {
+    return std::exchange(g_flush_animation, nullptr);
 }
 
 void set_ui_thread(std::optional<std::thread::id> thread) noexcept {

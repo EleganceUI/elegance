@@ -98,6 +98,8 @@ public:
 
     // Blocks until an event arrives.
     Event wait_event();
+    // Blocks until an event arrives or `seconds` pass (then returns EventType::none).
+    Event wait_event(double seconds);
     std::optional<Event> poll_event();
 
     // Wakes wait_event() with EventType::wake. Thread-safe.

@@ -44,7 +44,12 @@ struct PillButtonStyle : ButtonStyle {
 };
 
 View TitleBar(State<ColorScheme> scheme) {
-    const auto toggle = [=] { scheme = scheme.peek() == ColorScheme::dark ? ColorScheme::light : ColorScheme::dark; };
+    // Animated: every theme color cross-fades.
+    const auto toggle = [=] {
+        with_animation(Animation::ease_in_out(0.35), [=] {
+            scheme = scheme.peek() == ColorScheme::dark ? ColorScheme::light : ColorScheme::dark;
+        });
+    };
     return HStack({.alignment = VerticalAlignment::center, .spacing = 12},
                   Text("Elegence").font(Font::title2),
                   Text("Sandbox").foreground_style(ThemeColor::secondary),
@@ -194,6 +199,7 @@ View StateCards(std::function<void()> quit) {
                            }).foreground_style([=](const EnvironmentValues& env) {
                                return env.color(hovered() ? ThemeColor::background : ThemeColor::primary);
                            }))
+                           .animation(Animation::ease_out(0.18), hovered) // implicit: hover changes ease
                            .on_hover([=](bool inside) { hovered = inside; })
                            .on_tap_gesture([=] { taps += 1; });
 
@@ -201,7 +207,8 @@ View StateCards(std::function<void()> quit) {
     const auto dimmed = State(false);
     const View fade = HStack({.spacing = 16},
                              Circle().fill(palette::mauve).frame(44, 44).opacity([=] { return dimmed() ? 0.2f : 1.f; }),
-                             Button(Text([=] { return dimmed() ? "Show" : "Dim"; }), [=] { dimmed = !dimmed(); }));
+                             Button(Text([=] { return dimmed() ? "Show" : "Dim"; }),
+                                    [=] { with_animation(Animation::smooth(), [=] { dimmed = !dimmed(); }); }));
 
     return HStack({.spacing = 24},
                   Captioned(buttons, "Button + tint").card(),

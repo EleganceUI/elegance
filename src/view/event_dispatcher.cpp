@@ -5,6 +5,7 @@
 #include "view/event_dispatcher.h"
 
 #include <algorithm>
+#include <chrono>
 #include <functional>
 #include <unordered_set>
 
@@ -16,28 +17,74 @@ std::vector<Element*> EventDispatcher::path_at(Point location) {
     return path;
 }
 
+namespace {
+
+double now_seconds() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+} // namespace
+
 bool EventDispatcher::update_hover(const std::vector<Element*>& path) {
-    std::vector<Element*> now;
+    const double now = now_seconds();
+    const auto under_pointer = [&](const Element* element) { return std::ranges::find(path, element) != path.end(); };
+    // Schedules telling the handler about a change, or cancels a pending one that was undone
+    // (e.g. the pointer left before the enter delay passed).
+    const auto schedule = [&](Hover& hover) {
+        if (hover.over == hover.reported) {
+            hover.due = -1;
+        } else if (hover.due < 0) {
+            const HoverDelay delay = hover.element->effective_hover_delay();
+            hover.due = now + (hover.over ? delay.enter : delay.exit);
+        }
+    };
+
+    for (Hover& hover : hovers_) {
+        hover.over = under_pointer(hover.element);
+        schedule(hover);
+    }
     for (Element* element : path) {
-        if (element->event_handler()) {
-            now.push_back(element);
+        if (element->event_handler() &&
+            std::ranges::find(hovers_, element, &Hover::element) == hovers_.end()) {
+            Hover hover{element, true, false, -1};
+            schedule(hover);
+            hovers_.push_back(hover);
         }
     }
+    return tick();
+}
 
+bool EventDispatcher::tick() {
+    const double now = now_seconds();
     bool redraw = false;
     // Leaves innermost first, then enters outermost first, like the DOM's mouseleave/enter.
-    for (auto it = hovered_.rbegin(); it != hovered_.rend(); ++it) {
-        if (std::ranges::find(now, *it) == now.end()) {
-            redraw |= (*it)->event_handler()->hover(false).redraw;
+    for (auto it = hovers_.rbegin(); it != hovers_.rend(); ++it) {
+        if (it->due >= 0 && it->due <= now && !it->over) {
+            it->reported = false;
+            it->due = -1;
+            redraw |= it->element->event_handler()->hover(false).redraw;
         }
     }
-    for (Element* element : now) {
-        if (std::ranges::find(hovered_, element) == hovered_.end()) {
-            redraw |= element->event_handler()->hover(true).redraw;
+    for (Hover& hover : hovers_) {
+        if (hover.due >= 0 && hover.due <= now && hover.over) {
+            hover.reported = true;
+            hover.due = -1;
+            redraw |= hover.element->event_handler()->hover(true).redraw;
         }
     }
-    hovered_ = std::move(now);
+    // Forget elements the pointer is off that have nothing left to hear.
+    std::erase_if(hovers_, [](const Hover& hover) { return !hover.over && !hover.reported && hover.due < 0; });
     return redraw;
+}
+
+std::optional<double> EventDispatcher::next_deadline() const {
+    std::optional<double> next;
+    for (const Hover& hover : hovers_) {
+        if (hover.due >= 0 && (!next || hover.due < *next)) {
+            next = hover.due;
+        }
+    }
+    return next;
 }
 
 bool EventDispatcher::bubble(const std::vector<Element*>& path, const PointerEvent& event) {
@@ -101,7 +148,7 @@ bool EventDispatcher::revalidate() {
     walk(*root_);
 
     // Pointers to removed elements are compared, never dereferenced.
-    std::erase_if(hovered_, [&](const Element* element) { return !alive.contains(element); });
+    std::erase_if(hovers_, [&](const Hover& hover) { return !alive.contains(hover.element); });
     if (captured_ && !alive.contains(captured_)) {
         captured_ = nullptr;
     }

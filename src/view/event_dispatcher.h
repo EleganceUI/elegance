@@ -9,6 +9,7 @@
 
 #include <elg/events.h>
 
+#include <optional>
 #include <vector>
 
 namespace elg::detail {
@@ -16,7 +17,8 @@ namespace elg::detail {
 // Routes one window's pointer input into its element tree (design.md §10):
 // - down/up go to the handlers under the pointer, innermost first, until one consumes it;
 //   consuming a down captures the pointer until the up;
-// - hover enter/leave go to every handler under the pointer.
+// - hover enter/leave go to every handler under the pointer, after each one's hover delay
+//   (tick() delivers them when due).
 // Each method returns true when the window needs a new frame.
 class EventDispatcher {
 public:
@@ -28,14 +30,26 @@ public:
     // Call after If/ForEach removed elements: forgets elements that no longer exist (without
     // touching them) and re-evaluates hover at the last pointer position.
     bool revalidate();
+    // Delivers hover changes whose delay has passed.
+    bool tick();
+    // When the next pending hover change is due (steady clock seconds), if any.
+    std::optional<double> next_deadline() const;
 
 private:
+    // A handler-bearing element the pointer is over, or that still has to hear that it left.
+    struct Hover {
+        Element* element;
+        bool over;      // the pointer is over it now
+        bool reported;  // what its handler was last told
+        double due;     // when to tell it `over`; < 0 when nothing is pending
+    };
+
     std::vector<Element*> path_at(Point location);
     bool update_hover(const std::vector<Element*>& path);
     bool bubble(const std::vector<Element*>& path, const PointerEvent& event);
 
     Element* root_;
-    std::vector<Element*> hovered_; // handler-bearing elements under the pointer, outermost first
+    std::vector<Hover> hovers_; // outermost first
     Element* captured_ = nullptr;
     Point last_location_;
     bool pointer_inside_ = false;

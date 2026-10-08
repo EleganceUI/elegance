@@ -68,6 +68,8 @@ public:
     Color clear_color = Color::white;
     float scale = 1; // pixels per logical point
     std::vector<DrawCommand> commands;
+    // Set while painting when something is mid-animation: the window needs another frame.
+    bool animating = false;
 };
 
 // --- Helpers ---
@@ -77,6 +79,11 @@ ShapeStyle with_opacity(const ShapeStyle& style, float opacity);
 // The area a command can draw into, in points; nullopt for structural commands (clip, pop).
 std::optional<Rect> draw_bounds(const DrawCommand& command);
 Rect union_of(const Rect& a, const Rect& b);
+// Moves commands by (dx, dy) and scales them by `scale` around `origin` (transitions).
+void transform(std::vector<DrawCommand>& commands, float dx, float dy, float scale, Point origin);
+// Appends `content` faded to `opacity` as a group: an alpha multiply for a single shape, an
+// offscreen layer otherwise.
+void append_faded(DisplayList& list, DisplayList&& content, float opacity);
 
 } // namespace elg::detail
 

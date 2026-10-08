@@ -53,6 +53,86 @@ ShapeStyle with_opacity(const ShapeStyle& style, float opacity) {
                       style.value());
 }
 
+void transform(std::vector<DrawCommand>& commands, float dx, float dy, float scale, Point origin) {
+    if (dx == 0 && dy == 0 && scale == 1) {
+        return;
+    }
+    const auto point = [&](float x, float y) {
+        return Point{origin.x + (x - origin.x) * scale + dx, origin.y + (y - origin.y) * scale + dy};
+    };
+    const auto rect = [&](const Rect& r) {
+        const Point p = point(r.x, r.y);
+        return Rect{p.x, p.y, r.width * scale, r.height * scale};
+    };
+    const auto radii = [&](const CornerRadii& r) {
+        return CornerRadii{r.top_left * scale, r.top_right * scale, r.bottom_right * scale, r.bottom_left * scale};
+    };
+    for (DrawCommand& command : commands) {
+        std::visit(Overloaded{
+                       [&](RectCommand& c) {
+                           c.rect = rect(c.rect);
+                           c.radii = radii(c.radii);
+                           c.border_width *= scale;
+                       },
+                       [&](GlyphCommand& c) {
+                           c.quad = rect(c.quad);
+                           c.em_size *= scale;
+                       },
+                       [&](BoxShadowCommand& c) {
+                           c.rect = rect(c.rect);
+                           c.radii = radii(c.radii);
+                           c.blur_radius *= scale;
+                       },
+                       [&](PushClipCommand& c) {
+                           c.rect = rect(c.rect);
+                           c.radii = radii(c.radii);
+                       },
+                       [&](PushLayerCommand& c) {
+                           c.bounds = rect(c.bounds);
+                           if (c.shadow) {
+                               c.shadow->radius *= scale;
+                               c.shadow->x *= scale;
+                               c.shadow->y *= scale;
+                           }
+                       },
+                       [](auto&) {},
+                   },
+                   command);
+    }
+}
+
+void append_faded(DisplayList& list, DisplayList&& content, float opacity) {
+    if (opacity >= 1) {
+        list.commands.insert(list.commands.end(), std::make_move_iterator(content.commands.begin()),
+                             std::make_move_iterator(content.commands.end()));
+        return;
+    }
+    if (opacity <= 0 || content.commands.empty()) {
+        return;
+    }
+    if (content.commands.size() == 1) {
+        if (auto* rect = std::get_if<RectCommand>(&content.commands.front())) {
+            rect->fill = with_opacity(rect->fill, opacity);
+            rect->border = rect->border.opacity(opacity);
+            list.commands.push_back(std::move(*rect));
+            return;
+        }
+    }
+    std::optional<Rect> bounds;
+    for (const DrawCommand& command : content.commands) {
+        if (const std::optional<Rect> b = draw_bounds(command)) {
+            bounds = bounds ? union_of(*bounds, *b) : *b;
+        }
+    }
+    if (!bounds) {
+        return;
+    }
+    list.commands.push_back(PushLayerCommand{*bounds, opacity, std::nullopt});
+    list.commands.insert(list.commands.end(), std::make_move_iterator(content.commands.begin()),
+                         std::make_move_iterator(content.commands.end()));
+    list.commands.push_back(PopLayerCommand{});
+}
+
 Rect union_of(const Rect& a, const Rect& b) {
     const float x = std::min(a.x, b.x);
     const float y = std::min(a.y, b.y);

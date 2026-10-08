@@ -8,6 +8,8 @@ else ()
 endif ()
 
 add_library(elegence ${ELG_LIBRARY_TYPE}
+        animation/animation.cpp
+        animation/frame_clock.cpp
         app.cpp
         error.cpp
         graphics_context.cpp

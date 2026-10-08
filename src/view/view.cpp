@@ -8,6 +8,7 @@
 
 #include "core/crash.h"
 
+#include <elg/animation.h>
 #include <elg/modifiers/decoration.h>
 #include <elg/modifiers/effects.h>
 #include <elg/modifiers/environment.h>
@@ -121,6 +122,14 @@ View View::on_hover(std::function<void(bool)> action) const {
     return modifier(HoverModifier(std::move(action)));
 }
 
+View View::on_hover(std::function<void(bool)> action, HoverDelay delay) const {
+    return modifier(HoverModifier(std::move(action), delay));
+}
+
+View View::hover_delay(HoverDelay delay) const {
+    return modifier(HoverDelayModifier(delay));
+}
+
 View View::tint(Prop<Color> color) const {
     return modifier(TintModifier(std::move(color)));
 }
@@ -155,6 +164,18 @@ View View::disabled(Prop<bool> disabled) const {
 
 View View::disabled() const {
     return disabled(true);
+}
+
+View View::animation_impl(const Animation& animation, std::function<bool()> changed) const {
+    return View(std::make_shared<const detail::AnimationNode>(*this, animation, std::move(changed)));
+}
+
+View View::animates_layout(bool enabled) const {
+    return View(std::make_shared<const detail::LayoutAnimationNode>(*this, enabled));
+}
+
+View View::transition(const Transition& transition) const {
+    return View(std::make_shared<const detail::TransitionNode>(*this, transition));
 }
 
 View View::button_style_impl(std::shared_ptr<const ButtonStyle> style) const {
@@ -248,7 +269,33 @@ std::unique_ptr<Element> lower(const View& view, const LowerContext& context) {
         return std::make_unique<EmptyElement>();
     }
     const EnvironmentScope scope(context.environment);
-    return node->lower(context);
+    std::unique_ptr<Element> element = node->lower(context);
+    if (context.implicit_animation) {
+        element->set_implicit_animation(context.implicit_animation);
+    }
+    if (!context.animates_layout) {
+        element->set_animates_layout(false);
+    }
+    return element;
+}
+
+std::unique_ptr<Element> AnimationNode::lower(const LowerContext& context) const {
+    auto implicit = std::make_shared<ImplicitAnimation>(ImplicitAnimation{animation_});
+    // Runs before other effects in a flush, so the property effects it should animate see it
+    // fired.
+    start_effect(std::make_shared<EffectNode>([implicit, changed = changed_] {
+                     if (changed()) {
+                         implicit->fired_flush = current_flush();
+                     }
+                 }),
+                 true);
+    LowerContext inner = context;
+    inner.implicit_animation = std::move(implicit);
+    return detail::lower(content_, inner);
+}
+
+std::unique_ptr<Element> TransitionNode::lower(const LowerContext& context) const {
+    return std::make_unique<TransitionElement>(transition_, detail::lower(content_, context));
 }
 
 std::unique_ptr<Element> ModifiedNode::lower(const LowerContext& context) const {
@@ -269,12 +316,16 @@ std::unique_ptr<Element> ModifiedNode::lower(const LowerContext& context) const 
         static_cast<const EffectModifier&>(*modifier_).apply(effects);
         const Prop<float> opacity = effects.opacity;
         auto element = std::make_unique<EffectElement>(std::move(effects), detail::lower(content_, context));
-        bind(opacity, context, [target = element.get()](float value) { target->set_opacity(value); });
+        bind(opacity, context,
+             [target = element.get()](float value, const Animation* animation) { target->set_opacity(value, animation); });
         return element;
     }
-    case ModifierProtocol::event:
+    case ModifierProtocol::event: {
+        const EnvironmentValues environment = context.environment;
         return std::make_unique<EventElement>(static_cast<const EventModifier&>(*modifier_).make_handler(),
-                                              detail::lower(content_, context));
+                                              detail::lower(content_, context),
+                                              [environment] { return environment.get<HoverDelayKey>(); });
+    }
     case ModifierProtocol::environment: {
         LowerContext inner = context;
         static_cast<const EnvironmentModifier&>(*modifier_).apply(inner.environment);
@@ -299,15 +350,17 @@ std::unique_ptr<Element> ShapeNode::lower(const LowerContext& context) const {
     auto element = std::make_unique<ShapeElement>(spec_);
     ShapeElement* const target = element.get();
     if (spec_.fill) {
-        bind(*spec_.fill, context, [target](ShapeStyle fill) { target->set_fill(std::move(fill)); });
+        bind(*spec_.fill, context,
+             [target](ShapeStyle fill, const Animation* animation) { target->set_fill(std::move(fill), animation); });
     }
     if (spec_.stroke) {
-        bind(spec_.stroke->color, context, [target](Color color) { target->set_stroke_color(color); });
+        bind(spec_.stroke->color, context,
+             [target](Color color, const Animation* animation) { target->set_stroke_color(color, animation); });
     } else if (!spec_.fill) {
         // Unfilled, unstroked shapes use the environment's foreground.
         const EnvironmentValues environment = context.environment;
         bind(Prop<ShapeStyle>([environment] { return ShapeStyle(environment.get<ForegroundKey>()); }), context,
-             [target](ShapeStyle fill) { target->set_fill(std::move(fill)); });
+             [target](ShapeStyle fill, const Animation* animation) { target->set_fill(std::move(fill), animation); });
     }
     return element;
 }
@@ -327,7 +380,7 @@ std::unique_ptr<Element> TextNode::lower(const LowerContext& context) const {
     bind(font, context, [target](const Font& value) { target->set_font(value); });
     bind(content_, context, [target](const std::string& content) { target->set_content(content); });
     bind(style_.color ? *style_.color : Prop<Color>([environment] { return environment.get<ForegroundKey>(); }),
-         context, [target](Color color) { target->set_color(color); });
+         context, [target](Color color, const Animation* animation) { target->set_color(color, animation); });
     return element;
 }
 
@@ -352,7 +405,7 @@ std::unique_ptr<Element> ButtonNode::lower(const LowerContext& context) const {
         body = style->make_body(configuration);
     }
     return std::make_unique<ButtonElement>(detail::lower(body, context.nested()), action_, pressed, hovered,
-                                           enabled);
+                                           enabled, [environment] { return environment.get<HoverDelayKey>(); });
 }
 
 std::unique_ptr<Element> SpacerNode::lower(const LowerContext& context) const {

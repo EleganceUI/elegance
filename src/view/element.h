@@ -11,6 +11,7 @@
 #include "render/display_list.h"
 #include "text/text_layout.h"
 #include "text/text_system.h"
+#include "view/animated.h"
 
 #include <elg/events.h>
 #include <elg/graphics_context.h>
@@ -34,11 +35,28 @@ public:
 
     // Memoized per proposal until invalidate_layout().
     Size size_that_fits(ProposedSize proposal);
-    // Sizes the element for `proposal`, positions it, and lays out its children.
+    // Sizes the element for `proposal`, positions it, and lays out its children. A changed frame
+    // eases to its new place during an animated update (design.md §9.5).
     void place(Point position, ProposedSize proposal);
-    void paint(DisplayList& list) const { paint_impl(list); }
+    void paint(DisplayList& list) const {
+        if (frame_.animating()) {
+            list.animating = true;
+        }
+        paint_impl(list);
+    }
 
-    const Rect& frame() const noexcept { return frame_; }
+    // Where the element is drawn now: its laid-out frame, or on the way there.
+    Rect frame() const { return frame_.current(); }
+
+    // The `.animation(...)` this element is inside, if any.
+    void set_implicit_animation(std::shared_ptr<ImplicitAnimation> animation) noexcept {
+        implicit_ = std::move(animation);
+    }
+    // `.animates_layout(false)`: frame changes always snap.
+    void set_animates_layout(bool enabled) noexcept { animates_layout_ = enabled; }
+    // The animation for a change applied now: the running transaction's, else an implicit one
+    // that fired in this update.
+    const Animation* change_animation() const noexcept;
 
     virtual float layout_priority() const noexcept { return 0; }
     virtual bool is_spacer() const noexcept { return false; }
@@ -48,6 +66,11 @@ public:
     bool hit_test(Point point, std::vector<Element*>& path);
     // The handler for input to this element, if it has one.
     virtual EventHandler* event_handler() noexcept { return nullptr; }
+    // For elements with a handler: how long hover takes to start and end (the handler's own
+    // delay, else the environment's).
+    virtual HoverDelay effective_hover_delay() const { return {}; }
+    // Non-null for TransitionElement (If/ForEach use a child's own transition when it has one).
+    virtual class TransitionElement* as_transition() noexcept { return nullptr; }
 
     // Something that affects this element's size changed (e.g. reactive text): drops the cached
     // sizes of this element and every ancestor.
@@ -58,6 +81,17 @@ public:
     virtual void collect_layout_children(std::vector<Element*>& out) { out.push_back(this); }
     // Calls `visit` for each child this element owns.
     virtual void for_each_child(const std::function<void(Element&)>&) {}
+    // Removed If/ForEach children still animating out: painted by the parent layout, not laid out.
+    virtual void collect_exiting(std::vector<Element*>&) {}
+    // Destroys removed children whose exit animation has finished.
+    virtual void prune_exiting() {}
+
+protected:
+    // The next frame change snaps instead of animating (e.g. text whose content just changed:
+    // the glyphs can't morph, so their position shouldn't glide either).
+    void snap_next_layout() noexcept { snap_next_layout_ = true; }
+
+public:
 
 protected:
     // Records `child` as owned by this element (for layout invalidation).
@@ -82,7 +116,11 @@ protected:
 
 private:
     Element* parent_ = nullptr;
-    Rect frame_;
+    Animated<Rect> frame_{Rect{}};
+    bool placed_ = false;
+    bool animates_layout_ = true;
+    bool snap_next_layout_ = false;
+    std::shared_ptr<ImplicitAnimation> implicit_;
     std::vector<std::pair<ProposedSize, Size>> size_cache_;
 };
 
@@ -125,9 +163,12 @@ public:
     explicit ShapeElement(ShapeSpec spec) : spec_(std::move(spec)) {}
 
     // The resolved fill: the shape's own (static or reactive), or for shapes with neither a fill
-    // nor a stroke, the environment's foreground.
-    void set_fill(ShapeStyle fill) { fill_ = std::move(fill); }
-    void set_stroke_color(Color color) noexcept { stroke_color_ = color; }
+    // nor a stroke, the environment's foreground. Animates during animated updates.
+    void set_fill(ShapeStyle fill, const Animation* animation) {
+        has_fill_ = true;
+        fill_.set(std::move(fill), animation);
+    }
+    void set_stroke_color(Color color, const Animation* animation) { stroke_color_.set(color, animation); }
 
 protected:
     Size measure(ProposedSize proposal) override;
@@ -137,8 +178,9 @@ protected:
 
 private:
     ShapeSpec spec_;
-    std::optional<ShapeStyle> fill_;
-    Color stroke_color_ = Color::clear;
+    bool has_fill_ = false;
+    Animated<ShapeStyle> fill_{ShapeStyle(Color::clear)};
+    Animated<Color> stroke_color_{Color::clear};
 };
 
 struct TextStyle {
@@ -159,7 +201,7 @@ public:
     void set_font(const Font& font);
     // Reshapes the text and invalidates layout.
     void set_content(std::string_view content);
-    void set_color(Color color) noexcept { color_ = color; }
+    void set_color(Color color, const Animation* animation) { color_.set(color, animation); }
 
 protected:
     Size measure(ProposedSize proposal) override;
@@ -173,7 +215,7 @@ private:
     TextSystem* text_;
     const FontFace* face_ = nullptr;
     float size_ = 15;
-    Color color_ = Color::black;
+    Animated<Color> color_{Color::black};
     int line_limit_;
     TextAlignment alignment_;
     float ascent_ = 0;
@@ -213,6 +255,38 @@ protected:
 
 private:
     std::function<void(GraphicsContext&)> draw_;
+};
+
+// `.transition(...)`, and the wrapper If/ForEach put around each child: animates the child in
+// when added and out when removed during an animated update.
+class TransitionElement final : public Element {
+public:
+    TransitionElement(Transition transition, std::unique_ptr<Element> content)
+        : transition_(std::move(transition)), content_(std::move(content)) {
+        adopt(*content_);
+    }
+
+    void insert(const Animation* animation);
+    // Starts the exit; returns false if there's nothing to animate (remove it right away).
+    bool remove(const Animation* animation);
+    bool exit_finished() const { return removing_ && !progress_.animating(); }
+
+    TransitionElement* as_transition() noexcept override { return this; }
+    float layout_priority() const noexcept override { return content_->layout_priority(); }
+    bool is_spacer() const noexcept override { return content_->is_spacer(); }
+    void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
+
+protected:
+    Size measure(ProposedSize proposal) override { return content_->size_that_fits(proposal); }
+    void arrange(Rect bounds, ProposedSize proposal) override { content_->place({bounds.x, bounds.y}, proposal); }
+    void paint_impl(DisplayList& list) const override;
+    bool hit_impl(Point point, std::vector<Element*>& path) override;
+
+private:
+    Transition transition_;
+    std::unique_ptr<Element> content_;
+    Animated<float> progress_{1.f}; // 0: out, 1: in place
+    bool removing_ = false;
 };
 
 class LayoutElement final : public Element {
@@ -272,7 +346,7 @@ public:
         adopt(*content_);
     }
 
-    void set_opacity(float opacity) noexcept { opacity_ = opacity; }
+    void set_opacity(float opacity, const Animation* animation) { opacity_.set(opacity, animation); }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
     float layout_priority() const noexcept override { return content_->layout_priority(); }
@@ -287,7 +361,7 @@ protected:
 private:
     Effects effects_;
     std::unique_ptr<Element> content_;
-    float opacity_ = 1; // resolved from effects_.opacity
+    Animated<float> opacity_{1.f}; // resolved from effects_.opacity
 };
 
 class DecorationElement final : public Element {
@@ -321,9 +395,15 @@ private:
 // A view with an EventModifier: owns the handler; layout, paint, and hit testing pass through.
 class EventElement final : public Element {
 public:
-    EventElement(std::unique_ptr<EventHandler> handler, std::unique_ptr<Element> content)
-        : handler_(std::move(handler)), content_(std::move(content)) {
+    // `environment_delay` reads the environment's hover delay (used unless the handler has its own).
+    EventElement(std::unique_ptr<EventHandler> handler, std::unique_ptr<Element> content,
+                 std::function<HoverDelay()> environment_delay)
+        : handler_(std::move(handler)), content_(std::move(content)), environment_delay_(std::move(environment_delay)) {
         adopt(*content_);
+    }
+
+    HoverDelay effective_hover_delay() const override {
+        return handler_->hover_delay().value_or(environment_delay_());
     }
 
     float layout_priority() const noexcept override { return content_->layout_priority(); }
@@ -340,6 +420,7 @@ protected:
 private:
     std::unique_ptr<EventHandler> handler_;
     std::unique_ptr<Element> content_;
+    std::function<HoverDelay()> environment_delay_;
 };
 
 // A Button: behavior here, appearance from its ButtonStyle's body (the content). Hover and press
@@ -347,11 +428,13 @@ private:
 class ButtonElement final : public Element, private EventHandler {
 public:
     ButtonElement(std::unique_ptr<Element> content, std::function<void()> action, State<bool> pressed,
-                  State<bool> hovered, std::function<bool()> enabled)
+                  State<bool> hovered, std::function<bool()> enabled, std::function<HoverDelay()> hover_delay)
         : content_(std::move(content)), action_(std::move(action)), pressed_(std::move(pressed)),
-          hovered_(std::move(hovered)), enabled_(std::move(enabled)) {
+          hovered_(std::move(hovered)), enabled_(std::move(enabled)), hover_delay_(std::move(hover_delay)) {
         adopt(*content_);
     }
+
+    HoverDelay effective_hover_delay() const override { return hover_delay_(); }
 
     EventHandler* event_handler() noexcept override { return this; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
@@ -371,6 +454,7 @@ private:
     State<bool> pressed_;
     State<bool> hovered_;
     std::function<bool()> enabled_;
+    std::function<HoverDelay()> hover_delay_;
     bool down_ = false; // the pointer went down on the button and hasn't come up
 };
 

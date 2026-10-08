@@ -18,6 +18,7 @@
 #include <elg/export.h>
 
 #include <concepts>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -26,6 +27,8 @@
 #include <vector>
 
 namespace elg {
+
+class Animation;
 
 namespace detail {
 
@@ -65,9 +68,12 @@ private:
     int status_;
     bool queued_ = false;
     bool disposed_ = false;
+    bool priority_ = false; // runs before other effects in a flush
     ELG_PRIVATE_MEMBERS_BEGIN
     std::vector<ReactiveNode*> sources_;
     std::vector<ReactiveNode*> observers_;
+    // Effects: the animation of the transaction that scheduled the next run, if any.
+    std::shared_ptr<const Animation> transaction_;
     ELG_PRIVATE_MEMBERS_END
 };
 
@@ -151,7 +157,18 @@ private:
 
 ELG_API Scope* current_scope() noexcept;
 // Adopts the effect into the current scope and runs it once. Throws UsageError without a scope.
-ELG_API void start_effect(std::shared_ptr<EffectNode> effect);
+// Priority effects run before other effects in a flush (implicit animation triggers).
+ELG_API void start_effect(std::shared_ptr<EffectNode> effect, bool priority = false);
+
+// Animated transactions (with_animation): effects scheduled by writes inside one run with
+// current_animation() set to its animation.
+ELG_API void begin_transaction(std::shared_ptr<const Animation> animation);
+ELG_API void end_transaction() noexcept;
+ELG_API const Animation* current_animation() noexcept;
+// Counts flushes; a flush's number lasts until the next flush starts (through layout).
+ELG_API std::uint64_t current_flush() noexcept;
+// The animation of the latest animated transaction that ran in a flush since the last call.
+ELG_API std::shared_ptr<const Animation> take_flush_animation() noexcept;
 // Throws UsageError when called off the UI thread of a running App.
 ELG_API void check_ui_thread();
 ELG_API void begin_batch() noexcept;

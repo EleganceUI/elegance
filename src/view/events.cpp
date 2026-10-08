@@ -70,7 +70,8 @@ private:
 
 class HoverHandler final : public EventHandler {
 public:
-    explicit HoverHandler(std::function<void(bool)> action) : action_(std::move(action)) {}
+    HoverHandler(std::function<void(bool)> action, std::optional<HoverDelay> delay)
+        : action_(std::move(action)), delay_(delay) {}
 
     EventResult hover(bool inside) override {
         if (action_) {
@@ -79,8 +80,11 @@ public:
         return {};
     }
 
+    std::optional<HoverDelay> hover_delay() const override { return delay_; }
+
 private:
     std::function<void(bool)> action_;
+    std::optional<HoverDelay> delay_;
 };
 
 } // namespace
@@ -90,7 +94,7 @@ std::unique_ptr<EventHandler> TapGestureModifier::make_handler() const {
 }
 
 std::unique_ptr<EventHandler> HoverModifier::make_handler() const {
-    return std::make_unique<HoverHandler>(action_);
+    return std::make_unique<HoverHandler>(action_, delay_);
 }
 
 } // namespace elg
@@ -170,6 +174,10 @@ bool CanvasElement::hit_impl(Point point, std::vector<Element*>&) {
 
 bool TextElement::hit_impl(Point point, std::vector<Element*>&) {
     return contains(frame(), point);
+}
+
+bool TransitionElement::hit_impl(Point point, std::vector<Element*>& path) {
+    return !removing_ && content_->hit_test(point, path);
 }
 
 bool LayoutElement::hit_impl(Point point, std::vector<Element*>& path) {

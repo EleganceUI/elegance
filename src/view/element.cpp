@@ -48,10 +48,31 @@ void Element::invalidate_layout() noexcept {
     }
 }
 
+const Animation* Element::change_animation() const noexcept {
+    if (const Animation* animation = current_animation()) {
+        return animation;
+    }
+    return implicit_ && implicit_->fired() ? &implicit_->animation : nullptr;
+}
+
 void Element::place(Point position, ProposedSize proposal) {
     const Size size = size_that_fits(proposal);
-    frame_ = {position.x, position.y, size.width, size.height};
-    arrange(frame_, proposal);
+    const Rect target{position.x, position.y, size.width, size.height};
+    if (!placed_ || target != frame_.target()) {
+        // An element appearing for the first time takes its frame at once; afterwards, a layout
+        // change caused by an animated update eases there.
+        const Animation* animation = nullptr;
+        if (placed_ && animates_layout_ && !snap_next_layout_) {
+            animation = layout_animation();
+            if (!animation && implicit_ && implicit_->fired()) {
+                animation = &implicit_->animation;
+            }
+        }
+        frame_.set(target, animation);
+        placed_ = true;
+    }
+    snap_next_layout_ = false;
+    arrange(target, proposal);
 }
 
 // --- ShapeElement ---
@@ -80,7 +101,11 @@ void ShapeElement::paint_impl(DisplayList& list) const {
     const auto [rect, radii] = shape_outline(spec_, frame());
 
     // A stroked shape isn't filled unless asked to be (as in SwiftUI).
-    const ShapeStyle fill = fill_.value_or(ShapeStyle(Color::clear));
+    if (fill_.animating() || stroke_color_.animating()) {
+        list.animating = true;
+    }
+    const ShapeStyle fill = has_fill_ ? fill_.current() : ShapeStyle(Color::clear);
+    const Color stroke_color = stroke_color_.current();
     if (!spec_.stroke) {
         list.commands.push_back(RectCommand{rect, radii, fill, Color::clear, 0});
         return;
@@ -88,7 +113,7 @@ void ShapeElement::paint_impl(DisplayList& list) const {
 
     const ShapeStroke& stroke = *spec_.stroke;
     if (!stroke.centered) {
-        list.commands.push_back(RectCommand{rect, radii, fill, stroke_color_, stroke.width});
+        list.commands.push_back(RectCommand{rect, radii, fill, stroke_color, stroke.width});
         return;
     }
 
@@ -101,7 +126,7 @@ void ShapeElement::paint_impl(DisplayList& list) const {
     list.commands.push_back(RectCommand{rect.inset(-half),
                                         {grow(radii.top_left), grow(radii.top_right),
                                          grow(radii.bottom_right), grow(radii.bottom_left)},
-                                        Color::clear, stroke_color_, stroke.width});
+                                        Color::clear, stroke_color, stroke.width});
 }
 
 // --- SpacerElement ---
@@ -168,6 +193,9 @@ Size LayoutElement::measure(ProposedSize proposal) {
 }
 
 void LayoutElement::arrange(Rect bounds, ProposedSize proposal) {
+    for (const auto& child : children_) {
+        child->prune_exiting();
+    }
     layout_->place_children(bounds, proposal, handles_);
 }
 
@@ -175,6 +203,51 @@ void LayoutElement::paint_impl(DisplayList& list) const {
     for (const Element* child : laid_out_) {
         child->paint(list);
     }
+    // Removed children still animating out, where they last were.
+    std::vector<Element*> exiting;
+    for (const auto& child : children_) {
+        child->collect_exiting(exiting);
+    }
+    for (const Element* child : exiting) {
+        child->paint(list);
+    }
+}
+
+// --- TransitionElement ---
+
+void TransitionElement::insert(const Animation* animation) {
+    if (animation) {
+        progress_.set(0.f, nullptr);
+        progress_.set(1.f, animation);
+    }
+}
+
+bool TransitionElement::remove(const Animation* animation) {
+    if (!animation) {
+        return false;
+    }
+    removing_ = true;
+    progress_.set(0.f, animation);
+    return true;
+}
+
+void TransitionElement::paint_impl(DisplayList& list) const {
+    const float progress = progress_.current();
+    if (progress_.animating()) {
+        list.animating = true;
+    }
+    if (progress >= 1 && !removing_) {
+        content_->paint(list);
+        return;
+    }
+    const Rect bounds = frame();
+    const Transition::Pose pose = transition_.pose(progress, removing_, bounds.size());
+    DisplayList content;
+    content.scale = list.scale;
+    content_->paint(content);
+    list.animating |= content.animating;
+    transform(content.commands, pose.x, pose.y, pose.scale, bounds.center());
+    append_faded(list, std::move(content), pose.opacity);
 }
 
 // --- LayoutModifierElement ---
@@ -207,11 +280,15 @@ void EffectElement::paint_impl(DisplayList& list) const {
         content.commands.push_back(PushClipCommand{clip.rect, clip.radii});
     }
     content_->paint(content);
+    list.animating |= content.animating;
     if (clips) {
         content.commands.push_back(PopClipCommand{});
     }
 
-    const float opacity = std::clamp(opacity_, 0.f, 1.f);
+    if (opacity_.animating()) {
+        list.animating = true;
+    }
+    const float opacity = std::clamp(opacity_.current(), 0.f, 1.f);
     const std::optional<Shadow>& shadow = effects_.shadow;
     const auto append_content = [&] {
         list.commands.insert(list.commands.end(), std::make_move_iterator(content.commands.begin()),

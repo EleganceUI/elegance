@@ -10,7 +10,18 @@
 #include <elg/export.h>
 #include <elg/geometry.h>
 
+#include <optional>
+
 namespace elg {
+
+// How long the pointer must rest on a view before it counts as hovered (`enter`), and how long
+// after it leaves before it stops counting (`exit`), in seconds. Moving across a view faster than
+// `enter` doesn't hover it; coming back within `exit` cancels the leave.
+// Set for a subtree with .hover_delay({...}), or per handler with .on_hover(action, {...}).
+struct HoverDelay {
+    double enter = 0.1;
+    double exit = 0.0;
+};
 
 enum class MouseButton { left, middle, right, other };
 
@@ -44,8 +55,10 @@ public:
     // `frame` is the view's current frame in window coordinates. Events arrive innermost view
     // first, then bubble outwards until consumed.
     virtual EventResult pointer(const PointerEvent& event, Rect frame);
-    // The pointer entered (true) or left (false) the view.
+    // The pointer entered (true) or left (false) the view, after the hover delay.
     virtual EventResult hover(bool inside);
+    // This handler's own hover delay; nullopt uses the environment's (.hover_delay()).
+    virtual std::optional<HoverDelay> hover_delay() const { return std::nullopt; }
 };
 
 } // namespace elg

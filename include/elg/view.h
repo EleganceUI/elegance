@@ -22,10 +22,36 @@ namespace elg {
 namespace detail {
 class ViewNode;
 struct ViewAccess;
+
+// For View::animation: a function that reads `value` (a tracked read) and returns whether it
+// changed since the previous call (false on the first call).
+template <class Source>
+std::function<bool()> change_watcher(Source source) {
+    auto read = [source = std::move(source)] {
+        if constexpr (std::invocable<const Source&>) {
+            return std::invoke(source);
+        } else {
+            return source;
+        }
+    };
+    using Value = std::decay_t<decltype(read())>;
+    return [read = std::move(read), last = std::make_shared<std::optional<Value>>()]() {
+        Value value = read();
+        bool changed = last->has_value();
+        if constexpr (std::equality_comparable<Value>) {
+            changed = changed && !(**last == value);
+        }
+        *last = std::move(value);
+        return changed;
+    };
+}
 } // namespace detail
 
+class Animation;
 class ButtonStyle;
+struct HoverDelay;
 class Font;
+class Transition;
 class Modifier;
 class Shape;
 class ShapeStyle;
@@ -249,8 +275,13 @@ public:
 
     // Runs `action` on a tap (`count` = 2 for a double tap). The innermost tap gesture wins.
     ELG_API View on_tap_gesture(std::function<void()> action, int count = 1) const;
-    // Called with true when the pointer enters the view, false when it leaves.
+    // Called with true when the pointer has rested on the view for the hover delay, and false
+    // when it leaves (after the exit delay). The delay comes from the environment
+    // (.hover_delay()) unless given here.
     ELG_API View on_hover(std::function<void(bool)> action) const;
+    ELG_API View on_hover(std::function<void(bool)> action, HoverDelay delay) const;
+    // The hover delay for on_hover handlers and controls inside (default: enter 0.1 s, exit 0).
+    ELG_API View hover_delay(HoverDelay delay) const;
 
     // --- Environment (elg/modifiers/environment.h): inherited by everything inside. ---
 
@@ -271,6 +302,20 @@ public:
     View button_style(Style style) const {
         return button_style_impl(std::make_shared<const Style>(std::move(style)));
     }
+    // --- Animation (elg/animation.h) ---
+
+    // Changes inside this view animate with `animation` whenever `value` (a plain value, State,
+    // or closure; it should be equality-comparable) changed in the same update.
+    template <class Value>
+    View animation(const Animation& animation, Value value) const {
+        return animation_impl(animation, detail::change_watcher(std::move(value)));
+    }
+    // How this view enters and leaves when an If/ForEach adds or removes it with an animation.
+    ELG_API View transition(const Transition& transition) const;
+    // false: this view and everything inside snap to new positions and sizes instead of easing
+    // there. Colors, opacity, and transitions still animate.
+    ELG_API View animates_layout(bool enabled) const;
+
     // Sets any environment key (elg/environment.h): .environment<CompactKey>(true)
     template <class Key, class Value>
     View environment(Value&& value) const {
@@ -289,6 +334,7 @@ private:
     ELG_API explicit View(std::shared_ptr<const detail::ViewNode> node) noexcept;
     ELG_API View with_modifier(std::shared_ptr<const Modifier> modifier) const;
     ELG_API View button_style_impl(std::shared_ptr<const ButtonStyle> style) const;
+    ELG_API View animation_impl(const Animation& animation, std::function<bool()> changed) const;
     ELG_API static View deferred(std::function<View()> body);
 
     std::shared_ptr<const detail::ViewNode> node_;

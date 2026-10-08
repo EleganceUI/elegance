@@ -7,6 +7,7 @@
 
 // Umbrella header: include this to get the whole public API.
 
+#include <elg/animation.h>
 #include <elg/app.h>
 #include <elg/color.h>
 #include <elg/environment.h>

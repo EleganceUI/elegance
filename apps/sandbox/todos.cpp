@@ -57,24 +57,35 @@ View TodoWindow(State<ColorScheme> scheme) {
     });
     const auto next_id = State(6);
 
+    // Every change to the list animates: rows slide in and out, and the rest move into place.
+    const auto animate = [](auto&& change) { with_animation(Animation::spring(0.4, 0.86), change); };
+
     const auto add = [=] {
-        const int id = next_id.peek();
-        next_id = id + 1;
-        todos.update([&](std::vector<Todo>& list) { list.push_back({id, std::format("New task #{}", id)}); });
+        animate([=] {
+            const int id = next_id.peek();
+            next_id = id + 1;
+            todos.update([&](std::vector<Todo>& list) { list.push_back({id, std::format("New task #{}", id)}); });
+        });
     };
     const auto toggle = [=](int id) {
         return [=] {
-            todos.update([&](std::vector<Todo>& list) {
-                for (Todo& todo : list) {
-                    if (todo.id == id) {
-                        todo.done = !todo.done;
+            animate([=] {
+                todos.update([&](std::vector<Todo>& list) {
+                    for (Todo& todo : list) {
+                        if (todo.id == id) {
+                            todo.done = !todo.done;
+                        }
                     }
-                }
+                });
             });
         };
     };
     const auto remove = [=](int id) {
-        return [=] { todos.update([&](std::vector<Todo>& list) { std::erase_if(list, [&](const Todo& t) { return t.id == id; }); }); };
+        return [=] {
+            animate([=] {
+                todos.update([&](std::vector<Todo>& list) { std::erase_if(list, [&](const Todo& t) { return t.id == id; }); });
+            });
+        };
     };
     const auto remaining = computed([=] {
         return std::ranges::count_if(todos(), [](const Todo& todo) { return !todo.done; });
@@ -87,8 +98,10 @@ View TodoWindow(State<ColorScheme> scheme) {
                          If([=] { return std::ranges::any_of(todos(), &Todo::done); },
                             Button("Clear done",
                                    [=] {
-                                       todos.update([](std::vector<Todo>& list) {
-                                           std::erase_if(list, [](const Todo& todo) { return todo.done; });
+                                       animate([=] {
+                                           todos.update([](std::vector<Todo>& list) {
+                                               std::erase_if(list, [](const Todo& todo) { return todo.done; });
+                                           });
                                        });
                                    })
                                 .button_style(BorderedButtonStyle{})),
@@ -101,7 +114,10 @@ View TodoWindow(State<ColorScheme> scheme) {
                      Text("Nothing to do. Add a task to get started.").foreground_style(ThemeColor::secondary).padding(Edges::top, 8)),
                   ForEach(
                       todos, [](const Todo& todo) { return todo.id; },
-                      [=](const Todo& todo) { return TodoRow(todo, toggle(todo.id), remove(todo.id)); }),
+                      [=](const Todo& todo) {
+                          return TodoRow(todo, toggle(todo.id), remove(todo.id))
+                              .transition(Transition::opacity().combined(Transition::move(Edges::trailing)));
+                      }),
                   Spacer())
         .padding(24)
         .frame({.max_width = infinity, .max_height = infinity})

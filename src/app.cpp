@@ -13,10 +13,12 @@
 #include "render/frame_mailbox.h"
 #include "render/render_thread.h"
 #include "text/text_system.h"
+#include "view/animated.h"
 #include "view/event_dispatcher.h"
 #include "view/view_node.h"
 
 #include <elg/error.h>
+#include <elg/animation.h>
 #include <elg/environment.h>
 #include <elg/reactive.h>
 
@@ -38,6 +40,13 @@ namespace {
 // continuing (first frame, live resize). Bounded so a stuck driver can't freeze the app.
 constexpr auto kPresentTimeout = 100ms;
 constexpr auto kFirstFrameTimeout = 1000ms;
+// While animating, the loop paces itself by waiting for the previous frame's present (vsync);
+// this bounds the wait if presentation stalls.
+constexpr auto kAnimationFrameTimeout = 50ms;
+
+double seconds_now() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 
 struct WindowEntry {
     WindowDesc desc;
@@ -70,6 +79,8 @@ struct LiveWindow {
     gpu::Surface surface;
     bool dirty = true;
     bool tree_changed = false; // If/ForEach added or removed elements
+    bool animating = false;    // the last frame had animations in progress
+    std::uint64_t last_frame = 0;
     EnvironmentValues environment; // the root environment (system color scheme)
     Scope scope;
     std::unique_ptr<Element> root;
@@ -193,10 +204,12 @@ int App::run() {
     const auto post_frame = [&](LiveWindow& live) {
         WindowFrame frame = build_frame(live);
         live.dirty = false;
+        live.animating = frame.list.animating;
         if (std::vector<GlyphUpload> uploads = text.atlas.take_uploads(); !uploads.empty()) {
             mailbox.post(AtlasUploadCommand{std::move(uploads)});
         }
-        return mailbox.post(std::move(frame));
+        live.last_frame = mailbox.post(std::move(frame));
+        return live.last_frame;
     };
 
     // Draw before showing, so windows never appear blank.
@@ -219,6 +232,7 @@ int App::run() {
         }
         try {
             if (auto it = find_window(window_id); it != windows.end()) {
+                set_frame_time(seconds_now());
                 mailbox.wait_until_done(post_frame(**it), kPresentTimeout);
             }
         } catch (...) {
@@ -289,10 +303,26 @@ int App::run() {
         }
     };
 
+    set_frame_time(seconds_now());
     while (!self.quit_requested) {
-        handle(platform.wait_event());
+        // Idle: block until something happens. Animating: keep drawing, picking up events as
+        // they come.
+        const bool animating = std::ranges::any_of(windows, [](const auto& live) { return live->animating; });
+        if (!animating) {
+            // Wake for the next pending hover change (hover delays), else sleep until an event.
+            std::optional<double> deadline;
+            for (const auto& live : windows) {
+                if (const std::optional<double> due = live->events.next_deadline(); due && (!deadline || *due < *deadline)) {
+                    deadline = due;
+                }
+            }
+            handle(deadline ? platform.wait_event(*deadline - seconds_now()) : platform.wait_event());
+        }
         while (auto event = platform.poll_event()) {
             handle(*event);
+        }
+        for (const auto& live : windows) {
+            live->dirty |= live->events.tick(); // hover changes whose delay has passed
         }
         if (callback_error) {
             std::rethrow_exception(callback_error);
@@ -304,14 +334,23 @@ int App::run() {
             break;
         }
         // State written by event handlers takes effect here: effects update the elements they
-        // bind and request frames, then dirty windows draw.
+        // bind and request frames, then dirty windows draw. Every animation in a frame samples the
+        // same time; layout changes caused by an animated transaction animate too.
+        set_frame_time(seconds_now());
         flush_effects();
+        const std::shared_ptr<const Animation> transaction = take_flush_animation();
+        const LayoutAnimationScope layout_animation(transaction.get());
         for (const auto& live : windows) {
             if (std::exchange(live->tree_changed, false)) {
                 live->dirty |= live->events.revalidate();
             }
-            if (live->dirty) {
+            if (live->dirty || live->animating) {
                 post_frame(*live);
+            }
+        }
+        for (const auto& live : windows) {
+            if (live->animating) {
+                mailbox.wait_until_done(live->last_frame, kAnimationFrameTimeout);
             }
         }
     }

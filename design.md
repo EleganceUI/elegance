@@ -1124,6 +1124,13 @@ Separate render thread from day one (decided).
 - [x] Events: `EventModifier` / `EventHandler` protocol, bubbling innermost-first, pointer capture
   between down and up, hover enter/leave; `on_tap_gesture` (single/double), `on_hover`
 - [x] `Button` (default style: tint, hover, and pressed states) + `tint` environment value
+- [x] Hover delays: `HoverDelay{.enter, .exit}`. Hover starts only after the pointer rests for
+  `enter` (default 0.1 s), and ends `exit` after it leaves (default 0); passing over, or coming
+  back in time, cancels the pending change.
+  - Set for a subtree with `.hover_delay({...})` (an environment value), or per handler with
+    `.on_hover(action, {...})`. Buttons follow the environment.
+  - The idle loop wakes for the next pending hover change (an SDL wait with timeout) and
+    otherwise stays at 0% CPU.
 - [ ] Input follow-ups: synthetic input for UI tests (§16), drag/scroll gestures, cursors,
   keyboard and focus (M4)
 
@@ -1165,7 +1172,29 @@ Separate render thread from day one (decided).
   default), `Bordered`, and `Plain`, all using only the public API. `.disabled()` is supported.
 - [ ] Other style protocols as their controls arrive (`ToggleStyle`, `TextFieldStyle`, ...);
   theme fonts, spacing, and radii tokens; theme token files with hot reload (§8)
-- [ ] Implicit/explicit animation, transitions
+- [x] Animation (`elg/animation.h`): linear and ease curves (CSS cubic-Bézier), and springs
+  with SwiftUI's `response` / `damping_fraction`.
+  - Explicit: `with_animation(animation, changes)`. Effects scheduled by the writes run in that
+    transaction.
+  - Implicit: `.animation(animation, value)`, which applies when `value` changed in the same update.
+  - Animated: fills, strokes, text color, opacity, and layout (frames ease to new positions and
+    sizes).
+- [x] Transitions: `opacity` (default), `scale`, `offset`, `move(edge)`, `slide`, `combined`,
+  `asymmetric`. If/ForEach children animate in, and removed ones keep painting until their exit
+  ends.
+- [x] Snapping instead of easing:
+  - A `Text` whose content changed snaps to its new frame (glyphs can't morph, so a gliding
+    position looks wrong). Text whose content didn't change still eases, e.g. a row moving.
+  - `.animates_layout(false)` makes a view and everything inside snap to new positions and sizes.
+    Colors, opacity, and transitions still animate.
+- [x] Frame pacing: while anything animates the loop renders every frame, paced by presents
+  (vsync), then blocks again. Measured 0 ms CPU over 4 idle seconds.
+- [ ] Animation follow-ups:
+  - Retargeting carries velocity (springs currently restart from rest at the current value).
+  - `matched_geometry_effect`, keyframes / `PhaseAnimator`, gradient interpolation.
+  - Rotation transforms.
+  - Each fragment child is wrapped for its transition, so a nested If/ForEach inside a ForEach
+    item lays out on its own (vertically) instead of joining the outer stack.
 
 **M4: Controls & Input**
 - [ ] Core controls, focus/keyboard nav, TextField with IME

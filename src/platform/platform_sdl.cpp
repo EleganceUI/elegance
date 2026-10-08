@@ -12,6 +12,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 
@@ -195,6 +196,15 @@ Event Platform::wait_event() {
     SDL_Event event;
     if (!SDL_WaitEvent(&event)) {
         throw_sdl_error("failed to wait for events");
+    }
+    return translate(event, wake_event_);
+}
+
+Event Platform::wait_event(double seconds) {
+    SDL_Event event;
+    const auto milliseconds = static_cast<Sint32>(std::clamp(std::ceil(seconds * 1000), 0.0, 1e6));
+    if (!SDL_WaitEventTimeout(&event, milliseconds)) {
+        return {}; // timed out
     }
     return translate(event, wake_event_);
 }

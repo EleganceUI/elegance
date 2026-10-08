@@ -13,6 +13,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <utility>
 
 namespace elg {
@@ -31,15 +32,18 @@ private:
     ELG_PRIVATE_MEMBERS_END
 };
 
-// Calls `action(true)` when the pointer enters the view and `action(false)` when it leaves.
+// Calls `action(true)` when the pointer has rested on the view for the hover delay and
+// `action(false)` when it leaves. `delay` overrides the environment's.
 class ELG_API HoverModifier final : public EventModifier {
 public:
-    explicit HoverModifier(std::function<void(bool)> action) : action_(std::move(action)) {}
+    explicit HoverModifier(std::function<void(bool)> action, std::optional<HoverDelay> delay = std::nullopt)
+        : action_(std::move(action)), delay_(delay) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
     std::function<void(bool)> action_;
+    std::optional<HoverDelay> delay_;
     ELG_PRIVATE_MEMBERS_END
 };
 

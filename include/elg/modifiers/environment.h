@@ -38,6 +38,7 @@ using ColorSchemeModifier = EnvironmentKeyModifier<ColorSchemeKey>;
 using ThemeModifier = EnvironmentKeyModifier<ThemeKey>;
 using DisabledModifier = EnvironmentKeyModifier<DisabledKey>;
 using ButtonStyleModifier = EnvironmentKeyModifier<ButtonStyleKey>;
+using HoverDelayModifier = EnvironmentKeyModifier<HoverDelayKey>;
 
 } // namespace elg
 

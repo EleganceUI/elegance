@@ -39,6 +39,8 @@ struct Rect {
         return {x + amount, y + amount, std::max(0.f, width - 2 * amount),
                 std::max(0.f, height - 2 * amount)};
     }
+
+    friend constexpr bool operator==(const Rect&, const Rect&) = default;
 };
 
 struct CornerRadii {

@@ -106,7 +106,11 @@ void TextElement::set_font(const Font& font) {
 }
 
 void TextElement::set_content(std::string_view content) {
+    if (content == content_) {
+        return;
+    }
     content_ = content;
+    snap_next_layout();
     if (face_) {
         paragraphs_ = shape_text(*face_, content_);
     }
@@ -136,6 +140,10 @@ void TextElement::arrange(Rect, ProposedSize proposal) {
 void TextElement::paint_impl(DisplayList& list) const {
     const Rect bounds = frame();
     const float scale = list.scale > 0 ? list.scale : 1.f;
+    const Color color = color_.current();
+    if (color_.animating()) {
+        list.animating = true;
+    }
 
     for (std::size_t i = 0; i < arranged_.lines.size(); ++i) {
         const TextLine& line = arranged_.lines[i];
@@ -150,7 +158,7 @@ void TextElement::paint_impl(DisplayList& list) const {
                                 baseline - (glyph.y_offset + atlas->top) * size_,
                                 (atlas->right - atlas->left) * size_, (atlas->top - atlas->bottom) * size_};
                 const Rect uv{atlas->u0, atlas->v0, atlas->u1 - atlas->u0, atlas->v1 - atlas->v0};
-                list.commands.push_back(GlyphCommand{quad, uv, color_, size_});
+                list.commands.push_back(GlyphCommand{quad, uv, color, size_});
             }
             pen += glyph.advance * size_;
         };

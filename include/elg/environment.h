@@ -24,6 +24,7 @@
 // when it changes.
 
 #include <elg/color.h>
+#include <elg/events.h>
 #include <elg/export.h>
 #include <elg/font.h>
 #include <elg/prop.h>
@@ -125,6 +126,13 @@ struct DisabledKey {
     using Value = bool;
     static constexpr std::string_view name = "elg.disabled";
     static bool default_value(const EnvironmentValues&) { return false; }
+};
+
+// The hover delay for everything inside (on_hover handlers without their own, and controls).
+struct HoverDelayKey {
+    using Value = HoverDelay;
+    static constexpr std::string_view name = "elg.hover_delay";
+    static HoverDelay default_value(const EnvironmentValues&) { return {}; }
 };
 
 struct ButtonStyleKey {

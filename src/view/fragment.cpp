@@ -48,8 +48,8 @@ std::unique_ptr<Element> ForEachNode::lower(const LowerContext& context) const {
 
 // --- FragmentElement ---
 
-FragmentElement::Child FragmentElement::mount(const ForEachItem& item) {
-    Child child{item.key, item.value, nullptr, std::make_unique<Scope>()};
+FragmentElement::Child FragmentElement::mount(const ForEachItem& item, const Animation* animation) {
+    Child child{item.key, item.value, nullptr, nullptr, std::make_unique<Scope>()};
     Scope::Use use(*child.scope);
     // Building views may read state directly (e.g. in a component body); that must not subscribe
     // the If/ForEach effect running this.
@@ -61,11 +61,24 @@ FragmentElement::Child FragmentElement::mount(const ForEachItem& item) {
         throw;
     }
     end_untracked();
+
+    // Every child gets a transition: its own `.transition(...)`, else a fade.
+    child.transition = child.element->as_transition();
+    if (!child.transition) {
+        auto wrapper = std::make_unique<TransitionElement>(Transition::opacity(), std::move(child.element));
+        child.transition = wrapper.get();
+        child.element = std::move(wrapper);
+    }
     adopt(*child.element);
+    child.transition->insert(animation);
     return child;
 }
 
 void FragmentElement::set_items(const std::vector<ForEachItem>& items) {
+    // Changes animate during animated updates; the first set (the initial mount) never does.
+    const Animation* const animation = initialized_ ? change_animation() : nullptr;
+    initialized_ = true;
+
     std::unordered_map<ItemKey, std::size_t> existing;
     for (std::size_t i = 0; i < children_.size(); ++i) {
         existing.emplace(children_[i].key, i);
@@ -92,11 +105,16 @@ void FragmentElement::set_items(const std::vector<ForEachItem>& items) {
             continue;
         }
         changed = true;
-        next.push_back(mount(item));
+        next.push_back(mount(item, animation));
     }
 
-    // Children not kept are destroyed here: their scopes first (ending their effects), then
-    // their elements.
+    // Children not kept either animate out (kept in exiting_ until done) or are destroyed here:
+    // their scopes first (ending their effects), then their elements.
+    for (std::size_t i = 0; i < children_.size(); ++i) {
+        if (!kept[i] && children_[i].transition->remove(animation)) {
+            exiting_.push_back(std::move(children_[i]));
+        }
+    }
     children_ = std::move(next);
     if (!changed) {
         return;
@@ -136,6 +154,16 @@ void FragmentElement::collect_layout_children(std::vector<Element*>& out) {
     out.insert(out.end(), laid_out_.begin(), laid_out_.end());
 }
 
+void FragmentElement::collect_exiting(std::vector<Element*>& out) {
+    for (const Child& child : exiting_) {
+        out.push_back(child.element.get());
+    }
+}
+
+void FragmentElement::prune_exiting() {
+    std::erase_if(exiting_, [](const Child& child) { return child.transition->exit_finished(); });
+}
+
 void FragmentElement::for_each_child(const std::function<void(Element&)>& visit) {
     for (const Child& child : children_) {
         visit(*child.element);
@@ -149,12 +177,16 @@ Size FragmentElement::measure(ProposedSize proposal) {
 }
 
 void FragmentElement::arrange(Rect bounds, ProposedSize proposal) {
+    prune_exiting();
     standalone_layout_.place_children(bounds, proposal, handles_);
 }
 
 void FragmentElement::paint_impl(DisplayList& list) const {
     for (const Element* element : laid_out_) {
         element->paint(list);
+    }
+    for (const Child& child : exiting_) {
+        child.element->paint(list);
     }
 }
 
