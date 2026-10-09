@@ -1074,6 +1074,145 @@ alongside `sheet` and `popover`.
 
 ---
 
+### 13.2 Built-in icon library
+
+Apps need icons everywhere: toolbars, buttons, menus, list rows, and empty states. Elegence ships
+an existing open-source icon set rather than drawing its own. **No generated icons:** every glyph
+comes verbatim from the upstream project, and the code table is generated mechanically from the
+project's own metadata.
+
+#### Candidates
+
+| Set | License | Size | Styles | Notes |
+|---|---|---|---|---|
+| **Phosphor** (recommended) | MIT | ~1,500 icons | 6 weights: thin, light, regular, bold, fill, duotone | Ships TTF fonts per weight. The weights map onto `Weight`, so an icon can follow `.font_weight()` like SF Symbols. Neutral, modern look. |
+| Lucide | ISC | ~1,500 icons | 1 (stroke) | Very popular on the web (Feather successor). Ships an icon font; stroke width only adjustable with vector paths. |
+| Material Symbols | Apache-2.0 | ~3,000+ icons | Variable font: fill, weight, grade, optical size | Largest set. Needs variable-font axis support in the font loader. Distinctly "Google". |
+| Fluent UI System Icons | MIT | ~2,000+ icons | regular, filled | Matches Windows 11. Less neutral on macOS/Linux. |
+| Tabler / Heroicons / Bootstrap Icons | MIT | 300–5,000 | 1–2 | Fine alternatives; fewer weights. |
+
+All of these licenses are compatible with MPL-2.0. The license file ships next to the font, and
+`ELG_ICONS=OFF` drops the set for apps that don't want it.
+
+#### API: `Image`, like SwiftUI's `Image(systemName:)`
+
+Icons are images named by a dotted string, `"<set>.<icon-name>[.<variant>]"`:
+
+```cpp
+Image({.system_name = "lucide.person-standing"})        // set "lucide", icon "person-standing"
+Image({.system_name = "phosphor.heart.fill"})           // a variant, SF Symbols style
+Image({.system_name = "magnifying-glass"})              // no set prefix: the default set
+Image("lucide.trash")                                   // shorthand for {.system_name = ...}
+
+Image({.system_name = "lucide.gear"}).font(Font::title2)            // size follows the font
+Image({.system_name = "phosphor.gear"}).font_weight(Weight::bold)   // weight -> icon weight
+Image({.system_name = "lucide.trash"}).foreground_style(ThemeColor::danger)
+
+Label("Search", {.system_name = "lucide.search"})       // icon + text, spaced and aligned
+Button(Label("Delete", {.system_name = "lucide.trash-2"}), remove)
+MenuItem("Copy", copy, {.image = {.system_name = "lucide.copy"}, .shortcut = "Ctrl+C"})
+```
+
+- `Image(ImageSource)` is one view for every kind of image. `ImageSource` is an options struct,
+  so later sources join it as new fields: `.file = "logo.png"`, `.resource = ...`, `.pixels = ...`
+  (raster images; see below). Exactly one field is set.
+- **Name resolution:**
+  - The text before the first dot is the set if it names a registered set (`lucide`,
+    `phosphor`, ...). Otherwise the whole string is looked up in the default set.
+  - Icon names are kept verbatim from upstream, e.g. Lucide's kebab-case `person-standing`, so
+    names can be copied straight from the set's website.
+  - A trailing segment naming a variant the set has (`.fill`, `.duotone`, `.bold`, ...) selects
+    it, as SF Symbols' `heart.fill` does. Otherwise the icon's weight follows the font weight
+    (sets that have weights).
+- **Unknown names** throw `elg::UsageError` when the view is built, naming the closest matches
+  (`no icon "lucide.persn-standing"; did you mean "lucide.person-standing"?`).
+- **Optional typed constants** for autocompletion and compile-time checking: the generator also
+  emits `Icons::lucide::person_standing` etc., each just the name string, so
+  `Image({.system_name = Icons::lucide::person_standing})` works too.
+- An icon `Image` acts like a glyph of text:
+  - It takes the environment font size and foreground color.
+  - It sits on the text baseline in `HStack`s and `Label`s.
+  - `.resizable()` + `.frame(...)` scale it to a box instead.
+- **Icon sets are a registry**; see *Adding an icon set* below.
+- **Raster images (later, same view):** `Image({.file = "photo.png"})` with `.resizable()`,
+  `.aspect_ratio(fit/fill)`, and `.interpolation(...)`. That needs an image decoder
+  (e.g. wuffs or stb_image) and texture uploads through the atlas path.
+
+#### Adding an icon set (extensibility)
+
+Adding a set should take one line and no code: point Elegence at the files the set already ships.
+The built-in sets are registered through this same public API (dogfooding), so it gets exercised
+for real.
+
+```cpp
+// Most sets: an icon font plus the name -> codepoint map it ships with (format auto-detected).
+register_icon_set("brand", {.font = "brand-icons.ttf", .names = "brand-icons.json"});
+
+// Fonts whose glyphs are already named after the icons (common): the font alone is enough.
+register_icon_set("brand", {.font = "brand-icons.ttf"});
+
+// Variants as extra fonts ("brand.heart.fill"), and weights for .font_weight().
+register_icon_set("brand", {.font = "brand-regular.ttf",
+                            .names = "brand.json",
+                            .variants = {{"fill", "brand-fill.ttf"}},
+                            .weights = {{Weight::bold, "brand-bold.ttf"}}});
+
+// From memory (embedded in the app), e.g. with the CMake helper below.
+register_icon_set("brand", {.font_data = brand_ttf, .names_data = brand_json});
+
+set_default_icon_set("brand"); // for names without a set prefix
+```
+
+- **Name maps read as shipped**, so nothing needs converting:
+  - JSON objects `{"name": "e900"}` / `{"name": 59648}`.
+  - Material-style `.codepoints` text (`name e900` per line).
+  - CSS from icon webfonts (`.icon-name:before { content: "\e900"; }`), with a configurable
+    class prefix.
+  - IcoMoon `selection.json` and Fontello `config.json`.
+  - Without a map, the font's own glyph names (the `post` table / CFF names).
+- **CMake helper** to embed a set into an app, so there are no loose files at runtime:
+  `elegence_icon_set(my_app NAME brand FONT icons/brand.ttf NAMES icons/brand.json)`. It
+  generates the registration call and, optionally, `Icons::brand::...` constants.
+- **SVG sets (once GPU paths exist):** `register_icon_set("brand", {.svg_directory = "icons/"})`,
+  where each file name is an icon name and `heart-fill.svg` style suffixes can map to variants.
+  That covers sets that ship only SVGs.
+- **Packaging:**
+  - Each built-in set is a separate, optional component (`ELG_ICON_SETS="lucide;phosphor"`),
+    with its license file installed alongside.
+  - Third parties can publish a set as a tiny vcpkg port or CMake package that calls
+    `elegence_icon_set`.
+- **Errors:**
+  - Registering a name twice is a `UsageError` (unless `{.replace = true}`).
+  - A missing file or unreadable map throws `ResourceError` with the path and what was expected.
+
+#### Implementation
+
+1. **Now, through the existing text pipeline.**
+   - The set's TTF fonts render through FreeType, MSDF and the glyph atlas, like any text. That
+     means crisp at every size, GPU-cheap, and nothing new in the renderer.
+   - The fonts are embedded in the library binary (registered from memory), so apps carry no
+     loose files.
+   - A small script turns the upstream codepoint metadata into `Icons::`. The script and the pinned
+     upstream version live in `tools/`, and the generated header is committed.
+2. **Later, with GPU vector paths (§5).** Optionally switch to the set's SVG sources, for
+   arbitrary stroke widths, multicolor and duotone layers, and animatable icons.
+3. **Built-in controls use it.** These replace today's Segoe MDL2 glyphs and fallbacks
+   (`view/icons.h`):
+   - check marks: checkbox, menu checks, picker
+   - chevrons: menu buttons, submenus
+   - the close glyph for tooltips and tabs
+
+   The result looks the same on every platform. Window caption buttons may keep the native glyphs
+   on Windows.
+
+#### Open questions
+- **Which sets ship built in**, and which is the default for unprefixed names. Lucide (as in the
+  examples) and/or Phosphor (for its weights). The registry supports several either way.
+- Size of the embedded fonts. Phosphor at ~6 weights × ~150–250 KB each, about 1–1.5 MB. Ship
+  regular + bold + fill by default, and the rest opt-in?
+
+---
+
 ## 14. Extensibility
 
 - **Custom components**: functions or structs that return a `View`. Also custom
@@ -1408,6 +1547,40 @@ Separate render thread from day one (decided).
 
 **M5: Polish**
 - [ ] Inspector, accessibility, previews / hot reload, custom `Layout`, docs & examples
+- [x] Built-in icon library (§13.2), **Phosphor** 2.1.2 (MIT):
+  - Vendored verbatim in `third_party/phosphor`: regular, bold and fill TTFs plus the CSS name
+    map, with the license and the upstream source. 1,530 icons.
+  - Embedded with `elg_embed_file` (cmake/ElgEmbed.cmake). `ELG_ICONS=OFF` leaves it out.
+  - `Image({.system_name = "phosphor.heart.fill"})` / `Image("heart")`, and
+    `Label(title, {.system_name = ...})`.
+  - Icons take the environment's font size, weight (bold uses the bold font) and foreground.
+  - Unknown names throw `UsageError` with the three nearest names.
+  - `register_icon_set(name, {.font, .weights, .variants, .names | .names_data, .replace})` and
+    `set_default_icon_set`.
+  - Name maps auto-detected: CSS (with the shared class prefix removed), flat JSON, and
+    Material `.codepoints`.
+  - Phosphor registers itself through that same call.
+  - `register_font(family, std::span<const unsigned char>)`: fonts from memory.
+  - `MenuItemOptions::image`.
+  - Built-in check marks and chevrons use Phosphor, so the checkbox finally has a real ✓.
+    Caption buttons keep Segoe MDL2 on Windows.
+  - Glyph generation fixes for icon fonts:
+    - Outlines in the PostScript direction (`FT_Outline_Get_Orientation`) are reversed before
+      generating. Phosphor's had rendered inside-out.
+    - Icon fonts (flagged by `register_icon_set`) get a single-channel true distance field with
+      non-zero scanline sign correction, copied into all channels. Multi-channel fields turned
+      their overlapping outlines into speckles and streaks.
+    - Text keeps MTSDF.
+    - Verified against FreeType's own rendering of the same glyphs.
+  - Tests: `tests/image_tests.cpp` (names, variants, default set, suggestions, each map format,
+    registration errors).
+- [ ] Icon follow-ups:
+  - Glyph-name maps from the font's `post` table; IcoMoon `selection.json` / Fontello configs.
+  - The `elegence_icon_set` CMake helper for apps.
+  - Generated `Icons::phosphor::...` constants.
+  - Light/thin/duotone weights opt-in.
+  - `.resizable()`.
+  - Raster `Image({.file = ...})`; SVG sets with GPU paths.
 
 ---
 

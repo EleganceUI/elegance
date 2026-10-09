@@ -40,6 +40,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         view/event_dispatcher.cpp
         view/events.cpp
         view/fragment.cpp
+        view/image.cpp
         view/lazy_stack.cpp
         view/menus.cpp
         view/modifiers.cpp
@@ -87,6 +88,17 @@ find_package(harfbuzz CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 
 # Private: no SDL or Vulkan types appear in public headers (design.md §4).
+# Built-in icon sets (design.md §13.2), embedded into the library.
+include(ElgEmbed)
+if (ELG_ICONS)
+    set(phosphor "${PROJECT_SOURCE_DIR}/third_party/phosphor")
+    elg_embed_file(elegence phosphor_regular "${phosphor}/Phosphor.ttf")
+    elg_embed_file(elegence phosphor_bold "${phosphor}/Phosphor-Bold.ttf")
+    elg_embed_file(elegence phosphor_fill "${phosphor}/Phosphor-Fill.ttf")
+    elg_embed_file(elegence phosphor_css "${phosphor}/phosphor.css")
+    target_compile_definitions(elegence PRIVATE ELG_HAS_PHOSPHOR)
+endif ()
+
 if (WIN32)
     target_sources(elegence PRIVATE gpu/composition_win32.cpp)
     # dwmapi: rounded corners for undecorated windows; d3d11/dxgi/dcomp: transparent windows.

@@ -9,6 +9,7 @@
 
 #include <elg/export.h>
 #include <elg/graphics_context.h>
+#include <elg/image.h>
 #include <elg/layout.h>
 #include <elg/prop.h>
 #include <elg/reactive.h>
@@ -326,6 +327,7 @@ struct MenuItemOptions {
     std::string shortcut;              // a hint shown on the right, e.g. "Ctrl+R"
     bool destructive = false;          // shown in the danger color
     std::optional<Prop<bool>> checked; // a check mark in front, e.g. for options
+    std::optional<ImageSource> image;  // an icon in front: {.image = {{.system_name = "copy"}}}
 };
 
 // A menu command. Choosing it closes the menu, then runs `action`. Disable it with .disabled().

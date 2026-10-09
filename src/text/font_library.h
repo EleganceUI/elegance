@@ -23,13 +23,18 @@ namespace elg::detail {
 // A loaded font file: FreeType for glyph outlines, HarfBuzz for shaping. Metrics are in em units.
 class FontFace {
 public:
-    FontFace(FT_Library library, const std::filesystem::path& path, std::uint32_t id);
+    // `data` is the font file's bytes (shared: registered in-memory fonts aren't copied again);
+    // `name` is for messages.
+    FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigned char>> data, const std::string& name,
+             std::uint32_t id, bool icon = false);
     ~FontFace();
 
     FontFace(const FontFace&) = delete;
     FontFace& operator=(const FontFace&) = delete;
 
     std::uint32_t id() const noexcept { return id_; }
+    // An icon set's font: glyphs get a single-channel distance field (see GlyphAtlas).
+    bool icon() const noexcept { return icon_; }
     FT_Face ft_face() const noexcept { return ft_face_; }
     hb_font_t* hb_font() const noexcept { return hb_font_; }
     float units_per_em() const noexcept { return units_per_em_; }
@@ -39,7 +44,8 @@ public:
 
 private:
     std::uint32_t id_;
-    std::vector<unsigned char> data_; // FreeType and HarfBuzz both read from this
+    bool icon_;
+    std::shared_ptr<const std::vector<unsigned char>> data_; // FreeType and HarfBuzz both read from this
     FT_Face ft_face_ = nullptr;
     hb_font_t* hb_font_ = nullptr;
     float units_per_em_ = 1000;
@@ -47,6 +53,9 @@ private:
     float descender_ = -0.2f;
     float line_gap_ = 0;
 };
+
+// Marks a register_font() family as an icon set's font (register_icon_set does this).
+void mark_icon_font_family(std::string family);
 
 // Resolves Font descriptions to loaded faces (system fonts and register_font() families).
 // UI thread only.
@@ -63,7 +72,7 @@ public:
 
 private:
     FT_Library library_ = nullptr;
-    std::unordered_map<std::string, std::unique_ptr<FontFace>> faces_; // by file path
+    std::unordered_map<std::string, std::unique_ptr<FontFace>> faces_; // by file path or memory key
 };
 
 } // namespace elg::detail

@@ -20,6 +20,7 @@ endif ()
 
 option(ELG_BUILD_SHARED "Build Elegence as a shared library" ON)
 option(ELG_BUILD_SANDBOX "Build the sandbox test app"         ${PROJECT_IS_TOP_LEVEL})
+option(ELG_ICONS         "Embed the built-in icon set (Phosphor, MIT; ~1.4 MB)" ON)
 option(ELG_BUILD_EXAMPLES "Build the example apps (needs the vcpkg \"examples\" feature)" ${PROJECT_IS_TOP_LEVEL})
 option(ELG_BUILD_TESTS   "Build the unit tests (needs the vcpkg \"tests\" feature)" ${PROJECT_IS_TOP_LEVEL})
 

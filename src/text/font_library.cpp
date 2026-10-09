@@ -18,6 +18,7 @@
 #include <fstream>
 #include <map>
 #include <mutex>
+#include <set>
 #include <optional>
 
 namespace elg {
@@ -26,10 +27,14 @@ namespace {
 
 struct RegisteredFont {
     int weight;
-    std::filesystem::path file;
+    std::filesystem::path file;                              // a file, or
+    std::shared_ptr<const std::vector<unsigned char>> data;  // bytes registered from memory
+    std::string key;                                         // identifies the face once loaded
+    bool icon = false;                                       // an icon set's font
 };
 
 std::mutex g_registry_mutex;
+std::set<std::string, std::less<>> g_icon_families;
 std::map<std::string, std::vector<RegisteredFont>, std::less<>> g_registry;
 
 } // namespace
@@ -42,16 +47,35 @@ void register_font(std::string family, std::filesystem::path file, Weight weight
         throw ResourceError(std::format("register_font(): \"{}\" is not a file", file.string()));
     }
     std::lock_guard lock(g_registry_mutex);
-    g_registry[std::move(family)].push_back({static_cast<int>(weight), std::move(file)});
+    std::string key = file.string();
+    g_registry[std::move(family)].push_back({static_cast<int>(weight), std::move(file), nullptr, std::move(key)});
+}
+
+void register_font(std::string family, std::span<const unsigned char> data, Weight weight) {
+    if (family.empty()) {
+        throw UsageError("register_font(): the family name is empty");
+    }
+    if (data.empty()) {
+        throw ResourceError(std::format("register_font(): no font data for \"{}\"", family));
+    }
+    std::lock_guard lock(g_registry_mutex);
+    auto bytes = std::make_shared<const std::vector<unsigned char>>(data.begin(), data.end());
+    std::string key = std::format("memory:{}:{}", family, static_cast<int>(weight));
+    g_registry[std::move(family)].push_back({static_cast<int>(weight), {}, std::move(bytes), std::move(key)});
 }
 
 } // namespace elg
 
 namespace elg::detail {
 
+void mark_icon_font_family(std::string family) {
+    std::lock_guard lock(g_registry_mutex);
+    g_icon_families.insert(std::move(family));
+}
+
 namespace {
 
-std::filesystem::path registered_file(const Font& font) {
+RegisteredFont registered_font(const Font& font) {
     std::lock_guard lock(g_registry_mutex);
     const auto it = g_registry.find(font.family());
     if (it == g_registry.end() || it->second.empty()) {
@@ -65,7 +89,9 @@ std::filesystem::path registered_file(const Font& font) {
             best = &candidate;
         }
     }
-    return best->file;
+    RegisteredFont result = *best;
+    result.icon = g_icon_families.contains(font.family());
+    return result;
 }
 
 // Font files to try for the system UI font, best match first.
@@ -105,13 +131,13 @@ std::vector<std::filesystem::path> system_font_candidates(Weight weight) {
     return files;
 }
 
-std::filesystem::path find_font_file(const Font& font) {
+RegisteredFont find_font(const Font& font) {
     if (!font.family().empty()) {
-        return registered_file(font);
+        return registered_font(font);
     }
     for (const std::filesystem::path& file : system_font_candidates(font.weight())) {
         if (std::filesystem::is_regular_file(file)) {
-            return file;
+            return {static_cast<int>(font.weight()), file, nullptr, file.string()};
         }
     }
     throw ResourceError("no system font was found; register one with elg::register_font() and use "
@@ -130,15 +156,16 @@ std::vector<unsigned char> read_file(const std::filesystem::path& path) {
 
 // --- FontFace ---
 
-FontFace::FontFace(FT_Library library, const std::filesystem::path& path, std::uint32_t id)
-    : id_(id), data_(read_file(path)) {
-    if (FT_New_Memory_Face(library, data_.data(), static_cast<FT_Long>(data_.size()), 0, &ft_face_) != 0) {
-        throw ResourceError(std::format("\"{}\" isn't a supported font file", path.string()));
+FontFace::FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigned char>> data,
+                   const std::string& name, std::uint32_t id, bool icon)
+    : id_(id), icon_(icon), data_(std::move(data)) {
+    if (FT_New_Memory_Face(library, data_->data(), static_cast<FT_Long>(data_->size()), 0, &ft_face_) != 0) {
+        throw ResourceError(std::format("\"{}\" isn't a supported font file", name));
     }
     units_per_em_ = ft_face_->units_per_EM > 0 ? static_cast<float>(ft_face_->units_per_EM) : 1000.f;
 
-    hb_blob_t* blob = hb_blob_create(reinterpret_cast<const char*>(data_.data()),
-                                     static_cast<unsigned>(data_.size()), HB_MEMORY_MODE_READONLY, nullptr, nullptr);
+    hb_blob_t* blob = hb_blob_create(reinterpret_cast<const char*>(data_->data()),
+                                     static_cast<unsigned>(data_->size()), HB_MEMORY_MODE_READONLY, nullptr, nullptr);
     hb_face_t* face = hb_face_create(blob, 0);
     hb_font_ = hb_font_create(face);
     hb_face_destroy(face);
@@ -155,7 +182,7 @@ FontFace::FontFace(FT_Library library, const std::filesystem::path& path, std::u
         ascender_ = static_cast<float>(ft_face_->ascender) / units_per_em_;
         descender_ = static_cast<float>(ft_face_->descender) / units_per_em_;
     }
-    log_debug("loaded font {} ({})", path.string(), id);
+    log_debug("loaded font {} ({})", name, id);
 }
 
 FontFace::~FontFace() {
@@ -177,12 +204,14 @@ FontLibrary::~FontLibrary() {
 }
 
 const FontFace& FontLibrary::resolve(const Font& font) {
-    const std::filesystem::path file = find_font_file(font);
-    const std::string key = file.string();
-    auto it = faces_.find(key);
+    RegisteredFont source = find_font(font);
+    auto it = faces_.find(source.key);
     if (it == faces_.end()) {
+        auto data = source.data ? source.data
+                                : std::make_shared<const std::vector<unsigned char>>(read_file(source.file));
         const auto id = static_cast<std::uint32_t>(faces_.size() + 1);
-        it = faces_.emplace(key, std::make_unique<FontFace>(library_, file, id)).first;
+        it = faces_.emplace(source.key, std::make_unique<FontFace>(library_, std::move(data), source.key, id, source.icon))
+                 .first;
     }
     return *it->second;
 }

@@ -100,8 +100,9 @@ View MenuCards() {
             .frame({.max_width = infinity, .min_height = 64})
             .background(ThemeColor::surface_raised, RoundedRectangle(10))
             .context_menu([=] {
-                return Menu(MenuItem("Rename", say("Rename"), {.shortcut = "F2"}),
-                            MenuItem("Duplicate", say("Duplicate"), {.shortcut = "Ctrl+D"}),
+                return Menu(MenuItem("Rename", say("Rename"), {.shortcut = "F2", .image = {{.system_name = "pencil-simple"}}}),
+                            MenuItem("Duplicate", say("Duplicate"),
+                                     {.shortcut = "Ctrl+D", .image = {{.system_name = "copy-simple"}}}),
                             Divider(),
                             Submenu("Move to", [=] {
                                 return Menu(MenuItem("Documents", say("Moved to Documents")),
@@ -109,7 +110,7 @@ View MenuCards() {
                                             MenuItem("Archive", say("Moved to Archive")).disabled());
                             }),
                             Divider(),
-                            MenuItem("Delete", say("Delete"), {.destructive = true}));
+                            MenuItem("Delete", say("Delete"), {.destructive = true, .image = {{.system_name = "trash"}}}));
             });
 
     const auto grid = State(true);
@@ -144,6 +145,28 @@ View MenuCards() {
                                 .help("Tooltips open after a short rest"),
                             ".help()")
                       .card());
+}
+
+// The built-in icon set (Phosphor): weights follow the font, variants by name, Label for icon + text.
+View IconCards() {
+    const auto row = [](std::string suffix, Weight weight) {
+        std::vector<View> icons;
+        for (const char* name : {"house", "magnifying-glass", "bell", "gear", "user", "star", "heart"}) {
+            icons.push_back(Image(std::string(name) + suffix).font(Font::system(24, weight)));
+        }
+        return HStackLayout(VerticalAlignment::center, 14)(std::move(icons));
+    };
+    const View weights = VStack({.alignment = HorizontalAlignment::leading, .spacing = 12},
+                                row("", Weight::regular),
+                                row("", Weight::bold).foreground_style(palette::blue),
+                                row(".fill", Weight::regular).foreground_style(palette::peach));
+    const View labels = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
+                               Button(Label("Search", {.system_name = "magnifying-glass"}), [] {})
+                                   .button_style(BorderedButtonStyle{}),
+                               Button(Label("Delete", {.system_name = "phosphor.trash"}), [] {}).tint(palette::red));
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(weights, "Image: regular, .font_weight(bold), .fill").card(),
+                  Captioned(labels, "Label + Button").card());
 }
 
 // ZStack: layering with alignment, z_index, and priority sizing.
@@ -478,6 +501,7 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
                   // The title bar stays put; the cards scroll under it.
                   ScrollView(VStack({.alignment = HorizontalAlignment::leading, .spacing = 20},
                          MenuCards(),
+                         IconCards(),
                          ShapeCards(),
                          StackCards(),
                          // Like SwiftUI's .fixedSize(horizontal: false, vertical: true): take the

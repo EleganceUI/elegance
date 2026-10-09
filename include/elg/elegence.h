@@ -16,6 +16,7 @@
 #include <elg/font.h>
 #include <elg/geometry.h>
 #include <elg/gradient.h>
+#include <elg/image.h>
 #include <elg/graphics_context.h>
 #include <elg/layout.h>
 #include <elg/modifier.h>

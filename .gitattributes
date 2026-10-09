@@ -1,2 +1,4 @@
 # Store text files with LF in the repository; check out with the platform's line endings.
 * text=auto
+*.ttf binary
+*.otf binary

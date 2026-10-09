@@ -10,7 +10,9 @@
 #include "view/view_node.h"
 
 #include <elg/animation.h>
+#include <elg/error.h>
 #include <elg/font.h>
+#include <elg/image.h>
 #include <elg/shapes.h>
 #include <elg/styles.h>
 #include <elg/text.h>
@@ -28,7 +30,7 @@ namespace elg::detail {
 
 namespace {
 
-constexpr std::string_view kIconFamily = "elg.icons";
+constexpr std::string_view kIconFamily = "elg.caption-glyphs";
 
 bool icon_font_available() {
     static const bool available = [] {
@@ -49,34 +51,48 @@ bool icon_font_available() {
 
 } // namespace
 
-View icon(Icon which, float size) {
-    if (icon_font_available()) {
+namespace {
+
+// The built-in set's icon, or `fallback` when the library was built without icons.
+View set_icon(std::string_view name, float size, Weight weight, View fallback) {
+    try {
+        return Image(name).font(Font::system(size, weight));
+    } catch (const UsageError&) {
+        return fallback;
+    }
+}
+
+} // namespace
+
+View icon(Icon which, float size, Weight weight) {
+    const bool caption = which == Icon::minimize || which == Icon::maximize || which == Icon::restore ||
+                         which == Icon::close;
+    if (caption && icon_font_available()) {
         const char* glyph = "";
         switch (which) {
-        case Icon::minimize: glyph = "\xEE\xA4\xA1"; break;      // U+E921
-        case Icon::maximize: glyph = "\xEE\xA4\xA2"; break;      // U+E922
-        case Icon::restore: glyph = "\xEE\xA4\xA3"; break;       // U+E923
-        case Icon::close: glyph = "\xEE\xA2\xBB"; break;         // U+E8BB
-        case Icon::check: glyph = "\xEE\x9C\xBE"; break;         // U+E73E CheckMark
-        case Icon::chevron_right: glyph = "\xEE\x9D\xAC"; break; // U+E76C
-        case Icon::chevron_down: glyph = "\xEE\x9C\x8D"; break;  // U+E70D
+        case Icon::minimize: glyph = "\xEE\xA4\xA1"; break; // U+E921 ChromeMinimize
+        case Icon::maximize: glyph = "\xEE\xA4\xA2"; break; // U+E922 ChromeMaximize
+        case Icon::restore: glyph = "\xEE\xA4\xA3"; break;  // U+E923 ChromeRestore
+        default: glyph = "\xEE\xA2\xBB"; break;             // U+E8BB ChromeClose
         }
         return Text(glyph).font(Font::custom(std::string(kIconFamily), size));
     }
-    // Fallbacks: shapes and characters every UI font has.
     switch (which) {
-    case Icon::minimize: return Rectangle().frame(size, 1);
-    case Icon::maximize: return Rectangle().stroke_border(ThemeColor::primary, 1).frame(size, size);
+    case Icon::minimize: return set_icon("phosphor.minus", size * 1.4f, weight, Rectangle().frame(size, 1));
+    case Icon::maximize:
+        return set_icon("phosphor.square", size * 1.4f, weight,
+                        Rectangle().stroke_border(ThemeColor::primary, 1).frame(size, size));
     case Icon::restore:
-        return ZStack({.alignment = Alignment::bottom_leading},
-                      Rectangle().stroke_border(ThemeColor::primary, 1).frame(size * 0.8f, size * 0.8f).offset(2, -2),
-                      Rectangle().fill(ThemeColor::background).frame(size * 0.8f, size * 0.8f),
-                      Rectangle().stroke_border(ThemeColor::primary, 1).frame(size * 0.8f, size * 0.8f))
-            .frame(size, size);
-    case Icon::close: return Text("\xC3\x97").font(Font::system(size * 1.6f, Weight::light)); // ×
-    case Icon::check: return Circle().frame(size * 0.55f, size * 0.55f);
-    case Icon::chevron_right: return Text("\xE2\x80\xBA").font(Font::system(size * 1.6f)); // ›
-    case Icon::chevron_down: return Text("v").font(Font::system(size * 1.2f));
+        return set_icon("phosphor.copy-simple", size * 1.4f, weight,
+                        Rectangle().stroke_border(ThemeColor::primary, 1).frame(size, size));
+    case Icon::close:
+        return set_icon("phosphor.x", size * 1.4f, weight,
+                        Text("\xC3\x97").font(Font::system(size * 1.6f, Weight::light))); // ×
+    case Icon::check: return set_icon("phosphor.check", size, weight, Circle().frame(size * 0.55f, size * 0.55f));
+    case Icon::chevron_right:
+        return set_icon("phosphor.caret-right", size, weight, Text("\xE2\x80\xBA").font(Font::system(size * 1.6f)));
+    case Icon::chevron_down:
+        return set_icon("phosphor.caret-down", size, weight, Text("v").font(Font::system(size * 1.2f)));
     }
     return EmptyView();
 }
@@ -150,7 +166,10 @@ public:
         std::vector<View> parts;
         if (options_.checked) {
             const Prop<bool> checked = *options_.checked;
-            parts.push_back(If(checked, icon(Icon::check, 11), EmptyView()).frame(14, 14));
+            parts.push_back(If(checked, icon(Icon::check, 13, Weight::bold), EmptyView()).frame(14, 14));
+        }
+        if (options_.image) {
+            parts.push_back(Image(*options_.image).font(Font::system(15)).frame(16, 16));
         }
         parts.push_back(Text(title_));
         parts.push_back(Spacer(24));
@@ -197,7 +216,7 @@ public:
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const RowState state;
-        const View row = menu_row(HStack({.spacing = 8}, Text(title_), Spacer(24), icon(Icon::chevron_right, 9)), state,
+        const View row = menu_row(HStack({.spacing = 8}, Text(title_), Spacer(24), icon(Icon::chevron_right, 12)), state,
                                   false, context.environment);
         WindowServices* const services = context.services;
         const int level = services ? services->menu_level() + 1 : 0;
@@ -350,7 +369,7 @@ public:
         const State<bool> focused(false);
         const EnvironmentValues environment = context.environment;
         const ButtonConfiguration configuration{
-            .label = HStack({.spacing = 6}, label_, icon(Icon::chevron_down, 8)),
+            .label = HStack({.spacing = 6}, label_, icon(Icon::chevron_down, 12, Weight::bold)),
             .is_pressed = [pressed] { return pressed(); },
             .is_hovered = [hovered] { return hovered(); },
             .is_enabled = [environment] { return !environment.get<DisabledKey>(); },

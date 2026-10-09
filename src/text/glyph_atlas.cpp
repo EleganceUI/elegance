@@ -135,6 +135,14 @@ std::optional<AtlasGlyph> GlyphAtlas::generate(const FontFace& face, std::uint32
     if (!shape.contours.empty() && shape.contours.back().edges.empty()) {
         shape.contours.pop_back();
     }
+    // msdfgen takes filled areas from contour direction, in TrueType's convention (outer contours
+    // clockwise). Fonts drawn the other way (PostScript-style, common in icon fonts converted from
+    // SVG) would come out inside-out, so turn them around first.
+    if (FT_Outline_Get_Orientation(&ft->glyph->outline) == FT_ORIENTATION_POSTSCRIPT) {
+        for (msdfgen::Contour& contour : shape.contours) {
+            contour.reverse();
+        }
+    }
     shape.normalize();
     if (shape.contours.empty() || !shape.validate()) {
         return std::nullopt;
@@ -160,9 +168,29 @@ std::optional<AtlasGlyph> GlyphAtlas::generate(const FontFace& face, std::uint32
 
     msdfgen::Bitmap<float, 4> bitmap(static_cast<int>(width), static_cast<int>(height));
     const msdfgen::Vector2 translate(-bounds.l + pad / scale, -bounds.b + pad / scale);
-    const msdfgen::SDFTransformation transformation(msdfgen::Projection(msdfgen::Vector2(scale), translate),
+    const msdfgen::Projection projection(msdfgen::Vector2(scale), translate);
+    const msdfgen::SDFTransformation transformation(projection,
                                                     msdfgen::DistanceMapping(msdfgen::Range(kDistanceRange / scale)));
-    msdfgen::generateMTSDF(bitmap, shape, transformation);
+    if (face.icon()) {
+        // Icon fonts build glyphs from overlapping outlines (strokes, rings, teeth), which a
+        // multi-channel field turns into speckles and streaks. A true single-channel distance
+        // handles overlaps cleanly; its slightly rounder corners don't show at icon sizes. Every
+        // channel gets it, so the shader's median is the same distance.
+        msdfgen::Bitmap<float, 1> sdf(static_cast<int>(width), static_cast<int>(height));
+        msdfgen::generateSDF(sdf, shape, transformation, msdfgen::GeneratorConfig(true));
+        // Where outlines overlap, inside vs. outside is decided by scanning the shape with the
+        // non-zero fill rule, exactly as the font is meant to be filled. (Safe with one channel;
+        // with three it leaves the channels disagreeing.)
+        msdfgen::distanceSignCorrection(sdf, shape, projection, msdfgen::FILL_NONZERO);
+        for (int row = 0; row < static_cast<int>(height); ++row) {
+            for (int column = 0; column < static_cast<int>(width); ++column) {
+                float* pixel = bitmap(column, row);
+                pixel[0] = pixel[1] = pixel[2] = pixel[3] = *sdf(column, row);
+            }
+        }
+    } else {
+        msdfgen::generateMTSDF(bitmap, shape, transformation);
+    }
 
     // msdfgen bitmaps are bottom row first; the atlas is top row first.
     GlyphUpload upload{x, y, width, height, std::vector<std::uint8_t>(std::size_t{width} * height * 4)};

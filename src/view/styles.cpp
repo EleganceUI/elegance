@@ -5,6 +5,8 @@
 // The environment's theme resolution and the built-in button styles. The styles use only the
 // public API, like an app's own styles would (design.md §9.4, dogfooding).
 
+#include "view/icons.h"
+
 #include <elg/animation.h>
 #include <elg/environment.h>
 #include <elg/error.h>
@@ -195,11 +197,8 @@ View CheckboxToggleStyle::make_body(const ToggleConfiguration& toggle) const {
                    .frame(kSize, kSize)
                    .overlay(RoundedRectangle(kRadius).stroke_border(
                        [=] { return dim(toggle.is_on() ? tint() : colors().outline); }, 1.5f))
-                   // TODO: a check mark once vector paths land (system fonts can't be relied on
-                   // for U+2713 without font fallback).
-                   .overlay(RoundedRectangle(2)
-                                .fill(ThemeColor::on_accent)
-                                .frame(8, 8)
+                   .overlay(detail::icon(detail::Icon::check, 13, Weight::bold)
+                                .foreground_style(ThemeColor::on_accent)
                                 .opacity([=] { return toggle.is_on() ? 1.f : 0.f; }));
     return HStack(std::move(box),
                   toggle.label.foreground_style([=] { return toggle.is_enabled() ? colors().primary : colors().tertiary; }));

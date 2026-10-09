@@ -8,6 +8,7 @@
 #include <elg/export.h>
 
 #include <filesystem>
+#include <span>
 #include <string>
 
 namespace elg {
@@ -82,6 +83,8 @@ inline const Font Font::caption2 = Font::system(11);
 // Makes a font file available as Font::custom(family, ...). Register each weight's file
 // separately; the closest registered weight is used. Thread-safe.
 ELG_API void register_font(std::string family, std::filesystem::path file, Weight weight = Weight::regular);
+// The same from font data in memory (e.g. embedded in the app); the bytes are copied.
+ELG_API void register_font(std::string family, std::span<const unsigned char> data, Weight weight = Weight::regular);
 
 } // namespace elg
 
