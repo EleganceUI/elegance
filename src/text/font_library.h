@@ -7,6 +7,7 @@
 
 #include <elg/color.h>
 #include <elg/font.h>
+#include <elg/geometry.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -30,6 +31,31 @@ struct ColorLayer {
     bool foreground = false;
 };
 
+// A COLRv1 fill: a solid color or a gradient, in em units from the glyph's origin, y down.
+// "Foreground" colors take the text's color.
+struct ColorStop {
+    float offset = 0;
+    Color color;
+    bool foreground = false;
+};
+struct ColorPaint {
+    enum class Kind { solid, linear, radial };
+    Kind kind = Kind::solid;
+    Color color; // solid
+    bool foreground = false;
+    std::vector<ColorStop> stops; // gradients
+    Point p0, p1;                 // linear: start, end; radial: center
+    float r0 = 0, r1 = 0;         // radial
+};
+
+// One filled region of a COLRv1 glyph: flattened, closed polygons in em units from the glyph's
+// origin (y down), filled (non-zero) with `paint`.
+struct ColorPath {
+    std::shared_ptr<const std::vector<std::vector<Point>>> polygons;
+    Rect bounds;
+    ColorPaint paint;
+};
+
 // A loaded font file: FreeType for glyph outlines, HarfBuzz for shaping. Metrics are in em units.
 class FontFace {
 public:
@@ -49,6 +75,9 @@ public:
     bool has_color() const noexcept { return !palette_.empty(); }
     // A color glyph's layers, bottom to top; empty for ordinary glyphs. UI thread only.
     std::span<const ColorLayer> color_layers(std::uint32_t glyph) const;
+    // A COLRv1 glyph's filled regions, bottom to top (gradients, transforms); empty for other
+    // glyphs. Takes precedence over color_layers. UI thread only.
+    std::span<const ColorPath> color_paths(std::uint32_t glyph) const;
     // Whether the font has a glyph for `codepoint`.
     bool has_char(char32_t codepoint) const;
     // The font file's bytes.
@@ -65,6 +94,7 @@ private:
     bool icon_;
     std::vector<Color> palette_; // the default CPAL palette, sRGB
     mutable std::unordered_map<std::uint32_t, std::vector<ColorLayer>> color_layers_;
+    mutable std::unordered_map<std::uint32_t, std::vector<ColorPath>> color_paths_;
     std::shared_ptr<const std::vector<unsigned char>> data_; // FreeType and HarfBuzz both read from this
     FT_Face ft_face_ = nullptr;
     hb_font_t* hb_font_ = nullptr;

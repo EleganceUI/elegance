@@ -90,7 +90,7 @@ private:
     }
 
     void emit(PlanPass& pass, std::vector<QuadInstance>& out, QuadInstance instance, const Rect& extent,
-              const Clip& clip, int layer = -1, bool shadow = false, int path = -1) {
+              const Clip& clip, int layer = -1, bool shadow = false, int path = -1, bool mask = false) {
         if (clip.active && !overlaps(extent, clip.rect)) {
             return; // fully clipped
         }
@@ -104,7 +104,7 @@ private:
         if (layer < 0 && path < 0 && last && last->layer < 0 && last->path < 0 && last->first + last->count == index) {
             ++last->count;
         } else {
-            pass.segments.push_back({index, 1, layer, shadow, path});
+            pass.segments.push_back({index, 1, layer, shadow, path, mask});
         }
     }
 
@@ -163,9 +163,11 @@ private:
         emit(pass, out, instance, r.inset(-1), clip);
     }
 
-    // A path: its fan triangles go to a coverage mask; the pass fills through the mask.
+    // A path: its fan triangles go to a coverage mask; the pass fills through the mask. With
+    // `mask_pass` (a pass's size in pixels), the path instead masks what the pass has drawn so far:
+    // a quad over the whole pass keeps only what the coverage covers.
     void add_path(const PathCommand& command, Point origin, PlanPass& pass, std::vector<QuadInstance>& out,
-                  const Clip& clip) {
+                  const Clip& clip, std::optional<Size> mask_pass = std::nullopt) {
         if (!command.polygons || command.polygons->empty()) {
             return;
         }
@@ -176,7 +178,7 @@ private:
         const float y1 = std::ceil(bounds.max_y()) + 1;
         const Rect area{x0, y0, std::min(x1 - x0, static_cast<float>(kMaxLayerSize)),
                         std::min(y1 - y0, static_cast<float>(kMaxLayerSize))};
-        if (area.width < 1 || area.height < 1 || (clip.active && !overlaps(area, clip.rect))) {
+        if (!mask_pass && (area.width < 1 || area.height < 1 || (clip.active && !overlaps(area, clip.rect)))) {
             return;
         }
 
@@ -227,11 +229,31 @@ private:
             }
         }
         path.vertex_count = static_cast<std::uint32_t>(plan_.path_vertices.size()) - path.first_vertex;
+        if (mask_pass && (path.vertex_count == 0 || area.width < 1 || area.height < 1)) {
+            // Nothing is covered: clear the whole pass.
+            QuadInstance clear;
+            clear.rect = {0, 0, mask_pass->width, mask_pass->height};
+            clear.params = {0, static_cast<float>(QuadKind::rect), static_cast<float>(PaintKind::solid), 0};
+            emit(pass, out, clear, clear_extent(*mask_pass), Clip{}, -1, false, -1, true);
+            return;
+        }
         if (path.vertex_count == 0) {
             return;
         }
         const int index = static_cast<int>(plan_.paths.size());
         plan_.paths.push_back(path);
+
+        if (mask_pass) {
+            // Over the whole pass; outside the mask's own area the sampler clamps to its empty
+            // border.
+            QuadInstance instance;
+            instance.rect = {0, 0, mask_pass->width, mask_pass->height};
+            instance.shape = {-area.x, -area.y, mask_pass->width - area.x, mask_pass->height - area.y};
+            instance.color = {1, 1, 1, 1};
+            instance.params = {0, static_cast<float>(QuadKind::path), static_cast<float>(PaintKind::solid), 0};
+            emit(pass, out, instance, clear_extent(*mask_pass), Clip{}, -1, false, index, true);
+            return;
+        }
 
         QuadInstance instance;
         instance.rect = {area.x, area.y, area.width, area.height};
@@ -240,6 +262,8 @@ private:
         set_paint(instance, command.fill, to_pixels(command.paint_frame, origin));
         emit(pass, out, instance, area, clip, -1, false, index);
     }
+
+    static Rect clear_extent(Size size) { return {0, 0, size.width, size.height}; }
 
     void add_glyph(const GlyphCommand& command, Point origin, PlanPass& pass, std::vector<QuadInstance>& out,
                    const Clip& clip) {
@@ -305,7 +329,12 @@ private:
 
         std::vector<QuadInstance> layer_out;
         ++index;
-        build(index, {origin.x + x0, origin.y + y0}, layer, layer_out);
+        const Point layer_origin{origin.x + x0, origin.y + y0};
+        build(index, layer_origin, layer, layer_out);
+        if (command.mask) {
+            add_path(*command.mask, layer_origin, layer, layer_out, Clip{},
+                     Size{static_cast<float>(layer.width), static_cast<float>(layer.height)});
+        }
 
         const int layer_index = static_cast<int>(plan_.layers.size());
         plan_.layers.push_back(std::move(layer));

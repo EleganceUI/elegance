@@ -70,8 +70,8 @@ QuadRenderer::~QuadRenderer() {
 
 void QuadRenderer::destroy() noexcept {
     const VkDevice device = device_.handle();
-    for (auto& [format, pipeline] : pipelines_) {
-        vkDestroyPipeline(device, pipeline, nullptr);
+    for (const CachedPipeline& cached : pipelines_) {
+        vkDestroyPipeline(device, cached.pipeline, nullptr);
     }
     pipelines_.clear();
     vkDestroyPipelineLayout(device, layout_, nullptr);
@@ -104,6 +104,10 @@ void QuadRenderer::begin(VkCommandBuffer cmd, VkFormat color_format, VkExtent2D 
     }
 }
 
+void QuadRenderer::set_masking(VkCommandBuffer cmd, VkFormat color_format, bool masking) {
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_for(color_format, masking));
+}
+
 void QuadRenderer::bind_image(VkCommandBuffer cmd, VkDescriptorSet image) {
     vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout_, 0, 1, &image, 0, nullptr);
 }
@@ -114,10 +118,10 @@ void QuadRenderer::draw(VkCommandBuffer cmd, std::uint32_t first_instance, std::
     }
 }
 
-VkPipeline QuadRenderer::pipeline_for(VkFormat format) {
-    for (const auto& [cached_format, pipeline] : pipelines_) {
-        if (cached_format == format) {
-            return pipeline;
+VkPipeline QuadRenderer::pipeline_for(VkFormat format, bool masking) {
+    for (const CachedPipeline& cached : pipelines_) {
+        if (cached.format == format && cached.masking == masking) {
+            return cached.pipeline;
         }
     }
 
@@ -171,6 +175,13 @@ VkPipeline QuadRenderer::pipeline_for(VkFormat format) {
     blend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
     blend.dstAlphaBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
     blend.alphaBlendOp = VK_BLEND_OP_ADD;
+    if (masking) {
+        // Destination-in: dst * src.a.
+        blend.srcColorBlendFactor = VK_BLEND_FACTOR_ZERO;
+        blend.dstColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+        blend.srcAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+        blend.dstAlphaBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    }
     blend.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT |
                            VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
     VkPipelineColorBlendStateCreateInfo color_blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
@@ -202,7 +213,7 @@ VkPipeline QuadRenderer::pipeline_for(VkFormat format) {
     VkPipeline pipeline = VK_NULL_HANDLE;
     check(vkCreateGraphicsPipelines(device_.handle(), VK_NULL_HANDLE, 1, &info, nullptr, &pipeline),
           "create the UI pipeline");
-    pipelines_.emplace_back(format, pipeline);
+    pipelines_.push_back({format, masking, pipeline});
     return pipeline;
 }
 

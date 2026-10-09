@@ -23,6 +23,7 @@ struct PlanSegment {
     int layer = -1;      // >= 0: a composite of that layer
     bool shadow = false; // the layer's blurred shadow rather than its content
     int path = -1;       // >= 0: a path filled through that path's coverage mask
+    bool mask = false;   // keeps only what's under the path's coverage ("destination-in")
 };
 
 // A path's coverage mask to render before the passes that use it (gpu::PathRenderer).

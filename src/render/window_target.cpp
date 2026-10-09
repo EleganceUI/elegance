@@ -391,6 +391,17 @@ void WindowTarget::draw_pass(VkCommandBuffer cmd, const PlanPass& pass, VkFormat
                              const std::vector<VkDescriptorSet>& paths, const RenderResources& resources) {
     resources.quads.begin(cmd, format, extent, slot.instances.handle(), resources.atlas, stops);
     for (const PlanSegment& segment : pass.segments) {
+        if (segment.mask) {
+            // Masks what the pass has drawn so far (a layer clipped to a path).
+            resources.quads.set_masking(cmd, format, true);
+            if (segment.path >= 0) {
+                resources.quads.bind_image(cmd, paths[static_cast<std::size_t>(segment.path)]);
+            }
+            resources.quads.draw(cmd, segment.first, segment.count);
+            resources.quads.bind_image(cmd, resources.atlas);
+            resources.quads.set_masking(cmd, format, false);
+            continue;
+        }
         if (segment.path >= 0) {
             resources.quads.bind_image(cmd, paths[static_cast<std::size_t>(segment.path)]);
             resources.quads.draw(cmd, segment.first, segment.count);

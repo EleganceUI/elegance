@@ -94,6 +94,11 @@ void transform(std::vector<DrawCommand>& commands, float dx, float dy, float sca
                        },
                        [&](PushLayerCommand& c) {
                            c.bounds = rect(c.bounds);
+                           if (c.mask) {
+                               c.mask->offset = point(c.mask->offset.x, c.mask->offset.y);
+                               c.mask->scale *= scale;
+                               c.mask->paint_frame = rect(c.mask->paint_frame);
+                           }
                            if (c.shadow) {
                                c.shadow->radius *= scale;
                                c.shadow->x *= scale;
@@ -137,7 +142,7 @@ void append_faded(DisplayList& list, DisplayList&& content, float opacity) {
     if (!bounds) {
         return;
     }
-    list.commands.push_back(PushLayerCommand{*bounds, opacity, std::nullopt});
+    list.commands.push_back(PushLayerCommand{*bounds, opacity, std::nullopt, std::nullopt});
     list.commands.insert(list.commands.end(), std::make_move_iterator(content.commands.begin()),
                          std::make_move_iterator(content.commands.end()));
     list.commands.push_back(PopLayerCommand{});

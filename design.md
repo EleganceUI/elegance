@@ -812,7 +812,8 @@ Text("Hi").apply(card)                             // function-style: View card(
 - `clipped()`: rect scissor, effectively free.
 - `clip_shape(RoundedRectangle/Capsule/Circle)`: analytic SDF clip in the shader, with no
   offscreen pass.
-- `clip_shape(Path)`: stencil-based, which is cheap.
+- `clip_shape(Path)`: an offscreen layer masked by the path's cached coverage mask. It costs
+  more than the analytic clips, but the mask is reused across frames.
 - `mask(View)`: an arbitrary alpha mask. This needs an offscreen layer, so it's the most expensive
   option and the inspector should flag it.
 
@@ -1574,8 +1575,26 @@ Separate render thread from day one (decided).
   - Fallback prefers a color font for emoji: characters that default to emoji presentation, or
     are followed by U+FE0F. U+FE0E keeps the text style, and symbols like ★ ♥ ✓ stay with
     Segoe UI Symbol.
-- [ ] Color emoji follow-ups: COLRv1 gradients, then CBDT/sbix bitmap fonts (Apple Color Emoji,
-  Noto Color Emoji's bitmap build).
+- [x] Color emoji, COLRv1 (`src/text/color_glyph.cpp`):
+  - FreeType reads the paint graph, and it is flattened once per glyph into filled regions: an
+    outline (em units) plus a fill (`FontFace::color_paths`).
+  - Supported paints: layers, glyph and color-glyph references, transform, translate, scale,
+    rotate and skew (with their centers), solid colors and linear and radial gradients.
+    Foreground colors take the text color.
+  - The regions draw through the GPU path pipeline as `PathCommand`s, so emoji stay sharp at
+    any size and their masks are cached like other paths.
+  - Approximations:
+    - Two-circle radial gradients become concentric ones around the end circle.
+    - Sweep gradients draw as their average color.
+    - Composite modes draw the source over the backdrop.
+    - Gradient extend modes pad.
+  - Windows 10's Segoe UI Emoji is COLRv0 only. Run `sandbox --emoji-font Noto-COLRv1.ttf` to
+    see COLRv1 in the font fallback card.
+- [ ] Color emoji follow-ups:
+  - Sweep gradients and two-circle radials in the shader.
+  - COLRv1 composite modes and clip boxes.
+  - CBDT/sbix bitmap fonts (Apple Color Emoji, Noto Color Emoji's bitmap build).
+  - Rasterizing big emoji runs to a cached layer instead of one mask per region.
 - [x] GPU vector paths (§5), stencil-then-cover:
   - **Geometry** (`elg/path.h`, `src/geometry/path.cpp`):
     - `Path` building, including SVG-style arcs and rect/rounded-rect/ellipse/circle helpers.
@@ -1609,10 +1628,17 @@ Separate render thread from day one (decided).
   - Masks unused for 240 frames are dropped, and the least recently used ones go when the cache
     is over 32 MB. A mask still in flight is never freed.
   - Measured: a 75-frame scroll animation rendered 7 masks once and none after.
+- [x] `clip_shape` with any path shape (`PathShape`, `CustomShape`):
+  - The content renders into an offscreen layer.
+  - A `PushLayerCommand.mask` path then multiplies the layer by its coverage mask, drawn with a
+    "destination-in" pipeline variant of the UI shader. The layer then composites normally.
+  - The mask quad covers the whole layer, and the sampler clamps to the mask's empty border, so
+    everything outside the path clears.
+  - Hit testing follows the path (winding test on the flattened fill).
+  - Rounded-rect shapes (`RoundedRectangle`, `Capsule`, `Circle`) keep the analytic shader clip.
 - [ ] Path follow-ups:
   - Skip MSAA for small masks under memory pressure.
   - Analytic-coverage AA for sharper thin strokes.
-  - `clip_shape(PathShape)` clips through a mask.
   - A compute rasterizer (Vello-style) if path-heavy scenes need it.
   - SVG icon sets via `register_icon_set({.svg_directory})`.
 - [x] Persistent glyph cache on disk (`src/text/glyph_cache.*`):

@@ -51,10 +51,13 @@ public:
     void begin(VkCommandBuffer cmd, VkFormat color_format, VkExtent2D extent, VkBuffer instances,
                VkDescriptorSet image, VkDescriptorSet stops);
     void bind_image(VkCommandBuffer cmd, VkDescriptorSet image);
+    // Switches between "over" (the default) and "destination-in" blending, which keeps the
+    // target only where the drawn quad's alpha covers it (masking a layer).
+    void set_masking(VkCommandBuffer cmd, VkFormat color_format, bool masking);
     void draw(VkCommandBuffer cmd, std::uint32_t first_instance, std::uint32_t count);
 
 private:
-    VkPipeline pipeline_for(VkFormat format);
+    VkPipeline pipeline_for(VkFormat format, bool masking = false);
     void destroy() noexcept;
 
     const Device& device_;
@@ -62,8 +65,13 @@ private:
     VkShaderModule fragment_ = VK_NULL_HANDLE;
     VkDescriptorSetLayout stops_layout_ = VK_NULL_HANDLE;
     VkPipelineLayout layout_ = VK_NULL_HANDLE;
-    // Pipelines are specific to the target format (swapchain, layers).
-    std::vector<std::pair<VkFormat, VkPipeline>> pipelines_;
+    // Pipelines are specific to the target format (swapchain, layers) and blending.
+    struct CachedPipeline {
+        VkFormat format;
+        bool masking;
+        VkPipeline pipeline;
+    };
+    std::vector<CachedPipeline> pipelines_;
 };
 
 } // namespace elg::detail::gpu

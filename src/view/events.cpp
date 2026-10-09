@@ -249,7 +249,11 @@ bool EffectElement::hit_impl(Point point, std::vector<Element*>& path) {
         content_->hit_test(point, path); // record what's under the pointer, if anything
         return true;
     }
-    if (effects_.clip_shape && !inside(point, outline_of(*effects_.clip_shape, frame()))) {
+    if (const ShapeFill* mask = clip_path(clip_scale_ > 0 ? clip_scale_ : 1.f)) {
+        if (!shape_fill_contains(*mask, {point.x - frame().x, point.y - frame().y})) {
+            return false;
+        }
+    } else if (effects_.clip_shape && !inside(point, outline_of(*effects_.clip_shape, frame()))) {
         return false;
     }
     if (effects_.clip_to_bounds && !contains(frame(), point)) {

@@ -189,6 +189,44 @@ bool polygons_contain(const std::vector<std::vector<Point>>& polygons, Point p, 
 
 } // namespace
 
+// The shape's outline as a path, for a frame `local` at the origin.
+Path shape_path(const ShapeSpec& spec, Rect local) {
+    if (spec.kind == ShapeKind::path && spec.path) {
+        const ShapePath& source = *spec.path;
+        if (source.builder) {
+            return source.builder(local);
+        }
+        if (source.view_box && source.view_box->width > 0 && source.view_box->height > 0) {
+            // Fit the view box in the frame, keeping its aspect ratio, centered (SVG's "meet").
+            const Rect box = *source.view_box;
+            const float k = std::min(local.width / box.width, local.height / box.height);
+            const float dx = (local.width - box.width * k) / 2 - box.x * k;
+            const float dy = (local.height - box.height * k) / 2 - box.y * k;
+            return source.path.transformed(k, k, dx, dy);
+        }
+        return source.path;
+    }
+    const ShapeOutline o = shape_outline(spec, local);
+    return rounded_rect_path(o.rect, o.radii);
+}
+
+// Flattened to a quarter pixel.
+float flatten_tolerance(float scale) {
+    return 0.25f / std::max(scale, 0.25f);
+}
+
+ShapeFill shape_fill(const ShapeSpec& spec, Size size, float scale) {
+    ShapeFill fill;
+    fill.polygons = polygons_of(shape_path(spec, {0, 0, size.width, size.height}), flatten_tolerance(scale),
+                                fill.bounds);
+    fill.rule = spec.kind == ShapeKind::path && spec.path ? spec.path->rule : FillRule::non_zero;
+    return fill;
+}
+
+bool shape_fill_contains(const ShapeFill& fill, Point local) {
+    return fill.polygons && polygons_contain(*fill.polygons, local, fill.rule);
+}
+
 bool ShapeElement::uses_path() const noexcept {
     return spec_.kind == ShapeKind::path || (spec_.stroke && !spec_.stroke->style.dash.empty());
 }
@@ -197,28 +235,9 @@ const ShapeElement::Geometry& ShapeElement::geometry(Size size, float scale) con
     if (geometry_.size.width == size.width && geometry_.size.height == size.height && geometry_.scale == scale) {
         return geometry_;
     }
-    // Flattened to a quarter pixel.
-    const float tolerance = 0.25f / std::max(scale, 0.25f);
+    const float tolerance = flatten_tolerance(scale);
     const Rect local{0, 0, size.width, size.height};
-    Path outline;
-    if (spec_.kind == ShapeKind::path && spec_.path) {
-        const ShapePath& source = *spec_.path;
-        if (source.builder) {
-            outline = source.builder(local);
-        } else if (source.view_box && source.view_box->width > 0 && source.view_box->height > 0) {
-            // Fit the view box in the frame, keeping its aspect ratio, centered (SVG's "meet").
-            const Rect box = *source.view_box;
-            const float k = std::min(size.width / box.width, size.height / box.height);
-            const float dx = (size.width - box.width * k) / 2 - box.x * k;
-            const float dy = (size.height - box.height * k) / 2 - box.y * k;
-            outline = source.path.transformed(k, k, dx, dy);
-        } else {
-            outline = source.path;
-        }
-    } else {
-        const ShapeOutline o = shape_outline(spec_, local);
-        outline = rounded_rect_path(o.rect, o.radii);
-    }
+    const Path outline = shape_path(spec_, local);
 
     Geometry g;
     g.size = size;
@@ -460,11 +479,45 @@ void LayoutModifierElement::arrange(Rect bounds, ProposedSize proposal) {
 
 // --- EffectElement ---
 
+const ShapeFill* EffectElement::clip_path(float scale) const {
+    if (!effects_.clip_shape) {
+        return nullptr;
+    }
+    const auto& node = static_cast<const ShapeNode&>(*ViewAccess::node(*effects_.clip_shape));
+    if (node.spec().kind != ShapeKind::path) {
+        return nullptr;
+    }
+    const Size size = frame().size();
+    if (size.width != clip_size_.width || size.height != clip_size_.height || scale != clip_scale_) {
+        clip_fill_ = shape_fill(node.spec(), size, scale);
+        clip_size_ = size;
+        clip_scale_ = scale;
+    }
+    return &clip_fill_;
+}
+
 void EffectElement::paint_impl(DisplayList& list) const {
     // Paint the content (clipped) on its own first, to see what it consists of.
     DisplayList content;
     content.scale = list.scale;
-    const bool clips = effects_.clip_to_bounds || effects_.clip_shape;
+    const ShapeFill* mask = clip_path(list.scale > 0 ? list.scale : 1.f);
+    if (mask) {
+        // A path clip: the content renders offscreen and only what the path covers is kept.
+        // A rect clip to the same bounds first lets everything outside be culled.
+        const Rect bounds = frame();
+        const Rect mask_bounds{bounds.x + mask->bounds.x, bounds.y + mask->bounds.y, mask->bounds.width,
+                               mask->bounds.height};
+        content.commands.push_back(PushLayerCommand{
+            mask_bounds, 1, std::nullopt,
+            PathCommand{mask->polygons, mask->bounds, 1, {bounds.x, bounds.y}, bounds, ShapeStyle(Color::white),
+                        mask->rule}});
+        content.commands.push_back(PushClipCommand{mask_bounds, {}});
+        content_->paint(content);
+        content.commands.push_back(PopClipCommand{});
+        content.commands.push_back(PopLayerCommand{});
+        list.animating |= content.animating;
+    }
+    const bool clips = !mask && (effects_.clip_to_bounds || effects_.clip_shape);
     if (clips) {
         ShapeOutline clip{frame(), {}};
         if (effects_.clip_shape) {
@@ -473,8 +526,10 @@ void EffectElement::paint_impl(DisplayList& list) const {
         }
         content.commands.push_back(PushClipCommand{clip.rect, clip.radii});
     }
-    content_->paint(content);
-    list.animating |= content.animating;
+    if (!mask) {
+        content_->paint(content);
+        list.animating |= content.animating;
+    }
     if (clips) {
         content.commands.push_back(PopClipCommand{});
     }

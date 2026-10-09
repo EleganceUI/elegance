@@ -194,10 +194,23 @@ View PathCards() {
                    }
                    context.stroke_path(wave, palette::peach, {.width = 2.5f, .cap = LineCap::round, .join = LineJoin::round});
                }).frame(96, 48));
+    // Content clipped to paths: everything inside (gradients, text, icons) is masked by the shape.
+    const auto clipped = [](const Shape& shape) {
+        return ZStack(Rectangle().fill(LinearGradient({palette::mauve, palette::blue, palette::sky}, UnitPoint::top_leading,
+                                                      UnitPoint::bottom_trailing)),
+                      Text("Elegence").foreground_style(Color::white))
+            .frame(72, 72)
+            .clip_shape(shape);
+    };
+    const View clips = HStack({.spacing = 16}, clipped(star), clipped(heart), clipped(ring));
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
                   Captioned(shapes, "CustomShape, Path::svg, even-odd, stroke caps/joins").card(),
-                  Captioned(strokes, "Dashed strokes, Canvas paths").card());
+                  Captioned(strokes, "Dashed strokes, Canvas paths").card(),
+                  Captioned(clips, "clip_shape(path)").card());
 }
+
+// --emoji-font <file>: the large emoji below use this font (e.g. a COLRv1 emoji font).
+std::optional<std::string> g_emoji_family;
 
 // The built-in icon set (Phosphor): weights follow the font, variants by name, Label for icon + text.
 View IconCards() {
@@ -227,6 +240,8 @@ View IconCards() {
                                    Text("Symbols: ✓ ★ → ∑ ♥ ∞"),
                                    Text("中文  日本語  한국어  हिन्दी"),
                                    Text("Emoji: 😀 🎉 🚀 ☀️"),
+                                   Text("🦊🌈🎨🍩🧪").font(g_emoji_family ? Font::custom(*g_emoji_family, 36)
+                                                                         : Font::system(36)),
                                    Text("文字はどこでも改行できます。この文は折り返して表示されます。")
                                        .frame({.width = 220}))
                                 .frame({.width = 240}),
@@ -592,6 +607,11 @@ int main(int argc, char** argv) {
     bool light = false;
     bool only_main = false; // just the main window (handy when testing input)
     for (int i = 1; i < argc; ++i) {
+        if (std::string_view(argv[i]) == "--emoji-font" && i + 1 < argc) {
+            g_emoji_family = "Sandbox Emoji";
+            elg::register_font(*g_emoji_family, argv[++i]);
+            continue;
+        }
         smoke_test |= std::string_view(argv[i]) == "--smoke-test";
         light |= std::string_view(argv[i]) == "--light";
         only_main |= std::string_view(argv[i]) == "--only-main";

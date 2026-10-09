@@ -67,11 +67,13 @@ struct PushClipCommand {
 struct PopClipCommand {};
 
 // Renders everything until the matching PopLayerCommand offscreen, then composites it with
-// `opacity` and an optional blurred shadow of its alpha.
+// `opacity` and an optional blurred shadow of its alpha. With a `mask`, only what the mask path
+// covers is kept (clip_shape with a path).
 struct PushLayerCommand {
     Rect bounds; // of the layer's content, before the shadow
     float opacity = 1;
     std::optional<Shadow> shadow;
+    std::optional<PathCommand> mask; // its fill is ignored
 };
 
 struct PopLayerCommand {};

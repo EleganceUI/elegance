@@ -196,6 +196,16 @@ struct ShapeOutline {
 };
 ShapeOutline shape_outline(const ShapeSpec& spec, Rect frame);
 
+// A shape's filled area as flattened polygons, in points from the frame's corner (for a frame of
+// `size`, flattened finely enough for `scale` pixels per point).
+struct ShapeFill {
+    std::shared_ptr<const std::vector<std::vector<Point>>> polygons;
+    Rect bounds;
+    FillRule rule = FillRule::non_zero;
+};
+ShapeFill shape_fill(const ShapeSpec& spec, Size size, float scale);
+bool shape_fill_contains(const ShapeFill& fill, Point local);
+
 class ShapeElement final : public Element {
 public:
     explicit ShapeElement(ShapeSpec spec) : spec_(std::move(spec)) {}
@@ -421,8 +431,15 @@ protected:
     bool hit_impl(Point point, std::vector<Element*>& path) override;
 
 private:
+    // The clip shape's fill when it's a path (it clips through a mask), cached per size and scale;
+    // nullptr for the rounded-rect shapes, which clip analytically.
+    const ShapeFill* clip_path(float scale) const;
+
     Effects effects_;
     std::unique_ptr<Element> content_;
+    mutable ShapeFill clip_fill_;
+    mutable Size clip_size_{-1, -1};
+    mutable float clip_scale_ = 0;
     Animated<float> opacity_{1.f}; // resolved from effects_.opacity
     Animated<float> offset_x_{0.f};
     Animated<float> offset_y_{0.f};
