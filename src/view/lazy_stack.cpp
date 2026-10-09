@@ -56,6 +56,17 @@ public:
             }
         }
         items_ = std::move(items);
+        // Known sizes by position, so layout doesn't look every item up by key.
+        known_.assign(items_.size(), -1.f);
+        known_sum_ = 0;
+        known_count_ = 0;
+        for (std::size_t i = 0; i < items_.size(); ++i) {
+            if (const auto size = sizes_.find(items_[i].key); size != sizes_.end()) {
+                known_[i] = size->second;
+                known_sum_ += size->second;
+                ++known_count_;
+            }
+        }
         shown_.clear(); // rebuilt by the next layout; nothing may point at destroyed rows
         if (removed && context_.tree_changed) {
             *context_.tree_changed = true;
@@ -74,13 +85,12 @@ public:
 
     std::optional<float> item_offset(const ItemKey& key) const override {
         const float estimate = estimated_size();
-        float position = 0;
-        for (const ForEachItem& item : items_) {
-            if (item.key == key) {
-                return position;
+        double position = 0;
+        for (std::size_t i = 0; i < items_.size(); ++i) {
+            if (items_[i].key == key) {
+                return static_cast<float>(position);
             }
-            const auto size = sizes_.find(item.key);
-            position += (size != sizes_.end() ? size->second : estimate) + spacing_;
+            position += size_at(i, estimate) + spacing_;
         }
         return std::nullopt;
     }
@@ -89,13 +99,10 @@ protected:
     Size measure(ProposedSize proposal) override {
         const std::optional<float> cross = cross_of(proposal);
         const float estimate = estimated_size();
-        float main = 0;
-        for (const ForEachItem& item : items_) {
-            const auto size = sizes_.find(item.key);
-            main += size != sizes_.end() ? size->second : estimate;
-        }
+        // In double: summed in float, ten thousand rows drift by a row's height.
+        double main = known_sum_ + static_cast<double>(estimate) * static_cast<double>(items_.size() - known_count_);
         if (items_.size() > 1) {
-            main += spacing_ * static_cast<float>(items_.size() - 1);
+            main += static_cast<double>(spacing_) * static_cast<double>(items_.size() - 1);
         }
         // Across: what's offered, else the widest item built so far.
         float cross_size = 0;
@@ -106,7 +113,8 @@ protected:
                 cross_size = std::max(cross_size, cross_of(row.element->size_that_fits(item_proposal(cross))));
             }
         }
-        return axis_ == Axis::vertical ? Size{cross_size, main} : Size{main, cross_size};
+        const auto length = static_cast<float>(main);
+        return axis_ == Axis::vertical ? Size{cross_size, length} : Size{length, cross_size};
     }
 
     void arrange(Rect bounds, ProposedSize) override;
@@ -162,15 +170,22 @@ private:
         return axis_ == Axis::vertical ? ProposedSize{cross, std::nullopt} : ProposedSize{std::nullopt, cross};
     }
 
+    // The average of the sizes measured so far.
     float estimated_size() const {
-        if (sizes_.empty()) {
-            return kDefaultEstimate;
+        return known_count_ == 0 ? kDefaultEstimate : static_cast<float>(known_sum_ / static_cast<double>(known_count_));
+    }
+    float size_at(std::size_t index, float estimate) const {
+        return known_[index] >= 0 ? known_[index] : estimate;
+    }
+    void set_size(std::size_t index, float size) {
+        if (known_[index] >= 0) {
+            known_sum_ -= known_[index];
+        } else {
+            ++known_count_;
         }
-        float sum = 0;
-        for (const auto& [key, size] : sizes_) {
-            sum += size;
-        }
-        return sum / static_cast<float>(sizes_.size());
+        known_[index] = size;
+        known_sum_ += size;
+        sizes_[items_[index].key] = size;
     }
 
     Row mount(const ForEachItem& item) {
@@ -199,7 +214,10 @@ private:
     RowStyle style_;
     std::vector<ForEachItem> items_;
     std::map<ItemKey, Row> rows_;    // built items
-    std::map<ItemKey, float> sizes_; // measured main-axis sizes, by key
+    std::map<ItemKey, float> sizes_; // measured main-axis sizes, by key (kept across item changes)
+    std::vector<float> known_;       // the same by item position; -1 when not measured yet
+    double known_sum_ = 0; // double: sums of thousands of sizes
+    std::size_t known_count_ = 0;
     std::vector<Shown> shown_;       // built items in order, as last laid out
 };
 
@@ -227,11 +245,10 @@ void LazyStackElement::arrange(Rect bounds, ProposedSize) {
     bool structure_changed = false;
     bool size_changed = false;
     shown_.clear();
-    float position = 0;
+    double position = 0; // double, as in measure()
     for (std::size_t i = 0; i < items_.size(); ++i) {
         const ForEachItem& item = items_[i];
-        const auto known = sizes_.find(item.key);
-        float size = known != sizes_.end() ? known->second : estimate;
+        float size = size_at(i, estimate);
         if (position + size >= low && position <= high) {
             auto existing = rows_.find(item.key);
             Row row;
@@ -243,14 +260,15 @@ void LazyStackElement::arrange(Rect bounds, ProposedSize) {
                 structure_changed = true;
             }
             const Size actual = row.element->size_that_fits(proposal);
-            if (known == sizes_.end() || std::abs(known->second - main_of(actual)) > 0.01f) {
-                sizes_[item.key] = main_of(actual);
+            if (known_[i] < 0 || std::abs(known_[i] - main_of(actual)) > 0.01f) {
+                set_size(i, main_of(actual));
                 size_changed = true;
             }
             size = main_of(actual);
             const float offset = (cross - cross_of(actual)) * alignment_;
-            row.element->place(vertical ? Point{bounds.x + offset, bounds.y + position}
-                                        : Point{bounds.x + position, bounds.y + offset},
+            const auto at = static_cast<float>(position);
+            row.element->place(vertical ? Point{bounds.x + offset, bounds.y + at}
+                                        : Point{bounds.x + at, bounds.y + offset},
                                proposal);
             shown_.push_back({row.element.get(), i});
             kept.emplace(item.key, std::move(row));

@@ -62,14 +62,19 @@ Swapchain::Swapchain(const Device& device, VkSurfaceKHR surface, bool transparen
     : device_(device), surface_(surface), transparent_(transparent), format_(choose_format(device.physical(), surface)) {}
 
 Swapchain::~Swapchain() {
-    if (swapchain_) {
+    if (swapchain_ || !retired_.empty()) {
         vkDeviceWaitIdle(device_.handle());
+    }
+    for (Retired& retired : retired_) {
+        destroy(retired);
+    }
+    if (swapchain_) {
         destroy_images();
         vkDestroySwapchainKHR(device_.handle(), swapchain_, nullptr);
     }
 }
 
-bool Swapchain::prepare(VkExtent2D fallback) {
+bool Swapchain::prepare(VkExtent2D fallback, const std::function<void()>& idle, std::uint64_t submitted) {
     VkSurfaceCapabilitiesKHR caps;
     check(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device_.physical(), surface_, &caps),
           "query surface capabilities");
@@ -85,15 +90,21 @@ bool Swapchain::prepare(VkExtent2D fallback) {
     if (!stale_ && swapchain_ && extent.width == extent_.width && extent.height == extent_.height) {
         return true;
     }
-    create(extent, caps);
+    create(extent, caps, idle, submitted);
     return true;
 }
 
-void Swapchain::create(VkExtent2D extent, const VkSurfaceCapabilitiesKHR& caps) {
-    // Simple and safe: nothing may still use the old images. Resizes are rare.
-    device_.wait_idle();
+void Swapchain::create(VkExtent2D extent, const VkSurfaceCapabilitiesKHR& caps, const std::function<void()>& idle,
+                       std::uint64_t submitted) {
+    // Nothing may still use the old images: only this window's frames can (other windows keep
+    // drawing; a device-wide wait stalled every window on each step of a resize).
+    if (idle) {
+        idle();
+    }
 
-    std::uint32_t image_count = caps.minImageCount + 1;
+    // Two images: at most one frame waits for display. More would add a frame of latency, which
+    // shows while resizing as the compositor stretching an older, wrongly sized frame.
+    std::uint32_t image_count = std::max(caps.minImageCount, 2u);
     if (caps.maxImageCount != 0) {
         image_count = std::min(image_count, caps.maxImageCount);
     }
@@ -120,10 +131,13 @@ void Swapchain::create(VkExtent2D extent, const VkSurfaceCapabilitiesKHR& caps) 
     VkSwapchainKHR created = VK_NULL_HANDLE;
     check(vkCreateSwapchainKHR(device_.handle(), &info, nullptr, &created), "create the swapchain");
 
-    destroy_images();
+    // The old swapchain retires: a present queued with it may still be waiting on its semaphores.
     if (swapchain_) {
-        vkDestroySwapchainKHR(device_.handle(), swapchain_, nullptr);
+        retired_.push_back({swapchain_, std::move(views_), std::move(render_finished_), submitted});
     }
+    views_.clear();
+    render_finished_.clear();
+    images_.clear();
     swapchain_ = created;
     extent_ = extent;
     stale_ = false;
@@ -150,6 +164,26 @@ void Swapchain::create(VkExtent2D extent, const VkSurfaceCapabilitiesKHR& caps) 
               "create a semaphore");
         render_finished_.push_back(semaphore);
     }
+}
+
+void Swapchain::collect(std::uint64_t completed) noexcept {
+    std::erase_if(retired_, [&](Retired& retired) {
+        if (completed <= retired.submitted) {
+            return false;
+        }
+        destroy(retired);
+        return true;
+    });
+}
+
+void Swapchain::destroy(Retired& retired) noexcept {
+    for (VkImageView view : retired.views) {
+        vkDestroyImageView(device_.handle(), view, nullptr);
+    }
+    for (VkSemaphore semaphore : retired.semaphores) {
+        vkDestroySemaphore(device_.handle(), semaphore, nullptr);
+    }
+    vkDestroySwapchainKHR(device_.handle(), retired.swapchain, nullptr);
 }
 
 void Swapchain::destroy_images() noexcept {

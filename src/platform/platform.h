@@ -154,6 +154,10 @@ private:
 // Owns SDL's lifetime. Construct on the main thread, which becomes the UI thread.
 // Whether one of the app's windows has keyboard focus.
 bool any_window_focused();
+// Blocks until the system compositor has composed its next frame (DwmFlush on Windows; nothing
+// elsewhere). During a live resize this lets a just-presented frame reach the screen before the
+// window is resized again, so the compositor doesn't stretch an old frame.
+void wait_for_compositor();
 std::string clipboard_text();
 void set_clipboard_text(const std::string& text);
 // The pointer's shape: the arrow, or the I-beam over text.

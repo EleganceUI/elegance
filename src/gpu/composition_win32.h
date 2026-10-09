@@ -10,18 +10,24 @@
 #include "gpu/device.h"
 #include "gpu/vk.h"
 
+#include <array>
 #include <memory>
+#include <optional>
 
 namespace elg::detail::gpu {
 
-// Per-pixel transparent windows on Windows (design.md §4.1). Vulkan swapchains there are opaque
-// (drivers offer only VK_COMPOSITE_ALPHA_OPAQUE), so a transparent window is presented through
-// DirectComposition instead: we render into a D3D11 texture shared with Vulkan, then copy it into
-// a composition swapchain with premultiplied alpha that DWM blends with the desktop.
+// How windows present on Windows (design.md §4.1): through DirectComposition. We render into a
+// D3D11 texture shared with Vulkan, then copy it into a composition swapchain.
+// - Transparent windows: the swapchain has premultiplied alpha, which DWM blends with the
+//   desktop (Vulkan swapchains on Windows are opaque only).
+// - Every window: a composition swapchain is shown at its own pixel size, never stretched. While
+//   a window is resized faster than frames arrive, the newest frame stays put at the top-left and
+//   a background layer in the window's color fills the rest; a Vulkan swapchain's image would be
+//   stretched to the new size instead.
 class CompositionTarget {
 public:
     // Throws elg::GpuError if the interop isn't available (the caller falls back to a swapchain).
-    CompositionTarget(const Device& device, void* hwnd);
+    CompositionTarget(const Device& device, void* hwnd, bool transparent);
     ~CompositionTarget();
 
     CompositionTarget(const CompositionTarget&) = delete;
@@ -37,6 +43,11 @@ public:
     VkFormat format() const noexcept { return VK_FORMAT_B8G8R8A8_SRGB; }
     VkExtent2D extent() const noexcept { return extent_; }
 
+    // Waits (up to `timeout_ms`) until the compositor is ready for another frame: paces frames
+    // to the display without queueing them.
+    void wait_until_ready(unsigned timeout_ms);
+    // The color shown where no frame covers the window yet (opaque windows; sRGB).
+    void set_background(const std::array<float, 4>& srgb);
     // Call once the rendering into image() has finished (its fence waited): shows it.
     void present();
 
@@ -50,6 +61,8 @@ private:
     const Device& device_;
     std::unique_ptr<Impl> impl_;
     VkExtent2D extent_{};
+    bool transparent_;
+    std::optional<std::array<float, 4>> background_;
 };
 
 } // namespace elg::detail::gpu

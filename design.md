@@ -1251,6 +1251,37 @@ Separate render thread from day one (decided).
   draws a placeholder or skips, and the UI never blocks waiting for an upload.
 - **Resize**: the render thread recreates the swapchain. During live resize (§4) the UI thread
   sends new packets from the event watch callback.
+  - If the last presented image doesn't match the window's size, the compositor stretches it.
+    Keeping latency low hides that:
+    - Recreation waits only on the window's own frames, not the whole device.
+    - The old swapchain is retired: its views and semaphores are destroyed once a later
+      submission completes, because a pending present may still wait on them.
+    - Swapchains have two images, so at most one frame is queued.
+    - After each live-resize frame the UI thread waits for the compositor (`DwmFlush`), so the
+      new frame is on screen before the next resize step.
+  - On Windows, every window now presents through DirectComposition (`gpu/composition_win32`),
+    so that path is no longer just for transparent windows:
+    - A composition swapchain is shown at its own pixel size, never stretched.
+    - A late frame stays anchored top-left over a background layer in the window's clear color:
+      a 1×1 surface scaled to cover the window.
+    - Opaque windows use `DXGI_ALPHA_MODE_IGNORE`.
+    - Frames are paced by a frame-latency waitable swapchain (latency 1) instead of a blocking
+      present.
+    - `ELG_PRESENT=vulkan` restores Vulkan swapchains for opaque windows.
+  - What triggers a live-resize frame: SDL's live-resize timer is a `WM_TIMER`, which Windows
+    delivers only when no other message waits, so it fired irregularly during fast drags (one
+    window got 16 frames in a drag where another got 55, with 100–200 px jumps). Frames are now
+    also drawn on every pixel-size change while the thread is in the OS move/size loop
+    (`GUI_INMOVESIZE`). The timer still covers animations while the drag pauses.
+  - Lazy stacks keep measured sizes by item position, with a running total (in `double`), so
+    measuring is O(1) and arranging does map lookups only for visible rows. The 10,000-row
+    List's frame went from ~16 ms to ~1.6 ms in debug. Summing in `float` drifted by a whole row
+    over 10,000 items.
+  - Follow-ups:
+    - `VK_EXT_swapchain_maintenance1` 1:1 present scaling for the Vulkan path where drivers
+      expose it.
+    - Replace the CPU waits around the D3D11 copy with shared fences (keyed mutex or
+      `VK_KHR_external_semaphore_win32`).
 - **Embedding mode** (§4) runs without the render thread: the host calls `elg::render(cmd)` on
   its own render thread with the latest packet.
 - **Rule**: the UI thread never touches Vulkan objects, and the render thread never touches the

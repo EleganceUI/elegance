@@ -513,6 +513,7 @@ int App::run() {
             if (auto it = find_window(window_id); it != windows.end()) {
                 set_frame_time(seconds_now());
                 mailbox.wait_until_done(post_frame(**it), kPresentTimeout);
+                platform::wait_for_compositor();
             }
         } catch (...) {
             // Rethrown from the main loop; nothing may unwind through the OS modal loop.

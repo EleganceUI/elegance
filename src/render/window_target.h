@@ -55,6 +55,7 @@ private:
         VkCommandBuffer cmd = VK_NULL_HANDLE;
         VkFence in_flight = VK_NULL_HANDLE;
         VkSemaphore image_acquired = VK_NULL_HANDLE;
+        std::uint64_t submission = 0; // number of the last submission using this slot
         gpu::Buffer instances;
         gpu::Buffer stops;
         gpu::Buffer path_vertices;
@@ -117,6 +118,8 @@ private:
     VkSampler sampler_ = VK_NULL_HANDLE; // for sampling layers
     std::vector<FrameSlot> slots_;
     std::size_t next_slot_ = 0;
+    std::uint64_t submitted_ = 0; // queue submissions so far
+    std::uint64_t completed_ = 0; // the latest submission known to have finished
 };
 
 } // namespace elg::detail

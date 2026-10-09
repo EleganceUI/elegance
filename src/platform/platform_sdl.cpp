@@ -36,10 +36,29 @@ bool g_platform_alive = false;
     throw PlatformError(std::format("{}: {}", what, SDL_GetError()));
 }
 
+// Whether the OS is running its modal move/size loop on this thread (the user is dragging a
+// window edge), during which our event loop doesn't run.
+bool in_move_size_loop() {
+#if defined(_WIN32)
+    GUITHREADINFO info{sizeof(GUITHREADINFO)};
+    return GetGUIThreadInfo(GetCurrentThreadId(), &info) && (info.flags & GUI_INMOVESIZE) != 0;
+#else
+    return false;
+#endif
+}
+
 bool SDLCALL on_event_watch(void* userdata, SDL_Event* event) {
-    // SDL guarantees live-resize expose events arrive on the main thread; other events may be
-    // watched from whichever thread pushed them (e.g. wake() from the render thread).
-    if (event->type == SDL_EVENT_WINDOW_EXPOSED && event->window.data1 == 1 && SDL_IsMainThread()) {
+    // Events may be watched from whichever thread pushed them (e.g. wake() from the render
+    // thread); live resize only happens on the main thread.
+    if (!SDL_IsMainThread()) {
+        return true;
+    }
+    // While the user drags a window edge, draw each new size as the OS applies it (the frame then
+    // reaches the compositor with the size), and on SDL's live-resize timer for animations in
+    // between. The timer alone is too irregular: WM_TIMER only comes when no other message waits.
+    const bool live_expose = event->type == SDL_EVENT_WINDOW_EXPOSED && event->window.data1 == 1;
+    const bool resized = event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED && in_move_size_loop();
+    if (live_expose || resized) {
         static_cast<Platform*>(userdata)->dispatch_live_resize(event->window.windowID);
     }
     return true;
@@ -275,6 +294,12 @@ Rect Window::usable_area() const {
 
 bool any_window_focused() {
     return SDL_GetKeyboardFocus() != nullptr;
+}
+
+void wait_for_compositor() {
+#if defined(_WIN32)
+    DwmFlush();
+#endif
 }
 
 void* Window::native_handle() const {

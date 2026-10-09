@@ -4,6 +4,8 @@
 
 #include "render/window_target.h"
 
+#include "platform/platform.h"
+
 #include "render/color_space.h"
 
 #include "core/log.h"
@@ -14,6 +16,11 @@
 #include <span>
 
 namespace elg::detail {
+
+namespace {
+// The longest a composition frame waits for the display to be ready (it's a hint for pacing).
+constexpr unsigned kReadyTimeoutMs = 50;
+} // namespace
 
 namespace {
 
@@ -79,11 +86,14 @@ void render_offscreen(VkCommandBuffer cmd, const gpu::RenderImage& target, VkExt
 WindowTarget::WindowTarget(const gpu::Device& device, VkSurfaceKHR surface, bool transparent, void* native_window)
     : device_(device), swapchain_(device, surface, transparent) {
 #if defined(_WIN32)
-    if (transparent && native_window && gpu::CompositionTarget::supported(device)) {
+    // Every window presents through DirectComposition (no stretched frames while resizing, and
+    // transparency); ELG_PRESENT=vulkan uses a Vulkan swapchain for opaque windows instead.
+    const bool use_vulkan = !transparent && platform::environment_variable("ELG_PRESENT").value_or("") == "vulkan";
+    if (!use_vulkan && native_window && gpu::CompositionTarget::supported(device)) {
         try {
-            composition_ = std::make_unique<gpu::CompositionTarget>(device, native_window);
+            composition_ = std::make_unique<gpu::CompositionTarget>(device, native_window, transparent);
         } catch (const std::exception& error) {
-            log_warning("transparent window falls back to an opaque swapchain: {}", error.what());
+            log_warning("window falls back to a Vulkan swapchain: {}", error.what());
         }
     }
 #else
@@ -171,20 +181,28 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
 #endif
     const VkExtent2D fallback{static_cast<std::uint32_t>(std::max(frame.pixel_width, 0)),
                               static_cast<std::uint32_t>(std::max(frame.pixel_height, 0))};
-    if (!swapchain_.prepare(fallback)) {
+    const VkDevice dev = device_.handle();
+    const auto idle = [&] {
+        for (FrameSlot& s : slots_) {
+            gpu::check(vkWaitForFences(dev, 1, &s.in_flight, VK_TRUE, kNoTimeout), "wait for a frame");
+        }
+        completed_ = submitted_;
+    };
+    if (!swapchain_.prepare(fallback, idle, submitted_)) {
         return; // minimized
     }
 
-    const VkDevice dev = device_.handle();
     FrameSlot& slot = slots_[next_slot_];
     gpu::check(vkWaitForFences(dev, 1, &slot.in_flight, VK_TRUE, kNoTimeout), "wait for a frame");
+    completed_ = std::max(completed_, slot.submission);
+    swapchain_.collect(completed_); // swapchains retired by resizes, once their presents are done
 
     std::uint32_t image_index = 0;
     VkResult acquired = vkAcquireNextImageKHR(dev, swapchain_.handle(), kNoTimeout, slot.image_acquired,
                                               VK_NULL_HANDLE, &image_index);
     if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
         swapchain_.mark_stale();
-        if (!swapchain_.prepare(fallback)) {
+        if (!swapchain_.prepare(fallback, idle, submitted_)) {
             return;
         }
         acquired = vkAcquireNextImageKHR(dev, swapchain_.handle(), kNoTimeout, slot.image_acquired,
@@ -227,6 +245,7 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
     submit.signalSemaphoreInfoCount = 1;
     submit.pSignalSemaphoreInfos = &signal;
     gpu::check(vkQueueSubmit2(device_.queue(), 1, &submit, slot.in_flight), "submit a frame");
+    slot.submission = ++submitted_;
 
     const VkSwapchainKHR swapchain = swapchain_.handle();
     const VkSemaphore render_finished = swapchain_.render_finished(image_index);
@@ -257,6 +276,9 @@ void WindowTarget::render_composition([[maybe_unused]] const WindowFrame& frame,
     if (!composition_->prepare(extent)) {
         return; // minimized
     }
+    composition_->wait_until_ready(kReadyTimeoutMs); // paced to the display
+    const Color clear = frame.list.clear_color;
+    composition_->set_background({clear.r, clear.g, clear.b, 1});
     gpu::check(vkResetFences(dev, 1, &slot.in_flight), "reset a fence");
 
     const FramePlan plan = plan_frame(frame.list);

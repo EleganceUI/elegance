@@ -9,6 +9,7 @@
 #include "gpu/vk.h"
 
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 namespace elg::detail::gpu {
@@ -27,7 +28,14 @@ public:
     // (Re)creates the swapchain if it's stale or the surface size changed. `fallback` is used
     // when the surface doesn't dictate its size. Returns false when the surface has no area
     // (e.g. a minimized window); there is nothing to present then.
-    bool prepare(VkExtent2D fallback);
+    // `idle` is called before the swapchain is recreated: it waits for the window's frames in
+    // flight. `submitted` counts the window's queue submissions so far; the old swapchain's
+    // images and semaphores (a pending present may still wait on one) are kept until a later
+    // submission has completed (see collect()).
+    bool prepare(VkExtent2D fallback, const std::function<void()>& idle, std::uint64_t submitted);
+    // Destroys retired swapchains once submission number `completed` (and so everything queued
+    // before it, presents included) has finished.
+    void collect(std::uint64_t completed) noexcept;
 
     // Forces recreation on the next prepare(), e.g. after VK_ERROR_OUT_OF_DATE_KHR.
     void mark_stale() noexcept { stale_ = true; }
@@ -42,8 +50,18 @@ public:
     VkSemaphore render_finished(std::uint32_t index) const { return render_finished_[index]; }
 
 private:
-    void create(VkExtent2D extent, const VkSurfaceCapabilitiesKHR& caps);
+    void create(VkExtent2D extent, const VkSurfaceCapabilitiesKHR& caps, const std::function<void()>& idle,
+                std::uint64_t submitted);
     void destroy_images() noexcept;
+
+    struct Retired {
+        VkSwapchainKHR swapchain = VK_NULL_HANDLE;
+        std::vector<VkImageView> views;
+        std::vector<VkSemaphore> semaphores;
+        std::uint64_t submitted = 0; // submissions made before it was retired
+    };
+    void destroy(Retired& retired) noexcept;
+    std::vector<Retired> retired_;
 
     const Device& device_;
     VkSurfaceKHR surface_;

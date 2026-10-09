@@ -43,9 +43,13 @@ struct CompositionTarget::Impl {
     ComPtr<ID3D11DeviceContext> context;
     ComPtr<ID3D11Query> done; // signaled when the copy into the swapchain has executed
     ComPtr<IDXGISwapChain1> swapchain;
+    HANDLE ready = nullptr; // the swapchain's frame-latency waitable object
     ComPtr<IDCompositionDevice> dcomp;
     ComPtr<IDCompositionTarget> target;
-    ComPtr<IDCompositionVisual> visual;
+    ComPtr<IDCompositionVisual> root;
+    ComPtr<IDCompositionVisual> background; // opaque windows: a 1x1 surface scaled over everything
+    ComPtr<IDCompositionSurface> background_surface;
+    ComPtr<IDCompositionVisual> visual; // the frames
 
     // The shared texture: created by D3D11, imported into Vulkan.
     ComPtr<ID3D11Texture2D> shared;
@@ -60,7 +64,8 @@ bool CompositionTarget::supported(const Device& device) {
     return device.has_extension(kExternalMemoryWin32);
 }
 
-CompositionTarget::CompositionTarget(const Device& device, void* hwnd) : device_(device), impl_(std::make_unique<Impl>()) {
+CompositionTarget::CompositionTarget(const Device& device, void* hwnd, bool transparent)
+    : device_(device), impl_(std::make_unique<Impl>()), transparent_(transparent) {
     if (!supported(device)) {
         throw GpuError("the GPU can't share images with Direct3D (no VK_KHR_external_memory_win32)");
     }
@@ -98,13 +103,68 @@ CompositionTarget::CompositionTarget(const Device& device, void* hwnd) : device_
     check_hr(DCompositionCreateDevice(dxgi.Get(), IID_PPV_ARGS(&impl_->dcomp)), "create a DirectComposition device");
     check_hr(impl_->dcomp->CreateTargetForHwnd(static_cast<HWND>(hwnd), TRUE, &impl_->target),
              "attach DirectComposition to the window");
+    check_hr(impl_->dcomp->CreateVisual(&impl_->root), "create a composition visual");
     check_hr(impl_->dcomp->CreateVisual(&impl_->visual), "create a composition visual");
-    check_hr(impl_->target->SetRoot(impl_->visual.Get()), "set the composition root");
-    log_debug("transparent window presented through DirectComposition");
+    if (!transparent) {
+        // Under the frames: the window's background, wherever a frame doesn't reach (yet).
+        check_hr(impl_->dcomp->CreateVisual(&impl_->background), "create a composition visual");
+        check_hr(impl_->dcomp->CreateSurface(1, 1, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_ALPHA_MODE_IGNORE,
+                                             &impl_->background_surface),
+                 "create the background surface");
+        check_hr(impl_->background->SetContent(impl_->background_surface.Get()), "show the background");
+        // Bitmap interpolation off: the single pixel scales to a flat color.
+        check_hr(impl_->background->SetBitmapInterpolationMode(DCOMPOSITION_BITMAP_INTERPOLATION_MODE_NEAREST_NEIGHBOR),
+                 "set the background's interpolation");
+        const D2D_MATRIX_3X2_F scale{16384, 0, 0, 16384, 0, 0};
+        check_hr(impl_->background->SetTransform(scale), "scale the background");
+        check_hr(impl_->root->AddVisual(impl_->background.Get(), FALSE, nullptr), "add the background");
+    }
+    check_hr(impl_->root->AddVisual(impl_->visual.Get(), TRUE, impl_->background.Get()), "add the frames");
+    check_hr(impl_->target->SetRoot(impl_->root.Get()), "set the composition root");
+    check_hr(impl_->dcomp->Commit(), "commit the composition");
+    log_debug("window presented through DirectComposition ({})", transparent ? "transparent" : "opaque");
 }
 
 CompositionTarget::~CompositionTarget() {
     destroy_image();
+    if (impl_->ready) {
+        CloseHandle(impl_->ready);
+    }
+}
+
+void CompositionTarget::wait_until_ready(unsigned timeout_ms) {
+    if (impl_->ready) {
+        WaitForSingleObjectEx(impl_->ready, timeout_ms, TRUE);
+    }
+}
+
+void CompositionTarget::set_background(const std::array<float, 4>& srgb) {
+    if (!impl_->background_surface || background_ == srgb) {
+        return;
+    }
+    background_ = srgb;
+    ComPtr<ID3D11Texture2D> texture;
+    POINT offset{};
+    check_hr(impl_->background_surface->BeginDraw(nullptr, IID_PPV_ARGS(&texture), &offset),
+             "draw the background");
+    ComPtr<ID3D11RenderTargetView> target;
+    D3D11_RENDER_TARGET_VIEW_DESC desc{};
+    desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    desc.ViewDimension = D3D11_RTV_DIMENSION_TEXTURE2D;
+    const HRESULT created = impl_->d3d->CreateRenderTargetView(texture.Get(), &desc, &target);
+    if (SUCCEEDED(created)) {
+        // The surface may be a region of a bigger atlas: clear just our pixel.
+        const D3D11_RECT pixel{offset.x, offset.y, offset.x + 1, offset.y + 1};
+        ComPtr<ID3D11DeviceContext1> context1;
+        if (SUCCEEDED(impl_->context.As(&context1))) {
+            context1->ClearView(target.Get(), srgb.data(), &pixel, 1);
+        } else {
+            impl_->context->ClearRenderTargetView(target.Get(), srgb.data());
+        }
+    }
+    check_hr(impl_->background_surface->EndDraw(), "finish the background");
+    check_hr(created, "create the background's render target");
+    check_hr(impl_->dcomp->Commit(), "commit the composition");
 }
 
 void CompositionTarget::destroy_image() noexcept {
@@ -159,13 +219,20 @@ bool CompositionTarget::prepare(VkExtent2D extent) {
         desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
         desc.BufferCount = 2;
         desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-        desc.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED;
+        desc.AlphaMode = transparent_ ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_IGNORE;
+        desc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
         check_hr(factory->CreateSwapChainForComposition(impl_->d3d.Get(), &desc, nullptr, &impl_->swapchain),
                  "create a composition swapchain");
+        ComPtr<IDXGISwapChain2> swapchain2;
+        if (SUCCEEDED(impl_->swapchain.As(&swapchain2))) {
+            swapchain2->SetMaximumFrameLatency(1);
+            impl_->ready = swapchain2->GetFrameLatencyWaitableObject();
+        }
         check_hr(impl_->visual->SetContent(impl_->swapchain.Get()), "show the swapchain");
         check_hr(impl_->dcomp->Commit(), "commit the composition");
     } else {
-        check_hr(impl_->swapchain->ResizeBuffers(0, extent.width, extent.height, DXGI_FORMAT_UNKNOWN, 0),
+        check_hr(impl_->swapchain->ResizeBuffers(0, extent.width, extent.height, DXGI_FORMAT_UNKNOWN,
+                                                 DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT),
                  "resize the composition swapchain");
     }
 
@@ -264,7 +331,8 @@ void CompositionTarget::present() {
     check_hr(impl_->swapchain->GetBuffer(0, IID_PPV_ARGS(&back_buffer)), "get the composition back buffer");
     impl_->context->CopyResource(back_buffer.Get(), impl_->shared.Get());
     // No vsync wait here: DirectComposition shows it at the next composition anyway, and waiting
-    // would add a frame of latency (hover feedback in menus felt it).
+    // would add a frame of latency (hover feedback in menus felt it). Frames are paced by
+    // wait_until_ready() before rendering instead.
     check_hr(impl_->swapchain->Present(0, 0), "present to the composition swapchain");
     // Vulkan renders into the shared texture again next frame: let the copy finish first.
     impl_->context->End(impl_->done.Get());
