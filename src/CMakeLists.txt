@@ -32,6 +32,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         media/image_decode.cpp
         media/miniaudio.cpp
         media/video_source.cpp
+        net/http.cpp
         gpu/vk.cpp
         gpu/vma.cpp
         platform/dynamic_library.cpp
@@ -54,6 +55,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         view/fragment.cpp
         view/hot_reload.cpp
         view/image.cpp
+        view/async_image.cpp
         view/raster_image.cpp
         view/video_view.cpp
         view/inspect.cpp
@@ -129,7 +131,7 @@ endif ()
 if (WIN32)
     target_sources(elegence PRIVATE gpu/composition_win32.cpp)
     # dwmapi: rounded corners for undecorated windows; d3d11/dxgi/dcomp: transparent windows.
-    target_link_libraries(elegence PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid oleaut32)
+    target_link_libraries(elegence PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid oleaut32 winhttp)
 endif ()
 
 target_link_libraries(elegence PRIVATE

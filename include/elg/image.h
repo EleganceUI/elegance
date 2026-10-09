@@ -25,6 +25,8 @@
 #include <elg/view.h>
 
 #include <filesystem>
+#include <functional>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -52,6 +54,33 @@ struct ImageSource {
 // Throws elg::UsageError for an unknown icon (naming the closest matches).
 ELG_API View Image(ImageSource source);
 ELG_API View Image(std::string_view system_name);
+
+// --- AsyncImage: an image from the network ---
+
+// Where an AsyncImage is, for its content function.
+struct AsyncImagePhase {
+    enum class Kind { loading, success, failure };
+    Kind kind = Kind::loading;
+    View image;        // success: the image (an Image, so .resizable() applies)
+    std::string error; // failure: why
+};
+
+struct AsyncImageOptions {
+    float scale = 1; // pixels per point
+    // Resizable, keeping its aspect ratio this way (unset: at its own size, like Image).
+    std::optional<ContentMode> content_mode;
+};
+
+// Loads an image over HTTP(S) when first shown (design.md §13.3): a spinner while loading, the
+// image once it's here, a placeholder icon if it fails. Downloads are cached in memory, so lists
+// scrolling back don't fetch again.
+//   AsyncImage(url, {.content_mode = ContentMode::fill}).frame(48, 48).clip_shape(Circle())
+ELG_API View AsyncImage(std::string url, AsyncImageOptions options = {});
+// The same, with your own view for each phase:
+//   AsyncImage(url, [](const AsyncImagePhase& phase) {
+//       return phase.kind == AsyncImagePhase::Kind::success ? phase.image.resizable() : View(Color::gray);
+//   })
+ELG_API View AsyncImage(std::string url, std::function<View(const AsyncImagePhase&)> content, float scale = 1);
 
 // An icon followed by a title, spaced for buttons, menus, and lists.
 ELG_API View Label(std::string title, ImageSource icon);

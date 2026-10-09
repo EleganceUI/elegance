@@ -255,6 +255,10 @@ View raster_image(const ImageSource& source) {
     return ViewAccess::make(std::make_shared<const RasterImageNode>(source.file, std::move(data), source.scale, false));
 }
 
+View raster_image(std::shared_ptr<const Bytes> data, float scale) {
+    return ViewAccess::make(std::make_shared<const RasterImageNode>(fs::path(), std::move(data), scale, false));
+}
+
 } // namespace elg::detail
 
 namespace elg {

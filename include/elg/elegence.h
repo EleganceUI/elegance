@@ -20,6 +20,7 @@
 #include <elg/image.h>
 #include <elg/graphics_context.h>
 #include <elg/hot_reload.h>
+#include <elg/http.h>
 #include <elg/layout.h>
 #include <elg/modifier.h>
 #include <elg/path.h>

@@ -1980,8 +1980,34 @@ Separate render thread from day one (decided).
   - HDR/10-bit, subtitles and audio track selection.
   - Fullscreen.
   - Frame pacing from the display's vsync rather than 4 ms polling.
+- [x] Media part 4, HTTP and `AsyncImage`:
+  - **`elg/http.h`:** on the system's networking, with no bundled HTTP library.
+    - WinHTTP on Windows: system certificates and proxy settings (automatic proxy where
+      supported), HTTP/2, gzip/deflate, redirects. libcurl on Linux when present; NSURLSession
+      on macOS is a follow-up.
+    - Readable errors: timeout, name not resolved, TLS failure, cancelled...
+  - **`http::fetch(Request, done)`:** a worker thread per request (up to 6). `done` runs on the
+    UI thread. It returns a `Task`, and `cancel()` closes the WinHTTP handle so a blocking call
+    stops at once.
+  - **`http::Fetch`:** a request as reactive state (`is_loading`, `has_response`, `ok`,
+    `response`, `error`, `reload`), cancelled with its last copy.
+  - **`AsyncImage(url, {.scale, .content_mode})`** and `AsyncImage(url, content(phase))`:
+    - Fetched when lowered (so List rows not built don't download) and cancelled when the view
+      goes. Responses are checked to be images (`probe_image`).
+    - Downloads are cached in memory by URL (64 MB LRU), so scrolling back doesn't fetch again.
+    - The phase is the key of a one-item ForEach, so the spinner fades into the image. Failure
+      shows `image-broken` with the error as a tooltip.
+  - **Sandbox:** a Wikimedia photo (fill + rounded clip), a GitHub avatar in a circle, a failing
+    `.invalid` URL, and an `http::Fetch` status line with Reload. Idle CPU stays 0.
+  - **Tests:** header lookup, cancellation, AsyncImage construction and errors.
+- [ ] Networking follow-ups:
+  - NSURLSession (macOS).
+  - A disk cache honoring `Cache-Control`/`ETag`.
+  - Upload/download progress and streaming bodies.
+  - WebSockets.
+  - Optional JSON adapter (`elg/json.h` + `Response::json()`) behind a vcpkg feature, so apps
+    that already use a JSON library don't get a second one.
 - [ ] Media (§13.3), the rest, in order:
-  - `AsyncImage` and HTTP loading.
   - Capture: microphone, camera.
 - [x] Built-in icon library (§13.2), **Phosphor** 2.1.2 (MIT):
   - Vendored verbatim in `third_party/phosphor`: regular, bold and fill TTFs plus the CSS name
