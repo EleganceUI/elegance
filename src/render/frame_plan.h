@@ -24,6 +24,7 @@ struct PlanSegment {
     bool shadow = false; // the layer's blurred shadow rather than its content
     int path = -1;       // >= 0: a path filled through that path's coverage mask
     bool mask = false;   // keeps only what's under the path's coverage ("destination-in")
+    int image = -1;      // >= 0: a raster image (FramePlan::images)
 };
 
 // A path's coverage mask to render before the passes that use it (gpu::PathRenderer).
@@ -55,6 +56,8 @@ struct FramePlan {
     std::vector<std::array<float, 4>> stops;
     std::vector<PlanPath> paths;
     std::vector<std::array<float, 2>> path_vertices;
+    // Images drawn this frame (uploaded first if they aren't on the GPU yet).
+    std::vector<std::shared_ptr<const DecodedImage>> images;
 };
 
 // Converts logical points to pixels, resolves the clip stack per instance (culling instances

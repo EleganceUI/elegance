@@ -1214,6 +1214,81 @@ set_default_icon_set("brand"); // for names without a set prefix
 
 ---
 
+### 13.3 Media: images, audio, and video
+
+Elegence exists so desktop apps don't need a browser. What people reach for a browser for
+includes pictures, sound, and video, so these are built in rather than left to each app.
+Today `Image` only draws icons, and nothing plays sound or video.
+
+**Principles**
+- **Platform decoders first.** Use the OS media stack: Media Foundation on Windows,
+  AVFoundation on macOS, and GStreamer on Linux. This gives hardware decoding, the codecs the
+  OS already licenses (H.264, HEVC, AAC, and AV1 where installed), and audio/video sync for
+  free. An FFmpeg backend can come later as an option. Bundling it by default would bring a
+  large binary, LGPL linking care, and codec patent questions.
+- **Frames stay on the GPU.** Decoded video frames land in a GPU texture and are drawn like any
+  other quad, with no CPU copy where the platform allows it. On Windows the Media Foundation
+  engine renders into a D3D11 texture shared with Vulkan, the same interop that DirectComposition
+  presentation uses. macOS uses IOSurface → MoltenVK, and Linux uses DMA-BUF import.
+- **Reactive players.** A player's time, duration, state, and volume are signals, so a
+  scrubber is just `Slider(player.time_binding(), ...)`, and views update without callbacks.
+- **The UI thread never blocks.** Decoding, file and network I/O, and audio mixing run on their
+  own threads. Results reach the UI thread like everything else, through signals and
+  `post_ui_task`.
+
+**1. Raster images.** This is the foundation for the rest: the texture path video reuses.
+```cpp
+Image({.file = "assets/photo.jpg"}).resizable().aspect_ratio(ContentMode::fill).frame(200, 120).clip_shape(RoundedRectangle(12))
+Image({.data = png_bytes})                                  // from memory (embedded with elg_embed_file)
+AsyncImage("https://example.com/avatar.png", [](AsyncImagePhase phase) { ... })   // placeholder / loaded / failed
+```
+- Decoding: WIC on Windows, ImageIO on macOS, and stb_image/libspng on Linux. Formats are PNG,
+  JPEG, GIF (first frame, then animated), WebP and AVIF where the OS supports them, and SVG
+  through the path renderer.
+- Textures are uploaded on the render thread and cached by content hash, with mipmaps for
+  downscaling. Decoded sizes follow the drawn size (no 4000 px decode for a 64 pt thumbnail).
+- `ImageCommand` in the display list draws a textured quad with corner radii, opacity, and the
+  clip stack, through the same ubershader as layers.
+- `AsyncImage` loads over HTTP(S) through the platform: WinHTTP, NSURLSession, or libcurl. It
+  has a memory cache plus an optional disk cache.
+
+**2. Audio**
+```cpp
+const Sound click = Sound::load("assets/click.wav");    // short effects: decoded once, mixed, overlapping plays
+click.play({.volume = 0.6f});
+const AudioPlayer music("assets/theme.mp3");             // long files and streams: decoded as they play
+music.play();  music.seek(30s);  music.volume = 0.5f;
+Slider(music.time_binding(), {.max = music.duration()})
+```
+- Backend: **miniaudio** (public domain / MIT-0, single file, in vcpkg). It covers device
+  output on every platform (WASAPI, Core Audio, PulseAudio/ALSA), mixing, resampling, and
+  WAV/FLAC/MP3 decoding, plus Vorbis through stb_vorbis. AAC and other formats decode through
+  the platform decoder when present.
+- The audio callback thread never allocates or locks. Commands go through a lock-free queue.
+- Device changes (headphones plugged in) and the system's default device are followed
+  automatically.
+- Later: microphone capture (`AudioRecorder`), with the platform's permission prompts.
+
+**3. Video**
+```cpp
+const VideoPlayer player("assets/intro.mp4");           // also https:// URLs (progressive and HLS where the OS supports it)
+VideoView(player).aspect_ratio(ContentMode::fit).clip_shape(RoundedRectangle(16))
+VideoControls(player)                                   // built-in play/pause, scrubber, time, volume, fullscreen
+player.play();  player.is_playing();  player.time();    // signals
+```
+- Windows: `IMFMediaEngine` handles demuxing, hardware decoding, audio output, and A/V sync.
+  Each display frame, `TransferVideoFrame` writes into a shared D3D11 texture that Vulkan
+  samples.
+- macOS: `AVPlayer` + `AVPlayerItemVideoOutput` → `CVPixelBuffer` (IOSurface).
+- Linux: a GStreamer `playbin` with an `appsink` (DMA-BUF when available).
+- Frame pacing: the render thread asks the player for the frame due at the next vsync, so video
+  never runs the UI tree's layout. Only the video quad's texture changes, and windows playing
+  video redraw at the video's rate.
+- Later: Vulkan Video decode as a backend independent of the OS, and camera capture
+  (`CameraView`).
+
+**Order:** raster images → audio → video → AsyncImage and networking → capture (mic, camera).
+
 ## 14. Extensibility
 
 - **Custom components**: functions or structs that return a `View`. Also custom
@@ -1765,6 +1840,68 @@ Separate render thread from day one (decided).
   - Theme/token files that reload without a rebuild.
   - Catch exceptions from module bodies during mount (today they end the app, as in any view).
 - [ ] Accessibility, docs & examples
+- [x] Media (§13.3) part 1, raster images:
+  - **API:**
+    - `Image({.file})` and `Image({.data})`, with `scale` for @2x art. Exactly one source;
+      `ImageSource{}` throws.
+    - `.resizable()` applies to raster images only, before other modifiers, and throws
+      otherwise.
+    - `.aspect_ratio(ContentMode::fit/fill)` and `.aspect_ratio(ratio, mode)` work on any view
+      (`AspectRatioModifier`). Without a ratio, the content's ideal size gives it.
+  - **Decoding** (`src/media/image_decode`):
+    - WIC on Windows: PNG, JPEG, GIF, BMP, TIFF, ICO, and WebP/HEIF/AVIF with the OS codecs.
+      stb_image elsewhere for now (vcpkg, non-Windows).
+    - Converted to straight-alpha RGBA. EXIF orientation applied. Larger than 8192 px scaled to
+      fit.
+  - **Loading** (`src/view/raster_image.cpp`):
+    - The size is probed from the header when shown, so layout is right at once.
+    - Pixels decode on a small worker pool and arrive through `post_ui_task` into a
+      `State<pixels>` the element binds.
+    - Assets are shared by source (file path + mtime, or a hash of the data), so an image shown
+      twice decodes once.
+    - A missing or undecodable image logs a warning and takes no space.
+  - **GPU** (`gpu::TextureCache`):
+    - Textures are `R8G8B8A8_SRGB` with a full mip chain (blits), uploaded inside the frame's
+      own command buffer. Staging buffers live until that slot's fence.
+    - Shared by all windows. Dropped after 600 idle frames, or LRU over a 512 MB budget (never
+      within 16 frames of use).
+  - **Drawing:** `ImageCommand` → the ubershader's `image` kind (sampled linear, premultiplied in
+    the shader). Clip stack, `clip_shape`, opacity and layers all apply.
+  - **Sandbox:** generated assets (landscape JPEG, PNG with alpha at @2x, a JPEG stored sideways
+    with EXIF orientation 6) show fill + clip, fit, transparency and orientation.
+  - **Tests:** source validation, `resizable()` and `aspect_ratio` usage errors.
+- [ ] Image follow-ups:
+  - Decode at the drawn size (no full-size decode for thumbnails).
+  - Animated GIF/WebP.
+  - SVG files through the path renderer.
+  - `.interpolation(.none)` for pixel art.
+  - ICC color profiles.
+  - Premultiplied mip generation (straight-alpha mips can fringe at transparent edges).
+- [x] Media part 2, audio (`elg/audio.h`, `src/media/audio.cpp`):
+  - **miniaudio** 0.11 (vcpkg, header-only, compiled once in `media/miniaudio.cpp`). One
+    `ma_engine` per process, started on first use. It follows the default output device.
+    Without a device it logs once and plays silently.
+  - **`Sound::load(file | data)`:** decoded once, to the engine's format, so playing never
+    resamples. `play({.volume, .pitch, .pan})` starts a new voice, so plays overlap. Finished
+    voices are swept on the next play, never on the audio thread.
+  - **`AudioPlayer(file)`:** streamed (`MA_SOUND_FLAG_STREAM`). Has `play`, `pause`, `toggle`,
+    `stop`, `seek`, `set_volume` and `set_looping`.
+    - `is_playing()`, `time()`, `duration()`, `volume()` and `is_looping()` are signals.
+    - `time_binding()` and `volume_binding()` for Sliders (scrubbing seeks).
+    - Copies share one player, which stops with the last copy.
+  - **Position updates:** a ticker thread posts them to the UI thread about 15 times a second,
+    only while something plays, plus one final update when playback ends. Idle CPU stays 0.
+  - **Formats:** WAV, FLAC and MP3. Ogg Vorbis, AAC and M4A are follow-ups (stb_vorbis, the
+    platform decoders).
+  - **Sandbox:** generated `click.wav` and `tune.wav`. Overlapping clicks with pitch and pan; a
+    player with play/pause, scrubber, time, volume and loop.
+  - **Tests:** a WAV built in memory decodes with the right duration; missing and garbage
+    inputs throw `ResourceError`.
+- [ ] Media (§13.3), the rest, in order:
+  - Video: Media Foundation first; `VideoPlayer`, `VideoView`, `VideoControls`; zero-copy
+    D3D11 → Vulkan.
+  - `AsyncImage` and HTTP loading.
+  - Capture: microphone, camera.
 - [x] Built-in icon library (§13.2), **Phosphor** 2.1.2 (MIT):
   - Vendored verbatim in `third_party/phosphor`: regular, bold and fill TTFs plus the CSS name
     map, with the license and the upstream source. 1,530 icons.

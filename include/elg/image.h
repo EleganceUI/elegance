@@ -5,8 +5,11 @@
 #ifndef ELG_IMAGE_H
 #define ELG_IMAGE_H
 
-// Images and icon sets (design.md §13.2).
+// Images (design.md §13.3) and icon sets (§13.2).
 //
+//   Image({.file = "assets/photo.jpg"})             // a raster image, at its own size
+//   Image({.file = "photo.jpg"}).resizable().aspect_ratio(ContentMode::fill).frame(160, 100).clipped()
+//   Image({.data = embedded_png})                   // encoded image data in memory
 //   Image({.system_name = "phosphor.heart"})        // set "phosphor", icon "heart"
 //   Image({.system_name = "phosphor.heart.fill"})   // a variant of the set
 //   Image("gear")                                    // the default set (Phosphor)
@@ -30,12 +33,22 @@
 
 namespace elg {
 
-// What an Image shows. Set exactly one field.
+// What an Image shows: an icon, an image file, or image data. Set exactly one of the first three.
 struct ImageSource {
     // An icon: "<set>.<icon-name>[.<variant>]", or "<icon-name>[.<variant>]" in the default set.
     std::string system_name;
+    // A raster image file: PNG, JPEG, GIF (first frame), BMP, TIFF, ICO; WebP, HEIF, and AVIF
+    // where the system has the codecs. Photos are turned upright by their EXIF orientation.
+    std::filesystem::path file;
+    // Encoded image data in memory, in any of those formats (copied).
+    std::span<const unsigned char> data;
+    // Raster images: pixels per point, e.g. 2 for @2x artwork.
+    float scale = 1;
 };
 
+// Raster images are drawn at their own size (pixels / scale) unless made .resizable(). They
+// decode in the background and appear once ready; their size is known right away, so layout
+// doesn't jump. A file that can't be read or decoded logs a warning and shows nothing.
 // Throws elg::UsageError for an unknown icon (naming the closest matches).
 ELG_API View Image(ImageSource source);
 ELG_API View Image(std::string_view system_name);

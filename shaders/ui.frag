@@ -33,6 +33,7 @@ const float kLayer = 2.0;       // a layer's texture: in_uv = texels, in_color.a
 const float kLayerShadow = 3.0; // a layer's blurred alpha (R8): in_uv = texels, in_color = shadow
 const float kBoxShadow = 4.0;   // analytic blurred rounded rect: in_extra.y = sigma
 const float kPath = 5.0;        // a path's coverage mask (R8): in_uv = texels; fill as for rects
+const float kImage = 6.0;       // a raster image (sRGB, straight alpha): in_uv normalized, in_color.a = opacity
 
 // Paints (in_params.z).
 const float kSolid = 0.0;
@@ -194,6 +195,9 @@ void main() {
         color = in_color * texture(image, in_uv / vec2(textureSize(image, 0))).r;
     } else if (kind == kPath) {
         color = fill_color() * texture(image, in_uv / vec2(textureSize(image, 0))).r;
+    } else if (kind == kImage) {
+        vec4 texel = texture(image, in_uv); // linear (sRGB texture), straight alpha
+        color = vec4(texel.rgb * texel.a, texel.a) * in_color.a;
     } else {
         color = shade_box_shadow();
     }

@@ -121,6 +121,43 @@ void FixedSizeModifier::place(Rect bounds, ProposedSize proposal, const LayoutCh
     content.place({bounds.x, bounds.y}, content_proposal(proposal));
 }
 
+// --- AspectRatioModifier ---
+
+ProposedSize AspectRatioModifier::content_proposal(ProposedSize proposal, const LayoutChild& content) const {
+    float ratio = ratio_.value_or(0);
+    if (ratio <= 0) {
+        const Size ideal = content.size_that_fits({});
+        if (ideal.width <= 0 || ideal.height <= 0) {
+            return proposal; // no shape to keep
+        }
+        ratio = ideal.width / ideal.height;
+    }
+    const auto finite = [](std::optional<float> v) { return v && std::isfinite(*v) ? v : std::nullopt; };
+    const std::optional<float> width = finite(proposal.width);
+    const std::optional<float> height = finite(proposal.height);
+    if (width && height) {
+        const float w = mode_ == ContentMode::fit ? std::min(*width, *height * ratio) : std::max(*width, *height * ratio);
+        return {w, w / ratio};
+    }
+    if (width) {
+        return {*width, *width / ratio};
+    }
+    if (height) {
+        return {*height * ratio, *height};
+    }
+    // Nothing to fit into: the content's ideal width, at the ratio.
+    const Size ideal = content.size_that_fits({});
+    return {ideal.width, ideal.width / ratio};
+}
+
+Size AspectRatioModifier::size_that_fits(ProposedSize proposal, const LayoutChild& content) const {
+    return content.size_that_fits(content_proposal(proposal, content));
+}
+
+void AspectRatioModifier::place(Rect bounds, ProposedSize proposal, const LayoutChild& content) const {
+    content.place({bounds.x, bounds.y}, content_proposal(proposal, content));
+}
+
 // --- LayoutPriorityModifier ---
 
 Size LayoutPriorityModifier::size_that_fits(ProposedSize proposal, const LayoutChild& content) const {

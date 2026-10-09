@@ -333,6 +333,64 @@ View LayoutCards() {
                             "The same at 380 pt; layout_value<RowBreak>").card());
 }
 
+// Raster images (design.md §13.3): files decode in the background; resizable + aspect_ratio
+// for fit / fill; PNG transparency; EXIF orientation.
+View ImageCards() {
+    const std::string assets = ELG_SANDBOX_ASSETS;
+    const auto landscape = [&] { return Image({.file = assets + "/landscape.jpg"}).resizable(); };
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(landscape()
+                                .aspect_ratio(ContentMode::fill)
+                                .frame(220, 120)
+                                .clip_shape(RoundedRectangle(14)),
+                            "JPEG: resizable, fill, clip_shape")
+                      .card(),
+                  Captioned(landscape()
+                                .aspect_ratio(ContentMode::fit)
+                                .frame(160, 120)
+                                .background(RoundedRectangle(8).fill(ThemeColor::surface_raised)),
+                            "fit in 160 × 120")
+                      .card(),
+                  Captioned(HStack({.spacing = 16}, Image({.file = assets + "/badge.png", .scale = 2}),
+                                   Image({.file = assets + "/exif_rotated.jpg"}).resizable().aspect_ratio(ContentMode::fit).frame(80, 120)),
+                            "PNG alpha @2x; EXIF-rotated photo")
+                      .card());
+}
+
+// Audio (design.md §13.3): a Sound plays overlapping voices; an AudioPlayer streams, with
+// reactive time for a scrubber.
+View AudioCards() {
+    const std::string assets = ELG_SANDBOX_ASSETS;
+    const Sound click = Sound::load(assets + "/click.wav");
+    const AudioPlayer tune(assets + "/tune.wav");
+    const auto clock = [](double seconds) {
+        const int s = static_cast<int>(seconds);
+        return std::format("{}:{:02}", s / 60, s % 60);
+    };
+    const View sounds = HStack({.spacing = 8}, Button("Click", [=] { click.play(); }),
+                               Button("Low", [=] { click.play({.pitch = 0.5f}); }),
+                               Button("Left", [=] { click.play({.pan = -1}); }),
+                               Button("Right", [=] { click.play({.pan = 1}); }))
+                            .button_style(BorderedButtonStyle{});
+    const View player =
+        VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
+               HStack({.spacing = 10},
+                      Button(Text([=] { return std::string(tune.is_playing() ? "Pause" : "Play"); }).frame({.width = 44}),
+                             [=] { tune.toggle(); })
+                          .button_style(BorderedButtonStyle{}),
+                      Slider(tune.time_binding(), {.max = static_cast<float>(tune.duration())}).frame({.width = 200}),
+                      Text([=] { return clock(tune.time()) + " / " + clock(tune.duration()); })
+                          .font(Font::callout)
+                          .foreground_style(ThemeColor::secondary)),
+               HStack({.spacing = 8}, Image("speaker-low"), Slider(tune.volume_binding()).frame({.width = 120}),
+                      Image("speaker-high"),
+                      Toggle("Loop", Binding<bool>([=] { return tune.is_looping(); }, [=](bool on) { tune.set_looping(on); }))
+                          .fixed_size()));
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(sounds, "Sound: overlapping voices, pitch, pan").card(),
+                  Captioned(player, "AudioPlayer: streamed, scrub, volume, loop").card());
+}
+
 // ZStack: layering with alignment, z_index, and priority sizing.
 View StackCards() {
     // A badge pinned to the corner of what it labels.
@@ -664,6 +722,8 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
                   TitleBar(scheme),
                   // The title bar stays put; the cards scroll under it.
                   ScrollView(VStack({.alignment = HorizontalAlignment::leading, .spacing = 20},
+                         ImageCards(),
+                         AudioCards(),
                          PathCards(),
                          MenuCards(),
                          IconCards(),

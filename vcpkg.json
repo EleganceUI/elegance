@@ -7,9 +7,14 @@
   "dependencies": [
     "freetype",
     "harfbuzz",
+    "miniaudio",
     {
       "name": "msdfgen",
       "default-features": false
+    },
+    {
+      "name": "stb",
+      "platform": "!windows"
     },
     {
       "name": "sdl3",

@@ -12,6 +12,7 @@
 #include "gpu/quad_renderer.h"
 #include "gpu/render_image.h"
 #include "gpu/composition_win32.h"
+#include "gpu/texture_cache.h"
 #include "gpu/swapchain.h"
 #include "render/frame_mailbox.h"
 #include "render/frame_plan.h"
@@ -27,6 +28,7 @@ namespace elg::detail {
 // Render-thread objects shared by all windows.
 struct RenderResources {
     gpu::QuadRenderer& quads;
+    gpu::TextureCache& textures;
     gpu::BlurRenderer& blur;
     gpu::PathRenderer& paths;
     VkDescriptorSetLayout image_layout; // one combined image sampler (atlas, layers)
@@ -56,6 +58,7 @@ private:
         VkFence in_flight = VK_NULL_HANDLE;
         VkSemaphore image_acquired = VK_NULL_HANDLE;
         std::uint64_t submission = 0; // number of the last submission using this slot
+        std::vector<gpu::Buffer> uploads; // image staging buffers, freed once this slot's fence signals
         gpu::Buffer instances;
         gpu::Buffer stops;
         gpu::Buffer path_vertices;
@@ -88,7 +91,7 @@ private:
                 const RenderResources& resources);
     void draw_pass(VkCommandBuffer cmd, const PlanPass& pass, VkFormat format, VkExtent2D extent,
                    const FrameSlot& slot, VkDescriptorSet stops, const std::vector<LayerSets>& layers,
-                   const std::vector<VkDescriptorSet>& paths, const RenderResources& resources);
+                   const std::vector<VkDescriptorSet>& paths, const std::vector<VkDescriptorSet>& images, const RenderResources& resources);
     VkDescriptorSet allocate_set(FrameSlot& slot, VkDescriptorSetLayout layout);
     VkDescriptorSet image_set(FrameSlot& slot, VkDescriptorSetLayout layout, VkImageView view);
     gpu::RenderImage& pooled_image(std::vector<gpu::RenderImage>& pool, std::size_t index, VkFormat format,

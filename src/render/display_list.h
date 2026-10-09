@@ -11,6 +11,8 @@
 #include <elg/path.h>
 #include <elg/view.h>
 
+#include "media/image_decode.h"
+
 #include <memory>
 #include <optional>
 #include <variant>
@@ -58,6 +60,14 @@ struct PathCommand {
     }
 };
 
+// A raster image (design.md §13.3) drawn into `rect`, showing the `uv` part of it (normalized).
+struct ImageCommand {
+    Rect rect;
+    Rect uv{0, 0, 1, 1};
+    std::shared_ptr<const DecodedImage> image; // shared with the render thread; immutable
+    float opacity = 1;
+};
+
 // Clips everything until the matching PopClipCommand to a rounded rect.
 struct PushClipCommand {
     Rect rect;
@@ -78,8 +88,8 @@ struct PushLayerCommand {
 
 struct PopLayerCommand {};
 
-using DrawCommand = std::variant<RectCommand, GlyphCommand, BoxShadowCommand, PathCommand, PushClipCommand,
-                                 PopClipCommand, PushLayerCommand, PopLayerCommand>;
+using DrawCommand = std::variant<RectCommand, GlyphCommand, BoxShadowCommand, PathCommand, ImageCommand,
+                                 PushClipCommand, PopClipCommand, PushLayerCommand, PopLayerCommand>;
 
 // Immutable-once-built draw commands for one window frame, in logical points and sRGB, in
 // painter's order. Holds copies of everything, never references into app memory

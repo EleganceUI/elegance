@@ -123,6 +123,12 @@ struct ProposedSize {
     friend constexpr bool operator==(const ProposedSize&, const ProposedSize&) = default;
 };
 
+// How content with an aspect ratio fills space (aspect_ratio()).
+enum class ContentMode {
+    fit,  // all of it shows: as large as fits
+    fill, // it covers the space: as small as covers it (overflowing on one axis; clip it)
+};
+
 struct EdgeInsets {
     float top = 0;
     float leading = 0;
@@ -247,6 +253,13 @@ public:
 
     // Proposes nothing on the given axes, so the content takes its ideal size.
     ELG_API View fixed_size(bool horizontal = true, bool vertical = true) const;
+    // Sizes the view to an aspect ratio (width / height) within what's proposed; without a
+    // ratio, the view's own ideal size gives it (an image's).
+    ELG_API View aspect_ratio(ContentMode mode) const;
+    ELG_API View aspect_ratio(float ratio, ContentMode mode = ContentMode::fit) const;
+    // Raster Images: take whatever size they're offered instead of their own (stretching to
+    // it; combine with aspect_ratio to keep proportions). Throws elg::UsageError on other views.
+    ELG_API View resizable() const;
     // Stacks give space to higher priorities first; in a ZStack, the highest-priority children
     // decide its size and the others are offered that size. Default 0.
     ELG_API View layout_priority(float priority) const;

@@ -8,6 +8,7 @@
 
 #include "core/crash.h"
 #include "text/font_library.h"
+#include "view/raster_image.h"
 #include "view/view_node.h"
 
 #include <elg/error.h>
@@ -473,6 +474,13 @@ private:
 namespace elg {
 
 View Image(ImageSource source) {
+    const int kinds = (source.system_name.empty() ? 0 : 1) + (source.file.empty() ? 0 : 1) + (source.data.empty() ? 0 : 1);
+    if (kinds != 1) {
+        throw UsageError("Image: set exactly one of .system_name, .file, and .data");
+    }
+    if (source.system_name.empty()) {
+        return detail::raster_image(source);
+    }
     ResolvedIcon icon = resolve(source.system_name);
     const auto layer = [&](std::size_t index) {
         View view = detail::ViewAccess::make(

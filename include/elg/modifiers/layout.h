@@ -67,6 +67,22 @@ private:
     bool vertical_;
 };
 
+class ELG_API AspectRatioModifier final : public LayoutModifier {
+public:
+    AspectRatioModifier(std::optional<float> ratio, ContentMode mode) noexcept : ratio_(ratio), mode_(mode) {}
+
+    Size size_that_fits(ProposedSize proposal, const LayoutChild& content) const override;
+    void place(Rect bounds, ProposedSize proposal, const LayoutChild& content) const override;
+
+private:
+    ProposedSize content_proposal(ProposedSize proposal, const LayoutChild& content) const;
+
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::optional<float> ratio_;
+    ContentMode mode_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
 class ELG_API LayoutPriorityModifier final : public LayoutModifier {
 public:
     explicit LayoutPriorityModifier(float priority) noexcept : priority_(priority) {}

@@ -112,3 +112,17 @@ TEST_CASE("the default set can change", "[image]") {
     CHECK_NOTHROW(Image("only-here"));
     set_default_icon_set("phosphor");
 }
+
+TEST_CASE("raster image sources", "[image]") {
+    // Building the view doesn't touch the file: loading happens when it's shown.
+    CHECK_NOTHROW(Image({.file = "missing.png"}));
+    CHECK_NOTHROW(Image({.file = "photo.jpg"}).resizable().aspect_ratio(ContentMode::fill).frame(100, 60));
+    CHECK_NOTHROW(Image({.data = std::span<const unsigned char>(kFakeFont)}));
+    CHECK_THAT(error_of([] { Image({.system_name = "heart", .file = "photo.jpg"}); }), ContainsSubstring("exactly one"));
+    CHECK_THROWS_AS(Image(ImageSource{}), UsageError);
+    // resizable() is for raster images, before other modifiers.
+    CHECK_THROWS_AS(Image("heart").resizable(), UsageError);
+    CHECK_THROWS_AS(Image({.file = "photo.jpg"}).padding(4).resizable(), UsageError);
+    CHECK_THROWS_AS(Text("x").aspect_ratio(0.f), UsageError);
+    CHECK_NOTHROW(Text("x").aspect_ratio(16.f / 9.f, ContentMode::fill));
+}

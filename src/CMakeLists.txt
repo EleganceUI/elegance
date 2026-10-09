@@ -26,6 +26,10 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         gpu/quad_renderer.cpp
         gpu/render_image.cpp
         gpu/swapchain.cpp
+        gpu/texture_cache.cpp
+        media/audio.cpp
+        media/image_decode.cpp
+        media/miniaudio.cpp
         gpu/vk.cpp
         gpu/vma.cpp
         platform/dynamic_library.cpp
@@ -48,6 +52,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         view/fragment.cpp
         view/hot_reload.cpp
         view/image.cpp
+        view/raster_image.cpp
         view/inspect.cpp
         view/inspector.cpp
         view/lazy_stack.cpp
@@ -95,6 +100,9 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(Freetype REQUIRED)
 find_package(harfbuzz CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
+# miniaudio is a single header (design.md §13.3).
+find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
+target_include_directories(elegence PRIVATE "${MINIAUDIO_INCLUDE_DIR}")
 
 # Private: no SDL or Vulkan types appear in public headers (design.md §4).
 # Built-in icon sets (design.md §13.2), embedded into the library.
@@ -118,7 +126,7 @@ endif ()
 if (WIN32)
     target_sources(elegence PRIVATE gpu/composition_win32.cpp)
     # dwmapi: rounded corners for undecorated windows; d3d11/dxgi/dcomp: transparent windows.
-    target_link_libraries(elegence PRIVATE dwmapi d3d11 dxgi dcomp)
+    target_link_libraries(elegence PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys)
 endif ()
 
 target_link_libraries(elegence PRIVATE

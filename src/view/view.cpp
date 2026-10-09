@@ -11,6 +11,7 @@
 #include "view/window_drag.h"
 
 #include <elg/animation.h>
+#include <elg/error.h>
 #include <elg/modifiers/decoration.h>
 #include <elg/modifiers/effects.h>
 #include <elg/modifiers/environment.h>
@@ -66,6 +67,17 @@ View View::frame(FlexibleFrameOptions options) const {
 
 View View::fixed_size(bool horizontal, bool vertical) const {
     return modifier(FixedSizeModifier(horizontal, vertical));
+}
+
+View View::aspect_ratio(ContentMode mode) const {
+    return modifier(AspectRatioModifier(std::nullopt, mode));
+}
+
+View View::aspect_ratio(float ratio, ContentMode mode) const {
+    if (!(ratio > 0) || !std::isfinite(ratio)) {
+        throw UsageError(std::format("aspect_ratio({}): the ratio must be positive", ratio));
+    }
+    return modifier(AspectRatioModifier(ratio, mode));
 }
 
 View View::layout_priority(float priority) const {

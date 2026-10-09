@@ -410,9 +410,16 @@ gpu::RenderImage& WindowTarget::pooled_image(std::vector<gpu::RenderImage>& pool
 
 void WindowTarget::draw_pass(VkCommandBuffer cmd, const PlanPass& pass, VkFormat format, VkExtent2D extent,
                              const FrameSlot& slot, VkDescriptorSet stops, const std::vector<LayerSets>& layers,
-                             const std::vector<VkDescriptorSet>& paths, const RenderResources& resources) {
+                             const std::vector<VkDescriptorSet>& paths, const std::vector<VkDescriptorSet>& images,
+                             const RenderResources& resources) {
     resources.quads.begin(cmd, format, extent, slot.instances.handle(), resources.atlas, stops);
     for (const PlanSegment& segment : pass.segments) {
+        if (segment.image >= 0) {
+            resources.quads.bind_image(cmd, images[static_cast<std::size_t>(segment.image)]);
+            resources.quads.draw(cmd, segment.first, segment.count);
+            resources.quads.bind_image(cmd, resources.atlas);
+            continue;
+        }
         if (segment.mask) {
             // Masks what the pass has drawn so far (a layer clipped to a path).
             resources.quads.set_masking(cmd, format, true);
@@ -501,6 +508,15 @@ void WindowTarget::record(FrameSlot& slot, const DrawTarget& target, const Windo
     }
     evict_masks();
 
+    // Images: uploaded (with their mips) the first time a frame draws them.
+    slot.uploads.clear(); // this slot's previous frame has finished (its fence was waited)
+    std::vector<VkDescriptorSet> image_sets;
+    image_sets.reserve(plan.images.size());
+    for (const auto& image : plan.images) {
+        image_sets.push_back(resources.textures.acquire(cmd, *image, slot.uploads));
+    }
+    resources.textures.end_frame();
+
     // Offscreen layers first, innermost first; each may also get a two-pass blurred shadow.
     std::vector<LayerSets> layer_sets(plan.layers.size());
     std::size_t shadows = 0;
@@ -510,7 +526,7 @@ void WindowTarget::record(FrameSlot& slot, const DrawTarget& target, const Windo
 
         const gpu::RenderImage& content = pooled_image(slot.layers, i, kLayerFormat, layer.width, layer.height);
         render_offscreen(cmd, content, extent, [&] {
-            draw_pass(cmd, layer, kLayerFormat, extent, slot, stops, layer_sets, path_sets, resources);
+            draw_pass(cmd, layer, kLayerFormat, extent, slot, stops, layer_sets, path_sets, image_sets, resources);
         });
         layer_sets[i].content = image_set(slot, resources.image_layout, content.view());
 
@@ -544,7 +560,7 @@ void WindowTarget::record(FrameSlot& slot, const DrawTarget& target, const Windo
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
     const auto clear = to_linear_premultiplied(frame.list.clear_color);
     begin_rendering(cmd, target.view, target.extent, VkClearColorValue{{clear[0], clear[1], clear[2], clear[3]}});
-    draw_pass(cmd, plan.main, target.format, target.extent, slot, stops, layer_sets, path_sets, resources);
+    draw_pass(cmd, plan.main, target.format, target.extent, slot, stops, layer_sets, path_sets, image_sets, resources);
     vkCmdEndRendering(cmd);
     if (target.shared) {
         // Hand the image to Direct3D: GENERAL layout, released to the external queue family
