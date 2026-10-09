@@ -53,6 +53,19 @@ private:
     Shadow shadow_;
 };
 
+// Stacking order among siblings: higher draws in front (and is hit first). Default 0; ties keep
+// declaration order. Reactive.
+class ELG_API ZIndexModifier final : public EffectModifier {
+public:
+    explicit ZIndexModifier(Prop<float> z) : z_(std::move(z)) {}
+    void apply(Effects& effects) const override { effects.z_index = z_; }
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    Prop<float> z_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
 // Moves the drawn content without affecting layout. Reactive and animatable.
 class ELG_API OffsetModifier final : public EffectModifier {
 public:

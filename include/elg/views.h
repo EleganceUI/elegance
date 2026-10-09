@@ -113,6 +113,8 @@ struct TextFieldOptions {
 // word, triple-click all), word movement, clipboard, and undo/redo.
 //   TextField("Name", name.binding(), {.on_submit = save})
 ELG_API View TextField(std::string placeholder, Binding<std::string> text, TextFieldOptions options = {});
+// A TextField for passwords: shows a bullet per character, and can't be copied from.
+ELG_API View SecureField(std::string placeholder, Binding<std::string> text, TextFieldOptions options = {});
 
 struct SliderOptions {
     float min = 0;

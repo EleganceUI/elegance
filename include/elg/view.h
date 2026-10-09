@@ -243,8 +243,12 @@ public:
 
     // Proposes nothing on the given axes, so the content takes its ideal size.
     ELG_API View fixed_size(bool horizontal = true, bool vertical = true) const;
-    // Stacks give space to higher priorities first. Default 0.
+    // Stacks give space to higher priorities first; in a ZStack, the highest-priority children
+    // decide its size and the others are offered that size. Default 0.
     ELG_API View layout_priority(float priority) const;
+    // Stacking order among siblings (any stack, not just ZStack): higher draws in front and is hit
+    // first. Default 0; equal values keep declaration order (later in front).
+    ELG_API View z_index(Prop<float> z) const;
     // Moves the content when drawn, without affecting layout (and animates the move during
     // animated updates). Reactive: .offset([=] { return open() ? 0.f : -200.f; }, 0)
     ELG_API View offset(Prop<float> x, Prop<float> y) const;

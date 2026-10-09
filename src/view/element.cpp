@@ -31,7 +31,7 @@ bool drawable(const Rect& r) {
 
 Element::~Element() {
     if (focus_manager_) {
-        focus_manager_->forget(this);
+        focus_manager_->forget(this); // also ends a .focused watch on this element
     }
 }
 
@@ -217,16 +217,19 @@ void LayoutElement::arrange(Rect bounds, ProposedSize proposal) {
     layout_->place_children(bounds, proposal, handles_);
 }
 
-void LayoutElement::paint_impl(DisplayList& list) const {
-    for (const Element* child : laid_out_) {
-        child->paint(list);
-    }
+// Back to front: by z-index, then (exiting children after the rest, then) declaration order.
+std::vector<Element*> LayoutElement::paint_order() const {
+    std::vector<Element*> order = laid_out_;
     // Removed children still animating out, where they last were.
-    std::vector<Element*> exiting;
     for (const auto& child : children_) {
-        child->collect_exiting(exiting);
+        child->collect_exiting(order);
     }
-    for (const Element* child : exiting) {
+    std::ranges::stable_sort(order, {}, [](const Element* element) { return element->z_index(); });
+    return order;
+}
+
+void LayoutElement::paint_impl(DisplayList& list) const {
+    for (const Element* child : paint_order()) {
         child->paint(list);
     }
 }
@@ -272,6 +275,10 @@ void TransitionElement::paint_impl(DisplayList& list) const {
 
 float LayoutModifierElement::layout_priority() const noexcept {
     return modifier_->layout_priority().value_or(content_->layout_priority());
+}
+
+float LayoutModifierElement::z_index() const noexcept {
+    return content_->z_index();
 }
 
 Size LayoutModifierElement::measure(ProposedSize proposal) {

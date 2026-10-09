@@ -71,6 +71,10 @@ View View::layout_priority(float priority) const {
     return modifier(LayoutPriorityModifier(priority));
 }
 
+View View::z_index(Prop<float> z) const {
+    return modifier(ZIndexModifier(std::move(z)));
+}
+
 View View::offset(Prop<float> x, Prop<float> y) const {
     return modifier(OffsetModifier(std::move(x), std::move(y)));
 }
@@ -266,8 +270,13 @@ View Button(std::string title, std::function<void()> action) {
 }
 
 View TextField(std::string placeholder, Binding<std::string> text, TextFieldOptions options) {
-    return ViewAccess::make(
-        std::make_shared<const detail::TextFieldNode>(std::move(placeholder), std::move(text), std::move(options)));
+    return ViewAccess::make(std::make_shared<const detail::TextFieldNode>(std::move(placeholder), std::move(text),
+                                                                         std::move(options), false));
+}
+
+View SecureField(std::string placeholder, Binding<std::string> text, TextFieldOptions options) {
+    return ViewAccess::make(std::make_shared<const detail::TextFieldNode>(std::move(placeholder), std::move(text),
+                                                                         std::move(options), true));
 }
 
 View ScrollView(View content) {
@@ -387,17 +396,29 @@ std::unique_ptr<Element> make_button_element(const View& body, std::function<voi
 }
 
 // `.focused(binding)`: writes focus changes to the binding.
-class FocusBindingHandler final : public EventHandler {
+// `.focused(binding)` around a view: focusable itself only when nothing inside is (so Tab and
+// clicks reach the field it wraps, not an invisible wrapper first).
+class FocusScopeHandler final : public EventHandler {
 public:
-    explicit FocusBindingHandler(Binding<bool> binding) : binding_(std::move(binding)) {}
-    bool focusable() const override { return true; }
-    EventResult focus(bool focused) override {
-        binding_.set(focused);
-        return {};
+    void set_scope(Element* scope) noexcept { scope_ = scope; }
+    bool focusable() const override {
+        bool inner = false;
+        std::function<void(Element&)> walk = [&](Element& element) {
+            if (inner) {
+                return;
+            }
+            if (EventHandler* handler = element.event_handler(); handler && handler->focusable()) {
+                inner = true;
+                return;
+            }
+            element.for_each_child(walk);
+        };
+        scope_->for_each_child(walk);
+        return !inner;
     }
 
 private:
-    Binding<bool> binding_;
+    Element* scope_ = nullptr;
 };
 
 } // namespace
@@ -421,11 +442,15 @@ std::unique_ptr<Element> ModifiedNode::lower(const LowerContext& context) const 
         const Prop<float> opacity = effects.opacity;
         const Prop<float> offset_x = effects.offset_x;
         const Prop<float> offset_y = effects.offset_y;
+        const std::optional<Prop<float>> z_index = effects.z_index;
         auto element = std::make_unique<EffectElement>(std::move(effects), detail::lower(content_, context));
         EffectElement* const target = element.get();
         detail::bind(opacity, context, [target](float value, const Animation* animation) { target->set_opacity(value, animation); });
         detail::bind(offset_x, context, [target](float value, const Animation* animation) { target->set_offset_x(value, animation); });
         detail::bind(offset_y, context, [target](float value, const Animation* animation) { target->set_offset_y(value, animation); });
+        if (z_index) {
+            detail::bind(*z_index, context, [target](float value) { target->set_z_index(value); });
+        }
         return element;
     }
     case ModifierProtocol::event:
@@ -517,8 +542,15 @@ namespace {
 class TextEditorNode final : public ViewNode {
 public:
     explicit TextEditorNode(std::shared_ptr<TextEditor> editor) : editor_(std::move(editor)) {}
-    std::unique_ptr<Element> lower(const LowerContext&) const override {
-        return std::make_unique<TextEditorElement>(editor_);
+    // The text takes its font and colors from where the style put it (so a style's .font() or
+    // .foreground_style() on the field applies).
+    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+        const EnvironmentValues environment = context.environment;
+        editor_->set_environment(environment);
+        auto element = std::make_unique<TextEditorElement>(editor_);
+        detail::bind(Prop<Font>([environment] { return environment.get<FontKey>(); }), context,
+                     [editor = editor_](const Font& font) { editor->set_font(font); });
+        return element;
     }
 
 private:
@@ -531,10 +563,9 @@ std::unique_ptr<Element> TextFieldNode::lower(const LowerContext& context) const
     ELG_ASSERT(context.text, "lowering a TextField without a text system");
     const EnvironmentValues environment = context.environment;
     const auto editor = std::make_shared<TextEditor>(*context.text, text_, placeholder_, options_.on_submit,
-                                                     context.services, context.focus, environment);
-    // The font follows the environment's; the text follows the binding (when changed elsewhere).
-    detail::bind(Prop<Font>([environment] { return environment.get<FontKey>(); }), context,
-         [editor](const Font& font) { editor->set_font(font); });
+                                                     context.services, context.focus, environment, secure_);
+    // The text follows the binding (when changed elsewhere). The font is bound where the style
+    // places the field (TextEditorNode).
     detail::bind(Prop<std::string>(text_), context,
          [editor](const std::string& value) { editor->set_text(value); });
 
@@ -594,21 +625,35 @@ std::unique_ptr<Element> ToggleNode::lower(const LowerContext& context) const {
     return make_button_element(body, toggle, pressed, hovered, context);
 }
 
+// Like SwiftUI: the binding is true while focus is anywhere inside the view, and setting it
+// focuses the first focusable view inside (or the view itself if nothing inside can be).
 std::unique_ptr<Element> FocusedNode::lower(const LowerContext& context) const {
-    auto element = make_event_element(std::make_unique<FocusBindingHandler>(is_focused_), content_, context);
+    auto handler = std::make_unique<FocusScopeHandler>();
+    FocusScopeHandler* const scope_handler = handler.get();
+    auto element = make_event_element(std::move(handler), content_, context);
+    scope_handler->set_scope(element.get());
     if (!context.focus) {
         return element;
     }
-    // Binding -> focus. (Focus -> binding is the handler.) The focus manager is updated before the
-    // handlers hear about it, so the binding write they cause doesn't bounce back here.
-    effect([binding = is_focused_, target = element.get(), focus = context.focus, needs_frame = context.needs_frame] {
+    // Focus -> binding.
+    context.focus->watch(element.get(), [binding = is_focused_](bool within) { binding.set(within); });
+    // Binding -> focus. The focus manager updates before notifying, so the binding write a focus
+    // change causes finds nothing to do here.
+    effect([binding = is_focused_, scope = element.get(), focus = context.focus, needs_frame = context.needs_frame] {
         const bool wanted = binding();
-        const bool has_focus = focus->focused() == target;
-        if (wanted != has_focus) {
-            focus->focus(wanted ? target : nullptr, true);
-            if (needs_frame) {
-                *needs_frame = true;
-            }
+        const bool within = focus->contains_focus(scope);
+        if (wanted == within) {
+            return;
+        }
+        if (!wanted) {
+            focus->focus(nullptr, false);
+        } else if (Element* target = FocusManager::first_focusable(*scope)) {
+            focus->focus(target, true);
+        } else {
+            return;
+        }
+        if (needs_frame) {
+            *needs_frame = true;
         }
     });
     return element;

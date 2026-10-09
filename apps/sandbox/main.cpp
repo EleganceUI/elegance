@@ -86,6 +86,54 @@ View ShapeCards() {
 }
 
 // Wrapping, truncation, and alignment.
+// ZStack: layering with alignment, z_index, and priority sizing.
+View StackCards() {
+    // A badge pinned to the corner of what it labels.
+    const View badge = ZStack({.alignment = Alignment::top_trailing},
+                              RoundedRectangle(14)
+                                  .fill(ThemeColor::surface_raised)
+                                  .frame(76, 76)
+                                  .overlay(Text("Inbox").font(Font::callout)),
+                              Text("3")
+                                  .font(Font::system(12, Weight::bold))
+                                  .foreground_style(Color::white)
+                                  .padding(EdgeInsets::symmetric(7, 2))
+                                  .background(palette::red, Capsule())
+                                  .offset(8, -8));
+
+    // Overlapping cards: tapping one raises it with z_index.
+    const auto front = State(2);
+    const auto card = [=](int index, Color color, std::string name) {
+        return RoundedRectangle(10)
+            .fill(color)
+            .frame(92, 62)
+            .overlay(Text(std::move(name)).font(Font::headline).foreground_style(Color::hex(0x24273A)))
+            .shadow({.color = Color::black.opacity(0.3f), .radius = 6, .y = 2})
+            .offset(static_cast<float>(index) * 34, static_cast<float>(index) * 16)
+            .z_index([=] { return front() == index ? 1.f : 0.f; })
+            .on_tap_gesture([=] { front = index; });
+    };
+    const View layers = ZStack({.alignment = Alignment::top_leading},
+                               card(0, palette::peach, "One"),
+                               card(1, palette::green, "Two"),
+                               card(2, palette::sky, "Three"))
+                            .frame(170, 100, Alignment::top_leading);
+
+    // The text has the higher priority, so it sizes the stack and the capsule fills that.
+    const View sized = ZStack(Capsule().fill(LinearGradient({palette::mauve, palette::blue}, UnitPoint::leading,
+                                                            UnitPoint::trailing)),
+                              Text("Sized by its text")
+                                  .font(Font::headline)
+                                  .foreground_style(Color::hex(0x24273A))
+                                  .padding(EdgeInsets::symmetric(18, 10))
+                                  .layout_priority(1));
+
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(badge.padding(8), "ZStack(top_trailing) badge").card(),
+                  Captioned(layers, "z_index: tap a card to raise it").card(),
+                  Captioned(sized.frame({.height = 100}), "ZStack + layout_priority").card());
+}
+
 View TextCards() {
     const std::string story =
         "Elegence lays text out with HarfBuzz and draws it from a multi-channel signed distance "
@@ -344,6 +392,7 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
                   // The title bar stays put; the cards scroll under it.
                   ScrollView(VStack({.alignment = HorizontalAlignment::leading, .spacing = 20},
                          ShapeCards(),
+                         StackCards(),
                          // Like SwiftUI's .fixedSize(horizontal: false, vertical: true): take the
                          // text's full height instead of an equal share against the Spacer.
                          TextCards().fixed_size(false, true),

@@ -185,14 +185,15 @@ private:
 
 class TextFieldNode final : public ViewNode {
 public:
-    TextFieldNode(std::string placeholder, Binding<std::string> text, TextFieldOptions options)
-        : placeholder_(std::move(placeholder)), text_(std::move(text)), options_(std::move(options)) {}
+    TextFieldNode(std::string placeholder, Binding<std::string> text, TextFieldOptions options, bool secure)
+        : placeholder_(std::move(placeholder)), text_(std::move(text)), options_(std::move(options)), secure_(secure) {}
     std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     std::string placeholder_;
     Binding<std::string> text_;
     TextFieldOptions options_;
+    bool secure_;
 };
 
 class ToggleNode final : public ViewNode {

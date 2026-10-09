@@ -8,6 +8,7 @@
 #include <cctype>
 #include <cmath>
 #include <limits>
+#include <string_view>
 
 namespace elg::detail {
 
@@ -41,6 +42,8 @@ bool is_continuation(char c) {
     return (static_cast<unsigned char>(c) & 0xC0) == 0x80;
 }
 
+constexpr std::string_view kBullet = "\xE2\x80\xA2"; // U+2022, one per character in secure fields
+
 // Moves `byte` back onto a UTF-8 character boundary.
 std::size_t to_boundary(const std::string& text, std::size_t byte) {
     byte = std::min(byte, text.size());
@@ -54,8 +57,8 @@ std::size_t to_boundary(const std::string& text, std::size_t byte) {
 
 TextEditor::TextEditor(TextSystem& text, Binding<std::string> binding, std::string placeholder,
                        std::function<void()> on_submit, WindowServices* services, FocusManager* focus,
-                       EnvironmentValues environment)
-    : text_system_(&text), binding_(std::move(binding)), on_submit_(std::move(on_submit)), services_(services),
+                       EnvironmentValues environment, bool secure)
+    : text_system_(&text), secure_(secure), binding_(std::move(binding)), on_submit_(std::move(on_submit)), services_(services),
       focus_(focus), environment_(std::move(environment)), placeholder_(single_line(std::move(placeholder))) {}
 
 bool TextEditor::enabled() const {
@@ -92,6 +95,15 @@ void TextEditor::set_text(std::string value) {
 // --- Layout ---
 
 std::string TextEditor::displayed() const {
+    if (secure_) {
+        std::string bullets;
+        for (const char c : text_) {
+            if (!is_continuation(c)) {
+                bullets += kBullet;
+            }
+        }
+        return bullets;
+    }
     if (!composing()) {
         return text_;
     }
@@ -125,6 +137,19 @@ void TextEditor::reshape() {
         stops_.insert(stops_.begin(), {0, 0});
     }
     stops_.push_back({shown.size(), pen});
+    if (secure_) {
+        // Bullet n stands for character n: keep the stops in the text's bytes.
+        std::vector<std::size_t> starts;
+        for (std::size_t i = 0; i < text_.size(); ++i) {
+            if (!is_continuation(text_[i])) {
+                starts.push_back(i);
+            }
+        }
+        starts.push_back(text_.size());
+        for (Stop& stop : stops_) {
+            stop.byte = starts[std::min(stop.byte / kBullet.size(), starts.size() - 1)];
+        }
+    }
     width_ = pen;
     layout_changed();
 }
@@ -179,6 +204,9 @@ std::size_t TextEditor::next_stop(std::size_t byte) const {
 }
 
 std::size_t TextEditor::previous_word(std::size_t byte) const {
+    if (secure_) {
+        return 0; // words would reveal the text's shape
+    }
     while (byte > 0 && !is_word_byte(text_[byte - 1])) {
         --byte;
     }
@@ -189,6 +217,9 @@ std::size_t TextEditor::previous_word(std::size_t byte) const {
 }
 
 std::size_t TextEditor::next_word(std::size_t byte) const {
+    if (secure_) {
+        return text_.size();
+    }
     while (byte < text_.size() && is_word_byte(text_[byte])) {
         ++byte;
     }
@@ -199,6 +230,11 @@ std::size_t TextEditor::next_word(std::size_t byte) const {
 }
 
 void TextEditor::select_word(std::size_t byte) {
+    if (secure_) {
+        anchor_ = 0;
+        caret_ = text_.size();
+        return;
+    }
     // The run of word (or of non-word) characters around `byte`.
     const bool word = byte < text_.size() ? is_word_byte(text_[byte]) : byte > 0 && is_word_byte(text_[byte - 1]);
     std::size_t begin = byte;
@@ -453,7 +489,7 @@ EventResult TextEditor::key(const KeyEvent& event) {
         case Key::c:
         case Key::x:
             if (primary) {
-                if (selection && services_) {
+                if (selection && services_ && !secure_) { // passwords don't leave the field
                     services_->set_clipboard_text(text_.substr(begin, end - begin));
                     if (event.key == Key::x) {
                         erase(begin, end);
@@ -497,6 +533,9 @@ EventResult TextEditor::text_input(const TextInputEvent& event) {
         composition_.clear();
         replace_selection(event.text, true);
         return {.consumed = true, .redraw = true};
+    }
+    if (secure_) {
+        return {.consumed = true}; // no IME in password fields; committed text still arrives
     }
     // Composition: starting one replaces the selection, like typing would.
     if (!composing() && !event.text.empty() && caret_ != anchor_) {

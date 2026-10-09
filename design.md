@@ -1284,6 +1284,33 @@ Separate render thread from day one (decided).
     scroll bars) don't begin in the past.
   - Follow-ups: programmatic scrolling (`ScrollViewReader` / scroll position binding),
     overscroll bounce, momentum for wheel flicks, and scroll-aware synthetic input for tests.
+- [x] ZStack parity with SwiftUI:
+  - With mixed `layout_priority`, the highest-priority children size the stack and the others
+    are offered that size, e.g. a shape behind `Text(...).layout_priority(1)` takes the text's
+    size.
+  - `.z_index(Prop<float>)` (reactive) sets stacking order among siblings in any stack. Higher
+    values draw in front and are hit first; ties keep declaration order. Children animating out
+    keep their z.
+- [x] `SecureField(placeholder, binding, options)`:
+  - Bullets, one per character; caret stops map back to the text's bytes.
+  - No copy or cut. Word movement and double-click take the whole field. No IME composition.
+- [x] Fix: a TextField's text takes its font and colors from where the style places `field`, so
+  a style's `.font()` and `.foreground_style()` apply.
+- [x] Fix: `.focused(binding)` follows SwiftUI semantics.
+  - The binding is true while focus is anywhere inside the view.
+  - Setting it focuses the first focusable view inside.
+  - The wrapper is a Tab stop only when nothing inside can take focus.
+  - Before: the wrapper was its own extra Tab stop, so Tab into a wrapped field landed on an
+    invisible element first and typing went nowhere.
+  - Implemented with `FocusManager::watch` (focus entering or leaving a subtree) and
+    `first_focusable`.
+- [x] Example app `apps/login` (`ELG_BUILD_EXAMPLES`, vcpkg feature `examples`): a modern
+  web-style sign-in screen.
+  - A gradient backdrop with glows.
+  - A card with a credentials form (custom TextField and Button styles, validation messages,
+    Enter moving focus to the password via `.focused`).
+  - A QR login panel: nayuki-qr-code-generator drawn with `Canvas`, with a logo `ZStack`ed on top.
+  - An animated success screen.
 - [ ] Lazy stacks/List, Grid, presentations (sheet/popover)
 - [ ] Popup presentation layer (§13.1): popup windows, `context_menu`, `Menu` / `MenuItem` /
   `Submenu`, menu keyboard navigation, `.help()` tooltips; `App::menu_bar` (native on macOS)

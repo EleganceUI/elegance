@@ -27,7 +27,70 @@ bool FocusManager::focus(Element* element, bool visible) {
     if (element) {
         element->event_handler()->focus(true);
     }
+    notify_watches();
     return true;
+}
+
+bool FocusManager::contains_focus(const Element* scope) const noexcept {
+    for (const Element* element = focused_; element; element = element->parent()) {
+        if (element == scope) {
+            return true;
+        }
+    }
+    return false;
+}
+
+Element* FocusManager::first_focusable(Element& scope) {
+    Element* found = nullptr;
+    std::function<void(Element&)> walk = [&](Element& element) {
+        if (found) {
+            return;
+        }
+        if (EventHandler* handler = element.event_handler(); handler && handler->focusable()) {
+            found = &element;
+            return;
+        }
+        element.for_each_child(walk);
+    };
+    scope.for_each_child(walk);
+    if (!found) {
+        if (EventHandler* handler = scope.event_handler(); handler && handler->focusable()) {
+            found = &scope;
+        }
+    }
+    return found;
+}
+
+void FocusManager::watch(Element* scope, std::function<void(bool)> changed) {
+    watches_.push_back({scope, std::move(changed), contains_focus(scope)});
+}
+
+void FocusManager::notify_watches() {
+    // Copied first: a callback's state change may add or remove watches.
+    std::vector<std::pair<std::function<void(bool)>, bool>> calls;
+    for (Watch& watch : watches_) {
+        const bool within = contains_focus(watch.scope);
+        if (within != watch.within) {
+            watch.within = within;
+            calls.emplace_back(watch.changed, within);
+        }
+    }
+    for (const auto& [changed, within] : calls) {
+        changed(within);
+    }
+}
+
+void FocusManager::forget(const Element* element) noexcept {
+    std::erase_if(watches_, [&](const Watch& watch) { return watch.scope == element; });
+    if (focused_ == element) {
+        focused_ = nullptr;
+        set_text_input(false);
+        try {
+            notify_watches();
+        } catch (...) {
+            // A binding that throws while the tree is torn down has nowhere to report to.
+        }
+    }
 }
 
 // --- EventDispatcher ---

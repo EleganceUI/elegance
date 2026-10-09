@@ -230,8 +230,10 @@ bool TransitionElement::hit_impl(Point point, std::vector<Element*>& path) {
 }
 
 bool LayoutElement::hit_impl(Point point, std::vector<Element*>& path) {
-    // Front to back: later children are drawn on top.
-    for (auto it = laid_out_.rbegin(); it != laid_out_.rend(); ++it) {
+    // Front to back, the reverse of drawing (exiting children never take hits).
+    std::vector<Element*> order = laid_out_;
+    std::ranges::stable_sort(order, {}, [](const Element* element) { return element->z_index(); });
+    for (auto it = order.rbegin(); it != order.rend(); ++it) {
         if ((*it)->hit_test(point, path)) {
             return true;
         }

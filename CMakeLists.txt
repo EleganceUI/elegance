@@ -20,6 +20,7 @@ endif ()
 
 option(ELG_BUILD_SHARED "Build Elegence as a shared library" ON)
 option(ELG_BUILD_SANDBOX "Build the sandbox test app"         ${PROJECT_IS_TOP_LEVEL})
+option(ELG_BUILD_EXAMPLES "Build the example apps (needs the vcpkg \"examples\" feature)" ${PROJECT_IS_TOP_LEVEL})
 option(ELG_BUILD_TESTS   "Build the unit tests (needs the vcpkg \"tests\" feature)" ${PROJECT_IS_TOP_LEVEL})
 
 # Put the library and every executable in one folder so the sandbox finds the DLL on Windows.
@@ -33,6 +34,10 @@ add_subdirectory(src)
 
 if (ELG_BUILD_SANDBOX)
     add_subdirectory(apps/sandbox)
+endif ()
+
+if (ELG_BUILD_EXAMPLES)
+    add_subdirectory(apps/login)
 endif ()
 
 if (ELG_BUILD_TESTS)

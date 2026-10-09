@@ -36,9 +36,11 @@ class TextEditor {
 public:
     TextEditor(TextSystem& text, Binding<std::string> binding, std::string placeholder,
                std::function<void()> on_submit, WindowServices* services, FocusManager* focus,
-               EnvironmentValues environment);
+               EnvironmentValues environment, bool secure = false);
 
     void set_font(const Font& font);
+    // Where the text is shown (fonts and colors come from there).
+    void set_environment(EnvironmentValues environment) { environment_ = std::move(environment); }
     // The binding changed from outside (not by editing).
     void set_text(std::string value);
 
@@ -57,7 +59,7 @@ public:
 
 private:
     struct Stop {
-        std::size_t byte; // into the displayed text
+        std::size_t byte; // into the displayed text (secure: into the text itself)
         float x;          // points from the start
     };
     struct Snapshot {
@@ -92,6 +94,7 @@ private:
     void layout_changed();
 
     TextSystem* text_system_;
+    bool secure_; // shown as bullets; no copying, no IME composition
     Binding<std::string> binding_;
     std::function<void()> on_submit_;
     WindowServices* services_;

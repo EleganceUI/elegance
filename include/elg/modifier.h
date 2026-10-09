@@ -113,6 +113,8 @@ struct Effects {
     // Moves the drawn content (and where it's hit) without affecting layout.
     Prop<float> offset_x = 0.f;
     Prop<float> offset_y = 0.f;
+    // Stacking order among siblings, when set.
+    std::optional<Prop<float>> z_index;
     // Hit testing: by default a view is hit where its content draws (shapes by their outline,
     // text by its frame), within any clip.
     std::optional<Shape> content_shape; // hit test this shape (filling the bounds) instead

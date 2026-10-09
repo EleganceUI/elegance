@@ -28,6 +28,12 @@
         "catch2"
       ]
     },
+    "examples": {
+      "description": "Build the example apps (the login example uses a QR code encoder)",
+      "dependencies": [
+        "nayuki-qr-code-generator"
+      ]
+    },
     "profiling": {
       "description": "Tracy profiler integration",
       "dependencies": [

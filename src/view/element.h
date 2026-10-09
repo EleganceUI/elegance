@@ -65,6 +65,7 @@ public:
     const Animation* change_animation() const noexcept;
 
     virtual float layout_priority() const noexcept { return 0; }
+    virtual float z_index() const noexcept { return 0; }
     virtual bool is_spacer() const noexcept { return false; }
 
     // Hit testing (design.md §10): true if `point` (window points) hits this element's content.
@@ -294,6 +295,7 @@ public:
 
     TransitionElement* as_transition() noexcept override { return this; }
     float layout_priority() const noexcept override { return content_->layout_priority(); }
+    float z_index() const noexcept override { return content_->z_index(); }
     bool is_spacer() const noexcept override { return content_->is_spacer(); }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
@@ -329,6 +331,7 @@ protected:
 
 private:
     void rebuild_children();
+    std::vector<Element*> paint_order() const;
 
     std::shared_ptr<const Layout> layout_;
     std::vector<std::unique_ptr<Element>> children_; // owned, as built
@@ -344,6 +347,7 @@ public:
     }
 
     float layout_priority() const noexcept override;
+    float z_index() const noexcept override;
     bool is_spacer() const noexcept override { return content_->is_spacer(); }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
@@ -370,9 +374,11 @@ public:
     void set_opacity(float opacity, const Animation* animation) { opacity_.set(opacity, animation); }
     void set_offset_x(float x, const Animation* animation) { offset_x_.set(x, animation); }
     void set_offset_y(float y, const Animation* animation) { offset_y_.set(y, animation); }
+    void set_z_index(float z) noexcept { z_index_ = z; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
     float layout_priority() const noexcept override { return content_->layout_priority(); }
+    float z_index() const noexcept override { return z_index_.value_or(content_->z_index()); }
     bool is_spacer() const noexcept override { return content_->is_spacer(); }
 
 protected:
@@ -387,6 +393,7 @@ private:
     Animated<float> opacity_{1.f}; // resolved from effects_.opacity
     Animated<float> offset_x_{0.f};
     Animated<float> offset_y_{0.f};
+    std::optional<float> z_index_; // .z_index(...)
 };
 
 class DecorationElement final : public Element {
@@ -399,6 +406,7 @@ public:
     }
 
     float layout_priority() const noexcept override { return content_->layout_priority(); }
+    float z_index() const noexcept override { return content_->z_index(); }
     bool is_spacer() const noexcept override { return content_->is_spacer(); }
     void for_each_child(const std::function<void(Element&)>& visit) override {
         visit(*content_);
@@ -432,6 +440,7 @@ public:
     }
 
     float layout_priority() const noexcept override { return content_->layout_priority(); }
+    float z_index() const noexcept override { return content_->z_index(); }
     bool is_spacer() const noexcept override { return content_->is_spacer(); }
     EventHandler* event_handler() noexcept override { return handler_.get(); }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }

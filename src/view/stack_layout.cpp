@@ -211,20 +211,66 @@ void HStackLayout::place_children(Rect bounds, ProposedSize proposal,
     stack_place(Axis::horizontal, spacing_, fraction(alignment_), bounds, proposal, children);
 }
 
-Size ZStackLayout::size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const {
-    Size result;
+namespace {
+
+// Like SwiftUI: the children with the highest layout priority size the stack (from the proposal);
+// the rest are offered that size. With equal priorities, every child is offered the proposal.
+struct ZStackSizing {
+    float top_priority = 0;
+    bool mixed = false;
+    Size size;
+};
+
+ZStackSizing z_stack_sizing(ProposedSize proposal, std::span<const LayoutChild> children) {
+    ZStackSizing sizing;
+    bool first = true;
     for (const LayoutChild& child : children) {
-        const Size size = child.size_that_fits(proposal);
-        result.width = std::max(result.width, size.width);
-        result.height = std::max(result.height, size.height);
+        const float priority = child.layout_priority();
+        if (!first && priority != sizing.top_priority) {
+            sizing.mixed = true;
+        }
+        sizing.top_priority = first ? priority : std::max(sizing.top_priority, priority);
+        first = false;
+    }
+    for (const LayoutChild& child : children) {
+        if (child.layout_priority() == sizing.top_priority) {
+            const Size size = child.size_that_fits(proposal);
+            sizing.size.width = std::max(sizing.size.width, size.width);
+            sizing.size.height = std::max(sizing.size.height, size.height);
+        }
+    }
+    return sizing;
+}
+
+} // namespace
+
+Size ZStackLayout::size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const {
+    const ZStackSizing sizing = z_stack_sizing(proposal, children);
+    if (!sizing.mixed) {
+        return sizing.size;
+    }
+    // Lower-priority children may still overflow the size they're offered; the stack is the
+    // union, like SwiftUI.
+    Size result = sizing.size;
+    const ProposedSize offered{sizing.size.width, sizing.size.height};
+    for (const LayoutChild& child : children) {
+        if (child.layout_priority() != sizing.top_priority) {
+            const Size size = child.size_that_fits(offered);
+            result.width = std::max(result.width, size.width);
+            result.height = std::max(result.height, size.height);
+        }
     }
     return result;
 }
 
 void ZStackLayout::place_children(Rect bounds, ProposedSize proposal,
                                   std::span<const LayoutChild> children) const {
+    const ZStackSizing sizing = z_stack_sizing(proposal, children);
+    const ProposedSize offered{sizing.size.width, sizing.size.height};
     for (const LayoutChild& child : children) {
-        child.place(aligned_position(bounds, child.size_that_fits(proposal), alignment_), proposal);
+        const ProposedSize child_proposal =
+            sizing.mixed && child.layout_priority() != sizing.top_priority ? offered : proposal;
+        child.place(aligned_position(bounds, child.size_that_fits(child_proposal), alignment_), child_proposal);
     }
 }
 

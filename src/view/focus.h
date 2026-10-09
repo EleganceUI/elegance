@@ -8,6 +8,9 @@
 #include "view/element.h"
 #include "view/window_services.h"
 
+#include <functional>
+#include <vector>
+
 namespace elg::detail {
 
 // One window's keyboard focus (design.md §10): which element keys go to first, and whether the
@@ -24,15 +27,28 @@ public:
     // Moves focus to `element` (nullptr: none) and tells the handlers that lost and gained it.
     // Returns true when the window needs a new frame.
     bool focus(Element* element, bool visible);
-    // Called when a focusable element is destroyed: drops focus without touching it.
-    void forget(const Element* element) noexcept {
-        if (focused_ == element) {
-            focused_ = nullptr;
-            set_text_input(false);
-        }
-    }
+    // Whether the focused element is `scope` or inside it.
+    bool contains_focus(const Element* scope) const noexcept;
+    // The first element in `scope` (descendants in tree order, then `scope` itself) that can take
+    // focus, if any.
+    static Element* first_focusable(Element& scope);
+
+    // Calls `changed(true/false)` when focus moves into or out of `scope` (`.focused(binding)`).
+    void watch(Element* scope, std::function<void(bool)> changed);
+
+    // Called when an element that joined focus is destroyed: drops focus (and any watch) without
+    // touching it.
+    void forget(const Element* element) noexcept;
 
 private:
+    struct Watch {
+        Element* scope;
+        std::function<void(bool)> changed;
+        bool within;
+    };
+
+    void notify_watches();
+
     void set_text_input(bool on) noexcept {
         if (services_ && on != text_input_) {
             text_input_ = on;
@@ -41,6 +57,7 @@ private:
     }
 
     WindowServices* services_;
+    std::vector<Watch> watches_;
     bool text_input_ = false;
     Element* focused_ = nullptr;
     bool visible_ = false;
