@@ -69,6 +69,9 @@ public:
     // --- Render thread ---
     // Blocks until there is work. Returns false once a stop was requested.
     bool take(RenderBatch& batch);
+    // Like take(), but gives up after `timeout`: then `batch` is empty. Returns false once a stop
+    // was requested.
+    bool take_for(RenderBatch& batch, std::chrono::milliseconds timeout);
     void mark_done(std::uint64_t sequence);
     // The render thread is exiting: drops pending work and releases all waiters.
     void close();

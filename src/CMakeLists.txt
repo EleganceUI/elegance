@@ -27,9 +27,11 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         gpu/render_image.cpp
         gpu/swapchain.cpp
         gpu/texture_cache.cpp
+        gpu/video_textures.cpp
         media/audio.cpp
         media/image_decode.cpp
         media/miniaudio.cpp
+        media/video_source.cpp
         gpu/vk.cpp
         gpu/vma.cpp
         platform/dynamic_library.cpp
@@ -53,6 +55,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         view/hot_reload.cpp
         view/image.cpp
         view/raster_image.cpp
+        view/video_view.cpp
         view/inspect.cpp
         view/inspector.cpp
         view/lazy_stack.cpp
@@ -126,7 +129,7 @@ endif ()
 if (WIN32)
     target_sources(elegence PRIVATE gpu/composition_win32.cpp)
     # dwmapi: rounded corners for undecorated windows; d3d11/dxgi/dcomp: transparent windows.
-    target_link_libraries(elegence PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys)
+    target_link_libraries(elegence PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid oleaut32)
 endif ()
 
 target_link_libraries(elegence PRIVATE

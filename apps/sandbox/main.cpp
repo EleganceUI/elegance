@@ -391,6 +391,22 @@ View AudioCards() {
                   Captioned(player, "AudioPlayer: streamed, scrub, volume, loop").card());
 }
 
+// Video (design.md §13.3): Media Foundation decodes; frames go straight to the GPU; the render
+// thread redraws them without a new layout.
+View VideoCards() {
+    const VideoPlayer player(std::string(ELG_SANDBOX_ASSETS) + "/clip.mp4");
+    player.set_looping(true);
+    player.set_muted(true);
+    const View video = ZStack({.alignment = Alignment::bottom}, VideoView(player).aspect_ratio(16.f / 9.f),
+                              VideoControls(player).padding(10))
+                           .frame({.width = 400})
+                           .clip_shape(RoundedRectangle(14));
+    const View filled = VideoView(player, ContentMode::fill).frame(140, 140).clip_shape(Circle());
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(video, "VideoView + VideoControls (muted, looping)").card(),
+                  Captioned(filled, "The same video, fill + Circle").card());
+}
+
 // ZStack: layering with alignment, z_index, and priority sizing.
 View StackCards() {
     // A badge pinned to the corner of what it labels.
@@ -724,6 +740,7 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
                   ScrollView(VStack({.alignment = HorizontalAlignment::leading, .spacing = 20},
                          ImageCards(),
                          AudioCards(),
+                         VideoCards(),
                          PathCards(),
                          MenuCards(),
                          IconCards(),

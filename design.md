@@ -1897,9 +1897,47 @@ Separate render thread from day one (decided).
     player with play/pause, scrubber, time, volume and loop.
   - **Tests:** a WAV built in memory decodes with the right duration; missing and garbage
     inputs throw `ResourceError`.
+- [x] Media part 3, video (`elg/video.h`, `src/media/video_source.*`, `src/gpu/video_textures.*`):
+  - **`VideoPlayer(path or URL)`:**
+    - `play`, `pause`, `toggle`, `stop`, `seek`, `set_volume`, `set_muted`, `set_looping`.
+    - Reactive `is_playing`, `is_ready`, `time`, `duration`, `natural_size`, `volume`,
+      `is_muted`, `is_looping`, `error`.
+    - `progress_binding()` (0...1, writing seeks) and `volume_binding()`.
+    - Requests made before the decoder exists are kept and applied when it starts.
+  - **`VideoView(player, ContentMode)`:** the picture fitted or filled (clipped) on black. Its
+    ideal size is the video's (320×180 until known). **`VideoControls(player)`:** play/pause,
+    a scrubber, time and mute, as ordinary views.
+  - **Windows:** `IMFMediaEngine` in frame-server mode on a D3D11 device created on the
+    renderer's adapter (by LUID, which the render thread publishes). It handles demuxing,
+    hardware decoding, audio and A/V sync. Engine events (metadata, time updates, play, pause,
+    end, errors) reach the UI states through `post_ui_task`. The event callback never takes the
+    source's lock.
+  - **Frames:**
+    - `TransferVideoFrame` writes into a ring of 3 shared BGRA D3D11 textures (NT handles), so
+      frames in flight keep theirs, and waits for the copy.
+    - `gpu::VideoTextures` imports each texture once (`VK_KHR_external_memory_win32`, sRGB view)
+      and samples it in place, with no copy.
+    - Each command buffer acquires the textures from `VK_QUEUE_FAMILY_EXTERNAL` and releases
+      them back at its end.
+  - **Redraw without layout:** the render thread keeps the last frame of each window showing a
+    video. While one plays it polls every 4 ms, and when the decoder has a new frame it redraws
+    that frame: no UI-thread work per video frame.
+  - **Startup:** a view emits its `VideoCommand` even before the size is known, since the render
+    thread seeing it is what starts the decoder.
+  - **Measured:** a 640×360 30 fps clip plays at about 9% of one core in a debug build with
+    validation. Closing mid-playback exits cleanly with no validation errors.
+  - **Other platforms:** a stub that reports "not available yet" (AVFoundation and GStreamer are
+    next).
+  - **Sandbox:** generated `clip.mp4` (ffmpeg testsrc2, H.264/AAC, 10 s), muted and looping, with
+    controls, plus the same video filled into a circle.
+  - **Tests:** requests before loading, copies sharing, views building.
+- [ ] Video follow-ups:
+  - AVFoundation (macOS) and GStreamer (Linux).
+  - GPU-side sync instead of CPU waits around `TransferVideoFrame`.
+  - HDR/10-bit, subtitles and audio track selection.
+  - Fullscreen.
+  - Frame pacing from the display's vsync rather than 4 ms polling.
 - [ ] Media (§13.3), the rest, in order:
-  - Video: Media Foundation first; `VideoPlayer`, `VideoView`, `VideoControls`; zero-copy
-    D3D11 → Vulkan.
   - `AsyncImage` and HTTP loading.
   - Capture: microphone, camera.
 - [x] Built-in icon library (§13.2), **Phosphor** 2.1.2 (MIT):

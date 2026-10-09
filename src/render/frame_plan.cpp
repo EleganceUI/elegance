@@ -91,7 +91,7 @@ private:
 
     void emit(PlanPass& pass, std::vector<QuadInstance>& out, QuadInstance instance, const Rect& extent,
               const Clip& clip, int layer = -1, bool shadow = false, int path = -1, bool mask = false,
-              int image = -1) {
+              int image = -1, int video = -1) {
         if (clip.active && !overlaps(extent, clip.rect)) {
             return; // fully clipped
         }
@@ -102,12 +102,13 @@ private:
         out.push_back(instance);
 
         PlanSegment* last = pass.segments.empty() ? nullptr : &pass.segments.back();
-        const bool plain = layer < 0 && path < 0 && image < 0;
+        const bool plain = layer < 0 && path < 0 && image < 0 && video < 0;
         if (last && last->first + last->count == index &&
-            ((plain && last->layer < 0 && last->path < 0 && last->image < 0) || (image >= 0 && last->image == image))) {
+            ((plain && last->layer < 0 && last->path < 0 && last->image < 0 && last->video < 0) ||
+             (image >= 0 && last->image == image) || (video >= 0 && last->video == video))) {
             ++last->count;
         } else {
-            pass.segments.push_back({index, 1, layer, shadow, path, mask, image});
+            pass.segments.push_back({index, 1, layer, shadow, path, mask, image, video});
         }
     }
 
@@ -268,6 +269,34 @@ private:
 
     static Rect clear_extent(Size size) { return {0, 0, size.width, size.height}; }
 
+    void add_video(const VideoCommand& command, Point origin, PlanPass& pass, std::vector<QuadInstance>& out,
+                   const Clip& clip) {
+        if (!command.source || command.opacity <= 0) {
+            return;
+        }
+        const Rect r = to_pixels(command.rect, origin);
+        if (r.width <= 0 || r.height <= 0) {
+            return;
+        }
+        int index = -1;
+        for (std::size_t i = 0; i < plan_.videos.size(); ++i) {
+            if (plan_.videos[i] == command.source) {
+                index = static_cast<int>(i);
+                break;
+            }
+        }
+        if (index < 0) {
+            index = static_cast<int>(plan_.videos.size());
+            plan_.videos.push_back(command.source);
+        }
+        QuadInstance instance;
+        instance.rect = {r.x, r.y, r.width, r.height};
+        instance.shape = {command.uv.x, command.uv.y, command.uv.max_x(), command.uv.max_y()};
+        instance.color = {0, 0, 0, std::clamp(command.opacity, 0.f, 1.f)};
+        instance.params = {0, static_cast<float>(QuadKind::image), 0, 0};
+        emit(pass, out, instance, r, clip, -1, false, -1, false, -1, index);
+    }
+
     void add_image(const ImageCommand& command, Point origin, PlanPass& pass, std::vector<QuadInstance>& out,
                    const Clip& clip) {
         if (!command.image || command.image->width == 0 || command.opacity <= 0) {
@@ -409,6 +438,7 @@ private:
                            [&](const BoxShadowCommand& c) { add_box_shadow(c, origin, pass, out, clip); },
                            [&](const PathCommand& c) { add_path(c, origin, pass, out, clip); },
                            [&](const ImageCommand& c) { add_image(c, origin, pass, out, clip); },
+                           [&](const VideoCommand& c) { add_video(c, origin, pass, out, clip); },
                            [&](const PushClipCommand& c) { clips.push_back(push_clip(c, origin, clip)); },
                            [&](const PopClipCommand&) {
                                if (clips.size() > 1) {

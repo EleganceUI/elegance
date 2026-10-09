@@ -62,6 +62,18 @@ bool FrameMailbox::take(RenderBatch& batch) {
     return true;
 }
 
+bool FrameMailbox::take_for(RenderBatch& batch, std::chrono::milliseconds timeout) {
+    std::unique_lock lock(mutex_);
+    work_ready_.wait_for(lock, timeout, [&] { return stop_ || !commands_.empty() || !frames_.empty(); });
+    if (stop_) {
+        return false;
+    }
+    batch.commands = std::exchange(commands_, {});
+    batch.frames = std::exchange(frames_, {});
+    batch.sequence = posted_;
+    return true;
+}
+
 void FrameMailbox::mark_done(std::uint64_t sequence) {
     std::lock_guard lock(mutex_);
     done_ = std::max(done_, sequence);

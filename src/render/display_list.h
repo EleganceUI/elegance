@@ -12,6 +12,7 @@
 #include <elg/view.h>
 
 #include "media/image_decode.h"
+#include "media/video_source.h"
 
 #include <memory>
 #include <optional>
@@ -68,6 +69,15 @@ struct ImageCommand {
     float opacity = 1;
 };
 
+// The current frame of a video (design.md §13.3), drawn into `rect`. The render thread takes new
+// frames from the source itself, so a playing video redraws without new display lists.
+struct VideoCommand {
+    Rect rect;
+    Rect uv{0, 0, 1, 1};
+    std::shared_ptr<VideoSource> source;
+    float opacity = 1;
+};
+
 // Clips everything until the matching PopClipCommand to a rounded rect.
 struct PushClipCommand {
     Rect rect;
@@ -89,7 +99,7 @@ struct PushLayerCommand {
 struct PopLayerCommand {};
 
 using DrawCommand = std::variant<RectCommand, GlyphCommand, BoxShadowCommand, PathCommand, ImageCommand,
-                                 PushClipCommand, PopClipCommand, PushLayerCommand, PopLayerCommand>;
+                                 VideoCommand, PushClipCommand, PopClipCommand, PushLayerCommand, PopLayerCommand>;
 
 // Immutable-once-built draw commands for one window frame, in logical points and sRGB, in
 // painter's order. Holds copies of everything, never references into app memory

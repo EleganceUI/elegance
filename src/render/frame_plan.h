@@ -25,6 +25,7 @@ struct PlanSegment {
     int path = -1;       // >= 0: a path filled through that path's coverage mask
     bool mask = false;   // keeps only what's under the path's coverage ("destination-in")
     int image = -1;      // >= 0: a raster image (FramePlan::images)
+    int video = -1;      // >= 0: a video's current frame (FramePlan::videos)
 };
 
 // A path's coverage mask to render before the passes that use it (gpu::PathRenderer).
@@ -58,6 +59,8 @@ struct FramePlan {
     std::vector<std::array<float, 2>> path_vertices;
     // Images drawn this frame (uploaded first if they aren't on the GPU yet).
     std::vector<std::shared_ptr<const DecodedImage>> images;
+    // Videos drawn this frame.
+    std::vector<std::shared_ptr<VideoSource>> videos;
 };
 
 // Converts logical points to pixels, resolves the clip stack per instance (culling instances
