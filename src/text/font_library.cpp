@@ -11,6 +11,7 @@
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
+#include FT_COLOR_H
 #include <hb.h>
 
 #include <cstdlib>
@@ -218,7 +219,44 @@ FontFace::FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigne
         ascender_ = static_cast<float>(ft_face_->ascender) / units_per_em_;
         descender_ = static_cast<float>(ft_face_->descender) / units_per_em_;
     }
-    log_debug("loaded font {} ({})", name, id);
+    // Color glyphs: the default palette, if the font has COLR/CPAL tables.
+    if (FT_HAS_COLOR(ft_face_)) {
+        FT_Palette_Data palettes{};
+        FT_Color* colors = nullptr;
+        if (FT_Palette_Data_Get(ft_face_, &palettes) == 0 && palettes.num_palette_entries > 0 &&
+            FT_Palette_Select(ft_face_, 0, &colors) == 0 && colors) {
+            for (FT_UShort i = 0; i < palettes.num_palette_entries; ++i) {
+                const FT_Color& c = colors[i];
+                palette_.push_back(Color{c.red / 255.f, c.green / 255.f, c.blue / 255.f, c.alpha / 255.f});
+            }
+        }
+    }
+    log_debug("loaded font {} ({}{})", name, id, palette_.empty() ? "" : ", color");
+}
+
+std::span<const ColorLayer> FontFace::color_layers(std::uint32_t glyph) const {
+    if (palette_.empty()) {
+        return {};
+    }
+    auto it = color_layers_.find(glyph);
+    if (it == color_layers_.end()) {
+        std::vector<ColorLayer> layers;
+        FT_UInt layer_glyph = 0;
+        FT_UInt color_index = 0;
+        FT_LayerIterator iterator{};
+        while (FT_Get_Color_Glyph_Layer(ft_face_, glyph, &layer_glyph, &color_index, &iterator)) {
+            ColorLayer layer;
+            layer.glyph = layer_glyph;
+            if (color_index == 0xFFFF || color_index >= palette_.size()) {
+                layer.foreground = true; // drawn in the text's color
+            } else {
+                layer.color = palette_[color_index];
+            }
+            layers.push_back(layer);
+        }
+        it = color_layers_.emplace(glyph, std::move(layers)).first;
+    }
+    return it->second;
 }
 
 bool FontFace::has_char(char32_t codepoint) const {
@@ -253,17 +291,19 @@ const FontFace& FontLibrary::load(const std::string& key, const std::filesystem:
     return *it->second;
 }
 
-const FontFace* FontLibrary::fallback_for(char32_t codepoint) {
-    if (const auto cached = fallback_cache_.find(codepoint); cached != fallback_cache_.end()) {
+const FontFace* FontLibrary::fallback_for(char32_t codepoint, bool emoji) {
+    auto& cache = emoji ? emoji_fallback_cache_ : fallback_cache_;
+    if (const auto cached = cache.find(codepoint); cached != cache.end()) {
         return cached->second;
     }
     if (!fallback_files_listed_) {
         fallback_files_listed_ = true;
         fallback_files_ = fallback_font_candidates();
     }
+    const auto fits = [&](const FontFace& face) { return face.has_char(codepoint) && (!emoji || face.has_color()); };
     const FontFace* found = nullptr;
     for (const FontFace* face : fallbacks_) {
-        if (face->has_char(codepoint)) {
+        if (fits(*face)) {
             found = face;
             break;
         }
@@ -278,14 +318,17 @@ const FontFace* FontLibrary::fallback_for(char32_t codepoint) {
         try {
             const FontFace& face = load(file.string(), file);
             fallbacks_.push_back(&face);
-            if (face.has_char(codepoint)) {
+            if (fits(face)) {
                 found = &face;
             }
         } catch (const std::exception& failure) {
             log_warning("skipping fallback font {}: {}", file.string(), failure.what());
         }
     }
-    fallback_cache_.emplace(codepoint, found);
+    if (!found && emoji) {
+        found = fallback_for(codepoint); // no color font has it: any drawing will do
+    }
+    cache.emplace(codepoint, found);
     return found;
 }
 

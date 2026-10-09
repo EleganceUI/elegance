@@ -4,6 +4,8 @@
 
 #include "view/text_field.h"
 
+#include "text/glyph_draw.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -305,13 +307,7 @@ void TextEditor::paint(DisplayList& list, Rect frame) const {
     const auto draw = [&](const ShapedParagraph& paragraph, Color color) {
         float pen = origin;
         for (const ShapedGlyph& glyph : paragraph.glyphs) {
-            if (const AtlasGlyph* atlas = text_system_->atlas.find_or_add(glyph.face ? *glyph.face : *face_, glyph.id)) {
-                const Rect quad{pen + (glyph.x_offset + atlas->left) * size_,
-                                baseline - (glyph.y_offset + atlas->top) * size_,
-                                (atlas->right - atlas->left) * size_, (atlas->top - atlas->bottom) * size_};
-                const Rect uv{atlas->u0, atlas->v0, atlas->u1 - atlas->u0, atlas->v1 - atlas->v0};
-                list.commands.push_back(GlyphCommand{quad, uv, color, size_});
-            }
+            draw_glyph(list, text_system_->atlas, glyph.face ? *glyph.face : *face_, glyph, pen, baseline, size_, color);
             pen += glyph.advance * size_;
         }
     };

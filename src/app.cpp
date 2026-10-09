@@ -357,6 +357,7 @@ int App::run() {
     // the atlas's workers wake the event loop to draw them.
     TextSystem text;
     text.atlas.set_on_ready([&platform] { platform.wake(); });
+    text.atlas.set_disk_cache(GlyphDiskCache::default_directory());
     ScopeExit stop_glyph_wakes([&text] { text.atlas.set_on_ready({}); });
 
     // Every window's environment starts from the system's light/dark setting, as reactive state:

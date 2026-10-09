@@ -1564,7 +1564,18 @@ Separate render thread from day one (decided).
     lock made 8 workers 2.5× slower than 3.
   - Fonts are read in one bulk read. The stream-iterator read took ~1 s per CJK font in debug.
   - Measured debug startup of the sandbox: ~12 s → ~2.4 s. Release: 0.5 s.
-- [ ] Color emoji (COLRv0/v1 layers, then CBDT/sbix bitmaps). Emoji are monochrome outlines today.
+- [x] Color emoji, COLRv0:
+  - `FontFace` reads the default CPAL palette at load and looks up a glyph's COLR layers the
+    first time it is drawn (`color_layers`).
+  - `detail::draw_glyph` (`src/text/glyph_draw.h`) is the one glyph-drawing path for `Text` and
+    text fields. It draws a color glyph as its layers, bottom to top, each in its palette color.
+    "Foreground" layers take the text color, and every layer fades with the text's opacity.
+  - Layer glyphs use single-channel distance fields, as icons do, since layers overlap themselves.
+  - Fallback prefers a color font for emoji: characters that default to emoji presentation, or
+    are followed by U+FE0F. U+FE0E keeps the text style, and symbols like ★ ♥ ✓ stay with
+    Segoe UI Symbol.
+- [ ] Color emoji follow-ups: COLRv1 gradients, then CBDT/sbix bitmap fonts (Apple Color Emoji,
+  Noto Color Emoji's bitmap build).
 - [x] GPU vector paths (§5), stencil-then-cover:
   - **Geometry** (`elg/path.h`, `src/geometry/path.cpp`):
     - `Path` building, including SVG-style arcs and rect/rounded-rect/ellipse/circle helpers.
@@ -1591,14 +1602,29 @@ Separate render thread from day one (decided).
     - Hit testing on the flattened fill or stroke.
     - `GraphicsContext::fill_path` / `stroke_path` in a Canvas.
   - **Tests:** `tests/path_tests.cpp`.
+- [x] Path mask caching:
+  - Coverage masks are kept per window, keyed by a hash of the polygons, the scale, the
+    sub-pixel offset (snapped to ¼ px) and the fill rule. Moving or scrolling a path reuses its
+    mask.
+  - Masks unused for 240 frames are dropped, and the least recently used ones go when the cache
+    is over 32 MB. A mask still in flight is never freed.
+  - Measured: a 75-frame scroll animation rendered 7 masks once and none after.
 - [ ] Path follow-ups:
-  - Cache coverage masks across frames (re-rendered every drawn frame today).
   - Skip MSAA for small masks under memory pressure.
   - Analytic-coverage AA for sharper thin strokes.
   - `clip_shape(PathShape)` clips through a mask.
   - A compute rasterizer (Vello-style) if path-heavy scenes need it.
   - SVG icon sets via `register_icon_set({.svg_directory})`.
-- [ ] Persistent glyph cache on disk (instant warm starts, especially in debug).
+- [x] Persistent glyph cache on disk (`src/text/glyph_cache.*`):
+  - Generated glyph pixels are kept in `%LOCALAPPDATA%\Elegence\GlyphCache`, or
+    `~/Library/Caches/Elegence/GlyphCache` on macOS, or `$XDG_CACHE_HOME/elegence/glyphs` on
+    Linux. `ELG_GLYPH_CACHE` overrides the location, and `ELG_GLYPH_CACHE=off` disables it.
+  - There is one file per font, named by a hash of the font's bytes, so an updated font gets a
+    fresh file. The header records the format version and the generator settings.
+  - Records are appended by the workers with a checksum each. Loading stops at the first bad
+    record and truncates there. Each file is capped at 64 MB.
+  - A hit uploads the pixels straight away with no worker job.
+  - Measured debug sandbox startup: 2.17 s cold, 0.68 s warm.
 
 **M5: Polish**
 - [ ] Inspector, accessibility, previews / hot reload, custom `Layout`, docs & examples

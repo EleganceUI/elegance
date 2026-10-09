@@ -36,6 +36,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         render/window_target.cpp
         text/font_library.cpp
         text/glyph_atlas.cpp
+        text/glyph_cache.cpp
         text/text_layout.cpp
         view/controls.cpp
         view/element.cpp

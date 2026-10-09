@@ -17,6 +17,7 @@
 #include "render/frame_plan.h"
 
 #include <cstddef>
+#include <unordered_map>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -62,10 +63,9 @@ private:
         std::vector<gpu::RenderImage> layers;
         std::vector<gpu::RenderImage> blur_horizontal;
         std::vector<gpu::RenderImage> blur_vertical;
-        // Path masks: multisampled color and stencil scratch, and the resolved coverage.
+        // Path masks: multisampled color and stencil scratch (the masks themselves are cached).
         std::vector<gpu::RenderImage> path_samples;
         std::vector<gpu::RenderImage> path_stencils;
-        std::vector<gpu::RenderImage> path_masks;
     };
 
     struct LayerSets {
@@ -97,7 +97,19 @@ private:
                                    VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
     void destroy() noexcept;
 
+    // Path coverage masks kept across frames by content (PlanPath::key): unchanged paths are only
+    // composited, not rendered again.
+    struct CachedMask {
+        gpu::RenderImage mask;
+        std::uint64_t last_used = 0; // frame number
+    };
+    const gpu::RenderImage* cached_mask(std::uint64_t key);
+    void evict_masks();
+
     const gpu::Device& device_;
+    std::unordered_map<std::uint64_t, CachedMask> masks_;
+    std::size_t mask_bytes_ = 0;
+    std::uint64_t frame_number_ = 0;
     gpu::Swapchain swapchain_;
 #if defined(_WIN32)
     std::unique_ptr<gpu::CompositionTarget> composition_; // transparent windows on Windows

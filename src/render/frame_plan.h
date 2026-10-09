@@ -32,6 +32,9 @@ struct PlanPath {
     std::uint32_t first_vertex = 0; // fan triangles in FramePlan::path_vertices, mask pixels
     std::uint32_t vertex_count = 0;
     bool even_odd = false;
+    // Identifies the mask's content (geometry, scale, sub-pixel position, size, fill rule): equal
+    // keys render identical masks, so a mask can be reused across frames.
+    std::uint64_t key = 0;
 };
 
 struct PlanPass {

@@ -40,6 +40,47 @@ bool is_joiner(char32_t c) {
            (c >= 0xE0100 && c <= 0xE01EF);
 }
 
+// Characters drawn as emoji unless asked otherwise (Unicode's Emoji_Presentation, abridged).
+bool emoji_by_default(char32_t c) {
+    if (c >= 0x1F000) {
+        return (c >= 0x1F1E6 && c <= 0x1F1FF) || (c >= 0x1F300 && c <= 0x1F64F) || (c >= 0x1F680 && c <= 0x1F6FF) ||
+               (c >= 0x1F7E0 && c <= 0x1F7EB) || (c >= 0x1F90C && c <= 0x1F9FF) || (c >= 0x1FA70 && c <= 0x1FAFF) ||
+               c == 0x1F004 || c == 0x1F0CF || c == 0x1F18E || (c >= 0x1F191 && c <= 0x1F19A) || c == 0x1F201 ||
+               c == 0x1F21A || c == 0x1F22F || (c >= 0x1F232 && c <= 0x1F236) || (c >= 0x1F238 && c <= 0x1F23A) ||
+               (c >= 0x1F250 && c <= 0x1F251);
+    }
+    static constexpr char32_t ranges[][2] = {
+        {0x231A, 0x231B}, {0x23E9, 0x23EC}, {0x23F0, 0x23F0}, {0x23F3, 0x23F3}, {0x25FD, 0x25FE}, {0x2614, 0x2615},
+        {0x2648, 0x2653}, {0x267F, 0x267F}, {0x2693, 0x2693}, {0x26A1, 0x26A1}, {0x26AA, 0x26AB}, {0x26BD, 0x26BE},
+        {0x26C4, 0x26C5}, {0x26CE, 0x26CE}, {0x26D4, 0x26D4}, {0x26EA, 0x26EA}, {0x26F2, 0x26F3}, {0x26F5, 0x26F5},
+        {0x26FA, 0x26FA}, {0x26FD, 0x26FD}, {0x2705, 0x2705}, {0x270A, 0x270B}, {0x2728, 0x2728}, {0x274C, 0x274C},
+        {0x274E, 0x274E}, {0x2753, 0x2755}, {0x2757, 0x2757}, {0x2795, 0x2797}, {0x27B0, 0x27B0}, {0x27BF, 0x27BF},
+        {0x2B1B, 0x2B1C}, {0x2B50, 0x2B50}, {0x2B55, 0x2B55},
+    };
+    for (const auto& range : ranges) {
+        if (c >= range[0] && c <= range[1]) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Whether the character at `at` (decoded as `c`, ending at `next`) is drawn as an emoji: by
+// default, or when a U+FE0F variation selector asks for it (U+FE0E asks for text).
+bool wants_emoji(std::string_view text, char32_t c, std::size_t next) {
+    if (next < text.size()) {
+        std::size_t peek = next;
+        const char32_t selector = decode(text, peek);
+        if (selector == 0xFE0F) {
+            return true;
+        }
+        if (selector == 0xFE0E) {
+            return false;
+        }
+    }
+    return emoji_by_default(c);
+}
+
 // CJK text breaks between any two characters.
 bool breaks_anywhere(char32_t c) {
     return (c >= 0x2E80 && c <= 0x9FFF) || (c >= 0xAC00 && c <= 0xD7AF) || (c >= 0xF900 && c <= 0xFAFF) ||
@@ -173,7 +214,7 @@ ShapedParagraph shape_with_fallback(const FontFace& face, std::string_view text,
         while (at < end) {
             std::size_t next = at;
             const char32_t first = decode(text, next);
-            const FontFace* chosen = fonts.fallback_for(first);
+            const FontFace* chosen = fonts.fallback_for(first, wants_emoji(text, first, next));
             if (!chosen && is_joiner(first)) {
                 at = next; // a variation selector or joiner no font draws: it has no look of its own
                 continue;
@@ -182,7 +223,7 @@ ShapedParagraph shape_with_fallback(const FontFace& face, std::string_view text,
             while (piece_end < end) {
                 std::size_t peek = piece_end;
                 const char32_t c = decode(text, peek);
-                if (!is_joiner(c) && fonts.fallback_for(c) != chosen) {
+                if (!is_joiner(c) && fonts.fallback_for(c, wants_emoji(text, c, peek)) != chosen) {
                     break;
                 }
                 piece_end = peek;

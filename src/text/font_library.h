@@ -5,11 +5,13 @@
 #ifndef ELG_TEXT_FONT_LIBRARY_H
 #define ELG_TEXT_FONT_LIBRARY_H
 
+#include <elg/color.h>
 #include <elg/font.h>
 
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -19,6 +21,14 @@ typedef struct FT_FaceRec_* FT_Face;
 typedef struct hb_font_t hb_font_t;
 
 namespace elg::detail {
+
+// One layer of a color glyph (COLR): a plain glyph drawn in a palette color, or in the text's
+// color for "foreground" layers.
+struct ColorLayer {
+    std::uint32_t glyph = 0;
+    Color color;
+    bool foreground = false;
+};
 
 // A loaded font file: FreeType for glyph outlines, HarfBuzz for shaping. Metrics are in em units.
 class FontFace {
@@ -35,8 +45,14 @@ public:
     std::uint32_t id() const noexcept { return id_; }
     // An icon set's font: glyphs get a single-channel distance field (see GlyphAtlas).
     bool icon() const noexcept { return icon_; }
+    // Whether the font has color glyphs (COLR layers with a CPAL palette).
+    bool has_color() const noexcept { return !palette_.empty(); }
+    // A color glyph's layers, bottom to top; empty for ordinary glyphs. UI thread only.
+    std::span<const ColorLayer> color_layers(std::uint32_t glyph) const;
     // Whether the font has a glyph for `codepoint`.
     bool has_char(char32_t codepoint) const;
+    // The font file's bytes.
+    const std::vector<unsigned char>& bytes() const noexcept { return *data_; }
     FT_Face ft_face() const noexcept { return ft_face_; }
     hb_font_t* hb_font() const noexcept { return hb_font_; }
     float units_per_em() const noexcept { return units_per_em_; }
@@ -47,6 +63,8 @@ public:
 private:
     std::uint32_t id_;
     bool icon_;
+    std::vector<Color> palette_; // the default CPAL palette, sRGB
+    mutable std::unordered_map<std::uint32_t, std::vector<ColorLayer>> color_layers_;
     std::shared_ptr<const std::vector<unsigned char>> data_; // FreeType and HarfBuzz both read from this
     FT_Face ft_face_ = nullptr;
     hb_font_t* hb_font_ = nullptr;
@@ -73,8 +91,9 @@ public:
     const FontFace& resolve(const Font& font);
 
     // Font fallback (design.md §11): the first system fallback font that has `codepoint`, or
-    // nullptr. The chain (symbols, emoji, CJK, other scripts) loads on first use.
-    const FontFace* fallback_for(char32_t codepoint);
+    // nullptr. The chain (symbols, emoji, CJK, other scripts) loads on first use. With `emoji`, a
+    // color font that has it comes first (an emoji, not the symbol font's monochrome drawing).
+    const FontFace* fallback_for(char32_t codepoint, bool emoji = false);
 
 private:
     const FontFace& load(const std::string& key, const std::filesystem::path& file);
@@ -88,6 +107,7 @@ private:
     std::size_t fallbacks_tried_ = 0;        // files of the chain looked at so far
     bool fallback_files_listed_ = false;
     std::unordered_map<char32_t, const FontFace*> fallback_cache_;
+    std::unordered_map<char32_t, const FontFace*> emoji_fallback_cache_;
 };
 
 } // namespace elg::detail

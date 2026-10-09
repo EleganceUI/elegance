@@ -186,9 +186,37 @@ private:
         path.first_vertex = static_cast<std::uint32_t>(plan_.path_vertices.size());
         path.even_odd = command.rule == FillRule::even_odd;
         const float k = command.scale * scale_;
-        const float dx = command.offset.x * scale_ - origin.x - x0;
-        const float dy = command.offset.y * scale_ - origin.y - y0;
+        // Sub-pixel positions snap to a quarter pixel (at most 1/8 px off, invisible), so a moving
+        // path (scrolling, animations) cycles through a few cached masks instead of a new one
+        // every frame.
+        const auto snap = [](float v) { return std::floor(v) + std::round((v - std::floor(v)) * 4) / 4; };
+        const float dx = snap(command.offset.x * scale_ - origin.x - x0);
+        const float dy = snap(command.offset.y * scale_ - origin.y - y0);
         const auto vertex = [&](Point p) { return std::array<float, 2>{p.x * k + dx, p.y * k + dy}; };
+
+        // The content key: the polygons, then everything that changes how they rasterize. The
+        // integer part of the position doesn't (the mask moves with the quad), the fraction does.
+        std::uint64_t key = 14695981039346656037ull;
+        const auto mix = [&](const void* data, std::size_t size) {
+            const auto* bytes = static_cast<const unsigned char*>(data);
+            for (std::size_t i = 0; i < size; ++i) {
+                key = (key ^ bytes[i]) * 1099511628211ull;
+            }
+        };
+        for (const std::vector<Point>& polygon : *command.polygons) {
+            mix(polygon.data(), polygon.size() * sizeof(Point));
+            const std::size_t count = polygon.size();
+            mix(&count, sizeof(count));
+        }
+        const float subpixel_x = dx - std::floor(dx);
+        const float subpixel_y = dy - std::floor(dy);
+        const std::array<float, 3> placement{k, subpixel_x, subpixel_y};
+        mix(placement.data(), sizeof(placement));
+        const std::array<std::uint32_t, 3> shape{static_cast<std::uint32_t>(area.width),
+                                                  static_cast<std::uint32_t>(area.height),
+                                                  command.rule == FillRule::even_odd ? 1u : 0u};
+        mix(shape.data(), sizeof(shape));
+        path.key = key;
         for (const std::vector<Point>& polygon : *command.polygons) {
             // A fan from the first point: overlapping triangles cancel or add up in the stencil
             // exactly as the polygon winds.

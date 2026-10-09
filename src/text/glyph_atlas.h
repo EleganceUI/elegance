@@ -7,6 +7,7 @@
 
 #include "text/atlas.h"
 #include "text/font_library.h"
+#include "text/glyph_cache.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -55,6 +56,9 @@ public:
     void set_on_ready(std::function<void()> on_ready);
     // Waits until every requested glyph is generated, or `timeout` passes; true when done.
     bool wait_idle(std::chrono::milliseconds timeout);
+    // Keeps generated glyphs on disk in `directory` between runs (nullopt: don't). Call before
+    // the first glyph.
+    void set_disk_cache(std::optional<std::filesystem::path> directory);
 
 private:
     std::optional<AtlasGlyph> prepare(const FontFace& face, std::uint32_t glyph_id);
@@ -63,6 +67,7 @@ private:
     void work(std::stop_token stop);
 
     std::unordered_map<std::uint64_t, std::optional<AtlasGlyph>> glyphs_;
+    std::unique_ptr<GlyphDiskCache> disk_; // used by the workers too (it's thread-safe)
 
     // Shared with the workers.
     mutable std::mutex mutex_;

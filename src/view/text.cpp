@@ -6,6 +6,7 @@
 
 #include <elg/text.h>
 
+#include "text/glyph_draw.h"
 #include "view/view_node.h"
 
 #include <cmath>
@@ -153,13 +154,7 @@ void TextElement::paint_impl(DisplayList& list) const {
             std::round((bounds.y + ascent_ + static_cast<float>(i) * line_height_) * scale) / scale;
 
         const auto emit = [&](const ShapedGlyph& glyph) {
-            if (const AtlasGlyph* atlas = text_->atlas.find_or_add(glyph.face ? *glyph.face : *face_, glyph.id)) {
-                const Rect quad{pen + (glyph.x_offset + atlas->left) * size_,
-                                baseline - (glyph.y_offset + atlas->top) * size_,
-                                (atlas->right - atlas->left) * size_, (atlas->top - atlas->bottom) * size_};
-                const Rect uv{atlas->u0, atlas->v0, atlas->u1 - atlas->u0, atlas->v1 - atlas->v0};
-                list.commands.push_back(GlyphCommand{quad, uv, color, size_});
-            }
+            draw_glyph(list, text_->atlas, glyph.face ? *glyph.face : *face_, glyph, pen, baseline, size_, color);
             pen += glyph.advance * size_;
         };
 

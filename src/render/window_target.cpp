@@ -143,6 +143,12 @@ void WindowTarget::destroy() noexcept {
     for (FrameSlot& slot : slots_) {
         if (slot.in_flight) {
             vkWaitForFences(dev, 1, &slot.in_flight, VK_TRUE, kNoTimeout);
+        }
+    }
+    masks_.clear(); // the GPU is done with every frame
+    mask_bytes_ = 0;
+    for (FrameSlot& slot : slots_) {
+        if (slot.in_flight) {
             vkDestroyFence(dev, slot.in_flight, nullptr);
         }
         vkDestroySemaphore(dev, slot.image_acquired, nullptr);
@@ -275,6 +281,46 @@ void WindowTarget::render_composition([[maybe_unused]] const WindowFrame& frame,
 #endif
 }
 
+const gpu::RenderImage* WindowTarget::cached_mask(std::uint64_t key) {
+    const auto it = masks_.find(key);
+    if (it == masks_.end()) {
+        return nullptr;
+    }
+    it->second.last_used = frame_number_;
+    return &it->second.mask;
+}
+
+// Drops masks nobody drew lately. Only masks unused for more frames than can be in flight are
+// candidates (the GPU may still read the others); past the budget the least recently used go
+// first, otherwise masks unused for a few seconds' worth of frames.
+void WindowTarget::evict_masks() {
+    constexpr std::size_t kBudget = 32u << 20;     // bytes of R8 coverage
+    constexpr std::uint64_t kIdleFrames = 240;     // frames drawn without the mask
+    const std::uint64_t safe = frame_number_ > kFramesInFlight ? frame_number_ - kFramesInFlight : 0;
+    for (auto it = masks_.begin(); it != masks_.end();) {
+        const bool stale = it->second.last_used + kIdleFrames < frame_number_;
+        if (stale && it->second.last_used < safe) {
+            mask_bytes_ -= std::size_t{it->second.mask.width()} * it->second.mask.height();
+            it = masks_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    while (mask_bytes_ > kBudget) {
+        auto oldest = masks_.end();
+        for (auto it = masks_.begin(); it != masks_.end(); ++it) {
+            if (it->second.last_used < safe && (oldest == masks_.end() || it->second.last_used < oldest->second.last_used)) {
+                oldest = it;
+            }
+        }
+        if (oldest == masks_.end()) {
+            break; // everything is in use by recent frames
+        }
+        mask_bytes_ -= std::size_t{oldest->second.mask.width()} * oldest->second.mask.height();
+        masks_.erase(oldest);
+    }
+}
+
 VkDescriptorSet WindowTarget::allocate_set(FrameSlot& slot, VkDescriptorSetLayout layout) {
     VkDescriptorSetAllocateInfo info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
     info.descriptorSetCount = 1;
@@ -390,24 +436,37 @@ void WindowTarget::record(FrameSlot& slot, const DrawTarget& target, const Windo
     stops_write.pBufferInfo = &stops_buffer;
     vkUpdateDescriptorSets(dev, 1, &stops_write, 0, nullptr);
 
-    // Path coverage masks first: any pass may fill through them.
+    // Path coverage masks first: any pass may fill through them. Masks with the same content as
+    // in an earlier frame are reused; new ones render into the cache.
+    ++frame_number_;
     std::vector<VkDescriptorSet> path_sets(plan.paths.size());
+    std::size_t rendered = 0;
     for (std::size_t i = 0; i < plan.paths.size(); ++i) {
         const PlanPath& path = plan.paths[i];
-        gpu::PathRenderer& paths = resources.paths;
-        const gpu::RenderImage& samples =
-            pooled_image(slot.path_samples, i, gpu::PathRenderer::kMaskFormat, path.width, path.height, paths.samples(),
-                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT);
-        const gpu::RenderImage& stencil =
-            pooled_image(slot.path_stencils, i, paths.stencil_format(), path.width, path.height, paths.samples(),
-                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
-                         paths.stencil_aspect());
-        const gpu::RenderImage& mask =
-            pooled_image(slot.path_masks, i, gpu::PathRenderer::kMaskFormat, path.width, path.height);
-        paths.render(cmd, samples, stencil, mask, {path.width, path.height}, slot.path_vertices.handle(),
-                     path.first_vertex, path.vertex_count, path.even_odd);
-        path_sets[i] = image_set(slot, resources.image_layout, mask.view());
+        const gpu::RenderImage* mask = cached_mask(path.key);
+        if (!mask) {
+            gpu::PathRenderer& paths = resources.paths;
+            const gpu::RenderImage& samples = pooled_image(
+                slot.path_samples, rendered, gpu::PathRenderer::kMaskFormat, path.width, path.height, paths.samples(),
+                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT);
+            const gpu::RenderImage& stencil =
+                pooled_image(slot.path_stencils, rendered, paths.stencil_format(), path.width, path.height,
+                             paths.samples(),
+                             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+                             paths.stencil_aspect());
+            ++rendered;
+            CachedMask& cached = masks_.insert_or_assign(path.key, CachedMask{gpu::RenderImage(device_, gpu::PathRenderer::kMaskFormat,
+                                                                                               path.width, path.height),
+                                                                              frame_number_})
+                                     .first->second;
+            mask_bytes_ += std::size_t{path.width} * path.height;
+            paths.render(cmd, samples, stencil, cached.mask, {path.width, path.height}, slot.path_vertices.handle(),
+                         path.first_vertex, path.vertex_count, path.even_odd);
+            mask = &cached.mask;
+        }
+        path_sets[i] = image_set(slot, resources.image_layout, mask->view());
     }
+    evict_masks();
 
     // Offscreen layers first, innermost first; each may also get a two-pass blurred shadow.
     std::vector<LayerSets> layer_sets(plan.layers.size());

@@ -93,6 +93,8 @@ const AtlasGlyph* GlyphAtlas::find_or_add(const FontFace& face, std::uint32_t gl
 // A glyph's distance field to generate: everything a worker needs, independent of FreeType.
 struct GlyphJob {
     msdfgen::Shape shape;
+    const FontFace* face = nullptr; // for the disk cache (fonts outlive the atlas)
+    std::uint32_t glyph = 0;
     std::uint32_t x = 0;
     std::uint32_t y = 0;
     std::uint32_t width = 0;
@@ -197,6 +199,9 @@ void GlyphAtlas::work(std::stop_token stop) {
             jobs_.pop_front();
         }
         GlyphUpload upload = generate(*job);
+        if (disk_) {
+            disk_->store(*job->face, job->glyph, upload.width, upload.height, upload.rgba);
+        }
         std::function<void()> on_ready;
         {
             std::lock_guard lock(mutex_);
@@ -224,6 +229,13 @@ bool GlyphAtlas::has_uploads() const {
 void GlyphAtlas::set_on_ready(std::function<void()> on_ready) {
     std::lock_guard lock(mutex_);
     on_ready_ = std::move(on_ready);
+}
+
+void GlyphAtlas::set_disk_cache(std::optional<std::filesystem::path> directory) {
+    disk_ = directory ? std::make_unique<GlyphDiskCache>(std::move(directory)) : nullptr;
+    if (disk_ && !disk_->enabled()) {
+        disk_.reset();
+    }
 }
 
 bool GlyphAtlas::wait_idle(std::chrono::milliseconds timeout) {
@@ -303,7 +315,16 @@ std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_
         return std::nullopt;
     }
 
-    // The distance field is generated on a worker; until then the slot is empty.
+    // Generated in an earlier run: the pixels come straight from the disk cache. Otherwise the
+    // distance field is generated on a worker; until then the slot is empty.
+    std::optional<std::vector<std::uint8_t>> cached;
+    if (disk_) {
+        cached = disk_->find(face, glyph_id, width, height);
+    }
+    if (cached) {
+        std::lock_guard lock(mutex_);
+        uploads_.push_back({x, y, width, height, std::move(*cached)});
+    } else {
     auto job = std::make_unique<GlyphJob>();
     job->x = x;
     job->y = y;
@@ -311,9 +332,12 @@ std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_
     job->height = height;
     job->scale = scale;
     job->translate = msdfgen::Vector2(-bounds.l + pad / scale, -bounds.b + pad / scale);
-    job->icon = face.icon();
+    job->icon = face.icon() || face.has_color(); // icon and color-layer glyphs overlap themselves
     job->shape = std::move(shape);
+    job->face = &face;
+    job->glyph = glyph_id;
     submit(std::move(job));
+    }
 
     const float em = face.units_per_em();
     const auto pad_units = static_cast<float>(pad / scale);
