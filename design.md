@@ -1287,6 +1287,43 @@ player.play();  player.is_playing();  player.time();    // signals
 - Later: Vulkan Video decode as a backend independent of the OS, and camera capture
   (`CameraView`).
 
+**3a. The FFmpeg backend (optional).** The OS media stack stays the default: it costs nothing to
+ship, decodes in hardware, and the codec licenses are the OS vendor's. Only HEVC needs a paid
+Store extension on Windows, and that falls on the user's machine. FFmpeg is the alternative
+when an app needs the same formats everywhere, or containers and codecs the OS lacks.
+- **Opt-in:** `ELG_VIDEO_FFMPEG=ON` (a vcpkg feature). `VideoPlayer({.source = ..., .backend =
+  VideoBackend::ffmpeg})` picks it per player. `VideoBackend::automatic` uses the OS first and
+  falls back to FFmpeg for what the OS can't open.
+- **Licensing by default:** FFmpeg is linked dynamically and built LGPL-only (no GPL parts,
+  `--disable-gpl --disable-nonfree`). The default decoders are royalty-free:
+  - AV1 (dav1d), VP8/VP9 (libavcodec's own decoders).
+  - Opus, Vorbis, FLAC, PCM.
+  - Containers: MKV/WebM, MP4/MOV and Ogg.
+- **Patent-encumbered codecs** (H.264, HEVC, AAC, AC-3...) are enabled only with
+  `ELG_VIDEO_FFMPEG_PATENTED=ON`. When an app ships them, the patent royalties in the countries
+  it ships to are its author's responsibility. The docs and the CMake option say so plainly
+  (this design doesn't give legal advice).
+- **Architecture:** a second `VideoSource` implementation behind the same `VideoPlayer`,
+  `VideoView` and `VideoControls`. The renderer and views don't change.
+  - **Demux** (libavformat): files, and HTTP(S)/HLS through FFmpeg's protocols (or our HTTP
+    layer).
+  - **Decode** on a decoder thread: hardware first, software as the fallback. FFmpeg's Vulkan
+    hwaccel decodes into `VkImage`s on our device, so frames are sampled with no copy; the
+    multi-planar NV12/P010 formats use a YCbCr sampler conversion. D3D11VA → the existing shared
+    texture path is the Windows fallback; software frames upload into a ring of textures.
+  - **Audio:** decoded and resampled (libswresample) into a miniaudio data source on the
+    existing engine.
+  - **A/V sync:** the audio clock is the master. Video frames are queued with their
+    timestamps, and the render thread shows the one due at the next vsync, dropping late
+    frames.
+  - **Seeking:** to the keyframe before the target, then decode forward. The scrubber shows
+    keyframes while dragging and the exact frame on release.
+- **Extras this enables:** subtitle tracks (text and bitmap), audio track selection,
+  thumbnails (`VideoPlayer::thumbnail(at:)` for scrubber previews), and frame-accurate stepping.
+- **Not planned:** encoding and recording through FFmpeg. Capture uses the platform APIs, and
+  encoding raises the same licensing questions without a default that's both royalty-free and
+  widely playable.
+
 **Order:** raster images → audio → video → AsyncImage and networking → capture (mic, camera).
 
 ## 14. Extensibility
@@ -1931,6 +1968,12 @@ Separate render thread from day one (decided).
   - **Sandbox:** generated `clip.mp4` (ffmpeg testsrc2, H.264/AAC, 10 s), muted and looping, with
     controls, plus the same video filled into a circle.
   - **Tests:** requests before loading, copies sharing, views building.
+- [ ] Video: the FFmpeg backend (§13.3, 3a). Optional `ELG_VIDEO_FFMPEG`, LGPL with dynamic
+  linking, royalty-free decoders by default and H.264/HEVC/AAC only with
+  `ELG_VIDEO_FFMPEG_PATENTED`.
+  - Vulkan hwaccel zero-copy, with D3D11VA and software fallbacks.
+  - Audio into miniaudio, audio-clock A/V sync, `VideoBackend::automatic` fallback.
+  - Subtitles, track selection, thumbnails.
 - [ ] Video follow-ups:
   - AVFoundation (macOS) and GStreamer (Linux).
   - GPU-side sync instead of CPU waits around `TransferVideoFrame`.
