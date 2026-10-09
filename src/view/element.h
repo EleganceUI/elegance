@@ -33,9 +33,21 @@ namespace elg::detail {
 
 class FocusManager;
 
+// What the inspector (design.md §16) shows for an element.
+struct Inspection {
+    std::string name;   // e.g. "Text", "VStack", "Padding"
+    std::string detail; // a one-line summary, e.g. the text
+    std::vector<std::pair<std::string, std::string>> properties;
+};
+
 class Element {
 public:
     virtual ~Element();
+
+    // Describes this element for the inspector. The default names it after its type.
+    virtual void inspect(Inspection& out) const;
+    // The proposal it was last placed with (inspector); nullopt before its first layout.
+    std::optional<ProposedSize> last_proposal() const noexcept { return last_proposal_; }
 
     // Memoized per proposal until invalidate_layout().
     Size size_that_fits(ProposedSize proposal);
@@ -150,6 +162,7 @@ private:
     bool snap_next_layout_ = false;
     std::shared_ptr<ImplicitAnimation> implicit_;
     std::vector<std::pair<ProposedSize, Size>> size_cache_;
+    std::optional<ProposedSize> last_proposal_;
 };
 
 class EmptyElement final : public Element {
@@ -208,6 +221,7 @@ bool shape_fill_contains(const ShapeFill& fill, Point local);
 
 class ShapeElement final : public Element {
 public:
+    void inspect(Inspection& out) const override;
     explicit ShapeElement(ShapeSpec spec) : spec_(std::move(spec)) {}
 
     // The resolved fill: the shape's own (static or reactive), or for shapes with neither a fill
@@ -258,6 +272,7 @@ struct TextStyle {
 
 class TextElement final : public Element {
 public:
+    void inspect(Inspection& out) const override;
     // Font, content, and color are set with the setters (from static values or reactive
     // arguments), font first.
     TextElement(TextSystem& text, int line_limit, TextAlignment alignment);
@@ -357,6 +372,7 @@ private:
 
 class LayoutElement final : public Element {
 public:
+    void inspect(Inspection& out) const override;
     LayoutElement(std::shared_ptr<const Layout> layout, std::vector<std::unique_ptr<Element>> children);
 
     void for_each_child(const std::function<void(Element&)>& visit) override {
@@ -384,6 +400,7 @@ private:
 
 class LayoutModifierElement final : public Element {
 public:
+    void inspect(Inspection& out) const override;
     LayoutModifierElement(std::shared_ptr<const LayoutModifier> modifier, std::unique_ptr<Element> content)
         : modifier_(std::move(modifier)), content_(std::move(content)) {
         adopt(*content_);
@@ -409,6 +426,7 @@ private:
 // fast path (alpha multiply, analytic shadow); anything else is rendered as an offscreen layer.
 class EffectElement final : public Element {
 public:
+    void inspect(Inspection& out) const override;
     EffectElement(Effects effects, std::unique_ptr<Element> content)
         : effects_(std::move(effects)), content_(std::move(content)) {
         adopt(*content_);
@@ -448,6 +466,7 @@ private:
 
 class DecorationElement final : public Element {
 public:
+    void inspect(Inspection& out) const override;
     DecorationElement(std::shared_ptr<const DecorationModifier> modifier, std::unique_ptr<Element> content,
                       std::unique_ptr<Element> decoration)
         : modifier_(std::move(modifier)), content_(std::move(content)), decoration_(std::move(decoration)) {

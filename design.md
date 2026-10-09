@@ -1261,7 +1261,7 @@ Separate render thread from day one (decided).
 ## 16. Developer Experience
 
 - **Hot reload / previews**: see §9.6.
-- **Inspector**: an in-app overlay (toggle with F12) with the view tree, each view's modifier
+- **Inspector** (first version done, see M5): toggled with F12, in its own window, with the view tree, each view's modifier
   chain (and what it fused into), environment values, layout proposals and sizes, the signal
   dependency graph, offscreen-pass warnings (`mask`, `blur`), and per-frame timings.
 - **Profiling**: Tracy integration behind a compile flag.
@@ -1653,7 +1653,29 @@ Separate render thread from day one (decided).
   - Measured debug sandbox startup: 2.17 s cold, 0.68 s warm.
 
 **M5: Polish**
-- [ ] Inspector, accessibility, previews / hot reload, custom `Layout`, docs & examples
+- [x] Inspector (§16), first version (`src/view/inspector.*`, `src/view/inspect.cpp`):
+  - F12 in any window opens an Inspector window for it. F12 again, or closing either window,
+    closes it.
+  - The tree lists every element (depth first, through `for_each_child`).
+    - Each row shows the element's name and a summary: the text, a shape's radius, a stack's
+      child count, effects like `clip_shape(Path)`, `opacity`, `shadow` and `offset`.
+    - Rows also show the frame size and can collapse.
+    - The tree follows the window, refreshing at most twice a second, and has a Refresh button.
+  - Selecting a row highlights the element in its window.
+  - Details for the selection: frame, last proposal, child count and the element's properties
+    (font size, colors, fills, strokes, line count).
+  - **Pick** mode: hovering in the window outlines the element under the pointer, a click
+    selects it (expanding and scrolling the tree to it), and Esc cancels.
+  - Frame stats: UI-thread build time, view count, display-list commands, glyphs and paths.
+    Offscreen passes (layers) show as a warning.
+  - Elements describe themselves with `virtual void Element::inspect(Inspection&)`. The default
+    names an element after its type. The inspector keeps index paths, never element pointers,
+    so it can't outlive what it shows.
+  - It's a separate window rather than an overlay, so it never changes the inspected layout.
+- [ ] Inspector follow-ups: environment values per element, the signal dependency graph,
+  modifier fusion, per-pass GPU timings, and editing values live.
+- [ ] Accessibility, previews / hot reload, custom `Layout` cache and layout values, docs &
+  examples
 - [x] Built-in icon library (§13.2), **Phosphor** 2.1.2 (MIT):
   - Vendored verbatim in `third_party/phosphor`: regular, bold and fill TTFs plus the CSS name
     map, with the license and the upstream source. 1,530 icons.

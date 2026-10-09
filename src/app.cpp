@@ -16,6 +16,7 @@
 #include "text/text_system.h"
 #include "view/animated.h"
 #include "view/event_dispatcher.h"
+#include "view/inspector.h"
 #include "view/view_node.h"
 
 #include <elg/error.h>
@@ -429,11 +430,47 @@ int App::run() {
     }
 
     // Builds and posts a window's frame. Glyphs it used for the first time go to the atlas first.
+    // The inspector (design.md §16): F12 opens it for the focused window.
+    std::shared_ptr<Inspector> inspector;
+    std::unique_ptr<WindowEntry> inspector_entry;
+    std::uint32_t inspector_window = 0;
+    bool inspector_changed = false; // its states were written outside an event: flush and draw
+    double inspector_rows_at = -1;   // when its tree was last refreshed
+    bool inspector_rows_stale = false;
+    std::optional<ElementPath> inspector_seen_selection;
+    bool inspector_seen_picking = false;
+    constexpr double kInspectorRefresh = 0.5; // seconds between tree refreshes while things change
+    constexpr double kInspectorStats = 0.25;
+
+    const auto refresh_inspector_rows = [&](LiveWindow& target) {
+        inspector->rows = inspect_tree(*target.root);
+        inspector_rows_at = seconds_now();
+        inspector_rows_stale = false;
+        inspector_changed = true;
+    };
+
     const auto post_frame = [&](LiveWindow& live) {
         // Cleared first: layout may ask for another frame (lazy stacks measuring new items,
         // ScrollPosition requests settling), and that request must survive.
         live.dirty = false;
+        const bool inspected = inspector && live.window.id() == inspector->target;
+        const double build_start = inspected ? seconds_now() : 0;
         WindowFrame frame = build_frame(live);
+        if (inspected) {
+            const double now = seconds_now();
+            if (now - inspector->last_stats >= kInspectorStats) {
+                inspector->stats = count_frame(frame.list, (now - build_start) * 1000, inspector->rows.peek().size());
+                inspector->last_stats = now;
+                inspector_changed = true;
+            }
+            // The tree follows the window, at most twice a second (a refresh later catches up).
+            if (now - inspector_rows_at >= kInspectorRefresh) {
+                refresh_inspector_rows(live);
+            } else {
+                inspector_rows_stale = true;
+            }
+            paint_inspector_overlay(*inspector, *live.root, frame.list);
+        }
         if (std::exchange(live.tree_changed, false)) {
             if (live.events.revalidate()) { // layout added or removed elements (lazy stacks)
                 live.dirty = true;
@@ -494,6 +531,38 @@ int App::run() {
             windows.erase(it);
         }
     };
+    const auto close_inspector = [&] {
+        if (inspector) {
+            const std::uint32_t target = inspector->target;
+            destroy_window(inspector_window);
+            inspector.reset();
+            inspector_entry.reset();
+            inspector_window = 0;
+            if (auto it = find_window(target); it != windows.end()) {
+                (*it)->dirty = true; // without the highlight
+            }
+        }
+    };
+    const auto open_inspector = [&](LiveWindow& target) {
+        close_inspector();
+        inspector = std::make_shared<Inspector>();
+        inspector->target = target.window.id();
+        inspector->title = target.entry->desc.title.empty() ? std::string("Window") : target.entry->desc.title;
+        refresh_inspector_rows(target);
+        inspector_entry = std::make_unique<WindowEntry>();
+        inspector_entry->desc = {.title = "Inspector — " + inspector->title.peek(), .width = 480, .height = 720};
+        inspector_entry->content = [model = inspector] { return InspectorView(model); };
+        auto live = std::make_unique<LiveWindow>(*inspector_entry, instance, text, base, &popup_sink);
+        mailbox.post(AddWindowCommand{live->window.id(), live->surface.handle(), false, live->window.native_handle()});
+        post_frame(*live);
+        text.atlas.wait_idle(kGlyphWarmup);
+        mailbox.wait_until_done(post_frame(*live), kFirstFrameTimeout);
+        live->window.show();
+        inspector_window = live->window.id();
+        windows.push_back(std::move(live));
+        target.dirty = true;
+    };
+
     const auto close_menus_from = [&](int level) {
         // Deepest first: a submenu is a child window of the menu that opened it.
         while (!menus.empty() && menus.back().level >= level) {
@@ -637,6 +706,13 @@ int App::run() {
                 // Popups belong to a window; destroying it would destroy them under us.
                 close_menus_from(0);
                 close_tooltip_now();
+                if (event.window_id == inspector_window) {
+                    close_inspector();
+                    break;
+                }
+                if (inspector && event.window_id == inspector->target) {
+                    close_inspector();
+                }
                 const auto regular = std::ranges::count_if(windows, [](const auto& live) { return !live->is_popup; });
                 if (regular == 1) {
                     self.quit_requested = true;
@@ -663,6 +739,26 @@ int App::run() {
                     break;
                 }
                 const Point location = live.window.to_logical(event.x, event.y);
+                if (inspector && inspector->picking.peek() && live.window.id() == inspector->target) {
+                    std::vector<Element*> hits;
+                    std::optional<ElementPath> hovered;
+                    if (event.type != platform::EventType::pointer_leave && live.root->hit_test(location, hits)) {
+                        hovered = path_of(*live.root, *hits.back());
+                    }
+                    if (hovered != inspector->hovered) {
+                        inspector->hovered = hovered;
+                        live.dirty = true;
+                    }
+                    if (event.type == platform::EventType::pointer_down && hovered) {
+                        refresh_inspector_rows(live);
+                        reveal_in_inspector(*inspector, *hovered);
+                        inspector->picking = false;
+                        inspector->hovered.reset();
+                        inspector_changed = true;
+                        live.dirty = true;
+                    }
+                    break;
+                }
                 bool redraw = false;
                 switch (event.type) {
                 case platform::EventType::pointer_move: redraw = live.events.pointer_moved(location); break;
@@ -710,6 +806,20 @@ int App::run() {
             pending.close_tooltip = pending.close_tooltip || tooltip.has_value();
             const KeyEvent key{event.type == platform::EventType::key_down ? KeyEvent::Kind::down : KeyEvent::Kind::up,
                                event.key, event.modifiers, event.repeat};
+            if (key.kind == KeyEvent::Kind::down && key.key == Key::f12 && !key.repeat && menus.empty()) {
+                if (inspector && (event.window_id == inspector_window || event.window_id == inspector->target)) {
+                    close_inspector();
+                } else if (auto it = find_window(event.window_id); it != windows.end() && !(*it)->is_popup) {
+                    open_inspector(**it);
+                }
+                break;
+            }
+            if (key.kind == KeyEvent::Kind::down && key.key == Key::escape && inspector && inspector->picking.peek()) {
+                inspector->picking = false;
+                inspector->hovered.reset();
+                inspector_changed = true;
+                break;
+            }
             if (LiveWindow* menu = top_menu()) {
                 // The open menu takes the keyboard: Esc closes it, Left leaves a submenu.
                 if (menu->events.key(key)) {
@@ -769,6 +879,9 @@ int App::run() {
         if (!animating && !pending.any()) {
             // Wake for the next pending hover change (hover delays), else sleep until an event.
             std::optional<double> deadline;
+            if (inspector && inspector_rows_stale) {
+                deadline = inspector_rows_at + kInspectorRefresh;
+            }
             for (const auto& live : windows) {
                 for (const std::optional<double> due : {live->events.next_deadline(), live->services.wake()}) {
                     if (due && (!deadline || *due < *deadline)) {
@@ -796,6 +909,29 @@ int App::run() {
         }
         flush_effects(); // hover and other effects may ask for popups
         process_popups();
+        if (inspector) {
+            auto target = find_window(inspector->target);
+            if (target != windows.end()) {
+                LiveWindow& live = **target;
+                if (inspector->refresh_requested.peek()) {
+                    inspector->refresh_requested = false;
+                    refresh_inspector_rows(live);
+                } else if (inspector_rows_stale && seconds_now() - inspector_rows_at >= kInspectorRefresh) {
+                    refresh_inspector_rows(live);
+                }
+                // A selection made in the inspector, or picking turned on or off: the highlight
+                // in the window changes.
+                if (inspector->selected.peek() != inspector_seen_selection ||
+                    inspector->picking.peek() != inspector_seen_picking) {
+                    inspector_seen_selection = inspector->selected.peek();
+                    inspector_seen_picking = inspector->picking.peek();
+                    if (!inspector_seen_picking) {
+                        inspector->hovered.reset();
+                    }
+                    live.dirty = true;
+                }
+            }
+        }
         if (callback_error) {
             std::rethrow_exception(callback_error);
         }
@@ -823,6 +959,16 @@ int App::run() {
                 // Content may have moved under the pointer (scrolling, animations).
                 if (live->events.refresh_hover()) {
                     live->dirty = true;
+                }
+            }
+        }
+        // Frames of the inspected window update the inspector's states: show them now, not at the
+        // next event.
+        if (std::exchange(inspector_changed, false)) {
+            flush_effects();
+            for (const auto& live : windows) {
+                if (live->window.id() == inspector_window && live->dirty) {
+                    post_frame(*live);
                 }
             }
         }

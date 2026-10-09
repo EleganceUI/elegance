@@ -45,6 +45,8 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         view/events.cpp
         view/fragment.cpp
         view/image.cpp
+        view/inspect.cpp
+        view/inspector.cpp
         view/lazy_stack.cpp
         view/menus.cpp
         view/modifiers.cpp

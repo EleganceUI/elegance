@@ -90,6 +90,7 @@ void Element::place(Point position, ProposedSize proposal) {
         placed_ = true;
     }
     snap_next_layout_ = false;
+    last_proposal_ = proposal;
     arrange(target, proposal);
 }
 
