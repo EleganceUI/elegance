@@ -78,6 +78,11 @@ public:
     virtual HoverDelay effective_hover_delay() const { return {}; }
     // Scroll views: scrolls so `rect` (window points, as currently drawn) comes into sight.
     virtual void reveal(Rect) {}
+    // Scroll views: the part of their content that can be seen (window points), for lazy stacks.
+    virtual std::optional<Rect> visible_rect() const { return std::nullopt; }
+    // Lazy stacks: where the item with this key is (or would be), along the stack's axis from its
+    // start; estimated for items not built.
+    virtual std::optional<float> item_offset(const ItemKey&) const { return std::nullopt; }
     // Non-null for TransitionElement (If/ForEach use a child's own transition when it has one).
     virtual class TransitionElement* as_transition() noexcept { return nullptr; }
 
@@ -496,17 +501,50 @@ private:
     bool space_down_ = false; // Space went down while focused; the action runs when it comes up
 };
 
+// What a ScrollPosition drives: the scroll view it's attached to, or a request waiting for one.
+struct ScrollRequest {
+    enum class Kind { top, end, item };
+    Kind kind = Kind::top;
+    bool animated = true;
+    ItemKey key;
+    int settle = 0; // item: layouts left to re-aim while estimated sizes become real
+};
+
+struct ScrollTarget {
+    class ScrollElement* element = nullptr;
+    std::optional<ScrollRequest> request;
+    bool* needs_frame = nullptr;
+};
+
+struct ScrollTargetAccess {
+    static const std::shared_ptr<ScrollTarget>& target(const ScrollPosition& position) { return position.target_; }
+};
+
 // ScrollView (scroll.cpp).
 class ScrollElement final : public Element, private EventHandler {
 public:
-    ScrollElement(ScrollViewOptions options, std::unique_ptr<Element> content, std::function<Color()> indicator_color)
-        : options_(options), content_(std::move(content)), indicator_color_(std::move(indicator_color)) {
+    ScrollElement(ScrollViewOptions options, std::unique_ptr<Element> content, std::function<Color()> indicator_color,
+                  bool* needs_frame)
+        : options_(std::move(options)), content_(std::move(content)), indicator_color_(std::move(indicator_color)) {
         adopt(*content_);
+        if (options_.position) {
+            const auto& target = ScrollTargetAccess::target(*options_.position);
+            target->element = this;
+            target->needs_frame = needs_frame;
+        }
+    }
+    ~ScrollElement() override {
+        if (options_.position) {
+            if (const auto& target = ScrollTargetAccess::target(*options_.position); target->element == this) {
+                target->element = nullptr;
+            }
+        }
     }
 
     EventHandler* event_handler() noexcept override { return this; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
     void reveal(Rect rect) override;
+    std::optional<Rect> visible_rect() const override { return viewport_; }
 
 protected:
     Size measure(ProposedSize proposal) override;
@@ -535,6 +573,7 @@ private:
     std::optional<Axis> thumb_at(Point point) const;
     void show_indicators();
     void fade_indicators();
+    void apply_request();
 
     ScrollViewOptions options_;
     std::unique_ptr<Element> content_;

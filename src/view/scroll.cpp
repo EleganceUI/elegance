@@ -65,6 +65,8 @@ void ScrollElement::arrange(Rect bounds, ProposedSize) {
         offset_y_.set(target_.y, nullptr);
     }
 
+    apply_request(); // a ScrollPosition call, now that sizes are known
+
     // Starts at the top-leading corner along the scroll axes; centered across them.
     const Point offset = current_offset();
     const float x = scrolls(Axis::horizontal) ? bounds.x - offset.x
@@ -261,6 +263,60 @@ EventResult ScrollElement::pointer(const PointerEvent& event, Rect) {
         return {.consumed = true, .redraw = true};
     }
     return {};
+}
+
+void ScrollElement::apply_request() {
+    if (!options_.position) {
+        return;
+    }
+    std::optional<ScrollRequest>& request = ScrollTargetAccess::target(*options_.position)->request;
+    if (!request) {
+        return;
+    }
+    static const Animation animation = Animation::smooth(0.45);
+    const Animation* how = request->animated ? &animation : nullptr;
+    switch (request->kind) {
+    case ScrollRequest::Kind::top:
+        scroll_to({target_.x, 0}, how);
+        request.reset();
+        break;
+    case ScrollRequest::Kind::end:
+        scroll_to({target_.x, max_offset().y}, how);
+        request.reset();
+        break;
+    case ScrollRequest::Kind::item: {
+        // Find the lazy stack holding the item; its offset is relative to its own frame.
+        std::optional<float> found;
+        const Element* stack = nullptr;
+        std::function<void(Element&)> walk = [&](Element& element) {
+            if (found) {
+                return;
+            }
+            if (const std::optional<float> offset = element.item_offset(request->key)) {
+                found = offset;
+                stack = &element;
+                return;
+            }
+            element.for_each_child(walk);
+        };
+        content_->for_each_child(walk);
+        if (!found) {
+            walk(*content_);
+        }
+        if (found) {
+            // Content coordinates: where the stack is now, plus the item's offset in it.
+            const float y = stack->frame().y - viewport_.y + offset_y_.current() + *found;
+            scroll_to({target_.x, y}, nullptr);
+        }
+        // Items above it get measured as they're built, moving it: aim again for a few layouts.
+        if (!found || --request->settle <= 0) {
+            request.reset();
+        }
+        break;
+    }
+    }
+    show_indicators();
+    fade_indicators();
 }
 
 void ScrollElement::reveal(Rect rect) {

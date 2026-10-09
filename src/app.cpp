@@ -238,8 +238,15 @@ int App::run() {
 
     // Builds and posts a window's frame. Glyphs it used for the first time go to the atlas first.
     const auto post_frame = [&](LiveWindow& live) {
-        WindowFrame frame = build_frame(live);
+        // Cleared first: layout may ask for another frame (lazy stacks measuring new items,
+        // ScrollPosition requests settling), and that request must survive.
         live.dirty = false;
+        WindowFrame frame = build_frame(live);
+        if (std::exchange(live.tree_changed, false)) {
+            if (live.events.revalidate()) { // layout added or removed elements (lazy stacks)
+                live.dirty = true;
+            }
+        }
         live.animating = frame.list.animating;
         if (std::vector<GlyphUpload> uploads = text.atlas.take_uploads(); !uploads.empty()) {
             mailbox.post(AtlasUploadCommand{std::move(uploads)});
@@ -336,9 +343,11 @@ int App::run() {
             if (auto it = find_window(event.window_id); it != windows.end()) {
                 constexpr float kPointsPerNotch = 48;
                 LiveWindow& live = **it;
-                live.dirty |= live.events.scroll(live.window.to_logical(event.x, event.y),
+                if (live.events.scroll(live.window.to_logical(event.x, event.y),
                                                  event.wheel_x * kPointsPerNotch, -event.wheel_y * kPointsPerNotch,
-                                                 event.precise);
+                                                 event.precise)) {
+                    live.dirty = true;
+                }
             }
             break;
         case platform::EventType::text_input:
@@ -348,7 +357,9 @@ int App::run() {
                                                ? TextInputEvent::Kind::commit
                                                : TextInputEvent::Kind::composition,
                                            event.text, event.text_cursor};
-                (*it)->dirty |= (*it)->events.text_input(input);
+                if ((*it)->events.text_input(input)) {
+                    (*it)->dirty = true;
+                }
             }
             break;
         case platform::EventType::key_down:
@@ -356,7 +367,9 @@ int App::run() {
             if (auto it = find_window(event.window_id); it != windows.end()) {
                 const KeyEvent key{event.type == platform::EventType::key_down ? KeyEvent::Kind::down : KeyEvent::Kind::up,
                                    event.key, event.modifiers, event.repeat};
-                (*it)->dirty |= (*it)->events.key(key);
+                if ((*it)->events.key(key)) {
+                    (*it)->dirty = true;
+                }
             }
             break;
         case platform::EventType::system_theme_changed:
@@ -392,8 +405,12 @@ int App::run() {
             handle(*event);
         }
         for (const auto& live : windows) {
-            live->dirty |= live->events.tick(); // hover changes whose delay has passed
-            live->dirty |= live->services.take_due(seconds_now()); // e.g. the caret blinking
+            if (live->events.tick()) { // hover changes whose delay has passed
+                live->dirty = true;
+            }
+            if (live->services.take_due(seconds_now())) { // e.g. the caret blinking
+                live->dirty = true;
+            }
         }
         if (callback_error) {
             std::rethrow_exception(callback_error);
@@ -413,12 +430,16 @@ int App::run() {
         const LayoutAnimationScope layout_animation(transaction.get());
         for (const auto& live : windows) {
             if (std::exchange(live->tree_changed, false)) {
-                live->dirty |= live->events.revalidate();
+                if (live->events.revalidate()) {
+                    live->dirty = true;
+                }
             }
             if (live->dirty || live->animating) {
                 post_frame(*live);
                 // Content may have moved under the pointer (scrolling, animations).
-                live->dirty |= live->events.refresh_hover();
+                if (live->events.refresh_hover()) {
+                    live->dirty = true;
+                }
             }
         }
         for (const auto& live : windows) {

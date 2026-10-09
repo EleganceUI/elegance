@@ -30,6 +30,11 @@
 
 namespace elg {
 
+namespace detail {
+struct ScrollTarget;
+struct ScrollTargetAccess;
+} // namespace detail
+
 struct VStackOptions {
     HorizontalAlignment alignment = HorizontalAlignment::center;
     OptionalLength spacing; // default_stack_spacing when unset
@@ -89,20 +94,6 @@ ELG_API View Canvas(std::function<void(GraphicsContext&)> draw);
 // TODO(M3): ButtonStyle (design.md §8).
 ELG_API View Button(View label, std::function<void()> action);
 ELG_API View Button(std::string title, std::function<void()> action);
-
-enum class ScrollAxes { vertical = 1, horizontal = 2, both = 3 };
-
-struct ScrollViewOptions {
-    ScrollAxes axes = ScrollAxes::vertical;
-    bool shows_indicators = true; // scroll bars, shown while scrolling or hovered
-};
-
-// Shows `content` at its ideal size along the scroll axes, clipped to the space the scroll view
-// takes (all it's offered). Wheel, trackpad, scroll-bar drags, and keys (arrows, Page Up/Down,
-// Home/End, unhandled by the focused view) scroll it; Tab scrolls focused views into sight.
-//   ScrollView(VStack(rows...))
-ELG_API View ScrollView(View content);
-ELG_API View ScrollView(ScrollViewOptions options, View content);
 
 struct TextFieldOptions {
     std::function<void()> on_submit; // Enter
@@ -230,6 +221,48 @@ struct ItemsOf<Source> {
 
 } // namespace detail
 
+enum class ScrollAxes { vertical = 1, horizontal = 2, both = 3 };
+
+// Scrolls a ScrollView from code: create one, pass it in the options, and call it from event
+// handlers. Copies refer to the same scroll view.
+//   const auto position = ScrollPosition();
+//   ScrollView({.position = position}, LazyVStack(ForEach(messages, &Message::id, Row)))
+//   Button("Newest", [=] { position.scroll_to_end(); })
+class ELG_API ScrollPosition {
+public:
+    ScrollPosition();
+
+    void scroll_to_top(bool animated = true) const;
+    void scroll_to_end(bool animated = true) const;
+    // Scrolls the item with this ForEach key (in a lazy stack or List inside) to the top.
+    template <class K>
+    void scroll_to(const K& id) const {
+        scroll_to_key(detail::to_item_key(id));
+    }
+
+private:
+    void scroll_to_key(ItemKey key) const;
+
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::shared_ptr<detail::ScrollTarget> target_;
+    ELG_PRIVATE_MEMBERS_END
+    friend struct detail::ScrollTargetAccess;
+};
+
+struct ScrollViewOptions {
+    ScrollAxes axes = ScrollAxes::vertical;
+    bool shows_indicators = true; // scroll bars, shown while scrolling or hovered
+    std::optional<ScrollPosition> position;
+};
+
+// Shows `content` at its ideal size along the scroll axes, clipped to the space the scroll view
+// takes (all it's offered). Wheel, trackpad, scroll-bar drags, and keys (arrows, Page Up/Down,
+// Home/End, unhandled by the focused view) scroll it; Tab scrolls focused views into sight.
+//   ScrollView(VStack(rows...))
+ELG_API View ScrollView(View content);
+ELG_API View ScrollView(ScrollViewOptions options, View content);
+
+
 // One view per item of a collection, identified by key:
 //   ForEach(todos, [](const Todo& t) { return t.id; }, [=](const Todo& t) { return TodoRow(t); })
 // `items` is a std::vector, or a State / Computed / closure producing one. When it changes, items
@@ -260,7 +293,7 @@ View ForEach(Source items, KeyFunction key, ContentFunction content) {
         result.reserve(values.size());
         for (const T& value : values) {
             auto shared = std::make_shared<const T>(value);
-            result.push_back({detail::to_item_key(key(value)), shared, equals,
+            result.push_back({detail::to_item_key(std::invoke(key, value)), shared, equals,
                               [shared, content] { return View(content(*shared)); }});
         }
         return result;
@@ -274,6 +307,36 @@ View ForEach(Source items, ContentFunction content) {
     using T = typename detail::ItemsOf<Source>::type::value_type;
     return ForEach(std::move(items), [](const T& value) -> const T& { return value; }, std::move(content));
 }
+
+struct LazyVStackOptions {
+    HorizontalAlignment alignment = HorizontalAlignment::center;
+    OptionalLength spacing; // default_stack_spacing
+};
+
+struct LazyHStackOptions {
+    VerticalAlignment alignment = VerticalAlignment::center;
+    OptionalLength spacing;
+};
+
+// Like VStack / HStack over a ForEach, but only the items in or near the visible part of the
+// enclosing ScrollView are built; the rest are estimated from the sizes seen so far. For long
+// lists (thousands of rows). Items scrolled far away are destroyed with their state.
+//   ScrollView(LazyVStack(ForEach(messages, &Message::id, MessageRow)))
+// `for_each` must be a ForEach. Outside a ScrollView every item is built.
+ELG_API View LazyVStack(LazyVStackOptions options, View for_each);
+ELG_API View LazyVStack(View for_each);
+ELG_API View LazyHStack(LazyHStackOptions options, View for_each);
+ELG_API View LazyHStack(View for_each);
+
+// A scrolling list of rows: lazy, with separators, row padding, and a hover highlight, on a
+// rounded surface. `for_each` must be a ForEach.
+//   List(ForEach(contacts, &Contact::id, [](const Contact& c) { return ContactRow(c); }))
+struct ListOptions {
+    std::optional<ScrollPosition> position; // to scroll it from code
+};
+
+ELG_API View List(View for_each);
+ELG_API View List(ListOptions options, View for_each);
 
 } // namespace elg
 

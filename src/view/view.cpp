@@ -279,6 +279,31 @@ View SecureField(std::string placeholder, Binding<std::string> text, TextFieldOp
                                                                          std::move(options), true));
 }
 
+ScrollPosition::ScrollPosition() : target_(std::make_shared<detail::ScrollTarget>()) {}
+
+namespace {
+
+void request_scroll(detail::ScrollTarget& target, detail::ScrollRequest request) {
+    target.request = std::move(request);
+    if (target.needs_frame) {
+        *target.needs_frame = true; // applied in the scroll view's next layout
+    }
+}
+
+} // namespace
+
+void ScrollPosition::scroll_to_top(bool animated) const {
+    request_scroll(*target_, {.kind = detail::ScrollRequest::Kind::top, .animated = animated});
+}
+
+void ScrollPosition::scroll_to_end(bool animated) const {
+    request_scroll(*target_, {.kind = detail::ScrollRequest::Kind::end, .animated = animated});
+}
+
+void ScrollPosition::scroll_to_key(ItemKey key) const {
+    request_scroll(*target_, {.kind = detail::ScrollRequest::Kind::item, .animated = false, .key = std::move(key), .settle = 4});
+}
+
 View ScrollView(View content) {
     return ScrollView({}, std::move(content));
 }
@@ -595,7 +620,8 @@ std::unique_ptr<Element> TextFieldNode::lower(const LowerContext& context) const
 std::unique_ptr<Element> ScrollNode::lower(const LowerContext& context) const {
     const EnvironmentValues environment = context.environment;
     return std::make_unique<ScrollElement>(options_, detail::lower(content_, context.nested()),
-                                           [environment] { return environment.color(ThemeColor::secondary); });
+                                           [environment] { return environment.color(ThemeColor::secondary); },
+                                           context.needs_frame);
 }
 
 std::unique_ptr<Element> ToggleNode::lower(const LowerContext& context) const {

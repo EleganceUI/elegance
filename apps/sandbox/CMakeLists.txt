@@ -1,4 +1,5 @@
 add_executable(sandbox
+        contacts.cpp
         main.cpp
         todos.cpp
         view_extensions.cpp

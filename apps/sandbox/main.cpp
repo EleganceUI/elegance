@@ -9,6 +9,7 @@
 //   sandbox --smoke-test     render the first frame, then exit (for automated checks)
 //   sandbox --light          start in light mode
 
+#include "contacts.h"
 #include "palette.h"
 #include "todos.h"
 
@@ -431,6 +432,9 @@ int main(int argc, char** argv) {
                    });
         // A second window: If and ForEach.
         app.window({.title = "Elegence Todos", .width = 460, .height = 560}, [scheme] { return TodoWindow(scheme); });
+        // A third: a 10,000-row List (lazy stacks).
+        app.window({.title = "Elegence Contacts", .width = 520, .height = 640},
+                   [scheme] { return ContactsWindow(scheme); });
         return app.run();
     } catch (const elg::Error& e) {
         std::fprintf(stderr, "sandbox: %s\n", e.what());

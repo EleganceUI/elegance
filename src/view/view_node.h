@@ -270,6 +270,7 @@ class ForEachNode final : public ViewNode {
 public:
     explicit ForEachNode(std::function<std::vector<ForEachItem>()> items) : items_(std::move(items)) {}
     std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    const std::function<std::vector<ForEachItem>()>& items() const noexcept { return items_; }
 
 private:
     std::function<std::vector<ForEachItem>()> items_;

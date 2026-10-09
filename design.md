@@ -1311,7 +1311,37 @@ Separate render thread from day one (decided).
     Enter moving focus to the password via `.focused`).
   - A QR login panel: nayuki-qr-code-generator drawn with `Canvas`, with a logo `ZStack`ed on top.
   - An animated success screen.
-- [ ] Lazy stacks/List, Grid, presentations (sheet/popover)
+- [x] `LazyVStack` / `LazyHStack({.alignment, .spacing}, ForEach(...))`:
+  - Only items in or near the visible part of the enclosing ScrollView are built: the viewport
+    plus half a viewport each way (`Element::visible_rect`). Items scrolled out of reach are
+    destroyed with their scopes.
+  - Sizes of built items are remembered by key. Items never built are estimated at the average
+    measured size; the total re-settles over a frame as real sizes arrive.
+  - When the ForEach's items change, built items whose key is gone or whose value changed are
+    dropped (rebuilt if still in view).
+  - Elements built or destroyed during layout are revalidated in the dispatcher right after
+    layout.
+- [x] `List(ForEach(...))` / `List({.position}, ...)`:
+  - A lazy vertical stack in a ScrollView on a rounded surface.
+  - Row padding, inset separators drawn by the stack, and a hover highlight.
+- [x] `ScrollPosition`: `scroll_to_top()`, `scroll_to_end()` and `scroll_to(id)` (a lazy item's
+  key), passed as `ScrollViewOptions::position`.
+  - Requests are applied in the scroll view's next layout.
+  - `scroll_to(id)` re-aims for a few layouts while estimated sizes become real.
+- [x] `ForEach` key functions go through `std::invoke`, so member pointers work
+  (`ForEach(items, &Item::id, ...)`).
+- [x] Fixes found by the 10,000-row demo:
+  - The frame loop cleared `dirty` after building a frame, dropping redraws requested during
+    layout. It's cleared before now.
+  - Event results are applied as `if (call()) dirty = true;` so a handler's own redraw request
+    can't be overwritten.
+- [ ] Lazy follow-ups:
+  - Insertion and removal transitions for lazy items.
+  - Keep the scroll anchor stable when estimates above the viewport are corrected.
+  - Keep a focused item built while it's scrolled away.
+  - List selection (`selection: Binding`), sections and headers, swipe actions.
+  - `LazyVGrid` / `LazyHGrid`.
+- [ ] Grid, presentations (sheet/popover)
 - [ ] Popup presentation layer (§13.1): popup windows, `context_menu`, `Menu` / `MenuItem` /
   `Submenu`, menu keyboard navigation, `.help()` tooltips; `App::menu_bar` (native on macOS)
 
