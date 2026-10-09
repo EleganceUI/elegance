@@ -6,6 +6,7 @@
 
 #include "view/element.h"
 #include "view/focus.h"
+#include "view/window_drag.h"
 #include "view/view_node.h"
 
 #include <elg/modifiers/events.h>
@@ -104,15 +105,6 @@ private:
     std::optional<HoverDelay> delay_;
 };
 
-class FocusableHandler final : public EventHandler {
-public:
-    explicit FocusableHandler(bool focusable) noexcept : focusable_(focusable) {}
-    bool focusable() const override { return focusable_; }
-
-private:
-    bool focusable_;
-};
-
 class KeyPressHandler final : public EventHandler {
 public:
     explicit KeyPressHandler(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
@@ -131,7 +123,7 @@ private:
 } // namespace
 
 std::unique_ptr<EventHandler> FocusableModifier::make_handler() const {
-    return std::make_unique<FocusableHandler>(focusable_);
+    return std::make_unique<detail::FocusableHandler>(focusable_);
 }
 
 std::unique_ptr<EventHandler> KeyPressModifier::make_handler() const {

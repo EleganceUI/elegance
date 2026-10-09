@@ -8,6 +8,7 @@
 
 #include "core/crash.h"
 #include "view/text_field.h"
+#include "view/window_drag.h"
 
 #include <elg/animation.h>
 #include <elg/modifiers/decoration.h>
@@ -133,6 +134,25 @@ View View::on_hover(std::function<void(bool)> action, HoverDelay delay) const {
 
 View View::hover_delay(HoverDelay delay) const {
     return modifier(HoverDelayModifier(delay));
+}
+
+namespace {
+
+class WindowDragAreaModifier final : public EventModifier {
+public:
+    explicit WindowDragAreaModifier(bool enabled) noexcept : enabled_(enabled) {}
+    std::unique_ptr<EventHandler> make_handler() const override {
+        return std::make_unique<detail::WindowDragHandler>(enabled_);
+    }
+
+private:
+    bool enabled_;
+};
+
+} // namespace
+
+View View::window_drag_area(bool enabled) const {
+    return modifier(WindowDragAreaModifier(enabled));
 }
 
 View View::focusable(bool focusable) const {

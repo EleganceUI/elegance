@@ -4,9 +4,12 @@
 
 #include "gpu/swapchain.h"
 
+#include "core/log.h"
+
 #include <elg/error.h>
 
 #include <algorithm>
+#include <initializer_list>
 #include <limits>
 
 namespace elg::detail::gpu {
@@ -33,21 +36,30 @@ VkSurfaceFormatKHR choose_format(VkPhysicalDevice physical, VkSurfaceKHR surface
     return formats.front();
 }
 
-VkCompositeAlphaFlagBitsKHR choose_composite_alpha(VkCompositeAlphaFlagsKHR supported) {
-    for (VkCompositeAlphaFlagBitsKHR mode :
-         {VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
-          VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR, VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR}) {
-        if (supported & mode) {
-            return mode;
+// Transparent windows want the compositor to blend with our (premultiplied) alpha; opaque ones
+// want it ignored. INHERIT leaves it to the platform (e.g. a window made transparent with the
+// window system), which is the next best thing for transparency.
+VkCompositeAlphaFlagBitsKHR choose_composite_alpha(VkCompositeAlphaFlagsKHR supported, bool transparent) {
+    const auto pick = [&](std::initializer_list<VkCompositeAlphaFlagBitsKHR> modes) {
+        for (VkCompositeAlphaFlagBitsKHR mode : modes) {
+            if (supported & mode) {
+                return mode;
+            }
         }
+        return VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    };
+    if (transparent) {
+        return pick({VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR, VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
+                     VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR, VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR});
     }
-    return VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+    return pick({VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
+                 VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR, VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR});
 }
 
 } // namespace
 
-Swapchain::Swapchain(const Device& device, VkSurfaceKHR surface)
-    : device_(device), surface_(surface), format_(choose_format(device.physical(), surface)) {}
+Swapchain::Swapchain(const Device& device, VkSurfaceKHR surface, bool transparent)
+    : device_(device), surface_(surface), transparent_(transparent), format_(choose_format(device.physical(), surface)) {}
 
 Swapchain::~Swapchain() {
     if (swapchain_) {
@@ -96,7 +108,11 @@ void Swapchain::create(VkExtent2D extent, const VkSurfaceCapabilitiesKHR& caps) 
     info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
     info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
     info.preTransform = caps.currentTransform;
-    info.compositeAlpha = choose_composite_alpha(caps.supportedCompositeAlpha);
+    info.compositeAlpha = choose_composite_alpha(caps.supportedCompositeAlpha, transparent_);
+    if (transparent_) {
+        log_debug("transparent swapchain: composite alpha supported 0x{:x}, using 0x{:x}",
+                  static_cast<unsigned>(caps.supportedCompositeAlpha), static_cast<unsigned>(info.compositeAlpha));
+    }
     info.presentMode = VK_PRESENT_MODE_FIFO_KHR; // always available; vsync, no tearing
     info.clipped = VK_TRUE;
     info.oldSwapchain = swapchain_;

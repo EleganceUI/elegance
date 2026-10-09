@@ -16,7 +16,9 @@ namespace elg::detail::gpu {
 // A window's swapchain: sRGB color images presented with FIFO (vsync).
 class Swapchain {
 public:
-    Swapchain(const Device& device, VkSurfaceKHR surface);
+    // `transparent`: the window shows through where the image's alpha is below 1 (needs a
+    // compositor that blends; otherwise it stays opaque).
+    Swapchain(const Device& device, VkSurfaceKHR surface, bool transparent = false);
     ~Swapchain();
 
     Swapchain(const Swapchain&) = delete;
@@ -45,6 +47,7 @@ private:
 
     const Device& device_;
     VkSurfaceKHR surface_;
+    bool transparent_;
     VkSurfaceFormatKHR format_{};
     VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
     VkExtent2D extent_{};

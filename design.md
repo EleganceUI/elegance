@@ -232,16 +232,47 @@ drag & drop, IME composition, cursors, native file dialogs, multi-window, and th
   targets.
 - SDL stays behind an internal `platform/` interface. No SDL types appear in public headers, so
   a native backend could replace it later if needed (e.g. custom title bars, finer frame pacing).
-- **Threading constraint**: SDL requires window creation and event pumping on the main thread,
-  so the **UI thread is the main thread** (§15).
-- **Live resize**: on Windows and macOS the OS blocks the main thread in a modal loop while the
-  user drags the window edge. Handle this with SDL's event watch callback, which triggers layout
-  during the drag, and the render thread keeps presenting. The window must never freeze or
-  stretch while resizing.
-- **Custom title bars**: use SDL3's `SDL_SetWindowHitTest` for borderless windows with
-  draggable regions.
-- **Embedding mode**: the host supplies `VkDevice`, `VkQueue`, and a target image. Elegence
-  records into a command buffer the host provides. No platform layer is needed in this mode.
+
+### 4.1 Window customization (implemented in M4)
+
+- `WindowDesc` fields:
+  - `title_bar = TitleBar::hidden`: no system title bar or frame (`SDL_WINDOW_BORDERLESS`). On
+    Windows 11 the corners are still rounded (DWM corner preference) unless the window is
+    transparent.
+  - `transparent`: `SDL_WINDOW_TRANSPARENT`, a clear default background, and a swapchain that
+    prefers premultiplied composite alpha.
+  - `opacity`: whole-window, via `SDL_SetWindowOpacity`.
+  - `min_size`.
+- Undecorated windows get an SDL hit test, called on the UI thread during event pumping:
+  - 6 pt edges resize (unless maximized or not resizable).
+  - Otherwise the innermost event handler under the point decides: a `.window_drag_area()`
+    marker means *drag* (so double-click maximizes and Aero Snap works), and anything else (a
+    button inside the bar) means *normal*.
+- `WindowHandle` comes from `Environment<WindowKey>()`:
+  - Actions: `close()` (posts a close request, same as the system button), `minimize()`,
+    `toggle_maximized()`.
+  - Tracked reads: `is_maximized()` and `is_active()`, fed by SDL window events.
+  - The state outlives the window, so handles kept by an app go inert.
+- `WindowControls({.style, .minimize, .maximize})`:
+  - Windows-style caption buttons, 46×32, with a red hover on close. They use Segoe MDL2 Assets
+    glyphs when the font is installed, with drawn fallbacks otherwise.
+  - macOS-style traffic lights.
+  - Both dim while the window is inactive, and both are `.focusable(false)`.
+- `.focusable(false)` takes a whole subtree out of keyboard focus (Tab skips it, clicks leave
+  focus alone).
+- **Transparency on Windows goes through DirectComposition** (`gpu/composition_win32`).
+  - Windows Vulkan drivers expose only `VK_COMPOSITE_ALPHA_OPAQUE`; on this AMD machine
+    `SDL_WINDOW_TRANSPARENT` alone gave black corners.
+  - Each transparent window gets a D3D11 device on the same adapter (matched by LUID).
+  - It renders into a shared texture: created by D3D11 with an NT handle, imported into Vulkan
+    via `VK_KHR_external_memory_win32`, a UNORM image with an sRGB view.
+  - At the end of the frame the image is released to `VK_QUEUE_FAMILY_EXTERNAL` in GENERAL
+    layout; the fence is waited, then D3D11 copies it into a `CreateSwapChainForComposition`
+    swapchain (premultiplied alpha) on a DirectComposition visual over the HWND.
+  - A D3D event query keeps the next frame from overwriting the texture mid-copy.
+  - Opaque windows, and other platforms (premultiplied composite alpha where offered), keep
+    the plain Vulkan swapchain.
+  - If the interop is missing, the window falls back to opaque with a warning.
 
 ---
 

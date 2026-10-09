@@ -35,6 +35,9 @@ public:
     bool key(const KeyEvent& event);
     bool text_input(const TextInputEvent& event);
     bool scroll(Point location, float dx, float dy, bool precise);
+    // Whether pressing at `location` should move the window: the innermost handler there is a
+    // .window_drag_area() (controls inside one take their clicks).
+    bool drags_window_at(Point location);
     // Re-evaluates hover at the last pointer position (content may have moved under it, e.g.
     // scrolled).
     bool refresh_hover();

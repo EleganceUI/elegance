@@ -10,6 +10,8 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace elg::detail::gpu {
 
@@ -32,6 +34,8 @@ public:
     const std::string& name() const noexcept { return name_; }
 
     bool can_present(VkSurfaceKHR surface) const;
+    // Whether the device was created with this extension.
+    bool has_extension(std::string_view name) const;
     void wait_idle() const;
 
 private:
@@ -43,6 +47,7 @@ private:
     std::uint32_t queue_family_ = 0;
     VmaAllocator allocator_ = VK_NULL_HANDLE;
     std::string name_;
+    std::vector<std::string> extensions_;
 };
 
 } // namespace elg::detail::gpu

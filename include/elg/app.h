@@ -16,13 +16,29 @@
 
 namespace elg {
 
+enum class TitleBar {
+    system, // the platform's title bar and frame
+    hidden, // none: the content fills the window. Draw your own title bar with
+            // .window_drag_area() and WindowControls() (elg/window.h); edges still resize.
+};
+
 struct WindowDesc {
     std::string title = "Elegence";
     int width = 1280; // logical points
     int height = 720;
     bool resizable = true;
-    // Shown where no view draws. Default: the theme's background (ThemeColor::background).
+    // Smallest size the user can resize to (logical points).
+    std::optional<Size> min_size;
+    // Shown where no view draws. Default: the theme's background (ThemeColor::background), or
+    // clear for transparent windows.
     std::optional<Color> background;
+    TitleBar title_bar = TitleBar::system;
+    // The desktop shows through wherever the window's content (and background) isn't opaque:
+    // rounded or shaped windows, glassy panels. Usually with TitleBar::hidden. Needs a compositing
+    // window system; where transparency isn't available the window stays opaque.
+    bool transparent = false;
+    // The whole window's opacity, 0...1.
+    float opacity = 1;
 };
 
 // Builds a window's root view. Called once, on the UI thread, when the window opens.

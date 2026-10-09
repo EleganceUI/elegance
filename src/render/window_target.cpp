@@ -6,6 +6,8 @@
 
 #include "render/color_space.h"
 
+#include "core/log.h"
+
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -74,8 +76,19 @@ void render_offscreen(VkCommandBuffer cmd, const gpu::RenderImage& target, VkExt
 
 } // namespace
 
-WindowTarget::WindowTarget(const gpu::Device& device, VkSurfaceKHR surface)
-    : device_(device), swapchain_(device, surface) {
+WindowTarget::WindowTarget(const gpu::Device& device, VkSurfaceKHR surface, bool transparent, void* native_window)
+    : device_(device), swapchain_(device, surface, transparent) {
+#if defined(_WIN32)
+    if (transparent && native_window && gpu::CompositionTarget::supported(device)) {
+        try {
+            composition_ = std::make_unique<gpu::CompositionTarget>(device, native_window);
+        } catch (const std::exception& error) {
+            log_warning("transparent window falls back to an opaque swapchain: {}", error.what());
+        }
+    }
+#else
+    (void)native_window;
+#endif
     const VkDevice dev = device_.handle();
     try {
         VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
@@ -143,6 +156,12 @@ void WindowTarget::destroy() noexcept {
 }
 
 void WindowTarget::render(const WindowFrame& frame, const RenderResources& resources) {
+#if defined(_WIN32)
+    if (composition_) {
+        render_composition(frame, resources);
+        return;
+    }
+#endif
     const VkExtent2D fallback{static_cast<std::uint32_t>(std::max(frame.pixel_width, 0)),
                               static_cast<std::uint32_t>(std::max(frame.pixel_height, 0))};
     if (!swapchain_.prepare(fallback)) {
@@ -176,7 +195,10 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
     const FramePlan plan = plan_frame(frame.list);
     slot.instances.write(std::as_bytes(std::span(plan.instances)));
     slot.stops.write(std::as_bytes(std::span(plan.stops)));
-    record(slot, image_index, frame, plan, resources);
+    record(slot,
+           {swapchain_.image(image_index), swapchain_.view(image_index), swapchain_.format(), swapchain_.extent(),
+            false},
+           frame, plan, resources);
 
     VkSemaphoreSubmitInfo wait{VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
     wait.semaphore = slot.image_acquired;
@@ -212,6 +234,38 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
     }
 
     next_slot_ = (next_slot_ + 1) % slots_.size();
+}
+
+void WindowTarget::render_composition([[maybe_unused]] const WindowFrame& frame,
+                                      [[maybe_unused]] const RenderResources& resources) {
+#if defined(_WIN32)
+    const VkExtent2D extent{static_cast<std::uint32_t>(std::max(frame.pixel_width, 0)),
+                            static_cast<std::uint32_t>(std::max(frame.pixel_height, 0))};
+    const VkDevice dev = device_.handle();
+    FrameSlot& slot = slots_[next_slot_];
+    gpu::check(vkWaitForFences(dev, 1, &slot.in_flight, VK_TRUE, kNoTimeout), "wait for a frame");
+    if (!composition_->prepare(extent)) {
+        return; // minimized
+    }
+    gpu::check(vkResetFences(dev, 1, &slot.in_flight), "reset a fence");
+
+    const FramePlan plan = plan_frame(frame.list);
+    slot.instances.write(std::as_bytes(std::span(plan.instances)));
+    slot.stops.write(std::as_bytes(std::span(plan.stops)));
+    record(slot, {composition_->image(), composition_->view(), composition_->format(), composition_->extent(), true},
+           frame, plan, resources);
+
+    VkCommandBufferSubmitInfo cmd_info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
+    cmd_info.commandBuffer = slot.cmd;
+    VkSubmitInfo2 submit{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
+    submit.commandBufferInfoCount = 1;
+    submit.pCommandBufferInfos = &cmd_info;
+    gpu::check(vkQueueSubmit2(device_.queue(), 1, &submit, slot.in_flight), "submit a frame");
+    // Direct3D copies the image next, so the rendering must be finished.
+    gpu::check(vkWaitForFences(dev, 1, &slot.in_flight, VK_TRUE, kNoTimeout), "wait for a frame");
+    composition_->present();
+    next_slot_ = (next_slot_ + 1) % slots_.size();
+#endif
 }
 
 VkDescriptorSet WindowTarget::allocate_set(FrameSlot& slot, VkDescriptorSetLayout layout) {
@@ -297,7 +351,7 @@ void WindowTarget::draw_pass(VkCommandBuffer cmd, const PlanPass& pass, VkFormat
     }
 }
 
-void WindowTarget::record(FrameSlot& slot, std::uint32_t image_index, const WindowFrame& frame,
+void WindowTarget::record(FrameSlot& slot, const DrawTarget& target, const WindowFrame& frame,
                           const FramePlan& plan, const RenderResources& resources) {
     const VkDevice dev = device_.handle();
     gpu::check(vkResetCommandPool(dev, slot.pool, 0), "reset a command pool");
@@ -356,20 +410,39 @@ void WindowTarget::record(FrameSlot& slot, std::uint32_t image_index, const Wind
     }
 
     // The window itself.
-    const VkImage image = swapchain_.image(image_index);
+    const VkImage image = target.image;
     // The acquire semaphore is waited at COLOR_ATTACHMENT_OUTPUT, so the layout transition
     // starts at that stage too. The previous contents are discarded (UNDEFINED).
     barrier(cmd, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
     const auto clear = to_linear_premultiplied(frame.list.clear_color);
-    begin_rendering(cmd, swapchain_.view(image_index), swapchain_.extent(),
-                    VkClearColorValue{{clear[0], clear[1], clear[2], clear[3]}});
-    draw_pass(cmd, plan.main, swapchain_.format(), swapchain_.extent(), slot, stops, layer_sets, resources);
+    begin_rendering(cmd, target.view, target.extent, VkClearColorValue{{clear[0], clear[1], clear[2], clear[3]}});
+    draw_pass(cmd, plan.main, target.format, target.extent, slot, stops, layer_sets, resources);
     vkCmdEndRendering(cmd);
-    barrier(cmd, image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+    if (target.shared) {
+        // Hand the image to Direct3D: GENERAL layout, released to the external queue family
+        // (which also resolves any compression the driver applied).
+        VkImageMemoryBarrier2 release{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
+        release.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
+        release.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
+        release.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
+        release.dstAccessMask = VK_ACCESS_2_NONE;
+        release.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        release.newLayout = VK_IMAGE_LAYOUT_GENERAL;
+        release.srcQueueFamilyIndex = device_.queue_family();
+        release.dstQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL;
+        release.image = image;
+        release.subresourceRange = kColorRange;
+        VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
+        dependency.imageMemoryBarrierCount = 1;
+        dependency.pImageMemoryBarriers = &release;
+        vkCmdPipelineBarrier2(cmd, &dependency);
+    } else {
+        barrier(cmd, image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+    }
 
     gpu::check(vkEndCommandBuffer(cmd), "end a command buffer");
 }

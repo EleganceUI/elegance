@@ -32,5 +32,6 @@
 #include <elg/theme.h>
 #include <elg/view.h>
 #include <elg/views.h>
+#include <elg/window.h>
 
 #endif // ELG_ELEGENCE_H

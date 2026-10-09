@@ -94,7 +94,8 @@ void RenderThread::run(VkSurfaceKHR compatibility_surface, std::promise<void> re
                                            device.name(), add.window_id));
                                    }
                                    windows.emplace(add.window_id,
-                                                   std::make_unique<WindowTarget>(device, add.surface));
+                                                   std::make_unique<WindowTarget>(device, add.surface, add.transparent,
+                                                                                  add.native_window));
                                },
                                [&](const RemoveWindowCommand& remove) { windows.erase(remove.window_id); },
                                [&](const AtlasUploadCommand& upload) { atlas.upload(upload.uploads); },

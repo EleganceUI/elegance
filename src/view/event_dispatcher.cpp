@@ -4,6 +4,8 @@
 
 #include "view/event_dispatcher.h"
 
+#include "view/window_drag.h"
+
 #include <algorithm>
 #include <chrono>
 #include <functional>
@@ -43,7 +45,7 @@ bool FocusManager::contains_focus(const Element* scope) const noexcept {
 Element* FocusManager::first_focusable(Element& scope) {
     Element* found = nullptr;
     std::function<void(Element&)> walk = [&](Element& element) {
-        if (found) {
+        if (found || blocks_focus(element)) {
             return;
         }
         if (EventHandler* handler = element.event_handler(); handler && handler->focusable()) {
@@ -218,7 +220,10 @@ bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, Mo
                 break;
             }
         }
-        redraw |= focus_->focus(target, false);
+        // Inside a .focusable(false) scope (e.g. caption buttons) a click leaves focus alone.
+        if (!std::ranges::any_of(path, [](Element* element) { return blocks_focus(*element); })) {
+            redraw |= focus_->focus(target, false);
+        }
     }
     if (kind == PointerEvent::Kind::up && captured_) {
         Element* target = std::exchange(captured_, nullptr);
@@ -256,6 +261,9 @@ bool EventDispatcher::key(const KeyEvent& event) {
 bool EventDispatcher::move_focus(bool forward) {
     std::vector<Element*> order;
     std::function<void(Element&)> walk = [&](Element& element) {
+        if (blocks_focus(element)) {
+            return;
+        }
         if (EventHandler* handler = element.event_handler(); handler && handler->focusable()) {
             order.push_back(&element);
         }
@@ -310,6 +318,17 @@ bool EventDispatcher::text_input(const TextInputEvent& event) {
         }
     }
     return redraw;
+}
+
+bool EventDispatcher::drags_window_at(Point location) {
+    const std::vector<Element*> path = path_at(location);
+    for (auto it = path.rbegin(); it != path.rend(); ++it) {
+        if (EventHandler* handler = (*it)->event_handler()) {
+            const auto* drag = dynamic_cast<const WindowDragHandler*>(handler);
+            return drag && drag->enabled();
+        }
+    }
+    return false;
 }
 
 bool EventDispatcher::refresh_hover() {

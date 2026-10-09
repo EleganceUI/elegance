@@ -269,8 +269,21 @@ View LoginScreen() {
                                      .frame(600, 600)
                                      .offset(420, 260));
 
+    // The window has no system title bar (TitleBar::hidden): this one floats over the backdrop.
+    // Dragging it moves the window; the caption buttons still click.
+    const View title_bar = HStack({.spacing = 0},
+                                  Text("Elegence")
+                                      .font(Font::system(12, Weight::semibold))
+                                      .foreground_style(Color::white.opacity(0.7f))
+                                      .padding(Edges::leading, 14),
+                                  Spacer(),
+                                  WindowControls())
+                               .frame({.max_width = infinity, .min_height = 32})
+                               .window_drag_area();
+
     return ZStack(backdrop, card)
         .frame({.max_width = infinity, .max_height = infinity})
+        .overlay(title_bar, Alignment::top)
         .clipped()
         .theme(kTheme)
         .color_scheme(ColorScheme::dark)
@@ -286,7 +299,12 @@ int main(int argc, char** argv) {
     }
     try {
         App app;
-        app.window({.title = "Elegence Login", .width = 1080, .height = 700}, [&] {
+        app.window({.title = "Elegence Login",
+                    .width = 1080,
+                    .height = 700,
+                    .min_size = Size{900, 600},
+                    .title_bar = TitleBar::hidden},
+                   [&] {
             if (smoke_test) {
                 app.quit(); // still renders the first frame
             }

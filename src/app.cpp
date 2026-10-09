@@ -3,6 +3,7 @@
 // https://mozilla.org/MPL/2.0/.
 
 #include <elg/app.h>
+#include <elg/window.h>
 
 #include "core/crash.h"
 #include "core/log.h"
@@ -85,6 +86,25 @@ private:
     std::optional<double> wake_;
 };
 
+} // namespace
+
+// What a WindowHandle refers to; outlives the window (handles may be kept), so `window` is
+// cleared when it closes.
+namespace detail {
+struct WindowState {
+    platform::Window* window = nullptr;
+    State<bool> maximized{false};
+    State<bool> active{true};
+};
+} // namespace detail
+
+namespace {
+
+EnvironmentValues with_window(EnvironmentValues environment, const std::shared_ptr<WindowState>& state) {
+    environment.set<WindowKey>(WindowHandle(state));
+    return environment;
+}
+
 // A window while the app runs. Member order matters:
 // - the surface is destroyed before the window it belongs to;
 // - `dirty` and `scope` exist before mounting (the tree refers to them) and the scope outlives
@@ -92,7 +112,51 @@ private:
 struct LiveWindow {
     LiveWindow(WindowEntry& entry, const gpu::Instance& instance, TextSystem& text, EnvironmentValues base)
         : entry(&entry), window(entry.desc), surface(instance, window.create_surface(instance.handle())),
-          environment(std::move(base)), root(mount(text)) {}
+          state(std::make_shared<WindowState>(WindowState{.window = &window})),
+          environment(with_window(std::move(base), state)), root(mount(text)) {
+        if (entry.desc.title_bar == TitleBar::hidden) {
+            window.set_hit_test([this](Point point) { return hit_area(point); });
+        }
+    }
+
+    ~LiveWindow() { state->window = nullptr; } // handles kept by the app now do nothing
+
+    // Undecorated windows: resize at the edges, move from .window_drag_area() views.
+    platform::HitArea hit_area(Point point) {
+        if (entry->desc.resizable && !window.maximized()) {
+            constexpr float kEdge = 6;
+            const Size size = window.logical_size();
+            const bool left = point.x < kEdge;
+            const bool right = point.x >= size.width - kEdge;
+            const bool top = point.y < kEdge;
+            const bool bottom = point.y >= size.height - kEdge;
+            if (top && left) {
+                return platform::HitArea::resize_top_left;
+            }
+            if (top && right) {
+                return platform::HitArea::resize_top_right;
+            }
+            if (bottom && left) {
+                return platform::HitArea::resize_bottom_left;
+            }
+            if (bottom && right) {
+                return platform::HitArea::resize_bottom_right;
+            }
+            if (top) {
+                return platform::HitArea::resize_top;
+            }
+            if (bottom) {
+                return platform::HitArea::resize_bottom;
+            }
+            if (left) {
+                return platform::HitArea::resize_left;
+            }
+            if (right) {
+                return platform::HitArea::resize_right;
+            }
+        }
+        return events.drags_window_at(point) ? platform::HitArea::drag : platform::HitArea::normal;
+    }
 
     // Builds the element tree. The body runs once (design.md §6); effects it creates belong to
     // this window's scope.
@@ -111,6 +175,7 @@ struct LiveWindow {
     WindowEntry* entry;
     platform::Window window;
     gpu::Surface surface;
+    std::shared_ptr<WindowState> state; // behind this window's WindowHandles
     bool dirty = true;
     bool tree_changed = false; // If/ForEach added or removed elements
     bool animating = false;    // the last frame had animations in progress
@@ -141,8 +206,9 @@ WindowFrame build_frame(LiveWindow& live) {
     frame.pixel_width = pixels.width;
     frame.pixel_height = pixels.height;
     frame.scale = live.window.scale();
+    // Transparent windows start clear, so only what's drawn covers the desktop.
     frame.list.clear_color = live.entry->desc.background.value_or(
-        resolve_theme_color(live.environment, ThemeColor::background));
+        live.entry->desc.transparent ? Color::clear : resolve_theme_color(live.environment, ThemeColor::background));
     frame.list.scale = frame.scale;
 
     const Size size = live.window.logical_size();
@@ -163,6 +229,32 @@ struct App::Impl {
 };
 
 App::App() : impl_(std::make_unique<Impl>()) {}
+
+void WindowHandle::close() const {
+    if (state_ && state_->window) {
+        state_->window->request_close();
+    }
+}
+
+void WindowHandle::minimize() const {
+    if (state_ && state_->window) {
+        state_->window->minimize();
+    }
+}
+
+void WindowHandle::toggle_maximized() const {
+    if (state_ && state_->window) {
+        state_->window->toggle_maximized();
+    }
+}
+
+bool WindowHandle::is_maximized() const {
+    return state_ && state_->maximized();
+}
+
+bool WindowHandle::is_active() const {
+    return !state_ || state_->active();
+}
 
 App::~App() = default;
 
@@ -233,7 +325,8 @@ int App::run() {
     RenderThread renderer(instance, windows.front()->surface.handle(), mailbox,
                           [&platform] { platform.wake(); });
     for (const auto& live : windows) {
-        mailbox.post(AddWindowCommand{live->window.id(), live->surface.handle()});
+        mailbox.post(AddWindowCommand{live->window.id(), live->surface.handle(), live->entry->desc.transparent,
+                                      live->window.native_handle()});
     }
 
     // Builds and posts a window's frame. Glyphs it used for the first time go to the atlas first.
@@ -369,6 +462,20 @@ int App::run() {
                                    event.key, event.modifiers, event.repeat};
                 if ((*it)->events.key(key)) {
                     (*it)->dirty = true;
+                }
+            }
+            break;
+        case platform::EventType::window_maximized:
+        case platform::EventType::window_restored:
+        case platform::EventType::window_focus_gained:
+        case platform::EventType::window_focus_lost:
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                WindowState& state = *(*it)->state;
+                switch (event.type) {
+                case platform::EventType::window_maximized: state.maximized = true; break;
+                case platform::EventType::window_restored: state.maximized = false; break;
+                case platform::EventType::window_focus_gained: state.active = true; break;
+                default: state.active = false; break;
                 }
             }
             break;

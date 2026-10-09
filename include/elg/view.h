@@ -294,9 +294,15 @@ public:
     // The hover delay for on_hover handlers and controls inside (default: enter 0.1 s, exit 0).
     ELG_API View hover_delay(HoverDelay delay) const;
 
+    // Pressing and dragging here moves the window (for custom title bars, TitleBar::hidden).
+    // Double-clicking maximizes, like a system title bar. Controls inside still work.
+    ELG_API View window_drag_area(bool enabled = true) const;
+
     // --- Keyboard and focus (design.md §10) ---
 
-    // Lets the view take keyboard focus (Tab order, clicks). Controls are focusable already.
+    // true: the view takes keyboard focus (Tab order, clicks); controls are focusable already.
+    // false: the view and everything inside it never take focus (Tab skips them, clicking them
+    // leaves focus where it was), e.g. toolbar or caption buttons.
     ELG_API View focusable(bool focusable = true) const;
     // Two-way focus: the binding is true while the view has focus, and setting it true focuses
     // the view (false removes focus from it). Makes the view focusable.

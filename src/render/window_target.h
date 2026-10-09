@@ -10,11 +10,14 @@
 #include "gpu/device.h"
 #include "gpu/quad_renderer.h"
 #include "gpu/render_image.h"
+#include "gpu/composition_win32.h"
 #include "gpu/swapchain.h"
 #include "render/frame_mailbox.h"
 #include "render/frame_plan.h"
 
 #include <cstddef>
+#include <memory>
+#include <optional>
 #include <vector>
 
 namespace elg::detail {
@@ -31,7 +34,10 @@ struct RenderResources {
 // per-frame-in-flight command buffers, sync objects, buffers, and pooled offscreen images.
 class WindowTarget {
 public:
-    WindowTarget(const gpu::Device& device, VkSurfaceKHR surface);
+    // `native_window` (an HWND on Windows) lets transparent windows present through the
+    // platform compositor where Vulkan swapchains can't be transparent.
+    WindowTarget(const gpu::Device& device, VkSurfaceKHR surface, bool transparent = false,
+                 void* native_window = nullptr);
     ~WindowTarget();
 
     WindowTarget(const WindowTarget&) = delete;
@@ -60,7 +66,17 @@ private:
         VkDescriptorSet shadow = VK_NULL_HANDLE;
     };
 
-    void record(FrameSlot& slot, std::uint32_t image_index, const WindowFrame& frame, const FramePlan& plan,
+    // Where a frame goes: a swapchain image, or the composition target's shared image.
+    struct DrawTarget {
+        VkImage image;
+        VkImageView view;
+        VkFormat format;
+        VkExtent2D extent;
+        bool shared; // released to Direct3D (GENERAL, external queue family) instead of presented
+    };
+
+    void render_composition(const WindowFrame& frame, const RenderResources& resources);
+    void record(FrameSlot& slot, const DrawTarget& target, const WindowFrame& frame, const FramePlan& plan,
                 const RenderResources& resources);
     void draw_pass(VkCommandBuffer cmd, const PlanPass& pass, VkFormat format, VkExtent2D extent,
                    const FrameSlot& slot, VkDescriptorSet stops, const std::vector<LayerSets>& layers,
@@ -73,6 +89,9 @@ private:
 
     const gpu::Device& device_;
     gpu::Swapchain swapchain_;
+#if defined(_WIN32)
+    std::unique_ptr<gpu::CompositionTarget> composition_; // transparent windows on Windows
+#endif
     VkSampler sampler_ = VK_NULL_HANDLE; // for sampling layers
     std::vector<FrameSlot> slots_;
     std::size_t next_slot_ = 0;

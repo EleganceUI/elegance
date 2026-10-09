@@ -387,6 +387,32 @@ View MoreControlCards() {
                   Captioned(picker, "Picker (segmented)").card());
 }
 
+// A transparent, undecorated window: only the rounded glass panel is drawn, the desktop shows
+// around and (faintly) through it. Drag it anywhere on the panel.
+View WidgetWindow(State<ColorScheme> scheme) {
+    const auto taps = State(0);
+    const View panel =
+        VStack({.alignment = HorizontalAlignment::leading, .spacing = 8},
+               HStack({.spacing = 8},
+                      WindowControls({.style = WindowControlsStyle::traffic_lights, .minimize = false, .maximize = false}),
+                      Text("Widget").font(Font::headline),
+                      Spacer()),
+               Text("Transparent window, custom title bar").foreground_style(ThemeColor::secondary),
+               Button(Text([=] { return std::format("Tapped {}", taps()); }), [=] { taps += 1; })
+                   .button_style(BorderedButtonStyle{}))
+            .padding(16)
+            .frame({.max_width = infinity, .max_height = infinity, .alignment = Alignment::top_leading})
+            .background([](const EnvironmentValues& environment) { return environment.color(ThemeColor::surface).opacity(0.82f); },
+                        RoundedRectangle(16))
+            .overlay(RoundedRectangle(16).stroke_border(Color::white.opacity(0.18f), 1))
+            .window_drag_area();
+    // Room around the panel for its shadow, which is drawn over the (clear) window.
+    return panel.shadow({.color = Color::black.opacity(0.35f), .radius = 14, .y = 4})
+        .padding(16)
+        .theme(palette::theme)
+        .color_scheme(scheme);
+}
+
 View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
     return VStack({.spacing = 0},
                   TitleBar(scheme),
@@ -432,6 +458,14 @@ int main(int argc, char** argv) {
                    });
         // A second window: If and ForEach.
         app.window({.title = "Elegence Todos", .width = 460, .height = 560}, [scheme] { return TodoWindow(scheme); });
+        // A transparent widget with its own title bar.
+        app.window({.title = "Elegence Widget",
+                    .width = 340,
+                    .height = 190,
+                    .resizable = false,
+                    .title_bar = TitleBar::hidden,
+                    .transparent = true},
+                   [scheme] { return WidgetWindow(scheme); });
         // A third: a 10,000-row List (lazy stacks).
         app.window({.title = "Elegence Contacts", .width = 520, .height = 640},
                    [scheme] { return ContactsWindow(scheme); });

@@ -30,6 +30,8 @@ struct WindowFrame {
 struct AddWindowCommand {
     std::uint32_t window_id = 0;
     VkSurfaceKHR surface = VK_NULL_HANDLE; // owned by the UI thread
+    bool transparent = false;
+    void* native_window = nullptr; // HWND on Windows (transparent windows present through it)
 };
 
 struct RemoveWindowCommand {

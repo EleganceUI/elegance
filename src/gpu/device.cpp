@@ -23,6 +23,7 @@ struct Candidate {
     VkPhysicalDevice device = VK_NULL_HANDLE;
     std::uint32_t queue_family = 0;
     bool portability_subset = false;
+    bool external_memory_win32 = false;
     int score = 0;
     std::string name;
 };
@@ -66,6 +67,7 @@ std::optional<Candidate> evaluate(VkPhysicalDevice device, VkSurfaceKHR surface,
         return std::nullopt;
     }
     candidate.portability_subset = has_extension(extensions, kPortabilitySubset);
+    candidate.external_memory_win32 = has_extension(extensions, "VK_KHR_external_memory_win32");
 
     std::uint32_t family_count = 0;
     vkGetPhysicalDeviceQueueFamilyProperties(device, &family_count, nullptr);
@@ -141,6 +143,15 @@ Device::Device(const Instance& instance, VkSurfaceKHR surface) {
     if (best->portability_subset) {
         extensions.push_back(kPortabilitySubset);
     }
+#if defined(_WIN32)
+    // Transparent windows share images with Direct3D (gpu/composition_win32.h).
+    if (best->external_memory_win32) {
+        extensions.push_back("VK_KHR_external_memory_win32");
+    }
+#endif
+    for (const char* extension : extensions) {
+        extensions_.emplace_back(extension);
+    }
 
     VkDeviceCreateInfo info{VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO};
     info.pNext = &features13;
@@ -191,6 +202,10 @@ void Device::destroy() noexcept {
         vkDestroyDevice(device_, nullptr);
         device_ = VK_NULL_HANDLE;
     }
+}
+
+bool Device::has_extension(std::string_view name) const {
+    return std::ranges::find(extensions_, name) != extensions_.end();
 }
 
 bool Device::can_present(VkSurfaceKHR surface) const {

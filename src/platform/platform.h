@@ -47,6 +47,10 @@ enum class EventType {
     text_editing,
     key_down,
     key_up,
+    window_maximized,
+    window_restored,
+    window_focus_gained,
+    window_focus_lost,
     system_theme_changed,
 };
 
@@ -73,6 +77,20 @@ struct Event {
     bool repeat = false;
 };
 
+// What part of a window a point is, for windows without system decorations.
+enum class HitArea {
+    normal,
+    drag, // moves the window (a custom title bar)
+    resize_top_left,
+    resize_top,
+    resize_top_right,
+    resize_right,
+    resize_bottom_right,
+    resize_bottom,
+    resize_bottom_left,
+    resize_left,
+};
+
 class Window {
 public:
     // Created hidden; call show() once the first frame is queued.
@@ -95,6 +113,18 @@ public:
     void set_text_input_area(Rect area, float cursor);
 
     void show();
+    // The window system's handle (HWND on Windows), or nullptr.
+    void* native_handle() const;
+
+    void minimize();
+    void toggle_maximized();
+    bool maximized() const;
+    // Asks to close, like the system close button (arrives as window_close_requested).
+    void request_close();
+    // Decides drag and resize areas (logical points) for windows without system decorations.
+    // Called from inside event processing, on the UI thread.
+    void set_hit_test(std::function<HitArea(Point)> test);
+    HitArea hit_test_at(Point point) const { return hit_test_ ? hit_test_(point) : HitArea::normal; }
 
     // The caller owns the surface and must destroy it before this window.
     [[nodiscard]] VkSurfaceKHR create_surface(VkInstance instance) const;
@@ -102,6 +132,7 @@ public:
 private:
     SDL_Window* window_ = nullptr;
     std::uint32_t id_ = 0;
+    std::function<HitArea(Point)> hit_test_;
 };
 
 // Owns SDL's lifetime. Construct on the main thread, which becomes the UI thread.

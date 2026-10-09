@@ -18,6 +18,7 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#include <dwmapi.h>
 #elif defined(__linux__)
 #include <csignal>
 #include <fstream>
@@ -107,6 +108,10 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
         return {EventType::window_scale_changed, event.window.windowID};
     case SDL_EVENT_WINDOW_CLOSE_REQUESTED:
         return {EventType::window_close_requested, event.window.windowID};
+    case SDL_EVENT_WINDOW_MAXIMIZED: return {EventType::window_maximized, event.window.windowID};
+    case SDL_EVENT_WINDOW_RESTORED: return {EventType::window_restored, event.window.windowID};
+    case SDL_EVENT_WINDOW_FOCUS_GAINED: return {EventType::window_focus_gained, event.window.windowID};
+    case SDL_EVENT_WINDOW_FOCUS_LOST: return {EventType::window_focus_lost, event.window.windowID};
     case SDL_EVENT_SYSTEM_THEME_CHANGED:
         return {EventType::system_theme_changed};
     case SDL_EVENT_WINDOW_MOUSE_LEAVE:
@@ -195,6 +200,12 @@ Window::Window(const WindowDesc& desc) {
     if (desc.resizable) {
         flags |= SDL_WINDOW_RESIZABLE;
     }
+    if (desc.title_bar == TitleBar::hidden) {
+        flags |= SDL_WINDOW_BORDERLESS;
+    }
+    if (desc.transparent) {
+        flags |= SDL_WINDOW_TRANSPARENT;
+    }
 
     window_ = SDL_CreateWindow(desc.title.c_str(),
                                static_cast<int>(std::lround(desc.width * content_scale)),
@@ -203,6 +214,86 @@ Window::Window(const WindowDesc& desc) {
         throw_sdl_error("failed to create a window");
     }
     id_ = SDL_GetWindowID(window_);
+
+    if (desc.min_size) {
+        SDL_SetWindowMinimumSize(window_, static_cast<int>(std::lround(desc.min_size->width * content_scale)),
+                                 static_cast<int>(std::lround(desc.min_size->height * content_scale)));
+    }
+    if (desc.opacity < 1) {
+        SDL_SetWindowOpacity(window_, std::clamp(desc.opacity, 0.f, 1.f));
+    }
+#if defined(_WIN32)
+    // Windows 11 rounds the corners of decorated windows; ask the same for undecorated opaque
+    // ones (transparent windows draw their own shape). Ignored on Windows 10.
+    if (desc.title_bar == TitleBar::hidden && !desc.transparent) {
+        if (auto* hwnd = static_cast<HWND>(SDL_GetPointerProperty(SDL_GetWindowProperties(window_),
+                                                                   SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr))) {
+            const DWORD round = 2; // DWMWCP_ROUND
+            DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &round, sizeof(round));
+        }
+    }
+#endif
+}
+
+void* Window::native_handle() const {
+#if defined(_WIN32)
+    return SDL_GetPointerProperty(SDL_GetWindowProperties(window_), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+#else
+    return nullptr;
+#endif
+}
+
+void Window::minimize() {
+    SDL_MinimizeWindow(window_);
+}
+
+void Window::toggle_maximized() {
+    if (maximized()) {
+        SDL_RestoreWindow(window_);
+    } else {
+        SDL_MaximizeWindow(window_);
+    }
+}
+
+bool Window::maximized() const {
+    return (SDL_GetWindowFlags(window_) & SDL_WINDOW_MAXIMIZED) != 0;
+}
+
+void Window::request_close() {
+    SDL_Event event{};
+    event.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
+    event.window.windowID = id_;
+    SDL_PushEvent(&event);
+}
+
+namespace {
+
+SDL_HitTestResult SDLCALL hit_test(SDL_Window*, const SDL_Point* area, void* data) {
+    auto* window = static_cast<Window*>(data);
+    try {
+        switch (window->hit_test_at(window->to_logical(static_cast<float>(area->x), static_cast<float>(area->y)))) {
+        case HitArea::normal: return SDL_HITTEST_NORMAL;
+        case HitArea::drag: return SDL_HITTEST_DRAGGABLE;
+        case HitArea::resize_top_left: return SDL_HITTEST_RESIZE_TOPLEFT;
+        case HitArea::resize_top: return SDL_HITTEST_RESIZE_TOP;
+        case HitArea::resize_top_right: return SDL_HITTEST_RESIZE_TOPRIGHT;
+        case HitArea::resize_right: return SDL_HITTEST_RESIZE_RIGHT;
+        case HitArea::resize_bottom_right: return SDL_HITTEST_RESIZE_BOTTOMRIGHT;
+        case HitArea::resize_bottom: return SDL_HITTEST_RESIZE_BOTTOM;
+        case HitArea::resize_bottom_left: return SDL_HITTEST_RESIZE_BOTTOMLEFT;
+        case HitArea::resize_left: return SDL_HITTEST_RESIZE_LEFT;
+        }
+    } catch (...) {
+        // Nothing may unwind through the window system; a failed test is an ordinary point.
+    }
+    return SDL_HITTEST_NORMAL;
+}
+
+} // namespace
+
+void Window::set_hit_test(std::function<HitArea(Point)> test) {
+    hit_test_ = std::move(test);
+    SDL_SetWindowHitTest(window_, hit_test_ ? &hit_test : nullptr, this);
 }
 
 Window::~Window() {

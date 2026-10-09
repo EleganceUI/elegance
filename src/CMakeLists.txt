@@ -49,6 +49,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         view/text.cpp
         view/text_field.cpp
         view/view.cpp
+        view/window_controls.cpp
 )
 add_library(Elegence::Elegence ALIAS elegence)
 
@@ -85,6 +86,12 @@ find_package(harfbuzz CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
 
 # Private: no SDL or Vulkan types appear in public headers (design.md §4).
+if (WIN32)
+    target_sources(elegence PRIVATE gpu/composition_win32.cpp)
+    # dwmapi: rounded corners for undecorated windows; d3d11/dxgi/dcomp: transparent windows.
+    target_link_libraries(elegence PRIVATE dwmapi d3d11 dxgi dcomp)
+endif ()
+
 target_link_libraries(elegence PRIVATE
         SDL3::SDL3
         volk::volk
