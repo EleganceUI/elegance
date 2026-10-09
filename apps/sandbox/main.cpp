@@ -8,6 +8,7 @@
 //   sandbox                  open the demo windows
 //   sandbox --smoke-test     render the first frame, then exit (for automated checks)
 //   sandbox --light          start in light mode
+//   sandbox --only-main      open only the main window
 
 #include "contacts.h"
 #include "palette.h"
@@ -87,6 +88,64 @@ View ShapeCards() {
 }
 
 // Wrapping, truncation, and alignment.
+// Popups: a context menu with a submenu, a menu button with checkable items, a menu Picker, and
+// a tooltip. Each reports what was chosen.
+View MenuCards() {
+    const auto last = State(std::string("Nothing chosen yet"));
+    const auto say = [=](std::string what) { return [=] { last = what; }; };
+
+    const View target =
+        Text("Right-click me")
+            .font(Font::headline)
+            .frame({.max_width = infinity, .min_height = 64})
+            .background(ThemeColor::surface_raised, RoundedRectangle(10))
+            .context_menu([=] {
+                return Menu(MenuItem("Rename", say("Rename"), {.shortcut = "F2"}),
+                            MenuItem("Duplicate", say("Duplicate"), {.shortcut = "Ctrl+D"}),
+                            Divider(),
+                            Submenu("Move to", [=] {
+                                return Menu(MenuItem("Documents", say("Moved to Documents")),
+                                            MenuItem("Pictures", say("Moved to Pictures")),
+                                            MenuItem("Archive", say("Moved to Archive")).disabled());
+                            }),
+                            Divider(),
+                            MenuItem("Delete", say("Delete"), {.destructive = true}));
+            });
+
+    const auto grid = State(true);
+    const auto rulers = State(false);
+    const View view_menu = MenuButton("View", [=] {
+        return Menu(MenuItem("Show grid", [=] { grid = !grid(); }, {.checked = grid}),
+                    MenuItem("Show rulers", [=] { rulers = !rulers(); }, {.checked = rulers}),
+                    Divider(),
+                    MenuItem("Zoom to fit", say("Zoom to fit"), {.shortcut = "Ctrl+0"}));
+    }).button_style(BorderedButtonStyle{});
+
+    const auto size = State(std::string("Medium"));
+    const View picker = Picker(size.binding(), {{"Small", "Small"}, {"Medium", "Medium"}, {"Large", "Large"}},
+                               PickerStyle::menu);
+
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
+                                   target,
+                                   Text([=] { return last(); }).foreground_style(ThemeColor::secondary))
+                                .frame({.width = 260}),
+                            "context_menu + Submenu")
+                      .card(),
+                  Captioned(VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
+                                   HStack({.spacing = 10}, view_menu, picker),
+                                   Text([=] {
+                                       return std::format("Grid {}, rulers {}, size {}", grid() ? "on" : "off",
+                                                          rulers() ? "on" : "off", size());
+                                   }).foreground_style(ThemeColor::secondary)),
+                            "MenuButton, Picker(.menu)")
+                      .card(),
+                  Captioned(Button("Hover for help", say("Help button")).button_style(BorderedButtonStyle{})
+                                .help("Tooltips open after a short rest"),
+                            ".help()")
+                      .card());
+}
+
 // ZStack: layering with alignment, z_index, and priority sizing.
 View StackCards() {
     // A badge pinned to the corner of what it labels.
@@ -418,6 +477,7 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
                   TitleBar(scheme),
                   // The title bar stays put; the cards scroll under it.
                   ScrollView(VStack({.alignment = HorizontalAlignment::leading, .spacing = 20},
+                         MenuCards(),
                          ShapeCards(),
                          StackCards(),
                          // Like SwiftUI's .fixedSize(horizontal: false, vertical: true): take the
@@ -440,9 +500,11 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
 int main(int argc, char** argv) {
     bool smoke_test = false;
     bool light = false;
+    bool only_main = false; // just the main window (handy when testing input)
     for (int i = 1; i < argc; ++i) {
         smoke_test |= std::string_view(argv[i]) == "--smoke-test";
         light |= std::string_view(argv[i]) == "--light";
+        only_main |= std::string_view(argv[i]) == "--only-main";
     }
 
     try {
@@ -456,6 +518,9 @@ int main(int argc, char** argv) {
                        }
                        return ContentView(scheme, [&app] { app.quit(); });
                    });
+        if (only_main) {
+            return app.run();
+        }
         // A second window: If and ForEach.
         app.window({.title = "Elegence Todos", .width = 460, .height = 560}, [scheme] { return TodoWindow(scheme); });
         // A transparent widget with its own title bar.

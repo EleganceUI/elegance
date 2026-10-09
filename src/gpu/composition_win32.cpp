@@ -263,7 +263,9 @@ void CompositionTarget::present() {
     ComPtr<ID3D11Texture2D> back_buffer;
     check_hr(impl_->swapchain->GetBuffer(0, IID_PPV_ARGS(&back_buffer)), "get the composition back buffer");
     impl_->context->CopyResource(back_buffer.Get(), impl_->shared.Get());
-    check_hr(impl_->swapchain->Present(1, 0), "present to the composition swapchain");
+    // No vsync wait here: DirectComposition shows it at the next composition anyway, and waiting
+    // would add a frame of latency (hover feedback in menus felt it).
+    check_hr(impl_->swapchain->Present(0, 0), "present to the composition swapchain");
     // Vulkan renders into the shared texture again next frame: let the copy finish first.
     impl_->context->End(impl_->done.Get());
     while (impl_->context->GetData(impl_->done.Get(), nullptr, 0, 0) == S_FALSE) {

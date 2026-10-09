@@ -72,6 +72,7 @@ Key translate_key(SDL_Keycode code) {
     case SDLK_RIGHT: return Key::right;
     case SDLK_UP: return Key::up;
     case SDLK_DOWN: return Key::down;
+    case SDLK_APPLICATION: return Key::menu;
     default: return Key::unknown;
     }
 }
@@ -112,6 +113,7 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
     case SDL_EVENT_WINDOW_RESTORED: return {EventType::window_restored, event.window.windowID};
     case SDL_EVENT_WINDOW_FOCUS_GAINED: return {EventType::window_focus_gained, event.window.windowID};
     case SDL_EVENT_WINDOW_FOCUS_LOST: return {EventType::window_focus_lost, event.window.windowID};
+    case SDL_EVENT_WINDOW_MOVED: return {EventType::window_moved, event.window.windowID};
     case SDL_EVENT_SYSTEM_THEME_CHANGED:
         return {EventType::system_theme_changed};
     case SDL_EVENT_WINDOW_MOUSE_LEAVE:
@@ -183,7 +185,7 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
 
 // --- Window ---
 
-Window::Window(const WindowDesc& desc) {
+Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
     if (desc.width <= 0 || desc.height <= 0) {
         throw UsageError(std::format("window \"{}\" has an invalid size {}x{}", desc.title,
                                      desc.width, desc.height));
@@ -207,9 +209,18 @@ Window::Window(const WindowDesc& desc) {
         flags |= SDL_WINDOW_TRANSPARENT;
     }
 
-    window_ = SDL_CreateWindow(desc.title.c_str(),
-                               static_cast<int>(std::lround(desc.width * content_scale)),
-                               static_cast<int>(std::lround(desc.height * content_scale)), flags);
+    if (popup) {
+        // Menus and tooltips: always transparent and undecorated (they draw their own panel).
+        flags = SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN | SDL_WINDOW_TRANSPARENT |
+                (popup->tooltip ? SDL_WINDOW_TOOLTIP : SDL_WINDOW_POPUP_MENU);
+        window_ = SDL_CreatePopupWindow(popup->parent->window_, 0, 0,
+                                        std::max(1, static_cast<int>(std::lround(desc.width * content_scale))),
+                                        std::max(1, static_cast<int>(std::lround(desc.height * content_scale))), flags);
+    } else {
+        window_ = SDL_CreateWindow(desc.title.c_str(),
+                                   static_cast<int>(std::lround(desc.width * content_scale)),
+                                   static_cast<int>(std::lround(desc.height * content_scale)), flags);
+    }
     if (!window_) {
         throw_sdl_error("failed to create a window");
     }
@@ -233,6 +244,37 @@ Window::Window(const WindowDesc& desc) {
         }
     }
 #endif
+}
+
+void Window::set_popup_frame(Rect frame) {
+    // Logical points -> window coordinates (the inverse of to_logical); popups are positioned
+    // relative to their parent.
+    float density = SDL_GetWindowPixelDensity(window_);
+    if (density <= 0) {
+        density = 1;
+    }
+    const float factor = scale() / density;
+    SDL_SetWindowSize(window_, std::max(1, static_cast<int>(std::lround(frame.width * factor))),
+                      std::max(1, static_cast<int>(std::lround(frame.height * factor))));
+    SDL_SetWindowPosition(window_, static_cast<int>(std::lround(frame.x * factor)),
+                          static_cast<int>(std::lround(frame.y * factor)));
+}
+
+Rect Window::usable_area() const {
+    SDL_Rect bounds{};
+    if (!SDL_GetDisplayUsableBounds(SDL_GetDisplayForWindow(window_), &bounds)) {
+        return {-1e6f, -1e6f, 2e6f, 2e6f}; // unknown: don't constrain
+    }
+    int x = 0;
+    int y = 0;
+    SDL_GetWindowPosition(window_, &x, &y);
+    const Point origin = to_logical(static_cast<float>(bounds.x - x), static_cast<float>(bounds.y - y));
+    const Point size = to_logical(static_cast<float>(bounds.w), static_cast<float>(bounds.h));
+    return {origin.x, origin.y, size.x, size.y};
+}
+
+bool any_window_focused() {
+    return SDL_GetKeyboardFocus() != nullptr;
 }
 
 void* Window::native_handle() const {

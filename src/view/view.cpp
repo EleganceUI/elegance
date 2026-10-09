@@ -412,14 +412,6 @@ std::function<HoverDelay()> environment_hover_delay(const EnvironmentValues& env
     return [environment] { return environment.get<HoverDelayKey>(); };
 }
 
-// Focusable elements draw the ring in the tint.
-void join_focus(Element& element, const LowerContext& context) {
-    if (context.focus) {
-        element.set_focus_manager(context.focus,
-                                  [environment = context.environment] { return environment.get<TintKey>(); });
-    }
-}
-
 std::unique_ptr<EventElement> make_event_element(std::unique_ptr<EventHandler> handler, const View& content,
                                                  const LowerContext& context) {
     auto element = std::make_unique<EventElement>(std::move(handler), detail::lower(content, context),
@@ -428,19 +420,6 @@ std::unique_ptr<EventElement> make_event_element(std::unique_ptr<EventHandler> h
     return element;
 }
 
-// Buttons and toggles: `body` (from the style) with button behavior; `pressed` and `hovered` are
-// the States the style reads.
-std::unique_ptr<Element> make_button_element(const View& body, std::function<void()> action, State<bool> pressed,
-                                             State<bool> hovered, const LowerContext& context) {
-    const EnvironmentValues environment = context.environment;
-    auto element = std::make_unique<ButtonElement>(
-        detail::lower(body, context.nested()), std::move(action), std::move(pressed), std::move(hovered),
-        [environment] { return !environment.get<DisabledKey>(); }, environment_hover_delay(environment));
-    join_focus(*element, context);
-    return element;
-}
-
-// `.focused(binding)`: writes focus changes to the binding.
 // `.focused(binding)` around a view: focusable itself only when nothing inside is (so Tab and
 // clicks reach the field it wraps, not an invisible wrapper first).
 class FocusScopeHandler final : public EventHandler {
@@ -467,6 +446,25 @@ private:
 };
 
 } // namespace
+
+// Focusable elements draw the ring in the tint.
+void join_focus(Element& element, const LowerContext& context) {
+    if (context.focus) {
+        element.set_focus_manager(context.focus,
+                                  [environment = context.environment] { return environment.get<TintKey>(); });
+    }
+}
+
+std::unique_ptr<ButtonElement> make_button_element(const View& body, std::function<void()> action, State<bool> pressed,
+                                                   State<bool> hovered, const LowerContext& context) {
+    const EnvironmentValues environment = context.environment;
+    auto element = std::make_unique<ButtonElement>(
+        detail::lower(body, context.nested()), std::move(action), std::move(pressed), std::move(hovered),
+        [environment] { return !environment.get<DisabledKey>(); },
+        [environment] { return environment.get<HoverDelayKey>(); });
+    join_focus(*element, context);
+    return element;
+}
 
 std::unique_ptr<Element> ModifiedNode::lower(const LowerContext& context) const {
     switch (modifier_->protocol()) {
@@ -562,6 +560,7 @@ std::unique_ptr<Element> ButtonNode::lower(const LowerContext& context) const {
     // The button owns the interaction state; its style turns that into an appearance.
     const State<bool> pressed(false);
     const State<bool> hovered(false);
+    const State<bool> focused(false);
     const EnvironmentValues environment = context.environment;
     const auto enabled = [environment] { return !environment.get<DisabledKey>(); };
     const ButtonConfiguration configuration{
@@ -569,6 +568,7 @@ std::unique_ptr<Element> ButtonNode::lower(const LowerContext& context) const {
         .is_pressed = [pressed] { return pressed(); },
         .is_hovered = [hovered] { return hovered(); },
         .is_enabled = enabled,
+        .is_focused = [focused] { return focused(); },
     };
 
     // The style is chosen when the button is built.
@@ -578,7 +578,9 @@ std::unique_ptr<Element> ButtonNode::lower(const LowerContext& context) const {
         const EnvironmentScope scope(environment); // Environment<K>() in make_body
         body = style->make_body(configuration);
     }
-    return make_button_element(body, action_, pressed, hovered, context);
+    auto element = make_button_element(body, action_, pressed, hovered, context);
+    element->set_focus_state(focused);
+    return element;
 }
 
 namespace {

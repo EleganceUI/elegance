@@ -51,6 +51,7 @@ enum class EventType {
     window_restored,
     window_focus_gained,
     window_focus_lost,
+    window_moved,
     system_theme_changed,
 };
 
@@ -91,10 +92,19 @@ enum class HitArea {
     resize_left,
 };
 
+class Window;
+
+// A popup (menu or tooltip) window attached to `parent` (design.md §13.1).
+struct PopupSpec {
+    const Window* parent = nullptr;
+    bool tooltip = false;
+};
+
 class Window {
 public:
-    // Created hidden; call show() once the first frame is queued.
-    explicit Window(const WindowDesc& desc);
+    // Created hidden; call show() once the first frame is queued. With `popup`, the window is a
+    // borderless, transparent popup of its parent (place it with set_popup_frame()).
+    explicit Window(const WindowDesc& desc, const PopupSpec* popup = nullptr);
     ~Window();
 
     Window(const Window&) = delete;
@@ -124,6 +134,12 @@ public:
     // Decides drag and resize areas (logical points) for windows without system decorations.
     // Called from inside event processing, on the UI thread.
     void set_hit_test(std::function<HitArea(Point)> test);
+
+    // Popups: position and size, in the parent's logical points relative to its content.
+    void set_popup_frame(Rect frame);
+    // The usable area of this window's display (without taskbars), in this window's logical
+    // points relative to its content.
+    Rect usable_area() const;
     HitArea hit_test_at(Point point) const { return hit_test_ ? hit_test_(point) : HitArea::normal; }
 
     // The caller owns the surface and must destroy it before this window.
@@ -136,6 +152,8 @@ private:
 };
 
 // Owns SDL's lifetime. Construct on the main thread, which becomes the UI thread.
+// Whether one of the app's windows has keyboard focus.
+bool any_window_focused();
 std::string clipboard_text();
 void set_clipboard_text(const std::string& text);
 // The pointer's shape: the arrow, or the I-beam over text.

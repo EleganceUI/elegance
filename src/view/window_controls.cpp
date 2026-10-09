@@ -4,6 +4,7 @@
 
 // WindowControls(): caption buttons for custom title bars, composed from the public API.
 
+#include "view/icons.h"
 #include "view/view_node.h"
 
 #include <elg/font.h>
@@ -13,57 +14,19 @@
 #include <elg/views.h>
 #include <elg/window.h>
 
-#include <filesystem>
-
-#if defined(_WIN32)
-#include <windows.h> // the build defines WIN32_LEAN_AND_MEAN and NOMINMAX
-#endif
 
 namespace elg {
 
 namespace {
 
-constexpr std::string_view kIconFamily = "elg.caption-icons";
-
-// Windows' own caption glyphs (Segoe MDL2 Assets), when the font is there.
-bool caption_icons_available() {
-    static const bool available = [] {
-#if defined(_WIN32)
-        wchar_t windows[MAX_PATH] = L"C:\\Windows";
-        GetWindowsDirectoryW(windows, MAX_PATH);
-        const std::filesystem::path file = std::filesystem::path(windows) / "Fonts" / "segmdl2.ttf";
-        std::error_code error;
-        if (std::filesystem::exists(file, error)) {
-            register_font(std::string(kIconFamily), file);
-            return true;
-        }
-#endif
-        return false;
-    }();
-    return available;
-}
-
 enum class Caption { minimize, maximize, restore, close };
 
 View caption_icon(Caption caption) {
-    if (caption_icons_available()) {
-        const char* glyph = caption == Caption::minimize   ? "\xEE\xA4\xA1"  // U+E921 ChromeMinimize
-                            : caption == Caption::maximize ? "\xEE\xA4\xA2"  // U+E922 ChromeMaximize
-                            : caption == Caption::restore  ? "\xEE\xA4\xA3"  // U+E923 ChromeRestore
-                                                           : "\xEE\xA2\xBB"; // U+E8BB ChromeClose
-        return Text(glyph).font(Font::custom(std::string(kIconFamily), 10));
-    }
-    // Drawn fallbacks.
     switch (caption) {
-    case Caption::minimize: return Rectangle().frame(10, 1);
-    case Caption::maximize: return Rectangle().stroke_border(ThemeColor::primary, 1).frame(10, 10);
-    case Caption::restore:
-        return ZStack({.alignment = Alignment::bottom_leading},
-                      Rectangle().stroke_border(ThemeColor::primary, 1).frame(8, 8).offset(2, -2),
-                      Rectangle().fill(ThemeColor::background).frame(8, 8),
-                      Rectangle().stroke_border(ThemeColor::primary, 1).frame(8, 8))
-            .frame(10, 10);
-    case Caption::close: return Text("\xC3\x97").font(Font::system(16, Weight::light)); // U+00D7
+    case Caption::minimize: return detail::icon(detail::Icon::minimize);
+    case Caption::maximize: return detail::icon(detail::Icon::maximize);
+    case Caption::restore: return detail::icon(detail::Icon::restore);
+    case Caption::close: return detail::icon(detail::Icon::close);
     }
     return EmptyView();
 }

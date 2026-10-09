@@ -1373,8 +1373,38 @@ Separate render thread from day one (decided).
   - List selection (`selection: Binding`), sections and headers, swipe actions.
   - `LazyVGrid` / `LazyHGrid`.
 - [ ] Grid, presentations (sheet/popover)
-- [ ] Popup presentation layer (§13.1): popup windows, `context_menu`, `Menu` / `MenuItem` /
-  `Submenu`, menu keyboard navigation, `.help()` tooltips; `App::menu_bar` (native on macOS)
+- [x] Popup presentation layer (§13.1):
+  - Popups are `LiveWindow`s made with `SDL_CreatePopupWindow`. They're transparent, so their
+    rounded panels and shadows go through the DirectComposition path on Windows.
+  - Requests (`WindowServices::open_popup` / `close_menus` / `close_menus_then` /
+    `close_tooltip`) are queued and carried out between events and layout.
+  - Placement is at the point, below, or beside the anchor, flipped and shifted to stay within
+    the display's usable area.
+  - While a menu is open:
+    - Keys go to the top menu: Up/Down/Home/End move focus, Enter/Space choose, Esc closes,
+      Left leaves a submenu, Right enters one.
+    - A press elsewhere closes the menus without passing the click on.
+    - Moving or resizing the window, or focus leaving the app, closes them.
+  - `.context_menu(builder)`: right-click (on release), the Menu key, or Shift+F10.
+  - `Menu(items...)`, `MenuItem(title, action, {.shortcut, .destructive, .checked})`,
+    `Submenu(title, builder)` (opens on hover after the delay, click, or Right), `Divider()`.
+  - Choosing an item closes every menu, then runs its action.
+  - `MenuButton(label, builder)`, and `Picker(..., PickerStyle::menu)`.
+  - `.help("…")` tooltips: after 0.6 s; closed by leaving, pressing, scrolling, or typing.
+  - Hovering a menu row focuses it, so the hover and keyboard highlights stay one.
+  - Menu popups have zero hover delay: rows highlight on the first move, like native menus.
+    Submenus open after resting 0.25 s (their own hover handler).
+  - Composition swapchains present with interval 0, since DWM syncs anyway. Interval 1 added a
+    frame of hover latency.
+  - `ButtonConfiguration::is_focused` lets styles show keyboard focus.
+  - Icons come from Segoe MDL2 Assets on Windows, with fallbacks elsewhere (`view/icons.h`).
+- [ ] Popup follow-ups:
+  - Keep a popup window ready and reuse it, so opening doesn't build a D3D device and
+    swapchain each time.
+  - Type-to-select in menus; diagonal-move tolerance toward submenus.
+  - `popover`, `sheet`, `ComboBox`.
+  - `App::menu_bar` (native on macOS).
+  - Opening on press instead of release on macOS.
 
 **M5: Polish**
 - [ ] Inspector, accessibility, previews / hot reload, custom `Layout`, docs & examples

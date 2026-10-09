@@ -307,6 +307,9 @@ EventResult ButtonElement::pointer(const PointerEvent& event, Rect frame) {
 
 EventResult ButtonElement::hover(bool inside) {
     hovered_ = inside;
+    if (on_hover_) {
+        on_hover_(inside);
+    }
     return {}; // the style's reactive arguments request the frame
 }
 
@@ -317,6 +320,12 @@ bool ButtonElement::focusable() const {
 // Like native buttons: Enter activates on press; Space looks pressed while held and activates on
 // release.
 EventResult ButtonElement::key(const KeyEvent& event) {
+    if (extra_key_ != Key::unknown && event.key == extra_key_) {
+        if (event.kind == KeyEvent::Kind::down && untrack(enabled_) && action_) {
+            action_();
+        }
+        return {.consumed = true};
+    }
     if (event.key != Key::space && event.key != Key::enter) {
         return {};
     }
@@ -347,6 +356,9 @@ EventResult ButtonElement::key(const KeyEvent& event) {
 EventResult ButtonElement::focus(bool focused) {
     if (!focused && std::exchange(space_down_, false)) {
         pressed_ = false;
+    }
+    if (focused_) {
+        *focused_ = focused;
     }
     return {};
 }

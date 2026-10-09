@@ -478,6 +478,14 @@ public:
     EventHandler* event_handler() noexcept override { return this; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
+    // Written on focus changes, for styles (ButtonConfiguration::is_focused).
+    void set_focus_state(State<bool> focused) { focused_ = std::move(focused); }
+    void set_action(std::function<void()> action) { action_ = std::move(action); }
+    // Called after the hover delay when the pointer enters (true) or leaves (false).
+    void set_on_hover(std::function<void(bool)> on_hover) { on_hover_ = std::move(on_hover); }
+    // Also activate on these keys (e.g. Right for a submenu row).
+    void set_extra_key(Key key) noexcept { extra_key_ = key; }
+
 protected:
     Size measure(ProposedSize proposal) override { return content_->size_that_fits(proposal); }
     void arrange(Rect bounds, ProposedSize proposal) override { content_->place({bounds.x, bounds.y}, proposal); }
@@ -497,6 +505,9 @@ private:
     State<bool> hovered_;
     std::function<bool()> enabled_;
     std::function<HoverDelay()> hover_delay_;
+    std::optional<State<bool>> focused_;
+    std::function<void(bool)> on_hover_;
+    Key extra_key_ = Key::unknown;
     bool down_ = false;       // the pointer went down on the button and hasn't come up
     bool space_down_ = false; // Space went down while focused; the action runs when it comes up
 };

@@ -107,6 +107,12 @@ void bind(const Prop<T>& prop, const LowerContext& context, Apply apply) {
     });
 }
 
+// Joins `element` to the window's focus, drawing the ring in the tint.
+void join_focus(Element& element, const LowerContext& context);
+// A ButtonElement around `body` (from a style); `pressed` and `hovered` are what the style reads.
+std::unique_ptr<ButtonElement> make_button_element(const View& body, std::function<void()> action, State<bool> pressed,
+                                                   State<bool> hovered, const LowerContext& context);
+
 // Makes Environment<K>() work while a node is lowered (bodies, styles).
 class EnvironmentScope {
 public:

@@ -255,7 +255,34 @@ bool EventDispatcher::key(const KeyEvent& event) {
     if (plain_tab) {
         redraw |= move_focus(!has(event.modifiers, KeyModifiers::shift));
     }
+    if (menu_navigation_ && event.kind == KeyEvent::Kind::down) {
+        switch (event.key) {
+        case Key::down: redraw |= move_focus(true); break;
+        case Key::up: redraw |= move_focus(false); break;
+        case Key::home: redraw |= focus_edge(true); break;
+        case Key::end: redraw |= focus_edge(false); break;
+        default: break;
+        }
+    }
     return redraw;
+}
+
+bool EventDispatcher::focus_edge(bool first) {
+    std::vector<Element*> order;
+    std::function<void(Element&)> walk = [&](Element& element) {
+        if (blocks_focus(element)) {
+            return;
+        }
+        if (EventHandler* handler = element.event_handler(); handler && handler->focusable()) {
+            order.push_back(&element);
+        }
+        element.for_each_child(walk);
+    };
+    walk(*root_);
+    if (order.empty()) {
+        return false;
+    }
+    return focus_->focus(first ? order.front() : order.back(), true);
 }
 
 bool EventDispatcher::move_focus(bool forward) {

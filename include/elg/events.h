@@ -35,6 +35,7 @@ enum class Key {
     enter, escape, backspace, tab, space, forward_delete, insert,
     home, end, page_up, page_down, left, right, up, down,
     f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12,
+    menu, // the context-menu (application) key
 };
 
 enum class KeyModifiers : unsigned {

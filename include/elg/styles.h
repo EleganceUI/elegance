@@ -31,6 +31,7 @@ struct ButtonConfiguration {
     std::function<bool()> is_pressed; // pressed with the pointer still over it
     std::function<bool()> is_hovered;
     std::function<bool()> is_enabled; // false inside .disabled(true)
+    std::function<bool()> is_focused; // has keyboard focus
 };
 
 class ELG_API ButtonStyle {

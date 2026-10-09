@@ -137,9 +137,16 @@ ELG_API View ProgressView(Prop<float> fraction);
 // Indeterminate: activity of unknown length. Renders continuously while shown.
 ELG_API View ProgressView();
 
+enum class PickerStyle {
+    segmented, // every option visible, as segments
+    menu,      // the chosen option on a button; the others in a menu
+};
+
 namespace detail {
 ELG_API View make_segmented_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,
                                    std::function<void(std::size_t)> select);
+ELG_API View make_menu_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,
+                              std::function<void(std::size_t)> select);
 } // namespace detail
 
 // One of several options, shown as segments; `selection` is the chosen option's value.
@@ -147,14 +154,16 @@ ELG_API View make_segmented_picker(std::vector<std::string> labels, std::functio
 // (A menu presentation comes with popups, design.md §13.1.)
 template <class T>
     requires std::equality_comparable<T>
-View Picker(Binding<T> selection, std::vector<std::pair<T, std::string>> options) {
+View Picker(Binding<T> selection, std::vector<std::pair<T, std::string>> options,
+            PickerStyle style = PickerStyle::segmented) {
     const auto shared = std::make_shared<const std::vector<std::pair<T, std::string>>>(std::move(options));
     std::vector<std::string> labels;
     labels.reserve(shared->size());
     for (const auto& option : *shared) {
         labels.push_back(option.second);
     }
-    return detail::make_segmented_picker(
+    auto make = style == PickerStyle::menu ? &detail::make_menu_picker : &detail::make_segmented_picker;
+    return make(
         std::move(labels),
         [selection, shared]() -> std::size_t {
             const T current = selection();
@@ -307,6 +316,38 @@ View ForEach(Source items, ContentFunction content) {
     using T = typename detail::ItemsOf<Source>::type::value_type;
     return ForEach(std::move(items), [](const T& value) -> const T& { return value; }, std::move(content));
 }
+
+// --- Menus and popups (design.md §13.1) ---
+
+// A thin line separating groups: horizontal in a VStack (and menus), full width.
+ELG_API View Divider();
+
+struct MenuItemOptions {
+    std::string shortcut;              // a hint shown on the right, e.g. "Ctrl+R"
+    bool destructive = false;          // shown in the danger color
+    std::optional<Prop<bool>> checked; // a check mark in front, e.g. for options
+};
+
+// A menu command. Choosing it closes the menu, then runs `action`. Disable it with .disabled().
+ELG_API View MenuItem(std::string title, std::function<void()> action, MenuItemOptions options = {});
+
+// A menu item that opens another menu beside it (on hover, click, or Right).
+ELG_API View Submenu(std::string title, std::function<View()> menu);
+
+namespace detail {
+ELG_API View make_menu(std::vector<View> items);
+} // namespace detail
+
+// The menu panel: items (MenuItem, Submenu, Divider, or any view) stacked in a styled panel.
+// Up/Down move between items, Enter chooses, Esc closes, Left/Right leave and enter submenus.
+template <std::convertible_to<View>... Items>
+View Menu(Items&&... items) {
+    return detail::make_menu({View(std::forward<Items>(items))...});
+}
+
+// A button that opens the menu `menu` builds, below it.
+ELG_API View MenuButton(View label, std::function<View()> menu);
+ELG_API View MenuButton(std::string title, std::function<View()> menu);
 
 struct LazyVStackOptions {
     HorizontalAlignment alignment = HorizontalAlignment::center;

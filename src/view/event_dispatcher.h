@@ -33,6 +33,10 @@ public:
                         KeyModifiers modifiers);
     bool pointer_left();
     bool key(const KeyEvent& event);
+    // Menus: unhandled Up/Down move focus like Shift+Tab/Tab, Home/End to the first/last item.
+    void set_menu_navigation(bool enabled) noexcept { menu_navigation_ = enabled; }
+    // Focuses an element (no ring), e.g. a menu item under the pointer.
+    bool focus(Element* element) { return focus_->focus(element, false); }
     bool text_input(const TextInputEvent& event);
     bool scroll(Point location, float dx, float dy, bool precise);
     // Whether pressing at `location` should move the window: the innermost handler there is a
@@ -62,9 +66,11 @@ private:
     bool update_hover(const std::vector<Element*>& path);
     bool bubble(const std::vector<Element*>& path, const PointerEvent& event);
     bool move_focus(bool forward);
+    bool focus_edge(bool first);
 
     Element* root_;
     FocusManager* focus_;
+    bool menu_navigation_ = false;
     std::vector<Hover> hovers_; // outermost first
     Element* captured_ = nullptr;
     Point last_location_;
