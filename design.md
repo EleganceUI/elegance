@@ -1565,7 +1565,39 @@ Separate render thread from day one (decided).
   - Fonts are read in one bulk read. The stream-iterator read took ~1 s per CJK font in debug.
   - Measured debug startup of the sandbox: ~12 s → ~2.4 s. Release: 0.5 s.
 - [ ] Color emoji (COLRv0/v1 layers, then CBDT/sbix bitmaps). Emoji are monochrome outlines today.
-- [ ] GPU vector paths (§5): `Path`, arbitrary shapes, strokes, SVG icons.
+- [x] GPU vector paths (§5), stencil-then-cover:
+  - **Geometry** (`elg/path.h`, `src/geometry/path.cpp`):
+    - `Path` building, including SVG-style arcs and rect/rounded-rect/ellipse/circle helpers.
+    - `Path::svg(d)`: every command, relative and absolute, packed arc flags; errors give the
+      position.
+    - `bounds`, `contains(point, FillRule)`, `transformed`, `flatten(tolerance)` (Wang's formula).
+    - `stroked(StrokeStyle)`: width, butt/round/square caps, miter/round/bevel joins with a miter
+      limit, dash patterns with a phase.
+    - The stroker emits a union of consistently wound pieces (segment quads, join pieces, caps)
+      that the non-zero rule merges, so self-intersections need no special handling.
+  - **Rendering:**
+    - `PathCommand` carries shared flattened polygons placed by scale and offset, so scrolling
+      and transitions don't re-flatten.
+    - The planner turns each path into fan triangles and a mask pass.
+    - `gpu::PathRenderer` counts winding into an MSAA stencil (incr/decr wrap by facing for
+      non-zero, invert for even-odd), covers where non-zero or odd, and resolves to an R8 mask.
+    - Stencil format: first supported of S8 / D24S8 / D32S8; samples: up to 8×.
+    - `ui.frag`'s `path` kind fills color or gradient through the mask.
+  - **Views:**
+    - `PathShape(path, {.view_box, .fill_rule})`, scaled to fit and centered like SVG's "meet".
+    - `CustomShape([](Rect r) { return Path...; })`, rebuilt per frame size.
+    - `Shape::stroke(color, StrokeStyle)`: dashed strokes on any shape go through the path
+      pipeline.
+    - Hit testing on the flattened fill or stroke.
+    - `GraphicsContext::fill_path` / `stroke_path` in a Canvas.
+  - **Tests:** `tests/path_tests.cpp`.
+- [ ] Path follow-ups:
+  - Cache coverage masks across frames (re-rendered every drawn frame today).
+  - Skip MSAA for small masks under memory pressure.
+  - Analytic-coverage AA for sharper thin strokes.
+  - `clip_shape(PathShape)` clips through a mask.
+  - A compute rasterizer (Vello-style) if path-heavy scenes need it.
+  - SVG icon sets via `register_icon_set({.svg_directory})`.
 - [ ] Persistent glyph cache on disk (instant warm starts, especially in debug).
 
 **M5: Polish**

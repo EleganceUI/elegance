@@ -29,6 +29,47 @@ void GraphicsContext::stroke_rect(Rect rect, Color color, float width, CornerRad
     draw_rect(rect, radii, Color::clear, color, width);
 }
 
+namespace {
+
+std::shared_ptr<const std::vector<std::vector<Point>>> closed_polygons(const Path& path, float tolerance, Rect& bounds) {
+    auto polygons = std::make_shared<std::vector<std::vector<Point>>>();
+    bool any = false;
+    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    for (Path::Polyline& line : path.flatten(tolerance)) {
+        if (line.points.size() < 3) {
+            continue;
+        }
+        for (const Point p : line.points) {
+            x0 = any ? std::min(x0, p.x) : p.x;
+            y0 = any ? std::min(y0, p.y) : p.y;
+            x1 = any ? std::max(x1, p.x) : p.x;
+            y1 = any ? std::max(y1, p.y) : p.y;
+            any = true;
+        }
+        polygons->push_back(std::move(line.points));
+    }
+    bounds = {x0, y0, x1 - x0, y1 - y0};
+    return polygons;
+}
+
+} // namespace
+
+void GraphicsContext::fill_path(const Path& path, ShapeStyle style, FillRule rule) {
+    Rect bounds;
+    auto polygons = closed_polygons(path, 0.25f / std::max(scale_, 0.25f), bounds);
+    if (polygons->empty()) {
+        return;
+    }
+    list_->commands.push_back(detail::PathCommand{std::move(polygons), bounds, 1, {bounds_.x, bounds_.y},
+                                                  {bounds_.x + bounds.x, bounds_.y + bounds.y, bounds.width, bounds.height},
+                                                  std::move(style), rule});
+}
+
+void GraphicsContext::stroke_path(const Path& path, Color color, const StrokeStyle& style) {
+    const float tolerance = 0.25f / std::max(scale_, 0.25f);
+    fill_path(path.stroked(style, tolerance), ShapeStyle(color), FillRule::non_zero);
+}
+
 void GraphicsContext::draw_rect(Rect rect, CornerRadii radii, Color fill, Color border, float border_width) {
     if (rect.width <= 0 || rect.height <= 0) {
         return;

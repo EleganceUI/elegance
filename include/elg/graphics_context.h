@@ -8,6 +8,8 @@
 #include <elg/color.h>
 #include <elg/export.h>
 #include <elg/geometry.h>
+#include <elg/gradient.h>
+#include <elg/path.h>
 
 namespace elg {
 
@@ -37,6 +39,10 @@ public:
 
     // Fill and border in one primitive.
     void draw_rect(Rect rect, CornerRadii radii, Color fill, Color border, float border_width);
+
+    // Vector paths, in the canvas's points (design.md §5).
+    void fill_path(const Path& path, ShapeStyle style, FillRule rule = FillRule::non_zero);
+    void stroke_path(const Path& path, Color color, const StrokeStyle& style);
 
 private:
     detail::DisplayList* list_;

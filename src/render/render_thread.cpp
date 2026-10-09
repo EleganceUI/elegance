@@ -77,7 +77,8 @@ void RenderThread::run(VkSurfaceKHR compatibility_surface, std::promise<void> re
         gpu::AtlasTexture atlas(device);
         gpu::QuadRenderer quads(device, atlas.set_layout());
         gpu::BlurRenderer blur(device, atlas.set_layout());
-        const RenderResources resources{quads, blur, atlas.set_layout(), atlas.descriptor_set()};
+        gpu::PathRenderer paths(device);
+        const RenderResources resources{quads, blur, paths, atlas.set_layout(), atlas.descriptor_set()};
         std::unordered_map<std::uint32_t, std::unique_ptr<WindowTarget>> windows;
 
         ready.set_value();

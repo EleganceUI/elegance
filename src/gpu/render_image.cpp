@@ -8,7 +8,8 @@
 
 namespace elg::detail::gpu {
 
-RenderImage::RenderImage(const Device& device, VkFormat format, std::uint32_t width, std::uint32_t height)
+RenderImage::RenderImage(const Device& device, VkFormat format, std::uint32_t width, std::uint32_t height,
+                         VkSampleCountFlagBits samples, VkImageUsageFlags usage, VkImageAspectFlags aspect)
     : device_(&device), format_(format), width_(width), height_(height) {
     VkImageCreateInfo image_info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
     image_info.imageType = VK_IMAGE_TYPE_2D;
@@ -16,9 +17,9 @@ RenderImage::RenderImage(const Device& device, VkFormat format, std::uint32_t wi
     image_info.extent = {width, height, 1};
     image_info.mipLevels = 1;
     image_info.arrayLayers = 1;
-    image_info.samples = VK_SAMPLE_COUNT_1_BIT;
+    image_info.samples = samples;
     image_info.tiling = VK_IMAGE_TILING_OPTIMAL;
-    image_info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    image_info.usage = usage;
     image_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
     VmaAllocationCreateInfo allocation_info{};
     allocation_info.usage = VMA_MEMORY_USAGE_AUTO;
@@ -30,7 +31,7 @@ RenderImage::RenderImage(const Device& device, VkFormat format, std::uint32_t wi
     view_info.image = image_;
     view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
     view_info.format = format;
-    view_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    view_info.subresourceRange = {aspect, 0, 1, 0, 1};
     const VkResult result = vkCreateImageView(device.handle(), &view_info, nullptr, &view_);
     if (result != VK_SUCCESS) {
         release();

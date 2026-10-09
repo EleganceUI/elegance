@@ -7,6 +7,7 @@
 
 #include "gpu/blur_renderer.h"
 #include "gpu/buffer.h"
+#include "gpu/path_renderer.h"
 #include "gpu/device.h"
 #include "gpu/quad_renderer.h"
 #include "gpu/render_image.h"
@@ -26,6 +27,7 @@ namespace elg::detail {
 struct RenderResources {
     gpu::QuadRenderer& quads;
     gpu::BlurRenderer& blur;
+    gpu::PathRenderer& paths;
     VkDescriptorSetLayout image_layout; // one combined image sampler (atlas, layers)
     VkDescriptorSet atlas;
 };
@@ -54,11 +56,16 @@ private:
         VkSemaphore image_acquired = VK_NULL_HANDLE;
         gpu::Buffer instances;
         gpu::Buffer stops;
+        gpu::Buffer path_vertices;
         std::vector<VkDescriptorPool> descriptor_pools; // reset every frame
         // Offscreen images, reused across frames once this slot's fence has signaled.
         std::vector<gpu::RenderImage> layers;
         std::vector<gpu::RenderImage> blur_horizontal;
         std::vector<gpu::RenderImage> blur_vertical;
+        // Path masks: multisampled color and stencil scratch, and the resolved coverage.
+        std::vector<gpu::RenderImage> path_samples;
+        std::vector<gpu::RenderImage> path_stencils;
+        std::vector<gpu::RenderImage> path_masks;
     };
 
     struct LayerSets {
@@ -80,11 +87,14 @@ private:
                 const RenderResources& resources);
     void draw_pass(VkCommandBuffer cmd, const PlanPass& pass, VkFormat format, VkExtent2D extent,
                    const FrameSlot& slot, VkDescriptorSet stops, const std::vector<LayerSets>& layers,
-                   const RenderResources& resources);
+                   const std::vector<VkDescriptorSet>& paths, const RenderResources& resources);
     VkDescriptorSet allocate_set(FrameSlot& slot, VkDescriptorSetLayout layout);
     VkDescriptorSet image_set(FrameSlot& slot, VkDescriptorSetLayout layout, VkImageView view);
     gpu::RenderImage& pooled_image(std::vector<gpu::RenderImage>& pool, std::size_t index, VkFormat format,
-                                   std::uint32_t width, std::uint32_t height);
+                                   std::uint32_t width, std::uint32_t height,
+                                   VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT,
+                                   VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                                   VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
     void destroy() noexcept;
 
     const gpu::Device& device_;

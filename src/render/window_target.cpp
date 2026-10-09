@@ -105,6 +105,7 @@ WindowTarget::WindowTarget(const gpu::Device& device, VkSurfaceKHR surface, bool
             FrameSlot& slot = slots_.emplace_back(FrameSlot{
                 .instances = gpu::Buffer(device_.allocator(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT),
                 .stops = gpu::Buffer(device_.allocator(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT),
+                .path_vertices = gpu::Buffer(device_.allocator(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT),
             });
 
             VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
@@ -195,6 +196,9 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
     const FramePlan plan = plan_frame(frame.list);
     slot.instances.write(std::as_bytes(std::span(plan.instances)));
     slot.stops.write(std::as_bytes(std::span(plan.stops)));
+    if (!plan.path_vertices.empty()) {
+        slot.path_vertices.write(std::as_bytes(std::span(plan.path_vertices)));
+    }
     record(slot,
            {swapchain_.image(image_index), swapchain_.view(image_index), swapchain_.format(), swapchain_.extent(),
             false},
@@ -252,6 +256,9 @@ void WindowTarget::render_composition([[maybe_unused]] const WindowFrame& frame,
     const FramePlan plan = plan_frame(frame.list);
     slot.instances.write(std::as_bytes(std::span(plan.instances)));
     slot.stops.write(std::as_bytes(std::span(plan.stops)));
+    if (!plan.path_vertices.empty()) {
+        slot.path_vertices.write(std::as_bytes(std::span(plan.path_vertices)));
+    }
     record(slot, {composition_->image(), composition_->view(), composition_->format(), composition_->extent(), true},
            frame, plan, resources);
 
@@ -315,7 +322,9 @@ VkDescriptorSet WindowTarget::image_set(FrameSlot& slot, VkDescriptorSetLayout l
 }
 
 gpu::RenderImage& WindowTarget::pooled_image(std::vector<gpu::RenderImage>& pool, std::size_t index,
-                                             VkFormat format, std::uint32_t width, std::uint32_t height) {
+                                             VkFormat format, std::uint32_t width, std::uint32_t height,
+                                             VkSampleCountFlagBits samples, VkImageUsageFlags usage,
+                                             VkImageAspectFlags aspect) {
     // Sizes are rounded up so small changes (animations, resizes) reuse the same image.
     if (index < pool.size() && pool[index].width() >= width && pool[index].height() >= height) {
         return pool[index];
@@ -325,17 +334,23 @@ gpu::RenderImage& WindowTarget::pooled_image(std::vector<gpu::RenderImage>& pool
     if (index < pool.size()) {
         capacity_width = std::max(capacity_width, pool[index].width());
         capacity_height = std::max(capacity_height, pool[index].height());
-        pool[index] = gpu::RenderImage(device_, format, capacity_width, capacity_height);
+        pool[index] = gpu::RenderImage(device_, format, capacity_width, capacity_height, samples, usage, aspect);
         return pool[index];
     }
-    return pool.emplace_back(device_, format, capacity_width, capacity_height);
+    return pool.emplace_back(device_, format, capacity_width, capacity_height, samples, usage, aspect);
 }
 
 void WindowTarget::draw_pass(VkCommandBuffer cmd, const PlanPass& pass, VkFormat format, VkExtent2D extent,
                              const FrameSlot& slot, VkDescriptorSet stops, const std::vector<LayerSets>& layers,
-                             const RenderResources& resources) {
+                             const std::vector<VkDescriptorSet>& paths, const RenderResources& resources) {
     resources.quads.begin(cmd, format, extent, slot.instances.handle(), resources.atlas, stops);
     for (const PlanSegment& segment : pass.segments) {
+        if (segment.path >= 0) {
+            resources.quads.bind_image(cmd, paths[static_cast<std::size_t>(segment.path)]);
+            resources.quads.draw(cmd, segment.first, segment.count);
+            resources.quads.bind_image(cmd, resources.atlas);
+            continue;
+        }
         if (segment.layer < 0) {
             resources.quads.draw(cmd, segment.first, segment.count);
             continue;
@@ -375,6 +390,25 @@ void WindowTarget::record(FrameSlot& slot, const DrawTarget& target, const Windo
     stops_write.pBufferInfo = &stops_buffer;
     vkUpdateDescriptorSets(dev, 1, &stops_write, 0, nullptr);
 
+    // Path coverage masks first: any pass may fill through them.
+    std::vector<VkDescriptorSet> path_sets(plan.paths.size());
+    for (std::size_t i = 0; i < plan.paths.size(); ++i) {
+        const PlanPath& path = plan.paths[i];
+        gpu::PathRenderer& paths = resources.paths;
+        const gpu::RenderImage& samples =
+            pooled_image(slot.path_samples, i, gpu::PathRenderer::kMaskFormat, path.width, path.height, paths.samples(),
+                         VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT);
+        const gpu::RenderImage& stencil =
+            pooled_image(slot.path_stencils, i, paths.stencil_format(), path.width, path.height, paths.samples(),
+                         VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
+                         paths.stencil_aspect());
+        const gpu::RenderImage& mask =
+            pooled_image(slot.path_masks, i, gpu::PathRenderer::kMaskFormat, path.width, path.height);
+        paths.render(cmd, samples, stencil, mask, {path.width, path.height}, slot.path_vertices.handle(),
+                     path.first_vertex, path.vertex_count, path.even_odd);
+        path_sets[i] = image_set(slot, resources.image_layout, mask.view());
+    }
+
     // Offscreen layers first, innermost first; each may also get a two-pass blurred shadow.
     std::vector<LayerSets> layer_sets(plan.layers.size());
     std::size_t shadows = 0;
@@ -384,7 +418,7 @@ void WindowTarget::record(FrameSlot& slot, const DrawTarget& target, const Windo
 
         const gpu::RenderImage& content = pooled_image(slot.layers, i, kLayerFormat, layer.width, layer.height);
         render_offscreen(cmd, content, extent, [&] {
-            draw_pass(cmd, layer, kLayerFormat, extent, slot, stops, layer_sets, resources);
+            draw_pass(cmd, layer, kLayerFormat, extent, slot, stops, layer_sets, path_sets, resources);
         });
         layer_sets[i].content = image_set(slot, resources.image_layout, content.view());
 
@@ -418,7 +452,7 @@ void WindowTarget::record(FrameSlot& slot, const DrawTarget& target, const Windo
             VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
     const auto clear = to_linear_premultiplied(frame.list.clear_color);
     begin_rendering(cmd, target.view, target.extent, VkClearColorValue{{clear[0], clear[1], clear[2], clear[3]}});
-    draw_pass(cmd, plan.main, target.format, target.extent, slot, stops, layer_sets, resources);
+    draw_pass(cmd, plan.main, target.format, target.extent, slot, stops, layer_sets, path_sets, resources);
     vkCmdEndRendering(cmd);
     if (target.shared) {
         // Hand the image to Direct3D: GENERAL layout, released to the external queue family

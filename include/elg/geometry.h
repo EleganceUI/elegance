@@ -14,6 +14,8 @@ namespace elg {
 struct Point {
     float x = 0;
     float y = 0;
+
+    friend constexpr bool operator==(const Point&, const Point&) = default;
 };
 
 struct Size {

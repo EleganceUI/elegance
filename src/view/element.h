@@ -17,6 +17,7 @@
 #include <elg/graphics_context.h>
 #include <elg/layout.h>
 #include <elg/modifier.h>
+#include <elg/path.h>
 #include <elg/prop.h>
 #include <elg/text.h>
 #include <elg/view.h>
@@ -162,12 +163,21 @@ protected:
     void paint_impl(DisplayList&) const override {}
 };
 
-enum class ShapeKind { rectangle, rounded_rectangle, capsule, circle };
+enum class ShapeKind { rectangle, rounded_rectangle, capsule, circle, path };
+
+// A path shape's geometry: a fixed path (optionally in its own view box), or one built per frame.
+struct ShapePath {
+    Path path;
+    std::optional<Rect> view_box;
+    std::function<Path(Rect)> builder;
+    FillRule rule = FillRule::non_zero;
+};
 
 struct ShapeStroke {
     Prop<Color> color;
     float width = 1;
     bool centered = true; // false: inside the edge
+    StrokeStyle style;    // caps, joins, dashes (style.width == width)
 };
 
 // A Shape view's description (not to be confused with the public elg::ShapeStyle, its fill).
@@ -176,6 +186,7 @@ struct ShapeSpec {
     CornerRadii radii; // rounded_rectangle only
     std::optional<Prop<ShapeStyle>> fill;
     std::optional<ShapeStroke> stroke;
+    std::shared_ptr<const ShapePath> path; // ShapeKind::path
 };
 
 // The rounded rect a shape occupies inside `frame`.
@@ -204,10 +215,27 @@ protected:
     bool hit_impl(Point point, std::vector<Element*>& path) override;
 
 private:
+    using Polygons = std::vector<std::vector<Point>>;
+    // Flattened geometry for a frame size and display scale, in points from the frame's corner.
+    struct Geometry {
+        Size size{-1, -1};
+        float scale = 0;
+        std::shared_ptr<const Polygons> fill;
+        Rect fill_bounds;
+        std::shared_ptr<const Polygons> stroke;
+        Rect stroke_bounds;
+    };
+
+    // Whether this shape draws through the path pipeline (paths, and dashed strokes of any shape).
+    bool uses_path() const noexcept;
+    bool hit_path(Point point) const;
+    const Geometry& geometry(Size size, float scale) const;
+
     ShapeSpec spec_;
     bool has_fill_ = false;
     Animated<ShapeStyle> fill_{ShapeStyle(Color::clear)};
     Animated<Color> stroke_color_{Color::clear};
+    mutable Geometry geometry_;
 };
 
 struct TextStyle {

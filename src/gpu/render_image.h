@@ -12,10 +12,14 @@
 
 namespace elg::detail::gpu {
 
-// An offscreen image that is rendered to and then sampled (layers, blur passes).
+// An offscreen image that is rendered to and then sampled (layers, blur passes), or a
+// multisampled / depth-stencil scratch attachment (path masks).
 class RenderImage {
 public:
-    RenderImage(const Device& device, VkFormat format, std::uint32_t width, std::uint32_t height);
+    RenderImage(const Device& device, VkFormat format, std::uint32_t width, std::uint32_t height,
+                VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT,
+                VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+                VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
     ~RenderImage();
 
     RenderImage(RenderImage&& other) noexcept;

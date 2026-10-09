@@ -90,7 +90,7 @@ private:
     }
 
     void emit(PlanPass& pass, std::vector<QuadInstance>& out, QuadInstance instance, const Rect& extent,
-              const Clip& clip, int layer = -1, bool shadow = false) {
+              const Clip& clip, int layer = -1, bool shadow = false, int path = -1) {
         if (clip.active && !overlaps(extent, clip.rect)) {
             return; // fully clipped
         }
@@ -101,10 +101,10 @@ private:
         out.push_back(instance);
 
         PlanSegment* last = pass.segments.empty() ? nullptr : &pass.segments.back();
-        if (layer < 0 && last && last->layer < 0 && last->first + last->count == index) {
+        if (layer < 0 && path < 0 && last && last->layer < 0 && last->path < 0 && last->first + last->count == index) {
             ++last->count;
         } else {
-            pass.segments.push_back({index, 1, layer, shadow});
+            pass.segments.push_back({index, 1, layer, shadow, path});
         }
     }
 
@@ -119,16 +119,8 @@ private:
         return {first, static_cast<std::uint32_t>(stops.size())};
     }
 
-    void add_rect(const RectCommand& command, Point origin, PlanPass& pass, std::vector<QuadInstance>& out,
-                  const Clip& clip) {
-        const Rect r = to_pixels(command.rect, origin);
-        QuadInstance instance;
-        instance.rect = {r.x, r.y, r.width, r.height};
-        instance.shape = scaled_radii(command.radii, scale_, r.width, r.height);
-        instance.border_color = to_linear_premultiplied(command.border);
-        instance.params = {command.border_width * scale_, static_cast<float>(QuadKind::rect),
-                           static_cast<float>(PaintKind::solid), 0};
-
+    // The fill: a color, or a gradient whose unit points span `r` (pixels).
+    void set_paint(QuadInstance& instance, const ShapeStyle& fill, const Rect& r) {
         std::visit(Overloaded{
                        [&](const Color& color) { instance.color = to_linear_premultiplied(color); },
                        [&](const LinearGradient& gradient) {
@@ -155,8 +147,70 @@ private:
                                                 gradient.start_radius * scale_, gradient.end_radius * scale_};
                        },
                    },
-                   command.fill.value());
+                   fill.value());
+    }
+
+    void add_rect(const RectCommand& command, Point origin, PlanPass& pass, std::vector<QuadInstance>& out,
+                  const Clip& clip) {
+        const Rect r = to_pixels(command.rect, origin);
+        QuadInstance instance;
+        instance.rect = {r.x, r.y, r.width, r.height};
+        instance.shape = scaled_radii(command.radii, scale_, r.width, r.height);
+        instance.border_color = to_linear_premultiplied(command.border);
+        instance.params = {command.border_width * scale_, static_cast<float>(QuadKind::rect),
+                           static_cast<float>(PaintKind::solid), 0};
+        set_paint(instance, command.fill, r);
         emit(pass, out, instance, r.inset(-1), clip);
+    }
+
+    // A path: its fan triangles go to a coverage mask; the pass fills through the mask.
+    void add_path(const PathCommand& command, Point origin, PlanPass& pass, std::vector<QuadInstance>& out,
+                  const Clip& clip) {
+        if (!command.polygons || command.polygons->empty()) {
+            return;
+        }
+        const Rect bounds = to_pixels(command.window_bounds(), origin);
+        const float x0 = std::floor(bounds.x) - 1;
+        const float y0 = std::floor(bounds.y) - 1;
+        const float x1 = std::ceil(bounds.max_x()) + 1;
+        const float y1 = std::ceil(bounds.max_y()) + 1;
+        const Rect area{x0, y0, std::min(x1 - x0, static_cast<float>(kMaxLayerSize)),
+                        std::min(y1 - y0, static_cast<float>(kMaxLayerSize))};
+        if (area.width < 1 || area.height < 1 || (clip.active && !overlaps(area, clip.rect))) {
+            return;
+        }
+
+        PlanPath path;
+        path.width = static_cast<std::uint32_t>(area.width);
+        path.height = static_cast<std::uint32_t>(area.height);
+        path.first_vertex = static_cast<std::uint32_t>(plan_.path_vertices.size());
+        path.even_odd = command.rule == FillRule::even_odd;
+        const float k = command.scale * scale_;
+        const float dx = command.offset.x * scale_ - origin.x - x0;
+        const float dy = command.offset.y * scale_ - origin.y - y0;
+        const auto vertex = [&](Point p) { return std::array<float, 2>{p.x * k + dx, p.y * k + dy}; };
+        for (const std::vector<Point>& polygon : *command.polygons) {
+            // A fan from the first point: overlapping triangles cancel or add up in the stencil
+            // exactly as the polygon winds.
+            for (std::size_t i = 1; i + 1 < polygon.size(); ++i) {
+                plan_.path_vertices.push_back(vertex(polygon[0]));
+                plan_.path_vertices.push_back(vertex(polygon[i]));
+                plan_.path_vertices.push_back(vertex(polygon[i + 1]));
+            }
+        }
+        path.vertex_count = static_cast<std::uint32_t>(plan_.path_vertices.size()) - path.first_vertex;
+        if (path.vertex_count == 0) {
+            return;
+        }
+        const int index = static_cast<int>(plan_.paths.size());
+        plan_.paths.push_back(path);
+
+        QuadInstance instance;
+        instance.rect = {area.x, area.y, area.width, area.height};
+        instance.shape = {0, 0, area.width, area.height};
+        instance.params = {0, static_cast<float>(QuadKind::path), static_cast<float>(PaintKind::solid), 0};
+        set_paint(instance, command.fill, to_pixels(command.paint_frame, origin));
+        emit(pass, out, instance, area, clip, -1, false, index);
     }
 
     void add_glyph(const GlyphCommand& command, Point origin, PlanPass& pass, std::vector<QuadInstance>& out,
@@ -264,6 +318,7 @@ private:
                            [&](const RectCommand& c) { add_rect(c, origin, pass, out, clip); },
                            [&](const GlyphCommand& c) { add_glyph(c, origin, pass, out, clip); },
                            [&](const BoxShadowCommand& c) { add_box_shadow(c, origin, pass, out, clip); },
+                           [&](const PathCommand& c) { add_path(c, origin, pass, out, clip); },
                            [&](const PushClipCommand& c) { clips.push_back(push_clip(c, origin, clip)); },
                            [&](const PopClipCommand&) {
                                if (clips.size() > 1) {

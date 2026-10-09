@@ -13,6 +13,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         app.cpp
         error.cpp
         graphics_context.cpp
+        geometry/path.cpp
         core/crash.cpp
         core/log.cpp
         gpu/atlas_texture.cpp
@@ -20,6 +21,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         gpu/buffer.cpp
         gpu/device.cpp
         gpu/instance.cpp
+        gpu/path_renderer.cpp
         gpu/quad_renderer.cpp
         gpu/render_image.cpp
         gpu/swapchain.cpp
@@ -144,6 +146,9 @@ elg_add_shaders(elegence
         ${PROJECT_SOURCE_DIR}/shaders/ui.frag
         ${PROJECT_SOURCE_DIR}/shaders/blur.vert
         ${PROJECT_SOURCE_DIR}/shaders/blur.frag
+        ${PROJECT_SOURCE_DIR}/shaders/path.vert
+        ${PROJECT_SOURCE_DIR}/shaders/path_cover.vert
+        ${PROJECT_SOURCE_DIR}/shaders/path.frag
 )
 
 target_compile_definitions(elegence PRIVATE

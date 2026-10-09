@@ -191,6 +191,9 @@ bool Element::hit_test(Point point, std::vector<Element*>& path) {
 }
 
 bool ShapeElement::hit_impl(Point point, std::vector<Element*>&) {
+    if (uses_path()) {
+        return hit_path(point);
+    }
     const ShapeOutline outline = shape_outline(spec_, frame());
     if (!spec_.stroke || spec_.fill) {
         return inside(point, outline);

@@ -16,7 +16,7 @@
 namespace elg::detail::gpu {
 
 // Primitive kinds; see shaders/ui.frag.
-enum class QuadKind : int { rect = 0, glyph = 1, layer = 2, layer_shadow = 3, box_shadow = 4 };
+enum class QuadKind : int { rect = 0, glyph = 1, layer = 2, layer_shadow = 3, box_shadow = 4, path = 5 };
 enum class PaintKind : int { solid = 0, linear = 1, radial = 2 };
 
 // Per-instance data for shaders/ui.vert. Pixels of the render target, y down; colors linear and

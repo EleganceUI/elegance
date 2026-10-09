@@ -101,6 +101,7 @@ Size ShapeElement::measure(ProposedSize proposal) {
 
 ShapeOutline shape_outline(const ShapeSpec& spec, Rect frame) {
     switch (spec.kind) {
+    case ShapeKind::path: return {frame, {}};
     case ShapeKind::rectangle: return {frame, {}};
     case ShapeKind::rounded_rectangle: return {frame, spec.radii};
     case ShapeKind::capsule: return {frame, CornerRadii::all(std::min(frame.width, frame.height) / 2)};
@@ -112,8 +113,160 @@ ShapeOutline shape_outline(const ShapeSpec& spec, Rect frame) {
     return {frame, {}};
 }
 
+namespace {
+
+// A rounded rect's outline as a path (per-corner radii), for dashed strokes of the basic shapes.
+Path rounded_rect_path(Rect r, const CornerRadii& radii) {
+    constexpr float kKappa = 0.5522847498f;
+    const float max_radius = std::min(r.width, r.height) / 2;
+    const auto clamp = [&](float v) { return std::clamp(v, 0.f, max_radius); };
+    const float tl = clamp(radii.top_left), tr = clamp(radii.top_right), br = clamp(radii.bottom_right),
+                bl = clamp(radii.bottom_left);
+    Path path;
+    path.move_to({r.x + tl, r.y}).line_to({r.max_x() - tr, r.y});
+    if (tr > 0) {
+        path.cubic_to({r.max_x() - tr * (1 - kKappa), r.y}, {r.max_x(), r.y + tr * (1 - kKappa)}, {r.max_x(), r.y + tr});
+    }
+    path.line_to({r.max_x(), r.max_y() - br});
+    if (br > 0) {
+        path.cubic_to({r.max_x(), r.max_y() - br * (1 - kKappa)}, {r.max_x() - br * (1 - kKappa), r.max_y()},
+                      {r.max_x() - br, r.max_y()});
+    }
+    path.line_to({r.x + bl, r.max_y()});
+    if (bl > 0) {
+        path.cubic_to({r.x + bl * (1 - kKappa), r.max_y()}, {r.x, r.max_y() - bl * (1 - kKappa)}, {r.x, r.max_y() - bl});
+    }
+    path.line_to({r.x, r.y + tl});
+    if (tl > 0) {
+        path.cubic_to({r.x, r.y + tl * (1 - kKappa)}, {r.x + tl * (1 - kKappa), r.y}, {r.x + tl, r.y});
+    }
+    return path.close();
+}
+
+std::shared_ptr<const std::vector<std::vector<Point>>> polygons_of(const Path& path, float tolerance, Rect& bounds) {
+    auto polygons = std::make_shared<std::vector<std::vector<Point>>>();
+    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    bool any = false;
+    for (Path::Polyline& line : path.flatten(tolerance)) {
+        if (line.points.size() < 3) {
+            continue; // filling closes every subpath; fewer than 3 points enclose nothing
+        }
+        for (const Point p : line.points) {
+            if (!any) {
+                x0 = x1 = p.x;
+                y0 = y1 = p.y;
+                any = true;
+            }
+            x0 = std::min(x0, p.x);
+            y0 = std::min(y0, p.y);
+            x1 = std::max(x1, p.x);
+            y1 = std::max(y1, p.y);
+        }
+        polygons->push_back(std::move(line.points));
+    }
+    bounds = {x0, y0, x1 - x0, y1 - y0};
+    return polygons;
+}
+
+bool polygons_contain(const std::vector<std::vector<Point>>& polygons, Point p, FillRule rule) {
+    int winding = 0;
+    for (const std::vector<Point>& polygon : polygons) {
+        for (std::size_t i = 0; i < polygon.size(); ++i) {
+            const Point a = polygon[i];
+            const Point b = polygon[(i + 1) % polygon.size()];
+            const float side = (b.x - a.x) * (p.y - a.y) - (p.x - a.x) * (b.y - a.y);
+            if (a.y <= p.y) {
+                if (b.y > p.y && side > 0) {
+                    ++winding;
+                }
+            } else if (b.y <= p.y && side < 0) {
+                --winding;
+            }
+        }
+    }
+    return rule == FillRule::non_zero ? winding != 0 : (winding % 2) != 0;
+}
+
+} // namespace
+
+bool ShapeElement::uses_path() const noexcept {
+    return spec_.kind == ShapeKind::path || (spec_.stroke && !spec_.stroke->style.dash.empty());
+}
+
+const ShapeElement::Geometry& ShapeElement::geometry(Size size, float scale) const {
+    if (geometry_.size.width == size.width && geometry_.size.height == size.height && geometry_.scale == scale) {
+        return geometry_;
+    }
+    // Flattened to a quarter pixel.
+    const float tolerance = 0.25f / std::max(scale, 0.25f);
+    const Rect local{0, 0, size.width, size.height};
+    Path outline;
+    if (spec_.kind == ShapeKind::path && spec_.path) {
+        const ShapePath& source = *spec_.path;
+        if (source.builder) {
+            outline = source.builder(local);
+        } else if (source.view_box && source.view_box->width > 0 && source.view_box->height > 0) {
+            // Fit the view box in the frame, keeping its aspect ratio, centered (SVG's "meet").
+            const Rect box = *source.view_box;
+            const float k = std::min(size.width / box.width, size.height / box.height);
+            const float dx = (size.width - box.width * k) / 2 - box.x * k;
+            const float dy = (size.height - box.height * k) / 2 - box.y * k;
+            outline = source.path.transformed(k, k, dx, dy);
+        } else {
+            outline = source.path;
+        }
+    } else {
+        const ShapeOutline o = shape_outline(spec_, local);
+        outline = rounded_rect_path(o.rect, o.radii);
+    }
+
+    Geometry g;
+    g.size = size;
+    g.scale = scale;
+    if (spec_.kind == ShapeKind::path) {
+        g.fill = polygons_of(outline, tolerance, g.fill_bounds);
+    }
+    if (spec_.stroke) {
+        const ShapeStroke& stroke = *spec_.stroke;
+        Path line = outline;
+        if (!stroke.centered && spec_.kind != ShapeKind::path) {
+            // Inside the edge: stroke the outline inset by half the width.
+            const ShapeOutline o = shape_outline(spec_, local);
+            const float half = stroke.width / 2;
+            const auto shrink = [&](float r) { return r > 0 ? std::max(0.f, r - half) : 0.f; };
+            line = rounded_rect_path(o.rect.inset(half), {shrink(o.radii.top_left), shrink(o.radii.top_right),
+                                                          shrink(o.radii.bottom_right), shrink(o.radii.bottom_left)});
+        }
+        g.stroke = polygons_of(line.stroked(stroke.style, tolerance), tolerance, g.stroke_bounds);
+    }
+    geometry_ = std::move(g);
+    return geometry_;
+}
+
 void ShapeElement::paint_impl(DisplayList& list) const {
     if (!drawable(frame())) {
+        return;
+    }
+    if (uses_path()) {
+        if (fill_.animating() || stroke_color_.animating()) {
+            list.animating = true;
+        }
+        const Rect bounds = frame();
+        const Geometry& g = geometry(bounds.size(), list.scale > 0 ? list.scale : 1.f);
+        const Point origin{bounds.x, bounds.y};
+        const ShapeStyle fill = has_fill_ ? fill_.current() : ShapeStyle(Color::clear);
+        if (spec_.kind == ShapeKind::path) {
+            if (g.fill && !is_clear(fill)) {
+                list.commands.push_back(PathCommand{g.fill, g.fill_bounds, 1, origin, bounds, fill, spec_.path->rule});
+            }
+        } else if (!is_clear(fill)) {
+            const auto [rect, radii] = shape_outline(spec_, bounds);
+            list.commands.push_back(RectCommand{rect, radii, fill, Color::clear, 0});
+        }
+        if (g.stroke) {
+            list.commands.push_back(PathCommand{g.stroke, g.stroke_bounds, 1, origin, bounds,
+                                                ShapeStyle(stroke_color_.current()), FillRule::non_zero});
+        }
         return;
     }
     const auto [rect, radii] = shape_outline(spec_, frame());
@@ -145,6 +298,22 @@ void ShapeElement::paint_impl(DisplayList& list) const {
                                         {grow(radii.top_left), grow(radii.top_right),
                                          grow(radii.bottom_right), grow(radii.bottom_left)},
                                         Color::clear, stroke_color, stroke.width});
+}
+
+bool ShapeElement::hit_path(Point point) const {
+    const Rect bounds = frame();
+    const Point local{point.x - bounds.x, point.y - bounds.y};
+    const Geometry& g = geometry(bounds.size(), geometry_.scale > 0 ? geometry_.scale : 1.f);
+    if (spec_.kind == ShapeKind::path && spec_.fill && g.fill &&
+        polygons_contain(*g.fill, local, spec_.path ? spec_.path->rule : FillRule::non_zero)) {
+        return true;
+    }
+    if (g.stroke && polygons_contain(*g.stroke, local, FillRule::non_zero)) {
+        return true;
+    }
+    // An unstyled path (environment foreground) is filled.
+    return spec_.kind == ShapeKind::path && !spec_.stroke && g.fill &&
+           polygons_contain(*g.fill, local, spec_.path ? spec_.path->rule : FillRule::non_zero);
 }
 
 // --- SpacerElement ---

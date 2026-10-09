@@ -78,6 +78,11 @@ void transform(std::vector<DrawCommand>& commands, float dx, float dy, float sca
                            c.quad = rect(c.quad);
                            c.em_size *= scale;
                        },
+                       [&](PathCommand& c) {
+                           c.offset = point(c.offset.x, c.offset.y);
+                           c.scale *= scale;
+                           c.paint_frame = rect(c.paint_frame);
+                       },
                        [&](BoxShadowCommand& c) {
                            c.rect = rect(c.rect);
                            c.radii = radii(c.radii);
@@ -117,6 +122,11 @@ void append_faded(DisplayList& list, DisplayList&& content, float opacity) {
             list.commands.push_back(std::move(*rect));
             return;
         }
+        if (auto* path = std::get_if<PathCommand>(&content.commands.front())) {
+            path->fill = with_opacity(path->fill, opacity);
+            list.commands.push_back(std::move(*path));
+            return;
+        }
     }
     std::optional<Rect> bounds;
     for (const DrawCommand& command : content.commands) {
@@ -143,6 +153,7 @@ std::optional<Rect> draw_bounds(const DrawCommand& command) {
     return std::visit(Overloaded{
                           [](const RectCommand& c) -> std::optional<Rect> { return c.rect; },
                           [](const GlyphCommand& c) -> std::optional<Rect> { return c.quad; },
+                          [](const PathCommand& c) -> std::optional<Rect> { return c.window_bounds(); },
                           [](const BoxShadowCommand& c) -> std::optional<Rect> {
                               // The Gaussian is negligible beyond three sigma.
                               return c.rect.inset(-1.5f * c.blur_radius - 1);

@@ -9,10 +9,13 @@
 #include <elg/export.h>
 #include <elg/geometry.h>
 #include <elg/gradient.h>
+#include <elg/path.h>
 #include <elg/prop.h>
 #include <elg/view.h>
 
+#include <functional>
 #include <memory>
+#include <optional>
 
 namespace elg {
 
@@ -31,6 +34,8 @@ public:
     ELG_API Shape fill(Prop<ShapeStyle> style) const;
     // A line centered on the shape's edge.
     ELG_API Shape stroke(Prop<Color> color, float line_width = 1) const;
+    // A line with caps, joins, and dashes: .stroke(ThemeColor::outline, {.width = 2, .dash = {4, 4}})
+    ELG_API Shape stroke(Prop<Color> color, StrokeStyle style) const;
     // A line inside the shape's edge.
     ELG_API Shape stroke_border(Prop<Color> color, float line_width = 1) const;
 
@@ -45,6 +50,23 @@ ELG_API Shape RoundedRectangle(CornerRadii radii);
 ELG_API Shape Capsule();
 // The largest circle that fits, centered.
 ELG_API Shape Circle();
+
+struct PathShapeOptions {
+    // The path's own coordinate box (as in SVG): the path is scaled to fit the frame (keeping its
+    // aspect ratio) and centered. Without it, path coordinates are points from the frame's corner.
+    std::optional<Rect> view_box;
+    FillRule fill_rule = FillRule::non_zero;
+};
+
+// A vector path as a shape (design.md §5):
+//   PathShape(Path::svg("M12 2 L22 21 H2 Z"), {.view_box = Rect{0, 0, 24, 24}}).fill(palette::peach)
+ELG_API Shape PathShape(Path path, PathShapeOptions options = {});
+
+// A shape whose path depends on its frame, rebuilt when the frame's size changes (SwiftUI's
+// Shape.path(in:)). `path` gets the frame's size as a rect at (0, 0).
+//   CustomShape([](Rect r) { return Path().move_to({0, r.height}).line_to({r.width / 2, 0})
+//                                         .line_to({r.width, r.height}).close(); })
+ELG_API Shape CustomShape(std::function<Path(Rect)> path, FillRule fill_rule = FillRule::non_zero);
 
 } // namespace elg
 

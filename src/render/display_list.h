@@ -8,8 +8,10 @@
 #include <elg/color.h>
 #include <elg/geometry.h>
 #include <elg/gradient.h>
+#include <elg/path.h>
 #include <elg/view.h>
 
+#include <memory>
 #include <optional>
 #include <variant>
 #include <vector>
@@ -39,6 +41,23 @@ struct BoxShadowCommand {
     float blur_radius = 0; // points; sigma is half of it
 };
 
+// A filled vector path (design.md §5). The polygons (flattened, closed) are shared and in local
+// points; `scale` then `offset` place them in the window, so moving or scaling a path (scrolling,
+// transitions) doesn't touch them.
+struct PathCommand {
+    std::shared_ptr<const std::vector<std::vector<Point>>> polygons;
+    Rect bounds; // of the polygons, local points
+    float scale = 1;
+    Point offset;
+    Rect paint_frame; // window points; gradients' unit points map across it
+    ShapeStyle fill;
+    FillRule rule = FillRule::non_zero;
+
+    Rect window_bounds() const {
+        return {bounds.x * scale + offset.x, bounds.y * scale + offset.y, bounds.width * scale, bounds.height * scale};
+    }
+};
+
 // Clips everything until the matching PopClipCommand to a rounded rect.
 struct PushClipCommand {
     Rect rect;
@@ -57,7 +76,7 @@ struct PushLayerCommand {
 
 struct PopLayerCommand {};
 
-using DrawCommand = std::variant<RectCommand, GlyphCommand, BoxShadowCommand, PushClipCommand,
+using DrawCommand = std::variant<RectCommand, GlyphCommand, BoxShadowCommand, PathCommand, PushClipCommand,
                                  PopClipCommand, PushLayerCommand, PopLayerCommand>;
 
 // Immutable-once-built draw commands for one window frame, in logical points and sRGB, in

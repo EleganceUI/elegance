@@ -22,6 +22,16 @@ struct PlanSegment {
     std::uint32_t count = 0;
     int layer = -1;      // >= 0: a composite of that layer
     bool shadow = false; // the layer's blurred shadow rather than its content
+    int path = -1;       // >= 0: a path filled through that path's coverage mask
+};
+
+// A path's coverage mask to render before the passes that use it (gpu::PathRenderer).
+struct PlanPath {
+    std::uint32_t width = 0; // pixels
+    std::uint32_t height = 0;
+    std::uint32_t first_vertex = 0; // fan triangles in FramePlan::path_vertices, mask pixels
+    std::uint32_t vertex_count = 0;
+    bool even_odd = false;
 };
 
 struct PlanPass {
@@ -39,6 +49,8 @@ struct FramePlan {
     std::vector<gpu::QuadInstance> instances;
     // Gradient stops, two entries each: sRGB straight-alpha color, then (location, 0, 0, 0).
     std::vector<std::array<float, 4>> stops;
+    std::vector<PlanPath> paths;
+    std::vector<std::array<float, 2>> path_vertices;
 };
 
 // Converts logical points to pixels, resolves the clip stack per instance (culling instances

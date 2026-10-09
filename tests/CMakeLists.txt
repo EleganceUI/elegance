@@ -9,6 +9,7 @@ add_executable(elegence_tests
         animation_tests.cpp
         environment_tests.cpp
         image_tests.cpp
+        path_tests.cpp
         reactive_tests.cpp
 )
 target_link_libraries(elegence_tests PRIVATE Elegence::Elegence Catch2::Catch2WithMain)

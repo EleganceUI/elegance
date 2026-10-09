@@ -34,14 +34,19 @@ Shape Shape::fill(Prop<ShapeStyle> style) const {
 }
 
 Shape Shape::stroke(Prop<Color> color, float line_width) const {
+    return stroke(std::move(color), StrokeStyle{.width = line_width});
+}
+
+Shape Shape::stroke(Prop<Color> color, StrokeStyle style) const {
     ShapeSpec spec = spec_of(*this);
-    spec.stroke = detail::ShapeStroke{std::move(color), line_width, true};
+    const float width = style.width;
+    spec.stroke = detail::ShapeStroke{std::move(color), width, true, std::move(style)};
     return make_shape(std::move(spec));
 }
 
 Shape Shape::stroke_border(Prop<Color> color, float line_width) const {
     ShapeSpec spec = spec_of(*this);
-    spec.stroke = detail::ShapeStroke{std::move(color), line_width, false};
+    spec.stroke = detail::ShapeStroke{std::move(color), line_width, false, StrokeStyle{.width = line_width}};
     return make_shape(std::move(spec));
 }
 
@@ -63,6 +68,19 @@ Shape Capsule() {
 
 Shape Circle() {
     return make_shape({ShapeKind::circle});
+}
+
+Shape PathShape(Path path, PathShapeOptions options) {
+    ShapeSpec spec{ShapeKind::path};
+    spec.path = std::make_shared<const detail::ShapePath>(
+        detail::ShapePath{std::move(path), options.view_box, {}, options.fill_rule});
+    return make_shape(std::move(spec));
+}
+
+Shape CustomShape(std::function<Path(Rect)> path, FillRule fill_rule) {
+    ShapeSpec spec{ShapeKind::path};
+    spec.path = std::make_shared<const detail::ShapePath>(detail::ShapePath{{}, std::nullopt, std::move(path), fill_rule});
+    return make_shape(std::move(spec));
 }
 
 } // namespace elg

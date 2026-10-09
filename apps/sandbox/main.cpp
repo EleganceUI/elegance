@@ -16,7 +16,9 @@
 
 #include <elg/elegence.h>
 
+#include <cmath>
 #include <cstdio>
+#include <numbers>
 #include <format>
 #include <functional>
 #include <string>
@@ -145,6 +147,56 @@ View MenuCards() {
                                 .help("Tooltips open after a short rest"),
                             ".help()")
                       .card());
+}
+
+// Vector paths (GPU stencil-then-cover): custom shapes, SVG path data, fill rules, strokes with
+// caps, joins, and dashes, and paths in a Canvas.
+View PathCards() {
+    // A five-pointed star that fits whatever frame it gets.
+    const Shape star = CustomShape([](Rect r) {
+        Path path;
+        const Point c = r.center();
+        const float outer = std::min(r.width, r.height) / 2;
+        for (int i = 0; i < 10; ++i) {
+            const float angle = -std::numbers::pi_v<float> / 2 + static_cast<float>(i) * std::numbers::pi_v<float> / 5;
+            const float radius = i % 2 == 0 ? outer : outer * 0.45f;
+            const Point p{c.x + radius * std::cos(angle), c.y + radius * std::sin(angle)};
+            i == 0 ? path.move_to(p) : path.line_to(p);
+        }
+        return path.close();
+    });
+    const Shape heart = PathShape(Path::svg("M12 21 C5 15 2 11.5 2 8 A5 5 0 0 1 12 5.5 A5 5 0 0 1 22 8 C22 11.5 19 15 12 21 Z"),
+                                  {.view_box = Rect{2, 3, 20, 18}});
+    Path rings;
+    rings.add_circle({20, 20}, 20).add_circle({20, 20}, 11);
+    const Shape ring = PathShape(rings, {.fill_rule = FillRule::even_odd});
+    Path zigzag;
+    zigzag.move_to({2, 30}).line_to({14, 6}).line_to({26, 30}).line_to({38, 6}).line_to({50, 30});
+
+    const View shapes =
+        HStack({.spacing = 16},
+               star.fill(LinearGradient({palette::peach, palette::red}, UnitPoint::top, UnitPoint::bottom)).frame(56, 56),
+               heart.fill(palette::red).frame(56, 56),
+               ring.fill(palette::sky).frame(40, 40),
+               PathShape(zigzag).stroke(palette::green, {.width = 4, .cap = LineCap::round, .join = LineJoin::round})
+                   .frame(52, 36));
+    const View strokes =
+        HStack({.spacing = 16},
+               RoundedRectangle(10).stroke(palette::mauve, {.width = 2, .dash = {6, 4}}).frame(64, 48),
+               Circle().stroke(palette::blue, {.width = 3, .cap = LineCap::round, .dash = {0.1f, 7}}).frame(48, 48),
+               Canvas([](GraphicsContext& context) {
+                   Path wave;
+                   const Size size = context.size();
+                   for (int i = 0; i <= 48; ++i) {
+                       const float x = size.width * static_cast<float>(i) / 48;
+                       const float y = size.height / 2 + std::sin(static_cast<float>(i) / 48 * 4 * std::numbers::pi_v<float>) * size.height * 0.35f;
+                       i == 0 ? wave.move_to({x, y}) : wave.line_to({x, y});
+                   }
+                   context.stroke_path(wave, palette::peach, {.width = 2.5f, .cap = LineCap::round, .join = LineJoin::round});
+               }).frame(96, 48));
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(shapes, "CustomShape, Path::svg, even-odd, stroke caps/joins").card(),
+                  Captioned(strokes, "Dashed strokes, Canvas paths").card());
 }
 
 // The built-in icon set (Phosphor): weights follow the font, variants by name, Label for icon + text.
@@ -513,6 +565,7 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
                   TitleBar(scheme),
                   // The title bar stays put; the cards scroll under it.
                   ScrollView(VStack({.alignment = HorizontalAlignment::leading, .spacing = 20},
+                         PathCards(),
                          MenuCards(),
                          IconCards(),
                          ShapeCards(),
