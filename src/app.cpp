@@ -17,6 +17,7 @@
 #include "view/animated.h"
 #include "view/event_dispatcher.h"
 #include "view/inspector.h"
+#include "core/ui_tasks.h"
 #include "view/view_node.h"
 
 #include <elg/error.h>
@@ -358,6 +359,9 @@ int App::run() {
     // the atlas's workers wake the event loop to draw them.
     TextSystem text;
     text.atlas.set_on_ready([&platform] { platform.wake(); });
+    // Work other threads hand to this one (hot-reload builds) wakes the loop.
+    set_ui_task_waker([&platform] { platform.wake(); });
+    ScopeExit stop_task_wakes([] { set_ui_task_waker({}); });
     text.atlas.set_disk_cache(GlyphDiskCache::default_directory());
     ScopeExit stop_glyph_wakes([&text] { text.atlas.set_on_ready({}); });
 
@@ -908,6 +912,7 @@ int App::run() {
                 live->dirty = true;
             }
         }
+        run_ui_tasks(); // e.g. a hot reload: state written here takes effect below
         flush_effects(); // hover and other effects may ask for popups
         process_popups();
         if (inspector) {

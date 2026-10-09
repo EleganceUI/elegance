@@ -16,6 +16,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         geometry/path.cpp
         core/crash.cpp
         core/log.cpp
+        core/ui_tasks.cpp
         gpu/atlas_texture.cpp
         gpu/blur_renderer.cpp
         gpu/buffer.cpp
@@ -27,6 +28,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         gpu/swapchain.cpp
         gpu/vk.cpp
         gpu/vma.cpp
+        platform/dynamic_library.cpp
         platform/platform_sdl.cpp
         reactive/runtime.cpp
         render/display_list.cpp
@@ -44,6 +46,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         view/event_dispatcher.cpp
         view/events.cpp
         view/fragment.cpp
+        view/hot_reload.cpp
         view/image.cpp
         view/inspect.cpp
         view/inspector.cpp

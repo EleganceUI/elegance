@@ -1729,7 +1729,42 @@ Separate render thread from day one (decided).
     - Found through the modifiers wrapping a child (effects, decorations, events, transitions),
       never inside nested layouts.
   - Sandbox: `FlowLayout` (wrapping tags) uses both, with a `RowBreak` value.
-- [ ] Accessibility, previews / hot reload, docs & examples
+- [x] Hot reload and previews (§9.6), reset-on-reload:
+  - `elg/hot_reload.h`:
+    - `ELG_MODULE(root)` exports `elg_module_entry` (an ABI version, the root view and the
+      module's previews).
+    - `ELG_PREVIEW("Name") { ... }` registers into a per-module list (an inline function's
+      static, so each DLL has its own).
+    - `HotReload({.module, .build_command, .watch, .show})` is a window's content.
+  - A reload is a `ForEach` over a one-item "generation" list, so the existing machinery
+    unmounts the old tree (its scope and effects) and mounts the new module's views. No new
+    element type and no App remount logic.
+  - Modules load from unique copies (`%TEMP%/elegence-reload/<pid>/`), so the build can replace
+    the file. The previous module stays loaded while its views fade out; older ones unload.
+    Modules still loaded at exit are left loaded.
+  - A watcher thread polls the watched folders every 250 ms.
+    - A change runs the build command (output captured).
+    - A new module file (from our build or an IDE's) reloads once it has settled.
+    - Results reach the UI thread through `post_ui_task` (a queue the App drains each loop
+      iteration, with a wake).
+  - A status badge shows "Building…", the first compiler error (file, line, message) or
+    "Reloaded (N ms)". A failed build keeps the last good views.
+  - CMake: `elegence_views_module(target sources...)` and
+    `elegence_hot_reload(host MODULE views [WATCH ...])`. The latter generates
+    `<host>_hot_reload.h` with `elg_hot_reload_options()`. On Windows the rebuild runs through a
+    generated `rebuild.cmd` that restores the configure-time compiler environment (vcvars'
+    INCLUDE/LIB/PATH), so an app started from an IDE or Explorer can still build.
+  - `elegence-preview` (apps/preview) shows a module's previews in a sidebar, or with `--root`
+    its root view. `--module/--build/--watch` point it at any module. Ships with a
+    `gallery_views` demo module.
+  - Measured: about a 3 s edit-to-screen loop for the gallery module in a debug build.
+- [ ] Hot reload follow-ups:
+  - Restore `State` by view identity.
+  - Detect host/module layout mismatches (an exported layout hash).
+  - Copy PDBs so debuggers keep symbols.
+  - Theme/token files that reload without a rebuild.
+  - Catch exceptions from module bodies during mount (today they end the app, as in any view).
+- [ ] Accessibility, docs & examples
 - [x] Built-in icon library (§13.2), **Phosphor** 2.1.2 (MIT):
   - Vendored verbatim in `third_party/phosphor`: regular, bold and fill TTFs plus the CSS name
     map, with the license and the upstream source. 1,530 icons.

@@ -7,6 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(ElegenceViewExtensions)
+include(ElegenceHotReload)
 
 # Dependencies come from vcpkg.json (manifest mode). In classic mode vcpkg ignores the manifest
 # and find_package() fails later with a less helpful message.
@@ -36,6 +37,7 @@ add_subdirectory(src)
 
 if (ELG_BUILD_SANDBOX)
     add_subdirectory(apps/sandbox)
+    add_subdirectory(apps/preview)
 endif ()
 
 if (ELG_BUILD_EXAMPLES)
