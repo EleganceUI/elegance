@@ -17,6 +17,7 @@
 #include <elg/view.h>
 
 #include <memory>
+#include <typeinfo>
 #include <optional>
 
 namespace elg {
@@ -67,7 +68,18 @@ public:
     float layout_priority() const noexcept;
     bool is_spacer() const noexcept;
 
+    // The value set on this child with View::layout_value<Key>(...), else Key::default_value().
+    template <class Key>
+    typename Key::Value value() const {
+        if (const void* found = layout_value(typeid(Key))) {
+            return *static_cast<const typename Key::Value*>(found);
+        }
+        return Key::default_value();
+    }
+
 private:
+    const void* layout_value(const std::type_info& key) const;
+
     detail::Element* element_;
 };
 
@@ -81,6 +93,31 @@ public:
     virtual void place(Rect bounds, ProposedSize proposal, const LayoutChild& content) const = 0;
     // Overrides the content's layout priority when set.
     virtual std::optional<float> layout_priority() const { return std::nullopt; }
+};
+
+// Carries a value for the parent layout (View::layout_value) without changing layout.
+class ELG_API LayoutValueModifierBase : public LayoutModifier {
+public:
+    Size size_that_fits(ProposedSize proposal, const LayoutChild& content) const final {
+        return content.size_that_fits(proposal);
+    }
+    void place(Rect bounds, ProposedSize proposal, const LayoutChild& content) const final {
+        content.place({bounds.x, bounds.y}, proposal);
+    }
+    // The value for `key`, if this modifier carries it.
+    virtual const void* value_for(const std::type_info& key) const noexcept = 0;
+};
+
+template <class Key>
+class LayoutValueModifier final : public LayoutValueModifierBase {
+public:
+    explicit LayoutValueModifier(typename Key::Value value) : value_(std::move(value)) {}
+    const void* value_for(const std::type_info& key) const noexcept override {
+        return key == typeid(Key) ? &value_ : nullptr;
+    }
+
+private:
+    typename Key::Value value_;
 };
 
 // Adds a secondary view sized to the content: drawn behind it (background) or in front of

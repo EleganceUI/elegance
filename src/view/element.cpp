@@ -63,6 +63,7 @@ Size Element::size_that_fits(ProposedSize proposal) {
 void Element::invalidate_layout() noexcept {
     for (Element* element = this; element; element = element->parent_) {
         element->size_cache_.clear();
+        element->on_layout_invalidated();
     }
 }
 
@@ -388,6 +389,15 @@ void LayoutElement::rebuild_children() {
     }
 }
 
+const void* LayoutModifierElement::find_layout_value(const std::type_info& key) const noexcept {
+    if (const auto* carrier = dynamic_cast<const LayoutValueModifierBase*>(modifier_.get())) {
+        if (const void* value = carrier->value_for(key)) {
+            return value;
+        }
+    }
+    return content_->find_layout_value(key);
+}
+
 void LayoutElement::on_structure_changed() {
     // An If/ForEach inside changed what it shows. This layout is still one element to its
     // parent, so the change stops here.
@@ -396,14 +406,14 @@ void LayoutElement::on_structure_changed() {
 }
 
 Size LayoutElement::measure(ProposedSize proposal) {
-    return layout_->size_that_fits(proposal, handles_);
+    return layout_->cached_size_that_fits(proposal, handles_, cache_);
 }
 
 void LayoutElement::arrange(Rect bounds, ProposedSize proposal) {
     for (const auto& child : children_) {
         child->prune_exiting();
     }
-    layout_->place_children(bounds, proposal, handles_);
+    layout_->cached_place_children(bounds, proposal, handles_, cache_);
 }
 
 // Back to front: by z-index, then (exiting children after the rest, then) declaration order.

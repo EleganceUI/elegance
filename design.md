@@ -1672,10 +1672,33 @@ Separate render thread from day one (decided).
     names an element after its type. The inspector keeps index paths, never element pointers,
     so it can't outlive what it shows.
   - It's a separate window rather than an overlay, so it never changes the inspected layout.
-- [ ] Inspector follow-ups: environment values per element, the signal dependency graph,
-  modifier fusion, per-pass GPU timings, and editing values live.
-- [ ] Accessibility, previews / hot reload, custom `Layout` cache and layout values, docs &
-  examples
+- [ ] Inspector follow-ups:
+  - Environment values per element.
+  - Modifier fusion.
+  - Per-pass GPU timings.
+  - **State inspection**, planned and deferred:
+    - Tag each effect with the element being built when it was created, so a view's reactive
+      sources (`sources_`) can be listed.
+    - `State<T>` keeps a formatter when `T` is formattable, plus its `std::source_location` (or
+      an optional name), so values show as `todos.cpp:42 · count = 3`.
+    - For the selection: the states and computeds it reads, with values and the chain behind
+      each computed. An "All states" tab with reader counts and change flashes, then editing
+      simple values live.
+    - Dev builds only.
+- [x] Custom `Layout`, completed:
+  - `CachedLayout<Cache>` (`elg/layout.h`), SwiftUI's makeCache / updateCache.
+    - The cache lives in the laid-out view (`LayoutCache` in `LayoutElement`) and is made on
+      first layout.
+    - `update_cache` runs when children change (If/ForEach) or any descendant invalidates
+      layout. It's kept across measure, place and frames.
+    - Called without framework storage (by another layout), it builds a temporary cache.
+  - Layout values: `view.layout_value<Key>(value)` and `LayoutChild::value<Key>()`, where a key
+    is a type with `Value` and `default_value()`.
+    - Carried by a layout-transparent `LayoutValueModifier<Key>`.
+    - Found through the modifiers wrapping a child (effects, decorations, events, transitions),
+      never inside nested layouts.
+  - Sandbox: `FlowLayout` (wrapping tags) uses both, with a `RowBreak` value.
+- [ ] Accessibility, previews / hot reload, docs & examples
 - [x] Built-in icon library (§13.2), **Phosphor** 2.1.2 (MIT):
   - Vendored verbatim in `third_party/phosphor`: regular, bold and fill TTFs plus the CSS name
     map, with the license and the upstream source. 1,530 icons.

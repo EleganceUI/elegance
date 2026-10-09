@@ -69,6 +69,8 @@ template <class T>
 class Prop;
 template <class Key>
 class EnvironmentKeyModifier;
+template <class Key>
+class LayoutValueModifier;
 
 inline constexpr float infinity = std::numeric_limits<float>::infinity();
 
@@ -376,6 +378,15 @@ public:
     template <class Key, class Value>
     View environment(Value&& value) const {
         return modifier(EnvironmentKeyModifier<Key>(std::forward<Value>(value)));
+    }
+
+    // A value for the parent layout to read with LayoutChild::value<Key>() (custom layouts,
+    // elg/layout.h). A key is a type with a `Value` type and a `default_value()`:
+    //   struct Rank { using Value = int; static int default_value() { return 0; } };
+    //   Text("Gold").layout_value<Rank>(1)
+    template <class Key>
+    View layout_value(typename Key::Value value) const {
+        return modifier(LayoutValueModifier<Key>(std::move(value)));
     }
 
     // User extensions: a header of extra member declarations, set per target with

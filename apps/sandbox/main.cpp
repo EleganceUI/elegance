@@ -249,6 +249,90 @@ View IconCards() {
                       .card());
 }
 
+// A custom layout (design.md §7): children flow left to right and wrap into rows, like words.
+// The cache keeps each child's ideal size, measured once per change instead of on every pass;
+// a layout value starts a new row before a child.
+struct RowBreak {
+    using Value = bool;
+    static bool default_value() { return false; }
+};
+
+struct FlowCache {
+    std::vector<Size> sizes;
+    std::vector<bool> breaks;
+};
+
+struct FlowLayout : CachedLayout<FlowCache> {
+    float spacing = 8;
+
+    FlowCache make_cache(std::span<const LayoutChild> children) const override {
+        FlowCache cache;
+        for (const LayoutChild& child : children) {
+            cache.sizes.push_back(child.size_that_fits({}));
+            cache.breaks.push_back(child.value<RowBreak>());
+        }
+        return cache;
+    }
+
+    // Each child's position for a width, and the size of the whole.
+    std::vector<Point> flow(float max_width, const FlowCache& cache, Size& size) const {
+        std::vector<Point> positions;
+        float x = 0, y = 0, row_height = 0;
+        size = {};
+        for (std::size_t i = 0; i < cache.sizes.size(); ++i) {
+            const Size child = cache.sizes[i];
+            if (x > 0 && (cache.breaks[i] || x + child.width > max_width)) {
+                x = 0;
+                y += row_height + spacing;
+                row_height = 0;
+            }
+            positions.push_back({x, y});
+            x += child.width + spacing;
+            row_height = std::max(row_height, child.height);
+            size.width = std::max(size.width, x - spacing);
+        }
+        size.height = positions.empty() ? 0 : y + row_height;
+        return positions;
+    }
+
+    Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild>, FlowCache& cache) const override {
+        Size size;
+        flow(proposal.width.value_or(infinity), cache, size);
+        return size;
+    }
+
+    void place_children(Rect bounds, ProposedSize, std::span<const LayoutChild> children,
+                        FlowCache& cache) const override {
+        Size size;
+        const std::vector<Point> positions = flow(bounds.width, cache, size);
+        for (std::size_t i = 0; i < children.size(); ++i) {
+            children[i].place({bounds.x + positions[i].x, bounds.y + positions[i].y},
+                              ProposedSize{cache.sizes[i].width, cache.sizes[i].height});
+        }
+    }
+};
+
+View Tag(std::string title, Color color) {
+    return Text(std::move(title))
+        .font(Font::callout)
+        .padding(EdgeInsets{.top = 4, .leading = 10, .bottom = 4, .trailing = 10})
+        .background(Capsule().fill(color.opacity(0.25f)));
+}
+
+View LayoutCards() {
+    const auto tags = [] {
+        return FlowLayout{}(Tag("C++23", palette::blue), Tag("Vulkan", palette::red), Tag("SwiftUI-style", palette::mauve),
+                            Tag("reactive", palette::green), Tag("MSDF text", palette::peach), Tag("GPU paths", palette::sky),
+                            Tag("new row", palette::green).layout_value<RowBreak>(true), Tag("layout values", palette::mauve),
+                            Tag("cached", palette::blue));
+    };
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(tags().frame({.width = 220, .alignment = Alignment::top_leading}),
+                            "FlowLayout: CachedLayout, 220 pt").card(),
+                  Captioned(tags().frame({.width = 380, .alignment = Alignment::top_leading}),
+                            "The same at 380 pt; layout_value<RowBreak>").card());
+}
+
 // ZStack: layering with alignment, z_index, and priority sizing.
 View StackCards() {
     // A badge pinned to the corner of what it labels.
@@ -585,6 +669,7 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
                          IconCards(),
                          ShapeCards(),
                          StackCards(),
+                         LayoutCards(),
                          // Like SwiftUI's .fixedSize(horizontal: false, vertical: true): take the
                          // text's full height instead of an equal share against the Spacer.
                          TextCards().fixed_size(false, true),

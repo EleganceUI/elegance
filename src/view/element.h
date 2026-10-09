@@ -111,6 +111,8 @@ public:
     // Something that affects this element's size changed (e.g. reactive text): drops the cached
     // sizes of this element and every ancestor.
     void invalidate_layout() noexcept;
+    // A value from View::layout_value on this element or the modifiers wrapping its content.
+    virtual const void* find_layout_value(const std::type_info&) const noexcept { return nullptr; }
 
     // How a parent layout sees this element: itself, or for If/ForEach the elements they show
     // right now (flattened), or nothing for EmptyView.
@@ -141,6 +143,8 @@ protected:
     // A descendant If/ForEach changed what it shows. Layouts rebuild their child lists; other
     // elements pass it on.
     virtual void on_structure_changed() { notify_structure_changed(); }
+    // This element's cached sizes were dropped (it, or something inside, changed).
+    virtual void on_layout_invalidated() noexcept {}
 
     // Hits nothing by default (spacers, empty views). Containers test their children.
     virtual bool hit_impl(Point, std::vector<Element*>&) { return false; }
@@ -341,6 +345,9 @@ private:
 // when added and out when removed during an animated update.
 class TransitionElement final : public Element {
 public:
+    const void* find_layout_value(const std::type_info& key) const noexcept override {
+        return content_->find_layout_value(key);
+    }
     TransitionElement(Transition transition, std::unique_ptr<Element> content)
         : transition_(std::move(transition)), content_(std::move(content)) {
         adopt(*content_);
@@ -387,12 +394,14 @@ protected:
     void paint_impl(DisplayList& list) const override;
     bool hit_impl(Point point, std::vector<Element*>& path) override;
     void on_structure_changed() override;
+    void on_layout_invalidated() noexcept override { cache_.stale = true; }
 
 private:
     void rebuild_children();
     std::vector<Element*> paint_order() const;
 
     std::shared_ptr<const Layout> layout_;
+    LayoutCache cache_; // for CachedLayout
     std::vector<std::unique_ptr<Element>> children_; // owned, as built
     std::vector<Element*> laid_out_;                 // what the layout sees: If/ForEach flattened
     std::vector<LayoutChild> handles_;
@@ -400,6 +409,7 @@ private:
 
 class LayoutModifierElement final : public Element {
 public:
+    const void* find_layout_value(const std::type_info& key) const noexcept override;
     void inspect(Inspection& out) const override;
     LayoutModifierElement(std::shared_ptr<const LayoutModifier> modifier, std::unique_ptr<Element> content)
         : modifier_(std::move(modifier)), content_(std::move(content)) {
@@ -426,6 +436,9 @@ private:
 // fast path (alpha multiply, analytic shadow); anything else is rendered as an offscreen layer.
 class EffectElement final : public Element {
 public:
+    const void* find_layout_value(const std::type_info& key) const noexcept override {
+        return content_->find_layout_value(key);
+    }
     void inspect(Inspection& out) const override;
     EffectElement(Effects effects, std::unique_ptr<Element> content)
         : effects_(std::move(effects)), content_(std::move(content)) {
@@ -466,6 +479,9 @@ private:
 
 class DecorationElement final : public Element {
 public:
+    const void* find_layout_value(const std::type_info& key) const noexcept override {
+        return content_->find_layout_value(key);
+    }
     void inspect(Inspection& out) const override;
     DecorationElement(std::shared_ptr<const DecorationModifier> modifier, std::unique_ptr<Element> content,
                       std::unique_ptr<Element> decoration)
@@ -497,6 +513,9 @@ private:
 // A view with an EventModifier: owns the handler; layout, paint, and hit testing pass through.
 class EventElement final : public Element {
 public:
+    const void* find_layout_value(const std::type_info& key) const noexcept override {
+        return content_->find_layout_value(key);
+    }
     // `environment_delay` reads the environment's hover delay (used unless the handler has its own).
     EventElement(std::unique_ptr<EventHandler> handler, std::unique_ptr<Element> content,
                  std::function<HoverDelay()> environment_delay)
