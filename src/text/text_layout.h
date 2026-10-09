@@ -24,6 +24,8 @@ struct ShapedGlyph {
     float y_offset = 0;
     bool is_space = false;    // whitespace: trimmed at line ends
     bool break_after = false; // a line may break after this glyph
+    // The font the glyph is from when it isn't the paragraph's (font fallback); nullptr otherwise.
+    const FontFace* face = nullptr;
 };
 
 // One paragraph (text between newlines), shaped once at mount.
@@ -31,9 +33,10 @@ struct ShapedParagraph {
     std::vector<ShapedGlyph> glyphs;
 };
 
-// Splits at '\n' and shapes each paragraph with HarfBuzz.
-// TODO: bidi, script itemization, font fallback, UAX #14 line breaking (design.md §11).
-std::vector<ShapedParagraph> shape_text(const FontFace& face, std::string_view text);
+// Splits at '\n' and shapes each paragraph with HarfBuzz. With `fonts`, characters `face` lacks
+// come from the system fallback fonts (glyphs from them carry their face).
+// TODO: bidi, script itemization, UAX #14 line breaking (design.md §11).
+std::vector<ShapedParagraph> shape_text(const FontFace& face, std::string_view text, FontLibrary* fonts = nullptr);
 
 struct TextLine {
     std::size_t paragraph = 0;

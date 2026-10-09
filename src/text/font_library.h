@@ -35,6 +35,8 @@ public:
     std::uint32_t id() const noexcept { return id_; }
     // An icon set's font: glyphs get a single-channel distance field (see GlyphAtlas).
     bool icon() const noexcept { return icon_; }
+    // Whether the font has a glyph for `codepoint`.
+    bool has_char(char32_t codepoint) const;
     FT_Face ft_face() const noexcept { return ft_face_; }
     hb_font_t* hb_font() const noexcept { return hb_font_; }
     float units_per_em() const noexcept { return units_per_em_; }
@@ -70,9 +72,22 @@ public:
     // Throws elg::ResourceError if the font can't be found or loaded.
     const FontFace& resolve(const Font& font);
 
+    // Font fallback (design.md §11): the first system fallback font that has `codepoint`, or
+    // nullptr. The chain (symbols, emoji, CJK, other scripts) loads on first use.
+    const FontFace* fallback_for(char32_t codepoint);
+
 private:
+    const FontFace& load(const std::string& key, const std::filesystem::path& file);
+
     FT_Library library_ = nullptr;
     std::unordered_map<std::string, std::unique_ptr<FontFace>> faces_; // by file path or memory key
+    // The fallback chain: loaded one font at a time, only when the fonts before it don't have a
+    // character (a CJK font isn't read until CJK text appears).
+    std::vector<std::filesystem::path> fallback_files_;
+    std::vector<const FontFace*> fallbacks_; // loaded so far, in chain order
+    std::size_t fallbacks_tried_ = 0;        // files of the chain looked at so far
+    bool fallback_files_listed_ = false;
+    std::unordered_map<char32_t, const FontFace*> fallback_cache_;
 };
 
 } // namespace elg::detail

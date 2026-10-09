@@ -195,6 +195,11 @@ View View::font(Prop<Font> font) const {
     return modifier(FontModifier(std::move(font)));
 }
 
+View View::font_weight(Weight weight) const {
+    // Resolved against the surrounding environment, so this reads the font from outside.
+    return font([weight](const EnvironmentValues& environment) { return environment.get<FontKey>().weight(weight); });
+}
+
 View View::foreground_style(Prop<Color> color) const {
     return modifier(ForegroundStyleModifier(std::move(color)));
 }

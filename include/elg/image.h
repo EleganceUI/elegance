@@ -65,13 +65,23 @@ private:
     ELG_PRIVATE_MEMBERS_END
 };
 
+// A variant of an icon set ("<set>.<icon>.<variant>"): its font, and its own name map when its
+// codepoints differ from the set's (empty: the set's).
+struct IconVariant {
+    std::string name;
+    IconFont font;
+    std::filesystem::path names;
+    std::string_view names_data;
+};
+
 struct IconSetOptions {
-    IconFont font;                                           // the regular weight
-    std::vector<std::pair<Weight, IconFont>> weights;        // more weights (for .font_weight())
-    std::vector<std::pair<std::string, IconFont>> variants;  // "<set>.<icon>.<variant>" fonts
+    IconFont font;                                    // the regular weight
+    std::vector<std::pair<Weight, IconFont>> weights; // more weights (for .font_weight())
+    std::vector<IconVariant> variants;                // e.g. {"fill", "brand-fill.ttf"}
     // The name -> codepoint map, as the set ships it. Formats are recognized by content:
     //  - CSS from icon webfonts: `.prefix-name:before { content: "\e900"; }` (a prefix shared by
-    //    every name, like "ph-", is removed);
+    //    every name, like "ph-", is removed). An `:after` rule adds a second layer drawn over the
+    //    first, and `opacity:` sets a layer's opacity (two-tone icons);
     //  - JSON: {"name": "e900", ...} or {"name": 59648, ...};
     //  - Material-style codepoints text: one "name e900" per line.
     // The same names apply to every weight and variant.

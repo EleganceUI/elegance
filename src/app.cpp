@@ -41,6 +41,9 @@ namespace {
 // continuing (first frame, live resize). Bounded so a stuck driver can't freeze the app.
 constexpr auto kPresentTimeout = 100ms;
 constexpr auto kFirstFrameTimeout = 1000ms;
+// How long a new window (or popup) waits for its glyphs before showing anyway.
+constexpr auto kGlyphWarmup = 1500ms;
+constexpr auto kPopupGlyphWarmup = 150ms;
 // While animating, the loop paces itself by waiting for the previous frame's present (vsync);
 // this bounds the wait if presentation stalls.
 constexpr auto kAnimationFrameTimeout = 50ms;
@@ -350,8 +353,11 @@ int App::run() {
     const std::vector<const char*> extensions = platform.vulkan_instance_extensions();
     gpu::Instance instance(extensions);
 
-    // Fonts and glyphs, shared by all windows; outlives every element tree.
+    // Fonts and glyphs, shared by all windows; outlives every element tree. Glyphs finishing on
+    // the atlas's workers wake the event loop to draw them.
     TextSystem text;
+    text.atlas.set_on_ready([&platform] { platform.wake(); });
+    ScopeExit stop_glyph_wakes([&text] { text.atlas.set_on_ready({}); });
 
     // Every window's environment starts from the system's light/dark setting, as reactive state:
     // when it changes, only the colors that depend on it update.
@@ -440,8 +446,15 @@ int App::run() {
         return live.last_frame;
     };
 
-    // Draw before showing, so windows never appear blank.
+    // Draw before showing, so windows never appear blank: lay out once (which requests the
+    // glyphs), let the glyph workers finish (briefly), then draw with them.
     std::uint64_t first_frame = 0;
+    for (const auto& live : windows) {
+        first_frame = post_frame(*live);
+    }
+    if (!text.atlas.wait_idle(kGlyphWarmup)) {
+        log_debug("showing windows before all glyphs are ready");
+    }
     for (const auto& live : windows) {
         first_frame = post_frame(*live);
     }
@@ -562,6 +575,8 @@ int App::run() {
         live->window.set_popup_frame({origin.x - kPopupMargin, origin.y - kPopupMargin, size.width, size.height});
 
         mailbox.post(AddWindowCommand{live->window.id(), live->surface.handle(), true, live->window.native_handle()});
+        post_frame(*live); // requests its glyphs
+        text.atlas.wait_idle(kPopupGlyphWarmup);
         mailbox.wait_until_done(post_frame(*live), kFirstFrameTimeout);
         live->window.show();
         const std::uint32_t id = live->window.id();
@@ -764,6 +779,11 @@ int App::run() {
         }
         while (auto event = platform.poll_event()) {
             handle(*event);
+        }
+        if (text.atlas.has_uploads()) {
+            for (const auto& live : windows) {
+                live->dirty = true; // glyphs finished on the workers: draw them
+            }
         }
         for (const auto& live : windows) {
             if (live->events.tick()) { // hover changes whose delay has passed

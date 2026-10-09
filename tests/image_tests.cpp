@@ -41,6 +41,12 @@ TEST_CASE("built-in Phosphor icons resolve by name", "[image]") {
     CHECK_NOTHROW(Label("Search", {.system_name = "magnifying-glass"}));
 }
 
+TEST_CASE("Phosphor's extra weights and duotone resolve", "[image]") {
+    CHECK_NOTHROW(Image({.system_name = "phosphor.heart.duotone"}));
+    CHECK_NOTHROW(Image("gear").font_weight(Weight::thin));
+    CHECK_NOTHROW(Image("gear").font_weight(Weight::light));
+}
+
 TEST_CASE("unknown icons name the closest matches", "[image]") {
     const std::string message = error_of([] { Image("phosphor.hart"); });
     CHECK_THAT(message, ContainsSubstring("no icon \"hart\""));
@@ -68,9 +74,22 @@ TEST_CASE("icon sets register from the maps they ship", "[image]") {
                           {.font = std::span<const unsigned char>(kFakeFont), .names_data = "home e88a\nsearch e8b6\n", .replace = true});
         CHECK_NOTHROW(Image("test-points.home"));
     }
+    SECTION("two-tone layers from :before / :after with opacity, in a variant with its own map") {
+        register_icon_set("test-duo", {.font = std::span<const unsigned char>(kFakeFont),
+                                       .variants = {{.name = "duo",
+                                                     .font = std::span<const unsigned char>(kFakeFont),
+                                                     .names_data = R"(.x-duo.x-cup:before { content: "\e910"; opacity: 0.2; }
+                                                                      .x-duo.x-cup:after { content: "\e911"; margin-left: -1em; }
+                                                                      .x-duo.x-mug:before { content: "\e912"; opacity: 0.2; }
+                                                                      .x-duo.x-mug:after { content: "\e913"; margin-left: -1em; })"}},
+                                       .names_data = "cup e900\nmug e901\n",
+                                       .replace = true});
+        CHECK_NOTHROW(Image("test-duo.cup"));
+        CHECK_NOTHROW(Image("test-duo.cup.duo"));
+    }
     SECTION("variants") {
         register_icon_set("test-variants", {.font = std::span<const unsigned char>(kFakeFont),
-                                            .variants = {{"fill", std::span<const unsigned char>(kFakeFont)}},
+                                            .variants = {{.name = "fill", .font = std::span<const unsigned char>(kFakeFont)}},
                                             .names_data = "star e900\n",
                                             .replace = true});
         CHECK_NOTHROW(Image("test-variants.star.fill"));

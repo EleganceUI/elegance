@@ -101,7 +101,7 @@ void TextElement::set_font(const Font& font) {
     for (const ShapedGlyph& glyph : ellipsis_.glyphs) {
         ellipsis_width_ += glyph.advance * size_;
     }
-    paragraphs_ = shape_text(*face_, content_);
+    paragraphs_ = shape_text(*face_, content_, &text_->fonts);
     invalidate_layout();
 }
 
@@ -112,7 +112,7 @@ void TextElement::set_content(std::string_view content) {
     content_ = content;
     snap_next_layout();
     if (face_) {
-        paragraphs_ = shape_text(*face_, content_);
+        paragraphs_ = shape_text(*face_, content_, &text_->fonts);
     }
     invalidate_layout();
 }
@@ -153,7 +153,7 @@ void TextElement::paint_impl(DisplayList& list) const {
             std::round((bounds.y + ascent_ + static_cast<float>(i) * line_height_) * scale) / scale;
 
         const auto emit = [&](const ShapedGlyph& glyph) {
-            if (const AtlasGlyph* atlas = text_->atlas.find_or_add(*face_, glyph.id)) {
+            if (const AtlasGlyph* atlas = text_->atlas.find_or_add(glyph.face ? *glyph.face : *face_, glyph.id)) {
                 const Rect quad{pen + (glyph.x_offset + atlas->left) * size_,
                                 baseline - (glyph.y_offset + atlas->top) * size_,
                                 (atlas->right - atlas->left) * size_, (atlas->top - atlas->bottom) * size_};

@@ -32,6 +32,16 @@ extern const unsigned char phosphor_fill[];
 extern const std::size_t phosphor_fill_size;
 extern const unsigned char phosphor_css[];
 extern const std::size_t phosphor_css_size;
+#if defined(ELG_HAS_PHOSPHOR_EXTRA)
+extern const unsigned char phosphor_thin[];
+extern const std::size_t phosphor_thin_size;
+extern const unsigned char phosphor_light[];
+extern const std::size_t phosphor_light_size;
+extern const unsigned char phosphor_duotone[];
+extern const std::size_t phosphor_duotone_size;
+extern const unsigned char phosphor_duotone_css[];
+extern const std::size_t phosphor_duotone_css_size;
+#endif
 } // namespace elg::detail::embedded
 #endif
 
@@ -39,10 +49,22 @@ namespace elg {
 
 namespace {
 
+// One icon: glyphs drawn on top of each other (most icons have one; two-tone icons two).
+struct IconLayer {
+    char32_t code = 0;
+    float opacity = 1;
+};
+using IconGlyphs = std::map<std::string, std::vector<IconLayer>, std::less<>>;
+
+struct IconVariantSet {
+    std::string family;
+    IconGlyphs glyphs; // empty: the set's
+};
+
 struct IconSet {
-    std::string family;                                 // the regular (and weights) font family
-    std::map<std::string, std::string, std::less<>> variants; // variant -> font family
-    std::map<std::string, char32_t, std::less<>> glyphs;      // icon name -> codepoint
+    std::string family;                                       // the regular (and weights) font family
+    std::map<std::string, IconVariantSet, std::less<>> variants;
+    IconGlyphs glyphs;                                        // icon name -> layers
 };
 
 std::mutex g_mutex;
@@ -72,22 +94,45 @@ std::optional<char32_t> parse_codepoint(std::string_view text) {
 }
 
 // `.prefix-name:before { content: "\e900"; }`: the class right before ":before" names the icon.
-std::map<std::string, char32_t, std::less<>> parse_css(std::string_view css) {
-    std::map<std::string, char32_t, std::less<>> glyphs;
+// `:after` adds a second layer on top; `opacity: 0.2` dims a layer (two-tone icons).
+IconGlyphs parse_css(std::string_view css) {
+    IconGlyphs glyphs;
     std::size_t at = 0;
-    while ((at = css.find(":before", at)) != std::string_view::npos) {
+    while ((at = css.find(':', at)) != std::string_view::npos) {
+        const bool before = css.substr(at, 7) == ":before";
+        const bool after = css.substr(at, 6) == ":after";
+        if (!before && !after) {
+            ++at;
+            continue;
+        }
         const std::size_t dot = css.rfind('.', at);
-        const std::size_t content = css.find("content", at);
+        const std::size_t open = css.find('{', at);
         const std::size_t close = css.find('}', at);
-        if (dot == std::string_view::npos || content == std::string_view::npos || content > close) {
-            at += 7;
+        const std::size_t content = css.find("content", at);
+        if (dot == std::string_view::npos || open == std::string_view::npos || close == std::string_view::npos ||
+            content == std::string_view::npos || content > close || open > close) {
+            ++at;
             continue;
         }
         const std::string_view name = css.substr(dot + 1, at - dot - 1);
+        const std::string_view body = css.substr(open, close - open);
+        IconLayer layer;
         const std::size_t quote = css.find_first_of("\"'", content);
         if (quote != std::string_view::npos && quote < close) {
             if (const auto code = parse_codepoint(css.substr(quote + 1, 12))) {
-                glyphs.emplace(std::string(name), *code);
+                layer.code = *code;
+                if (const std::size_t opacity = body.find("opacity"); opacity != std::string_view::npos) {
+                    const std::size_t value = body.find_first_of("0123456789.", opacity);
+                    if (value != std::string_view::npos) {
+                        layer.opacity = std::clamp(std::stof(std::string(body.substr(value, 8))), 0.f, 1.f);
+                    }
+                }
+                std::vector<IconLayer>& layers = glyphs[std::string(name)];
+                if (before) {
+                    layers.insert(layers.begin(), layer);
+                } else {
+                    layers.push_back(layer);
+                }
             }
         }
         at = close;
@@ -95,7 +140,7 @@ std::map<std::string, char32_t, std::less<>> parse_css(std::string_view css) {
     // Drop the class prefix every name shares ("ph-", "fa-", ...).
     if (glyphs.size() > 1) {
         std::string prefix = glyphs.begin()->first;
-        for (const auto& [name, code] : glyphs) {
+        for (const auto& [name, layers] : glyphs) {
             std::size_t n = 0;
             while (n < prefix.size() && n < name.size() && prefix[n] == name[n]) {
                 ++n;
@@ -104,9 +149,9 @@ std::map<std::string, char32_t, std::less<>> parse_css(std::string_view css) {
         }
         if (const std::size_t dash = prefix.rfind('-'); dash != std::string::npos) {
             prefix.resize(dash + 1);
-            std::map<std::string, char32_t, std::less<>> stripped;
-            for (const auto& [name, code] : glyphs) {
-                stripped.emplace(name.substr(prefix.size()), code);
+            IconGlyphs stripped;
+            for (const auto& [name, layers] : glyphs) {
+                stripped.emplace(name.substr(prefix.size()), layers);
             }
             return stripped;
         }
@@ -115,8 +160,8 @@ std::map<std::string, char32_t, std::less<>> parse_css(std::string_view css) {
 }
 
 // A flat JSON object: {"name": "e900"} or {"name": 59648}.
-std::map<std::string, char32_t, std::less<>> parse_json(std::string_view json) {
-    std::map<std::string, char32_t, std::less<>> glyphs;
+IconGlyphs parse_json(std::string_view json) {
+    IconGlyphs glyphs;
     std::size_t at = 0;
     while ((at = json.find('"', at)) != std::string_view::npos) {
         const std::size_t end = json.find('"', at + 1);
@@ -146,7 +191,7 @@ std::map<std::string, char32_t, std::less<>> parse_json(std::string_view json) {
             }
         }
         if (code) {
-            glyphs.emplace(name, *code);
+            glyphs.emplace(name, std::vector{IconLayer{*code}});
         }
         at = next;
     }
@@ -154,20 +199,20 @@ std::map<std::string, char32_t, std::less<>> parse_json(std::string_view json) {
 }
 
 // "name e900" per line.
-std::map<std::string, char32_t, std::less<>> parse_codepoints(std::string_view text) {
-    std::map<std::string, char32_t, std::less<>> glyphs;
+IconGlyphs parse_codepoints(std::string_view text) {
+    IconGlyphs glyphs;
     std::istringstream lines{std::string(text)};
     std::string name;
     std::string code;
     while (lines >> name >> code) {
         if (const auto value = parse_codepoint(code)) {
-            glyphs.emplace(name, *value);
+            glyphs.emplace(name, std::vector{IconLayer{*value}});
         }
     }
     return glyphs;
 }
 
-std::map<std::string, char32_t, std::less<>> parse_names(std::string_view text) {
+IconGlyphs parse_names(std::string_view text) {
     const std::size_t first = text.find_first_not_of(" \t\r\n\xEF\xBB\xBF");
     if (first != std::string_view::npos && text[first] == '{' && text.find(":before") == std::string_view::npos) {
         return parse_json(text);
@@ -201,11 +246,22 @@ void register_builtin_sets() {
 #if defined(ELG_HAS_PHOSPHOR)
     using namespace detail::embedded;
     // Phosphor (MIT), third_party/phosphor. Registered like any app's set would be.
-    register_icon_set("phosphor",
-                      {.font = std::span(phosphor_regular, phosphor_regular_size),
-                       .weights = {{Weight::bold, std::span(phosphor_bold, phosphor_bold_size)}},
-                       .variants = {{"fill", std::span(phosphor_fill, phosphor_fill_size)}},
-                       .names_data = std::string_view(reinterpret_cast<const char*>(phosphor_css), phosphor_css_size)});
+    IconSetOptions phosphor{
+        .font = std::span(phosphor_regular, phosphor_regular_size),
+        .weights = {{Weight::bold, std::span(phosphor_bold, phosphor_bold_size)}},
+        .variants = {{.name = "fill", .font = std::span(phosphor_fill, phosphor_fill_size)}},
+        .names_data = std::string_view(reinterpret_cast<const char*>(phosphor_css), phosphor_css_size),
+    };
+#if defined(ELG_HAS_PHOSPHOR_EXTRA)
+    phosphor.weights.emplace_back(Weight::thin, std::span(phosphor_thin, phosphor_thin_size));
+    phosphor.weights.emplace_back(Weight::light, std::span(phosphor_light, phosphor_light_size));
+    // Duotone has its own codepoints: two layers per icon, the back one at 20% opacity.
+    phosphor.variants.push_back(
+        {.name = "duotone",
+         .font = std::span(phosphor_duotone, phosphor_duotone_size),
+         .names_data = std::string_view(reinterpret_cast<const char*>(phosphor_duotone_css), phosphor_duotone_css_size)});
+#endif
+    register_icon_set("phosphor", std::move(phosphor));
 #endif
 }
 
@@ -231,10 +287,10 @@ std::size_t edit_distance(std::string_view a, std::string_view b) {
     return row[b.size()];
 }
 
-// A resolved icon: the font family to draw it with and its character.
+// A resolved icon: the font family to draw it with and its layers (characters, UTF-8).
 struct ResolvedIcon {
     std::string family;
-    std::string glyph; // UTF-8
+    std::vector<std::pair<std::string, float>> layers; // glyph, opacity
 };
 
 std::string to_utf8(char32_t code) {
@@ -282,10 +338,14 @@ ResolvedIcon resolve(std::string_view system_name) {
         throw UsageError(std::format("Image(\"{}\"): no icon set \"{}\" is registered", system_name, set_name));
     }
     std::string family = set->second.family;
+    const IconGlyphs* glyphs = &set->second.glyphs;
     std::size_t last = parts.size();
     if (last - first >= 2) {
         if (const auto variant = set->second.variants.find(parts.back()); variant != set->second.variants.end()) {
-            family = variant->second;
+            family = variant->second.family;
+            if (!variant->second.glyphs.empty()) {
+                glyphs = &variant->second.glyphs;
+            }
             --last;
         }
     }
@@ -295,11 +355,11 @@ ResolvedIcon resolve(std::string_view system_name) {
         icon += parts[i];
     }
 
-    const auto glyph = set->second.glyphs.find(icon);
-    if (glyph == set->second.glyphs.end()) {
+    const auto glyph = glyphs->find(icon);
+    if (glyph == glyphs->end()) {
         // Suggest the nearest names.
         std::vector<std::pair<std::size_t, const std::string*>> nearest;
-        for (const auto& [name, code] : set->second.glyphs) {
+        for (const auto& [name, layers] : *glyphs) {
             nearest.emplace_back(edit_distance(icon, name), &name);
         }
         std::ranges::partial_sort(nearest, nearest.begin() + static_cast<std::ptrdiff_t>(std::min<std::size_t>(3, nearest.size())));
@@ -310,7 +370,11 @@ ResolvedIcon resolve(std::string_view system_name) {
         throw UsageError(std::format("Image(\"{}\"): the icon set \"{}\" has no icon \"{}\"{}", system_name, set_name,
                                      icon, hint.empty() ? "" : "; did you mean " + hint + "?"));
     }
-    return {family, to_utf8(glyph->second)};
+    ResolvedIcon resolved{family, {}};
+    for (const IconLayer& layer : glyph->second) {
+        resolved.layers.emplace_back(to_utf8(layer.code), layer.opacity);
+    }
+    return resolved;
 }
 
 } // namespace
@@ -347,10 +411,18 @@ void register_icon_set(std::string name, IconSetOptions options) {
     for (const auto& [weight, font] : options.weights) {
         register_icon_font(set.family, font, weight);
     }
-    for (const auto& [variant, font] : options.variants) {
-        const std::string family = std::format("elg.icons.{}.{}.{}", name, id, variant);
-        register_icon_font(family, font, Weight::regular);
-        set.variants.emplace(variant, family);
+    for (const IconVariant& variant : options.variants) {
+        if (variant.name.empty() || variant.name.find('.') != std::string::npos || variant.font.empty()) {
+            throw UsageError(std::format("register_icon_set(\"{}\"): variants need a name (no dots) and a font", name));
+        }
+        IconVariantSet variant_set;
+        variant_set.family = std::format("elg.icons.{}.{}.{}", name, id, variant.name);
+        if (!variant.names_data.empty() || !variant.names.empty()) {
+            variant_set.glyphs = parse_names(variant.names_data.empty() ? read_text(variant.names)
+                                                                         : std::string(variant.names_data));
+        }
+        register_icon_font(variant_set.family, variant.font, Weight::regular);
+        set.variants.emplace(variant.name, std::move(variant_set));
     }
 
     std::lock_guard lock(g_mutex);
@@ -402,7 +474,21 @@ namespace elg {
 
 View Image(ImageSource source) {
     ResolvedIcon icon = resolve(source.system_name);
-    return detail::ViewAccess::make(std::make_shared<const detail::IconNode>(std::move(icon.family), std::move(icon.glyph)));
+    const auto layer = [&](std::size_t index) {
+        View view = detail::ViewAccess::make(
+            std::make_shared<const detail::IconNode>(icon.family, std::move(icon.layers[index].first)));
+        const float opacity = icon.layers[index].second;
+        return opacity < 1 ? view.opacity(opacity) : view;
+    };
+    if (icon.layers.size() == 1) {
+        return layer(0);
+    }
+    // Two-tone icons: the layers stacked, each in the same color at its own opacity.
+    std::vector<View> layers;
+    for (std::size_t i = 0; i < icon.layers.size(); ++i) {
+        layers.push_back(layer(i));
+    }
+    return ZStackLayout()(std::move(layers));
 }
 
 View Image(std::string_view system_name) {

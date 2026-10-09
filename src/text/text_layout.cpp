@@ -17,6 +17,35 @@ namespace {
 // Absorbs float error so text measured at width W also fits when laid out at exactly W.
 constexpr float kFitTolerance = 0.01f;
 
+// Decodes the UTF-8 character at `at` (advancing it). Invalid bytes decode as U+FFFD.
+char32_t decode(std::string_view text, std::size_t& at) {
+    const auto byte = [&](std::size_t i) { return static_cast<unsigned char>(text[i]); };
+    const unsigned char lead = byte(at);
+    int extra = lead < 0x80 ? 0 : lead >= 0xF0 ? 3 : lead >= 0xE0 ? 2 : lead >= 0xC0 ? 1 : -1;
+    if (extra < 0 || at + static_cast<std::size_t>(extra) >= text.size() + (extra == 0 ? 1 : 0)) {
+        ++at;
+        return 0xFFFD;
+    }
+    char32_t code = extra == 0 ? lead : lead & (0x3F >> extra);
+    for (int i = 1; i <= extra; ++i) {
+        code = (code << 6) | (byte(at + static_cast<std::size_t>(i)) & 0x3F);
+    }
+    at += static_cast<std::size_t>(extra) + 1;
+    return code;
+}
+
+// Characters that join the one before them rather than choosing a font of their own.
+bool is_joiner(char32_t c) {
+    return (c >= 0x0300 && c <= 0x036F) || (c >= 0xFE00 && c <= 0xFE0F) || c == 0x200D || (c >= 0x1F3FB && c <= 0x1F3FF) ||
+           (c >= 0xE0100 && c <= 0xE01EF);
+}
+
+// CJK text breaks between any two characters.
+bool breaks_anywhere(char32_t c) {
+    return (c >= 0x2E80 && c <= 0x9FFF) || (c >= 0xAC00 && c <= 0xD7AF) || (c >= 0xF900 && c <= 0xFAFF) ||
+           (c >= 0xFF00 && c <= 0xFFEF) || (c >= 0x20000 && c <= 0x3FFFF);
+}
+
 ShapedParagraph shape_paragraph(const FontFace& face, std::string_view text) {
     ShapedParagraph paragraph;
     if (text.empty()) {
@@ -38,6 +67,8 @@ ShapedParagraph shape_paragraph(const FontFace& face, std::string_view text) {
         // The cluster is the byte offset of the first character the glyph came from.
         const char c = infos[i].cluster < text.size() ? text[infos[i].cluster] : '\0';
         const bool space = c == ' ' || c == '\t';
+        std::size_t at = infos[i].cluster;
+        const char32_t code = at < text.size() ? decode(text, at) : 0;
         paragraph.glyphs.push_back({
             .id = infos[i].codepoint, // after shaping, this is the glyph index
             .cluster = infos[i].cluster,
@@ -45,7 +76,7 @@ ShapedParagraph shape_paragraph(const FontFace& face, std::string_view text) {
             .x_offset = static_cast<float>(positions[i].x_offset) / em,
             .y_offset = static_cast<float>(positions[i].y_offset) / em,
             .is_space = space,
-            .break_after = space || c == '-',
+            .break_after = space || c == '-' || breaks_anywhere(code),
         });
     }
     hb_buffer_destroy(buffer);
@@ -106,7 +137,71 @@ void wrap_paragraph(const ShapedParagraph& paragraph, std::size_t index, float s
 
 } // namespace
 
-std::vector<ShapedParagraph> shape_text(const FontFace& face, std::string_view text) {
+// Re-shapes the parts `face` has no glyphs for (glyph 0) with fallback fonts.
+ShapedParagraph shape_with_fallback(const FontFace& face, std::string_view text, FontLibrary& fonts) {
+    ShapedParagraph shaped = shape_paragraph(face, text);
+    if (face.icon() || std::ranges::none_of(shaped.glyphs, [](const ShapedGlyph& g) { return g.id == 0; })) {
+        return shaped;
+    }
+    const std::vector<ShapedGlyph>& glyphs = shaped.glyphs;
+    ShapedParagraph result;
+    result.glyphs.reserve(glyphs.size());
+    std::size_t i = 0;
+    while (i < glyphs.size()) {
+        if (glyphs[i].id != 0) {
+            result.glyphs.push_back(glyphs[i++]);
+            continue;
+        }
+        // A run of missing glyphs: the text it covers (clusters increase left to right).
+        // Glyphs sharing a cluster belong together (e.g. an emoji and its invisible variation
+        // selector), so the run takes them too.
+        std::size_t j = i;
+        while (j < glyphs.size() && (glyphs[j].id == 0 || (j > i && glyphs[j].cluster == glyphs[j - 1].cluster))) {
+            ++j;
+        }
+        const std::size_t begin = glyphs[i].cluster;
+        const std::size_t end = j < glyphs.size() ? glyphs[j].cluster : text.size();
+        if (end <= begin) {
+            result.glyphs.insert(result.glyphs.end(), glyphs.begin() + static_cast<std::ptrdiff_t>(i),
+                                 glyphs.begin() + static_cast<std::ptrdiff_t>(j));
+            i = j;
+            continue;
+        }
+        // Split it into pieces by the first fallback font that has each character, and shape each
+        // piece with its font. Characters nobody has stay as the primary font's missing glyph.
+        std::size_t at = begin;
+        while (at < end) {
+            std::size_t next = at;
+            const char32_t first = decode(text, next);
+            const FontFace* chosen = fonts.fallback_for(first);
+            if (!chosen && is_joiner(first)) {
+                at = next; // a variation selector or joiner no font draws: it has no look of its own
+                continue;
+            }
+            std::size_t piece_end = next;
+            while (piece_end < end) {
+                std::size_t peek = piece_end;
+                const char32_t c = decode(text, peek);
+                if (!is_joiner(c) && fonts.fallback_for(c) != chosen) {
+                    break;
+                }
+                piece_end = peek;
+            }
+            const FontFace& piece_face = chosen ? *chosen : face;
+            ShapedParagraph piece = shape_paragraph(piece_face, text.substr(at, piece_end - at));
+            for (ShapedGlyph& glyph : piece.glyphs) {
+                glyph.cluster += static_cast<std::uint32_t>(at);
+                glyph.face = chosen;
+                result.glyphs.push_back(glyph);
+            }
+            at = piece_end;
+        }
+        i = j;
+    }
+    return result;
+}
+
+std::vector<ShapedParagraph> shape_text(const FontFace& face, std::string_view text, FontLibrary* fonts) {
     std::vector<ShapedParagraph> paragraphs;
     std::size_t start = 0;
     while (true) {
@@ -116,7 +211,7 @@ std::vector<ShapedParagraph> shape_text(const FontFace& face, std::string_view t
         if (!line.empty() && line.back() == '\r') {
             line.remove_suffix(1);
         }
-        paragraphs.push_back(shape_paragraph(face, line));
+        paragraphs.push_back(fonts ? shape_with_fallback(face, line, *fonts) : shape_paragraph(face, line));
         if (newline == std::string_view::npos) {
             break;
         }

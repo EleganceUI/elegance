@@ -55,6 +55,7 @@ class TextFieldStyle;
 struct HoverDelay;
 struct KeyEvent;
 enum class Key;
+enum class Weight;
 template <class T>
 class Binding;
 class Font;
@@ -325,6 +326,9 @@ public:
 
     // --- Environment (elg/modifiers/environment.h): inherited by everything inside. ---
 
+    // The weight of the font inside, keeping its size and family (text, and icons of sets with
+    // weights): Image("gear").font_weight(Weight::bold).
+    ELG_API View font_weight(Weight weight) const;
     ELG_API View font(Prop<Font> font) const;
     // The color of text and unfilled shapes. Also takes a ThemeColor.
     ELG_API View foreground_style(Prop<Color> color) const;

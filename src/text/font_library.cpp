@@ -145,14 +145,50 @@ RegisteredFont find_font(const Font& font) {
 }
 
 std::vector<unsigned char> read_file(const std::filesystem::path& path) {
-    std::ifstream file(path, std::ios::binary);
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
     if (!file) {
         throw ResourceError(std::format("can't open font file \"{}\"", path.string()));
     }
-    return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
+    // One bulk read: CJK fonts are tens of MB.
+    const std::streamsize size = file.tellg();
+    std::vector<unsigned char> data(static_cast<std::size_t>(std::max<std::streamsize>(size, 0)));
+    file.seekg(0);
+    if (!file.read(reinterpret_cast<char*>(data.data()), size)) {
+        throw ResourceError(std::format("can't read font file \"{}\"", path.string()));
+    }
+    return data;
 }
 
 } // namespace
+
+// Fonts to fall back to for characters the requested font lacks, in order: symbols, emoji
+// (monochrome until color glyphs, design.md §11), CJK, then other scripts.
+std::vector<std::filesystem::path> fallback_font_candidates() {
+    std::vector<std::filesystem::path> files;
+#if defined(_WIN32)
+    const std::filesystem::path dir =
+        std::filesystem::path(platform::environment_variable("WINDIR").value_or("C:\\Windows")) / "Fonts";
+    for (const char* name : {"seguisym.ttf", "seguiemj.ttf", "msyh.ttc", "YuGothR.ttc", "malgun.ttf", "Nirmala.ttf",
+                             "ebrima.ttf", "gadugi.ttf", "seguihis.ttf", "simsun.ttc", "arial.ttf"}) {
+        files.push_back(dir / name);
+    }
+#elif defined(__APPLE__)
+    for (const char* file : {"/System/Library/Fonts/Apple Symbols.ttf", "/System/Library/Fonts/PingFang.ttc",
+                             "/System/Library/Fonts/Hiragino Sans GB.ttc", "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+                             "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"}) {
+        files.push_back(file);
+    }
+#else
+    for (const char* file : {"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
+                             "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
+                             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                             "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+                             "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"}) {
+        files.push_back(file);
+    }
+#endif
+    return files;
+}
 
 // --- FontFace ---
 
@@ -185,6 +221,10 @@ FontFace::FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigne
     log_debug("loaded font {} ({})", name, id);
 }
 
+bool FontFace::has_char(char32_t codepoint) const {
+    return FT_Get_Char_Index(ft_face_, codepoint) != 0;
+}
+
 FontFace::~FontFace() {
     hb_font_destroy(hb_font_);
     FT_Done_Face(ft_face_);
@@ -201,6 +241,52 @@ FontLibrary::FontLibrary() {
 FontLibrary::~FontLibrary() {
     faces_.clear(); // faces must go before the library
     FT_Done_FreeType(library_);
+}
+
+const FontFace& FontLibrary::load(const std::string& key, const std::filesystem::path& file) {
+    auto it = faces_.find(key);
+    if (it == faces_.end()) {
+        auto data = std::make_shared<const std::vector<unsigned char>>(read_file(file));
+        const auto id = static_cast<std::uint32_t>(faces_.size() + 1);
+        it = faces_.emplace(key, std::make_unique<FontFace>(library_, std::move(data), key, id)).first;
+    }
+    return *it->second;
+}
+
+const FontFace* FontLibrary::fallback_for(char32_t codepoint) {
+    if (const auto cached = fallback_cache_.find(codepoint); cached != fallback_cache_.end()) {
+        return cached->second;
+    }
+    if (!fallback_files_listed_) {
+        fallback_files_listed_ = true;
+        fallback_files_ = fallback_font_candidates();
+    }
+    const FontFace* found = nullptr;
+    for (const FontFace* face : fallbacks_) {
+        if (face->has_char(codepoint)) {
+            found = face;
+            break;
+        }
+    }
+    // Not in the fonts loaded so far: load further down the chain until one has it.
+    while (!found && fallbacks_tried_ < fallback_files_.size()) {
+        const std::filesystem::path& file = fallback_files_[fallbacks_tried_++];
+        std::error_code error;
+        if (!std::filesystem::is_regular_file(file, error)) {
+            continue;
+        }
+        try {
+            const FontFace& face = load(file.string(), file);
+            fallbacks_.push_back(&face);
+            if (face.has_char(codepoint)) {
+                found = &face;
+            }
+        } catch (const std::exception& failure) {
+            log_warning("skipping fallback font {}: {}", file.string(), failure.what());
+        }
+    }
+    fallback_cache_.emplace(codepoint, found);
+    return found;
 }
 
 const FontFace& FontLibrary::resolve(const Font& font) {

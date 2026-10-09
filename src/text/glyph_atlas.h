@@ -8,8 +8,15 @@
 #include "text/atlas.h"
 #include "text/font_library.h"
 
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
+#include <deque>
+#include <functional>
+#include <memory>
+#include <mutex>
 #include <optional>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -23,23 +30,50 @@ struct AtlasGlyph {
     float left = 0, bottom = 0, right = 0, top = 0;
 };
 
-// The UI-side glyph atlas: generates MTSDF glyphs on first use and queues their pixels for the
-// render thread, which owns the texture (design.md §15). UI thread only.
-// TODO: generate on the worker pool; evict (LRU) or add pages when full.
+struct GlyphJob;
+
+// The UI-side glyph atlas (design.md §15). A new glyph's place and metrics are worked out at once
+// on the UI thread (so layout and drawing never wait), and its distance field is generated on a
+// pool of worker threads; the pixels are queued for the render thread, which owns the texture.
+// Until they arrive the glyph's slot is empty. UI thread only, except where noted.
+// TODO: evict (LRU) or add pages when full.
 class GlyphAtlas {
 public:
+    GlyphAtlas();
+    ~GlyphAtlas();
+    GlyphAtlas(const GlyphAtlas&) = delete;
+    GlyphAtlas& operator=(const GlyphAtlas&) = delete;
+
     // nullptr for glyphs with no outline (spaces), or when the atlas is full.
     const AtlasGlyph* find_or_add(const FontFace& face, std::uint32_t glyph_id);
 
-    // New glyph pixels since the last call; post them before any frame that uses them.
+    // Glyph pixels finished since the last call; post them before any frame that uses them.
     std::vector<GlyphUpload> take_uploads();
+    // Whether glyphs finished since take_uploads() (windows showing them need a frame).
+    bool has_uploads() const;
+    // Called on a worker thread whenever a glyph finishes (e.g. to wake the event loop).
+    void set_on_ready(std::function<void()> on_ready);
+    // Waits until every requested glyph is generated, or `timeout` passes; true when done.
+    bool wait_idle(std::chrono::milliseconds timeout);
 
 private:
-    std::optional<AtlasGlyph> generate(const FontFace& face, std::uint32_t glyph_id);
+    std::optional<AtlasGlyph> prepare(const FontFace& face, std::uint32_t glyph_id);
     bool allocate(std::uint32_t width, std::uint32_t height, std::uint32_t& x, std::uint32_t& y);
+    void submit(std::unique_ptr<GlyphJob> job);
+    void work(std::stop_token stop);
 
     std::unordered_map<std::uint64_t, std::optional<AtlasGlyph>> glyphs_;
+
+    // Shared with the workers.
+    mutable std::mutex mutex_;
+    std::condition_variable_any wake_workers_;
+    std::condition_variable idle_;
+    std::deque<std::unique_ptr<GlyphJob>> jobs_;
     std::vector<GlyphUpload> uploads_;
+    std::size_t pending_ = 0; // queued or being generated
+    std::function<void()> on_ready_;
+    std::vector<std::jthread> workers_;
+
     std::uint32_t shelf_x_ = 0;
     std::uint32_t shelf_y_ = 0;
     std::uint32_t shelf_height_ = 0;

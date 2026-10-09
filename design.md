@@ -1545,6 +1545,29 @@ Separate render thread from day one (decided).
   - `App::menu_bar` (native on macOS).
   - Opening on press instead of release on macOS.
 
+**Rendering foundations**
+- [x] Font fallback (§11):
+  - Runs the requested font has no glyph for are re-shaped with the first system font that has
+    each character, and glyphs carry their face.
+  - Windows chain: Segoe UI Symbol, Segoe UI Emoji, Microsoft YaHei, Yu Gothic, Malgun Gothic,
+    Nirmala UI, Ebrima, Gadugi, Segoe UI Historic, SimSun, Arial. macOS and Linux have their own
+    candidate lists.
+  - Fonts load lazily down the chain (CJK fonts only when CJK text appears), with a per-character
+    cache.
+  - Variation selectors and joiners nobody draws vanish instead of showing boxes.
+  - CJK text breaks between characters.
+- [x] Glyphs are generated on a worker pool:
+  - The UI thread only reads the outline, computes metrics and reserves the atlas slot. Distance
+    fields are generated on workers, and finished glyphs wake the loop to redraw.
+  - New windows wait up to 1.5 s for their glyphs (popups 150 ms) before showing.
+  - Workers: hardware threads − 1, up to 8. Debug builds use 3, because the debug heap's single
+    lock made 8 workers 2.5× slower than 3.
+  - Fonts are read in one bulk read. The stream-iterator read took ~1 s per CJK font in debug.
+  - Measured debug startup of the sandbox: ~12 s → ~2.4 s. Release: 0.5 s.
+- [ ] Color emoji (COLRv0/v1 layers, then CBDT/sbix bitmaps). Emoji are monochrome outlines today.
+- [ ] GPU vector paths (§5): `Path`, arbitrary shapes, strokes, SVG icons.
+- [ ] Persistent glyph cache on disk (instant warm starts, especially in debug).
+
 **M5: Polish**
 - [ ] Inspector, accessibility, previews / hot reload, custom `Layout`, docs & examples
 - [x] Built-in icon library (§13.2), **Phosphor** 2.1.2 (MIT):
@@ -1574,6 +1597,12 @@ Separate render thread from day one (decided).
     - Verified against FreeType's own rendering of the same glyphs.
   - Tests: `tests/image_tests.cpp` (names, variants, default set, suggestions, each map format,
     registration errors).
+- [x] Phosphor thin, light and duotone (`ELG_ICONS_EXTRA_WEIGHTS`, ~1.6 MB more):
+  - `Weight::thin` / `light` pick the matching font.
+  - `"…duotone"` icons are two layers from duotone's own map: the CSS `:before` at 20% opacity
+    and `:after`, drawn as a ZStack.
+  - Icon sets can give variants their own name maps (`IconVariant`).
+- [x] `View::font_weight(Weight)` changes the inherited font's weight (text and icons).
 - [ ] Icon follow-ups:
   - Glyph-name maps from the font's `post` table; IcoMoon `selection.json` / Fontello configs.
   - The `elegence_icon_set` CMake helper for apps.

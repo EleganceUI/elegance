@@ -70,7 +70,7 @@ void TextEditor::set_font(const Font& font) {
     size_ = font.size();
     ascent_ = face_->ascender() * size_;
     line_height_ = (face_->ascender() - face_->descender() + face_->line_gap()) * size_;
-    const std::vector<ShapedParagraph> placeholder = shape_text(*face_, placeholder_);
+    const std::vector<ShapedParagraph> placeholder = shape_text(*face_, placeholder_, &text_system_->fonts);
     placeholder_shaped_ = placeholder.empty() ? ShapedParagraph{} : placeholder.front();
     placeholder_width_ = 0;
     for (const ShapedGlyph& glyph : placeholder_shaped_.glyphs) {
@@ -118,7 +118,7 @@ void TextEditor::reshape() {
     shaped_ = {};
     const std::string shown = displayed();
     if (face_ && !shown.empty()) {
-        std::vector<ShapedParagraph> shaped = shape_text(*face_, shown);
+        std::vector<ShapedParagraph> shaped = shape_text(*face_, shown, &text_system_->fonts);
         if (!shaped.empty()) {
             shaped_ = std::move(shaped.front());
         }
@@ -305,7 +305,7 @@ void TextEditor::paint(DisplayList& list, Rect frame) const {
     const auto draw = [&](const ShapedParagraph& paragraph, Color color) {
         float pen = origin;
         for (const ShapedGlyph& glyph : paragraph.glyphs) {
-            if (const AtlasGlyph* atlas = text_system_->atlas.find_or_add(*face_, glyph.id)) {
+            if (const AtlasGlyph* atlas = text_system_->atlas.find_or_add(glyph.face ? *glyph.face : *face_, glyph.id)) {
                 const Rect quad{pen + (glyph.x_offset + atlas->left) * size_,
                                 baseline - (glyph.y_offset + atlas->top) * size_,
                                 (atlas->right - atlas->left) * size_, (atlas->top - atlas->bottom) * size_};

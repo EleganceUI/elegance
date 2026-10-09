@@ -157,16 +157,29 @@ View IconCards() {
         return HStackLayout(VerticalAlignment::center, 14)(std::move(icons));
     };
     const View weights = VStack({.alignment = HorizontalAlignment::leading, .spacing = 12},
+                                row("", Weight::thin),
+                                row("", Weight::light),
                                 row("", Weight::regular),
                                 row("", Weight::bold).foreground_style(palette::blue),
-                                row(".fill", Weight::regular).foreground_style(palette::peach));
+                                row(".fill", Weight::regular).foreground_style(palette::peach),
+                                row(".duotone", Weight::regular).foreground_style(palette::mauve));
     const View labels = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
                                Button(Label("Search", {.system_name = "magnifying-glass"}), [] {})
                                    .button_style(BorderedButtonStyle{}),
                                Button(Label("Delete", {.system_name = "phosphor.trash"}), [] {}).tint(palette::red));
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(weights, "Image: regular, .font_weight(bold), .fill").card(),
-                  Captioned(labels, "Label + Button").card());
+                  Captioned(weights, "Image: thin, light, regular, bold, .fill, .duotone").card(),
+                  Captioned(labels, "Label + Button").card(),
+                  // Characters Segoe UI lacks come from the system's fallback fonts.
+                  Captioned(VStack({.alignment = HorizontalAlignment::leading, .spacing = 6},
+                                   Text("Symbols: ✓ ★ → ∑ ♥ ∞"),
+                                   Text("中文  日本語  한국어  हिन्दी"),
+                                   Text("Emoji: 😀 🎉 🚀 ☀️"),
+                                   Text("文字はどこでも改行できます。この文は折り返して表示されます。")
+                                       .frame({.width = 220}))
+                                .frame({.width = 240}),
+                            "Font fallback")
+                      .card());
 }
 
 // ZStack: layering with alignment, z_index, and priority sizing.
