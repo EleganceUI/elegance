@@ -9,6 +9,7 @@ add_executable(elegence_tests
         accessibility_tests.cpp
         animation_tests.cpp
         audio_tests.cpp
+        capture_tests.cpp
         desktop_tests.cpp
         environment_tests.cpp
         http_tests.cpp

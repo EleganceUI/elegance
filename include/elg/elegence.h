@@ -10,6 +10,7 @@
 #include <elg/animation.h>
 #include <elg/app.h>
 #include <elg/audio.h>
+#include <elg/capture.h>
 #include <elg/color.h>
 #include <elg/desktop.h>
 #include <elg/environment.h>

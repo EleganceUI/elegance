@@ -6,6 +6,7 @@
 // itself; the controls are ordinary views over the player's states.
 
 #include <elg/video.h>
+#include <elg/capture.h>
 
 #include "media/video_source.h"
 #include "view/view_node.h"
@@ -122,7 +123,8 @@ constexpr Size kPlaceholder{320, 180}; // before the video's own size is known
 
 class VideoElement final : public Element {
 public:
-    VideoElement(std::shared_ptr<VideoSource> source, ContentMode mode) : source_(std::move(source)), mode_(mode) {}
+    VideoElement(std::shared_ptr<VideoSource> source, ContentMode mode, bool mirrored = false)
+        : source_(std::move(source)), mode_(mode), mirrored_(mirrored) {}
 
     void set_size(Size size) {
         if (size.width != size_.width || size.height != size_.height) {
@@ -168,7 +170,8 @@ protected:
         if (clip) {
             list.commands.push_back(PushClipCommand{bounds, {}});
         }
-        list.commands.push_back(VideoCommand{picture, {0, 0, 1, 1}, source_, 1});
+        // Mirrored: the texture read right to left.
+        list.commands.push_back(VideoCommand{picture, mirrored_ ? Rect{1, 0, -1, 1} : Rect{0, 0, 1, 1}, source_, 1});
         if (clip) {
             list.commands.push_back(PopClipCommand{});
         }
@@ -177,15 +180,17 @@ protected:
 private:
     std::shared_ptr<VideoSource> source_;
     ContentMode mode_;
+    bool mirrored_;
     Size size_{};
 };
 
 class VideoNode final : public ViewNode {
 public:
-    VideoNode(std::shared_ptr<VideoSource> source, ContentMode mode) : source_(std::move(source)), mode_(mode) {}
+    VideoNode(std::shared_ptr<VideoSource> source, ContentMode mode, bool mirrored = false)
+        : source_(std::move(source)), mode_(mode), mirrored_(mirrored) {}
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
-        auto element = std::make_unique<VideoElement>(source_, mode_);
+        auto element = std::make_unique<VideoElement>(source_, mode_, mirrored_);
         VideoElement* const target = element.get();
         // The size arrives with the video's metadata.
         effect([target, source = source_, needs_frame = context.needs_frame] {
@@ -200,6 +205,7 @@ public:
 private:
     std::shared_ptr<VideoSource> source_;
     ContentMode mode_;
+    bool mirrored_;
 };
 
 std::string clock(double seconds) {
@@ -221,6 +227,10 @@ namespace elg {
 
 View VideoView(VideoPlayer player, ContentMode mode) {
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(player.source(), mode));
+}
+
+View CameraView(Camera camera, ContentMode mode) {
+    return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(camera.source(), mode, camera.mirrored()));
 }
 
 View VideoControls(VideoPlayer player) {

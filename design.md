@@ -2100,8 +2100,71 @@ Separate render thread from day one (decided).
   - Still approximate: two rounded clips that overlap near the outer one's corners, where the
     outer corners act as its rect.
   - `QuadInstance` grows to 160 bytes.
-- [ ] Media (§13.3), the rest, in order:
-  - Capture: microphone, camera.
+- [x] Media part 5, capture (`elg/capture.h`):
+  - **`AudioRecorder({.device_id, .sample_rate, .channels, .on_samples})`:**
+    - miniaudio capture (`ma_device_type_capture`, f32) into memory.
+    - `start`, `stop`, `toggle`, `clear`. Reactive `is_recording`, `duration`, `level` (the
+      recent peak, posted about 15×/s while recording) and `error` (e.g. access denied in
+      Settings > Privacy).
+    - `samples()`, `wav()` and `save_wav()` (16-bit PCM), and `sound()` to play it back.
+    - `on_samples` streams blocks on the audio thread.
+    - `audio_input_devices()` lists inputs (id = the device id in hex).
+  - **`Camera({.device_id, .width, .height, .mirrored})` and `CameraView(camera, mode)`:** a
+    `VideoSource`, redrawn by the render thread without layout like video. Its frames go to the
+    renderer as frames in memory (below).
+    - Media Foundation's source reader on a capture thread, asking for NV12 (RGB32 if the
+      camera can't). It picks the native mode closest to the requested size (larger preferred),
+      then the best frame rate.
+    - **DirectShow fallback** for cameras Media Foundation doesn't see, e.g. virtual cameras on
+      Windows 10 (OBS, Snap Camera): camera → Sample Grabber (RGB32) → Null Renderer.
+      `IAMStreamConfig` picks the closest format. The grabber's interfaces are declared here,
+      since `qedit.h` left the SDK while `qedit.dll` still ships them.
+    - DirectShow frames are taken in the camera's own format (RGB32, NV12, YUY2, I420). Forcing
+      RGB32 made DirectShow insert converters that OBS's camera never fed. The graph runs
+      without a reference clock, since the Null Renderer otherwise held frames until their
+      presentation time and stalled the stream after the first one.
+    - Frames stay in the camera's format, rows packed and top down (bottom-up RGB32 is
+      flipped). The renderer converts them (below). A CPU converter (BT.709 / BT.601, limited
+      range) remains for snapshots.
+    - The preview is mirrored by default (uv read right to left). `snapshot()` encodes the newest
+      frame, unmirrored, as PNG through WIC. `camera_devices()` lists Media Foundation's cameras
+      plus DirectShow-only ones (ids prefixed `dshow:`).
+  - **Verified on this machine:**
+    - Recording from a (virtual) microphone: duration, level and 12 inputs listed.
+    - OBS Virtual Camera (DirectShow, NV12 1920×1080 at 60 fps) shows live in `CameraView`.
+    - CPU in release: 0.17 cores with the Vulkan conversion (0.35 in debug). Converting on the
+      CPU took 1.25; the earlier D3D11 video processor took 0.11 (0.41 in debug) but was Windows
+      only.
+  - **Sandbox:** a Capture row (record / play / clear with a level meter; camera preview with
+    start / stop / snapshot).
+  - **Tests:** device listing, recorders and cameras before starting, WAV header, option
+    clamping.
+  - **Frame handoff, the same on every platform** (`media/video_source.h`): `VideoFrame` is
+    tagged.
+    - `d3d11_shared`: a shared BGRA texture, imported into Vulkan and sampled in place (Media
+      Foundation video). macOS IOSurfaces and Linux DMA-BUFs would join as kinds imported the
+      same way.
+    - `cpu`: packed pixels in BGRA, NV12, YUY2 or I420, with matrix (BT.601 / BT.709) and range.
+      Any camera or software decoder can produce these, so macOS and Linux backends only need
+      to deliver bytes.
+    - `VideoTextures` uploads a `cpu` frame into a host-visible storage buffer, then a fullscreen
+      pass (`shaders/video_convert.frag`) reads its bytes and writes a BGRA image through a
+      UNORM view. The frame is sampled through an sRGB view, so the YUV→RGB math stays in gamma
+      space. It runs before the window's passes, once per new frame, even when several windows
+      show the source.
+    - Each source gets a ring of three images and buffers. It's recreated (after a device wait)
+      when the size changes, and freed after 240 idle frames.
+    - This replaced the D3D11 video processor, which was Windows only.
+- [ ] Capture follow-ups:
+  - macOS (AVCaptureSession) and Linux (PipeWire/V4L2), handing over `cpu` frames.
+  - One less copy: capture straight into the upload buffer, which needs a buffer pool shared
+    with the renderer.
+  - The ring has three slots for every window. Many windows showing one source at once could
+    overwrite a slot that's still in flight; per-slot fences would fix that.
+  - Read the matrix and range from the camera's media type, rather than guessing from height.
+  - Camera controls (focus, exposure), resolution and frame-rate lists.
+  - A lock-free recorder buffer (the audio callback takes a mutex today).
+  - Recording video (needs an encoder: Media Foundation's sink writer).
 - [x] Built-in icon library (§13.2), **Phosphor** 2.1.2 (MIT):
   - Vendored verbatim in `third_party/phosphor`: regular, bold and fill TTFs plus the CSS name
     map, with the license and the upstream source. 1,530 icons.

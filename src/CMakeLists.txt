@@ -29,8 +29,10 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         gpu/texture_cache.cpp
         gpu/video_textures.cpp
         media/audio.cpp
+        media/camera.cpp
         media/image_decode.cpp
         media/miniaudio.cpp
+        media/recorder.cpp
         media/video_source.cpp
         net/http.cpp
         gpu/vk.cpp
@@ -150,7 +152,7 @@ endif ()
 if (WIN32)
     target_sources(elegence PRIVATE gpu/composition_win32.cpp)
     # dwmapi: rounded corners for undecorated windows; d3d11/dxgi/dcomp: transparent windows.
-    target_link_libraries(elegence PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid oleaut32 winhttp shell32)
+    target_link_libraries(elegence PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid mf mfreadwrite strmiids oleaut32 winhttp shell32)
 endif ()
 
 target_link_libraries(elegence PRIVATE
@@ -188,6 +190,7 @@ elg_add_shaders(elegence
         ${PROJECT_SOURCE_DIR}/shaders/path.vert
         ${PROJECT_SOURCE_DIR}/shaders/path_cover.vert
         ${PROJECT_SOURCE_DIR}/shaders/path.frag
+        ${PROJECT_SOURCE_DIR}/shaders/video_convert.frag
 )
 
 target_compile_definitions(elegence PRIVATE

@@ -534,6 +534,68 @@ View DesktopCards() {
                   Captioned(system, "notify, TrayIcon").card());
 }
 
+// Capture (design.md §13.3): the microphone into memory (with a live level), and a camera's
+// picture straight to the GPU, with snapshots.
+View CaptureCards() {
+    const AudioRecorder recorder;
+    const std::size_t inputs = audio_input_devices().size();
+    const auto clock = [](double seconds) { return std::format("{:.1f} s", seconds); };
+    const View recording = VStack(
+        {.alignment = HorizontalAlignment::leading, .spacing = 8},
+        HStack({.spacing = 8},
+               Button(Text([=] { return std::string(recorder.is_recording() ? "Stop" : "Record"); }).frame({.width = 52}),
+                      [=] { recorder.toggle(); }),
+               Button("Play", [=] { recorder.sound().play(); }).disabled([=] { return recorder.duration() <= 0; }),
+               Button("Clear", [=] { recorder.clear(); }))
+            .button_style(BorderedButtonStyle{}),
+        ProgressView([=] { return recorder.level(); }).frame({.width = 220}).accessibility_label("Input level"),
+        Text([=] {
+            const std::string error = recorder.error();
+            return error.empty() ? clock(recorder.duration()) + std::format(" · {} inputs", inputs) : error;
+        })
+            .font(Font::caption)
+            .foreground_style(ThemeColor::secondary));
+
+    const Camera camera;
+    const std::vector<CameraDevice> cameras = camera_devices();
+    const State<int> shots(0);
+    const auto last_shot = std::make_shared<std::vector<unsigned char>>();
+    const View preview = VStack(
+        {.alignment = HorizontalAlignment::leading, .spacing = 8},
+        CameraView(camera).frame(240, 135).clip_shape(RoundedRectangle(10)),
+        HStack({.spacing = 8},
+               Button(Text([=] { return std::string(camera.is_running() ? "Stop" : "Start"); }).frame({.width = 44}),
+                      [=] { camera.is_running() ? camera.stop() : camera.start(); }),
+               Button("Snapshot", [=] {
+                   if (auto png = camera.snapshot()) {
+                       *last_shot = std::move(*png);
+                       shots += 1;
+                   }
+               }),
+               ForEach([=] { return shots() > 0 ? std::vector<int>{shots()} : std::vector<int>{}; },
+                       [=](int) {
+                           return Image({.data = *last_shot}).resizable().aspect_ratio(ContentMode::fill).frame(48, 27)
+                               .clip_shape(RoundedRectangle(4));
+                       }))
+            .button_style(BorderedButtonStyle{}),
+        Text([=] {
+            const std::string error = camera.error();
+            if (!error.empty()) {
+                return error;
+            }
+            const Size size = camera.size();
+            return (cameras.empty() ? std::string("No camera found") : cameras.front().name) +
+                   (size.width > 0 ? std::format(" · {}×{}", size.width, size.height) : std::string());
+        })
+            .font(Font::caption)
+            .foreground_style(ThemeColor::secondary)
+            .frame({.width = 240, .alignment = Alignment::leading}));
+
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(recording, "AudioRecorder: level, play back, clear").card(),
+                  Captioned(preview, "Camera + CameraView (mirrored), snapshot").card());
+}
+
 // ZStack: layering with alignment, z_index, and priority sizing.
 View StackCards() {
     // A badge pinned to the corner of what it labels.
@@ -870,6 +932,7 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
                          VideoCards(),
                          NetworkCards(),
                          DesktopCards(),
+                         CaptureCards(),
                          PathCards(),
                          MenuCards(),
                          IconCards(),
