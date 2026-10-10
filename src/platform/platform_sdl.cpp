@@ -135,6 +135,22 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
     case SDL_EVENT_WINDOW_MOVED: return {EventType::window_moved, event.window.windowID};
     case SDL_EVENT_SYSTEM_THEME_CHANGED:
         return {EventType::system_theme_changed};
+    case SDL_EVENT_DROP_BEGIN:
+    case SDL_EVENT_DROP_POSITION:
+    case SDL_EVENT_DROP_FILE:
+    case SDL_EVENT_DROP_TEXT:
+    case SDL_EVENT_DROP_COMPLETE: {
+        const EventType type = event.type == SDL_EVENT_DROP_BEGIN      ? EventType::drop_begin
+                               : event.type == SDL_EVENT_DROP_POSITION ? EventType::drop_position
+                               : event.type == SDL_EVENT_DROP_FILE     ? EventType::drop_file
+                               : event.type == SDL_EVENT_DROP_TEXT     ? EventType::drop_text
+                                                                       : EventType::drop_complete;
+        Event result{type, event.drop.windowID};
+        result.x = event.drop.x;
+        result.y = event.drop.y;
+        result.text = event.drop.data ? event.drop.data : "";
+        return result;
+    }
     case SDL_EVENT_WINDOW_MOUSE_LEAVE:
         return {EventType::pointer_leave, event.window.windowID};
     case SDL_EVENT_MOUSE_MOTION: {

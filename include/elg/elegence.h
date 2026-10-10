@@ -11,6 +11,7 @@
 #include <elg/app.h>
 #include <elg/audio.h>
 #include <elg/color.h>
+#include <elg/desktop.h>
 #include <elg/environment.h>
 #include <elg/error.h>
 #include <elg/events.h>

@@ -8,6 +8,7 @@ include(Catch)
 add_executable(elegence_tests
         animation_tests.cpp
         audio_tests.cpp
+        desktop_tests.cpp
         environment_tests.cpp
         http_tests.cpp
         image_tests.cpp

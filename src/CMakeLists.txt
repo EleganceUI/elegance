@@ -35,6 +35,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         net/http.cpp
         gpu/vk.cpp
         gpu/vma.cpp
+        platform/desktop_sdl.cpp
         platform/dynamic_library.cpp
         platform/platform_sdl.cpp
         reactive/runtime.cpp
@@ -49,6 +50,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         text/color_glyph.cpp
         text/text_layout.cpp
         view/controls.cpp
+        view/drop.cpp
         view/element.cpp
         view/event_dispatcher.cpp
         view/events.cpp
@@ -131,7 +133,7 @@ endif ()
 if (WIN32)
     target_sources(elegence PRIVATE gpu/composition_win32.cpp)
     # dwmapi: rounded corners for undecorated windows; d3d11/dxgi/dcomp: transparent windows.
-    target_link_libraries(elegence PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid oleaut32 winhttp)
+    target_link_libraries(elegence PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid oleaut32 winhttp shell32)
 endif ()
 
 target_link_libraries(elegence PRIVATE

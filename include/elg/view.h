@@ -10,6 +10,7 @@
 #include <elg/geometry.h>
 
 #include <concepts>
+#include <filesystem>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -17,6 +18,7 @@
 #include <string>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace elg {
 
@@ -121,6 +123,15 @@ struct ProposedSize {
     }
 
     friend constexpr bool operator==(const ProposedSize&, const ProposedSize&) = default;
+};
+
+// What a view does with things dragged in from other apps (on_drop()). Handlers get what was
+// dropped and where (in the view's coordinates); returning false means it wasn't wanted.
+struct DropOptions {
+    std::function<bool(const std::vector<std::filesystem::path>& files, Point location)> files;
+    std::function<bool(const std::string& text, Point location)> text;
+    // Set while a drag the view can take is over it (for a highlight).
+    std::function<void(bool targeted)> targeted;
 };
 
 // How content with an aspect ratio fills space (aspect_ratio()).
@@ -307,6 +318,9 @@ public:
     // when it leaves (after the exit delay). The delay comes from the environment
     // (.hover_delay()) unless given here.
     ELG_API View on_hover(std::function<void(bool)> action) const;
+    // Files or text dragged from other apps (Explorer, a browser) can be dropped here. The
+    // innermost view under the pointer that takes that kind of thing gets it.
+    ELG_API View on_drop(DropOptions options) const;
     ELG_API View on_hover(std::function<void(bool)> action, HoverDelay delay) const;
     // The hover delay for on_hover handlers and controls inside (default: enter 0.1 s, exit 0).
     ELG_API View hover_delay(HoverDelay delay) const;

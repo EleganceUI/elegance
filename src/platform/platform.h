@@ -53,6 +53,13 @@ enum class EventType {
     window_focus_lost,
     window_moved,
     system_theme_changed,
+    // Drag and drop from other apps: begin, position (while over the window), a file or text
+    // (one event each), complete (dropped, or the drag left).
+    drop_begin,
+    drop_position,
+    drop_file,
+    drop_text,
+    drop_complete,
 };
 
 enum class PointerButton { left, middle, right, other };

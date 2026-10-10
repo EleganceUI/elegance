@@ -1326,6 +1326,29 @@ when an app needs the same formats everywhere, or containers and codecs the OS l
 
 **Order:** raster images → audio → video → AsyncImage and networking → capture (mic, camera).
 
+### 13.4 Desktop integration
+
+What apps otherwise reach for Electron's APIs for, on the platform's own facilities (SDL3 where
+it covers them).
+- **File dialogs:** `choose_files({.filters, .directory, .multiple})`, `choose_save_file({.filters,
+  .directory, .name})`, `choose_folders`. Native dialogs (SDL3: the Windows file picker), over
+  the focused window. Results reach the UI thread asynchronously.
+- **Drag and drop in:** `.on_drop({.files, .text, .targeted})` on any view.
+  - The innermost view under the pointer that takes that kind of thing gets it, with the
+    location in its own coordinates. `targeted` drives a highlight while a drag hovers.
+  - SDL3's drop events (begin, position, file, text, complete). The targeted view is held by
+    path, so tree changes mid-drag are safe.
+  - Dragging out of the app is a follow-up.
+- **Notifications:** `notify({.title, .body, .on_click})`.
+  - Windows: a shell notification icon (a message-only window and `Shell_NotifyIcon` with
+    `NIF_INFO`), shown as a toast with the app's icon and kept in the notification center.
+    Clicks come back through `NIN_BALLOONUSERCLICK`.
+  - Proper WinRT toasts (actions, images) need an AppUserModelID and a Start-menu shortcut, so
+    they're a follow-up for packaged apps.
+- **Tray icon:** `TrayIcon({.icon, .tooltip, .menu})` (SDL3 tray): buttons, check boxes, separators
+  and submenus. Shown while any copy lives; `set_tooltip` and `set_menu`. The icon comes from an
+  `ImageSource`, else a plain dot.
+
 ## 14. Extensibility
 
 - **Custom components**: functions or structs that return a `View`. Also custom
@@ -2007,6 +2030,20 @@ Separate render thread from day one (decided).
   - WebSockets.
   - Optional JSON adapter (`elg/json.h` + `Response::json()`) behind a vcpkg feature, so apps
     that already use a JSON library don't get a second one.
+- [x] Desktop integration (§13.4): file dialogs, drag and drop in, notifications and the tray
+  icon, with a sandbox Desktop row and tests for the rules around them. The interactive parts
+  (dialogs, toasts, tray menu, drops) still need a person to try them.
+- [ ] Desktop follow-ups:
+  - Dragging out (files and text to other apps).
+  - WinRT toasts with actions.
+  - Badge counts.
+  - The app's own window icon and jump lists.
+  - "Open with" / file associations (handling files passed at launch).
+  - Single-instance apps.
+  - The clipboard beyond text (images, files).
+- [ ] Renderer: a rounded clip cut by a rectangular clip (e.g. a circle half scrolled out of a
+  ScrollView) uses the rounded radii on the cut rectangle, giving a lens shape. Keep the rounded
+  clip's own rect for its shape and apply the outer rect as a separate scissor.
 - [ ] Media (§13.3), the rest, in order:
   - Capture: microphone, camera.
 - [x] Built-in icon library (§13.2), **Phosphor** 2.1.2 (MIT):

@@ -362,7 +362,7 @@ View ImageCards() {
 View AudioCards() {
     const std::string assets = ELG_SANDBOX_ASSETS;
     const Sound click = Sound::load(assets + "/click.wav");
-    const AudioPlayer tune(assets + "/tune.wav");
+    const AudioPlayer tune(assets + "/music.wav");
     const auto clock = [](double seconds) {
         const int s = static_cast<int>(seconds);
         return std::format("{}:{:02}", s / 60, s % 60);
@@ -438,6 +438,96 @@ View NetworkCards() {
                             "Avatar; a failing URL")
                       .card(),
                   Captioned(status, "http::Fetch").card());
+}
+
+// Desktop integration (design.md §13.4): dropping files, the system's file dialogs,
+// notifications, and a tray icon.
+View DesktopCards() {
+    const State<bool> targeted(false);
+    const State<std::string> dropped(std::string("Nothing dropped yet"));
+    const auto names = [](const std::vector<std::filesystem::path>& files) {
+        std::string text;
+        for (const auto& file : files) {
+            text += (text.empty() ? "" : ", ") + file.filename().string();
+        }
+        return text;
+    };
+    const View zone =
+        ZStack(RoundedRectangle(12)
+                   .fill([=] { return ShapeStyle(palette::blue.opacity(targeted() ? 0.18f : 0.f)); })
+                   .stroke(palette::blue, {.width = 2, .dash = {6, 4}}),
+               VStack({.spacing = 4}, Image("download-simple").font(Font::title2),
+                      Text([=] { return dropped(); }).font(Font::callout).line_limit(2).multiline_text_alignment(TextAlignment::center))
+                   .padding(12))
+            .frame(240, 110)
+            .on_drop({.files = [=](const std::vector<std::filesystem::path>& files, Point) {
+                          dropped = std::format("{} file{}: {}", files.size(), files.size() == 1 ? "" : "s", names(files));
+                          return true;
+                      },
+                      .text = [=](const std::string& text, Point) {
+                          dropped = "Text: " + text.substr(0, 60);
+                          return true;
+                      },
+                      .targeted = [=](bool on) { targeted = on; }});
+
+    const State<std::vector<std::string>> picked(std::vector<std::string>{});
+    const State<std::string> saved(std::string("No file chosen"));
+    const View dialogs = VStack(
+        {.alignment = HorizontalAlignment::leading, .spacing = 8},
+        HStack({.spacing = 8},
+               Button("Open image…", [=] {
+                   choose_files({.filters = {{"Images", {"png", "jpg", "jpeg", "gif", "webp", "bmp"}}}},
+                                [=](std::vector<std::filesystem::path> files) {
+                                    if (!files.empty()) {
+                                        picked = std::vector<std::string>{files.front().string()};
+                                    }
+                                });
+               }),
+               Button("Save as…", [=] {
+                   choose_save_file({.filters = {{"Text", {"txt"}}}, .name = "notes.txt"},
+                                    [=](std::optional<std::filesystem::path> file) {
+                                        saved = file ? file->string() : std::string("Cancelled");
+                                    });
+               }))
+            .button_style(BorderedButtonStyle{}),
+        HStack({.spacing = 10},
+               ForEach([=] { return picked(); },
+                       [](const std::string& file) {
+                           return Image({.file = file}).resizable().aspect_ratio(ContentMode::fill).frame(44, 44).clip_shape(RoundedRectangle(8));
+                       }),
+               Text([=] { return saved(); }).font(Font::caption).foreground_style(ThemeColor::secondary).line_limit(2))
+            .frame({.width = 240, .alignment = Alignment::leading}));
+
+    const State<std::string> status{std::string()};
+    const State<bool> tray_on(false);
+    const auto tray = std::make_shared<std::optional<TrayIcon>>();
+    const View system = VStack(
+        {.alignment = HorizontalAlignment::leading, .spacing = 8},
+        Button("Notify", [=] {
+            notify({.title = "Elegence", .body = "A notification from the sandbox", .on_click = [=] { status = "Notification status"; }});
+        }).button_style(BorderedButtonStyle{}),
+        Toggle("Tray icon", Binding<bool>([=] { return tray_on(); },
+                                          [=](bool on) {
+                                              tray_on = on;
+                                              if (!on) {
+                                                  tray->reset();
+                                                  return;
+                                              }
+                                              tray->emplace(TrayIconOptions{
+                                                  .tooltip = "Elegence Sandbox",
+                                                  .menu = {{.title = "Say hello", .action = [=] { status = "Hello from the tray"; }},
+                                                           {.title = "Notifications", .checked = true,
+                                                            .toggled = [=](bool on) { status = on ? "Checked" : "Unchecked"; }},
+                                                           {},
+                                                           {.title = "Hide icon", .action = [=] { tray_on = false; tray->reset(); }}}});
+                                          }))
+            .fixed_size(),
+        Text([=] { return status(); }).font(Font::caption).foreground_style(ThemeColor::secondary));
+
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(zone, "on_drop: files or text from other apps").card(),
+                  Captioned(dialogs, "choose_files, choose_save_file").card(),
+                  Captioned(system, "notify, TrayIcon").card());
 }
 
 // ZStack: layering with alignment, z_index, and priority sizing.
@@ -775,6 +865,7 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
                          AudioCards(),
                          VideoCards(),
                          NetworkCards(),
+                         DesktopCards(),
                          PathCards(),
                          MenuCards(),
                          IconCards(),

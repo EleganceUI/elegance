@@ -16,6 +16,7 @@
 #include "text/text_system.h"
 #include "view/animated.h"
 #include "view/event_dispatcher.h"
+#include "view/drop.h"
 #include "view/inspector.h"
 #include "core/ui_tasks.h"
 #include "view/view_node.h"
@@ -686,6 +687,88 @@ int App::run() {
         }
     };
 
+    // Drag and drop from other apps (design.md §13.4), per window: what's being dropped, where,
+    // and the view targeted (by path, so a tree change can't leave it dangling).
+    struct DropSession {
+        std::vector<std::filesystem::path> files;
+        std::string text;
+        Point location;
+        std::optional<ElementPath> target;
+    };
+    std::unordered_map<std::uint32_t, DropSession> drops;
+    const auto set_drop_target = [&](LiveWindow& live, DropSession& session, std::optional<ElementPath> target) {
+        if (target == session.target) {
+            return;
+        }
+        const auto notify = [&](const std::optional<ElementPath>& path, bool on) {
+            if (!path) {
+                return;
+            }
+            if (auto* element = dynamic_cast<DropElement*>(element_at(*live.root, *path))) {
+                if (element->options().targeted) {
+                    element->options().targeted(on);
+                }
+            }
+        };
+        notify(session.target, false);
+        session.target = std::move(target);
+        notify(session.target, true);
+        live.dirty = true;
+    };
+    const auto handle_drop = [&](const platform::Event& event) {
+        auto it = find_window(event.window_id);
+        if (it == windows.end() || (*it)->is_popup) {
+            return;
+        }
+        LiveWindow& live = **it;
+        DropSession& session = drops[event.window_id];
+        if (event.type != platform::EventType::drop_begin && event.type != platform::EventType::drop_complete) {
+            session.location = live.window.to_logical(event.x, event.y);
+        }
+        switch (event.type) {
+        case platform::EventType::drop_begin: session = {}; break;
+        case platform::EventType::drop_file:
+        case platform::EventType::drop_text:
+        case platform::EventType::drop_position: {
+            if (event.type == platform::EventType::drop_file) {
+                const std::string_view path = event.text;
+                session.files.emplace_back(std::u8string(path.begin(), path.end()));
+            } else if (event.type == platform::EventType::drop_text) {
+                session.text += event.text;
+            }
+            // What's coming isn't known while dragging: files are the usual case.
+            const bool files = !session.files.empty() || session.text.empty();
+            DropElement* target = find_drop_target(*live.root, session.location, files);
+            if (!target && session.files.empty()) {
+                target = find_drop_target(*live.root, session.location, false);
+            }
+            set_drop_target(live, session, target ? path_of(*live.root, *target) : std::nullopt);
+            break;
+        }
+        case platform::EventType::drop_complete: {
+            const bool files = !session.files.empty();
+            if (files || !session.text.empty()) {
+                if (DropElement* target = find_drop_target(*live.root, session.location, files)) {
+                    const Rect frame = target->frame();
+                    const Point local{session.location.x - frame.x, session.location.y - frame.y};
+                    const DropOptions options = target->options(); // the handler may rebuild the tree
+                    set_drop_target(live, session, std::nullopt);
+                    if (files) {
+                        options.files(session.files, local);
+                    } else {
+                        options.text(session.text, local);
+                    }
+                }
+            }
+            set_drop_target(live, session, std::nullopt);
+            drops.erase(event.window_id);
+            live.dirty = true;
+            break;
+        }
+        default: break;
+        }
+    };
+
     const auto handle = [&](const platform::Event& event) {
         // Handlers may start animations (e.g. scrolling); they must start now, not at the last
         // frame's time, which can be long ago after idling.
@@ -869,6 +952,13 @@ int App::run() {
             for (const auto& live : windows) {
                 live->dirty = true; // the default window background follows the scheme
             }
+            break;
+        case platform::EventType::drop_begin:
+        case platform::EventType::drop_position:
+        case platform::EventType::drop_file:
+        case platform::EventType::drop_text:
+        case platform::EventType::drop_complete:
+            handle_drop(event);
             break;
         case platform::EventType::wake:
         case platform::EventType::none:
