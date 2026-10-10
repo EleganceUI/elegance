@@ -2041,9 +2041,16 @@ Separate render thread from day one (decided).
   - "Open with" / file associations (handling files passed at launch).
   - Single-instance apps.
   - The clipboard beyond text (images, files).
-- [ ] Renderer: a rounded clip cut by a rectangular clip (e.g. a circle half scrolled out of a
-  ScrollView) uses the rounded radii on the cut rectangle, giving a lens shape. Keep the rounded
-  clip's own rect for its shape and apply the outer rect as a separate scissor.
+- [x] Renderer: exact clipping of rounded clips cut by rectangular ones.
+  - Each instance carries the innermost rounded clip at its own size (`clip_rect` +
+    `clip_radii`) and a `clip_scissor`, the intersection of every enclosing clip's rect. The
+    shader multiplies the two coverages.
+  - A circle half scrolled out of a ScrollView stays a circle with a straight cut, and a plain
+    clip inside a rounded card keeps the card's corners. Before, the intersected rect took the
+    rounded radii and gave a lens shape.
+  - Still approximate: two rounded clips that overlap near the outer one's corners, where the
+    outer corners act as its rect.
+  - `QuadInstance` grows to 160 bytes.
 - [ ] Media (§13.3), the rest, in order:
   - Capture: microphone, camera.
 - [x] Built-in icon library (§13.2), **Phosphor** 2.1.2 (MIT):

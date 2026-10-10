@@ -143,6 +143,7 @@ VkPipeline QuadRenderer::pipeline_for(VkFormat format, bool masking) {
         {6, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(QuadInstance, clip_rect)},
         {7, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(QuadInstance, clip_radii)},
         {8, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(QuadInstance, extra)},
+        {9, 0, VK_FORMAT_R32G32B32A32_SFLOAT, offsetof(QuadInstance, clip_scissor)},
     };
     VkPipelineVertexInputStateCreateInfo vertex_input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
     vertex_input.vertexBindingDescriptionCount = 1;

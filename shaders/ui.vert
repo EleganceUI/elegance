@@ -15,6 +15,7 @@ layout(location = 5) in vec4 in_gradient;     // linear: start.xy, end.xy | radi
 layout(location = 6) in vec4 in_clip_rect;    // x, y, width, height
 layout(location = 7) in vec4 in_clip_radii;
 layout(location = 8) in vec4 in_extra;        // x: stop count; y: shadow sigma
+layout(location = 9) in vec4 in_clip_scissor; // x, y, width, height: the enclosing clips' rects
 
 layout(push_constant) uniform PushConstants {
     vec2 viewport; // pixels
@@ -31,6 +32,7 @@ layout(location = 7) flat out vec4 out_gradient;
 layout(location = 8) flat out vec4 out_clip_rect;
 layout(location = 9) flat out vec4 out_clip_radii;
 layout(location = 10) flat out vec4 out_extra;
+layout(location = 11) flat out vec4 out_clip_scissor;
 
 const float kRect = 0.0;
 const float kBoxShadow = 4.0;
@@ -65,4 +67,5 @@ void main() {
     out_clip_rect = in_clip_rect;
     out_clip_radii = in_clip_radii;
     out_extra = in_extra;
+    out_clip_scissor = in_clip_scissor;
 }

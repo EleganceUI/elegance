@@ -28,11 +28,14 @@ struct QuadInstance {
     std::array<float, 4> border_color{};
     std::array<float, 4> params{};       // x: border width | distance range; y: kind; z: paint; w: first stop
     std::array<float, 4> gradient{};     // linear: start, end | radial: center, r0, r1
+    // Clipping: the innermost rounded clip (its own rect and radii), and the intersection of every
+    // enclosing clip's rect. Coverage is the product of the two.
     std::array<float, 4> clip_rect{};
     std::array<float, 4> clip_radii{};
     std::array<float, 4> extra{};        // x: stop count; y: shadow sigma
+    std::array<float, 4> clip_scissor{}; // x, y, width, height
 };
-static_assert(sizeof(QuadInstance) == 144);
+static_assert(sizeof(QuadInstance) == 160);
 
 // The UI pipeline (design.md §5): rounded rects, glyphs, shadows, and layer composites as
 // instanced quads in painter's order. Set 0 is an image (the glyph atlas, or a layer for

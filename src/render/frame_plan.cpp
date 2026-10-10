@@ -27,11 +27,18 @@ struct Overloaded : Fs... {
 constexpr float kUnclipped = 1e7f;
 constexpr std::uint32_t kMaxLayerSize = 8192;
 
+// The clip in effect: `rect` with `radii` is the innermost rounded clip (at its own size; a plain
+// rect when there's none), and `scissor` is the intersection of every enclosing clip's rect.
 struct Clip {
     Rect rect{-kUnclipped, -kUnclipped, 2 * kUnclipped, 2 * kUnclipped};
     CornerRadii radii;
+    Rect scissor{-kUnclipped, -kUnclipped, 2 * kUnclipped, 2 * kUnclipped};
     bool active = false;
 };
+
+bool rounded(const CornerRadii& r) {
+    return r.top_left > 0 || r.top_right > 0 || r.bottom_right > 0 || r.bottom_left > 0;
+}
 
 Rect intersect(const Rect& a, const Rect& b) {
     const float x0 = std::max(a.x, b.x);
@@ -92,12 +99,13 @@ private:
     void emit(PlanPass& pass, std::vector<QuadInstance>& out, QuadInstance instance, const Rect& extent,
               const Clip& clip, int layer = -1, bool shadow = false, int path = -1, bool mask = false,
               int image = -1, int video = -1) {
-        if (clip.active && !overlaps(extent, clip.rect)) {
+        if (clip.active && (!overlaps(extent, clip.scissor) || !overlaps(extent, clip.rect))) {
             return; // fully clipped
         }
         instance.clip_rect = {clip.rect.x, clip.rect.y, clip.rect.width, clip.rect.height};
         instance.clip_radii = {clip.radii.top_left, clip.radii.top_right, clip.radii.bottom_right,
                                clip.radii.bottom_left};
+        instance.clip_scissor = {clip.scissor.x, clip.scissor.y, clip.scissor.width, clip.scissor.height};
         const auto index = static_cast<std::uint32_t>(out.size());
         out.push_back(instance);
 
@@ -182,7 +190,7 @@ private:
         const float y1 = std::ceil(bounds.max_y()) + 1;
         const Rect area{x0, y0, std::min(x1 - x0, static_cast<float>(kMaxLayerSize)),
                         std::min(y1 - y0, static_cast<float>(kMaxLayerSize))};
-        if (!mask_pass && (area.width < 1 || area.height < 1 || (clip.active && !overlaps(area, clip.rect)))) {
+        if (!mask_pass && (area.width < 1 || area.height < 1 || (clip.active && (!overlaps(area, clip.rect) || !overlaps(area, clip.scissor))))) {
             return;
         }
 
@@ -355,16 +363,23 @@ private:
     Clip push_clip(const PushClipCommand& command, Point origin, const Clip& current) const {
         const Rect r = to_pixels(command.rect, origin);
         const std::array<float, 4> radii = scaled_radii(command.radii, scale_, r.width, r.height);
-        Clip clip;
+        const CornerRadii corners{radii[0], radii[1], radii[2], radii[3]};
+        Clip clip = current;
         clip.active = true;
-        clip.rect = intersect(current.rect, r);
-        // Nested clips intersect exactly for rects; for rounded rects this keeps the inner
-        // clip's corners (or the outer's when the inner clip is larger), an approximation.
-        if (current.active && contains(r, current.rect)) {
-            clip.radii = current.radii;
-        } else {
-            clip.radii = {radii[0], radii[1], radii[2], radii[3]};
+        if (!rounded(corners)) {
+            // A plain rect only narrows the scissor; an enclosing rounded clip keeps its shape.
+            clip.scissor = intersect(current.scissor, r);
+            return clip;
         }
+        // A rounded clip becomes the shape, at its own size. The enclosing shape's rect joins the
+        // scissor. Exact unless both are rounded and overlap near the outer one's corners; then the
+        // outer corners are approximated by its rect.
+        clip.scissor = current.active ? intersect(current.scissor, current.rect) : current.scissor;
+        if (current.active && rounded(current.radii) && contains(r, current.rect)) {
+            return current; // the new clip contains the old one: nothing changes
+        }
+        clip.rect = r;
+        clip.radii = corners;
         return clip;
     }
 

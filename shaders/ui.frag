@@ -23,6 +23,7 @@ layout(location = 7) flat in vec4 in_gradient;
 layout(location = 8) flat in vec4 in_clip_rect;
 layout(location = 9) flat in vec4 in_clip_radii;
 layout(location = 10) flat in vec4 in_extra;
+layout(location = 11) flat in vec4 in_clip_scissor;
 
 layout(location = 0) out vec4 out_color; // premultiplied
 
@@ -175,11 +176,16 @@ vec4 shade_box_shadow() {
 
 // --- Clipping ---
 
+// The innermost rounded clip, at its own size, times the enclosing clips' rect: a circle half
+// scrolled out of view stays a circle with a straight cut.
 float clip_coverage() {
     vec2 half_size = in_clip_rect.zw * 0.5;
     vec2 center = in_clip_rect.xy + half_size;
-    float d = rounded_box_distance(gl_FragCoord.xy - center, half_size, in_clip_radii);
-    return clamp(0.5 - d, 0.0, 1.0);
+    float shape = clamp(0.5 - rounded_box_distance(gl_FragCoord.xy - center, half_size, in_clip_radii), 0.0, 1.0);
+    vec2 scissor_half = in_clip_scissor.zw * 0.5;
+    vec2 scissor_center = in_clip_scissor.xy + scissor_half;
+    float scissor = clamp(0.5 - rounded_box_distance(gl_FragCoord.xy - scissor_center, scissor_half, vec4(0.0)), 0.0, 1.0);
+    return shape * scissor;
 }
 
 void main() {
