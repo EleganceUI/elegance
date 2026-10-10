@@ -180,6 +180,8 @@ public:
 
     void set_pixels(std::shared_ptr<const DecodedImage> pixels) { pixels_ = std::move(pixels); }
 
+    void accessibility(AccessibilityInfo& out) const override { out.role = AccessRole::image; }
+
     void inspect(Inspection& out) const override {
         out.name = "Image";
         out.detail = asset_->name;

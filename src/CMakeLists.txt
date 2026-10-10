@@ -35,6 +35,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         net/http.cpp
         gpu/vk.cpp
         gpu/vma.cpp
+        platform/accessibility_adapter.cpp
         platform/desktop_sdl.cpp
         platform/dynamic_library.cpp
         platform/platform_sdl.cpp
@@ -57,6 +58,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         view/fragment.cpp
         view/hot_reload.cpp
         view/image.cpp
+        view/accessibility.cpp
         view/async_image.cpp
         view/raster_image.cpp
         view/video_view.cpp
@@ -107,6 +109,21 @@ find_package(VulkanMemoryAllocator CONFIG REQUIRED)
 find_package(Freetype REQUIRED)
 find_package(harfbuzz CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
+# Accessibility (design.md §12): AccessKit's official prebuilt C library (MIT / Apache-2.0),
+# linked statically, so building Elegence needs no Rust toolchain.
+if (ELG_ACCESSIBILITY)
+    include(FetchContent)
+    FetchContent_Declare(accesskit_c
+        URL https://github.com/AccessKit/accesskit-c/releases/download/0.23.1/accesskit-c-0.23.1.zip
+        URL_HASH SHA256=35b7ca8a6f1e038b5da35e1e9e5a0adaed9bfcf21e1496d29598fbbadcc7043f
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+        SOURCE_SUBDIR no-cmake-here) # use the prebuilt libraries, don't build it
+    FetchContent_MakeAvailable(accesskit_c)
+    include("${accesskit_c_SOURCE_DIR}/accesskit-config.cmake")
+    target_link_libraries(elegence PRIVATE accesskit-static)
+    target_compile_definitions(elegence PRIVATE ELG_HAVE_ACCESSKIT=1)
+endif ()
+
 # miniaudio is a single header (design.md §13.3).
 find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
 target_include_directories(elegence PRIVATE "${MINIAUDIO_INCLUDE_DIR}")

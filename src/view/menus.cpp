@@ -7,6 +7,7 @@
 // around them.
 
 #include "view/icons.h"
+#include "view/accessibility.h"
 #include "view/view_node.h"
 
 #include <elg/animation.h>
@@ -398,7 +399,9 @@ public:
             pressed, hovered, context);
         element->set_focus_state(focused);
         *element_slot = element.get();
-        return element;
+        AccessibilitySpec semantics;
+        semantics.role = AccessRole::popup_button;
+        return with_accessibility(std::move(element), std::move(semantics));
     }
 
 private:

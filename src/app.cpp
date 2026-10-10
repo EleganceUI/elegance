@@ -16,6 +16,8 @@
 #include "text/text_system.h"
 #include "view/animated.h"
 #include "view/event_dispatcher.h"
+#include "platform/accessibility_adapter.h"
+#include "view/accessibility.h"
 #include "view/drop.h"
 #include "view/inspector.h"
 #include "core/ui_tasks.h"
@@ -239,6 +241,9 @@ struct LiveWindow {
     Scope scope;
     std::unique_ptr<Element> root;
     EventDispatcher events{*root, focus};
+    // Screen readers (design.md §12); made by App::run, dormant until one asks.
+    std::unique_ptr<AccessibilityAdapter> accessibility;
+    AccessTree accessibility_tree; // the last one sent: what requests act on
 };
 
 MouseButton to_mouse_button(platform::PointerButton button) {
@@ -454,6 +459,51 @@ int App::run() {
         inspector_changed = true;
     };
 
+    // Screen readers (design.md §12): the window's tree, built when asked for, and their requests.
+    const auto perform_access_request = [&](std::uint32_t window_id, const AccessRequest& request) {
+        auto it = std::ranges::find_if(windows, [&](const auto& live) { return live->window.id() == window_id; });
+        if (it == windows.end()) {
+            return;
+        }
+        LiveWindow& live = **it;
+        const auto target = live.accessibility_tree.targets.find(request.target);
+        if (target == live.accessibility_tree.targets.end() || !target->second.element) {
+            return;
+        }
+        Element* element = target->second.element;
+        switch (request.action.kind) {
+        case AccessibilityAction::Kind::focus: live.focus.focus(element, true); break;
+        case AccessibilityAction::Kind::scroll_into_view:
+            for (Element* e = element->parent(); e; e = e->parent()) {
+                e->reveal(element->frame());
+            }
+            break;
+        case AccessibilityAction::Kind::click:
+            if (target->second.action) {
+                target->second.action();
+                break;
+            }
+            [[fallthrough]];
+        default: element->accessibility_action(request.action); break;
+        }
+        live.dirty = true;
+    };
+    const auto attach_accessibility = [&](LiveWindow& live) {
+        LiveWindow* const window = &live;
+        const std::uint32_t id = live.window.id();
+        live.accessibility = std::make_unique<AccessibilityAdapter>(
+            live.window.native_handle(),
+            AccessibilityAdapter::Callbacks{
+                .build = [window] {
+                    window->accessibility_tree = build_accessibility_tree(
+                        *window->root, window->entry->desc.title, window->window.logical_size(), window->focus.focused());
+                    return window->accessibility_tree;
+                },
+                .scale = [window] { return window->window.scale(); },
+                .request = [&perform_access_request, id](const AccessRequest& request) { perform_access_request(id, request); },
+            });
+    };
+
     const auto post_frame = [&](LiveWindow& live) {
         // Cleared first: layout may ask for another frame (lazy stacks measuring new items,
         // ScrollPosition requests settling), and that request must survive.
@@ -482,6 +532,9 @@ int App::run() {
             }
         }
         live.animating = frame.list.animating;
+        if (live.accessibility) {
+            live.accessibility->update(); // only when a screen reader listens
+        }
         if (std::vector<GlyphUpload> uploads = text.atlas.take_uploads(); !uploads.empty()) {
             mailbox.post(AtlasUploadCommand{std::move(uploads)});
         }
@@ -503,6 +556,7 @@ int App::run() {
     }
     mailbox.wait_until_done(first_frame, kFirstFrameTimeout);
     for (const auto& live : windows) {
+        attach_accessibility(*live);
         live->window.show();
     }
 
@@ -563,6 +617,7 @@ int App::run() {
         post_frame(*live);
         text.atlas.wait_idle(kGlyphWarmup);
         mailbox.wait_until_done(post_frame(*live), kFirstFrameTimeout);
+        attach_accessibility(*live);
         live->window.show();
         inspector_window = live->window.id();
         windows.push_back(std::move(live));

@@ -383,6 +383,29 @@ void TextEditor::restore(std::vector<Snapshot>& from, std::vector<Snapshot>& to)
     changed();
 }
 
+void TextEditor::replace_all(std::string value) {
+    text_ = std::move(value);
+    caret_ = anchor_ = text_.size();
+    changed();
+}
+
+void TextFieldElement::accessibility(AccessibilityInfo& out) const {
+    out.role = editor_->secure() ? AccessRole::password_field : AccessRole::text_field;
+    out.value = editor_->accessible_text();
+    out.placeholder = editor_->placeholder();
+    out.label = editor_->placeholder();
+    out.disabled = enabled_ && !untrack(enabled_);
+    out.can_focus = out.can_set_value = !out.disabled;
+}
+
+bool TextFieldElement::accessibility_action(const AccessibilityAction& action) {
+    if (action.kind != AccessibilityAction::Kind::set_value || (enabled_ && !untrack(enabled_))) {
+        return false;
+    }
+    editor_->replace_all(action.text);
+    return true;
+}
+
 void TextEditor::changed() {
     binding_.set(text_);
     reshape();

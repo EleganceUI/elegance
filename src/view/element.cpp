@@ -8,6 +8,7 @@
 #include "view/view_node.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 
 namespace elg::detail {
@@ -58,6 +59,14 @@ Size Element::size_that_fits(ProposedSize proposal) {
     }
     size_cache_.emplace_back(proposal, size);
     return size;
+}
+
+std::uint64_t Element::accessibility_id() const noexcept {
+    static std::atomic<std::uint64_t> next{2}; // 1 is each window's root
+    if (accessibility_id_ == 0) {
+        accessibility_id_ = next.fetch_add(1, std::memory_order_relaxed);
+    }
+    return accessibility_id_;
 }
 
 void Element::invalidate_layout() noexcept {

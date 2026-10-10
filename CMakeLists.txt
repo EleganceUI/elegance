@@ -25,6 +25,7 @@ option(ELG_ICONS         "Embed the built-in icon set (Phosphor, MIT): regular, 
 option(ELG_ICONS_EXTRA_WEIGHTS "Also embed Phosphor's thin, light, and duotone styles (~1.6 MB)" ON)
 option(ELG_BUILD_EXAMPLES "Build the example apps (needs the vcpkg \"examples\" feature)" ${PROJECT_IS_TOP_LEVEL})
 option(ELG_BUILD_TESTS   "Build the unit tests (needs the vcpkg \"tests\" feature)" ${PROJECT_IS_TOP_LEVEL})
+option(ELG_ACCESSIBILITY "Screen reader support through AccessKit (downloads its prebuilt C library)" ON)
 
 # Put the library and every executable in one folder so the sandbox finds the DLL on Windows.
 if (PROJECT_IS_TOP_LEVEL)

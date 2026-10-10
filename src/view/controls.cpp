@@ -5,6 +5,7 @@
 // Slider and ProgressView (elements that draw themselves), and Stepper and the segmented Picker
 // (composed from the public API, like an app's own controls would be).
 
+#include "view/accessibility.h"
 #include "view/view_node.h"
 
 #include <elg/animation.h>
@@ -45,6 +46,28 @@ public:
 
     EventHandler* event_handler() noexcept override { return this; }
 
+    void accessibility(AccessibilityInfo& out) const override {
+        out.role = AccessRole::slider;
+        out.numeric = untrack([&] { return value_(); });
+        out.minimum = options_.min;
+        out.maximum = options_.max;
+        out.step = adjust_step();
+        out.disabled = !enabled();
+        out.can_adjust = out.can_set_value = out.can_focus = !out.disabled;
+    }
+    bool accessibility_action(const AccessibilityAction& action) override {
+        if (!enabled()) {
+            return false;
+        }
+        const float now = untrack([&] { return value_(); });
+        switch (action.kind) {
+        case AccessibilityAction::Kind::increment: write(now + adjust_step(), nullptr); return true;
+        case AccessibilityAction::Kind::decrement: write(now - adjust_step(), nullptr); return true;
+        case AccessibilityAction::Kind::set_numeric: write(static_cast<float>(action.number), nullptr); return true;
+        default: return false;
+        }
+    }
+
 protected:
     Size measure(ProposedSize proposal) override {
         const float width = proposal.width.value_or(kDefaultWidth);
@@ -61,6 +84,8 @@ private:
     float fraction(float value) const {
         return std::clamp((value - options_.min) / (options_.max - options_.min), 0.f, 1.f);
     }
+    // What a screen reader's increment moves: the step, else a twentieth of the range.
+    float adjust_step() const { return options_.step > 0 ? options_.step : (options_.max - options_.min) / 20; }
     bool enabled() const {
         return !untrack([&] { return environment_.get<DisabledKey>(); });
     }
@@ -194,6 +219,15 @@ public:
 
     void set_fraction(float fraction, const Animation* animation) {
         fraction_.set(std::clamp(fraction, 0.f, 1.f), animation);
+    }
+
+    void accessibility(AccessibilityInfo& out) const override {
+        out.role = AccessRole::progress;
+        if (determinate_) {
+            out.numeric = fraction_.target();
+            out.minimum = 0;
+            out.maximum = 1;
+        }
     }
 
 protected:
@@ -361,9 +395,13 @@ View Stepper(View label, Binding<int> value, StepperOptions options) {
     };
     const View buttons =
         HStack({.spacing = 0},
-               Button(Text("\xE2\x88\x92"), change(-1)).disabled([=] { return value() <= options.min; }), // U+2212 minus
+               Button(Text("\xE2\x88\x92"), change(-1))
+                   .disabled([=] { return value() <= options.min; })
+                   .accessibility_label("Decrease"), // U+2212 minus
                Rectangle().fill(ThemeColor::outline).frame(1, 16),
-               Button(Text("+"), change(+1)).disabled([=] { return value() >= options.max; }))
+               Button(Text("+"), change(+1))
+                   .disabled([=] { return value() >= options.max; })
+                   .accessibility_label("Increase"))
             .button_style(detail::StepperSegmentStyle{})
             .background(ThemeColor::surface_raised, RoundedRectangle(7))
             .clip_shape(RoundedRectangle(7))

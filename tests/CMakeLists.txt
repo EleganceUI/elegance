@@ -6,6 +6,7 @@ find_package(Catch2 3 CONFIG REQUIRED)
 include(Catch)
 
 add_executable(elegence_tests
+        accessibility_tests.cpp
         animation_tests.cpp
         audio_tests.cpp
         desktop_tests.cpp

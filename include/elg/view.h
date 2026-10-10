@@ -125,6 +125,25 @@ struct ProposedSize {
     friend constexpr bool operator==(const ProposedSize&, const ProposedSize&) = default;
 };
 
+// What a view is to screen readers, when the automatic choice isn't right (accessibility_role()).
+enum class AccessibilityRole {
+    group,
+    label,
+    heading,
+    button,
+    link,
+    image,
+    toggle,
+    checkbox,
+    slider,
+    progress,
+    text_field,
+    list,
+    list_item,
+    tab,
+    menu_item,
+};
+
 // What a view does with things dragged in from other apps (on_drop()). Handlers get what was
 // dropped and where (in the view's coordinates); returning false means it wasn't wanted.
 struct DropOptions {
@@ -321,6 +340,22 @@ public:
     // Files or text dragged from other apps (Explorer, a browser) can be dropped here. The
     // innermost view under the pointer that takes that kind of thing gets it.
     ELG_API View on_drop(DropOptions options) const;
+
+    // --- Accessibility (design.md §12) ---
+    // Built-in views describe themselves to screen readers; these adjust that.
+    // What it's called (an icon-only button needs one: Image("trash") says nothing).
+    ELG_API View accessibility_label(Prop<std::string> label) const;
+    // What it holds, as words ("3 of 10", "50%").
+    ELG_API View accessibility_value(Prop<std::string> value) const;
+    // What happens if it's used, when the label doesn't say ("Deletes the draft").
+    ELG_API View accessibility_hint(Prop<std::string> hint) const;
+    // Leaves it (and everything inside) out: decoration.
+    ELG_API View accessibility_hidden(bool hidden = true) const;
+    ELG_API View accessibility_role(AccessibilityRole role) const;
+    // One element for everything inside, labeled with their text (a row read as one line).
+    ELG_API View accessibility_element() const;
+    // What a screen reader's default action (click) does, for views made clickable with gestures.
+    ELG_API View accessibility_action(std::function<void()> action) const;
     ELG_API View on_hover(std::function<void(bool)> action, HoverDelay delay) const;
     // The hover delay for on_hover handlers and controls inside (default: enter 0.1 s, exit 0).
     ELG_API View hover_delay(HoverDelay delay) const;

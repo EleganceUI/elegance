@@ -7,6 +7,7 @@
 #include "view/view_node.h"
 
 #include "core/crash.h"
+#include "view/accessibility.h"
 #include "view/text_field.h"
 #include "view/window_drag.h"
 
@@ -691,7 +692,10 @@ std::unique_ptr<Element> ToggleNode::lower(const LowerContext& context) const {
         const EnvironmentScope scope(environment);
         body = style->make_body(configuration);
     }
-    return make_button_element(body, toggle, pressed, hovered, context);
+    AccessibilitySpec semantics;
+    semantics.role = AccessRole::toggle;
+    semantics.toggled = [is_on]() -> std::optional<bool> { return is_on(); };
+    return with_accessibility(make_button_element(body, toggle, pressed, hovered, context), std::move(semantics));
 }
 
 // Like SwiftUI: the binding is true while focus is anywhere inside the view, and setting it

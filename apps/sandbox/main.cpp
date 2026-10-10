@@ -337,7 +337,9 @@ View LayoutCards() {
 // for fit / fill; PNG transparency; EXIF orientation.
 View ImageCards() {
     const std::string assets = ELG_SANDBOX_ASSETS;
-    const auto landscape = [&] { return Image({.file = assets + "/landscape.jpg"}).resizable(); };
+    const auto landscape = [&] {
+        return Image({.file = assets + "/landscape.jpg"}).resizable().accessibility_label("Mountains at dusk");
+    };
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
                   Captioned(landscape()
                                 .aspect_ratio(ContentMode::fill)
@@ -378,11 +380,13 @@ View AudioCards() {
                       Button(Text([=] { return std::string(tune.is_playing() ? "Pause" : "Play"); }).frame({.width = 44}),
                              [=] { tune.toggle(); })
                           .button_style(BorderedButtonStyle{}),
-                      Slider(tune.time_binding(), {.max = static_cast<float>(tune.duration())}).frame({.width = 200}),
+                      Slider(tune.time_binding(), {.max = static_cast<float>(tune.duration())})
+                          .frame({.width = 200})
+                          .accessibility_label("Position"),
                       Text([=] { return clock(tune.time()) + " / " + clock(tune.duration()); })
                           .font(Font::callout)
                           .foreground_style(ThemeColor::secondary)),
-               HStack({.spacing = 8}, Image("speaker-low"), Slider(tune.volume_binding()).frame({.width = 120}),
+               HStack({.spacing = 8}, Image("speaker-low"), Slider(tune.volume_binding()).frame({.width = 120}).accessibility_label("Volume"),
                       Image("speaker-high"),
                       Toggle("Loop", Binding<bool>([=] { return tune.is_looping(); }, [=](bool on) { tune.set_looping(on); }))
                           .fixed_size()));

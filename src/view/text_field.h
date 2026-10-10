@@ -43,6 +43,11 @@ public:
     void set_environment(EnvironmentValues environment) { environment_ = std::move(environment); }
     // The binding changed from outside (not by editing).
     void set_text(std::string value);
+    // Assistive technology: the text (empty for secure fields), the placeholder, and replacing it.
+    std::string accessible_text() const { return secure_ ? std::string() : text_; }
+    const std::string& placeholder() const noexcept { return placeholder_; }
+    bool secure() const noexcept { return secure_; }
+    void replace_all(std::string value);
 
     // Input, from the TextFieldElement.
     EventResult key(const KeyEvent& event);
@@ -169,6 +174,8 @@ public:
 
     EventHandler* event_handler() noexcept override { return this; }
     HoverDelay effective_hover_delay() const override { return {0, 0}; } // the I-beam shows at once
+    void accessibility(AccessibilityInfo& out) const override;
+    bool accessibility_action(const AccessibilityAction& action) override;
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
 protected:

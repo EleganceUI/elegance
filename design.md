@@ -972,9 +972,45 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
 
 - Expose a semantic tree (roles, names, states, actions) to the OS screen readers
   (UIA / AT-SPI / NSAccessibility).
-- **Proposed**: Integrate **AccessKit** via its C API rather than writing three backends.
+- **Decided:** **AccessKit** through its C API (`accesskit-c`), rather than writing three backends.
+  - CMake downloads the official prebuilt release (pinned version and SHA-256) and links it
+    statically (`ELG_ACCESSIBILITY`, on by default). Building Elegence needs no Rust toolchain.
+    MIT / Apache-2.0.
 - Built-in components ship with correct roles. Keyboard navigation works everywhere, and
   `prefers-reduced-motion` and high-contrast settings are respected.
+
+**How it works** (`src/view/accessibility.*`, `src/platform/accessibility_adapter.*`):
+- **Element semantics:** each element describes itself (`virtual accessibility(AccessibilityInfo&)`):
+  role, label, value, hint, placeholder, states (disabled, toggled, expanded, selected), numeric
+  value and range, and supported actions. Elements without a role are transparent.
+  - Text: a label. Icons and empty text are hidden.
+  - Buttons combine their content's text into their name.
+  - `Toggle` is a switch with its state. `MenuButton` and `Picker(.menu)` are pop-up buttons
+    (combo boxes).
+  - Sliders have their value, range, step, increment/decrement and set value.
+  - `ProgressView` has its fraction. Text fields have their text (never a secure field's),
+    placeholder and set value.
+  - Images, video and scroll views have their roles. Stepper buttons are named "Decrease" and
+    "Increase".
+- **Modifiers:** `.accessibility_label`, `_value`, `_hint` (reactive), `_hidden`, `_role`,
+  `_element` (combine children into one element, labeled with their text) and `_action`. They
+  apply to the element they wrap, or the nearest one inside with a role; around several children
+  they form a group.
+- **The tree is built on demand:** AccessKit's Windows subclassing adapter hooks the window's
+  `WM_GETOBJECT` and stays dormant until a screen reader asks.
+  - Once active, the whole tree is rebuilt from current values after each frame and sent, and
+    AccessKit diffs it. No bookkeeping to keep in sync, and nothing at all while no screen
+    reader is listening (idle CPU stays 0).
+  - Node ids are per-element process-unique ids. Bounds are window points × scale. Focus is the
+    focused element's node, or the nearest one around it.
+- **Requests:** actions arrive on the screen reader's thread and are copied and posted to the UI
+  thread (click, focus, increment/decrement, set value/number, scroll into view). Focus goes
+  through the FocusManager; scroll into view through `reveal()` up the ancestors.
+- **Verified** with Windows UI Automation (the API Narrator uses), from a script against the
+  running sandbox:
+  - Names, roles, values and toggle and range states read correctly.
+  - Invoke, Toggle, RangeValue.SetValue, Value.SetValue on a text field, and SetFocus all act
+    on the app.
 
 ---
 
@@ -1899,7 +1935,20 @@ Separate render thread from day one (decided).
   - Copy PDBs so debuggers keep symbols.
   - Theme/token files that reload without a rebuild.
   - Catch exceptions from module bodies during mount (today they end the app, as in any view).
-- [ ] Accessibility, docs & examples
+- [x] Accessibility (§12): AccessKit on Windows (UI Automation); element semantics for every
+  built-in view; `.accessibility_*` modifiers; on-demand tree with actions. Verified through UI
+  Automation and tested.
+- [ ] Accessibility follow-ups:
+  - macOS (NSAccessibility) and Linux (AT-SPI) adapters. AccessKit has them; they need the
+    platform window handles.
+  - Popups and menus as their own trees (menu, menu item roles).
+  - Live regions (announcements).
+  - Text selection and caret (text runs) for fields.
+  - Lists and list items for `List`.
+  - Headings in `Font::large_title` text.
+  - Reduced motion and high contrast from the system settings.
+  - Testing with Narrator and NVDA by a person.
+- [ ] Docs & examples
 - [x] Media (§13.3) part 1, raster images:
   - **API:**
     - `Image({.file})` and `Image({.data})`, with `scale` for @2x art. Exactly one source;

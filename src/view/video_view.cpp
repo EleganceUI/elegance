@@ -131,6 +131,8 @@ public:
         }
     }
 
+    void accessibility(AccessibilityInfo& out) const override { out.role = AccessRole::video; }
+
     void inspect(Inspection& out) const override {
         out.name = "VideoView";
         out.detail = std::format("{} × {}", size_.width, size_.height);
@@ -225,11 +227,13 @@ View VideoControls(VideoPlayer player) {
     const View play = Button(detail::SwitchIcon("pause.fill", "play.fill", [player] { return player.is_playing(); })
                                  .frame(18, 18),
                              [player] { player.toggle(); })
-                          .button_style(PlainButtonStyle{});
+                          .button_style(PlainButtonStyle{})
+                          .accessibility_label([player] { return std::string(player.is_playing() ? "Pause" : "Play"); });
     const View mute = Button(detail::SwitchIcon("speaker-slash.fill", "speaker-high.fill", [player] { return player.is_muted(); })
                                  .frame(18, 18),
                              [player] { player.set_muted(!player.is_muted()); })
-                          .button_style(PlainButtonStyle{});
+                          .button_style(PlainButtonStyle{})
+                          .accessibility_label([player] { return std::string(player.is_muted() ? "Unmute" : "Mute"); });
     const View time = Text([player] {
                           const std::string failure = player.error();
                           return failure.empty() ? detail::clock(player.time()) + " / " + detail::clock(player.duration())
@@ -237,7 +241,11 @@ View VideoControls(VideoPlayer player) {
                       })
                           .font(Font::system(12))
                           .fixed_size();
-    return HStack({.spacing = 12}, play, Slider(player.progress_binding()), time, mute)
+    return HStack({.spacing = 12}, play,
+                  Slider(player.progress_binding())
+                      .accessibility_label("Position")
+                      .accessibility_value([player] { return detail::clock(player.time()) + " of " + detail::clock(player.duration()); }),
+                  time, mute)
         .foreground_style(Color::white)
         .padding(EdgeInsets{.top = 8, .leading = 14, .bottom = 8, .trailing = 14})
         .background(Capsule().fill(Color::black.opacity(0.55f)));

@@ -33,6 +33,65 @@ namespace elg::detail {
 
 class FocusManager;
 
+// What an element is to assistive technology (design.md §12): screen readers see a tree of these.
+// An element with no role is transparent: its children join its parent's.
+enum class AccessRole {
+    none,
+    window,
+    group,
+    label,
+    heading,
+    button,
+    link,
+    toggle,   // a switch
+    checkbox,
+    slider,
+    stepper,
+    progress,
+    text_field,
+    password_field,
+    image,
+    video,
+    list,
+    list_item,
+    scroll_view,
+    tab,
+    menu,
+    menu_item,
+    popup_button, // a button that opens a menu (MenuButton, Picker)
+};
+
+struct AccessibilityInfo {
+    AccessRole role = AccessRole::none;
+    std::string label;       // its name
+    std::string value;       // what it holds (a text field's text, a slider's value as text)
+    std::string hint;        // a longer description
+    std::string placeholder;
+    bool hidden = false;          // it and everything inside are left out (decorative)
+    bool combine = false;         // children's text becomes its label; they aren't exposed themselves
+    bool disabled = false;
+    std::optional<bool> toggled;  // switches and check boxes
+    std::optional<bool> expanded;
+    bool selected = false;
+    std::optional<double> numeric; // sliders, steppers, progress
+    std::optional<double> minimum;
+    std::optional<double> maximum;
+    std::optional<double> step;
+    // Actions it supports; the element performs them in accessibility_action().
+    bool can_click = false;
+    bool can_focus = false;
+    bool can_adjust = false;     // increment / decrement
+    bool can_set_value = false;  // text or numbers
+};
+
+// What assistive technology asks an element to do.
+struct AccessibilityAction {
+    enum class Kind { click, focus, increment, decrement, set_value, set_numeric, scroll_into_view };
+    Kind kind = Kind::click;
+    std::string text;
+    double number = 0;
+};
+
 // What the inspector (design.md §16) shows for an element.
 struct Inspection {
     std::string name;   // e.g. "Text", "VStack", "Padding"
@@ -46,6 +105,13 @@ public:
 
     // Describes this element for the inspector. The default names it after its type.
     virtual void inspect(Inspection& out) const;
+    // Describes this element to assistive technology (design.md §12). The default: no role
+    // (transparent).
+    virtual void accessibility(AccessibilityInfo&) const {}
+    // Carries out an action from assistive technology; false if it can't.
+    virtual bool accessibility_action(const AccessibilityAction&) { return false; }
+    // A stable id for the accessibility tree, unique for the process.
+    std::uint64_t accessibility_id() const noexcept;
     // The proposal it was last placed with (inspector); nullopt before its first layout.
     std::optional<ProposedSize> last_proposal() const noexcept { return last_proposal_; }
 
@@ -167,6 +233,7 @@ private:
     std::shared_ptr<ImplicitAnimation> implicit_;
     std::vector<std::pair<ProposedSize, Size>> size_cache_;
     std::optional<ProposedSize> last_proposal_;
+    mutable std::uint64_t accessibility_id_ = 0;
 };
 
 class EmptyElement final : public Element {
@@ -276,6 +343,7 @@ struct TextStyle {
 
 class TextElement final : public Element {
 public:
+    void accessibility(AccessibilityInfo& out) const override;
     void inspect(Inspection& out) const override;
     // Font, content, and color are set with the setters (from static values or reactive
     // arguments), font first.
@@ -549,6 +617,8 @@ private:
 // are written to States the style reads, so only what the style derives from them updates.
 class ButtonElement final : public Element, private EventHandler {
 public:
+    void accessibility(AccessibilityInfo& out) const override;
+    bool accessibility_action(const AccessibilityAction& action) override;
     ButtonElement(std::unique_ptr<Element> content, std::function<void()> action, State<bool> pressed,
                   State<bool> hovered, std::function<bool()> enabled, std::function<HoverDelay()> hover_delay)
         : content_(std::move(content)), action_(std::move(action)), pressed_(std::move(pressed)),
@@ -617,6 +687,8 @@ struct ScrollTargetAccess {
 // ScrollView (scroll.cpp).
 class ScrollElement final : public Element, private EventHandler {
 public:
+    void accessibility(AccessibilityInfo& out) const override;
+    bool accessibility_action(const AccessibilityAction& action) override;
     ScrollElement(ScrollViewOptions options, std::unique_ptr<Element> content, std::function<Color()> indicator_color,
                   bool* needs_frame)
         : options_(std::move(options)), content_(std::move(content)), indicator_color_(std::move(indicator_color)) {
