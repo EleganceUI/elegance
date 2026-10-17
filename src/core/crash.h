@@ -8,16 +8,33 @@
 #include <exception>
 #include <format>
 #include <source_location>
-#include <stacktrace>
+#include <string>
 #include <string_view>
+#include <vector>
+#include <version>
+
+#if defined(__cpp_lib_stacktrace)
+#include <stacktrace>
+#endif
 
 namespace elg::detail {
+
+#if defined(__cpp_lib_stacktrace)
+using StackTrace = std::stacktrace;
+#else
+// libc++ (macOS) has no <stacktrace>: the return addresses, symbolized by execinfo.
+struct StackTrace {
+    static StackTrace current() noexcept;
+    std::vector<void*> frames;
+};
+#endif
+std::string to_text(const StackTrace& trace);
 
 // Reports a bug inside Elegence: writes a crash report, shows it, then terminates
 // (design.md §3.2). Never use this for errors the developer can handle; throw elg::Error.
 [[noreturn]] void internal_error(std::string_view message,
                                  std::source_location where = std::source_location::current(),
-                                 std::stacktrace trace = std::stacktrace::current());
+                                 StackTrace trace = StackTrace::current());
 
 // Routes std::terminate to internal_error() while alive, then restores the previous handler.
 class CrashHandlerScope {

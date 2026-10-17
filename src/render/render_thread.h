@@ -8,6 +8,8 @@
 #include "gpu/instance.h"
 #include "render/frame_mailbox.h"
 
+#include <elg/move_only_function.h>
+
 #include <exception>
 #include <functional>
 #include <future>
@@ -25,7 +27,7 @@ public:
     // errors. `compatibility_surface` picks a GPU that can present to the app's windows.
     // `on_error` is called from the render thread after a developer-facing error stopped it.
     RenderThread(const gpu::Instance& instance, VkSurfaceKHR compatibility_surface,
-                 FrameMailbox& mailbox, std::move_only_function<void()> on_error);
+                 FrameMailbox& mailbox, MoveOnlyFunction<void()> on_error);
     ~RenderThread();
 
     RenderThread(const RenderThread&) = delete;
@@ -39,7 +41,7 @@ private:
 
     const gpu::Instance& instance_;
     FrameMailbox& mailbox_;
-    std::move_only_function<void()> on_error_;
+    MoveOnlyFunction<void()> on_error_;
     mutable std::mutex error_mutex_;
     std::exception_ptr error_;
     std::thread thread_;

@@ -827,7 +827,7 @@ Camera::Camera(CameraOptions options) : mirrored_(options.mirrored) {
 #if defined(_WIN32)
     source_ = std::make_shared<detail::CameraSource>(std::move(options));
 #else
-    source_ = detail::VideoSource::create(""); // reports that it isn't available
+    source_ = detail::VideoSource::unsupported("cameras aren't available on this platform yet");
 #endif
 }
 

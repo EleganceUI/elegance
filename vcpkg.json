@@ -14,7 +14,7 @@
     },
     {
       "name": "stb",
-      "platform": "!windows"
+      "platform": "!windows & !osx"
     },
     {
       "name": "sdl3",

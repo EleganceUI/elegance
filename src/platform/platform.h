@@ -176,7 +176,7 @@ void set_text_cursor(bool text);
 
 class Platform {
 public:
-    using LiveResizeCallback = std::move_only_function<void(std::uint32_t window_id)>;
+    using LiveResizeCallback = MoveOnlyFunction<void(std::uint32_t window_id)>;
 
     Platform();
     ~Platform();

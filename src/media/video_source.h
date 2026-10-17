@@ -29,7 +29,8 @@ std::optional<std::array<std::uint8_t, 8>> render_adapter();
 // - `cpu`: pixels in memory, in `format`, packed (no row padding), top to bottom. The renderer
 //   uploads them and converts YUV to RGB in a Vulkan pass, the same on every platform. Any
 //   decoder or camera can start here.
-// Later: macOS IOSurfaces and Linux DMA-BUFs, imported like the D3D11 textures.
+// Later: macOS IOSurfaces and Linux DMA-BUFs, imported like the D3D11 textures (macOS decodes to
+// `cpu` NV12 for now).
 struct VideoFrame {
     enum class Kind { d3d11_shared, cpu };
     enum class Format : std::uint32_t { bgra = 0, nv12 = 1, yuy2 = 2, i420 = 3 };
@@ -60,6 +61,8 @@ class VideoSource : public std::enable_shared_from_this<VideoSource> {
 public:
     // UI thread. `url` is a file path or an http(s) URL.
     static std::shared_ptr<VideoSource> create(std::string url);
+    // A source that never plays, with `message` as its error.
+    static std::shared_ptr<VideoSource> unsupported(std::string message);
     virtual ~VideoSource() = default;
 
     // --- UI thread ---

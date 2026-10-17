@@ -7,6 +7,7 @@
 
 #include <elg/color.h>
 #include <elg/export.h>
+#include <elg/move_only_function.h>
 #include <elg/view.h>
 
 #include <functional>
@@ -42,7 +43,7 @@ struct WindowDesc {
 };
 
 // Builds a window's root view. Called once, on the UI thread, when the window opens.
-using ContentFunction = std::move_only_function<View()>;
+using ContentFunction = MoveOnlyFunction<View()>;
 
 // Owns the application lifetime: windows, the event loop, and the render thread.
 class ELG_API App {

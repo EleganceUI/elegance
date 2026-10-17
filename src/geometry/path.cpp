@@ -13,7 +13,11 @@
 #include <charconv>
 #include <cmath>
 #include <format>
+#include <locale>
 #include <numbers>
+#include <sstream>
+#include <string>
+#include <version>
 
 namespace elg {
 
@@ -269,10 +273,48 @@ public:
         if (begin < end && *begin == '+') {
             ++begin;
         }
+#if defined(__cpp_lib_to_chars)
         const auto [next, error] = std::from_chars(begin, end, value);
         if (error != std::errc{}) {
             fail("expected a number");
         }
+#else
+        // libc++ (macOS) lacks floating-point from_chars: find the number's end the same way,
+        // then parse it in the classic locale.
+        const char* next = begin;
+        const auto digits = [&] {
+            const char* start = next;
+            while (next < end && std::isdigit(static_cast<unsigned char>(*next))) {
+                ++next;
+            }
+            return next > start;
+        };
+        if (next < end && *next == '-') {
+            ++next;
+        }
+        bool mantissa = digits();
+        if (next < end && *next == '.') {
+            ++next;
+            mantissa = digits() || mantissa;
+        }
+        if (!mantissa) {
+            fail("expected a number");
+        }
+        if (next < end && (*next == 'e' || *next == 'E')) {
+            const char* exponent = next++;
+            if (next < end && (*next == '-' || *next == '+')) {
+                ++next;
+            }
+            if (!digits()) {
+                next = exponent; // "1e" is the number 1, then something else
+            }
+        }
+        std::istringstream text(std::string(begin, next));
+        text.imbue(std::locale::classic());
+        if (!(text >> value)) {
+            fail("expected a number");
+        }
+#endif
         at_ = static_cast<std::size_t>(next - data_.data());
         return value;
     }

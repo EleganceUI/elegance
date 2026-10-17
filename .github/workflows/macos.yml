@@ -1,0 +1,49 @@
+# Builds Elegence on macOS (Apple Clang, libc++, MoltenVK) and runs the unit tests.
+name: macOS
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: [docs/**, roadmap/**, design/**, "**.md"]
+  pull_request:
+    paths-ignore: [docs/**, roadmap/**, design/**, "**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/../vcpkg
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/../vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      # glslc comes from shaderc; MoltenVK and the loader are what volk finds at run time.
+      - name: Install tools
+        run: |
+          brew install cmake ninja pkgconf shaderc molten-vk vulkan-loader
+          cmake --version
+
+      - name: Set up vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../vcpkg-cache
+          key: vcpkg-macos-15-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-macos-15-
+
+      - name: Configure
+        run: cmake --preset macos-debug
+
+      - name: Build
+        run: cmake --build --preset macos-debug
+
+      - name: Test
+        run: ctest --test-dir build/macos-debug --output-on-failure

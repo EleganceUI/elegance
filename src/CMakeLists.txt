@@ -160,6 +160,16 @@ if (WIN32)
     target_link_libraries(elegence PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid mf mfreadwrite strmiids oleaut32 winhttp shell32)
 endif ()
 
+if (APPLE)
+    # Video playback through AVFoundation (Objective-C++, ARC); images through ImageIO.
+    enable_language(OBJCXX)
+    target_sources(elegence PRIVATE media/video_source_apple.mm)
+    set_source_files_properties(media/video_source_apple.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_link_libraries(elegence PRIVATE
+            "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework QuartzCore"
+            "-framework Foundation" "-framework ImageIO" "-framework CoreGraphics" "-framework CoreFoundation")
+endif ()
+
 target_link_libraries(elegence PRIVATE
         SDL3::SDL3
         volk::volk

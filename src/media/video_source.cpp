@@ -3,7 +3,8 @@
 // https://mozilla.org/MPL/2.0/.
 
 // Video sources (design.md §13.3). Windows: Media Foundation's media engine in frame-server
-// mode, rendering each new frame into a ring of D3D11 textures shared with Vulkan.
+// mode, rendering each new frame into a ring of D3D11 textures shared with Vulkan. macOS:
+// AVFoundation, in video_source_apple.mm.
 
 #include "media/video_source.h"
 
@@ -62,7 +63,7 @@ namespace {
 // Platforms without a video backend yet: an error, shown by the view.
 class UnsupportedVideoSource final : public VideoSource {
 public:
-    UnsupportedVideoSource() { error = std::string("video playback isn't available on this platform yet"); }
+    explicit UnsupportedVideoSource(std::string message) { error = std::move(message); }
     void play() override {}
     void pause() override {}
     void seek(double) override {}
@@ -489,13 +490,23 @@ STDMETHODIMP EngineNotify::EventNotify(DWORD event, DWORD_PTR param1, DWORD) {
 
 } // namespace
 
+#if defined(__APPLE__)
+std::shared_ptr<VideoSource> create_avfoundation_source(std::string url); // video_source_apple.mm
+#endif
+
 std::shared_ptr<VideoSource> VideoSource::create(std::string url) {
 #if defined(_WIN32)
     return std::make_shared<MediaEngineSource>(std::move(url));
+#elif defined(__APPLE__)
+    return create_avfoundation_source(std::move(url));
 #else
     (void)url;
-    return std::make_shared<UnsupportedVideoSource>();
+    return unsupported("video playback isn't available on this platform yet");
 #endif
+}
+
+std::shared_ptr<VideoSource> VideoSource::unsupported(std::string message) {
+    return std::make_shared<UnsupportedVideoSource>(std::move(message));
 }
 
 } // namespace elg::detail

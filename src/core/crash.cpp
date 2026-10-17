@@ -9,6 +9,7 @@
 
 #include <elg/app.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -19,14 +20,50 @@
 #include <sstream>
 #include <thread>
 
+#if !defined(__cpp_lib_stacktrace)
+#include <execinfo.h>
+#endif
+
 namespace elg::detail {
+
+#if defined(__cpp_lib_stacktrace)
+std::string to_text(const StackTrace& trace) {
+    return std::to_string(trace);
+}
+#else
+StackTrace StackTrace::current() noexcept {
+    StackTrace trace;
+    try {
+        trace.frames.resize(128);
+        const int count = backtrace(trace.frames.data(), static_cast<int>(trace.frames.size()));
+        trace.frames.resize(static_cast<std::size_t>(std::max(count, 0)));
+    } catch (...) {
+        trace.frames.clear();
+    }
+    return trace;
+}
+
+std::string to_text(const StackTrace& trace) {
+    std::string text;
+    if (trace.frames.empty()) {
+        return "(unavailable)";
+    }
+    char** symbols = backtrace_symbols(trace.frames.data(), static_cast<int>(trace.frames.size()));
+    for (std::size_t i = 0; i < trace.frames.size(); ++i) {
+        text += symbols ? symbols[i] : std::format("{}", trace.frames[i]);
+        text += '\n';
+    }
+    std::free(symbols);
+    return text;
+}
+#endif
 
 namespace {
 
 std::atomic_flag g_crashing;
 
 std::string build_report(std::string_view message, const std::source_location& where,
-                         const std::stacktrace& trace) {
+                         const StackTrace& trace) {
     std::ostringstream thread_id;
     thread_id << std::this_thread::get_id();
 
@@ -38,7 +75,7 @@ std::string build_report(std::string_view message, const std::source_location& w
                                      "stack trace:\n{}\n\n"
                                      "recent log:\n",
                                      version(), thread_id.str(), where.file_name(), where.line(),
-                                     where.function_name(), message, std::to_string(trace));
+                                     where.function_name(), message, to_text(trace));
     for (const std::string& line : recent_log_lines()) {
         report += line;
         report += '\n';
@@ -72,7 +109,7 @@ std::filesystem::path write_report(const std::string& report) {
 
 } // namespace
 
-void internal_error(std::string_view message, std::source_location where, std::stacktrace trace) {
+void internal_error(std::string_view message, std::source_location where, StackTrace trace) {
     // A crash while reporting a crash: give up immediately.
     if (g_crashing.test_and_set()) {
         std::abort();

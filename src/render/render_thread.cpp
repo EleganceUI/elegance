@@ -34,7 +34,7 @@ struct Overloaded : Fs... {
 } // namespace
 
 RenderThread::RenderThread(const gpu::Instance& instance, VkSurfaceKHR compatibility_surface,
-                           FrameMailbox& mailbox, std::move_only_function<void()> on_error)
+                           FrameMailbox& mailbox, MoveOnlyFunction<void()> on_error)
     : instance_(instance), mailbox_(mailbox), on_error_(std::move(on_error)) {
     std::promise<void> ready;
     std::future<void> initialized = ready.get_future();
