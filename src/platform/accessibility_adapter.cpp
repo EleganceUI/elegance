@@ -11,6 +11,8 @@
 #include "core/ui_tasks.h"
 
 #include <atomic>
+#include <unordered_map>
+#include <vector>
 
 #if defined(ELG_HAVE_ACCESSKIT)
 #if defined(_WIN32)
@@ -62,17 +64,53 @@ struct AccessibilityAdapter::Impl {
     std::atomic<bool> active{false};
 
     // AccessKit's factories run synchronously on this (the UI) thread.
+    // What AccessKit has, to send only what changed after it (rebuilding every node of a large
+    // window each frame costs milliseconds).
+    std::unordered_map<std::uint64_t, AccessNode> sent;
+    std::uint64_t sent_focus = 0;
+    double sent_scale = 0;
+    // The nodes of the update being built (update()).
+    std::vector<const AccessNode*> pending;
+    std::uint64_t pending_focus = 0;
+
+    // The whole tree: when a client first asks for it.
     static accesskit_tree_update* build_update(void* userdata) {
         auto* self = static_cast<Impl*>(userdata);
         self->active = true;
-        return self->convert(self->callbacks.build());
+        const AccessTree& tree = self->callbacks.build();
+        std::vector<const AccessNode*> nodes;
+        nodes.reserve(tree.nodes.size());
+        for (const AccessNode& node : tree.nodes) {
+            nodes.push_back(&node);
+        }
+        self->remember(tree);
+        return self->convert(nodes, tree.focus, true);
     }
 
-    accesskit_tree_update* convert(const AccessTree& tree) const {
+    // The changes since the last update.
+    static accesskit_tree_update* build_changes(void* userdata) {
+        auto* self = static_cast<Impl*>(userdata);
+        return self->convert(self->pending, self->pending_focus, false);
+    }
+
+    void remember(const AccessTree& tree) {
+        sent.clear();
+        for (const AccessNode& node : tree.nodes) {
+            sent.emplace(node.id, node);
+        }
+        sent_focus = tree.focus;
+        sent_scale = callbacks.scale ? callbacks.scale() : 1.0;
+    }
+
+    accesskit_tree_update* convert(const std::vector<const AccessNode*>& nodes, std::uint64_t focus,
+                                   bool whole_tree) const {
         const double k = callbacks.scale ? callbacks.scale() : 1.0;
-        accesskit_tree_update* update = accesskit_tree_update_with_capacity_and_focus(tree.nodes.size(), tree.focus);
-        accesskit_tree_update_set_tree_info(update, accesskit_tree_info_new(AccessTree::kRoot));
-        for (const AccessNode& source : tree.nodes) {
+        accesskit_tree_update* update = accesskit_tree_update_with_capacity_and_focus(nodes.size(), focus);
+        if (whole_tree) {
+            accesskit_tree_update_set_tree_info(update, accesskit_tree_info_new(AccessTree::kRoot));
+        }
+        for (const AccessNode* node_source : nodes) {
+            const AccessNode& source = *node_source;
             const AccessibilityInfo& info = source.info;
             accesskit_node* node = accesskit_node_new(role_of(info.role));
             accesskit_node_set_bounds(node, accesskit_rect{source.bounds.x * k, source.bounds.y * k,
@@ -191,13 +229,30 @@ AccessibilityAdapter::~AccessibilityAdapter() {
 }
 
 void AccessibilityAdapter::update() {
-    if (!impl_->adapter) {
+    // Nothing until a client asks for the tree (build_update); then only what changed.
+    if (!impl_->adapter || !impl_->active) {
         return;
     }
+    Impl& impl = *impl_;
+    const AccessTree& tree = impl.callbacks.build();
+    const double scale = impl.callbacks.scale ? impl.callbacks.scale() : 1.0;
+    impl.pending.clear();
+    for (const AccessNode& node : tree.nodes) {
+        const auto it = impl.sent.find(node.id);
+        if (scale != impl.sent_scale || it == impl.sent.end() || !(it->second == node)) {
+            impl.pending.push_back(&node);
+        }
+    }
+    if (impl.pending.empty() && tree.focus == impl.sent_focus) {
+        return;
+    }
+    impl.pending_focus = tree.focus;
     if (accesskit_windows_queued_events* events =
-            accesskit_windows_subclassing_adapter_update_if_active(impl_->adapter, Impl::build_update, impl_.get())) {
+            accesskit_windows_subclassing_adapter_update_if_active(impl.adapter, Impl::build_changes, impl_.get())) {
         accesskit_windows_queued_events_raise(events);
     }
+    impl.pending.clear();
+    impl.remember(tree);
 }
 
 bool AccessibilityAdapter::active() const noexcept {

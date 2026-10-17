@@ -36,8 +36,8 @@ char32_t decode(std::string_view text, std::size_t& at) {
 
 // Characters that join the one before them rather than choosing a font of their own.
 bool is_joiner(char32_t c) {
-    return (c >= 0x0300 && c <= 0x036F) || (c >= 0xFE00 && c <= 0xFE0F) || c == 0x200D || (c >= 0x1F3FB && c <= 0x1F3FF) ||
-           (c >= 0xE0100 && c <= 0xE01EF);
+    return (c >= 0x0300 && c <= 0x036F) || (c >= 0xFE00 && c <= 0xFE0F) || c == 0x200D || c == 0x20E3 ||
+           (c >= 0x1F3FB && c <= 0x1F3FF) || (c >= 0xE0020 && c <= 0xE007F) || (c >= 0xE0100 && c <= 0xE01EF);
 }
 
 // Characters drawn as emoji unless asked otherwise (Unicode's Emoji_Presentation, abridged).
@@ -178,18 +178,31 @@ void wrap_paragraph(const ShapedParagraph& paragraph, std::size_t index, float s
 
 } // namespace
 
-// Re-shapes the parts `face` has no glyphs for (glyph 0) with fallback fonts.
+// Re-shapes the parts `face` has no glyphs for (glyph 0) with fallback fonts, and emoji it can
+// only draw in one color (a text font's heart for U+2764 U+FE0F) with a color font.
 ShapedParagraph shape_with_fallback(const FontFace& face, std::string_view text, FontLibrary& fonts) {
     ShapedParagraph shaped = shape_paragraph(face, text);
-    if (face.icon() || std::ranges::none_of(shaped.glyphs, [](const ShapedGlyph& g) { return g.id == 0; })) {
+    if (face.icon()) {
         return shaped;
     }
     const std::vector<ShapedGlyph>& glyphs = shaped.glyphs;
+    std::vector<bool> missing(glyphs.size());
+    for (std::size_t g = 0; g < glyphs.size(); ++g) {
+        missing[g] = glyphs[g].id == 0;
+        if (!missing[g] && !face.has_color() && glyphs[g].cluster < text.size()) {
+            std::size_t next = glyphs[g].cluster;
+            const char32_t c = decode(text, next);
+            missing[g] = wants_emoji(text, c, next);
+        }
+    }
+    if (std::ranges::none_of(missing, [](bool m) { return m; })) {
+        return shaped;
+    }
     ShapedParagraph result;
     result.glyphs.reserve(glyphs.size());
     std::size_t i = 0;
     while (i < glyphs.size()) {
-        if (glyphs[i].id != 0) {
+        if (!missing[i]) {
             result.glyphs.push_back(glyphs[i++]);
             continue;
         }
@@ -197,7 +210,7 @@ ShapedParagraph shape_with_fallback(const FontFace& face, std::string_view text,
         // Glyphs sharing a cluster belong together (e.g. an emoji and its invisible variation
         // selector), so the run takes them too.
         std::size_t j = i;
-        while (j < glyphs.size() && (glyphs[j].id == 0 || (j > i && glyphs[j].cluster == glyphs[j - 1].cluster))) {
+        while (j < glyphs.size() && (missing[j] || (j > i && glyphs[j].cluster == glyphs[j - 1].cluster))) {
             ++j;
         }
         const std::size_t begin = glyphs[i].cluster;

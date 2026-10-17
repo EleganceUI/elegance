@@ -82,6 +82,8 @@ struct AccessibilityInfo {
     bool can_focus = false;
     bool can_adjust = false;     // increment / decrement
     bool can_set_value = false;  // text or numbers
+
+    friend bool operator==(const AccessibilityInfo&, const AccessibilityInfo&) = default;
 };
 
 // What assistive technology asks an element to do.
@@ -97,6 +99,19 @@ struct Inspection {
     std::string name;   // e.g. "Text", "VStack", "Padding"
     std::string detail; // a one-line summary, e.g. the text
     std::vector<std::pair<std::string, std::string>> properties;
+};
+
+// While alive, layout arranges every element, even ones nothing changed for (frames of windows
+// with animations running, whose elements move without being invalidated).
+class FullLayoutScope {
+public:
+    explicit FullLayoutScope(bool full) noexcept;
+    ~FullLayoutScope();
+    FullLayoutScope(const FullLayoutScope&) = delete;
+    FullLayoutScope& operator=(const FullLayoutScope&) = delete;
+
+private:
+    bool previous_;
 };
 
 class Element {
@@ -124,6 +139,11 @@ public:
         if (frame_.animating()) {
             list.animating = true;
         }
+        // Out of sight (scrolled away): skipped, unless it may be on its way in.
+        if (list.cull && paint_bounds_ && cullable() && !overlaps(*paint_bounds_, *list.cull)) {
+            list.animating |= moving_;
+            return;
+        }
         paint_impl(list);
         if (focus_manager_) {
             paint_focus_ring(list);
@@ -143,6 +163,10 @@ public:
     // that fired in this update.
     const Animation* change_animation() const noexcept;
 
+    // Painting may skip this element when it's entirely outside what can be seen. false: never
+    // (it can draw anywhere: canvases, transitions under way), nor its ancestors.
+    virtual bool cullable() const { return true; }
+
     virtual float layout_priority() const noexcept { return 0; }
     virtual float z_index() const noexcept { return 0; }
     virtual bool is_spacer() const noexcept { return false; }
@@ -159,6 +183,10 @@ public:
     virtual void reveal(Rect) {}
     // Scroll views: the part of their content that can be seen (window points), for lazy stacks.
     virtual std::optional<Rect> visible_rect() const { return std::nullopt; }
+    // Scroll containers: content inside moved by `delta` along `axis` (rows above the visible
+    // part changed size); move the scroll offset with it so what's on screen stays put. Returns
+    // false if it didn't (not a scroll container, or it's following the end).
+    virtual bool anchor_shift(Axis, float) { return false; }
     // Lazy stacks: where the item with this key is (or would be), along the stack's axis from its
     // start; estimated for items not built.
     virtual std::optional<float> item_offset(const ItemKey&) const { return std::nullopt; }
@@ -177,6 +205,13 @@ public:
     // Something that affects this element's size changed (e.g. reactive text): drops the cached
     // sizes of this element and every ancestor.
     void invalidate_layout() noexcept;
+    // Where it draws changed without its size changing (an offset): the next layout visits it
+    // and its ancestors again to recompute paint bounds.
+    void invalidate_paint_bounds() noexcept {
+        for (Element* element = this; element; element = element->parent_) {
+            element->needs_arrange_ = true;
+        }
+    }
     // A value from View::layout_value on this element or the modifiers wrapping its content.
     virtual const void* find_layout_value(const std::type_info&) const noexcept { return nullptr; }
 
@@ -219,9 +254,21 @@ protected:
     // `bounds` is the element's frame.
     virtual void arrange(Rect bounds, ProposedSize proposal) = 0;
     virtual void paint_impl(DisplayList& list) const = 0;
+    // Its arrangement depends on more than its frame, proposal, and invalidate_layout() (a scroll
+    // offset, the visible part of a scroll view, a caret): it's arranged every layout.
+    virtual bool always_arranges() const { return false; }
+    // Where it draws, given its frame's and children's (strokes, shadows, offsets reach further).
+    virtual Rect paint_extent(Rect bounds) const { return bounds; }
+    // Its drawing is moving (an offset animating), so it may come into sight while skipped.
+    virtual bool drawing_moves() const { return false; }
 
 private:
     void paint_focus_ring(DisplayList& list) const;
+    // After layout: paint_bounds_ and moving_ for this element and everything inside.
+    void update_paint_bounds();
+    static bool overlaps(const Rect& a, const Rect& b) noexcept {
+        return a.x < b.max_x() && b.x < a.max_x() && a.y < b.max_y() && b.y < a.max_y();
+    }
 
     Element* parent_ = nullptr;
     FocusManager* focus_manager_ = nullptr;
@@ -233,6 +280,10 @@ private:
     std::shared_ptr<ImplicitAnimation> implicit_;
     std::vector<std::pair<ProposedSize, Size>> size_cache_;
     std::optional<ProposedSize> last_proposal_;
+    std::optional<Rect> paint_bounds_; // as of the last layout; nullopt: unknown or unbounded
+    bool moving_ = false;              // something inside is moving (frames, offsets, transitions)
+    bool needs_arrange_ = true;        // it or something inside was invalidated since its arrange
+    bool always_arranges_inside_ = false; // always_arranges(), here or anywhere inside
     mutable std::uint64_t accessibility_id_ = 0;
 };
 
@@ -294,6 +345,9 @@ class ShapeElement final : public Element {
 public:
     void inspect(Inspection& out) const override;
     explicit ShapeElement(ShapeSpec spec) : spec_(std::move(spec)) {}
+    Rect paint_extent(Rect bounds) const override {
+        return spec_.stroke ? bounds.inset(-spec_.stroke->width) : bounds;
+    }
 
     // The resolved fill: the shape's own (static or reactive), or for shapes with neither a fill
     // nor a stroke, the environment's foreground. Animates during animated updates.
@@ -360,9 +414,12 @@ protected:
     void arrange(Rect bounds, ProposedSize proposal) override;
     void paint_impl(DisplayList& list) const override;
     bool hit_impl(Point point, std::vector<Element*>&) override;
+    void on_layout_invalidated() noexcept override { arranged_for_.reset(); }
 
 private:
     TextLayoutResult layout(ProposedSize proposal) const;
+    // Recomputes the lines for the new text at the last proposal (see text.cpp).
+    void relayout_now();
 
     TextSystem* text_;
     const FontFace* face_ = nullptr;
@@ -377,6 +434,7 @@ private:
     ShapedParagraph ellipsis_;
     float ellipsis_width_ = 0;
     TextLayoutResult arranged_;
+    std::optional<ProposedSize> arranged_for_; // the proposal arranged_ is for, until text or font change
 };
 
 class SpacerElement final : public Element {
@@ -398,6 +456,7 @@ private:
 class CanvasElement final : public Element {
 public:
     explicit CanvasElement(std::function<void(GraphicsContext&)> draw) : draw_(std::move(draw)) {}
+    bool cullable() const override { return false; } // it may draw outside its frame
 
 protected:
     Size measure(ProposedSize proposal) override;
@@ -425,6 +484,9 @@ public:
     // Starts the exit; returns false if there's nothing to animate (remove it right away).
     bool remove(const Animation* animation);
     bool exit_finished() const { return removing_ && !progress_.animating(); }
+    // Moved, scaled, or on its way out, it draws away from its frame.
+    bool cullable() const override { return !removing_ && progress_.current() >= 1; }
+    bool drawing_moves() const override { return progress_.animating(); }
 
     TransitionElement* as_transition() noexcept override { return this; }
     float layout_priority() const noexcept override { return content_->layout_priority(); }
@@ -514,10 +576,18 @@ public:
     }
 
     void set_opacity(float opacity, const Animation* animation) { opacity_.set(opacity, animation); }
-    void set_offset_x(float x, const Animation* animation) { offset_x_.set(x, animation); }
-    void set_offset_y(float y, const Animation* animation) { offset_y_.set(y, animation); }
+    void set_offset_x(float x, const Animation* animation) {
+        offset_x_.set(x, animation);
+        invalidate_paint_bounds();
+    }
+    void set_offset_y(float y, const Animation* animation) {
+        offset_y_.set(y, animation);
+        invalidate_paint_bounds();
+    }
     void set_z_index(float z) noexcept { z_index_ = z; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
+    Rect paint_extent(Rect bounds) const override;
+    bool drawing_moves() const override { return offset_x_.animating() || offset_y_.animating(); }
 
     float layout_priority() const noexcept override { return content_->layout_priority(); }
     float z_index() const noexcept override { return z_index_.value_or(content_->z_index()); }
@@ -605,7 +675,14 @@ protected:
     Size measure(ProposedSize proposal) override { return content_->size_that_fits(proposal); }
     void arrange(Rect bounds, ProposedSize proposal) override { content_->place({bounds.x, bounds.y}, proposal); }
     void paint_impl(DisplayList& list) const override { content_->paint(list); }
-    bool hit_impl(Point point, std::vector<Element*>& path) override { return content_->hit_test(point, path); }
+    bool hit_impl(Point point, std::vector<Element*>& path) override {
+        if (content_->hit_test(point, path)) {
+            return true;
+        }
+        const Rect bounds = frame();
+        return handler_->covers_frame() && point.x >= bounds.x && point.x < bounds.max_x() && point.y >= bounds.y &&
+               point.y < bounds.max_y();
+    }
 
 private:
     std::unique_ptr<EventHandler> handler_;
@@ -711,6 +788,8 @@ public:
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
     void reveal(Rect rect) override;
     std::optional<Rect> visible_rect() const override { return viewport_; }
+    bool always_arranges() const override { return true; } // the offset places the content
+    bool anchor_shift(Axis axis, float delta) override;
 
 protected:
     Size measure(ProposedSize proposal) override;
@@ -750,6 +829,7 @@ private:
     Animated<float> offset_x_{0.f};
     Animated<float> offset_y_{0.f};
     Animated<float> indicators_{0.f}; // scroll bar opacity
+    bool pinned_ = true; // at the end (sticks_to_end follows it); the first layout counts
     bool hovered_ = false;
     std::optional<Axis> dragging_; // a scroll bar thumb being dragged
     Point drag_start_;

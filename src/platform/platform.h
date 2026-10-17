@@ -154,6 +154,10 @@ public:
 
 private:
     SDL_Window* window_ = nullptr;
+    // Popups: the window they belong to, which has the keyboard (they're never activated), and
+    // whether text input was started there for the popup.
+    SDL_Window* parent_ = nullptr;
+    bool parent_text_input_ = false;
     std::uint32_t id_ = 0;
     std::function<HitArea(Point)> hit_test_;
 };

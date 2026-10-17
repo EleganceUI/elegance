@@ -233,6 +233,10 @@ View CameraView(Camera camera, ContentMode mode) {
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(camera.source(), mode, camera.mirrored()));
 }
 
+View VideoFeedView(VideoFeed feed, ContentMode mode, bool mirrored) {
+    return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(feed.source(), mode, mirrored));
+}
+
 View VideoControls(VideoPlayer player) {
     const View play = Button(detail::SwitchIcon("pause.fill", "play.fill", [player] { return player.is_playing(); })
                                  .frame(18, 18),

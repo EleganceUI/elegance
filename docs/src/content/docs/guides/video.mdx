@@ -1,0 +1,72 @@
+---
+title: Video
+description: "Playing video files and streams with VideoPlayer, VideoView and the built-in controls."
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import Example from '../../../components/Example.astro';
+
+Video playback uses the system's media stack. On Windows that's Media Foundation, with hardware
+decoding: MP4 (H.264), HEVC, VP9 and AV1 where the codecs are installed, plus MOV, WMV and more.
+It plays the sound too, and keeps picture and sound in sync.
+
+```cpp
+const VideoPlayer player("assets/intro.mp4");    // a file path or an http(s) URL
+
+ZStack({.alignment = Alignment::bottom},
+       VideoView(player).aspect_ratio(16.f / 9.f).clip_shape(RoundedRectangle(12)),
+       VideoControls(player).padding(10));
+
+player.play();
+```
+
+## VideoPlayer
+
+A `VideoPlayer` is a video and its playback. Copies control the same video, and it stops when the
+last copy, and the last view showing it, goes away.
+
+Loading is asynchronous; if the video can't be played (a missing file, an unsupported format, a
+network error), `error()` says why.
+
+| Controls | Reactive readers |
+| --- | --- |
+| `play()`, `pause()`, `toggle()` | `is_playing()` |
+| `stop()` (pauses and rewinds) | `is_ready()`: the duration and size are known |
+| `seek(seconds)` | `time()`, `duration()` |
+| `set_volume(0...1)`, `set_muted(bool)` | `volume()`, `is_muted()` |
+| `set_looping(bool)` | `is_looping()` |
+| | `natural_size()` (pixels), `error()` |
+
+For sliders, `progress_binding()` is the position from 0 to 1 (writing seeks), and
+`volume_binding()` the volume.
+
+## VideoView and VideoControls
+
+`VideoView(player, mode)` shows the picture, fitted into the space (`ContentMode::fit`, the
+default) or filling it (`ContentMode::fill`, clip it), on black. Its ideal size is the video's own.
+
+`VideoControls(player)` is a ready-made bar with play/pause, a scrubber, the time and a mute
+button. Lay it over the video or put it below. You can also build your own from the player's
+readers and bindings:
+
+```cpp
+HStack(Button(If([=] { return player.is_playing(); }, Image("pause"), Image("play")), [=] { player.toggle(); })
+           .accessibility_label("Play or pause"),
+       Slider(player.progress_binding()),
+       Text([=] { return std::format("{:.0f} s", player.time()); }));
+```
+
+## Performance
+
+Decoded frames go straight to the GPU: the decoder writes into textures shared with the renderer,
+with no copies through the CPU. A playing video redraws its window without running layout again,
+and the UI thread isn't involved.
+
+<Aside>
+Media Foundation is the only backend today. An optional FFmpeg backend, for formats Windows doesn't
+decode, is planned.
+</Aside>
+
+## Example
+
+<Example name="media_player" />

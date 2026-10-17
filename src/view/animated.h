@@ -99,6 +99,12 @@ public:
         return animation_->finished(t) ? to_ : interpolate(from_, to_, animation_->progress(t));
     }
 
+    // Moves the start and target by `delta`, keeping any animation's progress (scroll anchoring).
+    void shift(const T& delta) {
+        from_ = from_ + delta;
+        to_ = to_ + delta;
+    }
+
     bool animating() const { return animation_ && !animation_->finished(frame_time() - start_); }
     const T& target() const noexcept { return to_; }
 

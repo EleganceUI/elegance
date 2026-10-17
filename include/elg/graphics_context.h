@@ -29,6 +29,13 @@ public:
     // Pixels per logical point.
     float scale() const noexcept;
 
+    // Animated drawing: seconds on the frame clock (the same instant for everything drawn in a
+    // frame), and a request to be drawn again next frame. Call request_frame() on every draw
+    // while it should keep moving; the window goes back to idle once nothing asks.
+    //   Canvas([](GraphicsContext& g) { draw_spinner(g, g.time()); g.request_frame(); })
+    double time() const noexcept;
+    void request_frame() noexcept;
+
     void fill_rect(Rect rect, Color color, CornerRadii radii = {});
     void fill_rect(Rect rect, Color color, float radius) {
         fill_rect(rect, color, CornerRadii::all(radius));

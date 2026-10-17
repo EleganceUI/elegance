@@ -26,6 +26,7 @@ struct ShapedGlyph {
     bool break_after = false; // a line may break after this glyph
     // The font the glyph is from when it isn't the paragraph's (font fallback); nullptr otherwise.
     const FontFace* face = nullptr;
+    bool placeholder = false; // room for an attachment (StyledText): nothing is drawn
 };
 
 // One paragraph (text between newlines), shaped once at mount.

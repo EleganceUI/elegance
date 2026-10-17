@@ -1,0 +1,76 @@
+---
+title: Desktop integration
+description: "File dialogs, notifications, the tray icon, and dropping files from other apps."
+---
+
+import Example from '../../../components/Example.astro';
+
+These use the system's own dialogs and services. Call them on the UI thread of a running app;
+their callbacks run on the UI thread too.
+
+## File dialogs
+
+```cpp
+choose_files({.filters = {{"Images", {"png", "jpg", "jpeg"}}}, .multiple = true},
+             [=](std::vector<std::filesystem::path> files) {
+                 if (!files.empty()) {
+                     photos.update([&](auto& list) { list.insert(list.end(), files.begin(), files.end()); });
+                 }
+             });
+
+choose_save_file({.filters = {{"Text", {"txt"}}}, .name = "notes.txt"},
+                 [=](std::optional<std::filesystem::path> path) {
+                     if (path) {
+                         save_notes(*path);
+                     }
+                 });
+
+choose_folders({}, [=](std::vector<std::filesystem::path> folders) { /* ... */ });
+```
+
+The dialogs open over the active window and don't block: the callback gets the result, or nothing
+if the user cancelled. A filter with no extensions means all files; `directory` chooses where the
+dialog opens. The save dialog asks about replacing an existing file itself, but doesn't create the
+file.
+
+## Notifications
+
+```cpp
+notify({.title = "Export finished", .body = "Saved 12 photos", .on_click = [=] { show_folder(); }});
+```
+
+On Windows this is a toast, which also stays in the notification center. `on_click` runs when the
+user clicks it.
+
+## Tray icon
+
+A `TrayIcon` puts an icon with a menu in the system tray (the notification area on Windows). It's
+shown while any copy of it lives, so keep it somewhere that lasts, such as `main`:
+
+```cpp
+std::optional<TrayIcon> tray;
+
+app.window({.title = "Sync"}, [&] {
+    tray.emplace(TrayIconOptions{
+        .icon = {.file = "assets/tray.png"},
+        .tooltip = "Sync",
+        .menu = {{.title = "Pause syncing", .checked = false, .toggled = [=](bool on) { paused = on; }},
+                 {}, // a separator
+                 {.title = "Quit", .action = [&] { app.quit(); }}},
+    });
+    return SyncView();
+});
+```
+
+Menu items have a title (empty for a separator), an `action`, an optional check box (`checked`
+and `toggled`), `enabled`, and a `submenu`. `set_tooltip` and `set_menu` change them later. Without
+an icon, the tray shows a dot in the theme's accent color.
+
+## Drag and drop
+
+Views accept files and text dragged in from other apps with `on_drop`; see
+[Input](../input/#dropping-files-and-text).
+
+## Example
+
+<Example name="desktop" />

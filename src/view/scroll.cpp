@@ -65,6 +65,12 @@ void ScrollElement::arrange(Rect bounds, ProposedSize) {
         offset_y_.set(target_.y, nullptr);
     }
 
+    // Following the end (pinned_): it moved, so go with it. Scrolling up unpins (scroll_to).
+    if (options_.sticks_to_end && pinned_ && scrolls(Axis::vertical) && target_.y != max.y) {
+        target_.y = max.y;
+        offset_y_.set(target_.y, nullptr);
+    }
+
     apply_request(); // a ScrollPosition call, now that sizes are known
 
     // Starts at the top-leading corner along the scroll axes; centered across them.
@@ -115,7 +121,18 @@ std::optional<Axis> ScrollElement::thumb_at(Point point) const {
 
 void ScrollElement::paint_impl(DisplayList& list) const {
     list.commands.push_back(PushClipCommand{frame(), {}});
+    // Only what's in the viewport is painted.
+    const std::optional<Rect> outer = list.cull;
+    Rect visible = frame();
+    if (outer) {
+        const float x = std::max(visible.x, outer->x);
+        const float y = std::max(visible.y, outer->y);
+        visible = {x, y, std::max(0.f, std::min(visible.max_x(), outer->max_x()) - x),
+                   std::max(0.f, std::min(visible.max_y(), outer->max_y()) - y)};
+    }
+    list.cull = visible;
     content_->paint(list);
+    list.cull = outer;
     list.commands.push_back(PopClipCommand{});
 
     if (offset_x_.animating() || offset_y_.animating() || indicators_.animating()) {
@@ -154,6 +171,26 @@ bool ScrollElement::scroll_to(Point target, const Animation* animation) {
     target_ = target;
     offset_x_.set(target.x, animation);
     offset_y_.set(target.y, animation);
+    pinned_ = target.y >= max.y - 0.5f; // at the end: follow it as the content grows
+    return true;
+}
+
+bool ScrollElement::anchor_shift(Axis axis, float delta) {
+    // At the start, rows inserted before the first one should come into view, not push it down
+    // (browsers skip anchoring there too).
+    if (!scrolls(axis) || (axis == Axis::vertical ? target_.y : target_.x) <= 0.5f) {
+        return false;
+    }
+    if (axis == Axis::vertical) {
+        if (options_.sticks_to_end && pinned_) {
+            return false; // following the end instead
+        }
+        target_.y += delta;
+        offset_y_.shift(delta);
+    } else {
+        target_.x += delta;
+        offset_x_.shift(delta);
+    }
     return true;
 }
 

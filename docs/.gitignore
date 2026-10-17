@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.astro/
+# Generated from include/elg by scripts/gen-reference.mjs
+src/content/docs/reference/

@@ -15,7 +15,8 @@ namespace elg::detail {
 
 // --- FocusManager ---
 
-bool FocusManager::focus(Element* element, bool visible) {
+bool FocusManager::focus(Element* element, bool visible, bool navigated) {
+    navigated_ = navigated;
     if (element == focused_) {
         return std::exchange(visible_, visible) != visible;
     }
@@ -282,7 +283,7 @@ bool EventDispatcher::focus_edge(bool first) {
     if (order.empty()) {
         return false;
     }
-    return focus_->focus(first ? order.front() : order.back(), true);
+    return focus_->focus(first ? order.front() : order.back(), true, true);
 }
 
 bool EventDispatcher::move_focus(bool forward) {
@@ -308,7 +309,7 @@ bool EventDispatcher::move_focus(bool forward) {
         const std::size_t index = static_cast<std::size_t>(current - order.begin());
         next = order[(index + (forward ? 1 : order.size() - 1)) % order.size()];
     }
-    const bool redraw = focus_->focus(next, true);
+    const bool redraw = focus_->focus(next, true, true);
     for (Element* ancestor = next->parent(); ancestor; ancestor = ancestor->parent()) {
         ancestor->reveal(next->frame());
     }

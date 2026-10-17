@@ -32,6 +32,11 @@ std::unique_ptr<Element> IfNode::lower(const LowerContext& context) const {
     // Each branch has a fixed key, so re-evaluating to the same branch keeps its views.
     detail::bind(condition_, context, [target, then_view = then_, else_view = else_](bool condition) {
         const View& branch = condition ? then_view : else_view;
+        // An empty branch (View()) mounts nothing, so stacks don't space around it.
+        if (!ViewAccess::node(branch)) {
+            target->set_items({});
+            return;
+        }
         target->set_items({ForEachItem{static_cast<std::int64_t>(condition ? 1 : 0), nullptr, nullptr,
                                        [branch] { return branch; }}});
     });

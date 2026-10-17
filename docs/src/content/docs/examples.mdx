@@ -1,0 +1,107 @@
+---
+title: Examples
+description: "Twelve small, complete apps, each showing one part of Elegence. Screenshots and full source."
+tableOfContents:
+  maxHeadingLevel: 2
+---
+
+import Example from '../../components/Example.astro';
+
+Each example is a single `main.cpp` in the repository's `examples/` folder, built with the rest of
+the project (`ELG_BUILD_EXAMPLES`). Run one from the build folder:
+
+```sh
+build\windows-debug\bin\todos.exe
+```
+
+## hello
+
+The smallest app: one window, an icon and two lines of text.
+
+<Example name="hello" />
+
+## counter
+
+State and reactive arguments. Writing the count updates exactly the views that read it. See
+[State and data flow](../guides/state/).
+
+<Example name="counter" />
+
+## todos
+
+A list in state: a text field, `ForEach` keyed by id, `If`, a computed count, and animated
+insertions and removals. The [first app tutorial](../start/first-app/) builds it step by step.
+
+<Example name="todos" collapsed />
+
+## layout
+
+Stacks, spacers, frames, overlays, and a custom flow layout for the tags. See
+[Layout](../guides/layout/) and [Custom layouts](../guides/custom-layouts/).
+
+<Example name="layout" collapsed />
+
+## styling
+
+A custom theme, light and dark mode, a button style, a view modifier, and a custom environment
+value. See [Colors and themes](../guides/themes/) and [Control styles](../guides/styles/).
+
+<Example name="styling" collapsed />
+
+## drawing
+
+Gradients, dashed strokes, an SVG path, a shape computed from its frame, and a chart drawn in a
+`Canvas`. See [Shapes and drawing](../guides/drawing/).
+
+<Example name="drawing" collapsed />
+
+## animation
+
+A banner with a transition, a switch with an implicit spring, and tiles that slide to their new
+places when shuffled. See [Animation](../guides/animation/).
+
+<Example name="animation" collapsed />
+
+## title_bar
+
+A window without the system frame: its own title bar, window controls, and a translucent, rounded
+panel. See [Windows](../guides/windows/).
+
+<Example name="title_bar" collapsed />
+
+## media_player
+
+Open a video with the file dialog, or drop one on the window, and play it with the built-in
+controls. See [Video](../guides/video/).
+
+<Example name="media_player" collapsed />
+
+## network
+
+A request as reactive state, and a long, lazily built list of images from the web. See
+[Networking](../guides/networking/).
+
+<Example name="network" collapsed />
+
+## recorder
+
+Voice memos with a live level meter, and a camera preview with snapshots. See
+[Microphone and camera](../guides/capture/).
+
+<Example name="recorder" collapsed />
+
+## desktop
+
+File dialogs, notifications, a tray icon with a menu, and dropping files from other apps. See
+[Desktop integration](../guides/desktop/).
+
+<Example name="desktop" collapsed />
+
+## More
+
+The repository also has larger apps:
+
+- `apps/sandbox`: nearly every feature in one scrolling window, plus Contacts, Todos and Widget
+  windows.
+- `apps/login`: a modern sign-in screen with a QR code, built only with the public API.
+- `apps/preview`: the preview host for [hot reload](../guides/hot-reload/).

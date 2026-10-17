@@ -37,8 +37,17 @@ struct RegisteredFont {
 std::mutex g_registry_mutex;
 std::set<std::string, std::less<>> g_icon_families;
 std::map<std::string, std::vector<RegisteredFont>, std::less<>> g_registry;
+std::vector<std::filesystem::path> g_emoji_fonts;
 
 } // namespace
+
+void register_emoji_font(std::filesystem::path file) {
+    if (!std::filesystem::is_regular_file(file)) {
+        throw ResourceError(std::format("register_emoji_font(): \"{}\" is not a file", file.string()));
+    }
+    std::lock_guard lock(g_registry_mutex);
+    g_emoji_fonts.push_back(std::move(file));
+}
 
 void register_font(std::string family, std::filesystem::path file, Weight weight) {
     if (family.empty()) {
@@ -97,12 +106,25 @@ RegisteredFont registered_font(const Font& font) {
 
 // Font files to try for the system UI font, best match first.
 // TODO: real system font discovery (DirectWrite / CoreText / fontconfig), variable font axes.
-std::vector<std::filesystem::path> system_font_candidates(Weight weight) {
+std::vector<std::filesystem::path> system_font_candidates(Weight weight, bool italic) {
     const int w = static_cast<int>(weight);
     std::vector<std::filesystem::path> files;
 #if defined(_WIN32)
     const std::filesystem::path dir =
         std::filesystem::path(platform::environment_variable("WINDIR").value_or("C:\\Windows")) / "Fonts";
+    if (italic) {
+        // Segoe UI's italics; upright ones follow if they're missing.
+        if (w <= 300) {
+            files.push_back(dir / "seguili.ttf");
+        } else if (w >= 800) {
+            files.push_back(dir / "seguibli.ttf");
+        } else if (w >= 700) {
+            files.push_back(dir / "segoeuiz.ttf");
+        } else if (w >= 600) {
+            files.push_back(dir / "seguisbi.ttf");
+        }
+        files.push_back(dir / "segoeuii.ttf");
+    }
     if (w <= 300) {
         files.push_back(dir / "segoeuil.ttf");
     } else if (w >= 800) {
@@ -116,6 +138,7 @@ std::vector<std::filesystem::path> system_font_candidates(Weight weight) {
     files.push_back(dir / "arial.ttf");
 #elif defined(__APPLE__)
     (void)w;
+    (void)italic;
     files.push_back("/System/Library/Fonts/SFNS.ttf");
     files.push_back("/System/Library/Fonts/Helvetica.ttc");
 #else
@@ -136,7 +159,7 @@ RegisteredFont find_font(const Font& font) {
     if (!font.family().empty()) {
         return registered_font(font);
     }
-    for (const std::filesystem::path& file : system_font_candidates(font.weight())) {
+    for (const std::filesystem::path& file : system_font_candidates(font.weight(), font.is_italic())) {
         if (std::filesystem::is_regular_file(file)) {
             return {static_cast<int>(font.weight()), file, nullptr, file.string()};
         }
@@ -302,10 +325,35 @@ const FontFace* FontLibrary::fallback_for(char32_t codepoint, bool emoji) {
     }
     const auto fits = [&](const FontFace& face) { return face.has_char(codepoint) && (!emoji || face.has_color()); };
     const FontFace* found = nullptr;
+    // The app's emoji fonts first (register_emoji_font), loaded as they're registered.
+    if (emoji) {
+        std::vector<std::filesystem::path> registered;
+        {
+            std::lock_guard lock(g_registry_mutex);
+            registered.assign(g_emoji_fonts.begin() + static_cast<std::ptrdiff_t>(emoji_faces_.size() + emoji_fonts_failed_),
+                              g_emoji_fonts.end());
+        }
+        for (const std::filesystem::path& file : registered) {
+            try {
+                emoji_faces_.push_back(&load(file.string(), file));
+            } catch (const std::exception& failure) {
+                ++emoji_fonts_failed_;
+                log_warning("skipping emoji font {}: {}", file.string(), failure.what());
+            }
+        }
+        for (const FontFace* face : emoji_faces_) {
+            if (fits(*face)) {
+                found = face;
+                break;
+            }
+        }
+    }
     for (const FontFace* face : fallbacks_) {
+        if (found) {
+            break;
+        }
         if (fits(*face)) {
             found = face;
-            break;
         }
     }
     // Not in the fonts loaded so far: load further down the chain until one has it.

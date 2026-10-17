@@ -2076,7 +2076,7 @@ Separate render thread from day one (decided).
   - NSURLSession (macOS).
   - A disk cache honoring `Cache-Control`/`ETag`.
   - Upload/download progress and streaming bodies.
-  - WebSockets.
+  - WebSockets: `http::WebSocket` (elg/websocket.h) on WinHTTP; libcurl's WebSocket API elsewhere.
   - Optional JSON adapter (`elg/json.h` + `Response::json()`) behind a vcpkg feature, so apps
     that already use a JSON library don't get a second one.
 - [x] Desktop integration (§13.4): file dialogs, drag and drop in, notifications and the tray

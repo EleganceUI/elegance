@@ -1,0 +1,78 @@
+---
+title: Introduction
+description: "What Elegence is, what it's for, and how it compares to other ways of building desktop UI."
+---
+
+import { Aside, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+Elegence is a C++23 framework for building desktop app interfaces. You describe the UI as a tree
+of views, style them with chained modifiers, and connect them to reactive state. A Vulkan renderer
+draws the result.
+
+```cpp
+#include <elg/elegence.h>
+
+using namespace elg;
+
+int main() {
+    App app;
+    app.window({.title = "Hello"}, [] {
+        return VStack(Image("hand-waving").font(Font::system(48)),
+                      Text("Hello, Elegence!").font(Font::title));
+    });
+    return app.run();
+}
+```
+
+## Why Elegence
+
+Building a modern-looking app is easiest in a browser, but the web platform brings a browser
+engine's memory use, startup time and runtime cost. Native toolkits are lean but slow to author.
+Elegence aims to sit in between:
+
+- **Fast to author.** Building a UI feels like SwiftUI: compose views, chain modifiers, and keep
+  appearance next to structure. There's no markup language and no scripting layer; the UI is C++.
+- **Stateful by design.** Reactive state is built into the core. Changing a value updates exactly
+  the properties that read it.
+- **Lean.** Startup in well under a second, near-zero CPU while idle, and memory in tens of
+  megabytes.
+- **Complete.** Text editing, lists, menus, animation, themes, media, networking, desktop
+  integration, accessibility and developer tools come in the box.
+
+## What it looks like
+
+A view is a value. Functions return views, and modifiers return new views:
+
+```cpp
+View ProfileBadge(std::string name) {
+    return HStack(Circle().fill(ThemeColor::accent).frame(32, 32),
+                  Text(std::move(name)).font(Font::headline))
+        .padding(12)
+        .background(ThemeColor::surface, RoundedRectangle(12));
+}
+```
+
+State is a handle you capture by value. Reading it inside a closure subscribes the closure:
+
+```cpp
+const State<bool> on(false);
+Toggle("Notifications", on);
+Text([=] { return on() ? "You'll be notified" : "Muted"; });
+```
+
+## Platform support
+
+<Aside type="note">
+Elegence is young. It's developed and tested on **Windows 10 and 11** (x64, MSVC). The renderer
+(SDL3 and Vulkan) is cross-platform, and Linux and macOS (through MoltenVK) are planned. Some
+backends, such as video, camera capture, file dialogs and notifications, are Windows-only for now.
+</Aside>
+
+## Where to go next
+
+<CardGrid>
+	<LinkCard title="Installation" href="../installation/" description="Build Elegence and add it to your project." />
+	<LinkCard title="Your first app" href="../first-app/" description="Build a small app step by step." />
+	<LinkCard title="Thinking in Elegence" href="../concepts/" description="Views, modifiers, state, and the environment." />
+	<LinkCard title="Examples" href="../../examples/" description="Twelve small apps with screenshots and source." />
+</CardGrid>

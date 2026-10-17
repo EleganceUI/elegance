@@ -77,6 +77,8 @@ struct AccessNode {
     AccessibilityInfo info;
     Rect bounds; // window points
     std::vector<std::uint64_t> children;
+
+    friend bool operator==(const AccessNode&, const AccessNode&) = default;
 };
 
 struct AccessTree {

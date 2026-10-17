@@ -5,6 +5,7 @@
 #include <elg/graphics_context.h>
 
 #include "render/display_list.h"
+#include "view/animated.h"
 
 #include <algorithm>
 
@@ -19,6 +20,14 @@ Size GraphicsContext::size() const noexcept {
 
 float GraphicsContext::scale() const noexcept {
     return scale_;
+}
+
+double GraphicsContext::time() const noexcept {
+    return detail::frame_time();
+}
+
+void GraphicsContext::request_frame() noexcept {
+    list_->animating = true;
 }
 
 void GraphicsContext::fill_rect(Rect rect, Color color, CornerRadii radii) {

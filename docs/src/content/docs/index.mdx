@@ -1,0 +1,46 @@
+---
+title: Elegence
+description: "Declarative, reactive UI for modern C++, drawn with Vulkan."
+template: splash
+hero:
+  tagline: Build native desktop apps the way you'd write SwiftUI, in C++23. Views are values, state is reactive, and every pixel is drawn on the GPU. No browser engine, no markup, no scripting layer.
+  image:
+    file: ../../assets/examples/layout.png
+    alt: A profile card built with Elegence
+  actions:
+    - text: Get started
+      link: start/introduction/
+      icon: right-arrow
+    - text: See the examples
+      link: examples/
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+```cpp
+View Counter() {
+    const State<int> count(0);
+    return VStack(Text([=] { return std::format("Count: {}", count()); }).font(Font::title),
+                  Button("Add one", [=] { count += 1; }));
+}
+```
+
+<CardGrid>
+	<Card title="Declarative" icon="puzzle">
+		Compose views from stacks and chain modifiers like `.padding()`, `.background()` and
+		`.clip_shape()`. Appearance lives next to structure, in plain C++.
+	</Card>
+	<Card title="Reactive" icon="rocket">
+		Read a `State` in a closure and that closure re-runs when the state changes. Only the
+		properties that depend on it update; nothing is diffed or rebuilt.
+	</Card>
+	<Card title="GPU-native" icon="laptop">
+		A Vulkan renderer with analytic anti-aliasing, gradients, shadows, blur and vector paths.
+		Idle windows use no CPU, and live resizing stays smooth.
+	</Card>
+	<Card title="Batteries included" icon="star">
+		Text editing, lists, menus, animation, themes, images, audio, video, camera, HTTP, file
+		dialogs, notifications, accessibility, an inspector and hot reload.
+	</Card>
+</CardGrid>

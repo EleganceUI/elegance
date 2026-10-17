@@ -5,6 +5,7 @@
 #include "view/text_field.h"
 
 #include "text/glyph_draw.h"
+#include "text/styled_layout.h"
 
 #include <algorithm>
 #include <cctype>
@@ -67,7 +68,24 @@ bool TextEditor::enabled() const {
     return !untrack([&] { return environment_.get<DisabledKey>(); });
 }
 
+void TextEditor::configure(int max_lines, std::function<std::vector<TextSpan>(std::string_view)> styler) {
+    max_lines_ = std::max(1, max_lines);
+    styler_ = secure_ ? nullptr : std::move(styler); // a password's shape stays hidden
+    text_ = clean(std::move(text_));
+    reshape();
+}
+
+std::string TextEditor::clean(std::string text) const {
+    if (!multiline()) {
+        return single_line(std::move(text));
+    }
+    std::erase(text, '\r');
+    std::ranges::replace(text, '\t', ' ');
+    return text;
+}
+
 void TextEditor::set_font(const Font& font) {
+    font_ = font;
     face_ = &text_system_->fonts.resolve(font);
     size_ = font.size();
     ascent_ = face_->ascender() * size_;
@@ -82,78 +100,186 @@ void TextEditor::set_font(const Font& font) {
 }
 
 void TextEditor::set_text(std::string value) {
-    value = single_line(std::move(value));
+    value = clean(std::move(value));
     if (value == text_) {
         return; // our own write coming back
     }
     text_ = std::move(value);
-    caret_ = to_boundary(text_, caret_);
-    anchor_ = to_boundary(text_, anchor_);
+    // Replaced from outside (a completion, a reset, text to edit): the caret goes to the end,
+    // where typing carries on.
+    caret_ = anchor_ = text_.size();
     composition_.clear();
     typing_ = false;
     reshape();
 }
 
-// --- Layout ---
+// --- What's shown ---
 
-std::string TextEditor::displayed() const {
-    if (secure_) {
-        std::string bullets;
-        for (const char c : text_) {
-            if (!is_continuation(c)) {
-                bullets += kBullet;
+std::size_t TextEditor::shown_without_composition(std::size_t text_byte) const {
+    for (const Segment& segment : segments_) {
+        if (text_byte <= segment.text_end) {
+            if (segment.atomic) {
+                return text_byte >= segment.text_end ? segment.shown_end : segment.shown_begin;
             }
+            return segment.shown_begin + (text_byte - segment.text_begin);
         }
-        return bullets;
     }
-    if (!composing()) {
-        return text_;
+    return segments_.empty() ? 0 : segments_.back().shown_end;
+}
+
+std::size_t TextEditor::to_shown(std::size_t text_byte) const {
+    std::size_t shown = shown_without_composition(text_byte);
+    if (composing() && text_byte > caret_) {
+        shown += composition_.size();
     }
-    std::string shown = text_;
-    shown.insert(caret_, composition_);
     return shown;
 }
 
+std::size_t TextEditor::to_text(std::size_t shown_byte, std::optional<bool> toward_end) const {
+    if (composing()) {
+        const std::size_t at = shown_without_composition(caret_);
+        if (shown_byte >= at && shown_byte <= at + composition_.size()) {
+            return caret_;
+        }
+        if (shown_byte > at + composition_.size()) {
+            shown_byte -= composition_.size();
+        }
+    }
+    for (const Segment& segment : segments_) {
+        if (shown_byte <= segment.shown_end) {
+            if (!segment.atomic) {
+                return segment.text_begin + (shown_byte - segment.shown_begin);
+            }
+            if (shown_byte <= segment.shown_begin) {
+                return segment.text_begin;
+            }
+            if (shown_byte >= segment.shown_end) {
+                return segment.text_end;
+            }
+            const bool end = toward_end ? *toward_end
+                                        : (shown_byte - segment.shown_begin) * 2 >= segment.shown_end - segment.shown_begin;
+            return end ? segment.text_end : segment.text_begin;
+        }
+    }
+    return text_.size();
+}
+
+std::size_t TextEditor::out_of_atomic(std::size_t text_byte, bool toward_end) const {
+    for (const Segment& segment : segments_) {
+        if (segment.atomic && segment.text_begin < text_byte && text_byte < segment.text_end) {
+            return toward_end ? segment.text_end : segment.text_begin;
+        }
+    }
+    return text_byte;
+}
+
 void TextEditor::reshape() {
-    stops_.clear();
-    width_ = 0;
-    shaped_ = {};
-    const std::string shown = displayed();
-    if (face_ && !shown.empty()) {
-        std::vector<ShapedParagraph> shaped = shape_text(*face_, shown, &text_system_->fonts);
-        if (!shaped.empty()) {
-            shaped_ = std::move(shaped.front());
-        }
-    }
-    // A caret stop at the start of each cluster (a character with its combining marks, or a
-    // ligature), and at the end.
-    float pen = 0;
-    for (std::size_t i = 0; i < shaped_.glyphs.size(); ++i) {
-        const ShapedGlyph& glyph = shaped_.glyphs[i];
-        if (i == 0 || glyph.cluster != shaped_.glyphs[i - 1].cluster) {
-            stops_.push_back({glyph.cluster, pen});
-        }
-        pen += glyph.advance * size_;
-    }
-    if (stops_.empty() || stops_.front().byte != 0) {
-        stops_.insert(stops_.begin(), {0, 0});
-    }
-    stops_.push_back({shown.size(), pen});
+    segments_.clear();
+    spans_.clear();
+    shown_.clear();
+    const auto plain = [&](std::size_t begin, std::size_t end) {
+        segments_.push_back({begin, end, shown_.size(), shown_.size() + (end - begin), false});
+        shown_.append(text_, begin, end - begin);
+    };
     if (secure_) {
-        // Bullet n stands for character n: keep the stops in the text's bytes.
-        std::vector<std::size_t> starts;
-        for (std::size_t i = 0; i < text_.size(); ++i) {
-            if (!is_continuation(text_[i])) {
-                starts.push_back(i);
+        // Bullet n stands for character n.
+        for (std::size_t i = 0; i < text_.size();) {
+            std::size_t next = i + 1;
+            while (next < text_.size() && is_continuation(text_[next])) {
+                ++next;
+            }
+            segments_.push_back({i, next, shown_.size(), shown_.size() + kBullet.size(), true});
+            shown_ += kBullet;
+            i = next;
+        }
+    } else {
+        std::vector<TextSpan> spans = styler_ ? styler_(text_) : std::vector<TextSpan>{};
+        std::size_t at = 0;
+        for (TextSpan& span : spans) {
+            span.begin = to_boundary(text_, std::min(span.begin, text_.size()));
+            span.end = to_boundary(text_, std::min(span.end, text_.size()));
+            if (span.begin < at || span.begin >= span.end) {
+                continue; // overlapping or empty: the styler's mistake; skip it
+            }
+            if (span.begin > at) {
+                plain(at, span.begin);
+            }
+            const std::size_t shown_begin = shown_.size();
+            if (span.label) {
+                segments_.push_back({span.begin, span.end, shown_begin, shown_begin + span.label->size(), true});
+                shown_ += *span.label;
+            } else {
+                plain(span.begin, span.end);
+            }
+            TextSpan shown_span = span;
+            shown_span.begin = shown_begin;
+            shown_span.end = shown_.size();
+            spans_.push_back(std::move(shown_span));
+            at = span.end;
+        }
+        if (at < text_.size()) {
+            plain(at, text_.size());
+        }
+    }
+    // The IME's text goes in at the caret, pushing what's after it along.
+    if (composing()) {
+        const std::size_t at = shown_without_composition(caret_);
+        shown_.insert(at, composition_);
+        for (TextSpan& span : spans_) {
+            if (span.begin >= at) {
+                span.begin += composition_.size();
+            }
+            if (span.end > at) {
+                span.end += composition_.size();
             }
         }
-        starts.push_back(text_.size());
-        for (Stop& stop : stops_) {
-            stop.byte = starts[std::min(stop.byte / kBullet.size(), starts.size() - 1)];
-        }
     }
-    width_ = pen;
+
+    if (face_) {
+        std::vector<StyledRunSpec> runs;
+        styles_template_ = {DrawStyle{}};
+        style_colors_ = {std::nullopt};
+        for (std::size_t i = 0; i < spans_.size(); ++i) {
+            const TextSpan& span = spans_[i];
+            runs.push_back({.begin = span.begin,
+                            .end = span.end,
+                            .face = &text_system_->fonts.resolve(run_font(font_, span.style)),
+                            .style = static_cast<std::uint32_t>(i + 1),
+                            .keep_together = span.style.keep_together || span.style.background.has_value() ||
+                                             span.label.has_value()});
+            styles_template_.push_back({.background = span.style.background,
+                                        .underline = span.style.underline,
+                                        .strikethrough = span.style.strikethrough});
+            style_colors_.push_back(span.style.color);
+        }
+        shape_ = shape_styled(shown_, runs, *face_, size_, text_system_->fonts);
+        natural_width_ = layout_for(std::nullopt).width;
+        relayout(layout_width_.value_or(std::numeric_limits<float>::infinity()));
+    }
     layout_changed();
+}
+
+TextLayoutResult TextEditor::layout_for(std::optional<float> width) const {
+    if (!face_) {
+        return {};
+    }
+    return layout_text(shape_.paragraphs, {.font_size = size_,
+                                           .line_height = shape_.line_height,
+                                           .max_width = multiline() ? width : std::nullopt});
+}
+
+void TextEditor::relayout(float width) {
+    layout_ = layout_for(width);
+    layout_width_ = width;
+    stops_ = caret_stops(shape_, layout_, size_, shown_.size());
+    text_stops_.clear();
+    for (const CaretStop& stop : stops_) {
+        text_stops_.push_back(to_text(stop.byte));
+    }
+    text_stops_.push_back(0);
+    text_stops_.push_back(text_.size());
+    std::ranges::sort(text_stops_);
+    text_stops_.erase(std::unique(text_stops_.begin(), text_stops_.end()), text_stops_.end());
 }
 
 void TextEditor::layout_changed() {
@@ -162,44 +288,57 @@ void TextEditor::layout_changed() {
     }
 }
 
-float TextEditor::x_at(std::size_t byte) const {
-    float x = 0;
-    for (const Stop& stop : stops_) {
-        if (stop.byte > byte) {
-            break;
+const CaretStop& TextEditor::stop_at(std::size_t shown_byte) const {
+    // The last exact match: at a wrap, the caret goes to the start of the next line.
+    const CaretStop* exact = nullptr;
+    const CaretStop* before = &stops_.front();
+    for (const CaretStop& stop : stops_) {
+        if (stop.byte == shown_byte) {
+            exact = &stop;
+        } else if (stop.byte < shown_byte) {
+            before = &stop;
         }
-        x = stop.x;
     }
-    return x;
+    return exact ? *exact : *before;
 }
 
-std::size_t TextEditor::byte_at(float x) const {
-    std::size_t best = 0;
-    float best_distance = std::numeric_limits<float>::max();
-    for (const Stop& stop : stops_) {
-        if (const float distance = std::abs(stop.x - x); distance < best_distance) {
-            best_distance = distance;
-            best = stop.byte;
+std::size_t TextEditor::line_of(std::size_t text_byte) const {
+    return stop_at(to_shown(text_byte)).line;
+}
+
+std::size_t TextEditor::byte_on_line(std::size_t line, float x) const {
+    const CaretStop* best = nullptr;
+    for (const CaretStop& stop : stops_) {
+        if (stop.line == line && (!best || std::abs(stop.x - x) < std::abs(best->x - x))) {
+            best = &stop;
         }
     }
-    return best;
+    return best ? to_text(best->byte) : 0;
+}
+
+std::size_t TextEditor::byte_at(Point local) const {
+    const float line_height = shape_.line_height > 0 ? shape_.line_height : line_height_;
+    const std::size_t lines = std::max<std::size_t>(layout_.lines.size(), 1);
+    const auto line = static_cast<std::size_t>(std::clamp(std::floor(local.y / line_height), 0.f,
+                                                           static_cast<float>(lines - 1)));
+    return byte_on_line(line, local.x);
 }
 
 std::size_t TextEditor::previous_stop(std::size_t byte) const {
     std::size_t result = 0;
-    for (const Stop& stop : stops_) {
-        if (stop.byte >= byte) {
+    for (const std::size_t stop : text_stops_) {
+        if (stop >= byte) {
             break;
         }
-        result = stop.byte;
+        result = stop;
     }
     return result;
 }
 
 std::size_t TextEditor::next_stop(std::size_t byte) const {
-    for (const Stop& stop : stops_) {
-        if (stop.byte > byte) {
-            return stop.byte;
+    for (const std::size_t stop : text_stops_) {
+        if (stop > byte) {
+            return stop;
         }
     }
     return text_.size();
@@ -215,7 +354,7 @@ std::size_t TextEditor::previous_word(std::size_t byte) const {
     while (byte > 0 && is_word_byte(text_[byte - 1])) {
         --byte;
     }
-    return to_boundary(text_, byte);
+    return out_of_atomic(to_boundary(text_, byte), false);
 }
 
 std::size_t TextEditor::next_word(std::size_t byte) const {
@@ -228,7 +367,7 @@ std::size_t TextEditor::next_word(std::size_t byte) const {
     while (byte < text_.size() && !is_word_byte(text_[byte])) {
         ++byte;
     }
-    return to_boundary(text_, byte);
+    return out_of_atomic(to_boundary(text_, byte), true);
 }
 
 void TextEditor::select_word(std::size_t byte) {
@@ -237,49 +376,84 @@ void TextEditor::select_word(std::size_t byte) {
         caret_ = text_.size();
         return;
     }
+    // A chip selects as a whole.
+    for (const Segment& segment : segments_) {
+        if (segment.atomic && segment.text_begin <= byte && byte < segment.text_end) {
+            anchor_ = segment.text_begin;
+            caret_ = segment.text_end;
+            return;
+        }
+    }
     // The run of word (or of non-word) characters around `byte`.
     const bool word = byte < text_.size() ? is_word_byte(text_[byte]) : byte > 0 && is_word_byte(text_[byte - 1]);
     std::size_t begin = byte;
     std::size_t end = byte;
-    while (begin > 0 && is_word_byte(text_[begin - 1]) == word) {
+    while (begin > 0 && is_word_byte(text_[begin - 1]) == word && text_[begin - 1] != '\n') {
         --begin;
     }
-    while (end < text_.size() && is_word_byte(text_[end]) == word) {
+    while (end < text_.size() && is_word_byte(text_[end]) == word && text_[end] != '\n') {
         ++end;
     }
-    anchor_ = to_boundary(text_, begin);
-    caret_ = to_boundary(text_, end);
+    anchor_ = out_of_atomic(to_boundary(text_, begin), false);
+    caret_ = out_of_atomic(to_boundary(text_, end), true);
 }
 
 Size TextEditor::measure(ProposedSize proposal) const {
     // Takes the width it's offered (like SwiftUI); ideally, its text's.
-    const float natural = std::max({width_, placeholder_width_, kMinWidth}) + kCaretWidth;
-    return {proposal.width.value_or(natural), line_height_};
+    const float natural = std::max({natural_width_, placeholder_width_, kMinWidth}) + kCaretWidth;
+    const float width = proposal.width.value_or(natural);
+    const float line_height = shape_.line_height > 0 ? shape_.line_height : line_height_;
+    if (!multiline()) {
+        return {width, line_height};
+    }
+    // Grows a line at a time up to max_lines, then scrolls.
+    const TextLayoutResult wrapped = layout_for(std::max(width - kCaretWidth, 1.f));
+    const std::size_t lines = std::clamp<std::size_t>(wrapped.lines.size(), 1, static_cast<std::size_t>(max_lines_));
+    return {width, line_height * static_cast<float>(lines)};
 }
 
 void TextEditor::arranged(Rect frame) {
     frame_ = frame;
-    // Keep the caret in sight when the text is wider than the field.
-    const std::size_t caret = caret_ + (composing() ? composition_cursor_ : 0);
-    const float caret_x = x_at(caret);
-    const float room = std::max(frame.width - kCaretWidth, 0.f);
-    if (width_ <= room) {
-        scroll_ = 0;
-    } else {
-        if (caret_x - scroll_ < 0) {
-            scroll_ = caret_x;
-        } else if (caret_x - scroll_ > room) {
-            scroll_ = caret_x - room;
+    const float width = std::max(frame.width - kCaretWidth, 1.f);
+    if (!layout_width_ || *layout_width_ != width) {
+        relayout(width);
+    }
+    const float line_height = shape_.line_height > 0 ? shape_.line_height : line_height_;
+    const CaretStop& caret = stop_at(to_shown(caret_) + (composing() ? composition_cursor_ : 0));
+    if (multiline()) {
+        // Keep the caret's line in sight when there are more lines than shown.
+        scroll_x_ = 0;
+        const float content = static_cast<float>(layout_.lines.size()) * line_height;
+        const float top = static_cast<float>(caret.line) * line_height;
+        if (top < scroll_y_) {
+            scroll_y_ = top;
+        } else if (top + line_height > scroll_y_ + frame.height) {
+            scroll_y_ = top + line_height - frame.height;
         }
-        scroll_ = std::clamp(scroll_, 0.f, width_ - room);
+        scroll_y_ = std::clamp(scroll_y_, 0.f, std::max(content - frame.height, 0.f));
+    } else {
+        // Keep the caret in sight when the text is wider than the field.
+        scroll_y_ = 0;
+        const float room = std::max(frame.width - kCaretWidth, 0.f);
+        if (layout_.width <= room) {
+            scroll_x_ = 0;
+        } else {
+            if (caret.x - scroll_x_ < 0) {
+                scroll_x_ = caret.x;
+            } else if (caret.x - scroll_x_ > room) {
+                scroll_x_ = caret.x - room;
+            }
+            scroll_x_ = std::clamp(scroll_x_, 0.f, layout_.width - room);
+        }
     }
     // Tell the IME where we are (for its candidate list), when that changed.
     if (focused_ && services_) {
-        const float cursor = caret_x - scroll_;
-        if (!input_area_ || *input_area_ != frame || input_cursor_ != cursor) {
-            input_area_ = frame;
+        const float cursor = caret.x - scroll_x_;
+        const Rect area{frame.x, frame.y + static_cast<float>(caret.line) * line_height - scroll_y_, frame.width, line_height};
+        if (!input_area_ || *input_area_ != area || input_cursor_ != cursor) {
+            input_area_ = area;
             input_cursor_ = cursor;
-            services_->set_text_input_area(frame, cursor);
+            services_->set_text_input_area(area, cursor);
         }
     }
 }
@@ -290,50 +464,86 @@ void TextEditor::paint(DisplayList& list, Rect frame) const {
     const bool active = enabled();
     const Color tint = environment_.get<TintKey>();
     const Color foreground = active ? environment_.get<ForegroundKey>() : environment_.color(ThemeColor::tertiary);
-    const float origin = frame.x - scroll_;
-    const float baseline = snap(frame.y + ascent_);
+    const float line_height = shape_.line_height > 0 ? shape_.line_height : line_height_;
+    const Point origin{frame.x - scroll_x_, frame.y - scroll_y_};
 
     list.commands.push_back(PushClipCommand{Rect{frame.x - kCaretWidth, frame.y, frame.width + 2 * kCaretWidth, frame.height}, {}});
 
     if (focused_ && !composing() && caret_ != anchor_) {
-        const float x0 = x_at(selection_start());
-        const float x1 = x_at(selection_end());
+        const std::size_t s0 = to_shown(selection_start());
+        const std::size_t s1 = to_shown(selection_end());
         Color selection = tint;
         selection.a *= 0.35f;
-        list.commands.push_back(RectCommand{{origin + x0, frame.y, x1 - x0, frame.height}, {}, ShapeStyle(selection),
-                                            Color::clear, 0});
+        for (std::size_t li = 0; li < layout_.lines.size(); ++li) {
+            const CaretStop* first = nullptr;
+            const CaretStop* last = nullptr;
+            for (const CaretStop& stop : stops_) {
+                if (stop.line == li) {
+                    first = first ? first : &stop;
+                    last = &stop;
+                }
+            }
+            if (!first || s1 <= first->byte || s0 > last->byte) {
+                continue;
+            }
+            const auto x_at = [&](std::size_t byte) {
+                float x = first->x;
+                for (const CaretStop& stop : stops_) {
+                    if (stop.line == li && stop.byte <= byte) {
+                        x = stop.x;
+                    }
+                }
+                return x;
+            };
+            const float x0 = x_at(std::max(s0, first->byte));
+            float x1 = x_at(std::min(s1, last->byte));
+            if (s1 > last->byte) {
+                x1 += size_ * 0.3f; // a selected line break shows as a sliver
+            }
+            list.commands.push_back(RectCommand{{origin.x + x0, origin.y + static_cast<float>(li) * line_height, x1 - x0,
+                                                 line_height},
+                                                {}, ShapeStyle(selection), Color::clear, 0});
+        }
     }
 
-    const auto draw = [&](const ShapedParagraph& paragraph, Color color) {
-        float pen = origin;
-        for (const ShapedGlyph& glyph : paragraph.glyphs) {
-            draw_glyph(list, text_system_->atlas, glyph.face ? *glyph.face : *face_, glyph, pen, baseline, size_, color);
-            pen += glyph.advance * size_;
-        }
-    };
     if (face_) {
-        if (shaped_.glyphs.empty()) {
-            draw(placeholder_shaped_, environment_.color(ThemeColor::tertiary));
+        if (text_.empty() && !composing()) {
+            float pen = origin.x;
+            const float baseline = snap(origin.y + ascent_);
+            for (const ShapedGlyph& glyph : placeholder_shaped_.glyphs) {
+                draw_glyph(list, text_system_->atlas, glyph.face ? *glyph.face : *face_, glyph, pen, baseline, size_,
+                           environment_.color(ThemeColor::tertiary));
+                pen += glyph.advance * size_;
+            }
         } else {
-            draw(shaped_, foreground);
+            std::vector<DrawStyle> styles = styles_template_;
+            for (std::size_t i = 0; i < styles.size(); ++i) {
+                styles[i].color = i < style_colors_.size() && style_colors_[i] ? *style_colors_[i] : foreground;
+            }
+            draw_styled(list, text_system_->atlas, *face_, shape_, layout_, styles, origin, size_, scale);
         }
     }
 
     if (composing()) {
         // The IME's text is underlined until it's committed.
-        const float x0 = x_at(caret_);
-        const float x1 = x_at(caret_ + composition_.size());
-        list.commands.push_back(RectCommand{{origin + x0, snap(baseline + 2), x1 - x0, 1}, {}, ShapeStyle(foreground),
-                                            Color::clear, 0});
+        const std::size_t at = to_shown(caret_);
+        const CaretStop& start = stop_at(at);
+        const CaretStop& end = stop_at(at + composition_.size());
+        if (start.line == end.line) {
+            const float y = origin.y + static_cast<float>(start.line) * line_height + shape_.ascent + 2;
+            list.commands.push_back(RectCommand{{origin.x + start.x, snap(y), end.x - start.x, 1}, {},
+                                                ShapeStyle(foreground), Color::clear, 0});
+        }
     }
 
     if (focused_ && active && (caret_ == anchor_ || composing())) {
         const double elapsed = std::max(frame_time() - blink_start_, 0.0);
         const auto phase = static_cast<long long>(elapsed / kBlinkHalfPeriod);
         if (phase % 2 == 0) {
-            const float x = snap(origin + x_at(caret_ + (composing() ? composition_cursor_ : 0)));
-            list.commands.push_back(
-                RectCommand{{x, frame.y, kCaretWidth, frame.height}, {}, ShapeStyle(tint), Color::clear, 0});
+            const CaretStop& caret = stop_at(to_shown(caret_) + (composing() ? composition_cursor_ : 0));
+            list.commands.push_back(RectCommand{{snap(origin.x + caret.x), origin.y + static_cast<float>(caret.line) * line_height,
+                                                 kCaretWidth, line_height},
+                                                {}, ShapeStyle(tint), Color::clear, 0});
         }
         if (services_) {
             services_->wake_at(blink_start_ + static_cast<double>(phase + 1) * kBlinkHalfPeriod);
@@ -384,7 +594,7 @@ void TextEditor::restore(std::vector<Snapshot>& from, std::vector<Snapshot>& to)
 }
 
 void TextEditor::replace_all(std::string value) {
-    text_ = std::move(value);
+    text_ = clean(std::move(value));
     caret_ = anchor_ = text_.size();
     changed();
 }
@@ -406,6 +616,7 @@ bool TextFieldElement::accessibility_action(const AccessibilityAction& action) {
     return true;
 }
 
+
 void TextEditor::changed() {
     binding_.set(text_);
     reshape();
@@ -413,7 +624,7 @@ void TextEditor::changed() {
 }
 
 void TextEditor::replace_selection(std::string text, bool typing) {
-    text = single_line(std::move(text));
+    text = clean(std::move(text));
     const std::size_t begin = selection_start();
     const std::size_t end = selection_end();
     if (text.empty() && begin == end) {
@@ -460,6 +671,18 @@ EventResult TextEditor::key(const KeyEvent& event) {
         const std::size_t begin = selection_start();
         const std::size_t end = selection_end();
         const bool selection = begin != end;
+        // The caret's line's ends (multiline Home/End).
+        const auto line_end = [&](bool last) {
+            const std::size_t line = line_of(caret_);
+            std::size_t result = last ? 0 : text_.size();
+            for (const CaretStop& stop : stops_) {
+                if (stop.line == line) {
+                    const std::size_t byte = to_text(stop.byte);
+                    result = last ? std::max(result, byte) : std::min(result, byte);
+                }
+            }
+            return result;
+        };
         switch (event.key) {
         case Key::left:
             if (selection && !shift) {
@@ -475,10 +698,22 @@ EventResult TextEditor::key(const KeyEvent& event) {
                 move_caret(word ? next_word(caret_) : next_stop(caret_), shift);
             }
             return handled;
-        case Key::home:
-        case Key::up: move_caret(0, shift); return handled;
-        case Key::end:
-        case Key::down: move_caret(text_.size(), shift); return handled;
+        case Key::home: move_caret(multiline() && !primary ? line_end(false) : 0, shift); return handled;
+        case Key::end: move_caret(multiline() && !primary ? line_end(true) : text_.size(), shift); return handled;
+        case Key::up:
+        case Key::down: {
+            // A line up or down at the same x; past the first or last line, to the start or end.
+            const std::size_t line = line_of(caret_);
+            const bool up = event.key == Key::up;
+            const std::size_t lines = std::max<std::size_t>(layout_.lines.size(), 1);
+            if (!multiline() || (up && line == 0) || (!up && line + 1 >= lines)) {
+                move_caret(up ? 0 : text_.size(), shift);
+            } else {
+                const float x = stop_at(to_shown(caret_)).x;
+                move_caret(byte_on_line(up ? line - 1 : line + 1, x), shift);
+            }
+            return handled;
+        }
         case Key::backspace:
             if (selection) {
                 erase(begin, end);
@@ -494,6 +729,10 @@ EventResult TextEditor::key(const KeyEvent& event) {
             }
             return handled;
         case Key::enter:
+            if (multiline() && shift) {
+                replace_selection("\n", false); // Shift+Enter: a new line; Enter submits
+                return handled;
+            }
             if (on_submit_) {
                 on_submit_();
             }
@@ -571,7 +810,9 @@ EventResult TextEditor::pointer(const PointerEvent& event) {
     if (!enabled() || event.button != MouseButton::left) {
         return {};
     }
-    const auto byte_under = [&] { return byte_at(event.location.x - frame_.x + scroll_); };
+    const auto byte_under = [&] {
+        return byte_at({event.location.x - frame_.x + scroll_x_, event.location.y - frame_.y + scroll_y_});
+    };
     switch (event.kind) {
     case PointerEvent::Kind::down:
         if (composing()) {
@@ -608,8 +849,8 @@ void TextEditor::focus_changed(bool focused) {
     input_area_.reset();
     if (focused) {
         // Tabbing in selects everything, like the web and native fields; clicking places the
-        // caret (the pointer handler does that next).
-        if (focus_ && focus_->ring_visible()) {
+        // caret (the pointer handler does that next), and focus from code leaves it where it is.
+        if (focus_ && focus_->navigated()) {
             anchor_ = 0;
             caret_ = text_.size();
         }
@@ -652,6 +893,9 @@ EventResult TextFieldElement::hover(bool inside) {
 }
 
 EventResult TextFieldElement::key(const KeyEvent& event) {
+    if (key_filter_ && key_filter_(event)) {
+        return {.consumed = true, .redraw = true};
+    }
     return editor_->key(event);
 }
 

@@ -18,19 +18,25 @@ enum class CursorShape { arrow, text };
 
 // A popup window to open (design.md §13.1), anchored to a rect in the opener's window.
 struct PopupRequest {
-    enum class Kind { menu, tooltip };
+    // Popovers share the menus' stack (and their closing on outside clicks, Esc, and focus
+    // loss), without menu keyboard navigation.
+    enum class Kind { menu, tooltip, popover };
     enum class Placement {
         at_point, // the panel's corner at anchor's origin (context menus)
         below,    // under the anchor, left edges aligned (dropdowns, tooltips)
         beside,   // to the right of the anchor, tops aligned (submenus)
+        above,    // over the anchor, left edges aligned (menus of buttons near the bottom)
+        leading,  // to the left of the anchor, tops aligned
     };
 
     Kind kind = Kind::menu;
     Placement placement = Placement::below;
+    bool centered = false;           // centered on the anchor across the placement's direction
     Rect anchor;                     // the opener window's logical points
     std::function<View()> content;   // built when the popup mounts, in its own scope
     EnvironmentValues environment;   // the opener's: theme, fonts, tint carry over
-    int level = 0;                   // menus: 0 for the first, +1 per submenu
+    int level = 0;                   // menus and popovers: 0 for the first, +1 per nested one
+    std::function<void()> on_close;  // menus and popovers: runs after it closes, for any reason
 };
 
 // What elements need from the window they're in, beyond drawing: text input (IME), the

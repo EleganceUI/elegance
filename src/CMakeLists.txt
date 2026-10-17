@@ -29,12 +29,15 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         gpu/texture_cache.cpp
         gpu/video_textures.cpp
         media/audio.cpp
+        media/audio_stream.cpp
         media/camera.cpp
         media/image_decode.cpp
         media/miniaudio.cpp
         media/recorder.cpp
+        media/video_feed.cpp
         media/video_source.cpp
         net/http.cpp
+        net/websocket.cpp
         gpu/vk.cpp
         gpu/vma.cpp
         platform/accessibility_adapter.cpp
@@ -51,6 +54,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         text/glyph_atlas.cpp
         text/glyph_cache.cpp
         text/color_glyph.cpp
+        text/styled_layout.cpp
         text/text_layout.cpp
         view/controls.cpp
         view/drop.cpp
@@ -73,6 +77,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         view/shapes.cpp
         view/stack_layout.cpp
         view/styles.cpp
+        view/styled_text.cpp
         view/text.cpp
         view/text_field.cpp
         view/view.cpp

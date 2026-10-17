@@ -23,10 +23,12 @@ public:
 
     Element* focused() const noexcept { return focused_; }
     bool ring_visible() const noexcept { return visible_; }
+    // Whether focus last arrived by Tab (not a click or code): text fields select all then.
+    bool navigated() const noexcept { return navigated_; }
 
     // Moves focus to `element` (nullptr: none) and tells the handlers that lost and gained it.
-    // Returns true when the window needs a new frame.
-    bool focus(Element* element, bool visible);
+    // `navigated`: by Tab. Returns true when the window needs a new frame.
+    bool focus(Element* element, bool visible, bool navigated = false);
     // Whether the focused element is `scope` or inside it.
     bool contains_focus(const Element* scope) const noexcept;
     // The first element in `scope` (descendants in tree order, then `scope` itself) that can take
@@ -61,6 +63,7 @@ private:
     bool text_input_ = false;
     Element* focused_ = nullptr;
     bool visible_ = false;
+    bool navigated_ = false;
 };
 
 } // namespace elg::detail

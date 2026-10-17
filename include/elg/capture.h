@@ -8,7 +8,7 @@
 // Capture from the microphone and the camera (design.md §13.3).
 //
 //   const AudioRecorder recorder;                          // the default microphone
-//   Button([=] { return recorder.is_recording() ? "Stop" : "Record"; }, [=] { recorder.toggle(); })
+//   Button(Text([=] { return recorder.is_recording() ? "Stop" : "Record"; }), [=] { recorder.toggle(); })
 //   ProgressView([=] { return recorder.level(); })         // a live input meter
 //   recorder.save_wav("memo.wav");
 //
@@ -44,12 +44,6 @@ class VideoSource;
 
 // --- Microphone ---
 
-struct AudioDevice {
-    std::string id;   // for AudioRecorderOptions::device_id
-    std::string name; // as the system shows it
-    bool is_default = false;
-};
-
 // The system's audio inputs (microphones, line in, virtual devices).
 ELG_API std::vector<AudioDevice> audio_input_devices();
 
@@ -60,6 +54,9 @@ struct AudioRecorderOptions {
     // Each block of samples as it arrives (interleaved, -1...1), for streaming or analysis. Runs on
     // the audio thread: keep it short, and don't touch views or state from it.
     std::function<void(std::span<const float>)> on_samples;
+    // false: samples only go to on_samples (live audio, a meter), so memory doesn't grow while it
+    // runs; duration() and samples() then stay empty.
+    bool keeps_samples = true;
 };
 
 // Records from a microphone into memory. Copies share the recording; it stops when the last copy

@@ -111,6 +111,9 @@ public:
     std::vector<DrawCommand> commands;
     // Set while painting when something is mid-animation: the window needs another frame.
     bool animating = false;
+    // While painting: the part that can be seen (a scroll view's frame); elements entirely
+    // outside it aren't painted. nullopt: everything is.
+    std::optional<Rect> cull;
 };
 
 // --- Helpers ---

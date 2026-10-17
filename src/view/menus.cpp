@@ -360,17 +360,148 @@ private:
     std::function<View()> popup_;
 };
 
+// --- Popovers ---
+
+// Wraps a view; opens a popover by it while the binding is true, and closes it when the binding
+// goes false. Closed from outside (a click elsewhere, Esc), it sets the binding back to false.
+class PopoverElement final : public Element {
+public:
+    // Shared with the popup's on_close, which may run after this element is gone.
+    struct Presence {
+        bool open = false;   // the popup was requested and hasn't closed since
+        bool wanted = false; // the binding's value, as last seen
+        int generation = 0;  // +1 per open and close(), so a stale on_close does nothing
+    };
+
+    PopoverElement(std::unique_ptr<Element> content, std::function<View()> popover, PopoverOptions options,
+                   Binding<bool> is_presented, EnvironmentValues environment, WindowServices* services)
+        : content_(std::move(content)), popover_(std::move(popover)), options_(options),
+          is_presented_(std::move(is_presented)), environment_(std::move(environment)), services_(services),
+          level_(services ? services->menu_level() + 1 : 0) {
+        adopt(*content_);
+    }
+    ~PopoverElement() override { close(); } // its view went away: so does the popover
+
+    // The binding's value (from an effect). Opening waits for a frame to anchor to.
+    void set_presented(bool presented) {
+        presence_->wanted = presented;
+        if (!presented) {
+            close();
+        } else if (arranged_) {
+            open();
+        }
+    }
+
+    float layout_priority() const noexcept override { return content_->layout_priority(); }
+    bool is_spacer() const noexcept override { return content_->is_spacer(); }
+    void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
+
+protected:
+    Size measure(ProposedSize proposal) override { return content_->size_that_fits(proposal); }
+    void arrange(Rect bounds, ProposedSize proposal) override {
+        content_->place({bounds.x, bounds.y}, proposal);
+        arranged_ = true;
+        if (presence_->wanted) {
+            open(); // presented from the start
+        }
+    }
+    void paint_impl(DisplayList& list) const override { content_->paint(list); }
+    bool hit_impl(Point point, std::vector<Element*>& path) override { return content_->hit_test(point, path); }
+
+private:
+    void open() {
+        if (!services_ || presence_->open) {
+            return;
+        }
+        presence_->open = true;
+        const int generation = ++presence_->generation;
+        PopupRequest::Placement placement = PopupRequest::Placement::below;
+        switch (options_.opens) {
+        case PopoverEdge::below: placement = PopupRequest::Placement::below; break;
+        case PopoverEdge::above: placement = PopupRequest::Placement::above; break;
+        case PopoverEdge::trailing: placement = PopupRequest::Placement::beside; break;
+        case PopoverEdge::leading: placement = PopupRequest::Placement::leading; break;
+        }
+        services_->open_popup({
+            .kind = PopupRequest::Kind::popover,
+            .placement = placement,
+            .centered = true,
+            .anchor = frame(),
+            .content = [content = popover_, padded = options_.padded] {
+                View panel = padded ? content().padding(12) : content();
+                return panel.clip_shape(RoundedRectangle(10))
+                    .background(ThemeColor::surface, RoundedRectangle(10))
+                    .overlay(RoundedRectangle(10).stroke_border(ThemeColor::outline, 1));
+            },
+            .environment = environment_,
+            .level = level_,
+            .on_close =
+                [presence = presence_, binding = is_presented_, generation] {
+                    // Closed from outside (close() moved the generation on): the binding goes
+                    // back to false, which then finds nothing left to close.
+                    if (presence->generation != generation) {
+                        return;
+                    }
+                    presence->open = false;
+                    if (presence->wanted) {
+                        presence->wanted = false;
+                        binding.set(false);
+                    }
+                },
+        });
+    }
+
+    void close() {
+        if (services_ && std::exchange(presence_->open, false)) {
+            ++presence_->generation;
+            services_->close_menus(level_);
+        }
+    }
+
+    std::unique_ptr<Element> content_;
+    std::function<View()> popover_;
+    PopoverOptions options_;
+    Binding<bool> is_presented_;
+    EnvironmentValues environment_;
+    WindowServices* services_;
+    int level_;
+    std::shared_ptr<Presence> presence_ = std::make_shared<Presence>();
+    bool arranged_ = false;
+};
+
+class PopoverNode final : public ViewNode {
+public:
+    PopoverNode(View content, Binding<bool> is_presented, std::function<View()> popover, PopoverOptions options)
+        : content_(std::move(content)), is_presented_(std::move(is_presented)), popover_(std::move(popover)),
+          options_(options) {}
+    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+        auto element = std::make_unique<PopoverElement>(detail::lower(content_, context), popover_, options_,
+                                                        is_presented_, context.environment, context.services);
+        PopoverElement* const target = element.get();
+        detail::bind(Prop<bool>(is_presented_), context, [target](bool presented) { target->set_presented(presented); });
+        return element;
+    }
+
+private:
+    View content_;
+    Binding<bool> is_presented_;
+    std::function<View()> popover_;
+    PopoverOptions options_;
+};
+
 // A Button (in the environment's ButtonStyle) whose action opens a menu below it.
 class MenuButtonNode final : public ViewNode {
 public:
-    MenuButtonNode(View label, std::function<View()> menu) : label_(std::move(label)), menu_(std::move(menu)) {}
+    MenuButtonNode(View label, std::function<View()> menu, MenuButtonOptions options)
+        : label_(std::move(label)), menu_(std::move(menu)), options_(options) {}
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const State<bool> pressed(false);
         const State<bool> hovered(false);
         const State<bool> focused(false);
         const EnvironmentValues environment = context.environment;
         const ButtonConfiguration configuration{
-            .label = HStack({.spacing = 6}, label_, icon(Icon::chevron_down, 12, Weight::bold)),
+            .label = options_.shows_indicator ? HStack({.spacing = 6}, label_, icon(Icon::chevron_down, 12, Weight::bold))
+                                              : label_,
             .is_pressed = [pressed] { return pressed(); },
             .is_hovered = [hovered] { return hovered(); },
             .is_enabled = [environment] { return !environment.get<DisabledKey>(); },
@@ -386,10 +517,11 @@ public:
         WindowServices* const services = context.services;
         auto element = make_button_element(
             body,
-            [services, element_slot, menu = menu_, environment] {
+            [services, element_slot, menu = menu_, environment, edge = options_.opens] {
                 if (services && *element_slot) {
                     services->open_popup({.kind = PopupRequest::Kind::menu,
-                                          .placement = PopupRequest::Placement::below,
+                                          .placement = edge == MenuEdge::above ? PopupRequest::Placement::above
+                                                                               : PopupRequest::Placement::below,
                                           .anchor = (*element_slot)->frame(),
                                           .content = menu,
                                           .environment = environment,
@@ -407,6 +539,7 @@ public:
 private:
     View label_;
     std::function<View()> menu_;
+    MenuButtonOptions options_;
 };
 
 } // namespace
@@ -440,7 +573,11 @@ View detail::make_menu(std::vector<View> items) {
 }
 
 View MenuButton(View label, std::function<View()> menu) {
-    return ViewAccess::make(std::make_shared<const detail::MenuButtonNode>(std::move(label), std::move(menu)));
+    return MenuButton(std::move(label), std::move(menu), MenuButtonOptions{});
+}
+
+View MenuButton(View label, std::function<View()> menu, MenuButtonOptions options) {
+    return ViewAccess::make(std::make_shared<const detail::MenuButtonNode>(std::move(label), std::move(menu), options));
 }
 
 View MenuButton(std::string title, std::function<View()> menu) {
@@ -463,6 +600,11 @@ View View::help(std::string text) const {
     };
     return ViewAccess::make(std::make_shared<const detail::PopupTriggerNode>(detail::PopupTriggerElement::Kind::help,
                                                                             *this, std::move(tooltip)));
+}
+
+View View::popover(Binding<bool> is_presented, std::function<View()> content, PopoverOptions options) const {
+    return ViewAccess::make(std::make_shared<const detail::PopoverNode>(*this, std::move(is_presented),
+                                                                       std::move(content), options));
 }
 
 View detail::make_menu_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,

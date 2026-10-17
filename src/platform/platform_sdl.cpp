@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <utility>
 
 #if defined(_WIN32)
 #include <windows.h>
@@ -248,7 +249,8 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
         // Menus and tooltips: always transparent and undecorated (they draw their own panel).
         flags = SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN | SDL_WINDOW_TRANSPARENT |
                 (popup->tooltip ? SDL_WINDOW_TOOLTIP : SDL_WINDOW_POPUP_MENU);
-        window_ = SDL_CreatePopupWindow(popup->parent->window_, 0, 0,
+        parent_ = popup->parent->window_;
+        window_ = SDL_CreatePopupWindow(parent_, 0, 0,
                                         std::max(1, static_cast<int>(std::lround(desc.width * content_scale))),
                                         std::max(1, static_cast<int>(std::lround(desc.height * content_scale))), flags);
     } else {
@@ -380,6 +382,9 @@ void Window::set_hit_test(std::function<HitArea(Point)> test) {
 }
 
 Window::~Window() {
+    if (parent_text_input_) {
+        SDL_StopTextInput(parent_); // closed with its text field focused
+    }
     SDL_DestroyWindow(window_);
 }
 
@@ -402,10 +407,19 @@ Size Window::logical_size() const {
 
 void Window::start_text_input() {
     SDL_StartTextInput(window_);
+    // A popup (a popover's text field): typing reaches the parent's native window, so SDL makes
+    // text there. Unless the parent has text input of its own, it's started for the popup.
+    if (parent_ && !parent_text_input_ && !SDL_TextInputActive(parent_)) {
+        SDL_StartTextInput(parent_);
+        parent_text_input_ = true;
+    }
 }
 
 void Window::stop_text_input() {
     SDL_StopTextInput(window_);
+    if (std::exchange(parent_text_input_, false)) {
+        SDL_StopTextInput(parent_);
+    }
 }
 
 void Window::set_text_input_area(Rect area, float cursor) {

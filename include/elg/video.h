@@ -23,9 +23,11 @@
 #include <elg/reactive.h>
 #include <elg/view.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace elg {
 
@@ -83,6 +85,48 @@ ELG_API View VideoView(VideoPlayer player, ContentMode mode = ContentMode::fit);
 // Built-in controls: play/pause, a scrubber, the time, and mute. Lay them over (or under) a
 // VideoView.
 ELG_API View VideoControls(VideoPlayer player);
+
+// --- Frames from the app ---
+
+// Video the app makes itself (a decoder of its own, a screen capture), shown by VideoFeedView:
+//
+//   const VideoFeed feed;
+//   VideoFeedView(feed).aspect_ratio(16.f / 9.f)
+//   feed.push(VideoFeed::Format::nv12, 1280, 720, std::move(pixels));  // from any thread
+//
+// Frames are packed (no row padding), top to bottom. The renderer converts YUV on the GPU and
+// redraws only the views showing the feed when a frame arrives. Copies share the feed.
+class ELG_API VideoFeed {
+public:
+    enum class Format { bgra, nv12, i420 };
+
+    VideoFeed();
+
+    // A new frame (any thread). `full_range`: YUV in 0...255 rather than 16...235.
+    void push(Format format, std::uint32_t width, std::uint32_t height, std::vector<std::uint8_t> pixels,
+              bool full_range = false) const;
+    // No picture (black) until the next push (any thread).
+    void clear() const;
+
+    // Reactive (UI thread).
+    Size size() const;      // pixels of the frames; zero before the first
+    bool has_frame() const; // false before the first push and after clear()
+
+    // The same feed (copies of one another).
+    bool operator==(const VideoFeed& other) const noexcept { return source_ == other.source_; }
+
+    // Internal: the source the views draw.
+    const std::shared_ptr<detail::VideoSource>& source() const noexcept { return source_; }
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::shared_ptr<detail::VideoSource> source_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
+// The feed's picture, fitted into (or filling, clipped to) the space offered, on black;
+// `mirrored` shows it flipped left to right (someone's own camera).
+ELG_API View VideoFeedView(VideoFeed feed, ContentMode mode = ContentMode::fit, bool mirrored = false);
 
 } // namespace elg
 

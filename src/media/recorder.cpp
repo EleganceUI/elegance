@@ -97,7 +97,7 @@ struct RecorderState {
         for (std::size_t i = 0; i < count; ++i) {
             peak = std::max(peak, std::abs(data[i]));
         }
-        {
+        if (self->options.keeps_samples) {
             std::lock_guard lock(self->mutex);
             self->samples.insert(self->samples.end(), data, data + count);
         }

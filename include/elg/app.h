@@ -72,6 +72,11 @@ private:
     ELG_PRIVATE_MEMBERS_END
 };
 
+// Runs `task` on the UI thread soon, between events, where state may be written. For results
+// of work done on your own threads (parsing, decoding). Call from any thread; tasks run in the
+// order posted. Posted while no App runs, it waits for the next one.
+ELG_API void post_to_ui_thread(std::function<void()> task);
+
 // Library version string, e.g. "0.1.0".
 ELG_API const char* version();
 

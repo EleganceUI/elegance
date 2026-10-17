@@ -9,6 +9,7 @@
 // where the style puts the field; the TextFieldElement around the style's body is the focusable
 // control that takes the input.
 
+#include "text/styled_layout.h"
 #include "text/text_layout.h"
 #include "text/text_system.h"
 #include "view/element.h"
@@ -18,6 +19,7 @@
 #include <elg/environment.h>
 #include <elg/events.h>
 #include <elg/reactive.h>
+#include <elg/text.h>
 
 #include <cstddef>
 #include <functional>
@@ -30,14 +32,20 @@ namespace elg::detail {
 
 class TextEditorElement;
 
-// A single line of editable text: the text (synced with the binding), caret and selection (byte
-// offsets on cluster boundaries), the IME composition, undo history, and its shaped layout.
+// The editable text: the text (synced with the binding), caret and selection (byte offsets on
+// cluster boundaries), the IME composition, undo history, and its styled, wrapped layout.
+//
+// What's shown can differ from the text: spans with a label (TextFieldOptions::styler) show the
+// label and are edited as one unit, and secure fields show a bullet per character. Segments map
+// between the two; the caret and selection live in the text, drawing works in what's shown.
 class TextEditor {
 public:
     TextEditor(TextSystem& text, Binding<std::string> binding, std::string placeholder,
                std::function<void()> on_submit, WindowServices* services, FocusManager* focus,
                EnvironmentValues environment, bool secure = false);
 
+    // TextFieldOptions::max_lines and ::styler.
+    void configure(int max_lines, std::function<std::vector<TextSpan>(std::string_view)> styler);
     void set_font(const Font& font);
     // Where the text is shown (fonts and colors come from there).
     void set_environment(EnvironmentValues environment) { environment_ = std::move(environment); }
@@ -63,26 +71,41 @@ public:
     void paint(DisplayList& list, Rect frame) const;
 
 private:
-    struct Stop {
-        std::size_t byte; // into the displayed text (secure: into the text itself)
-        float x;          // points from the start
-    };
     struct Snapshot {
         std::string text;
         std::size_t caret;
         std::size_t anchor;
     };
+    // A stretch of the text and how it's shown; atomic ones (labels, bullets) can't be entered.
+    struct Segment {
+        std::size_t text_begin;
+        std::size_t text_end;
+        std::size_t shown_begin;
+        std::size_t shown_end;
+        bool atomic;
+    };
 
     bool enabled() const;
+    bool multiline() const noexcept { return max_lines_ > 1; }
     bool composing() const noexcept { return !composition_.empty(); }
     std::size_t selection_start() const noexcept { return std::min(caret_, anchor_); }
     std::size_t selection_end() const noexcept { return std::max(caret_, anchor_); }
+    std::string clean(std::string text) const; // what the field takes: one line, unless multiline
 
-    // The text as shown: the composition is inserted at the caret.
-    std::string displayed() const;
-    void reshape();
-    float x_at(std::size_t display_byte) const;
-    std::size_t byte_at(float x) const; // nearest caret stop to `x` (points from the start)
+    // Text <-> shown bytes. Bytes inside an atomic segment go to its nearer end (or `toward_end`).
+    std::size_t shown_without_composition(std::size_t text_byte) const;
+    std::size_t to_shown(std::size_t text_byte) const;
+    std::size_t to_text(std::size_t shown_byte, std::optional<bool> toward_end = std::nullopt) const;
+    // Inside an atomic segment: out of it, toward its end or start.
+    std::size_t out_of_atomic(std::size_t text_byte, bool toward_end) const;
+
+    void reshape();                 // the text or style changed: segments, shown text, shaping
+    void relayout(float width);     // line breaking for this width, caret stops
+    TextLayoutResult layout_for(std::optional<float> width) const;
+    const CaretStop& stop_at(std::size_t shown_byte) const; // where a shown byte's caret goes
+    std::size_t line_of(std::size_t text_byte) const;
+    std::size_t byte_at(Point local) const; // nearest caret stop to a point (in the text's coordinates)
+    std::size_t byte_on_line(std::size_t line, float x) const;
     std::size_t previous_stop(std::size_t byte) const;
     std::size_t next_stop(std::size_t byte) const;
     std::size_t previous_word(std::size_t byte) const;
@@ -106,7 +129,10 @@ private:
     FocusManager* focus_;
     EnvironmentValues environment_;
     TextEditorElement* element_ = nullptr;
+    int max_lines_ = 1;
+    std::function<std::vector<TextSpan>(std::string_view)> styler_;
 
+    Font font_ = Font::system(15);
     const FontFace* face_ = nullptr;
     float size_ = 15;
     float ascent_ = 12;
@@ -119,14 +145,24 @@ private:
     std::string composition_;
     std::size_t composition_cursor_ = 0;
 
-    ShapedParagraph shaped_;
-    std::vector<Stop> stops_;
-    float width_ = 0;
+    // What's shown, shaped (width-independent) and laid out (for layout_width_).
+    std::vector<Segment> segments_;
+    std::string shown_;
+    std::vector<TextSpan> spans_;  // the styler's, with shown byte ranges
+    StyledShape shape_;
+    std::vector<DrawStyle> styles_template_; // colors filled in when drawn
+    std::vector<std::optional<Color>> style_colors_; // each style's own color; none: the foreground
+    TextLayoutResult layout_;
+    std::optional<float> layout_width_;
+    std::vector<CaretStop> stops_;  // shown bytes
+    std::vector<std::size_t> text_stops_; // the caret stops in the text, sorted
+    float natural_width_ = 0;
     ShapedParagraph placeholder_shaped_;
     float placeholder_width_ = 0;
 
     Rect frame_;
-    float scroll_ = 0; // when the text is wider than the field
+    float scroll_x_ = 0; // single line: when the text is wider than the field
+    float scroll_y_ = 0; // multiline: when it has more lines than shown
     bool focused_ = false;
     bool dragging_ = false;
     double blink_start_ = 0;
@@ -144,6 +180,7 @@ public:
     explicit TextEditorElement(std::shared_ptr<TextEditor> editor) : editor_(std::move(editor)) {
         editor_->attach(this);
     }
+    bool always_arranges() const override { return true; } // keeps the caret in sight
     ~TextEditorElement() override {
         if (editor_->attached() == this) {
             editor_->attach(nullptr);
@@ -174,6 +211,8 @@ public:
 
     EventHandler* event_handler() noexcept override { return this; }
     HoverDelay effective_hover_delay() const override { return {0, 0}; } // the I-beam shows at once
+    // TextFieldOptions::on_key: offered each key before the editor.
+    void set_key_filter(std::function<bool(const KeyEvent&)> filter) { key_filter_ = std::move(filter); }
     void accessibility(AccessibilityInfo& out) const override;
     bool accessibility_action(const AccessibilityAction& action) override;
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
@@ -195,6 +234,7 @@ private:
 
     std::shared_ptr<TextEditor> editor_;
     std::unique_ptr<Element> content_;
+    std::function<bool(const KeyEvent&)> key_filter_;
     State<bool> focused_;
     State<bool> hovered_;
     std::function<bool()> enabled_;

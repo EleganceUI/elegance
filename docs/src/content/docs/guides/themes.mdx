@@ -1,0 +1,98 @@
+---
+title: Colors and themes
+description: "Colors, semantic theme colors, light and dark mode, custom themes, and gradients."
+---
+
+import Example from '../../../components/Example.astro';
+
+## Colors
+
+`Color` is an sRGB color with straight alpha:
+
+```cpp
+Color::hex(0x7AA2F7)
+Color::hex(0x7AA2F7, 0.5f)          // with alpha
+Color::rgb(122, 162, 247)
+Color{0.48f, 0.64f, 0.97f, 1.f}
+Color::black.opacity(0.3f)
+Color::hex(0x7AA2F7).mix(Color::white, 0.2f) // 20% toward white
+Color::white, Color::black, Color::clear
+```
+
+Gradients fill shapes and backgrounds like colors do; see
+[Shapes and drawing](../drawing/#gradients).
+
+## Theme colors
+
+Rather than fixed colors, most UI should use **semantic colors**. A `ThemeColor` is resolved
+against the theme and color scheme where it's used, so the same code looks right in light and
+dark mode:
+
+```cpp
+Text("Details").foreground_style(ThemeColor::secondary);
+RoundedRectangle(12).fill(ThemeColor::surface);
+content.background(ThemeColor::background);
+```
+
+| Token | Use |
+| --- | --- |
+| `background` | The window background |
+| `surface` | Cards and panels |
+| `surface_raised` | Controls and panels on surfaces |
+| `outline` | Borders and separators |
+| `primary` | Main text and icons (the default foreground) |
+| `secondary` | Supporting text |
+| `tertiary` | Hints and disabled text |
+| `accent` | The tint: prominent buttons, selection |
+| `on_accent` | Text and icons on the accent |
+| `danger`, `success`, `warning` | Status colors |
+
+To mix a theme color with something else, take the environment in the closure:
+
+```cpp
+.background([](const EnvironmentValues& env) { return env.color(ThemeColor::surface).opacity(0.9f); })
+.fill([=](const EnvironmentValues& env) { return on() ? env.color(ThemeColor::accent) : env.color(ThemeColor::outline); })
+```
+
+## Light and dark mode
+
+Windows follow the system's light or dark setting by default, and switch when it changes. Force a
+scheme for any part of the UI with `color_scheme`:
+
+```cpp
+Sidebar().color_scheme(ColorScheme::dark);
+Root().color_scheme([=] { return dark_mode() ? ColorScheme::dark : ColorScheme::light; });
+```
+
+## Custom themes
+
+A `Theme` holds a full set of colors for light and dark. Start from the standard theme and change
+what you need:
+
+```cpp
+Theme brand_theme() {
+    Theme theme = Theme::standard();
+    theme.light.accent = Color::hex(0x7C3AED);
+    theme.dark.accent = Color::hex(0xA78BFA);
+    theme.dark.background = Color::hex(0x17141F);
+    return theme;
+}
+
+Root().theme(brand_theme());
+```
+
+Themes, like the other environment values, apply to everything inside the view they're set on, so
+different parts of a window can have different themes.
+
+## Tint
+
+The tint is the accent color of controls. It defaults to the theme's `accent`:
+
+```cpp
+Button("Delete", remove).tint(Color::hex(0xFF453A));
+Form().tint(ThemeColor::success);
+```
+
+## Example
+
+<Example name="styling" />

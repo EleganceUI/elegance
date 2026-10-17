@@ -1,0 +1,139 @@
+---
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file, You can obtain one at
+// https://mozilla.org/MPL/2.0/.
+
+// Starlight's page title, plus a progress bar for pages with a checklist. The checkboxes in the
+// page's Markdown (`- [ ] ...`) become clickable and remember their state in this browser.
+import Default from '@astrojs/starlight/components/PageTitle.astro';
+import { countTasks } from '../tasks';
+import { graph, href, SPEC_PREFIX } from '../graph';
+
+const { entry } = Astro.locals.starlightRoute;
+const total = countTasks(entry.body ?? '');
+
+// Spec pages show what they build on and what builds on them; spec and checklist link each other.
+const nodes = await graph();
+const isSpec = entry.id.startsWith(SPEC_PREFIX);
+const node = nodes.get(isSpec ? entry.id.slice(SPEC_PREFIX.length) : entry.id);
+const link = (key: string) => ({ title: nodes.get(key)!.title, href: href(SPEC_PREFIX + key) });
+---
+
+<Default />
+{
+	node && !isSpec && (
+		<p class="roadmap-twin">
+			<a href={href(node.spec.id)}>How it works: the spec for this part →</a>
+		</p>
+	)
+}
+{
+	node && isSpec && (
+		<div class="roadmap-deps">
+			{node.checklist && (
+				<p class="roadmap-twin">
+					<a href={href(node.checklist.id)}>Checklist for this part →</a>
+				</p>
+			)}
+			<p>
+				<strong>Depends on:</strong>{' '}
+				{node.depends.length === 0
+					? 'nothing; start here.'
+					: node.depends.map(link).map((d, i) => (
+							<>
+								{i > 0 && ', '}
+								<a href={d.href}>{d.title}</a>
+							</>
+						))}
+			</p>
+			<p>
+				<strong>Needed by:</strong>{' '}
+				{node.neededBy.length === 0
+					? 'nothing else yet.'
+					: node.neededBy.map(link).map((d, i) => (
+							<>
+								{i > 0 && ', '}
+								<a href={d.href}>{d.title}</a>
+							</>
+						))}
+			</p>
+		</div>
+	)
+}
+{
+	total > 0 && (
+		<div class="roadmap-bar" data-roadmap-page={entry.id}>
+			<div class="roadmap-meter" aria-hidden="true">
+				<div class="roadmap-meter-fill" />
+			</div>
+			<span class="roadmap-count" aria-live="polite">0 / {total} done</span>
+			<label class="roadmap-toggle">
+				<input type="checkbox" class="roadmap-hide-done" />
+				Hide done
+			</label>
+		</div>
+	)
+}
+
+<script>
+	import { collectItems, load, save } from '../scripts/progress';
+
+	const bar = document.querySelector<HTMLElement>('.roadmap-bar[data-roadmap-page]');
+	const content = document.querySelector<HTMLElement>('.sl-markdown-content');
+	if (bar && content) {
+		const page = bar.dataset.roadmapPage!;
+		const items = collectItems(content);
+		const fill = bar.querySelector<HTMLElement>('.roadmap-meter-fill')!;
+		const count = bar.querySelector<HTMLElement>('.roadmap-count')!;
+		const hideDone = bar.querySelector<HTMLInputElement>('.roadmap-hide-done')!;
+
+		let progress = load();
+		// Forget ticks for items no longer on the page (reworded or removed), so counts stay true.
+		const done = progress.pages[page] ?? {};
+		const keys = new Set(items.map((item) => item.key));
+		for (const key of Object.keys(done)) {
+			if (!keys.has(key)) {
+				delete done[key];
+			}
+		}
+		progress.pages[page] = done;
+		save(progress);
+
+		const refresh = () => {
+			const ticked = items.filter((item) => item.checkbox.checked).length;
+			const percent = items.length ? Math.round((ticked / items.length) * 100) : 0;
+			fill.style.width = `${percent}%`;
+			bar.classList.toggle('complete', items.length > 0 && ticked === items.length);
+			count.textContent = `${ticked} / ${items.length} done (${percent}%)`;
+		};
+
+		for (const { key, checkbox, element } of items) {
+			checkbox.disabled = false;
+			checkbox.checked = key in done;
+			element.classList.toggle('done', checkbox.checked);
+			checkbox.addEventListener('change', () => {
+				progress = load(); // another tab may have changed it
+				const page_done = (progress.pages[page] ??= {});
+				if (checkbox.checked) {
+					page_done[key] = new Date().toISOString();
+				} else {
+					delete page_done[key];
+				}
+				save(progress);
+				element.classList.toggle('done', checkbox.checked);
+				refresh();
+			});
+		}
+
+		hideDone.checked = progress.hideDone;
+		document.body.classList.toggle('roadmap-hiding-done', progress.hideDone);
+		hideDone.addEventListener('change', () => {
+			progress = load();
+			progress.hideDone = hideDone.checked;
+			save(progress);
+			document.body.classList.toggle('roadmap-hiding-done', hideDone.checked);
+		});
+
+		refresh();
+	}
+</script>

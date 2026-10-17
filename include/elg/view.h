@@ -153,6 +153,14 @@ struct DropOptions {
     std::function<void(bool targeted)> targeted;
 };
 
+// Which side of its view a popover opens on (it flips if there isn't room).
+enum class PopoverEdge { below, above, trailing, leading };
+
+struct PopoverOptions {
+    PopoverEdge opens = PopoverEdge::below;
+    bool padded = true; // false: the content reaches the panel's edges (images, lists)
+};
+
 // How content with an aspect ratio fills space (aspect_ratio()).
 enum class ContentMode {
     fit,  // all of it shows: as large as fits
@@ -373,6 +381,13 @@ public:
     ELG_API View context_menu(std::function<View()> menu) const;
     // A tooltip with `text`, shown after the pointer rests on the view for a moment.
     ELG_API View help(std::string text) const;
+    // A panel of `content` beside the view, shown while `is_presented` is true. Clicking outside
+    // it, Esc, or switching apps closes it and sets `is_presented` back to false. The builder runs
+    // each time it opens; the content can be anything, e.g. a small form.
+    //   Button("Details", [=] { showing = true; })
+    //       .popover(showing.binding(), [=] { return VStack(Text("Release notes"), ...); })
+    ELG_API View popover(Binding<bool> is_presented, std::function<View()> content,
+                         PopoverOptions options = {}) const;
 
     // --- Keyboard and focus (design.md §10) ---
 

@@ -1,0 +1,144 @@
+---
+title: Installation
+description: "Build Elegence from source and add it to a CMake project."
+---
+
+import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Elegence is built from source with CMake. Its dependencies come from
+[vcpkg](https://vcpkg.io) in manifest mode, so they're downloaded and built for you on the first
+configure.
+
+## Requirements
+
+- **Windows 10 or 11**, x64.
+- **Visual Studio 2022 or later** with the C++ workload (MSVC with C++23 support).
+- **CMake 4.3** or later, and **Ninja** (both come with Visual Studio and CLion).
+- **vcpkg**, with the `VCPKG_ROOT` environment variable pointing at it.
+- A GPU and driver with **Vulkan 1.3**.
+- The **Vulkan SDK**: the build compiles the shaders with its `glslc` (found through the
+  `VULKAN_SDK` environment variable the installer sets).
+
+## Build the repository
+
+<Steps>
+
+1. Get vcpkg, if you don't have it:
+
+   ```sh
+   git clone https://github.com/microsoft/vcpkg
+   .\vcpkg\bootstrap-vcpkg.bat
+   setx VCPKG_ROOT "%CD%\vcpkg"
+   ```
+
+2. Configure with a preset. Run this from a **Developer Command Prompt** (or in CLion or Visual
+   Studio, which set up the compiler for you):
+
+   ```sh
+   cmake --preset windows-debug
+   ```
+
+   The first configure builds the dependencies (SDL3, FreeType, HarfBuzz, miniaudio and a few
+   more), which takes a while. Later configures reuse them.
+
+3. Build:
+
+   ```sh
+   cmake --build --preset windows-debug
+   ```
+
+4. Run the sandbox, which shows most features in one window, or any example:
+
+   ```sh
+   build\windows-debug\bin\sandbox.exe
+   build\windows-debug\bin\counter.exe
+   ```
+
+</Steps>
+
+The presets are `windows-debug` and `windows-release` (RelWithDebInfo). Everything lands in
+`build/<preset>/bin`, next to `elegence.dll`.
+
+## Build options
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `ELG_BUILD_SHARED` | `ON` | Build Elegence as a DLL. Hot reload needs this. |
+| `ELG_BUILD_SANDBOX` | top level | The sandbox and preview apps. |
+| `ELG_BUILD_EXAMPLES` | top level | The examples in `examples/` and the login demo. |
+| `ELG_BUILD_TESTS` | top level | Unit tests (needs the vcpkg `tests` feature). |
+| `ELG_ICONS` | `ON` | Embed the Phosphor icon set (regular, bold, fill; about 1.4 MB). |
+| `ELG_ICONS_EXTRA_WEIGHTS` | `ON` | Also embed Phosphor's thin, light and duotone styles (about 1.6 MB). |
+| `ELG_ACCESSIBILITY` | `ON` | Screen reader support through AccessKit (downloads its prebuilt library). |
+
+## Use it in your project
+
+Add Elegence as a subdirectory, for example as a git submodule, and link `Elegence::Elegence`:
+
+```cmake title="CMakeLists.txt"
+cmake_minimum_required(VERSION 4.3)
+project(MyApp LANGUAGES CXX)
+
+set(CMAKE_CXX_STANDARD 23)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_subdirectory(external/elegence)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE Elegence::Elegence)
+
+# Keep the app next to elegence.dll so Windows finds it.
+set_target_properties(my_app PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+set_target_properties(elegence PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+if (MSVC)
+    target_compile_options(my_app PRIVATE /utf-8)
+endif ()
+```
+
+vcpkg only reads the manifest of the top-level project, so your project needs Elegence's
+dependencies in its own `vcpkg.json`:
+
+```json title="vcpkg.json"
+{
+  "name": "my-app",
+  "version": "0.1.0",
+  "dependencies": [
+    "freetype",
+    "harfbuzz",
+    "miniaudio",
+    { "name": "msdfgen", "default-features": false },
+    { "name": "stb", "platform": "!windows" },
+    { "name": "sdl3", "features": ["vulkan"] },
+    "volk",
+    "vulkan-headers",
+    "vulkan-memory-allocator"
+  ]
+}
+```
+
+Configure with vcpkg's toolchain file, as the presets do:
+
+```sh
+cmake -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=%VCPKG_ROOT%/scripts/buildsystems/vcpkg.cmake
+```
+
+<Aside type="tip">
+Compile with `/utf-8` on MSVC. Elegence's strings are UTF-8, and without the flag string literals
+with non-ASCII characters (`"−"`, `"…"`) are mangled by the source code page.
+</Aside>
+
+## Check that it works
+
+```cpp title="main.cpp"
+#include <elg/elegence.h>
+
+int main() {
+    elg::App app;
+    app.window({.title = "It works"}, [] { return elg::Text("Hello from Elegence"); });
+    return app.run();
+}
+```
+
+If the window doesn't open, run the app from a terminal: errors are printed to stderr, and the
+log says which GPU was picked.

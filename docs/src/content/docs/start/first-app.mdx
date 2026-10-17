@@ -1,0 +1,152 @@
+---
+title: Your first app
+description: "Build a small todo list step by step, learning views, modifiers, state and lists along the way."
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+import Example from '../../../components/Example.astro';
+
+This tutorial builds the todo list from `examples/todos` one piece at a time. You'll meet the
+ideas used in every Elegence app: views, modifiers, state, bindings and lists.
+
+## 1. A window
+
+Every app has one `App`. It opens windows, runs the event loop, and returns when the last window
+closes:
+
+```cpp
+#include <elg/elegence.h>
+
+using namespace elg;
+
+int main() {
+    App app;
+    app.window({.title = "Todos", .width = 480, .height = 560}, [] {
+        return Text("Todos").font(Font::large_title);
+    });
+    return app.run();
+}
+```
+
+The second argument builds the window's content. It runs once, when the window opens, and
+returns a `View`.
+
+## 2. Views and modifiers
+
+Views are values: `Text`, `Button`, `VStack`, `Circle` and the rest are functions that return a
+`View`. Modifiers such as `.padding()` and `.font()` return a new view wrapping the old one, so
+you chain them:
+
+```cpp
+View TodoApp() {
+    return VStack({.alignment = HorizontalAlignment::leading, .spacing = 12},
+                  Text("Todos").font(Font::large_title),
+                  Text("Nothing left to do.").foreground_style(ThemeColor::secondary))
+        .padding(24)
+        .frame({.max_width = infinity, .max_height = infinity, .alignment = Alignment::top_leading});
+}
+```
+
+`VStack` places its children top to bottom. The final `.frame` lets the stack take the whole
+window and pins its content to the top-left corner; without it the content is centered.
+
+Pass the function to the window: `app.window({...}, TodoApp)`.
+
+## 3. State
+
+A `State<T>` holds a value that can change. It's a cheap handle: copies refer to the same value,
+so closures capture it **by value** (`[=]`) and can still write to it.
+
+```cpp
+const State<std::string> draft;
+const State<int> next_id(4);
+```
+
+Reading a state inside a closure that Elegence runs, such as the content of a `Text` or a
+`.disabled` condition, subscribes that closure. When the state changes, the closure runs again and
+updates that one property:
+
+```cpp
+Button("Add", add).disabled([=] { return draft().empty(); })
+```
+
+<Aside>
+The view functions themselves run once. Only the closures you pass as arguments re-run. Writing
+`Text(draft())` would read the value once and never update; `Text([=] { return draft(); })`
+follows it.
+</Aside>
+
+## 4. Bindings and text fields
+
+Controls that edit a value take a `Binding<T>`: a pair of get and set functions. A `State`
+converts to one, so a text field can edit the draft directly:
+
+```cpp
+TextField("What needs doing?", draft, {.on_submit = add})
+```
+
+## 5. A list
+
+The todos are a `State<std::vector<Todo>>`. `ForEach` makes one view per item, identified by a key
+so that items keep their views when the list changes. `List` puts the rows on a scrolling,
+separated surface, and builds only the rows that are visible:
+
+```cpp
+struct Todo {
+    int id = 0;
+    std::string title;
+    bool done = false;
+
+    friend bool operator==(const Todo&, const Todo&) = default;
+};
+
+const State<std::vector<Todo>> todos(std::vector<Todo>{{1, "Read the docs"}});
+
+List(ForEach(todos, &Todo::id, [=](const Todo& todo) { return TodoRow(todo.id, todo.title, todos); }))
+```
+
+`If` shows one view or another depending on a condition:
+
+```cpp
+If([=] { return todos().empty(); },
+   Text("Nothing left to do."),
+   List(ForEach(todos, &Todo::id, ...)))
+```
+
+## 6. Changing the list, with animation
+
+`State::update` changes the value in place. Wrapping a change in `with_animation` animates
+everything it causes: the new row fades in, and the rows below slide down to make room.
+
+```cpp
+const auto add = [=] {
+    if (draft().empty()) {
+        return;
+    }
+    with_animation(Animation::smooth(), [&] {
+        todos.update([&](std::vector<Todo>& list) { list.push_back({next_id(), draft()}); });
+    });
+    next_id += 1;
+    draft = std::string();
+};
+```
+
+## 7. Derived values
+
+A `computed` value is recalculated only when the state it reads changes, and only when someone
+reads it:
+
+```cpp
+const auto remaining = computed([=] { return std::ranges::count(todos(), false, &Todo::done); });
+Text([=] { return std::format("{} left", remaining()); })
+```
+
+## The whole app
+
+<Example name="todos" />
+
+## Next steps
+
+- [Thinking in Elegence](../concepts/) explains the model behind what you just used.
+- [Layout](../../guides/layout/) covers stacks, frames and spacing in depth.
+- [State and data flow](../../guides/state/) covers bindings, effects and sharing state.

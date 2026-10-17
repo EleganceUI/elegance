@@ -633,6 +633,7 @@ std::unique_ptr<Element> TextFieldNode::lower(const LowerContext& context) const
     const EnvironmentValues environment = context.environment;
     const auto editor = std::make_shared<TextEditor>(*context.text, text_, placeholder_, options_.on_submit,
                                                      context.services, context.focus, environment, secure_);
+    editor->configure(options_.max_lines, options_.styler);
     // The text follows the binding (when changed elsewhere). The font is bound where the style
     // places the field (TextEditorNode).
     detail::bind(Prop<std::string>(text_), context,
@@ -657,6 +658,9 @@ std::unique_ptr<Element> TextFieldNode::lower(const LowerContext& context) const
                                                       enabled, context.services);
     if (context.focus) {
         element->set_focus_manager(context.focus, {}); // the style shows focus
+    }
+    if (options_.on_key) {
+        element->set_key_filter(options_.on_key);
     }
     return element;
 }

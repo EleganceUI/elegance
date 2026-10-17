@@ -37,8 +37,8 @@ View ProfileCard(std::string name, std::string role, Color color) {
                   VStack({.alignment = HorizontalAlignment::leading, .spacing = 2},
                          Text(std::move(name)).font(Font::headline),
                          Text(std::move(role)).foreground_style(ThemeColor::secondary)),
-                  Spacer(), Image("caret-right").foreground_style(ThemeColor::tertiary))
-        .padding(16)
+                  Spacer(), Image("caret-left").foreground_style(ThemeColor::tertiary))
+        .padding(32)
         .frame({.width = 320})
         .background(RoundedRectangle(14).fill(ThemeColor::surface));
 }
@@ -77,7 +77,7 @@ View Gallery() {
 ELG_MODULE(Gallery)
 
 ELG_PREVIEW("Profile card") {
-    return ProfileCard("Ada Lovelace", "Analyst", kMauve);
+    return ProfileCard("Sip Lovelace", "Software Engineer", kMauve);
 }
 
 ELG_PREVIEW("Profile card, light") {

@@ -13,6 +13,7 @@
 #include <elg/layout.h>
 #include <elg/prop.h>
 #include <elg/reactive.h>
+#include <elg/text.h>
 #include <elg/view.h>
 
 #include <concepts>
@@ -91,13 +92,22 @@ ELG_API View EmptyView();
 ELG_API View Canvas(std::function<void(GraphicsContext&)> draw);
 
 // A push button: `label` on a rounded background in the environment's tint, lighter while
-// hovered and darker while pressed. `action` runs when it's clicked.
-// TODO(M3): ButtonStyle (design.md §8).
+// hovered and darker while pressed. `action` runs when it's clicked (or activated with Space or
+// Enter while focused). Its look comes from the ButtonStyle (.button_style(), elg/styles.h).
 ELG_API View Button(View label, std::function<void()> action);
 ELG_API View Button(std::string title, std::function<void()> action);
 
 struct TextFieldOptions {
     std::function<void()> on_submit; // Enter
+    // More than 1: the field wraps and grows up to this many lines, then scrolls. Enter submits;
+    // Shift+Enter starts a new line.
+    int max_lines = 1;
+    // Styles ranges of the text as it's edited (markdown, mentions shown as chips: TextSpan). Spans
+    // are sorted and don't overlap. Called after every change.
+    std::function<std::vector<TextSpan>(std::string_view text)> styler;
+    // Sees key presses before the field does; return true to take one (the field then ignores
+    // it). For keys the field would otherwise use, e.g. Up/Down/Enter in an autocomplete list.
+    std::function<bool(const KeyEvent&)> on_key;
 };
 
 // A single-line text editor bound to `text`; its look comes from the TextFieldStyle (a rounded
@@ -150,9 +160,9 @@ ELG_API View make_menu_picker(std::vector<std::string> labels, std::function<std
                               std::function<void(std::size_t)> select);
 } // namespace detail
 
-// One of several options, shown as segments; `selection` is the chosen option's value.
+// One of several options; `selection` is the chosen option's value. Shown as segments, or with
+// PickerStyle::menu as a button that opens a menu of the options.
 //   Picker(size.binding(), {{Size::small, "S"}, {Size::medium, "M"}, {Size::large, "L"}})
-// (A menu presentation comes with popups, design.md §13.1.)
 template <class T>
     requires std::equality_comparable<T>
 View Picker(Binding<T> selection, std::vector<std::pair<T, std::string>> options,
@@ -263,6 +273,9 @@ struct ScrollViewOptions {
     ScrollAxes axes = ScrollAxes::vertical;
     bool shows_indicators = true; // scroll bars, shown while scrolling or hovered
     std::optional<ScrollPosition> position;
+    // Chat logs: starts at the end, and while scrolled to the end it stays there as the content
+    // grows (new messages, images loading), without animating. Scrolled back, it stays put.
+    bool sticks_to_end = false;
 };
 
 // Shows `content` at its ideal size along the scroll axes, clipped to the space the scroll view
@@ -347,8 +360,17 @@ View Menu(Items&&... items) {
     return detail::make_menu({View(std::forward<Items>(items))...});
 }
 
-// A button that opens the menu `menu` builds, below it.
+// Which side of its button a MenuButton's menu opens on (it flips if there isn't room).
+enum class MenuEdge { below, above };
+
+struct MenuButtonOptions {
+    MenuEdge opens = MenuEdge::below; // above: for buttons near the bottom, like a message box's
+    bool shows_indicator = true;      // the chevron after the label
+};
+
+// A button that opens the menu `menu` builds, below it (or as `options` say).
 ELG_API View MenuButton(View label, std::function<View()> menu);
+ELG_API View MenuButton(View label, std::function<View()> menu, MenuButtonOptions options);
 ELG_API View MenuButton(std::string title, std::function<View()> menu);
 
 struct LazyVStackOptions {

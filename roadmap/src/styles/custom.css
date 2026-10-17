@@ -1,0 +1,211 @@
+/* Elegence's accent, as in the docs site. */
+:root {
+	--sl-color-accent-low: #0b2447;
+	--sl-color-accent: #3b8cff;
+	--sl-color-accent-high: #c9defc;
+	--elg-gradient: linear-gradient(120deg, #7aa2f7, #bb9af7);
+	--roadmap-done: #3fb950;
+}
+
+:root[data-theme='light'] {
+	--sl-color-accent-low: #d6e6ff;
+	--sl-color-accent: #0a6cdf;
+	--sl-color-accent-high: #0b2f66;
+	--roadmap-done: #1a7f37;
+}
+
+/* --- Checklists --- */
+
+.sl-markdown-content li.task-list-item,
+.sl-markdown-content li:has(> input[type='checkbox']) {
+	list-style: none;
+	margin-inline-start: -1.25rem;
+}
+
+.sl-markdown-content input[type='checkbox'] {
+	width: 1.05rem;
+	height: 1.05rem;
+	margin: 0 0.5rem 0 0;
+	vertical-align: -0.15rem;
+	accent-color: var(--roadmap-done);
+	cursor: pointer;
+}
+
+.sl-markdown-content li.done > :not(ul, ol) ,
+.sl-markdown-content li.done {
+	color: var(--sl-color-gray-3);
+}
+
+.roadmap-hiding-done .sl-markdown-content li.done {
+	display: none;
+}
+
+/* --- Progress bars --- */
+
+.roadmap-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem 1rem;
+	margin-top: 1rem;
+}
+
+.roadmap-meter {
+	flex: 1 1 12rem;
+	height: 0.5rem;
+	border-radius: 999px;
+	background: var(--sl-color-gray-6);
+	overflow: hidden;
+}
+
+.roadmap-meter-fill {
+	width: 0;
+	height: 100%;
+	border-radius: inherit;
+	background: var(--elg-gradient);
+	transition: width 0.25s ease;
+}
+
+.complete .roadmap-meter-fill {
+	background: var(--roadmap-done);
+}
+
+.roadmap-count {
+	font-size: var(--sl-text-sm);
+	color: var(--sl-color-gray-2);
+	font-variant-numeric: tabular-nums;
+}
+
+.roadmap-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	font-size: var(--sl-text-sm);
+	color: var(--sl-color-gray-2);
+	cursor: pointer;
+}
+
+/* --- Overview --- */
+
+.roadmap-overall .roadmap-meter {
+	height: 0.75rem;
+}
+
+.roadmap-group ul {
+	padding: 0;
+	margin: 0.5rem 0 0;
+}
+
+.sl-markdown-content .roadmap-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(5rem, 10rem) 4.5rem;
+	align-items: center;
+	gap: 0.75rem;
+	list-style: none;
+	margin: 0.15rem 0;
+}
+
+.roadmap-row .roadmap-count {
+	text-align: end;
+}
+
+.roadmap-row.complete a {
+	color: var(--roadmap-done);
+}
+
+.roadmap-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem;
+	margin-top: 2rem;
+}
+
+.roadmap-actions button,
+.roadmap-import {
+	font: inherit;
+	font-size: var(--sl-text-sm);
+	padding: 0.4rem 0.9rem;
+	border: 1px solid var(--sl-color-gray-5);
+	border-radius: 0.5rem;
+	background: var(--sl-color-gray-6);
+	color: var(--sl-color-white);
+	cursor: pointer;
+}
+
+.roadmap-import input {
+	display: none;
+}
+
+.roadmap-actions button:hover,
+.roadmap-import:hover {
+	border-color: var(--sl-color-accent);
+}
+
+/* --- Specs: dependencies and links between spec and checklist --- */
+
+.roadmap-twin {
+	margin-top: 0.75rem;
+	font-size: var(--sl-text-sm);
+}
+
+.roadmap-deps {
+	margin-top: 1rem;
+	padding: 0.75rem 1rem;
+	border: 1px solid var(--sl-color-gray-5);
+	border-inline-start: 3px solid var(--sl-color-accent);
+	border-radius: 0.5rem;
+	background: var(--sl-color-gray-6);
+	font-size: var(--sl-text-sm);
+}
+
+.roadmap-deps p {
+	margin: 0.25rem 0;
+}
+
+.roadmap-deps .roadmap-twin {
+	margin-top: 0;
+}
+
+.roadmap-waves li {
+	margin-bottom: 0.5rem;
+}
+
+.roadmap-deptable {
+	font-size: var(--sl-text-sm);
+}
+
+/* --- Sidebar: a topic's checklist sits under its spec --- */
+
+.sidebar-content a.roadmap-sidebar-checklist {
+	padding-inline-start: 1.6rem;
+	font-size: var(--sl-text-xs);
+	color: var(--sl-color-gray-3);
+}
+
+.sidebar-content a.roadmap-sidebar-checklist::before {
+	content: '↳';
+	margin-inline-end: 0.35rem;
+}
+
+.sidebar-content a.roadmap-sidebar-checklist[aria-current='page'] {
+	color: var(--sl-color-text-invert);
+}
+
+.roadmap-row-title {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: 0.25rem 0.75rem;
+	min-width: 0;
+}
+
+.sl-markdown-content a.roadmap-row-spec {
+	font-size: var(--sl-text-xs);
+	color: var(--sl-color-gray-3);
+	text-decoration: none;
+}
+
+.sl-markdown-content a.roadmap-row-spec:hover {
+	color: var(--sl-color-accent-high);
+	text-decoration: underline;
+}

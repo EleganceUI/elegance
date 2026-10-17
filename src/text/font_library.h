@@ -134,6 +134,8 @@ private:
     // character (a CJK font isn't read until CJK text appears).
     std::vector<std::filesystem::path> fallback_files_;
     std::vector<const FontFace*> fallbacks_; // loaded so far, in chain order
+    std::vector<const FontFace*> emoji_faces_; // register_emoji_font()'s, ahead of the chain for emoji
+    std::size_t emoji_fonts_failed_ = 0;
     std::size_t fallbacks_tried_ = 0;        // files of the chain looked at so far
     bool fallback_files_listed_ = false;
     std::unordered_map<char32_t, const FontFace*> fallback_cache_;

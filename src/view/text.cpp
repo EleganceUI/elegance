@@ -9,6 +9,7 @@
 #include "text/glyph_draw.h"
 #include "view/view_node.h"
 
+#include <algorithm>
 #include <cmath>
 
 namespace elg {
@@ -103,7 +104,19 @@ void TextElement::set_font(const Font& font) {
         ellipsis_width_ += glyph.advance * size_;
     }
     paragraphs_ = shape_text(*face_, content_, &text_->fonts);
+    relayout_now();
     invalidate_layout();
+}
+
+void TextElement::relayout_now() {
+    // The lines must always index the paragraphs they're drawn from: a view on its way out (an
+    // exit transition) is painted without being laid out again, and old lines over new, shorter
+    // text would read past its glyphs.
+    if (arranged_for_) {
+        arranged_ = layout(*arranged_for_);
+    } else if (!arranged_.lines.empty()) {
+        arranged_ = {};
+    }
 }
 
 void TextElement::set_content(std::string_view content) {
@@ -115,6 +128,7 @@ void TextElement::set_content(std::string_view content) {
     if (face_) {
         paragraphs_ = shape_text(*face_, content_, &text_->fonts);
     }
+    relayout_now();
     invalidate_layout();
 }
 
@@ -135,7 +149,11 @@ Size TextElement::measure(ProposedSize proposal) {
 }
 
 void TextElement::arrange(Rect, ProposedSize proposal) {
-    arranged_ = layout(proposal);
+    // Every frame lays out the whole tree: line breaking only reruns when something changed.
+    if (arranged_for_ != proposal) {
+        arranged_ = layout(proposal);
+        arranged_for_ = proposal;
+    }
 }
 
 void TextElement::paint_impl(DisplayList& list) const {
@@ -158,8 +176,11 @@ void TextElement::paint_impl(DisplayList& list) const {
             pen += glyph.advance * size_;
         };
 
+        if (line.paragraph >= paragraphs_.size()) {
+            break;
+        }
         const ShapedParagraph& paragraph = paragraphs_[line.paragraph];
-        for (std::size_t g = line.begin; g < line.end; ++g) {
+        for (std::size_t g = line.begin; g < std::min(line.end, paragraph.glyphs.size()); ++g) {
             emit(paragraph.glyphs[g]);
         }
         if (line.ellipsis) {

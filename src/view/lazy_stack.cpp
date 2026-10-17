@@ -34,6 +34,7 @@ class LazyStackElement final : public Element {
 public:
     LazyStackElement(Axis axis, float alignment, float spacing, LowerContext context, RowStyle style)
         : axis_(axis), alignment_(alignment), spacing_(spacing), context_(std::move(context)), style_(std::move(style)) {}
+    bool always_arranges() const override { return true; } // builds what scrolled into view
 
     // Takes the ForEach's items. Built items whose key is gone or whose value changed are
     // destroyed (and rebuilt by the next layout if still in view).
@@ -219,6 +220,12 @@ private:
     double known_sum_ = 0; // double: sums of thousands of sizes
     std::size_t known_count_ = 0;
     std::vector<Shown> shown_;       // built items in order, as last laid out
+    // Scroll anchoring: the first row in view at the last layout, and where it was then.
+    struct Anchor {
+        ItemKey key;
+        float position;
+    };
+    std::optional<Anchor> anchor_;
 };
 
 void LazyStackElement::arrange(Rect bounds, ProposedSize) {
@@ -230,17 +237,27 @@ void LazyStackElement::arrange(Rect bounds, ProposedSize) {
     // margin each way so items exist before they scroll in.
     float low = -std::numeric_limits<float>::infinity();
     float high = std::numeric_limits<float>::infinity();
+    std::optional<float> visible_start; // inside a scroll view: where its visible part begins
     for (const Element* ancestor = parent(); ancestor; ancestor = ancestor->parent()) {
         if (const std::optional<Rect> visible = ancestor->visible_rect()) {
             const float start = vertical ? visible->y - bounds.y : visible->x - bounds.x;
             const float length = vertical ? visible->height : visible->width;
             low = start - length / 2;
             high = start + length * 1.5f;
+            visible_start = start;
             break;
         }
     }
 
     const float estimate = estimated_size();
+    struct Placement {
+        Element* element;
+        float position; // along the main axis, in the stack
+        float size;
+        float cross_offset;
+    };
+    std::vector<Placement> placements;
+    std::optional<float> anchor_now; // where the anchor row is now
     std::map<ItemKey, Row> kept;
     bool structure_changed = false;
     bool size_changed = false;
@@ -265,15 +282,47 @@ void LazyStackElement::arrange(Rect bounds, ProposedSize) {
                 size_changed = true;
             }
             size = main_of(actual);
-            const float offset = (cross - cross_of(actual)) * alignment_;
-            const auto at = static_cast<float>(position);
-            row.element->place(vertical ? Point{bounds.x + offset, bounds.y + at}
-                                        : Point{bounds.x + at, bounds.y + offset},
-                               proposal);
+            placements.push_back({row.element.get(), static_cast<float>(position), size,
+                                  (cross - cross_of(actual)) * alignment_});
             shown_.push_back({row.element.get(), i});
             kept.emplace(item.key, std::move(row));
         }
+        if (anchor_ && item.key == anchor_->key) {
+            anchor_now = static_cast<float>(position);
+        }
         position += size + spacing_;
+    }
+
+    // Scroll anchoring: rows above the one at the top of the view changed size (estimates became
+    // real sizes, items were inserted): move the scroll offset by as much, and place everything
+    // that much earlier now, so nothing on screen jumps.
+    float shift = 0;
+    if (anchor_ && anchor_now && *anchor_now != anchor_->position) {
+        const float delta = *anchor_now - anchor_->position;
+        for (Element* ancestor = parent(); ancestor; ancestor = ancestor->parent()) {
+            if (ancestor->visible_rect()) {
+                if (ancestor->anchor_shift(axis_, delta)) {
+                    shift = delta;
+                }
+                break;
+            }
+        }
+    }
+    anchor_.reset();
+    for (const Placement& placed : placements) {
+        const float at = placed.position - shift;
+        placed.element->place(vertical ? Point{bounds.x + placed.cross_offset, bounds.y + at}
+                                       : Point{bounds.x + at, bounds.y + placed.cross_offset},
+                              proposal);
+        // The new anchor: the first row reaching into the visible part.
+        if (!anchor_ && visible_start && placed.position + placed.size > *visible_start + shift) {
+            for (const Shown& shown : shown_) {
+                if (shown.element == placed.element) {
+                    anchor_ = Anchor{items_[shown.index].key, placed.position};
+                    break;
+                }
+            }
+        }
     }
 
     // What's left was scrolled out of reach: destroy it.

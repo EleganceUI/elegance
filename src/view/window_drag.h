@@ -17,6 +17,8 @@ class WindowDragHandler final : public EventHandler {
 public:
     explicit WindowDragHandler(bool enabled) noexcept : enabled_(enabled) {}
     bool enabled() const noexcept { return enabled_; }
+    // The whole area drags, gaps included, like a system title bar.
+    bool covers_frame() const override { return enabled_; }
 
 private:
     bool enabled_;

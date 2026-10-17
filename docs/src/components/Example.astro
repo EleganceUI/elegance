@@ -1,0 +1,40 @@
+---
+// An example from the repository's examples/ folder: its screenshot and full source, read at
+// build time so the page always shows the code that compiles.
+//   <Example name="counter" />
+import { Code } from '@astrojs/starlight/components';
+import { Image } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+
+interface Props {
+	name: string;
+	// Show the source collapsed under the screenshot (for long examples).
+	collapsed?: boolean;
+}
+
+const { name, collapsed = false } = Astro.props;
+
+const sources = import.meta.glob<string>('../../../examples/*/main.cpp', { query: '?raw', import: 'default', eager: true });
+const shots = import.meta.glob<{ default: ImageMetadata }>('../assets/examples/*.png', { eager: true });
+
+const source = sources[`../../../examples/${name}/main.cpp`];
+if (!source) throw new Error(`Example "${name}" not found in examples/`);
+// The license header isn't interesting here.
+const code = source.replace(/^(\/\/.*\r?\n)+\r?\n/, '');
+const shot = shots[`../assets/examples/${name}.png`]?.default;
+const path = `examples/${name}/main.cpp`;
+---
+
+<figure class="elg-example">
+	{shot && <Image src={shot} alt={`The ${name} example running`} class="elg-example-shot" />}
+	{
+		collapsed ? (
+			<details>
+				<summary>Source: <code>{path}</code></summary>
+				<Code code={code} lang="cpp" title={path} />
+			</details>
+		) : (
+			<Code code={code} lang="cpp" title={path} />
+		)
+	}
+</figure>

@@ -69,8 +69,19 @@ std::uint64_t Element::accessibility_id() const noexcept {
     return accessibility_id_;
 }
 
+namespace {
+bool g_full_layout = false;
+} // namespace
+
+FullLayoutScope::FullLayoutScope(bool full) noexcept : previous_(std::exchange(g_full_layout, full)) {}
+
+FullLayoutScope::~FullLayoutScope() {
+    g_full_layout = previous_;
+}
+
 void Element::invalidate_layout() noexcept {
     for (Element* element = this; element; element = element->parent_) {
+        element->needs_arrange_ = true;
         element->size_cache_.clear();
         element->on_layout_invalidated();
     }
@@ -86,6 +97,12 @@ const Animation* Element::change_animation() const noexcept {
 void Element::place(Point position, ProposedSize proposal) {
     const Size size = size_that_fits(proposal);
     const Rect target{position.x, position.y, size.width, size.height};
+    // Same place, same proposal, and nothing inside changed: everything inside is already where
+    // it belongs. A small update in a large window lays out only what it touched.
+    if (placed_ && !needs_arrange_ && !always_arranges_inside_ && !moving_ && !g_full_layout &&
+        target == frame_.target() && last_proposal_ == proposal) {
+        return;
+    }
     if (!placed_ || target != frame_.target()) {
         // An element appearing for the first time takes its frame at once; afterwards, a layout
         // change caused by an animated update eases there.
@@ -101,7 +118,30 @@ void Element::place(Point position, ProposedSize proposal) {
     }
     snap_next_layout_ = false;
     last_proposal_ = proposal;
+    needs_arrange_ = false; // first: an invalidation during arrange holds for the next layout
     arrange(target, proposal);
+    update_paint_bounds();
+}
+
+void Element::update_paint_bounds() {
+    // Room for what's drawn just outside frames: focus rings, antialiasing, glyph overhangs.
+    constexpr float kMargin = 8;
+    bool bounded = cullable();
+    Rect bounds = frame().inset(-kMargin);
+    bool moving = frame_.animating() || drawing_moves();
+    bool always = always_arranges();
+    for_each_child([&](Element& child) {
+        moving = moving || child.moving_;
+        always = always || child.always_arranges_inside_;
+        if (child.paint_bounds_) {
+            bounds = union_of(bounds, *child.paint_bounds_);
+        } else {
+            bounded = false; // a child not placed yet, or drawing anywhere
+        }
+    });
+    paint_bounds_ = bounded ? std::optional<Rect>(paint_extent(bounds)) : std::nullopt;
+    moving_ = moving;
+    always_arranges_inside_ = always;
 }
 
 // --- ShapeElement ---
@@ -448,6 +488,7 @@ void TransitionElement::insert(const Animation* animation) {
     if (animation) {
         progress_.set(0.f, nullptr);
         progress_.set(1.f, animation);
+        invalidate_paint_bounds(); // not cullable while it moves in
     }
 }
 
@@ -457,6 +498,7 @@ bool TransitionElement::remove(const Animation* animation) {
     }
     removing_ = true;
     progress_.set(0.f, animation);
+    invalidate_paint_bounds();
     return true;
 }
 
@@ -514,6 +556,18 @@ const ShapeFill* EffectElement::clip_path(float scale) const {
         clip_scale_ = scale;
     }
     return &clip_fill_;
+}
+
+// The content moves by the offset; a shadow spreads around it (by about three blur radii).
+Rect EffectElement::paint_extent(Rect bounds) const {
+    Rect moved = bounds;
+    moved.x += offset_x_.current();
+    moved.y += offset_y_.current();
+    if (const std::optional<Shadow>& shadow = effects_.shadow) {
+        moved = union_of(moved, Rect{moved.x + shadow->x, moved.y + shadow->y, moved.width, moved.height})
+                    .inset(-3 * shadow->radius);
+    }
+    return union_of(bounds, moved);
 }
 
 void EffectElement::paint_impl(DisplayList& list) const {

@@ -144,6 +144,9 @@ public:
     virtual EventResult text_input(const TextInputEvent& event);
     // This handler's own hover delay; nullopt uses the environment's (.hover_delay()).
     virtual std::optional<HoverDelay> hover_delay() const { return std::nullopt; }
+    // true: the view is hit anywhere in its frame, not only where its content draws (a window
+    // drag area's gaps and Spacers still drag).
+    virtual bool covers_frame() const { return false; }
 };
 
 } // namespace elg

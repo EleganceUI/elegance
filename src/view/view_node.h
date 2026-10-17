@@ -296,6 +296,7 @@ public:
     void for_each_child(const std::function<void(Element&)>& visit) override;
     void collect_exiting(std::vector<Element*>& out) override;
     void prune_exiting() override;
+    bool always_arranges() const override { return !exiting_.empty(); } // prunes finished exits
 
 protected:
     Size measure(ProposedSize proposal) override;

@@ -36,14 +36,17 @@ public:
         return Font(std::move(family), size, weight);
     }
 
-    Font weight(Weight weight) const { return Font(family_, size_, weight); }
+    Font weight(Weight weight) const { return Font(family_, size_, weight, italic_); }
     Font bold() const { return weight(Weight::bold); }
-    Font with_size(float size) const { return Font(family_, size, weight_); }
+    Font with_size(float size) const { return Font(family_, size, weight_, italic_); }
+    // The italic face (the system font's; registered families stay upright).
+    Font italic(bool italic = true) const { return Font(family_, size_, weight_, italic); }
 
     // Empty for the system font.
     const std::string& family() const noexcept { return family_; }
     float size() const noexcept { return size_; }
     Weight weight() const noexcept { return weight_; }
+    bool is_italic() const noexcept { return italic_; }
 
     // Semantic text styles (sizes are tentative until Dynamic Type-style scaling, design.md §9.5).
     static const Font large_title;
@@ -61,11 +64,13 @@ public:
     friend bool operator==(const Font&, const Font&) = default;
 
 private:
-    Font(std::string family, float size, Weight weight) : family_(std::move(family)), size_(size), weight_(weight) {}
+    Font(std::string family, float size, Weight weight, bool italic = false)
+        : family_(std::move(family)), size_(size), weight_(weight), italic_(italic) {}
 
     std::string family_;
     float size_ = 15;
     Weight weight_ = Weight::regular;
+    bool italic_ = false;
 };
 
 inline const Font Font::large_title = Font::system(30, Weight::bold);
@@ -85,6 +90,11 @@ inline const Font Font::caption2 = Font::system(11);
 ELG_API void register_font(std::string family, std::filesystem::path file, Weight weight = Weight::regular);
 // The same from font data in memory (e.g. embedded in the app); the bytes are copied.
 ELG_API void register_font(std::string family, std::span<const unsigned char> data, Weight weight = Weight::regular);
+
+// Draws emoji with this color font (COLR/CPAL, e.g. Twemoji) before the system's, in every text
+// view: characters it lacks still fall back to the system emoji font. Fonts registered earlier
+// win. Thread-safe; register before the text is first shaped.
+ELG_API void register_emoji_font(std::filesystem::path file);
 
 } // namespace elg
 

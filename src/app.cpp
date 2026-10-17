@@ -53,6 +53,9 @@ constexpr auto kPopupGlyphWarmup = 150ms;
 // this bounds the wait if presentation stalls.
 constexpr auto kAnimationFrameTimeout = 50ms;
 
+// Seconds between accessibility updates while frames come quickly (they're coalesced).
+constexpr double kAccessibilityInterval = 0.1;
+
 double seconds_now() {
     return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
@@ -244,6 +247,10 @@ struct LiveWindow {
     // Screen readers (design.md §12); made by App::run, dormant until one asks.
     std::unique_ptr<AccessibilityAdapter> accessibility;
     AccessTree accessibility_tree; // the last one sent: what requests act on
+    // Accessibility updates are coalesced while frames come quickly: the next may be sent then,
+    // and `accessibility_stale` holds one skipped meanwhile.
+    double accessibility_next = 0;
+    bool accessibility_stale = false;
 };
 
 MouseButton to_mouse_button(platform::PointerButton button) {
@@ -271,6 +278,8 @@ WindowFrame build_frame(LiveWindow& live) {
 
     const Size size = live.window.logical_size();
     const ProposedSize proposal{size.width, size.height};
+    // While animations run, things move without invalidating layout: lay out everything.
+    const FullLayoutScope full_layout(live.animating);
     const Size fitted = live.root->size_that_fits(proposal);
     live.root->place(aligned_position({0, 0, size.width, size.height}, fitted, Alignment::center), proposal);
     live.root->paint(frame.list);
@@ -385,6 +394,7 @@ int App::run() {
         std::unique_ptr<WindowEntry> entry;
         std::uint32_t id = 0;
         int level = 0; // menus
+        std::function<void()> on_close;
     };
     std::vector<OpenPopup> menus;
     std::optional<OpenPopup> tooltip;
@@ -397,15 +407,24 @@ int App::run() {
     } pending;
     const auto request_close = [&](int level) {
         pending.close_level = pending.close_level ? std::min(*pending.close_level, level) : level;
-        // Opening a deeper menu after this request would be pointless.
-        std::erase_if(pending.opens, [&](const auto& open) {
-            return open.first.kind == PopupRequest::Kind::menu && open.first.level >= level;
+        // Opening a deeper menu after this request would be pointless. A dropped one counts as
+        // closed (a popover's binding goes back to false).
+        std::vector<std::function<void()>> dropped;
+        std::erase_if(pending.opens, [&](auto& open) {
+            const bool drop = open.first.kind != PopupRequest::Kind::tooltip && open.first.level >= level;
+            if (drop && open.first.on_close) {
+                dropped.push_back(std::move(open.first.on_close));
+            }
+            return drop;
         });
+        for (auto& on_close : dropped) {
+            on_close();
+        }
     };
     const PopupSink popup_sink{
         .open =
             [&](PopupRequest request, std::uint32_t opener) {
-                if (request.kind == PopupRequest::Kind::menu) {
+                if (request.kind != PopupRequest::Kind::tooltip) {
                     request_close(request.level);
                 } else {
                     pending.close_tooltip = true;
@@ -466,6 +485,10 @@ int App::run() {
             return;
         }
         LiveWindow& live = **it;
+        // Frames since the last update (coalesced) may have destroyed elements the targets name.
+        if (live.accessibility && std::exchange(live.accessibility_stale, false)) {
+            live.accessibility->update();
+        }
         const auto target = live.accessibility_tree.targets.find(request.target);
         if (target == live.accessibility_tree.targets.end() || !target->second.element) {
             return;
@@ -494,7 +517,7 @@ int App::run() {
         live.accessibility = std::make_unique<AccessibilityAdapter>(
             live.window.native_handle(),
             AccessibilityAdapter::Callbacks{
-                .build = [window] {
+                .build = [window]() -> const AccessTree& {
                     window->accessibility_tree = build_accessibility_tree(
                         *window->root, window->entry->desc.title, window->window.logical_size(), window->focus.focused());
                     return window->accessibility_tree;
@@ -533,7 +556,16 @@ int App::run() {
         }
         live.animating = frame.list.animating;
         if (live.accessibility) {
-            live.accessibility->update(); // only when a screen reader listens
+            // Only when a client (a screen reader) listens. Walking a large tree takes a while, so
+            // during bursts of frames it's at most every kAccessibilityInterval, and once after.
+            const double now = seconds_now();
+            if (now >= live.accessibility_next) {
+                live.accessibility->update();
+                live.accessibility_next = now + kAccessibilityInterval;
+                live.accessibility_stale = false;
+            } else {
+                live.accessibility_stale = true; // sent by the main loop when it's time
+            }
         }
         if (std::vector<GlyphUpload> uploads = text.atlas.take_uploads(); !uploads.empty()) {
             mailbox.post(AtlasUploadCommand{std::move(uploads)});
@@ -628,7 +660,11 @@ int App::run() {
         // Deepest first: a submenu is a child window of the menu that opened it.
         while (!menus.empty() && menus.back().level >= level) {
             destroy_window(menus.back().id);
+            const std::function<void()> on_close = std::move(menus.back().on_close);
             menus.pop_back();
+            if (on_close) {
+                on_close(); // e.g. a popover's binding goes back to false
+            }
         }
     };
     const auto close_tooltip_now = [&] {
@@ -654,14 +690,15 @@ int App::run() {
         }
         LiveWindow& opener = **opener_it;
         const bool is_menu = request.kind == PopupRequest::Kind::menu;
+        const bool is_tooltip = request.kind == PopupRequest::Kind::tooltip;
         auto entry = std::make_unique<WindowEntry>();
         entry->desc = {.title = "", .width = 1, .height = 1, .resizable = false,
                        .title_bar = TitleBar::hidden, .transparent = true};
-        const float shadow = is_menu ? 12.f : 6.f;
+        const float shadow = is_tooltip ? 6.f : 12.f;
         entry->content = [content = request.content, shadow] {
             return content().shadow({.color = Color::black.opacity(0.28f), .radius = shadow, .y = 3}).padding(kPopupMargin);
         };
-        const platform::PopupSpec spec{.parent = &opener.window, .tooltip = !is_menu};
+        const platform::PopupSpec spec{.parent = &opener.window, .tooltip = is_tooltip};
         // Menu rows respond to the pointer at once, like native menus (submenus have their own
         // opening delay).
         EnvironmentValues environment = request.environment;
@@ -669,7 +706,7 @@ int App::run() {
             environment.set<HoverDelayKey>(HoverDelay{.enter = 0, .exit = 0});
         }
         auto live = std::make_unique<LiveWindow>(*entry, instance, text, environment, &popup_sink, &spec,
-                                                 is_menu ? request.level : -1);
+                                                 is_tooltip ? -1 : request.level);
         live->events.set_menu_navigation(is_menu);
 
         // Size to the content; place the panel by the anchor, kept on the display.
@@ -694,12 +731,36 @@ int App::run() {
                 origin.y = anchor.y - 4 - panel.height; // above instead
             }
             break;
+        case PopupRequest::Placement::above:
+            origin = {anchor.x, anchor.y - 4 - panel.height};
+            if (origin.y < area.y) {
+                origin.y = anchor.max_y() + 4; // below instead
+            }
+            break;
         case PopupRequest::Placement::beside:
             origin = {anchor.max_x() - 2, anchor.y - 4};
             if (origin.x + panel.width > area.max_x()) {
                 origin.x = anchor.x - panel.width + 2; // to the left instead
             }
             break;
+        case PopupRequest::Placement::leading:
+            origin = {anchor.x + 2 - panel.width, anchor.y - 4};
+            if (origin.x < area.x) {
+                origin.x = anchor.max_x() - 2; // to the right instead
+            }
+            break;
+        }
+        if (request.centered) {
+            const bool sideways = request.placement == PopupRequest::Placement::beside ||
+                                  request.placement == PopupRequest::Placement::leading;
+            if (sideways) {
+                // Clear of the anchor (submenus overlap theirs), on whichever side it went.
+                const bool right = origin.x >= anchor.x + anchor.width / 2;
+                origin.x = right ? anchor.max_x() + 4 : anchor.x - 4 - panel.width;
+                origin.y = anchor.y + (anchor.height - panel.height) / 2;
+            } else {
+                origin.x = anchor.x + (anchor.width - panel.width) / 2;
+            }
         }
         origin.x = std::clamp(origin.x, area.x, std::max(area.x, area.max_x() - panel.width));
         origin.y = std::clamp(origin.y, area.y, std::max(area.y, area.max_y() - panel.height));
@@ -712,10 +773,10 @@ int App::run() {
         live->window.show();
         const std::uint32_t id = live->window.id();
         windows.push_back(std::move(live));
-        if (is_menu) {
-            menus.push_back({std::move(entry), id, request.level});
+        if (is_tooltip) {
+            tooltip = OpenPopup{std::move(entry), id, 0, {}};
         } else {
-            tooltip = OpenPopup{std::move(entry), id, 0};
+            menus.push_back({std::move(entry), id, request.level, std::move(request.on_close)});
         }
     };
 
@@ -933,17 +994,25 @@ int App::run() {
             }
             break;
         case platform::EventType::text_input:
-        case platform::EventType::text_editing:
-            if (auto it = find_window(event.window_id); it != windows.end()) {
+        case platform::EventType::text_editing: {
+            // Like keys, typing goes to the open popover or menu (a popover's text field).
+            LiveWindow* target = top_menu();
+            if (!target) {
+                if (auto it = find_window(event.window_id); it != windows.end()) {
+                    target = it->get();
+                }
+            }
+            if (target) {
                 const TextInputEvent input{event.type == platform::EventType::text_input
                                                ? TextInputEvent::Kind::commit
                                                : TextInputEvent::Kind::composition,
                                            event.text, event.text_cursor};
-                if ((*it)->events.text_input(input)) {
-                    (*it)->dirty = true;
+                if (target->events.text_input(input)) {
+                    target->dirty = true;
                 }
             }
             break;
+        }
         case platform::EventType::key_down:
         case platform::EventType::key_up: {
             pending.close_tooltip = pending.close_tooltip || tooltip.has_value();
@@ -1033,7 +1102,9 @@ int App::run() {
                 deadline = inspector_rows_at + kInspectorRefresh;
             }
             for (const auto& live : windows) {
-                for (const std::optional<double> due : {live->events.next_deadline(), live->services.wake()}) {
+                const std::optional<double> accessibility =
+                    live->accessibility_stale ? std::optional(live->accessibility_next) : std::nullopt;
+                for (const std::optional<double> due : {live->events.next_deadline(), live->services.wake(), accessibility}) {
                     if (due && (!deadline || *due < *deadline)) {
                         deadline = due;
                     }
@@ -1055,6 +1126,13 @@ int App::run() {
             }
             if (live->services.take_due(seconds_now())) { // e.g. the caret blinking
                 live->dirty = true;
+            }
+            // A coalesced accessibility update, once frames stopped coming (no need to draw).
+            if (live->accessibility_stale && !live->dirty && !live->animating &&
+                seconds_now() >= live->accessibility_next) {
+                live->accessibility_stale = false;
+                live->accessibility_next = seconds_now() + kAccessibilityInterval;
+                live->accessibility->update();
             }
         }
         run_ui_tasks(); // e.g. a hot reload: state written here takes effect below
@@ -1134,6 +1212,10 @@ int App::run() {
 
 const char* version() {
     return ELG_VERSION_STRING;
+}
+
+void post_to_ui_thread(std::function<void()> task) {
+    detail::post_ui_task(std::move(task));
 }
 
 } // namespace elg

@@ -25,8 +25,9 @@ struct AccessRequest {
 class AccessibilityAdapter {
 public:
     struct Callbacks {
-        // Builds the tree now (UI thread). The scale converts window points to pixels.
-        std::function<AccessTree()> build;
+        // Builds the tree now (UI thread), valid until the next build. The scale converts window
+        // points to pixels.
+        std::function<const AccessTree&()> build;
         std::function<float()> scale;
         // A request arrived; called on the UI thread (through post_ui_task).
         std::function<void(const AccessRequest&)> request;

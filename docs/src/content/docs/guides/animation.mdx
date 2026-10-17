@@ -1,0 +1,96 @@
+---
+title: Animation
+description: "Explicit and implicit animations, springs and curves, transitions for views that come and go, and layout animation."
+---
+
+import Example from '../../../components/Example.astro';
+
+In Elegence you don't animate properties directly. You change state, and say that the change
+should animate. Everything the change causes then moves smoothly to its new value: colors, fills,
+strokes, opacity, offsets, and layout. Views added or removed by `If` and `ForEach` animate in and
+out with their transition.
+
+## Explicit animation
+
+Wrap state changes in `with_animation`:
+
+```cpp
+Button("Toggle", [=] {
+    with_animation(Animation::spring(), [&] { expanded = !expanded(); });
+});
+```
+
+Every property change caused by the writes inside animates with that animation, including frames
+moving and resizing, and views appearing and disappearing.
+
+## Implicit animation
+
+`.animation(animation, value)` animates changes inside a view whenever `value` changed in the same
+update, however the change happened:
+
+```cpp
+Circle()
+    .fill([=] { return on() ? Color::hex(0x9ECE6A) : Color::hex(0x565F89); })
+    .offset([=] { return on() ? 40.f : 0.f; }, 0.f)
+    .animation(Animation::spring(0.35, 0.7), on);
+```
+
+`value` is a state, a closure, or a plain value. It should support `==`.
+
+## Curves and springs
+
+```cpp
+Animation::linear(0.25)
+Animation::ease_in(0.25)
+Animation::ease_out(0.2)
+Animation::ease_in_out(0.35)
+Animation::spring()                 // response 0.5 s, damping 0.825
+Animation::spring(0.35, 0.6)        // quicker and bouncier
+Animation::smooth(0.4)              // a spring without overshoot
+Animation::ease_out(0.2).delay(0.1)
+```
+
+Durations are in seconds. A spring's `response` is roughly the time to reach the target, and its
+`damping_fraction` controls the bounce: 1 settles without overshooting, lower values bounce. The
+parameters mean the same as SwiftUI's.
+
+A change made while an animation is running starts from wherever the value is at that moment, so
+nothing jumps.
+
+## Transitions
+
+When an `If` or `ForEach` adds or removes a view during an animated change, the view's transition
+decides how it enters and leaves. The default is a fade.
+
+```cpp
+If(shown,
+   Banner().transition(Transition::move(Edges::top).combined(Transition::opacity())));
+
+ForEach(items, &Item::id, [](const Item& item) {
+    return Row(item).transition(Transition::scale(0.8f).combined(Transition::opacity()));
+});
+```
+
+| Transition | Effect |
+| --- | --- |
+| `Transition::opacity()` | Fades (the default) |
+| `Transition::scale(from)` | Grows from, and shrinks to, a fraction of its size |
+| `Transition::offset(x, y)` | Moves in from an offset |
+| `Transition::move(edge)` | Slides in from beyond an edge of its frame |
+| `Transition::slide()` | In from the leading edge, out to the trailing edge |
+| `Transition::identity()` | Appears and disappears at once |
+| `Transition::asymmetric(in, out)` | Different transitions for insertion and removal |
+
+Combine transitions with `.combined(...)`.
+
+## Layout animation
+
+Frames are animated too: during an animated change, views ease to their new position and size.
+Reordering a `ForEach`, for example, slides each item to its new place.
+
+To make part of the UI snap instead, use `.animates_layout(false)`. Colors, opacity and transitions
+still animate inside it.
+
+## Example
+
+<Example name="animation" />
