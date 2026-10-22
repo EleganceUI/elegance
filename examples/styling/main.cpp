@@ -97,6 +97,7 @@ View Settings() {
 
 int main() {
     App app;
+
     app.window({.title = "Styling", .width = 480, .height = 520}, Settings);
     return app.run();
 }

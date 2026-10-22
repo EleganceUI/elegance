@@ -8,6 +8,7 @@
 #include <elg/elegence.h>
 
 #include <format>
+#include <iostream>
 
 using namespace elg;
 
@@ -27,6 +28,9 @@ View Counter() {
 
 int main() {
     App app;
+
     app.window({.title = "Counter", .width = 360, .height = 280}, Counter);
-    return app.run();
+    auto res = app.run();
+
+    return res;
 }
