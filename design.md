@@ -1437,8 +1437,13 @@ Separate render thread from day one (decided).
       a 1×1 surface scaled to cover the window.
     - Opaque windows use `DXGI_ALPHA_MODE_IGNORE`.
     - Frames are paced by a frame-latency waitable swapchain (latency 1) instead of a blocking
-      present.
+      present. The present uses sync interval 1: with 0 the waitable is signaled as soon as the
+      present is queued, and an animating window rendered ~900 fps on a 75 Hz display (~50% GPU).
     - `ELG_PRESENT=vulkan` restores Vulkan swapchains for opaque windows.
+    - `ELG_PRESENT=swapchain`, or RenderDoc being attached (`renderdoc.dll` loaded), puts every
+      window on a Vulkan swapchain and creates no Direct3D objects. RenderDoc can't capture
+      DirectComposition or D3D11/Vulkan sharing; the system's composition code crashed on its
+      wrapped D3D11 device. Transparent windows render opaque then (logged once).
   - What triggers a live-resize frame: SDL's live-resize timer is a `WM_TIMER`, which Windows
     delivers only when no other message waits, so it fired irregularly during fast drags (one
     window got 16 frames in a drag where another got 55, with 100–200 px jumps). Frames are now

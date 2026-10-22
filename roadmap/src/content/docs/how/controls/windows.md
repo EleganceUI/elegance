@@ -76,7 +76,9 @@ The swapchain is shown at its own pixel size, never stretched. While a resize ou
 the newest frame stays anchored top-left over the background color.
 
 Every window uses this path. `ELG_PRESENT=vulkan` switches opaque windows back to a plain Vulkan
-swapchain. If the interop isn't available, a transparent window falls back to opaque with a
+swapchain. `ELG_PRESENT=swapchain` switches every window, and so does running under RenderDoc,
+which can't capture DirectComposition. No Direct3D objects are created then, and transparent
+windows render opaque. If the interop isn't available, a transparent window falls back to opaque with a
 warning.
 
 ## Rules

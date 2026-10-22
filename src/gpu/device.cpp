@@ -76,7 +76,9 @@ std::optional<Candidate> evaluate(VkPhysicalDevice device, VkSurfaceKHR surface,
     bool found = false;
     for (std::uint32_t i = 0; i < family_count && !found; ++i) {
         VkBool32 present = VK_FALSE;
-        vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &present);
+        if (vkGetPhysicalDeviceSurfaceSupportKHR(device, i, surface, &present) != VK_SUCCESS) {
+            present = VK_FALSE; // the output is undefined on failure
+        }
         if ((families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) && present) {
             candidate.queue_family = i;
             found = true;

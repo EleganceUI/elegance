@@ -98,6 +98,13 @@ Instance::Instance(std::span<const char* const> required_extensions) {
                                    VK_API_VERSION_MINOR(loader_version)));
     }
 
+    // The window system's (VK_KHR_surface and the platform's surface extension): fail by name
+    // rather than with vkCreateInstance's VK_ERROR_EXTENSION_NOT_PRESENT.
+    for (const char* name : required_extensions) {
+        if (!has_instance_extension(name)) {
+            throw GpuError(std::format("Vulkan can't show windows: the instance extension {} is missing", name));
+        }
+    }
     std::vector<const char*> extensions(required_extensions.begin(), required_extensions.end());
     std::vector<const char*> layers;
     VkInstanceCreateFlags flags = 0;

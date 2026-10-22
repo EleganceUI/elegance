@@ -65,6 +65,13 @@ private:
     std::optional<std::array<float, 4>> background_;
 };
 
+// Whether windows may present through DirectComposition in this process. Not when
+// ELG_PRESENT=swapchain asks for Vulkan swapchains, nor under RenderDoc: it supports neither
+// DirectComposition nor sharing images with Direct3D, and the system's composition code crashes
+// on its wrapped D3D11 device. Decided on the first call, before any Direct3D object exists, and
+// logged.
+bool composition_allowed();
+
 } // namespace elg::detail::gpu
 
 #endif // _WIN32

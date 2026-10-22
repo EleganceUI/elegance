@@ -7,6 +7,7 @@
 #include "gpu/composition_win32.h"
 
 #include "core/log.h"
+#include "platform/platform.h"
 
 #include <elg/error.h>
 
@@ -20,6 +21,7 @@
 
 #include <cstring>
 #include <format>
+#include <string>
 
 namespace elg::detail::gpu {
 
@@ -62,6 +64,33 @@ struct CompositionTarget::Impl {
 
 bool CompositionTarget::supported(const Device& device) {
     return device.has_extension(kExternalMemoryWin32);
+}
+
+bool composition_allowed() {
+    static const bool allowed = [] {
+        const std::string present = platform::environment_variable("ELG_PRESENT").value_or("");
+        if (present == "swapchain") {
+            log_info("windows present through Vulkan swapchains (ELG_PRESENT=swapchain)");
+            return false;
+        }
+        // RenderDoc's capture library is injected when the process starts, before any window.
+        if (GetModuleHandleA("renderdoc.dll") != nullptr) {
+            log_info("windows present through Vulkan swapchains (RenderDoc is attached, and it can't capture "
+                     "DirectComposition)");
+            return false;
+        }
+        if (present == "vulkan") {
+            log_info("opaque windows present through Vulkan swapchains, transparent ones through "
+                     "DirectComposition (ELG_PRESENT=vulkan)");
+        } else {
+            if (!present.empty()) {
+                log_warning("ELG_PRESENT={} is not recognized (use swapchain or vulkan)", present);
+            }
+            log_info("windows present through DirectComposition");
+        }
+        return true;
+    }();
+    return allowed;
 }
 
 CompositionTarget::CompositionTarget(const Device& device, void* hwnd, bool transparent)
@@ -330,10 +359,12 @@ void CompositionTarget::present() {
     ComPtr<ID3D11Texture2D> back_buffer;
     check_hr(impl_->swapchain->GetBuffer(0, IID_PPV_ARGS(&back_buffer)), "get the composition back buffer");
     impl_->context->CopyResource(back_buffer.Get(), impl_->shared.Get());
-    // No vsync wait here: DirectComposition shows it at the next composition anyway, and waiting
-    // would add a frame of latency (hover feedback in menus felt it). Frames are paced by
-    // wait_until_ready() before rendering instead.
-    check_hr(impl_->swapchain->Present(0, 0), "present to the composition swapchain");
+    // Sync interval 1: shown at the next vblank, and the frame-latency object wait_until_ready()
+    // waits on is signaled only once it's on screen, so animation runs at the display's rate. With
+    // 0 that object is signaled as soon as the present is queued, and an animating window renders
+    // as fast as the GPU allows (hundreds of frames a second). Latency stays at one frame: the wait
+    // returns at a vblank, and the frame rendered right after it shows at the next.
+    check_hr(impl_->swapchain->Present(1, 0), "present to the composition swapchain");
     // Vulkan renders into the shared texture again next frame: let the copy finish first.
     impl_->context->End(impl_->done.Get());
     while (impl_->context->GetData(impl_->done.Get(), nullptr, 0, 0) == S_FALSE) {

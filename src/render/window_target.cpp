@@ -11,6 +11,7 @@
 #include "core/log.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <limits>
 #include <span>
@@ -20,6 +21,26 @@ namespace elg::detail {
 namespace {
 // The longest a composition frame waits for the display to be ready (it's a hint for pacing).
 constexpr unsigned kReadyTimeoutMs = 50;
+
+// Vulkan swapchains on Windows are opaque only: transparent windows present through
+// DirectComposition there, or render opaque.
+#if defined(_WIN32)
+constexpr bool kTransparentSwapchains = false;
+#else
+constexpr bool kTransparentSwapchains = true;
+#endif
+
+#if defined(_WIN32)
+// Whether a window presents through DirectComposition (gpu/composition_win32.h) instead of its
+// Vulkan swapchain.
+bool wants_composition(const gpu::Device& device, bool transparent, void* native_window) {
+    if (!gpu::composition_allowed() || !native_window || !gpu::CompositionTarget::supported(device)) {
+        return false;
+    }
+    // ELG_PRESENT=vulkan: Vulkan swapchains for opaque windows only.
+    return transparent || platform::environment_variable("ELG_PRESENT").value_or("") != "vulkan";
+}
+#endif
 } // namespace
 
 namespace {
@@ -84,16 +105,22 @@ void render_offscreen(VkCommandBuffer cmd, const gpu::RenderImage& target, VkExt
 } // namespace
 
 WindowTarget::WindowTarget(const gpu::Device& device, VkSurfaceKHR surface, bool transparent, void* native_window)
-    : device_(device), swapchain_(device, surface, transparent) {
+    : device_(device), swapchain_(device, surface, transparent && kTransparentSwapchains) {
 #if defined(_WIN32)
     // Every window presents through DirectComposition (no stretched frames while resizing, and
-    // transparency); ELG_PRESENT=vulkan uses a Vulkan swapchain for opaque windows instead.
-    const bool use_vulkan = !transparent && platform::environment_variable("ELG_PRESENT").value_or("") == "vulkan";
-    if (!use_vulkan && native_window && gpu::CompositionTarget::supported(device)) {
+    // transparency), unless wants_composition() says otherwise.
+    if (wants_composition(device, transparent, native_window)) {
         try {
             composition_ = std::make_unique<gpu::CompositionTarget>(device, native_window, transparent);
         } catch (const std::exception& error) {
             log_warning("window falls back to a Vulkan swapchain: {}", error.what());
+        }
+    }
+    if (transparent && !composition_) {
+        static std::atomic_flag warned;
+        if (!warned.test_and_set()) {
+            log_warning("transparent windows render opaque: they present through Vulkan swapchains, which "
+                        "can't be transparent on Windows");
         }
     }
 #else
@@ -207,6 +234,11 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
         }
         acquired = vkAcquireNextImageKHR(dev, swapchain_.handle(), kNoTimeout, slot.image_acquired,
                                          VK_NULL_HANDLE, &image_index);
+        if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
+            // Still resizing: skip this frame (the semaphore wasn't signaled, the fence not reset).
+            swapchain_.mark_stale();
+            return;
+        }
     }
     if (acquired == VK_SUBOPTIMAL_KHR) {
         swapchain_.mark_stale(); // still presentable; recreate next frame
