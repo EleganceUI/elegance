@@ -43,6 +43,7 @@ endif ()
 
 if (ELG_BUILD_EXAMPLES)
     add_subdirectory(apps/login)
+    add_subdirectory(apps/music)
     add_subdirectory(examples)
 endif ()
 
