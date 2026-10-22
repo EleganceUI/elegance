@@ -218,6 +218,10 @@ public:
     // How a parent layout sees this element: itself, or for If/ForEach the elements they show
     // right now (flattened), or nothing for EmptyView.
     virtual void collect_layout_children(std::vector<Element*>& out) { out.push_back(this); }
+    // True when a parent layout places this element's layout children (collect_layout_children)
+    // instead of the element: it's never placed itself inside a layout, and its paint bounds are
+    // its children's.
+    virtual bool flattened_by_layouts() const noexcept { return false; }
     // Calls `visit` for each child this element owns.
     virtual void for_each_child(const std::function<void(Element&)>&) {}
     // Removed If/ForEach children still animating out: painted by the parent layout, not laid out.
@@ -291,6 +295,7 @@ class EmptyElement final : public Element {
 public:
     // Takes no place (and no spacing) in a parent layout.
     void collect_layout_children(std::vector<Element*>&) override {}
+    bool flattened_by_layouts() const noexcept override { return true; }
 
 protected:
     Size measure(ProposedSize) override { return {}; }

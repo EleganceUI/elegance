@@ -293,6 +293,7 @@ public:
     void set_items(const std::vector<ForEachItem>& items);
 
     void collect_layout_children(std::vector<Element*>& out) override;
+    bool flattened_by_layouts() const noexcept override { return true; }
     void for_each_child(const std::function<void(Element&)>& visit) override;
     void collect_exiting(std::vector<Element*>& out) override;
     void prune_exiting() override;

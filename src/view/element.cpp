@@ -130,7 +130,19 @@ void Element::update_paint_bounds() {
     Rect bounds = frame().inset(-kMargin);
     bool moving = frame_.animating() || drawing_moves();
     bool always = always_arranges();
-    for_each_child([&](Element& child) {
+    const auto include = [&](const auto& self, Element& child) -> void {
+        if (!child.placed_ && child.flattened_by_layouts()) {
+            // If/ForEach (or nothing) inside a layout: never placed itself, its children were.
+            // Counted through, an empty If doesn't make everything around it uncullable.
+            always = always || child.always_arranges();
+            child.for_each_child([&](Element& inner) { self(self, inner); });
+            std::vector<Element*> exiting; // still drawn while they animate out
+            child.collect_exiting(exiting);
+            for (Element* inner : exiting) {
+                self(self, *inner);
+            }
+            return;
+        }
         moving = moving || child.moving_;
         always = always || child.always_arranges_inside_;
         if (child.paint_bounds_) {
@@ -138,7 +150,8 @@ void Element::update_paint_bounds() {
         } else {
             bounded = false; // a child not placed yet, or drawing anywhere
         }
-    });
+    };
+    for_each_child([&](Element& child) { include(include, child); });
     paint_bounds_ = bounded ? std::optional<Rect>(paint_extent(bounds)) : std::nullopt;
     moving_ = moving;
     always_arranges_inside_ = always;
