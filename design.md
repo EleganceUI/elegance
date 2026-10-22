@@ -1819,8 +1819,10 @@ Separate render thread from day one (decided).
   - Hovering a menu row focuses it, so the hover and keyboard highlights stay one.
   - Menu popups have zero hover delay: rows highlight on the first move, like native menus.
     Submenus open after resting 0.25 s (their own hover handler).
-  - Composition swapchains present with interval 0, since DWM syncs anyway. Interval 1 added a
-    frame of hover latency.
+  - Composition swapchains presented with interval 0 here, to save a frame of hover latency.
+    That left the frame-latency waitable unpaced (it signals once the present is queued), so
+    animations ran at ~900 fps; they present with interval 1 again, paced by the waitable, and
+    menu hover was checked to still feel immediate (§ presentation above).
   - `ButtonConfiguration::is_focused` lets styles show keyboard focus.
   - Icons come from Segoe MDL2 Assets on Windows, with fallbacks elsewhere (`view/icons.h`).
 - [ ] Popup follow-ups:

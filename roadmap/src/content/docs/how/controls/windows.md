@@ -70,7 +70,11 @@ Each frame:
    `VK_QUEUE_FAMILY_EXTERNAL`**, then wait the fence.
 4. D3D11 copies the shared texture into the swapchain's back buffer; an **event query** keeps the
    next frame from overwriting the texture before the copy finishes.
-5. Present with **sync interval 0** (DWM synchronizes anyway; interval 1 added a frame of latency).
+5. Present with **sync interval 1**. The waitable in step 1 is then signaled when the frame is
+   on screen, which is what paces animation to the display. With interval 0 it's signaled as
+   soon as the present is queued, and an animating window renders as fast as the GPU allows
+   (~900 fps on a 75 Hz display). Latency stays at one frame: the wait returns at a vblank and
+   the frame rendered right after it shows at the next.
 
 The swapchain is shown at its own pixel size, never stretched. While a resize outruns the frames,
 the newest frame stays anchored top-left over the background color.

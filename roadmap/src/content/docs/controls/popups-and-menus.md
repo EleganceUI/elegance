@@ -60,8 +60,10 @@ tree.
 
 ## Gotchas
 
-- **Composition swapchains present with interval 0**, since DWM syncs anyway. Interval 1 added a
-  frame of hover latency in menus.
+- **Don't present composition swapchains with interval 0 to cut hover latency.** It was tried for
+  menus, but with interval 0 the frame-latency waitable signals as soon as the present is queued,
+  so nothing paces animation: ~900 fps and ~50% GPU on a 75 Hz display. Interval 1 plus waiting
+  on the waitable before rendering keeps latency at one frame, and menus feel the same.
 - Opening a popup currently builds a D3D device and swapchain each time. The planned fix is to
   keep one popup window ready and reuse it.
 - Not built yet: type-to-select, diagonal-move tolerance toward submenus, `sheet`,

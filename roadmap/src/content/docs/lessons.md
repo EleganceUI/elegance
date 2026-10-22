@@ -49,7 +49,9 @@ subsystem; this page collects them so you can skim them all before you start.
   every size change inside the move/size loop (`GUI_INMOVESIZE`), then `DwmFlush`.
 - Windows Vulkan drivers only offer opaque composite alpha. Transparency (and stretch-free
   resizing) goes through DirectComposition with a D3D11 texture shared into Vulkan.
-- Composition swapchains present with interval 0; interval 1 adds a frame of hover latency.
+- Present composition swapchains with **interval 1**. With interval 0 the frame-latency waitable
+  signals as soon as the present is queued and stops pacing anything: animations ran at ~900 fps
+  (~50% GPU on a 75 Hz display). Interval 1 with the waitable keeps latency at one frame.
 - Retire old swapchains until a later submission completes; a pending present may still use their
   semaphores. Keep one `render_finished` semaphore per image.
 
