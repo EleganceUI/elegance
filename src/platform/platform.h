@@ -171,8 +171,14 @@ bool any_window_focused();
 void wait_for_compositor();
 std::string clipboard_text();
 void set_clipboard_text(const std::string& text);
-// The pointer's shape: the arrow, or the I-beam over text.
-void set_text_cursor(bool text);
+// The pointer's shape.
+enum class SystemCursor {
+    arrow,
+    text,              // the I-beam, over text
+    resize_horizontal, // a split view's divider between side-by-side panes
+    resize_vertical,
+};
+void set_cursor(SystemCursor cursor);
 
 class Platform {
 public:

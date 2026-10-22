@@ -1385,6 +1385,84 @@ it covers them).
   and submenus. Shown while any copy lives; `set_tooltip` and `set_menu`. The icon comes from an
   `ImageSource`, else a plain dot.
 
+### 13.5 Split views and navigation
+
+The structure of most desktop apps (`<elg/navigation.h>`, example `navigation`).
+
+#### Split views
+`HSplitView(a, b, ...)` and `VSplitView(...)`: panes with a draggable divider between each two.
+- **Pane limits come from the pane's own layout**, as in SwiftUI. There's no split-specific
+  modifier:
+  - a pane's minimum is what it takes when offered 0;
+  - its maximum is what it takes when offered infinity;
+  - it starts at its ideal size.
+  So `.frame({.min_width = 180, .ideal_width = 240, .max_width = 400})` bounds a pane. Content
+  that doesn't grow (a bare `Text`) can't be dragged wider than it is.
+- **Preferred vs. actual sizes:** each pane keeps a preferred size: its ideal when it appears,
+  then wherever a drag left it. Every layout starts from the preferred sizes.
+  - The difference from the available length goes first to the pane with the highest
+    `layout_priority` (ties: the last pane), then to the others from the last back, each within
+    its limits.
+  - A sidebar squeezed by a small window gets its width back when the window grows. Storing the
+    squeezed size lost it, which showed up in the first test.
+- **Dividers:** a 1 pt line taking space between the panes.
+  - It can be grabbed 4 pt either side. Hover shows the resize cursor at once, and a tinted 3 pt
+    bar while hovered or dragged.
+  - A drag moves only the two panes beside it, each within its limits.
+- **Dynamic panes:** a pane can be an `If` (a collapsible sidebar). Panes are flattened like a
+  layout's children; a pane that goes loses its preferred size, and one that animates out is
+  painted where it was.
+- **Clipping:** each pane is clipped to its share, so content larger than its pane doesn't run
+  into the next.
+
+`NavigationSplitView(sidebar, detail)` and `(sidebar, content, detail)` compose an `HSplitView`:
+- the sidebar column is 180–360 pt (ideal 240) on the surface color;
+- the three-column form adds a content column of 220–480 pt;
+- the detail is at least 200 pt and takes size changes (`layout_priority(1)`).
+
+`sidebar_visible` (a `Binding<bool>`) puts the sidebar in an `If` that slides it to the leading
+edge. Toggled inside `with_animation`, the other columns' frames ease to their new widths.
+
+#### NavigationStack
+`NavigationStack(path, root, destination, {.root_title, .title, .shows_bar})`.
+- **Driven by a path** (`State<std::vector<Route>>` or a `Binding`), like SwiftUI's
+  `NavigationStack(path:)`. Pushing and popping are edits to the path from anywhere, and a deep
+  link or restored session is just a path.
+  - `destination` builds a page from a route. Routes are compared with `==`: the longest
+    unchanged prefix of pages is kept, and the rest are rebuilt.
+  - A path present at mount (a deep link) shows at once, without animating.
+- **Pages under the top one stay alive** until removed from the path, each in its own `Scope`.
+  Scroll positions and state survive going back.
+  - A covered page has a `.focusable(false)` handler, so Tab and clicks skip it.
+  - It's `hidden` to screen readers, and hit testing and painting skip it.
+  - It's still visited as a child, so the event dispatcher sees the pointer leave its controls,
+    rather than leaving them stuck hovered.
+  - If focus was in the page that got covered, it moves to the first control of the new page
+    when the ring was showing (keyboard use), else it's dropped.
+- **Transitions:**
+  - A push slides the new page in from the trailing edge, over the old one. The old page moves
+    30% of the way to the leading edge and dims slightly.
+  - A pop reverses it, and the popped page is kept until it has slid away.
+  - The page on top gets the background color and a soft shadow while moving. The whole stack is
+    clipped, so pages don't slide over a sidebar.
+  - The animation is the transaction's when there is one (`with_animation`), else
+    `Animation::smooth(0.35)`.
+- **The bar:** the top page's title, and from the second page on, a back button (caret + the
+  title of the page underneath). Alt+Left goes back too, while focus is inside the stack.
+  - `root_title` is a `Prop`, so it can follow state (the selected folder).
+  - There are no toolbar items or per-page title modifiers yet. Those need a way for a page to
+    pass values up to its container (SwiftUI's preferences), which Elegence doesn't have.
+
+#### Not done yet
+- Keyboard resizing of dividers, and a splitter role for screen readers. Dividers are hidden
+  from accessibility for now.
+- Persisting pane sizes (a binding to the preferred sizes).
+- Double-clicking a divider to collapse a pane.
+- The mouse's back button: `MouseButton::other` doesn't say which button it is.
+- Toolbar items in the navigation bar, and `navigation_title` set by the page itself. Both need
+  preferences.
+- `TabView`.
+
 ## 14. Extensibility
 
 - **Custom components**: functions or structs that return a `View`. Also custom

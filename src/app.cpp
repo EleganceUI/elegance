@@ -111,7 +111,14 @@ public:
     void set_text_input_area(Rect area, float cursor) override { window_->set_text_input_area(area, cursor); }
     std::string clipboard_text() override { return platform::clipboard_text(); }
     void set_clipboard_text(const std::string& text) override { platform::set_clipboard_text(text); }
-    void set_cursor(CursorShape shape) override { platform::set_text_cursor(shape == CursorShape::text); }
+    void set_cursor(CursorShape shape) override {
+        switch (shape) {
+        case CursorShape::arrow: platform::set_cursor(platform::SystemCursor::arrow); break;
+        case CursorShape::text: platform::set_cursor(platform::SystemCursor::text); break;
+        case CursorShape::resize_horizontal: platform::set_cursor(platform::SystemCursor::resize_horizontal); break;
+        case CursorShape::resize_vertical: platform::set_cursor(platform::SystemCursor::resize_vertical); break;
+        }
+    }
     void wake_at(double seconds) override {
         if (!wake_ || seconds < *wake_) {
             wake_ = seconds;

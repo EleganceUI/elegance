@@ -301,7 +301,7 @@ View ForEach(Source items, KeyFunction key, ContentFunction content) {
     static_assert(std::is_convertible_v<std::invoke_result_t<const ContentFunction&, const T&>, View>,
                   "the content function takes an item and returns a view");
 
-    bool (*equals)(const void*, const void*) = [](const void* a, const void* b) {
+    bool (*equals)(const void*, const void*) = []([[maybe_unused]] const void* a, [[maybe_unused]] const void* b) {
         if constexpr (std::equality_comparable<T>) {
             return *static_cast<const T*>(a) == *static_cast<const T*>(b);
         } else {

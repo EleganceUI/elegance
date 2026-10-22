@@ -14,7 +14,7 @@
 
 namespace elg::detail {
 
-enum class CursorShape { arrow, text };
+enum class CursorShape { arrow, text, resize_horizontal, resize_vertical };
 
 // A popup window to open (design.md §13.1), anchored to a rect in the opener's window.
 struct PopupRequest {

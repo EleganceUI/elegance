@@ -446,11 +446,18 @@ void set_clipboard_text(const std::string& text) {
     SDL_SetClipboardText(text.c_str());
 }
 
-void set_text_cursor(bool text) {
+void set_cursor(SystemCursor cursor) {
     // Created once; SDL frees them at shutdown.
     static SDL_Cursor* const arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
     static SDL_Cursor* const ibeam = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_TEXT);
-    SDL_SetCursor(text ? ibeam : arrow);
+    static SDL_Cursor* const ew = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);
+    static SDL_Cursor* const ns = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NS_RESIZE);
+    switch (cursor) {
+    case SystemCursor::arrow: SDL_SetCursor(arrow); break;
+    case SystemCursor::text: SDL_SetCursor(ibeam); break;
+    case SystemCursor::resize_horizontal: SDL_SetCursor(ew); break;
+    case SystemCursor::resize_vertical: SDL_SetCursor(ns); break;
+    }
 }
 
 Point Window::to_logical(float x, float y) const {

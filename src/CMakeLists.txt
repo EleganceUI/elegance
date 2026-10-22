@@ -73,8 +73,10 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         view/lazy_stack.cpp
         view/menus.cpp
         view/modifiers.cpp
+        view/navigation_stack.cpp
         view/scroll.cpp
         view/shapes.cpp
+        view/split_view.cpp
         view/stack_layout.cpp
         view/styles.cpp
         view/styled_text.cpp
