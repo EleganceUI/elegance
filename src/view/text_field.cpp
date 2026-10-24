@@ -814,6 +814,7 @@ EventResult TextEditor::pointer(const PointerEvent& event) {
         return byte_at({event.location.x - frame_.x + scroll_x_, event.location.y - frame_.y + scroll_y_});
     };
     switch (event.kind) {
+    case PointerEvent::Kind::hover: return {};
     case PointerEvent::Kind::down:
         if (composing()) {
             return {.consumed = true};

@@ -28,7 +28,7 @@
 #include <elg/view.h>
 
 #include <concepts>
-#include <cstdint>
+
 #include <optional>
 #include <span>
 #include <utility>
@@ -48,9 +48,9 @@ struct GridItem {
     float minimum = 10;
     float maximum = infinity;
     // Space after this track (between its tracks too, for adaptive). Default: the grid's spacing.
-    OptionalLength spacing;
+    OptionalLength spacing{};
     // Where views sit in this track's cells. Default: the grid's alignment.
-    std::optional<Alignment> alignment;
+    std::optional<Alignment> alignment{};
 
     static constexpr GridItem fixed(float size) noexcept { return {Kind::fixed, size, size}; }
     static constexpr GridItem flexible(float minimum = 10, float maximum = infinity) noexcept {

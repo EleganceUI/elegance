@@ -4,7 +4,6 @@
 
 #include "render/frame_plan.h"
 
-#include "core/log.h"
 #include "render/color_space.h"
 #include "text/atlas.h"
 

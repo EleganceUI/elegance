@@ -341,10 +341,10 @@ struct ShapeStroke {
 // A Shape view's description (not to be confused with the public elg::ShapeStyle, its fill).
 struct ShapeSpec {
     ShapeKind kind = ShapeKind::rectangle;
-    CornerRadii radii; // rounded_rectangle only
-    std::optional<Prop<ShapeStyle>> fill;
-    std::optional<ShapeStroke> stroke;
-    std::shared_ptr<const ShapePath> path; // ShapeKind::path
+    CornerRadii radii{}; // rounded_rectangle only
+    std::optional<Prop<ShapeStyle>> fill{};
+    std::optional<ShapeStroke> stroke{};
+    std::shared_ptr<const ShapePath> path{}; // ShapeKind::path
 };
 
 // The rounded rect a shape occupies inside `frame`.

@@ -5,7 +5,6 @@
 // Hit testing, the built-in event modifiers, and the Button element (design.md §10).
 
 #include "view/element.h"
-#include "view/focus.h"
 #include "view/window_drag.h"
 #include "view/view_node.h"
 
@@ -75,7 +74,8 @@ public:
             return {.consumed = true};
         }
         case PointerEvent::Kind::cancel: pressed_ = false; return {};
-        case PointerEvent::Kind::move: return {};
+        case PointerEvent::Kind::move:
+        case PointerEvent::Kind::hover: return {};
         }
         return {};
     }
@@ -307,7 +307,8 @@ EventResult ButtonElement::pointer(const PointerEvent& event, Rect frame) {
         }
         return {.consumed = true};
     }
-    case PointerEvent::Kind::cancel: break;
+    case PointerEvent::Kind::cancel:
+    case PointerEvent::Kind::hover: break;
     }
     return {};
 }

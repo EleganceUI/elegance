@@ -164,6 +164,7 @@ EventResult SplitDividerElement::pointer(const PointerEvent& event, Rect) {
         return {};
     }
     switch (event.kind) {
+    case PointerEvent::Kind::hover: return {};
     case PointerEvent::Kind::down:
         dragging_ = true;
         drag_start_ = along(event.location);
@@ -447,8 +448,6 @@ View detail_column(View detail) {
 } // namespace elg::detail
 
 namespace elg {
-
-using detail::ViewAccess;
 
 View detail::make_split_view(Axis axis, std::vector<View> panes) {
     return ViewAccess::make(std::make_shared<const SplitNode>(axis, std::move(panes)));

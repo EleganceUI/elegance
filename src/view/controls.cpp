@@ -5,7 +5,6 @@
 // Slider and ProgressView (elements that draw themselves), and Stepper and the segmented Picker
 // (composed from the public API, like an app's own controls would be).
 
-#include "view/accessibility.h"
 #include "view/view_node.h"
 
 #include <elg/animation.h>
@@ -114,6 +113,7 @@ private:
             return {};
         }
         switch (event.kind) {
+        case PointerEvent::Kind::hover: return {};
         case PointerEvent::Kind::down:
             if (!enabled()) {
                 return {.consumed = true};

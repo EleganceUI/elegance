@@ -4,24 +4,27 @@
 
 #include "render/window_target.h"
 
-#include "platform/platform.h"
-
 #include "render/color_space.h"
 
+#if defined(_WIN32)
 #include "core/log.h"
+#include "platform/platform.h"
+
+#include <atomic>
+#endif
 
 #include <algorithm>
-#include <atomic>
 #include <cstdint>
 #include <span>
 
 namespace elg::detail {
 
 namespace {
+
+#if defined(_WIN32)
 // The longest a composition frame waits for the display to be ready (it's a hint for pacing).
 constexpr unsigned kReadyTimeoutMs = 50;
 
-#if defined(_WIN32)
 // Whether a window presents through DirectComposition (gpu/composition_win32.h) instead of its
 // WebGPU surface.
 bool wants_composition(const gpu::Device& device, bool transparent, void* native_window) {

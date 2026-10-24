@@ -5,7 +5,6 @@
 #include "platform/platform.h"
 
 #include "core/crash.h"
-#include "core/log.h"
 
 #include <elg/error.h>
 

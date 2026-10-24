@@ -119,12 +119,14 @@ void ShapeElement::inspect(Inspection& out) const {
 }
 
 void LayoutElement::inspect(Inspection& out) const {
-    out.name = type_label(typeid(*layout_), "Layout");
+    const auto* layout = layout_.get();
+    out.name = type_label(typeid(*layout), "Layout");
     out.detail = std::format("{} children", laid_out_.size());
 }
 
 void LayoutModifierElement::inspect(Inspection& out) const {
-    out.name = type_label(typeid(*modifier_), "Modifier");
+    const auto* modifier = modifier_.get();
+    out.name = type_label(typeid(*modifier), "Modifier");
 }
 
 void EffectElement::inspect(Inspection& out) const {

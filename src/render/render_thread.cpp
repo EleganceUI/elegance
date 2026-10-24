@@ -5,7 +5,6 @@
 #include "render/render_thread.h"
 
 #include "core/crash.h"
-#include "core/log.h"
 #include "gpu/device.h"
 #include "gpu/instance.h"
 #include "gpu/atlas_texture.h"

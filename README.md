@@ -43,6 +43,22 @@ The first configure builds the dependencies, Dawn included (about half an hour).
 static linking, and using Elegance in your own project. To start an app, copy a folder from
 elegance-examples, such as `hello-cpp`.
 
+### Native tests and editor diagnostics
+
+The tests use Catch2 3. Install it through vcpkg's `tests` feature (or provide an
+existing installation using `Catch2_DIR`), then configure the build used by clangd
+with `-DELG_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`. Run the tests with:
+
+```sh
+cmake --build build/local-offline-static
+ctest --test-dir build/local-offline-static --output-on-failure
+```
+
+The checked-in `.clangd` selects `build/local-offline-static`. If you use another
+build directory, update `CompilationDatabase` accordingly. Test files must appear
+in that build's `compile_commands.json`: otherwise clangd guesses compile flags,
+and a missing Catch2 header produces misleading `TEST_CASE` syntax errors.
+
 ## Layout
 
 ```

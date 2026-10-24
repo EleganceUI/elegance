@@ -4,21 +4,24 @@
 
 #include "gpu/device.h"
 
+#ifndef NDEBUG
 #include "core/crash.h"
+#endif
 #include "core/log.h"
 #include "platform/platform.h"
 
 #include <elg/error.h>
 
-#include <algorithm>
-#include <cstring>
-#include <filesystem>
 #include <format>
 #include <mutex>
 #include <unordered_map>
 #include <vector>
 
 #if defined(_WIN32)
+#include <algorithm>
+#include <cstring>
+#include <filesystem>
+
 #include <windows.h> // the build defines WIN32_LEAN_AND_MEAN and NOMINMAX
 #include <dxgi1_4.h>
 #include <wrl/client.h>

@@ -8,15 +8,15 @@
 
 #include "media/video_source.h"
 
-#include "core/log.h"
-#include "core/ui_tasks.h"
-
 #include <atomic>
-#include <cmath>
-#include <format>
 #include <mutex>
 
 #if defined(_WIN32)
+#include "core/log.h"
+#include "core/ui_tasks.h"
+
+#include <cmath>
+#include <format>
 #include <windows.h>
 #include <d3d11_4.h>
 #include <dxgi1_4.h>
@@ -50,6 +50,7 @@ VideoSource::VideoSource() : id(g_next_id.fetch_add(1)) {}
 std::size_t packed_size(VideoFrame::Format format, std::uint32_t width, std::uint32_t height) {
     const std::size_t pixels = static_cast<std::size_t>(width) * height;
     switch (format) {
+    case VideoFrame::Format::rgba:
     case VideoFrame::Format::bgra: return pixels * 4;
     case VideoFrame::Format::yuy2: return pixels * 2;
     case VideoFrame::Format::nv12:

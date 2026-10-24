@@ -117,14 +117,14 @@ struct LayerTransform {
 struct PushLayerCommand {
     Rect bounds; // of the layer's content, before the shadow
     float opacity = 1;
-    std::optional<Shadow> shadow;
-    std::optional<PathCommand> mask; // its fill is ignored
+    std::optional<Shadow> shadow{};
+    std::optional<PathCommand> mask{}; // its fill is ignored
     float blur = 0;                  // radius in points
     bool blur_opaque = false;        // edges read as the nearest pixel, not transparent
-    std::optional<ColorMatrix> color_matrix;
+    std::optional<ColorMatrix> color_matrix{};
     BlendMode blend = BlendMode::normal;
-    std::optional<LayerTransform> transform;
-    std::optional<Shadow> inner_shadow;
+    std::optional<LayerTransform> transform{};
+    std::optional<Shadow> inner_shadow{};
 };
 
 // Inside a layer: the commands after it (to the PopLayerCommand) are a mask; only where they're
