@@ -418,7 +418,9 @@ View detail::make_segmented_picker(std::vector<std::string> labels, std::functio
     std::vector<View> segments;
     segments.reserve(labels.size());
     for (std::size_t i = 0; i < labels.size(); ++i) {
-        segments.push_back(Button(Text(labels[i]),
+        // Labels keep their width: the stack offers equal shares, and a longer label ("Center"
+        // among "End" and "Fill") would wrap even when all of them fit.
+        segments.push_back(Button(Text(labels[i]).fixed_size(true, false),
                                   [select, i] { with_animation(Animation::ease_out(0.15), [&] { select(i); }); })
                                .button_style(PickerSegmentStyle([selected, i] { return selected() == i; })));
     }

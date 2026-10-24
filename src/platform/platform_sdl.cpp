@@ -202,6 +202,7 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
         result.wheel_x = event.wheel.x;
         result.wheel_y = event.wheel.y;
         result.precise = event.wheel.x != std::trunc(event.wheel.x) || event.wheel.y != std::trunc(event.wheel.y);
+        result.modifiers = translate_modifiers(SDL_GetModState());
         return result;
     }
     case SDL_EVENT_KEY_DOWN:
@@ -243,6 +244,9 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
     }
     if (desc.transparent) {
         flags |= SDL_WINDOW_TRANSPARENT;
+    }
+    if (desc.fullscreen) {
+        flags |= SDL_WINDOW_FULLSCREEN; // borderless at the desktop's mode (no mode was set)
     }
 
     if (popup) {
@@ -447,17 +451,28 @@ void set_clipboard_text(const std::string& text) {
 }
 
 void set_cursor(SystemCursor cursor) {
-    // Created once; SDL frees them at shutdown.
-    static SDL_Cursor* const arrow = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_DEFAULT);
-    static SDL_Cursor* const ibeam = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_TEXT);
-    static SDL_Cursor* const ew = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_EW_RESIZE);
-    static SDL_Cursor* const ns = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_NS_RESIZE);
+    // Created on first use; SDL frees them at shutdown.
+    const auto system = [](SDL_SystemCursor id) {
+        static SDL_Cursor* cursors[SDL_SYSTEM_CURSOR_COUNT] = {};
+        if (!cursors[id]) {
+            cursors[id] = SDL_CreateSystemCursor(id);
+        }
+        return cursors[id];
+    };
+    SDL_SystemCursor id = SDL_SYSTEM_CURSOR_DEFAULT;
     switch (cursor) {
-    case SystemCursor::arrow: SDL_SetCursor(arrow); break;
-    case SystemCursor::text: SDL_SetCursor(ibeam); break;
-    case SystemCursor::resize_horizontal: SDL_SetCursor(ew); break;
-    case SystemCursor::resize_vertical: SDL_SetCursor(ns); break;
+    case SystemCursor::arrow: id = SDL_SYSTEM_CURSOR_DEFAULT; break;
+    case SystemCursor::text: id = SDL_SYSTEM_CURSOR_TEXT; break;
+    case SystemCursor::resize_horizontal: id = SDL_SYSTEM_CURSOR_EW_RESIZE; break;
+    case SystemCursor::resize_vertical: id = SDL_SYSTEM_CURSOR_NS_RESIZE; break;
+    case SystemCursor::pointer: id = SDL_SYSTEM_CURSOR_POINTER; break;
+    case SystemCursor::crosshair: id = SDL_SYSTEM_CURSOR_CROSSHAIR; break;
+    case SystemCursor::move: id = SDL_SYSTEM_CURSOR_MOVE; break;
+    case SystemCursor::resize_nwse: id = SDL_SYSTEM_CURSOR_NWSE_RESIZE; break;
+    case SystemCursor::resize_nesw: id = SDL_SYSTEM_CURSOR_NESW_RESIZE; break;
+    case SystemCursor::not_allowed: id = SDL_SYSTEM_CURSOR_NOT_ALLOWED; break;
     }
+    SDL_SetCursor(system(id));
 }
 
 Point Window::to_logical(float x, float y) const {

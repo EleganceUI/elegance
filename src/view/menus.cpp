@@ -226,7 +226,7 @@ public:
             if (services && *element_slot) {
                 services->open_popup({.kind = PopupRequest::Kind::menu,
                                       .placement = PopupRequest::Placement::beside,
-                                      .anchor = (*element_slot)->frame(),
+                                      .anchor = (*element_slot)->drawn_frame(),
                                       .content = menu,
                                       .environment = environment,
                                       .level = level});
@@ -304,8 +304,11 @@ private:
         }
         // Opens on release, like Windows; the press is taken so nothing else reacts to it.
         if (event.kind == PointerEvent::Kind::up) {
+            // The event is in layout coordinates; the menu opens where the pointer is on screen.
+            const Rect drawn = drawn_frame();
+            const Rect laid_out = frame();
             open(PopupRequest::Kind::menu, PopupRequest::Placement::at_point,
-                 {event.location.x, event.location.y, 0, 0});
+                 {event.location.x + drawn.x - laid_out.x, event.location.y + drawn.y - laid_out.y, 0, 0});
         }
         return {.consumed = true};
     }
@@ -313,7 +316,7 @@ private:
     EventResult hover(bool inside) override {
         if (kind_ == Kind::help) {
             if (inside) {
-                open(PopupRequest::Kind::tooltip, PopupRequest::Placement::below, frame());
+                open(PopupRequest::Kind::tooltip, PopupRequest::Placement::below, drawn_frame());
             } else if (services_) {
                 services_->close_tooltip();
             }
@@ -327,7 +330,7 @@ private:
         }
         const bool shift_f10 = event.key == Key::f10 && has(event.modifiers, KeyModifiers::shift);
         if (event.key == Key::menu || shift_f10) {
-            const Rect bounds = frame();
+            const Rect bounds = drawn_frame();
             open(PopupRequest::Kind::menu, PopupRequest::Placement::at_point, {bounds.x, bounds.max_y(), 0, 0});
             return {.consumed = true};
         }
@@ -426,7 +429,7 @@ private:
             .kind = PopupRequest::Kind::popover,
             .placement = placement,
             .centered = true,
-            .anchor = frame(),
+            .anchor = drawn_frame(),
             .content = [content = popover_, padded = options_.padded] {
                 View panel = padded ? content().padding(12) : content();
                 return panel.clip_shape(RoundedRectangle(10))
@@ -522,7 +525,7 @@ public:
                     services->open_popup({.kind = PopupRequest::Kind::menu,
                                           .placement = edge == MenuEdge::above ? PopupRequest::Placement::above
                                                                                : PopupRequest::Placement::below,
-                                          .anchor = (*element_slot)->frame(),
+                                          .anchor = (*element_slot)->drawn_frame(),
                                           .content = menu,
                                           .environment = environment,
                                           .level = services->menu_level() + 1});

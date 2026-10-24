@@ -163,10 +163,17 @@ void FragmentElement::collect_exiting(std::vector<Element*>& out) {
     for (const Child& child : exiting_) {
         out.push_back(child.element.get());
     }
+    // Nested If/ForEach items leaving, inside items that stay.
+    for (const Child& child : children_) {
+        child.element->collect_exiting(out);
+    }
 }
 
 void FragmentElement::prune_exiting() {
     std::erase_if(exiting_, [](const Child& child) { return child.transition->exit_finished(); });
+    for (const Child& child : children_) {
+        child.element->prune_exiting();
+    }
 }
 
 void FragmentElement::for_each_child(const std::function<void(Element&)>& visit) {
@@ -183,6 +190,9 @@ Size FragmentElement::measure(ProposedSize proposal) {
 
 void FragmentElement::arrange(Rect bounds, ProposedSize proposal) {
     prune_exiting();
+    std::vector<Element*> exiting;
+    collect_exiting(exiting);
+    move_exiting(exiting);
     standalone_layout_.place_children(bounds, proposal, handles_);
 }
 

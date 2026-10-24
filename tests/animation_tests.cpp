@@ -46,6 +46,22 @@ TEST_CASE("timing curves run from 0 to 1 over their duration") {
     CHECK(Animation::ease_out(1.0).progress(0.25) > 0.25); // fast start
 }
 
+TEST_CASE("custom curves map elapsed time to progress") {
+    const Animation cubic = Animation::custom([](double t) { return t * t * t; }, 1.0);
+    CHECK(cubic.progress(0) == 0);
+    CHECK(cubic.progress(0.5) == Approx(0.125));
+    CHECK(cubic.progress(1.0) == 1);
+    CHECK(cubic.finished(1.0));
+
+    // Overshoot passes through; the end still lands on the target.
+    const Animation back = Animation::custom([](double t) { return t < 1 ? t * 1.5 : 7.0; }, 1.0);
+    CHECK(back.progress(0.8) == Approx(1.2));
+    CHECK(back.progress(1.0) == 1);
+
+    CHECK(Animation::custom(nullptr, 1.0).progress(0.5) == Approx(0.5)); // no curve: linear
+    CHECK(Animation::custom([](double t) { return t; }, 1.0).delay(0.5).progress(1.0) == Approx(0.5));
+}
+
 TEST_CASE("delay holds the start") {
     const Animation delayed = Animation::linear(1.0).delay(0.5);
     CHECK(delayed.progress(0.4) == 0);

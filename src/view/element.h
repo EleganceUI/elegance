@@ -152,6 +152,19 @@ public:
 
     // Where the element is drawn now: its laid-out frame, or on the way there.
     Rect frame() const { return frame_.current(); }
+    // frame() moved by the offsets of the elements around it (.offset draws, and hits, content
+    // away from its layout): where it is on screen, e.g. for anchoring popups.
+    Rect drawn_frame() const {
+        Rect result = frame();
+        for (const Element* element = parent_; element; element = element->parent_) {
+            const Point offset = element->content_offset();
+            result.x += offset.x;
+            result.y += offset.y;
+        }
+        return result;
+    }
+    // How far the content is drawn from where it's laid out (.offset).
+    virtual Point content_offset() const { return {}; }
 
     // The `.animation(...)` this element is inside, if any.
     void set_implicit_animation(std::shared_ptr<ImplicitAnimation> animation) noexcept {
@@ -239,6 +252,10 @@ public:
 protected:
     // Records `child` as owned by this element (for layout invalidation).
     void adopt(Element& child) noexcept { child.parent_ = this; }
+    // Removed children animating out aren't laid out, so they'd stay where they were removed. When
+    // their container moves (scrolling, its parent's layout), they move with it: call from arrange
+    // with the exiting children it paints.
+    void move_exiting(const std::vector<Element*>& exiting);
     // Tells the ancestors that the set of children a layout sees has changed.
     void notify_structure_changed() {
         if (parent_) {
@@ -287,6 +304,7 @@ private:
     std::optional<Rect> paint_bounds_; // as of the last layout; nullopt: unknown or unbounded
     bool moving_ = false;              // something inside is moving (frames, offsets, transitions)
     bool needs_arrange_ = true;        // it or something inside was invalidated since its arrange
+    Point moved_by_;                   // how far the last place() moved it (for exiting children)
     bool always_arranges_inside_ = false; // always_arranges(), here or anywhere inside
     mutable std::uint64_t accessibility_id_ = 0;
 };
@@ -494,6 +512,18 @@ public:
     bool drawing_moves() const override { return progress_.animating(); }
 
     TransitionElement* as_transition() noexcept override { return this; }
+    // An If/ForEach item that is itself an If/ForEach (a GridRow in a ForEach, say): its parent
+    // layout places what the inner one shows, as if the two were one fragment.
+    void collect_layout_children(std::vector<Element*>& out) override {
+        if (content_->flattened_by_layouts()) {
+            content_->collect_layout_children(out);
+        } else {
+            out.push_back(this);
+        }
+    }
+    bool flattened_by_layouts() const noexcept override { return content_->flattened_by_layouts(); }
+    void collect_exiting(std::vector<Element*>& out) override { content_->collect_exiting(out); }
+    void prune_exiting() override { content_->prune_exiting(); }
     float layout_priority() const noexcept override { return content_->layout_priority(); }
     float z_index() const noexcept override { return content_->z_index(); }
     bool is_spacer() const noexcept override { return content_->is_spacer(); }
@@ -593,6 +623,7 @@ public:
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
     Rect paint_extent(Rect bounds) const override;
     bool drawing_moves() const override { return offset_x_.animating() || offset_y_.animating(); }
+    Point content_offset() const override { return {offset_x_.current(), offset_y_.current()}; }
 
     float layout_priority() const noexcept override { return content_->layout_priority(); }
     float z_index() const noexcept override { return z_index_.value_or(content_->z_index()); }

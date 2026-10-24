@@ -36,6 +36,8 @@ struct Color {
                 a + (other.a - a) * amount};
     }
 
+    friend constexpr bool operator==(const Color&, const Color&) = default;
+
     static const Color black;
     static const Color white;
     static const Color clear;

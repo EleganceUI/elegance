@@ -103,6 +103,17 @@ void Element::place(Point position, ProposedSize proposal) {
         target == frame_.target() && last_proposal_ == proposal) {
         return;
     }
+    // How far it moved, for exiting children to follow. A size change moves the origin too (an
+    // emptied If in an overlay shrinks toward its alignment), but that isn't movement: then it
+    // moved as far as its parent did (placed first, in the same layout).
+    const Rect previous = frame_.target();
+    if (!placed_) {
+        moved_by_ = {};
+    } else if (previous.width == target.width && previous.height == target.height) {
+        moved_by_ = {target.x - previous.x, target.y - previous.y};
+    } else {
+        moved_by_ = parent_ ? parent_->moved_by_ : Point{};
+    }
     if (!placed_ || target != frame_.target()) {
         // An element appearing for the first time takes its frame at once; afterwards, a layout
         // change caused by an animated update eases there.
@@ -121,6 +132,18 @@ void Element::place(Point position, ProposedSize proposal) {
     needs_arrange_ = false; // first: an invalidation during arrange holds for the next layout
     arrange(target, proposal);
     update_paint_bounds();
+}
+
+void Element::move_exiting(const std::vector<Element*>& exiting) {
+    if (moved_by_.x == 0 && moved_by_.y == 0) {
+        return;
+    }
+    for (Element* child : exiting) {
+        if (child->last_proposal_) {
+            const Rect target = child->frame_.target();
+            child->place({target.x + moved_by_.x, target.y + moved_by_.y}, *child->last_proposal_);
+        }
+    }
 }
 
 void Element::update_paint_bounds() {
@@ -472,9 +495,12 @@ Size LayoutElement::measure(ProposedSize proposal) {
 }
 
 void LayoutElement::arrange(Rect bounds, ProposedSize proposal) {
+    std::vector<Element*> exiting;
     for (const auto& child : children_) {
         child->prune_exiting();
+        child->collect_exiting(exiting);
     }
+    move_exiting(exiting);
     layout_->cached_place_children(bounds, proposal, handles_, cache_);
 }
 
@@ -524,13 +550,25 @@ void TransitionElement::paint_impl(DisplayList& list) const {
         content_->paint(list);
         return;
     }
-    const Rect bounds = frame();
+    Rect bounds = frame();
+    if (content_->flattened_by_layouts()) {
+        // Never placed itself: transform about what the inner If/ForEach shows.
+        std::vector<Element*> shown;
+        content_->collect_layout_children(shown);
+        for (std::size_t i = 0; i < shown.size(); ++i) {
+            bounds = i == 0 ? shown[i]->frame() : union_of(bounds, shown[i]->frame());
+        }
+    }
     const Transition::Pose pose = transition_.pose(progress, removing_, bounds.size());
     DisplayList content;
     content.scale = list.scale;
     content_->paint(content);
     list.animating |= content.animating;
-    transform(content.commands, pose.x, pose.y, pose.scale, bounds.center());
+    // Scaled about the middle of what's drawn: content inside .offset is drawn away from this
+    // frame (a window placed by its offset grows from its own middle, not the desktop's corner).
+    const Point offset = content_->content_offset();
+    const Point center{bounds.center().x + offset.x, bounds.center().y + offset.y};
+    transform(content.commands, pose.x, pose.y, pose.scale, center);
     append_faded(list, std::move(content), pose.opacity);
 }
 

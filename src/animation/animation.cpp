@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <utility>
 
 namespace elg {
 
@@ -58,6 +59,14 @@ Animation Animation::spring(double response, double damping_fraction) {
     return {Curve::spring, std::max(response, 0.01), std::max(damping_fraction, 0.01)};
 }
 
+Animation Animation::custom(std::function<double(double)> curve, double duration) {
+    Animation animation{Curve::custom, std::max(duration, 0.0), 0};
+    if (curve) {
+        animation.custom_ = std::make_shared<const std::function<double(double)>>(std::move(curve));
+    }
+    return animation;
+}
+
 Animation Animation::delay(double seconds) const {
     Animation copy = *this;
     copy.delay_ += std::max(seconds, 0.0);
@@ -79,6 +88,10 @@ double Animation::progress(double seconds) const noexcept {
         case Curve::ease_in: return cubic_bezier(0.42, 0, 1, 1, x);
         case Curve::ease_out: return cubic_bezier(0, 0, 0.58, 1, x);
         case Curve::ease_in_out: return cubic_bezier(0.42, 0, 0.58, 1, x);
+        case Curve::custom: {
+            const double y = custom_ ? (*custom_)(x) : x;
+            return std::isfinite(y) ? y : x;
+        }
         case Curve::spring: break;
         }
         return x;

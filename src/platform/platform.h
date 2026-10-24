@@ -79,7 +79,7 @@ struct Event {
     // Text events: the text, and for editing (IME composition) the caret in bytes.
     std::string text;
     std::size_t text_cursor = 0;
-    // Key events (modifiers also for pointer buttons).
+    // Key events (modifiers also for pointer buttons and the wheel).
     Key key = Key::unknown;
     KeyModifiers modifiers = KeyModifiers::none;
     bool repeat = false;
@@ -177,6 +177,12 @@ enum class SystemCursor {
     text,              // the I-beam, over text
     resize_horizontal, // a split view's divider between side-by-side panes
     resize_vertical,
+    pointer,           // a hand, over links
+    crosshair,
+    move,
+    resize_nwse, // corner handles: top-left to bottom-right
+    resize_nesw,
+    not_allowed,
 };
 void set_cursor(SystemCursor cursor);
 

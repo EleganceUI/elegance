@@ -66,6 +66,65 @@ View View::frame(FlexibleFrameOptions options) const {
     return modifier(FlexibleFrameModifier(options));
 }
 
+namespace {
+
+// .frame(Prop<Size>): a frame whose size is bound to state.
+class BoundFrameElement final : public detail::Element {
+public:
+    BoundFrameElement(Alignment alignment, std::unique_ptr<Element> content)
+        : alignment_(alignment), content_(std::move(content)) {
+        adopt(*content_);
+    }
+
+    void set_size(Size size) {
+        if (size.width != size_.width || size.height != size_.height) {
+            size_ = size;
+            invalidate_layout();
+        }
+    }
+    void inspect(detail::Inspection& out) const override { out.name = "Frame"; }
+    float layout_priority() const noexcept override { return content_->layout_priority(); }
+    float z_index() const noexcept override { return content_->z_index(); }
+    void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
+
+protected:
+    Size measure(ProposedSize) override { return size_; }
+    void arrange(Rect bounds, ProposedSize) override {
+        const ProposedSize offer{size_.width, size_.height};
+        content_->place(aligned_position(bounds, content_->size_that_fits(offer), alignment_), offer);
+    }
+    void paint_impl(detail::DisplayList& list) const override { content_->paint(list); }
+    bool hit_impl(Point point, std::vector<Element*>& path) override { return content_->hit_test(point, path); }
+
+private:
+    Alignment alignment_;
+    Size size_;
+    std::unique_ptr<Element> content_;
+};
+
+class BoundFrameNode final : public detail::ViewNode {
+public:
+    BoundFrameNode(View content, Prop<Size> size, Alignment alignment)
+        : content_(std::move(content)), size_(std::move(size)), alignment_(alignment) {}
+    std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
+        auto element = std::make_unique<BoundFrameElement>(alignment_, detail::lower(content_, context));
+        BoundFrameElement* const target = element.get();
+        detail::bind(size_, context, [target](Size size) { target->set_size(size); });
+        return element;
+    }
+
+private:
+    View content_;
+    Prop<Size> size_;
+    Alignment alignment_;
+};
+
+} // namespace
+
+View View::frame(Prop<Size> size, Alignment alignment) const {
+    return ViewAccess::make(std::make_shared<const BoundFrameNode>(*this, std::move(size), alignment));
+}
+
 View View::fixed_size(bool horizontal, bool vertical) const {
     return modifier(FixedSizeModifier(horizontal, vertical));
 }
@@ -740,8 +799,23 @@ std::unique_ptr<Element> SpacerNode::lower(const LowerContext& context) const {
     return std::make_unique<SpacerElement>(min_length_, context.spacer_axis);
 }
 
-std::unique_ptr<Element> CanvasNode::lower(const LowerContext&) const {
-    return std::make_unique<CanvasElement>(draw_);
+std::unique_ptr<Element> CanvasNode::lower(const LowerContext& context) const {
+    auto element = std::make_unique<CanvasElement>(draw_);
+    // The canvas redraws when state its drawing reads changes: an effect runs the drawing once
+    // (into nothing) to see what it reads, and asks for a frame whenever that changes.
+    CanvasElement* const target = element.get();
+    effect([draw = draw_, target, needs_frame = context.needs_frame, first = std::make_shared<bool>(true)] {
+        if (!draw) {
+            return;
+        }
+        DisplayList scratch;
+        GraphicsContext graphics(scratch, target->frame(), 1);
+        draw(graphics);
+        if (!std::exchange(*first, false) && needs_frame) {
+            *needs_frame = true;
+        }
+    });
+    return element;
 }
 
 std::unique_ptr<Element> DeferredNode::lower(const LowerContext& context) const {

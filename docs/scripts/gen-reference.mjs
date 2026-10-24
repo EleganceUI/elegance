@@ -31,6 +31,7 @@ const headers = [
 	['prop.h', 'Reactive arguments.'],
 	['environment.h', 'Environment values and keys.'],
 	['layout.h', 'The layout protocol, cached layouts, and the stack layouts.'],
+	['grid.h', 'Grids: VGrid and HGrid tracks, and Grid tables of GridRows.'],
 	['modifier.h', 'The modifier protocols, for custom modifiers.'],
 	['modifiers/layout.h', 'Built-in layout modifiers.'],
 	['modifiers/decoration.h', 'Built-in decoration modifiers.'],

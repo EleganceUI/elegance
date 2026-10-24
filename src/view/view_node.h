@@ -23,6 +23,7 @@
 
 #include <functional>
 #include <memory>
+#include <utility>
 #include <optional>
 #include <string>
 #include <vector>
@@ -89,13 +90,18 @@ void bind(const Prop<T>& prop, const LowerContext& context, Apply apply) {
     }
     // Environment-dependent props (e.g. ThemeColor) resolve against the environment where they're
     // used; reading it is tracked, so a theme or color scheme change re-applies them.
+    // The first value is where a new element starts, never animated: a view mounted inside
+    // with_animation (a window opening) starts at its offset instead of sliding there from 0.
     effect([prop, apply = std::move(apply), environment = context.environment, needs_frame = context.needs_frame,
-            implicit = context.implicit_animation] {
+            implicit = context.implicit_animation, first = std::make_shared<bool>(true)] {
         T value = prop.get(environment);
         if constexpr (animatable) {
             const Animation* animation = current_animation();
             if (!animation && implicit && implicit->fired()) {
                 animation = &implicit->animation;
+            }
+            if (std::exchange(*first, false)) {
+                animation = nullptr;
             }
             apply(std::move(value), animation);
         } else {

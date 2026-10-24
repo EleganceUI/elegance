@@ -38,7 +38,7 @@ public:
     // Focuses an element (no ring), e.g. a menu item under the pointer.
     bool focus(Element* element) { return focus_->focus(element, false); }
     bool text_input(const TextInputEvent& event);
-    bool scroll(Point location, float dx, float dy, bool precise);
+    bool scroll(Point location, float dx, float dy, bool precise, KeyModifiers modifiers = KeyModifiers::none);
     // Whether pressing at `location` should move the window: the innermost handler there is a
     // .window_drag_area() (controls inside one take their clicks).
     bool drags_window_at(Point location);
@@ -75,6 +75,12 @@ private:
     Element* captured_ = nullptr;
     Point last_location_;
     bool pointer_inside_ = false;
+    // Wheel latching: a scroll gesture stays with the element that took its first event (a page
+    // scrolled past a horizontal shelf keeps scrolling) until the wheel pauses or the pointer
+    // moves.
+    Element* wheel_latched_ = nullptr;
+    double last_wheel_ = 0;     // when the last wheel event came
+    Point last_wheel_location_; // where
 };
 
 } // namespace elg::detail

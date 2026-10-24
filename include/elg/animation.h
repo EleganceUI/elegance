@@ -18,6 +18,7 @@
 #include <elg/reactive.h>
 #include <elg/view.h>
 
+#include <functional>
 #include <memory>
 
 namespace elg {
@@ -35,6 +36,11 @@ public:
     static Animation spring(double response = 0.5, double damping_fraction = 0.825);
     // A gentle spring without overshoot.
     static Animation smooth(double duration = 0.4) { return spring(duration, 1.0); }
+    // Your own curve: `curve` gets the fraction of `duration` elapsed (0 to 1) and returns the
+    // progress (0 at the start, 1 at the target). It may go past 0 or 1 to overshoot; the
+    // animation lands on the target once `duration` is up regardless.
+    //   Animation::custom([](double t) { return t * t * t; }, 0.3)
+    static Animation custom(std::function<double(double)> curve, double duration = 0.25);
 
     // Waits before starting.
     Animation delay(double seconds) const;
@@ -44,7 +50,7 @@ public:
     bool finished(double seconds) const noexcept;
 
 private:
-    enum class Curve { linear, ease_in, ease_out, ease_in_out, spring };
+    enum class Curve { linear, ease_in, ease_out, ease_in_out, spring, custom };
     Animation(Curve curve, double duration, double damping) noexcept
         : curve_(curve), duration_(duration), damping_(damping) {}
 
@@ -52,6 +58,9 @@ private:
     double duration_; // seconds; a spring's response
     double damping_;  // springs only
     double delay_ = 0;
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::shared_ptr<const std::function<double(double)>> custom_; // Curve::custom only
+    ELG_PRIVATE_MEMBERS_END
 };
 
 // Runs `changes` in an animated transaction: every property change that the writes inside cause

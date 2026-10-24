@@ -14,6 +14,27 @@ namespace elg {
 GraphicsContext::GraphicsContext(detail::DisplayList& list, Rect bounds, float scale) noexcept
     : list_(&list), bounds_(bounds), scale_(scale) {}
 
+GraphicsContext::~GraphicsContext() {
+    while (clips_ > 0) {
+        pop_clip();
+    }
+}
+
+void GraphicsContext::push_clip(Rect rect, CornerRadii radii) {
+    rect.x += bounds_.x;
+    rect.y += bounds_.y;
+    list_->commands.push_back(detail::PushClipCommand{rect, radii});
+    ++clips_;
+}
+
+void GraphicsContext::pop_clip() {
+    if (clips_ == 0) {
+        return;
+    }
+    list_->commands.push_back(detail::PopClipCommand{});
+    --clips_;
+}
+
 Size GraphicsContext::size() const noexcept {
     return bounds_.size();
 }

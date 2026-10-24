@@ -63,6 +63,20 @@ constexpr KeyModifiers primary_modifier() noexcept {
 #endif
 }
 
+// The mouse pointer's shape (set_cursor()).
+enum class Cursor {
+    arrow,
+    text,     // the I-beam
+    pointer,  // a hand, over links
+    crosshair,
+    move,
+    resize_horizontal,
+    resize_vertical,
+    resize_nwse, // corners: top-left to bottom-right
+    resize_nesw, // corners: top-right to bottom-left
+    not_allowed,
+};
+
 // A mouse wheel or trackpad scroll. Deltas are in points, positive toward the end of the content
 // (wheel down: positive dy).
 struct ScrollEvent {
@@ -70,6 +84,7 @@ struct ScrollEvent {
     float dx = 0;
     float dy = 0;
     bool precise = false; // trackpad-style fine deltas (apply directly) rather than wheel notches
+    KeyModifiers modifiers = KeyModifiers::none; // held while scrolling (Ctrl+wheel: zoom)
 };
 
 // Text from the keyboard or an input method, for views that accept text (TextField).
@@ -99,6 +114,10 @@ struct PointerEvent {
         up,
         move,   // only sent to the handler that captured the pointer
         cancel, // the pointer was lost (e.g. the window closed); reset any pressed state
+        // The pointer moved over the view while nothing has it captured (no button held on
+        // something). Innermost first, until one consumes it: for highlights and cursors that
+        // depend on where the pointer is.
+        hover,
     };
 
     Kind kind = Kind::move;

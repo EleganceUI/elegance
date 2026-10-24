@@ -993,9 +993,14 @@ int App::run() {
             if (auto it = find_window(event.window_id); it != windows.end()) {
                 constexpr float kPointsPerNotch = 48;
                 LiveWindow& live = **it;
-                if (live.events.scroll(live.window.to_logical(event.x, event.y),
-                                                 event.wheel_x * kPointsPerNotch, -event.wheel_y * kPointsPerNotch,
-                                                 event.precise)) {
+                float dx = event.wheel_x * kPointsPerNotch;
+                float dy = -event.wheel_y * kPointsPerNotch;
+                // Shift turns a plain wheel sideways, as in browsers.
+                if (has(event.modifiers, KeyModifiers::shift) && dx == 0) {
+                    std::swap(dx, dy);
+                }
+                if (live.events.scroll(live.window.to_logical(event.x, event.y), dx, dy, event.precise,
+                                       event.modifiers)) {
                     live.dirty = true;
                 }
             }
@@ -1215,6 +1220,22 @@ int App::run() {
         }
     }
     return 0;
+}
+
+void set_cursor(Cursor cursor) {
+    detail::check_ui_thread();
+    switch (cursor) {
+    case Cursor::arrow: platform::set_cursor(platform::SystemCursor::arrow); break;
+    case Cursor::text: platform::set_cursor(platform::SystemCursor::text); break;
+    case Cursor::pointer: platform::set_cursor(platform::SystemCursor::pointer); break;
+    case Cursor::crosshair: platform::set_cursor(platform::SystemCursor::crosshair); break;
+    case Cursor::move: platform::set_cursor(platform::SystemCursor::move); break;
+    case Cursor::resize_horizontal: platform::set_cursor(platform::SystemCursor::resize_horizontal); break;
+    case Cursor::resize_vertical: platform::set_cursor(platform::SystemCursor::resize_vertical); break;
+    case Cursor::resize_nwse: platform::set_cursor(platform::SystemCursor::resize_nwse); break;
+    case Cursor::resize_nesw: platform::set_cursor(platform::SystemCursor::resize_nesw); break;
+    case Cursor::not_allowed: platform::set_cursor(platform::SystemCursor::not_allowed); break;
+    }
 }
 
 const char* version() {

@@ -288,6 +288,10 @@ public:
     ELG_API View frame(FrameOptions options) const;
     ELG_API View frame(float width, float height, Alignment alignment = Alignment::center) const;
     ELG_API View frame(FlexibleFrameOptions options) const;
+    // A fixed size that follows state, like frame(width, height) but laid out again whenever the
+    // size changes (a panel or window resized by dragging).
+    //   content.frame([=] { return Size{width(), height()}; })
+    ELG_API View frame(Prop<Size> size, Alignment alignment = Alignment::center) const;
 
     // Proposes nothing on the given axes, so the content takes its ideal size.
     ELG_API View fixed_size(bool horizontal = true, bool vertical = true) const;
@@ -307,6 +311,15 @@ public:
     // Moves the content when drawn, without affecting layout (and animates the move during
     // animated updates). Reactive: .offset([=] { return open() ? 0.f : -200.f; }, 0)
     ELG_API View offset(Prop<float> x, Prop<float> y) const;
+
+    // --- Grids (elg/grid.h) ---
+
+    // A Grid cell that spans `count` columns.
+    ELG_API View grid_cell_columns(int count) const;
+    // Where this view sits in its grid cell, instead of its row's, column's, or grid's alignment.
+    ELG_API View grid_cell_alignment(Alignment alignment) const;
+    // The horizontal alignment of every cell in this cell's Grid column.
+    ELG_API View grid_column_alignment(HorizontalAlignment alignment) const;
 
     // --- Decoration (elg/modifiers/decoration.h) ---
 

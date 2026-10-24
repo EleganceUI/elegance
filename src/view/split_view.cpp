@@ -303,9 +303,12 @@ Size SplitElement::measure(ProposedSize proposal) {
 }
 
 void SplitElement::arrange(Rect bounds, ProposedSize) {
+    std::vector<Element*> exiting;
     for (const auto& child : children_) {
         child->prune_exiting();
+        child->collect_exiting(exiting);
     }
+    move_exiting(exiting);
     across_ = across(bounds.size());
     // A pane prefers its ideal size when it appears (later content changes don't resize it), even
     // if it can't have it yet.

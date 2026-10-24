@@ -21,6 +21,7 @@
 #include <elg/gradient.h>
 #include <elg/image.h>
 #include <elg/graphics_context.h>
+#include <elg/grid.h>
 #include <elg/hot_reload.h>
 #include <elg/http.h>
 #include <elg/websocket.h>

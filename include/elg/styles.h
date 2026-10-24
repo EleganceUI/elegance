@@ -53,7 +53,7 @@ public:
     View make_body(const ButtonConfiguration& button) const override;
 };
 
-// Just the label, in the tint, dimmed while pressed.
+// Just the label, in the colors around it (not the tint), dimmed while pressed or disabled.
 class ELG_API PlainButtonStyle final : public ButtonStyle {
 public:
     View make_body(const ButtonConfiguration& button) const override;

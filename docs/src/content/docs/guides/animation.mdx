@@ -54,6 +54,27 @@ Durations are in seconds. A spring's `response` is roughly the time to reach the
 `damping_fraction` controls the bounce: 1 settles without overshooting, lower values bounce. The
 parameters mean the same as SwiftUI's.
 
+### Custom curves
+
+`Animation::custom` takes your own easing function. It's called with the fraction of the duration
+that has elapsed, from 0 to 1, and returns how far along the animation is: 0 at the start, 1 at
+the target.
+
+```cpp
+// Ease-out cubic over 0.3 s
+Animation::custom([](double t) { return 1 - std::pow(1 - t, 3); }, 0.3)
+
+// Back-out: overshoots a little before settling
+Animation::custom([](double t) {
+    const double c = 1.70158;
+    return 1 + (c + 1) * std::pow(t - 1, 3) + c * std::pow(t - 1, 2);
+}, 0.4)
+```
+
+The curve can return values below 0 or above 1 to undershoot or overshoot. Once the duration is up
+the value lands on the target, whatever the curve returns at 1. The curve runs every frame on the UI
+thread, so keep it cheap and don't throw from it.
+
 A change made while an animation is running starts from wherever the value is at that moment, so
 nothing jumps.
 

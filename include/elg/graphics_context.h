@@ -23,6 +23,10 @@ class ELG_API GraphicsContext {
 public:
     // Internal: created by the framework for each draw.
     GraphicsContext(detail::DisplayList& list, Rect bounds, float scale) noexcept;
+    // Closes any clips still pushed.
+    ~GraphicsContext();
+    GraphicsContext(const GraphicsContext&) = delete;
+    GraphicsContext& operator=(const GraphicsContext&) = delete;
 
     // Drawable area in logical points.
     Size size() const noexcept;
@@ -51,10 +55,16 @@ public:
     void fill_path(const Path& path, ShapeStyle style, FillRule rule = FillRule::non_zero);
     void stroke_path(const Path& path, Color color, const StrokeStyle& style);
 
+    // Drawing until the matching pop_clip() shows only inside `rect` (with rounded corners).
+    // Clips nest; ones left pushed are popped when the drawing ends.
+    void push_clip(Rect rect, CornerRadii radii = {});
+    void pop_clip();
+
 private:
     detail::DisplayList* list_;
     Rect bounds_;
     float scale_;
+    int clips_ = 0;
 };
 
 } // namespace elg

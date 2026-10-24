@@ -62,6 +62,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         view/event_dispatcher.cpp
         view/events.cpp
         view/fragment.cpp
+        view/grid_layout.cpp
         view/hot_reload.cpp
         view/image.cpp
         view/accessibility.cpp

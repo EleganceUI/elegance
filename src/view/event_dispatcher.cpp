@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <functional>
 #include <unordered_set>
 
@@ -106,6 +107,21 @@ std::vector<Element*> EventDispatcher::path_at(Point location) {
 
 namespace {
 
+// The event as `element` sees it: in its layout's coordinates. Content inside .offset is drawn
+// (and hit) away from where it's laid out, so the pointer is moved back by those offsets.
+PointerEvent local_event(PointerEvent event, const Element& element) {
+    const Rect drawn = element.drawn_frame();
+    const Rect laid_out = element.frame();
+    event.location.x -= drawn.x - laid_out.x;
+    event.location.y -= drawn.y - laid_out.y;
+    return event;
+}
+
+// Delivers `event` to `element`'s handler, in its coordinates.
+EventResult deliver(const PointerEvent& event, Element& element) {
+    return element.event_handler()->pointer(local_event(event, element), element.frame());
+}
+
 double now_seconds() {
     return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
 }
@@ -181,7 +197,7 @@ bool EventDispatcher::bubble(const std::vector<Element*>& path, const PointerEve
         if (!handler) {
             continue;
         }
-        const EventResult result = handler->pointer(event, (*it)->frame());
+        const EventResult result = deliver(event, **it);
         redraw |= result.redraw;
         if (result.consumed) {
             if (event.kind == PointerEvent::Kind::down) {
@@ -194,12 +210,23 @@ bool EventDispatcher::bubble(const std::vector<Element*>& path, const PointerEve
 }
 
 bool EventDispatcher::pointer_moved(Point location) {
+    // Moving the mouse ends a wheel gesture, so the next one goes to what's under it. Ignored
+    // right after a wheel event, when a hand on the wheel jiggles the mouse.
+    constexpr double kWheelMoveGrace = 0.1;
+    constexpr float kWheelMoveSlop = 4;
+    if (wheel_latched_ && now_seconds() - last_wheel_ > kWheelMoveGrace &&
+        std::hypot(location.x - last_wheel_location_.x, location.y - last_wheel_location_.y) > kWheelMoveSlop) {
+        wheel_latched_ = nullptr;
+    }
     last_location_ = location;
     pointer_inside_ = true;
-    bool redraw = update_hover(path_at(location));
+    const std::vector<Element*> path = path_at(location);
+    bool redraw = update_hover(path);
     if (captured_) {
         const PointerEvent event{PointerEvent::Kind::move, location};
-        redraw |= captured_->event_handler()->pointer(event, captured_->frame()).redraw;
+        redraw |= deliver(event, *captured_).redraw;
+    } else {
+        redraw |= bubble(path, PointerEvent{PointerEvent::Kind::hover, location});
     }
     return redraw;
 }
@@ -228,7 +255,7 @@ bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, Mo
     }
     if (kind == PointerEvent::Kind::up && captured_) {
         Element* target = std::exchange(captured_, nullptr);
-        return redraw | target->event_handler()->pointer(event, target->frame()).redraw;
+        return redraw | deliver(event, *target).redraw;
     }
     return redraw | bubble(path, event);
 }
@@ -316,17 +343,38 @@ bool EventDispatcher::move_focus(bool forward) {
     return redraw;
 }
 
-bool EventDispatcher::scroll(Point location, float dx, float dy, bool precise) {
+bool EventDispatcher::scroll(Point location, float dx, float dy, bool precise, KeyModifiers modifiers) {
+    // A gesture ends after this long without wheel events.
+    constexpr double kWheelGesturePause = 0.5;
     last_location_ = location;
     pointer_inside_ = true;
-    const ScrollEvent event{location, dx, dy, precise};
-    const std::vector<Element*> path = path_at(location);
+    const ScrollEvent event{location, dx, dy, precise, modifiers};
+    const double now = now_seconds();
+    if (now - last_wheel_ > kWheelGesturePause) {
+        wheel_latched_ = nullptr;
+    }
+    last_wheel_ = now;
+    last_wheel_location_ = location;
+
+    // Latched: to that element and its ancestors, whatever is under the pointer now. Otherwise
+    // the innermost element under the pointer first, and whichever takes it is latched.
+    std::vector<Element*> path;
+    if (wheel_latched_) {
+        for (Element* element = wheel_latched_; element; element = element->parent()) {
+            path.insert(path.begin(), element);
+        }
+    } else {
+        path = path_at(location);
+    }
     bool redraw = false;
     for (auto it = path.rbegin(); it != path.rend(); ++it) {
         if (EventHandler* handler = (*it)->event_handler()) {
             const EventResult result = handler->scroll(event);
             redraw |= result.redraw;
             if (result.consumed) {
+                if (!wheel_latched_) {
+                    wheel_latched_ = *it;
+                }
                 break;
             }
         }
@@ -375,6 +423,9 @@ bool EventDispatcher::revalidate() {
     std::erase_if(hovers_, [&](const Hover& hover) { return !alive.contains(hover.element); });
     if (captured_ && !alive.contains(captured_)) {
         captured_ = nullptr;
+    }
+    if (wheel_latched_ && !alive.contains(wheel_latched_)) {
+        wheel_latched_ = nullptr;
     }
     return pointer_inside_ ? update_hover(path_at(last_location_)) : false;
 }

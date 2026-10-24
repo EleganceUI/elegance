@@ -44,6 +44,7 @@ export default defineConfig({
 						{ label: 'Layout', slug: 'guides/layout' },
 						{ label: 'State and data flow', slug: 'guides/state' },
 						{ label: 'Lists and dynamic content', slug: 'guides/lists' },
+						{ label: 'Grids', slug: 'guides/grids' },
 						{ label: 'Text, fonts, and icons', slug: 'guides/text-and-icons' },
 						{ label: 'Controls', slug: 'guides/controls' },
 						{ label: 'Colors and themes', slug: 'guides/themes' },

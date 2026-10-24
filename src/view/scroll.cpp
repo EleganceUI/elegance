@@ -210,10 +210,16 @@ void ScrollElement::fade_indicators() {
 EventResult ScrollElement::scroll(const ScrollEvent& event) {
     float dx = event.dx;
     float dy = event.dy;
-    if (options_.axes == ScrollAxes::horizontal && dx == 0) {
-        std::swap(dx, dy); // a plain wheel scrolls a horizontal-only view
+    // A mouse wheel's notches scroll a horizontal-only view sideways. It only gets them when a
+    // gesture starts over it: the dispatcher latches gestures, so scrolling a page past it keeps
+    // scrolling the page. Trackpads scroll sideways themselves; their vertical part goes on.
+    if (options_.axes == ScrollAxes::horizontal && dx == 0 && !event.precise) {
+        std::swap(dx, dy);
     }
-    if (!scroll_to({target_.x + dx, target_.y + dy}, event.precise ? nullptr : &wheel_animation())) {
+    dx = scrolls(Axis::horizontal) ? dx : 0.f;
+    dy = scrolls(Axis::vertical) ? dy : 0.f;
+    if ((dx == 0 && dy == 0) ||
+        !scroll_to({target_.x + dx, target_.y + dy}, event.precise ? nullptr : &wheel_animation())) {
         return {}; // at the end: an outer scroll view may take it
     }
     show_indicators();

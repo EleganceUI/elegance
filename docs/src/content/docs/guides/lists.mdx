@@ -96,6 +96,11 @@ ScrollView({.axes = ScrollAxes::horizontal, .shows_indicators = false}, HStack(c
 The scroll view takes all the space it's offered and gives its content its ideal size along the
 scroll axes. Focusing a view with Tab scrolls it into sight.
 
+Wheel scrolling stays with the scroll view where it started until the wheel pauses for half a
+second or the mouse moves. Scrolling a page down past a horizontal shelf keeps scrolling the
+page; stopping over the shelf and scrolling again scrolls it sideways (a mouse wheel's vertical
+notches scroll a horizontal-only view). Shift+wheel always scrolls sideways.
+
 ### Scrolling from code
 
 Create a `ScrollPosition`, pass it in the options, and call it from event handlers:

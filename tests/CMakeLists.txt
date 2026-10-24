@@ -12,6 +12,7 @@ add_executable(elegence_tests
         capture_tests.cpp
         desktop_tests.cpp
         environment_tests.cpp
+        grid_tests.cpp
         http_tests.cpp
         image_tests.cpp
         path_tests.cpp

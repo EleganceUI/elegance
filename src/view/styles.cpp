@@ -140,12 +140,12 @@ View BorderedButtonStyle::make_body(const ButtonConfiguration& button) const {
 }
 
 View PlainButtonStyle::make_body(const ButtonConfiguration& button) const {
-    const auto tint = Environment<TintKey>();
-    return button.label.foreground_style([=] {
+    // As SwiftUI's .plain: no tint, the label keeps the colors it would have anyway.
+    return button.label.opacity([=] {
         if (!button.is_enabled()) {
-            return tint().opacity(0.4f);
+            return 0.4f;
         }
-        return button.is_pressed() ? tint().opacity(0.6f) : tint();
+        return button.is_pressed() ? 0.6f : 1.f;
     });
 }
 
