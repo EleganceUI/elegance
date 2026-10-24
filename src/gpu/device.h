@@ -11,10 +11,24 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 
 namespace elg::detail::gpu {
+
+// A retained snapshot of the renderer's exact Dawn device, not just its adapter.
+// Lock mutex while checking active and creating producer resources; shutdown uses the same
+// lock before destroying the device. If also locking a source, lock the source first; shutdown
+// never locks sources. Device/queue references are immutable after publication; only active
+// changes. Retaining this keeps handles alive, not the renderer.
+struct RenderDevice {
+    std::mutex mutex;
+    bool active = true;
+    wgpu::Device device;
+    wgpu::Queue queue;
+};
+std::shared_ptr<RenderDevice> render_device();
 
 // The adapter (GPU), the device and its queue. Owned by the render thread.
 // ELG_GPU_BACKEND=d3d12|d3d11|vulkan|metal|opengl picks the API Dawn runs on; by default it picks
@@ -53,10 +67,11 @@ private:
     void check() const;
 
     const Instance& instance_;
-    std::unique_ptr<Errors> errors_;
+    std::shared_ptr<Errors> errors_;
     wgpu::Adapter adapter_;
     wgpu::Device device_;
     wgpu::Queue queue_;
+    std::shared_ptr<RenderDevice> published_;
     std::string name_;
     wgpu::BackendType backend_ = wgpu::BackendType::Undefined;
     std::optional<std::array<std::uint8_t, 8>> luid_;

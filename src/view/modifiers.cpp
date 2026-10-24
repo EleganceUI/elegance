@@ -10,6 +10,7 @@
 #include <elg/shapes.h>
 
 #include <algorithm>
+#include <cmath>
 
 namespace elg {
 

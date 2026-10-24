@@ -29,7 +29,9 @@ function(elg_write_link_manifest target file)
         if (item MATCHES "^\\$<LINK_LIBRARY:([A-Za-z_]+),(.+)>$")
             set(feature "${CMAKE_MATCH_1}")
             string(REPLACE "," ";" wrapped "${CMAKE_MATCH_2}")
-            if (feature STREQUAL "FRAMEWORK")
+            # The supported macOS deployment target (13+) provides these frameworks, so
+                        # external consumers can link optional SDL frameworks normally as well.
+                        if (feature STREQUAL "FRAMEWORK" OR feature STREQUAL "WEAK_FRAMEWORK")
                 foreach (framework IN LISTS wrapped)
                     # A path (/System/Library/Frameworks/X.framework) links by its name.
                     if (framework MATCHES "([^/]+)\\.framework/?$")

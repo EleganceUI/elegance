@@ -5,34 +5,19 @@
 #ifndef ELG_GPU_IMAGE_H
 #define ELG_GPU_IMAGE_H
 
-// Images the app renders with its own GPU code (OpenGL, Vulkan, Direct3D), shown without copies
-// (design.md §13.3).
-//
-//   const GpuImage image({.width = 512, .height = 512, .origin = GpuImage::Origin::bottom_left});
-//   GpuImageView(image)                                   // in the UI
-//
-//   // On the app's render thread, every frame:
-//   if (const auto frame = image.begin_frame()) {
-//       // Import frame->texture once per frame->buffer, draw into it, then signal frame->fence
-//       // to frame->fence_value from the same GPU queue.
-//       image.end_frame(*frame);
-//   }
-//
-// The image has a few buffers, so the app draws the next frame while the renderer shows the last.
-// Windows shares them as Direct3D 11 textures (DXGI_FORMAT_R8G8B8A8_UNORM, gamma-encoded like
-// sRGB) and a shared D3D fence, which OpenGL (GL_EXT_memory_object_win32,
-// GL_EXT_semaphore_win32), Vulkan (VK_KHR_external_memory_win32, external semaphores), and
-// Direct3D 11/12 can all import. Other platforms don't support it yet: begin_frame() gives
-// nothing.
-
 #include <elg/export.h>
 #include <elg/geometry.h>
 #include <elg/view.h>
 
-#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
+
+// WebGPU's opaque C handles. No public dependency on Dawn's C++ wrapper. Include the
+// matching Dawn webgpu/webgpu.h when using these handles with the WebGPU C API.
+typedef struct WGPUDeviceImpl* WGPUDevice;
+typedef struct WGPUQueueImpl* WGPUQueue;
+typedef struct WGPUTextureImpl* WGPUTexture;
 
 namespace elg {
 
@@ -41,15 +26,21 @@ class GpuImageSource;
 class VideoSource;
 } // namespace detail
 
+// Images produced with the renderer's Dawn/WebGPU device, sampled directly without native
+// handle imports or CPU readback, on every supported Dawn backend. This is NOT a portable
+// sharing API for another WebGPU device, wgpu-native, OpenGL, Vulkan or Direct3D resources.
+// Use the same Dawn runtime/ABI as Elegance; do not install a different Dawn proc table.
+//
+// On one producer thread:
+//   if (const auto frame = image.begin_frame()) {
+//       // Encode writes to frame->texture using frame->device, then submit all commands
+//       // to frame->queue BEFORE publishing (queue writes must also precede end_frame).
+//       image.end_frame(*frame);
+//   }
+// Queue submission order, not CPU/GPU completion, synchronizes producer and renderer.
 class ELG_API GpuImage {
 public:
-    // Where the app's first row goes. OpenGL draws bottom row first.
     enum class Origin { top_left, bottom_left };
-    // How end_frame() learns the drawing is done.
-    enum class Sync {
-        fence,    // the app signals the frame's fence to fence_value (GPU to GPU, no waiting)
-        finished, // the app's GPU work on it has completed (e.g. after glFinish)
-    };
     static constexpr std::uint32_t kBuffers = 3;
 
     struct Options {
@@ -58,27 +49,46 @@ public:
         Origin origin = Origin::top_left;
     };
 
-    // A buffer to draw the next frame into.
+    // One exclusive write reservation. Copying Frame does not create another reservation.
     struct Frame {
-        std::uint32_t buffer = 0; // 0 ... kBuffers - 1. Its handles never change: import each once.
+        std::uint32_t buffer = 0; // 0 ... kBuffers - 1; stable texture per image/buffer
         std::uint32_t width = 0;
         std::uint32_t height = 0;
-        // Windows: NT handles the image owns (don't close them).
-        void* texture = nullptr; // ID3D11Texture2D: GL_HANDLE_TYPE_D3D11_IMAGE_EXT, VK_..._D3D11_TEXTURE_BIT
-        void* fence = nullptr;   // the image's fence (the same for every frame): GL_HANDLE_TYPE_D3D12_FENCE_EXT,
-                                 // VK_..._D3D12_FENCE_BIT
-        std::uint64_t fence_value = 0;              // Sync::fence: signal the fence to this when drawn
-        std::array<std::uint8_t, 8> adapter_luid{}; // the GPU the renderer uses: draw on the same one
+        WGPUDevice device = nullptr;
+        WGPUQueue queue = nullptr;
+        WGPUTexture texture = nullptr;
+        std::uint64_t sequence = 0; // opaque reservation token; return unchanged
     };
 
     explicit GpuImage(Options options);
 
-    // A buffer the renderer isn't reading, once the renderer's GPU is known (from the first frame
-    // of a window), or nothing: not yet, or not supported here. May wait for the GPU to finish
-    // reading the buffer. One thread draws: call begin_frame() and end_frame() from it.
+    // Nonblocking: nothing before a renderer device exists, after its shutdown, for invalid
+    // dimensions, while a reservation is outstanding, or while all buffers are reserved for
+    // display/recording. Calls on copies of this image may be concurrent; only one write
+    // reservation is granted at a time. The reservation's owner must synchronize all writes
+    // and submit them before end/cancel; do not end/cancel a frame another thread is writing.
+    //
+    // Handles are BORROWED: never release/destroy them or destroy the device, and keep the
+    // GpuImage alive while using them. Stop and join producers before renderer/application
+    // shutdown. A frame does not keep the renderer running; device-loss recovery is unsupported.
+    // Do not write a texture outside its begin/end reservation, even if you retain a handle.
+    //
+    // Textures: 2D RGBA8Unorm, one mip/layer/sample, usage RenderAttachment | TextureBinding |
+    // CopySrc | CopyDst | StorageBinding. RGBA8UnormSrgb views are allowed. Stored RGB is
+    // sRGB-encoded (renderer samples via an sRGB view); alpha is straight (not premultiplied).
+    // Rendering via an sRGB attachment view encodes linear shader RGB automatically. Set that
+    // view's usage to RenderAttachment (sRGB cannot inherit StorageBinding). Origin only flips
+    // display.
     std::optional<Frame> begin_frame() const;
-    // Shows the frame, next time windows showing the image draw.
-    void end_frame(const Frame& frame, Sync sync = Sync::fence) const;
+    // Publish only AFTER submitting all writes to frame.queue. No fence or GPU wait is needed.
+    // Never submit further writes to this reservation afterwards. The renderer holds buffers
+    // until its reads are submitted to that same queue, so subsequent writes are ordered after
+    // those reads, even when the GPU has not finished. Newer unpublished-to-display frames may
+    // replace older ones. Foreign, stale, or already-ended frames are ignored.
+    void end_frame(const Frame& frame) const;
+    // Abandon a reservation (e.g. encoding failed). Any writes already submitted must still be
+    // on frame.queue, and no commands referencing this reservation may be submitted afterwards.
+    void cancel_frame(const Frame& frame) const;
 
     Size size() const noexcept; // pixels
     Origin origin() const noexcept;

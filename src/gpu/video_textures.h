@@ -18,6 +18,8 @@
 namespace elg::detail::gpu {
 
 // Video frames' textures (design.md §13.3). Render thread only.
+// - Same-device WebGPU textures (Kind::webgpu): sampled directly. Keep the snapshot's lease
+//   through submission; subsequent producer writes on the same queue follow these reads.
 // - Shared textures (VideoFrame::Kind::d3d11_shared): imported into WebGPU once each (shared
 //   texture memory) and sampled in place. The decoder writes them outside WebGPU, so every frame
 //   that samples one begins access to it first and ends access once submitted.
@@ -36,7 +38,11 @@ public:
     // memory, recording the upload and conversion into `encoder`. Null if it can't be shown.
     wgpu::BindGroup acquire(const wgpu::CommandEncoder& encoder, const VideoFrame& frame,
                             std::vector<std::uint64_t>& acquired);
-    // Hands `acquired` back to the decoder. Call after the frame using them was submitted.
+    // Hands `acquired` back to the decoder/producer. Call only after ALL commands recorded
+    // using this batch were submitted. A WebGPU lease is released after Submit returns, not
+    // after GPU completion: later producer writes must use the same queue. If recording or
+    // submit throws, leases stay held until this cache is destroyed; never submit that aborted
+    // recording afterwards.
     void release(const std::vector<std::uint64_t>& acquired);
 
     // Once per rendered frame: drops textures no frame has used for a while (a video that
@@ -50,6 +56,7 @@ private:
         wgpu::Texture copy; // Direct3D 11: sampled instead of `texture` (see import())
         wgpu::BindGroup group;
         std::weak_ptr<SharedTextureOwner> owner;
+        std::shared_ptr<void> lease; // WebGPU ring reservation: reset only after submission
         std::uint64_t last_used = 0;
     };
     bool import(const VideoFrame& frame, Texture& texture);

@@ -1382,22 +1382,23 @@ when an app needs the same formats everywhere, or containers and codecs the OS l
   widely playable.
 
 #### GPU images (`elg/gpu_image.h`)
-Apps that render with their own GPU code (OpenGL, Vulkan, Direct3D: a 3D viewport, a game, a
-plot) draw into a `GpuImage`, and `GpuImageView` shows it with no copies.
-- **Buffers:** three textures, so the app draws the next frame while the renderer shows the last.
-  `begin_frame()` hands out the buffer used longest ago that's neither shown nor about to be, and
-  first waits (on the CPU; usually already done) for the renderer's fence from its last read.
-- **Windows:** shared D3D11 textures (`R8G8B8A8_UNORM`, NT handles) and one shared D3D fence,
-  made on the renderer's adapter once it's known. OpenGL imports them with
-  `GL_EXT_memory_object_win32` / `GL_EXT_semaphore_win32`, Vulkan with external memory and
-  semaphores, and Direct3D directly. The app signals the fence to the frame's value
-  (`Sync::fence`, GPU to GPU), or reports the work finished (`Sync::finished`) and Elegance
-  signals it. The renderer waits on it in `BeginAccess` and passes its `EndAccess` fence back.
-- **Vulkan backend** (Dawn can't import D3D textures there): `end_frame()` copies the frame
-  through memory instead; slower, same API.
-- **Origin:** `Origin::bottom_left` for OpenGL, which draws bottom row first; the view flips it.
-- **Not yet:** macOS (IOSurface + `MTLSharedEvent`) and Linux (DMA-BUF + sync file), resizing
-  an image (make a new one), and transparency (shown on black, like video).
+Apps render a 3D viewport, game, or plot into a `GpuImage` using Elegance's own Dawn/WebGPU
+device and queue; `GpuImageView` samples its textures directly on any supported Dawn backend.
+- **Buffers:** three `RGBA8Unorm` textures, sampled through sRGB views. `begin_frame()` reserves
+  the oldest free buffer, or returns nothing if no device/buffer is available. Only one producer
+  reservation may be outstanding. Snapshot leases prevent reuse until renderer reads are submitted.
+- **Synchronization:** frames expose borrowed `WGPUDevice`, `WGPUQueue`, and `WGPUTexture`
+  handles plus an opaque sequence token. Submit all writes to that queue before `end_frame()`;
+  subsequent renderer reads and producer writes are ordered by the same queue, without native
+  shared fences, CPU waits, DXGI imports, or readback. `cancel_frame()` abandons a reservation.
+- **Lifetime:** keep the image alive while using its handles; never destroy/release them. Stop
+  producers before application/renderer shutdown. Devices do not migrate or recover from loss.
+- **Interop:** use the matching Dawn runtime/ABI, not a separate WebGPU device, Rust `wgpu`,
+  OpenGL, or Vulkan handles. Native cross-device/API sharing is not part of this interface.
+  Windows video decoding and transparent-window composition retain their native interop paths.
+- **Origin:** `Origin::bottom_left` flips display vertically; default is `top_left`.
+- **Not yet:** resizing an image (make a new one), device-loss recovery, and transparent view
+  composition (shown on black, like video).
 
 **Order:** raster images → audio → video → AsyncImage and networking → capture (mic, camera).
 

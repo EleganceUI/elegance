@@ -787,7 +787,7 @@ void EffectElement::paint_impl(DisplayList& list) const {
             std::optional<ShapeStyle> fill = matrix ? filtered(rect.fill, *matrix) : std::optional(rect.fill);
             if (fill) {
                 const auto adjust = [&](Color color) {
-                    return (matrix ? apply(*matrix, color) : color).opacity(opacity);
+                    return (matrix ? elg::detail::apply(*matrix, color) : color).opacity(opacity);
                 };
                 for (DrawCommand& command : content.commands) {
                     if (auto* box = std::get_if<BoxShadowCommand>(&command)) {
