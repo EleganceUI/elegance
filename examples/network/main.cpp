@@ -5,7 +5,7 @@
 // Network: a request as reactive state (http::Fetch), and images loaded from the web in a long,
 // lazily built list (AsyncImage).
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <format>
 #include <vector>
@@ -14,7 +14,7 @@ using namespace elg;
 
 // A quote from GitHub's API, with a button to fetch another.
 View Quote() {
-    const http::Fetch zen({.url = "https://api.github.com/zen", .headers = {{"User-Agent", "elegence-example"}}});
+    const http::Fetch zen({.url = "https://api.github.com/zen", .headers = {{"User-Agent", "elegance-example"}}});
     return HStack({.spacing = 12},
                   Image("quotes").font(Font::title2).foreground_style(ThemeColor::accent),
                   If([=] { return zen.is_loading() && !zen.has_response(); },

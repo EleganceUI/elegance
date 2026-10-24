@@ -54,5 +54,5 @@ and `elg_embed_file` from [Build](../../foundations/build/).
 - Don't generate or redraw icons: every glyph comes verbatim from upstream, and the name table comes
   mechanically from the project's own metadata.
 - Not built yet: glyph-name maps from the font's `post` table; IcoMoon `selection.json` and
-  Fontello configs; the `elegence_icon_set` CMake helper; generated `Icons::phosphor::...`
+  Fontello configs; the `elegance_icon_set` CMake helper; generated `Icons::phosphor::...`
   constants; making the extra weights opt-in; `.resizable()` for icons; SVG icon sets.

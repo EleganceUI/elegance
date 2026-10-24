@@ -1,6 +1,6 @@
 ---
 title: Vulkan bring-up
-description: "The GPU objects Elegence owns, their lifetimes, and how a window gets its images."
+description: "The GPU objects Elegance owns, their lifetimes, and how a window gets its images."
 sidebar:
   order: 1
 depends: [foundations/platform]

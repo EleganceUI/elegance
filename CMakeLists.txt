@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 4.3)
-project(Elegence VERSION 0.1.0 LANGUAGES CXX)
+project(Elegance VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
-include(ElegenceViewExtensions)
-include(ElegenceHotReload)
+include(EleganceViewExtensions)
+include(EleganceHotReload)
 
 # Dependencies come from vcpkg.json (manifest mode). In classic mode vcpkg ignores the manifest
 # and find_package() fails later with a less helpful message.
@@ -20,8 +20,8 @@ if (DEFINED VCPKG_MANIFEST_MODE AND NOT VCPKG_MANIFEST_MODE)
 endif ()
 
 # vcpkg's *-static triplets (x64-windows-static) link every dependency statically, the C runtime
-# included (/MT): an app is then one executable. Elegence and the apps use the same runtime, and
-# Elegence is static too: its API passes std types, which a DLL with its own runtime can't share.
+# included (/MT): an app is then one executable. Elegance and the apps use the same runtime, and
+# Elegance is static too: its API passes std types, which a DLL with its own runtime can't share.
 # (*-static-md triplets keep the shared runtime.)
 set(ELG_STATIC_RUNTIME OFF)
 if (MSVC AND VCPKG_TARGET_TRIPLET MATCHES "-static$")
@@ -36,10 +36,10 @@ if (ELG_STATIC_RUNTIME)
 else ()
     set(elg_shared_default ON)
 endif ()
-option(ELG_BUILD_SHARED "Build Elegence as a shared library (OFF: static, linked into each app; no hot reload)"
+option(ELG_BUILD_SHARED "Build Elegance as a shared library (OFF: static, linked into each app; no hot reload)"
        ${elg_shared_default})
 if (ELG_STATIC_RUNTIME AND ELG_BUILD_SHARED)
-    message(FATAL_ERROR "The ${VCPKG_TARGET_TRIPLET} triplet links the C runtime statically, so Elegence must be "
+    message(FATAL_ERROR "The ${VCPKG_TARGET_TRIPLET} triplet links the C runtime statically, so Elegance must be "
                         "static too (ELG_BUILD_SHARED=OFF): its API passes std types between modules.")
 endif ()
 option(ELG_BUILD_SANDBOX "Build the sandbox test app"         ${PROJECT_IS_TOP_LEVEL})

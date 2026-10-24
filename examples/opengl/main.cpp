@@ -2,12 +2,12 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// OpenGL: a spinning cube drawn by OpenGL on its own thread, shown in an Elegence window with
+// OpenGL: a spinning cube drawn by OpenGL on its own thread, shown in an Elegance window with
 // controls over it. OpenGL draws straight into a GpuImage's shared textures (no copies) and
-// signals its shared fence when each frame is done. SDL (which Elegence already uses) provides
+// signals its shared fence when each frame is done. SDL (which Elegance already uses) provides
 // the OpenGL context. Windows only for now, like GpuImage.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_opengl.h>
@@ -239,7 +239,7 @@ private:
                                 static_cast<GLint>(frame->height), GL_COLOR_BUFFER_BIT, GL_NEAREST);
 
             if (semaphore) {
-                // The fence reaches fence_value when the GPU has drawn the frame; Elegence's GPU
+                // The fence reaches fence_value when the GPU has drawn the frame; Elegance's GPU
                 // waits for it. No waiting here.
                 gl.semaphore_parameter(semaphore, GL_D3D12_FENCE_VALUE_EXT, &frame->fence_value);
                 const GLenum layout = GL_LAYOUT_COLOR_ATTACHMENT_EXT;

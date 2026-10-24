@@ -5,7 +5,7 @@
 // Capture (design.md §13.3). Devices differ per machine, so these check what holds everywhere:
 // listing devices works, and recorders and cameras behave before they start.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <catch2/catch_test_macros.hpp>
 

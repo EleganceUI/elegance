@@ -10,7 +10,7 @@ depends: [foundations/build]
 
 Every subsystem fails sometimes. This part decides, once, what happens when it does. A
 developer's mistake or a missing file should reach the developer as an exception they can catch.
-A bug inside Elegence should stop the process with a report good enough to fix it from, and never
+A bug inside Elegance should stop the process with a report good enough to fix it from, and never
 limp on with corrupted state.
 
 ## How it works
@@ -19,7 +19,7 @@ limp on with corrupted state.
 
 | | Developer-facing error | Internal error |
 |---|---|---|
-| Caused by | The app's code, its input, or the environment | A bug in Elegence |
+| Caused by | The app's code, its input, or the environment | A bug in Elegance |
 | Examples | A font that doesn't exist, `State` written off the UI thread, no GPU | A broken invariant, an unexpected `std::out_of_range`, a segfault |
 | Mechanism | `throw elg::Error` (or a subclass) | `ELG_ASSERT` → `internal_error()` → crash report → terminate |
 | Caller can handle it | Yes | No |
@@ -31,7 +31,7 @@ the throw site. Where failure is routine, an API also has a `try_` form returnin
 `std::expected`.
 
 **Classification rule.** `elg::Error` and `std::bad_alloc` escaping framework code are passed
-on. Any *other* exception escaping framework internals means Elegence itself is wrong, so it
+on. Any *other* exception escaping framework internals means Elegance itself is wrong, so it
 becomes a crash report.
 
 ### Exceptions crossing the framework
@@ -46,7 +46,7 @@ framework function that called it. There:
 3. Without a handler, `App::run()` stops the loop, tears everything down in order, and rethrows
    to its caller. `try { app.run(); } catch (...) {}` works.
 
-Exceptions never unwind through C code. Every callback Elegence hands to a C library (SDL event
+Exceptions never unwind through C code. Every callback Elegance hands to a C library (SDL event
 watches, the Vulkan debug messenger, AccessKit, COM callbacks) is a trampoline that catches
 everything, stores the `exception_ptr`, and returns normally. The exception is rethrown later on
 the UI thread.

@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_ELEGENCE_H
-#define ELG_ELEGENCE_H
+#ifndef ELG_ELEGANCE_H
+#define ELG_ELEGANCE_H
 
 // Umbrella header: include this to get the whole public API.
 
@@ -46,4 +46,4 @@
 #include <elg/views.h>
 #include <elg/window.h>
 
-#endif // ELG_ELEGENCE_H
+#endif // ELG_ELEGANCE_H

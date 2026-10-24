@@ -2,7 +2,7 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Sandbox: a real app built against the public Elegence API, used to exercise features
+// Sandbox: a real app built against the public Elegance API, used to exercise features
 // as they land. Only include public headers here, never anything from src/.
 //
 //   sandbox                  open the demo windows
@@ -14,7 +14,7 @@
 #include "palette.h"
 #include "todos.h"
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <cmath>
 #include <cstdio>
@@ -55,7 +55,7 @@ View TitleBar(State<ColorScheme> scheme) {
         });
     };
     return HStack({.alignment = VerticalAlignment::center, .spacing = 12},
-                  Text("Elegence").font(Font::title2),
+                  Text("Elegance").font(Font::title2),
                   Text("Sandbox").foreground_style(ThemeColor::secondary),
                   Spacer(),
                   Button(Text([=] { return scheme() == ColorScheme::dark ? "Light mode" : "Dark mode"; }), toggle)
@@ -198,7 +198,7 @@ View PathCards() {
     const auto clipped = [](const Shape& shape) {
         return ZStack(Rectangle().fill(LinearGradient({palette::mauve, palette::blue, palette::sky}, UnitPoint::top_leading,
                                                       UnitPoint::bottom_trailing)),
-                      Text("Elegence").foreground_style(Color::white))
+                      Text("Elegance").foreground_style(Color::white))
             .frame(72, 72)
             .clip_shape(shape);
     };
@@ -508,7 +508,7 @@ View DesktopCards() {
     const View system = VStack(
         {.alignment = HorizontalAlignment::leading, .spacing = 8},
         Button("Notify", [=] {
-            notify({.title = "Elegence", .body = "A notification from the sandbox", .on_click = [=] { status = "Notification status"; }});
+            notify({.title = "Elegance", .body = "A notification from the sandbox", .on_click = [=] { status = "Notification status"; }});
         }).button_style(BorderedButtonStyle{}),
         Toggle("Tray icon", Binding<bool>([=] { return tray_on(); },
                                           [=](bool on) {
@@ -518,7 +518,7 @@ View DesktopCards() {
                                                   return;
                                               }
                                               tray->emplace(TrayIconOptions{
-                                                  .tooltip = "Elegence Sandbox",
+                                                  .tooltip = "Elegance Sandbox",
                                                   .menu = {{.title = "Say hello", .action = [=] { status = "Hello from the tray"; }},
                                                            {.title = "Notifications", .checked = true,
                                                             .toggled = [=](bool on) { status = on ? "Checked" : "Unchecked"; }},
@@ -646,7 +646,7 @@ View StackCards() {
 
 View TextCards() {
     const std::string story =
-        "Elegence lays text out with HarfBuzz and draws it from a multi-channel signed distance "
+        "Elegance lays text out with HarfBuzz and draws it from a multi-channel signed distance "
         "field atlas, so the same glyphs stay sharp at every size and scale. Words wrap to the "
         "width the layout proposes, and text truncates with an ellipsis when it runs out of room.";
 
@@ -975,7 +975,7 @@ int main(int argc, char** argv) {
         App app;
         // Shared by both windows: the title bar's toggle switches them together.
         const State<ColorScheme> scheme(light ? ColorScheme::light : ColorScheme::dark);
-        app.window({.title = "Elegence Sandbox", .width = 1100, .height = 860},
+        app.window({.title = "Elegance Sandbox", .width = 1100, .height = 860},
                    [&] {
                        if (smoke_test) {
                            app.quit(); // still renders the first frame
@@ -986,9 +986,9 @@ int main(int argc, char** argv) {
             return app.run();
         }
         // A second window: If and ForEach.
-        app.window({.title = "Elegence Todos", .width = 460, .height = 560}, [scheme] { return TodoWindow(scheme); });
+        app.window({.title = "Elegance Todos", .width = 460, .height = 560}, [scheme] { return TodoWindow(scheme); });
         // A transparent widget with its own title bar.
-        app.window({.title = "Elegence Widget",
+        app.window({.title = "Elegance Widget",
                     .width = 340,
                     .height = 190,
                     .resizable = false,
@@ -996,7 +996,7 @@ int main(int argc, char** argv) {
                     .transparent = true},
                    [scheme] { return WidgetWindow(scheme); });
         // A third: a 10,000-row List (lazy stacks).
-        app.window({.title = "Elegence Contacts", .width = 520, .height = 640},
+        app.window({.title = "Elegance Contacts", .width = 520, .height = 640},
                    [scheme] { return ContactsWindow(scheme); });
         return app.run();
     } catch (const elg::Error& e) {

@@ -9,7 +9,7 @@ depends: [controls/basic-controls, controls/windows]
 ## What it's for
 
 Menus, dropdowns, popovers and tooltips must escape their window's bounds, look like the rest of
-the app, and behave like native menus: keyboard navigation, submenus, dismissal. Elegence draws
+the app, and behave like native menus: keyboard navigation, submenus, dismissal. Elegance draws
 them itself, inside small popup windows.
 
 ## How it works

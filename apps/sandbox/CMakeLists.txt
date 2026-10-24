@@ -6,9 +6,9 @@ add_executable(sandbox
 )
 
 # Dot-syntax View extensions (.card(), ...), design.md §9.4.
-elegence_view_extensions(sandbox view_extensions.h)
+elegance_view_extensions(sandbox view_extensions.h)
 
-target_link_libraries(sandbox PRIVATE Elegence::Elegence)
+target_link_libraries(sandbox PRIVATE Elegance::Elegance)
 # Sample images (generated; see assets/).
 target_compile_definitions(sandbox PRIVATE "ELG_SANDBOX_ASSETS=\"${CMAKE_CURRENT_SOURCE_DIR}/assets\"")
 

@@ -5,7 +5,7 @@
 // Popover: panels shown beside a view while a binding is true. Clicking outside or Esc closes
 // them and sets the binding back.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <format>
 #include <string>

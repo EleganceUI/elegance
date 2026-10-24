@@ -11,7 +11,7 @@
 
 #include "qr_code.h"
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <cctype>
 #include <cstdio>
@@ -272,7 +272,7 @@ View LoginScreen() {
     // The window has no system title bar (TitleBar::hidden): this one floats over the backdrop.
     // Dragging it moves the window; the caption buttons still click.
     const View title_bar = HStack({.spacing = 0},
-                                  Text("Elegence")
+                                  Text("Elegance")
                                       .font(Font::system(12, Weight::semibold))
                                       .foreground_style(Color::white.opacity(0.7f))
                                       .padding(Edges::leading, 14),
@@ -299,7 +299,7 @@ int main(int argc, char** argv) {
     }
     try {
         App app;
-        app.window({.title = "Elegence Login",
+        app.window({.title = "Elegance Login",
                     .width = 1080,
                     .height = 700,
                     .min_size = Size{900, 600},

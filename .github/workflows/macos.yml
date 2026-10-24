@@ -1,4 +1,4 @@
-# Builds Elegence on macOS (Apple Clang, libc++, WebGPU on Metal) and runs the unit tests.
+# Builds Elegance on macOS (Apple Clang, libc++, WebGPU on Metal) and runs the unit tests.
 name: macOS
 
 on:

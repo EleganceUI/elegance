@@ -8,7 +8,7 @@ depends: [framework/dynamic-content]
 
 ## What it's for
 
-Animation in Elegence is a property of **updates**, not of views. You say *this change should
+Animation in Elegance is a property of **updates**, not of views. You say *this change should
 animate*, and every property the change affects (a color, an opacity, a frame, a view's
 insertion) eases from where it is to where it should be. Nothing animates continuously unless
 something is moving.

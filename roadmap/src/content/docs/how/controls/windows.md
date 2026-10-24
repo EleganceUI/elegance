@@ -46,7 +46,7 @@ clicks don't steal focus.
 ### Presentation on Windows: DirectComposition
 
 Vulkan swapchains on Windows are opaque, and a swapchain image is **stretched** to the window
-when the window is resized faster than frames arrive. Both problems go away if Elegence presents
+when the window is resized faster than frames arrive. Both problems go away if Elegance presents
 through DirectComposition (DComp), the compositor API under modern Windows UI.
 
 Per window, `CompositionTarget` builds:

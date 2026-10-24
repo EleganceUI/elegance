@@ -248,7 +248,7 @@ private:
         WNDCLASSW type{};
         type.lpfnWndProc = procedure;
         type.hInstance = GetModuleHandleW(nullptr);
-        type.lpszClassName = L"ElegenceNotifier";
+        type.lpszClassName = L"EleganceNotifier";
         RegisterClassW(&type);
         // A message-only window: it receives the icon's messages and is never shown.
         window_ = CreateWindowExW(0, type.lpszClassName, L"", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, type.hInstance, nullptr);

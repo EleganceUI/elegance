@@ -1,6 +1,6 @@
 ---
 title: A frame, start to finish
-description: "When Elegence renders, what each stage of a frame does, which thread does it, and which stages scale with what changed."
+description: "When Elegance renders, what each stage of a frame does, which thread does it, and which stages scale with what changed."
 sidebar:
   order: 2
 ---
@@ -10,7 +10,7 @@ the pixels on screen. Every stage gets its own spec; this is how they fit togeth
 
 ## When a frame happens at all
 
-Elegence renders **only when something changed**. An idle window sits blocked in the OS's event
+Elegance renders **only when something changed**. An idle window sits blocked in the OS's event
 wait, using no CPU or GPU. Something has to wake it:
 
 - an input event (pointer, key, text, wheel);

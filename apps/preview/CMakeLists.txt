@@ -1,12 +1,12 @@
 # The preview host and a views module to try it with (design.md §9.6).
 
-elegence_views_module(gallery_views gallery/gallery.cpp)
+elegance_views_module(gallery_views gallery/gallery.cpp)
 
-add_executable(elegence-preview main.cpp)
-target_link_libraries(elegence-preview PRIVATE Elegence::Elegence)
-elegence_hot_reload(elegence-preview MODULE gallery_views WATCH gallery)
+add_executable(elegance-preview main.cpp)
+target_link_libraries(elegance-preview PRIVATE Elegance::Elegance)
+elegance_hot_reload(elegance-preview MODULE gallery_views WATCH gallery)
 
-foreach (target IN ITEMS gallery_views elegence-preview)
+foreach (target IN ITEMS gallery_views elegance-preview)
     if (MSVC)
         target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
     else ()

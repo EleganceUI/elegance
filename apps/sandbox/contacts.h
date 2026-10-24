@@ -5,7 +5,7 @@
 #ifndef SANDBOX_CONTACTS_H
 #define SANDBOX_CONTACTS_H
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 // A List of 10,000 contacts with a live filter: exercises lazy stacks.
 elg::View ContactsWindow(elg::State<elg::ColorScheme> scheme);

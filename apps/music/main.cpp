@@ -16,7 +16,7 @@
 #include "pages.h"
 #include "ui.h"
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <algorithm>
 #include <cmath>

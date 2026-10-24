@@ -3,7 +3,7 @@ title: Grids
 description: "Views in columns and rows - VGrid and HGrid with fixed, flexible, and adaptive tracks, and Grid tables of GridRows."
 ---
 
-Elegence has two kinds of grid, both in `<elg/grid.h>`:
+Elegance has two kinds of grid, both in `<elg/grid.h>`:
 
 - **`VGrid` and `HGrid`** flow their children into tracks, filling one line before starting the
   next: a photo wall, a library of cards, a palette of swatches.

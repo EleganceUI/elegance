@@ -1,6 +1,6 @@
-# Elegence roadmap
+# Elegance roadmap
 
-A checklist site for building Elegence by hand: every subsystem in build order, what to read
+A checklist site for building Elegance by hand: every subsystem in build order, what to read
 first, how to know each part works, and the traps the current code already hit. Built with
 [Astro Starlight](https://starlight.astro.build), like `docs/`.
 

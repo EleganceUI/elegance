@@ -5,7 +5,7 @@
 #ifndef LOGIN_QR_CODE_H
 #define LOGIN_QR_CODE_H
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <string>
 

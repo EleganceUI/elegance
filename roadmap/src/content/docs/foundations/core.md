@@ -35,7 +35,7 @@ throws, asserts, or logs through it.
 - [ ] An in-memory ring buffer of the last ~200 lines, for crash reports
 
 ### Crash reports
-- [ ] Write `pref_path()/crashes/<timestamp>.txt` with: message and location, stack trace, Elegence version/build hash, OS, GPU, driver, Vulkan version, window and DPI state, the log tail, recent input events, loaded hot-reload modules
+- [ ] Write `pref_path()/crashes/<timestamp>.txt` with: message and location, stack trace, Elegance version/build hash, OS, GPU, driver, Vulkan version, window and DPI state, the log tail, recent input events, loaded hot-reload modules
 - [ ] A minidump on Windows
 - [ ] Install handlers for access violations, `std::terminate`, and pure virtual calls
 - [ ] Default: `SDL_ShowSimpleMessageBox` with the path; `app.on_crash(fn)` to override

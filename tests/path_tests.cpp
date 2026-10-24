@@ -4,7 +4,7 @@
 
 // Path geometry: building, SVG path data, fill rules, flattening, and stroking.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>

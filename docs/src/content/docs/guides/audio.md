@@ -3,7 +3,7 @@ title: Audio
 description: "Playing sound effects and music, and controlling playback from the UI."
 ---
 
-Elegence plays audio through miniaudio. Sound goes to the system's default output device and
+Elegance plays audio through miniaudio. Sound goes to the system's default output device and
 follows it when it changes (headphones plugged in, for example). Supported formats are **WAV**,
 **FLAC** and **MP3**.
 

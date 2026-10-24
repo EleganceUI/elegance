@@ -19,7 +19,7 @@ independence. A worker pool and a persistent cache make generating them cheap.
 A distance field stores, per texel, the distance to the glyph's edge. The shader thresholds it
 at 0.5 with a one-pixel ramp scaled to the on-screen size, so one bitmap serves every size. A
 single-channel field rounds sharp corners. **Multi-channel** fields (MSDF) keep corners sharp by
-storing three distances whose **median** recovers the edge. Elegence stores **MTSDF**: MSDF in
+storing three distances whose **median** recovers the edge. Elegance stores **MTSDF**: MSDF in
 RGB plus a true SDF in alpha, which leaves room for outlines, glow and faux-bold later.
 
 Generation settings: glyphs at a **48 px em**, a **6 px** distance range, in a **2048² RGBA8**
@@ -65,8 +65,8 @@ usually has its text.
 
 `GlyphDiskCache` stores generated pixels between runs:
 
-- **Location**: `%LOCALAPPDATA%\Elegence\GlyphCache` (macOS `~/Library/Caches/Elegence/GlyphCache`,
-  Linux `$XDG_CACHE_HOME/elegence/glyphs`); `ELG_GLYPH_CACHE` overrides it, and `off` disables it.
+- **Location**: `%LOCALAPPDATA%\Elegance\GlyphCache` (macOS `~/Library/Caches/Elegance/GlyphCache`,
+  Linux `$XDG_CACHE_HOME/elegance/glyphs`); `ELG_GLYPH_CACHE` overrides it, and `off` disables it.
 - **One file per font**, named by a hash of the font's bytes, so an updated font gets a fresh
   file. The header records the format version and generator settings; a mismatch discards the file.
 - **Append-only records** (glyph id, size, pixels, checksum), written by workers. On load, reading

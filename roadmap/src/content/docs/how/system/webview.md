@@ -15,7 +15,7 @@ the "no web content" non-goal first (see the checklist page).
 
 Some content is only available as a web page: OAuth sign-in, help pages, a map, an existing web
 widget. A `WebView` hosts the **OS's browser control** (WebView2 on Windows, WKWebView on macOS,
-WebKitGTK on Linux) inside an Elegence layout. Elegence doesn't render HTML; it positions,
+WebKitGTK on Linux) inside an Elegance layout. Elegance doesn't render HTML; it positions,
 clips and routes input to a control the OS draws.
 
 ## How it works
@@ -53,7 +53,7 @@ handle's `error` says so and the app keeps running.
 
 ### Placement: visual hosting
 
-Each Elegence window on Windows already presents through a DirectComposition visual tree (see
+Each Elegance window on Windows already presents through a DirectComposition visual tree (see
 [Windows and DirectComposition](../../controls/windows/)). WebView2's **composition controller**
 renders into a DComp visual it's given, so:
 
@@ -83,10 +83,10 @@ With visual hosting, the host owns input:
   coordinates. The page's `CursorChanged` sets the cursor.
 - **Focus**: the element joins the window's `FocusManager`. Gaining focus calls `MoveFocus`
   (programmatic, next or previous, matching how focus arrived). When the user tabs out of the
-  page, WebView2 raises `MoveFocusRequested`, and Elegence moves focus to the next or previous
+  page, WebView2 raises `MoveFocusRequested`, and Elegance moves focus to the next or previous
   element.
 - **Keys** go to the page while it has focus. `AcceleratorKeyPressed` lets app shortcuts (F12, a
-  quit shortcut) reach Elegence first.
+  quit shortcut) reach Elegance first.
 
 ### The script bridge
 
@@ -104,15 +104,15 @@ WebView2 window.
 ## Rules
 
 - The browser control is the OS's; nothing is bundled.
-- Native content always draws **above** Elegence content in its window (see below); design every
+- Native content always draws **above** Elegance content in its window (see below); design every
   feature around that.
 - Everything the app sees happens on the UI thread.
 
 ## Edge cases and limits
 
-- **Airspace**: Elegence can't draw over the page: no overlays, in-window tooltips, shadows across
+- **Airspace**: Elegance can't draw over the page: no overlays, in-window tooltips, shadows across
   it, `mask`, opacity groups or blur behind it. WebView2 has no API to render into a texture
-  Elegence could composite. Anything that must cover the page needs a popup window (menus and
+  Elegance could composite. Anything that must cover the page needs a popup window (menus and
   popovers already are).
 - **Transforms**: scale and rotation can't apply to the page; transitions should fade or hide it.
 - **User data folder**: one per process; two instances sharing a folder fail to start. Default

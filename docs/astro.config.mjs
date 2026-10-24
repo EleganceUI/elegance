@@ -15,7 +15,7 @@ export default defineConfig({
 	base,
 	integrations: [
 		starlight({
-			title: 'Elegence',
+			title: 'Elegance',
 			description: 'Declarative, reactive UI for modern C++, drawn with Vulkan.',
 			logo: { src: './src/assets/logo.svg', replacesTitle: false },
 			favicon: '/favicon.svg',
@@ -34,7 +34,7 @@ export default defineConfig({
 						{ label: 'Introduction', slug: 'start/introduction' },
 						{ label: 'Installation', slug: 'start/installation' },
 						{ label: 'Your first app', slug: 'start/first-app' },
-						{ label: 'Thinking in Elegence', slug: 'start/concepts' },
+						{ label: 'Thinking in Elegance', slug: 'start/concepts' },
 					],
 				},
 				{

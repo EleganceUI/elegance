@@ -5,7 +5,7 @@
 // Desktop: the system's file dialogs, notifications, a tray icon with a menu, and dropping
 // files from other apps.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <filesystem>
 #include <format>
@@ -21,7 +21,7 @@ View Desktop(App& app, std::optional<TrayIcon>& tray) {
     const State<bool> targeted(false);
     const State<bool> paused(false);
 
-    tray.emplace(TrayIconOptions{.tooltip = "Elegence desktop example",
+    tray.emplace(TrayIconOptions{.tooltip = "Elegance desktop example",
                          .menu = {{.title = "Paused",
                                    .checked = false,
                                    .toggled = [=](bool on) { paused = on; }},
@@ -68,7 +68,7 @@ View Desktop(App& app, std::optional<TrayIcon>& tray) {
                          Button("Save list…", save_list)
                              .button_style(BorderedButtonStyle{})
                              .disabled([=] { return files().empty(); }),
-                         Button("Notify me", [=] { notify({.title = "Hello from Elegence", .body = "Click me"}); })
+                         Button("Notify me", [=] { notify({.title = "Hello from Elegance", .body = "Click me"}); })
                              .button_style(BorderedButtonStyle{})),
                   Text([=] { return paused() ? "Paused from the tray" : "Running"; })
                       .foreground_style(ThemeColor::secondary),

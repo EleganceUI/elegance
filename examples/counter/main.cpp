@@ -5,7 +5,7 @@
 // Counter: state and reactive arguments. Writing `count` updates exactly the views whose
 // closures read it; nothing else is rebuilt.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <format>
 #include <iostream>

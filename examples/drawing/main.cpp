@@ -5,7 +5,7 @@
 // Drawing: shapes with fills, gradients and strokes, SVG paths, a shape computed from its
 // frame, and immediate-mode drawing in a Canvas.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <array>
 #include <cmath>

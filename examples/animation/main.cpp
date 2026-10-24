@@ -5,7 +5,7 @@
 // Animation: explicit animations (with_animation), implicit ones (.animation), transitions for
 // views that appear and disappear, and layout that eases to its new place.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <algorithm>
 #include <random>

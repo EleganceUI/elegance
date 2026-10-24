@@ -5,7 +5,7 @@
 // Grids: a VGrid of cards that fits as many columns as the window allows, and a Grid table with
 // columns sized to their content, a spanning cell, and a full-width divider.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <format>
 #include <string>

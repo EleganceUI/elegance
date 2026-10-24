@@ -5,7 +5,7 @@
 // HTTP and AsyncImage (design.md §13.3). Results arrive on a running App's UI thread, so these
 // check what doesn't need one; the sandbox's Network cards exercise real requests.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <catch2/catch_test_macros.hpp>
 

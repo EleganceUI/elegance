@@ -18,7 +18,7 @@ window, without changing what it inspects.
 
 F12 in a window opens an **Inspector window** for it. F12 again, or closing either window, closes
 it. One window is inspected at a time. It's a separate window rather than an overlay, so the
-inspected layout is never disturbed. The inspector is built with Elegence's own views (a List of
+inspected layout is never disturbed. The inspector is built with Elegance's own views (a List of
 rows, a details panel, buttons), which also makes it a large dogfooding test.
 
 ### Paths, not pointers

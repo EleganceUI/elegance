@@ -11,7 +11,7 @@
 //   Text([=] { return std::format("Count: {}", count()); })   // re-renders that one Text
 //   Button("+", [=] { count += 1; })
 //
-// Reading a State inside a closure that Elegence runs reactively (a reactive argument, a
+// Reading a State inside a closure that Elegance runs reactively (a reactive argument, a
 // Computed, an effect) subscribes that closure; writing the State re-runs exactly the closures
 // that read it, once per frame. Everything is UI-thread only.
 

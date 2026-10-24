@@ -30,7 +30,7 @@ struct StackTrace {
 #endif
 std::string to_text(const StackTrace& trace);
 
-// Reports a bug inside Elegence: writes a crash report, shows it, then terminates
+// Reports a bug inside Elegance: writes a crash report, shows it, then terminates
 // (design.md §3.2). Never use this for errors the developer can handle; throw elg::Error.
 [[noreturn]] void internal_error(std::string_view message,
                                  std::source_location where = std::source_location::current(),

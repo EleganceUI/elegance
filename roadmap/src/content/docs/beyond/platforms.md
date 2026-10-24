@@ -34,7 +34,7 @@ The Windows version of each subsystem, as a reference for the shape of the inter
 - [ ] `App::menu_bar(...)` as a native `NSMenu`
 - [ ] Context menus open on press on macOS; Ctrl-click and long-press openers
 - [ ] Notifications and tray equivalents
-- [ ] Glyph cache paths: `~/Library/Caches/Elegence/GlyphCache` and `$XDG_CACHE_HOME/elegence/glyphs`
+- [ ] Glyph cache paths: `~/Library/Caches/Elegance/GlyphCache` and `$XDG_CACHE_HOME/elegance/glyphs`
 
 ## Done when
 

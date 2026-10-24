@@ -388,7 +388,7 @@ View TopBar(const Desktop& d) {
     };
     const View menu =
         Button(HStack({.spacing = 6}, Image("squares-four.fill").foreground_style(ThemeColor::accent),
-                      Text("Elegence").font(Font::system(13, Weight::bold)))
+                      Text("Elegance").font(Font::system(13, Weight::bold)))
                    .padding(EdgeInsets::symmetric(9, 3)),
                [=] {
                    with_animation(Animation::spring(0.3, 0.85), [&] {
@@ -648,7 +648,7 @@ View LoginScreen(const Desktop& d) {
                              .foreground_style(Color::white)
                              .padding(EdgeInsets{.top = 90}),
                          Spacer(), center, Spacer(),
-                         HStack(Text("Elegence Desktop").font(Font::system(12)).foreground_style(Color::white.opacity(0.6f)),
+                         HStack(Text("Elegance Desktop").font(Font::system(12)).foreground_style(Color::white.opacity(0.6f)),
                                 Spacer(),
                                 Button(Image("power").font(Font::system(20)).foreground_style(Color::white).padding(10),
                                        [app] { app->quit(); })

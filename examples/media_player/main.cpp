@@ -5,7 +5,7 @@
 // Media player: open a video with the system's file dialog (or drop one on the window) and
 // play it with the built-in controls.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <filesystem>
 #include <functional>

@@ -5,7 +5,7 @@
 // Recorder: voice memos from the microphone, with a live level meter, and a camera preview
 // with snapshots.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <format>
 #include <memory>

@@ -17,11 +17,11 @@ the new ones in seconds. Previews show individual views on their own.
 ### The setup
 
 ```
-app.exe / preview host ──links──► elegence.dll        (never reloaded)
+app.exe / preview host ──links──► elegance.dll        (never reloaded)
         └─ LoadLibrary ──► views_<N>.dll             (rebuilt and reloaded on save)
 ```
 
-The module is built against the **same** `elegence.dll`, compiler and CRT as the host. It exports
+The module is built against the **same** `elegance.dll`, compiler and CRT as the host. It exports
 `elg_module_entry`, made by `ELG_MODULE(root)`, which returns an ABI version, the root view
 function and the module's previews. `ELG_PREVIEW("Name") { ... }` registers a preview into a list
 that's an **inline function's static**, so each DLL has its own list.
@@ -37,7 +37,7 @@ would crash. Five rules, kept everywhere from the start, prevent that:
    or hashes, never `typeid` or static addresses, which differ per module.
 3. **Scoped ownership.** Every effect, closure, subscription, timer and task belongs to a mount
    scope, so the module's code can be torn down completely.
-4. **One framework instance.** The shared `elegence.dll` with `/MD`, so host, framework and
+4. **One framework instance.** The shared `elegance.dll` with `/MD`, so host, framework and
    module share one heap and one set of globals.
 5. **Light headers.** Public headers declare; reload latency is compile + link time.
 
@@ -51,7 +51,7 @@ is needed.
 
 Loading a module:
 
-1. Copy the module file to a **unique path** under `%TEMP%/elegence-reload/<pid>/`. A loaded DLL
+1. Copy the module file to a **unique path** under `%TEMP%/elegance-reload/<pid>/`. A loaded DLL
    is locked on Windows, and `dlopen` caches by path elsewhere, so loading from a copy lets the
    build overwrite the original.
 2. `LoadLibrary`, find `elg_module_entry`, check the ABI version.
@@ -76,8 +76,8 @@ compiler error, or "Reloaded (N ms)". A failed build keeps the last good views o
 
 ### CMake
 
-- `elegence_views_module(target sources...)` builds a module.
-- `elegence_hot_reload(host MODULE views [WATCH ...])` generates `<host>_hot_reload.h` with
+- `elegance_views_module(target sources...)` builds a module.
+- `elegance_hot_reload(host MODULE views [WATCH ...])` generates `<host>_hot_reload.h` with
   `elg_hot_reload_options()` (paths and the build command).
 - On Windows the build runs through a generated `rebuild.cmd` that restores the configure-time
   compiler environment (vcvars' INCLUDE, LIB, PATH), so an app started from Explorer or an IDE can
@@ -85,7 +85,7 @@ compiler error, or "Reloaded (N ms)". A failed build keeps the last good views o
 
 ### Previews
 
-`elegence-preview` (apps/preview) loads any module (`--module/--build/--watch`) and shows its
+`elegance-preview` (apps/preview) loads any module (`--module/--build/--watch`) and shows its
 previews in a sidebar, rebuilding the selected one when the selection or the module changes.
 `--root` shows the module's root view instead. It ships with a `gallery_views` demo module.
 

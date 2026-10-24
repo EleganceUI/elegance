@@ -1,9 +1,9 @@
 ---
 title: Accessibility
-description: "How Elegence apps work with screen readers, and the modifiers that improve what they say."
+description: "How Elegance apps work with screen readers, and the modifiers that improve what they say."
 ---
 
-Elegence exposes every window's UI to assistive technology through
+Elegance exposes every window's UI to assistive technology through
 [AccessKit](https://accesskit.dev). On Windows, that's UI Automation, used by Narrator, NVDA and
 JAWS, as well as by testing tools.
 

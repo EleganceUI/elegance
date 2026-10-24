@@ -8,12 +8,12 @@ sidebar:
 Some apps need a web page inside them: an OAuth sign-in, a help page, a rich-text or map widget.
 Bundling a browser engine is a non-goal (`design.md` §1), so a `WebView` hosts the **OS's own**
 browser control instead. It costs nothing to ship and stays patched by the OS. The hard part is
-that this control draws itself, outside Elegence's renderer.
+that this control draws itself, outside Elegance's renderer.
 
 :::caution[Decide first]
 This relaxes the "no web content" non-goal. Record the decision in `design.md` §1 before building
 it (see [Open decisions](../../beyond/decisions/)). The exception being made is "the system
-browser control, as a view," not "Elegence renders HTML."
+browser control, as a view," not "Elegance renders HTML."
 :::
 
 :::note[Depends on]
@@ -26,7 +26,7 @@ visual tree), [Hit testing, events, and focus](../../framework/input-and-focus/)
 ## Read first
 
 - [WebView2 docs](https://learn.microsoft.com/microsoft-edge/webview2/): "Windowed vs. Visual hosting", `ICoreWebView2CompositionController`, the Evergreen runtime and its bootstrapper
-- `src/gpu/composition_win32.*`: every Elegence window already presents through a DirectComposition visual. The web view's visual goes beside it
+- `src/gpu/composition_win32.*`: every Elegance window already presents through a DirectComposition visual. The web view's visual goes beside it
 - `include/elg/video.h`: the closest existing pattern (a handle with reactive state, plus a view that shows it)
 
 ## Tasks
@@ -45,17 +45,17 @@ visual tree), [Hit testing, events, and focus](../../framework/input-and-focus/)
 - [ ] The UI thread must be COM STA (`CoInitializeEx(COINIT_APARTMENTTHREADED)`) and pump messages. SDL's loop already pumps
 - [ ] Runtime missing: `error()` says so, with a link to the Evergreen bootstrapper. Never crash
 - [ ] Create the environment once per process (one user data folder; default under `pref_path()`)
-- [ ] **Visual hosting** (`CreateCoreWebView2CompositionController`): set its `RootVisualTarget` to a DirectComposition visual added **above** the window's Elegence content visual, on the same DComp device
+- [ ] **Visual hosting** (`CreateCoreWebView2CompositionController`): set its `RootVisualTarget` to a DirectComposition visual added **above** the window's Elegance content visual, on the same DComp device
 - [ ] Each layout, send the element's window frame (points × scale) to the visual's offset and the controller's `Bounds`
 - [ ] Clip to the enclosing clips with an `IDCompositionRectangleClip`. It supports corner radii, so `clip_shape(RoundedRectangle)` works
 - [ ] Hide the visual when culled (scrolled out of view), when an ancestor has zero opacity, or while a transition removes the view
 - [ ] Input: with visual hosting the host forwards mouse and wheel input (`SendMouseInput`) and pointer input (`SendPointerInput`), translated to the view's coordinates; set the cursor from `CursorChanged`
-- [ ] Focus: joining Elegence's `FocusManager` calls `MoveFocus(PROGRAMMATIC/NEXT/PREVIOUS)`; `MoveFocusRequested` (Tab out of the page) moves Elegence focus to the next or previous element
-- [ ] Keys: while the page has focus, keyboard input goes to WebView2. Handle `AcceleratorKeyPressed` so app shortcuts (F12 inspector, Ctrl+Q) still reach Elegence
+- [ ] Focus: joining Elegance's `FocusManager` calls `MoveFocus(PROGRAMMATIC/NEXT/PREVIOUS)`; `MoveFocusRequested` (Tab out of the page) moves Elegance focus to the next or previous element
+- [ ] Keys: while the page has focus, keyboard input goes to WebView2. Handle `AcceleratorKeyPressed` so app shortcuts (F12 inspector, Ctrl+Q) still reach Elegance
 - [ ] Scale changes: update `RasterizationScale` when the window's DPI changes
 - [ ] Shutdown: close controllers before the window and the DComp device go
 
-### Keeping it in sync with Elegence frames
+### Keeping it in sync with Elegance frames
 - [ ] Work out which thread commits DirectComposition: the visual's position must change in the **same commit** as the Vulkan frame that moved the content around it, or the page lags a frame behind while scrolling and resizing
 - [ ] Measure during a scroll and a live resize; if they drift, hand position updates to the render thread with the frame packet and commit them there with the present
 
@@ -71,15 +71,15 @@ visual tree), [Hit testing, events, and focus](../../framework/input-and-focus/)
 ## Done when
 
 - [ ] An OAuth sign-in page loads in a rounded, clipped view inside a List and scrolls with the list with no visible lag
-- [ ] Tab moves from an Elegence text field into the page's first input and back out again
+- [ ] Tab moves from an Elegance text field into the page's first input and back out again
 - [ ] A page calls `postMessage`, and the app updates a `State` from it; `evaluate` returns a value
 - [ ] On a machine without the WebView2 runtime, the app keeps running and shows the error
 - [ ] Popups and menus still appear above the web content (they're separate windows, so they should)
 
 ## Gotchas to expect
 
-- **Airspace**: native web content always draws above Elegence content in the same window. Nothing
-  Elegence draws can overlap it, including overlays, shadows over it, a tooltip drawn in-window,
+- **Airspace**: native web content always draws above Elegance content in the same window. Nothing
+  Elegance draws can overlap it, including overlays, shadows over it, a tooltip drawn in-window,
   `.mask()`, opacity groups, and blur behind. WebView2 has no offscreen-texture API (only
   `CapturePreview` screenshots), so that's a hard limit. Document it, and reach for popup windows
   for anything that must sit on top.

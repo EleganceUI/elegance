@@ -1,6 +1,6 @@
 ---
 title: Debugging and errors
-description: "The inspector, logging, how Elegence reports errors, and crash reports."
+description: "The inspector, logging, how Elegance reports errors, and crash reports."
 ---
 
 ## The inspector
@@ -22,7 +22,7 @@ Because it's a separate window, the inspector never changes the layout it's show
 
 ## Logging
 
-Elegence logs to stderr, with a prefix per level:
+Elegance logs to stderr, with a prefix per level:
 
 ```
 [elg:info] GPU: AMD Radeon RX 6650 XT (Direct3D 12 through WebGPU)
@@ -34,7 +34,7 @@ your app from a terminal, or look at the IDE's output, when something doesn't ap
 
 ## Errors you can handle
 
-Elegence reports problems that are yours to handle by throwing exceptions derived from
+Elegance reports problems that are yours to handle by throwing exceptions derived from
 `elg::Error` (itself a `std::runtime_error`):
 
 | Exception | When |
@@ -64,9 +64,9 @@ In debug builds, each `elg::Error` also captures a stack trace where it was thro
 
 ## Crash reports
 
-Bugs inside Elegence itself aren't thrown: a failed internal check produces a **crash report** and
+Bugs inside Elegance itself aren't thrown: a failed internal check produces a **crash report** and
 ends the process, since continuing could corrupt state. The report has the message, where in
-Elegence it happened, a stack trace, the Elegence version and the most recent log lines. On Windows
-it's written to `%APPDATA%\Elegence\Elegence\crashes\`, and a message box shows where.
+Elegance it happened, a stack trace, the Elegance version and the most recent log lines. On Windows
+it's written to `%APPDATA%\Elegance\Elegance\crashes\`, and a message box shows where.
 
 If you hit one, please report it with the file attached.

@@ -8,7 +8,7 @@ depends: [text/glyphs]
 
 ## What it's for
 
-Apps need icons everywhere. Elegence ships an existing icon set (Phosphor, MIT) rather than
+Apps need icons everywhere. Elegance ships an existing icon set (Phosphor, MIT) rather than
 drawing its own. Icons render through the text pipeline, so they're as cheap and crisp as glyphs
 and take the font size and color of their surroundings. A registry lets apps add any icon font in
 one call.

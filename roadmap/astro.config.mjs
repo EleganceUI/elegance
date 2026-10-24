@@ -17,8 +17,8 @@ export default defineConfig({
 	base,
 	integrations: [
 		starlight({
-			title: 'Elegence Roadmap',
-			description: 'Everything it takes to build Elegence by hand, as a checklist.',
+			title: 'Elegance Roadmap',
+			description: 'Everything it takes to build Elegance by hand, as a checklist.',
 			logo: { src: './src/assets/logo.svg', replacesTitle: false },
 			favicon: '/favicon.svg',
 			customCss: ['./src/styles/custom.css'],

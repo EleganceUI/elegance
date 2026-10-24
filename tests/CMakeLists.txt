@@ -5,7 +5,7 @@
 find_package(Catch2 3 CONFIG REQUIRED)
 include(Catch)
 
-add_executable(elegence_tests
+add_executable(elegance_tests
         accessibility_tests.cpp
         animation_tests.cpp
         audio_tests.cpp
@@ -19,12 +19,12 @@ add_executable(elegence_tests
         reactive_tests.cpp
         video_tests.cpp
 )
-target_link_libraries(elegence_tests PRIVATE Elegence::Elegence Catch2::Catch2WithMain)
+target_link_libraries(elegance_tests PRIVATE Elegance::Elegance Catch2::Catch2WithMain)
 
 if (MSVC)
-    target_compile_options(elegence_tests PRIVATE /W4 /permissive- /utf-8)
+    target_compile_options(elegance_tests PRIVATE /W4 /permissive- /utf-8)
 else ()
-    target_compile_options(elegence_tests PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(elegance_tests PRIVATE -Wall -Wextra -Wpedantic)
 endif ()
 
-catch_discover_tests(elegence_tests)
+catch_discover_tests(elegance_tests)

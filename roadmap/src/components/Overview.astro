@@ -98,7 +98,7 @@ const total = groups.flatMap((group) => group.pages).reduce((sum, page) => sum +
 		const blob = new Blob([JSON.stringify(load(), null, 2)], { type: 'application/json' });
 		const link = document.createElement('a');
 		link.href = URL.createObjectURL(blob);
-		link.download = `elegence-roadmap-${new Date().toISOString().slice(0, 10)}.json`;
+		link.download = `elegance-roadmap-${new Date().toISOString().slice(0, 10)}.json`;
 		link.click();
 		URL.revokeObjectURL(link.href);
 	});

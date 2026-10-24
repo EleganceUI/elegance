@@ -21,7 +21,7 @@ using MoveOnlyFunction = std::move_only_function<Signature>;
 #else
 
 // std::move_only_function for standard libraries without it (libc++, which macOS uses). Only
-// the plain `R(Args...)` form, which is all Elegence needs.
+// the plain `R(Args...)` form, which is all Elegance needs.
 template <typename Signature>
 class MoveOnlyFunction;
 

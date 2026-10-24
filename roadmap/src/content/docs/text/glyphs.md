@@ -35,7 +35,7 @@ scale and DPI. They're generated off the UI thread and cached on disk between ru
 - [ ] `AtlasTexture`: an RGBA8 texture plus its descriptor set; copy uploads in on the render thread
 
 ### Disk cache
-- [ ] One file per font, named by a hash of the font's bytes, in `%LOCALAPPDATA%\Elegence\GlyphCache` (macOS `~/Library/Caches/Elegence/GlyphCache`, Linux `$XDG_CACHE_HOME/elegence/glyphs`)
+- [ ] One file per font, named by a hash of the font's bytes, in `%LOCALAPPDATA%\Elegance\GlyphCache` (macOS `~/Library/Caches/Elegance/GlyphCache`, Linux `$XDG_CACHE_HOME/elegance/glyphs`)
 - [ ] `ELG_GLYPH_CACHE` overrides the path; `ELG_GLYPH_CACHE=off` disables it
 - [ ] Header with format version and generator settings; records appended by workers, each with a checksum
 - [ ] On load, stop at the first bad record and truncate there; cap each file at 64 MB

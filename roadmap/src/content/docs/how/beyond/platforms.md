@@ -13,7 +13,7 @@ don't.
 
 ## What it's for
 
-Elegence targets Windows, Linux (X11 and Wayland) and macOS. The code is Windows-first, but
+Elegance targets Windows, Linux (X11 and Wayland) and macOS. The code is Windows-first, but
 almost every platform-specific piece already sits behind an internal interface. Porting means
 writing backends, not restructuring.
 

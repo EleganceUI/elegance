@@ -67,7 +67,7 @@ std::string build_report(std::string_view message, const std::source_location& w
     std::ostringstream thread_id;
     thread_id << std::this_thread::get_id();
 
-    std::string report = std::format("Elegence internal error\n"
+    std::string report = std::format("Elegance internal error\n"
                                      "version:  {}\n"
                                      "thread:   {}\n"
                                      "location: {}:{} ({})\n"
@@ -123,7 +123,7 @@ void internal_error(std::string_view message, std::source_location where, StackT
         path = write_report(report).string();
     } catch (...) {
         if (report.empty()) {
-            std::fputs("Elegence internal error (report formatting failed)\n", stderr);
+            std::fputs("Elegance internal error (report formatting failed)\n", stderr);
         }
     }
 
@@ -132,10 +132,10 @@ void internal_error(std::string_view message, std::source_location where, StackT
     }
 
     const std::string box =
-        path.empty() ? std::string("An internal error occurred in Elegence.")
-                     : "An internal error occurred in Elegence.\nA crash report was written to:\n" +
+        path.empty() ? std::string("An internal error occurred in Elegance.")
+                     : "An internal error occurred in Elegance.\nA crash report was written to:\n" +
                            path;
-    platform::show_error_box("Elegence crashed", box.c_str());
+    platform::show_error_box("Elegance crashed", box.c_str());
     std::abort();
 }
 

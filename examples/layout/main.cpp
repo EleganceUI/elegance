@@ -5,7 +5,7 @@
 // Layout: stacks, spacers, frames, overlays, and a custom layout (a flow of tags that wraps
 // to the next row when it runs out of width).
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <algorithm>
 #include <span>
@@ -79,7 +79,7 @@ View ProfileCard() {
                   HStack({.spacing = 14},
                          avatar,
                          VStack({.alignment = HorizontalAlignment::leading, .spacing = 2},
-                                Text("Elegence").font(Font::title2),
+                                Text("Elegance").font(Font::title2),
                                 Text("SwiftUI-style UI for C++").foreground_style(ThemeColor::secondary)),
                          Spacer(),
                          Text("PRO")

@@ -95,7 +95,7 @@ public:
             fail(std::format("can't play {}: not a valid file path or URL", url_));
             return;
         }
-        queue_ = dispatch_queue_create("elegence.video", DISPATCH_QUEUE_SERIAL);
+        queue_ = dispatch_queue_create("elegance.video", DISPATCH_QUEUE_SERIAL);
         NSDictionary* attributes = @{
             (__bridge NSString*)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
         };

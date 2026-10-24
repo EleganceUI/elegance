@@ -5,7 +5,7 @@ sidebar:
   order: 3
 ---
 
-Almost everything Elegence draws is an instanced quad in one pipeline, in painter's order. The
+Almost everything Elegance draws is an instanced quad in one pipeline, in painter's order. The
 fragment shader switches on a "kind" per instance. Offscreen passes happen only for groups,
 blur, and masks.
 

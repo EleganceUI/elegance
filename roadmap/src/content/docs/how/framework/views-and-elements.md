@@ -97,7 +97,7 @@ C++ has no extension methods, so a user header is `#include`d **inside** `class 
 `ELG_VIEW_EXTENSIONS` is defined, the technique Eigen and Dear ImGui use. It may only declare
 non-virtual member functions; `static_assert`s check that `View` stays one pointer and not
 polymorphic. The functions are defined in app code and come down to `.modifier()` calls.
-`elegence_view_extensions(target header)` sets the define per target. `Text` and `Shape` have
+`elegance_view_extensions(target header)` sets the define per target. `Text` and `Shape` have
 matching hooks.
 
 ### Mounting a window

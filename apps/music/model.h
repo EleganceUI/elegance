@@ -10,7 +10,7 @@
 
 #include "library.h"
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <atomic>
 #include <memory>

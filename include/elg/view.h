@@ -556,7 +556,7 @@ public:
     }
 
     // User extensions: a header of extra member declarations, set per target with
-    // elegence_view_extensions() in CMake (design.md §9.4).
+    // elegance_view_extensions() in CMake (design.md §9.4).
 #ifdef ELG_VIEW_EXTENSIONS
 #include ELG_VIEW_EXTENSIONS
 #endif

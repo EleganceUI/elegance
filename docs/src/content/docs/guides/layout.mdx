@@ -6,7 +6,7 @@ description: "How views get their size and position, and the tools to control it
 import { Aside } from '@astrojs/starlight/components';
 import Example from '../../../components/Example.astro';
 
-Layout in Elegence follows SwiftUI's model. It's a conversation between parent and child, in
+Layout in Elegance follows SwiftUI's model. It's a conversation between parent and child, in
 three steps:
 
 1. The parent **proposes** a size to the child.
@@ -24,7 +24,7 @@ differently:
 - Stacks divide their space among their children.
 - A window proposes its size to its root view, then centers the result.
 
-All sizes are in **logical points**; Elegence scales to the display's pixels.
+All sizes are in **logical points**; Elegance scales to the display's pixels.
 
 ## Stacks
 
@@ -33,7 +33,7 @@ All sizes are in **logical points**; Elegence scales to the display's pixels.
 
 ```cpp
 VStack({.alignment = HorizontalAlignment::leading, .spacing = 4},
-       Text("Elegence").font(Font::headline),
+       Text("Elegance").font(Font::headline),
        Text("SwiftUI-style UI for C++").foreground_style(ThemeColor::secondary));
 
 ZStack({.alignment = Alignment::bottom_trailing},

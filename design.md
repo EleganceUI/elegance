@@ -1,9 +1,9 @@
-# Elegence — Design Document
+# Elegance — Design Document
 
 > Status: **Draft / living document**
 > Last updated: 2026-10-08
 
-Elegence is a C++ UI framework for building modern app interfaces in a SwiftUI-style declarative
+Elegance is a C++ UI framework for building modern app interfaces in a SwiftUI-style declarative
 API (views composed from stacks, styled with chained modifiers like `.padding()`, `.background()`,
 `.font()`, `.clip_shape()`, and driven by reactive state) with a GPU-native Vulkan renderer. It
 aims for web-like productivity without a browser engine's memory, startup time, and runtime cost.
@@ -37,7 +37,7 @@ point, not a commitment.
 - A scripting layer of any kind (JS, Lua, WASM). Logic is C++. Iteration speed comes from DLL hot
   reload (§9.6).
 - Rendering arbitrary web content.
-- **OPEN**: Native-looking widgets (OS-themed)? Proposed: no. Elegence draws everything itself.
+- **OPEN**: Native-looking widgets (OS-themed)? Proposed: no. Elegance draws everything itself.
 
 ---
 
@@ -136,7 +136,7 @@ or input, or by the environment.
 - **No unwinding through C frames**: every C callback (SDL event watch, Vulkan debug messenger,
   AccessKit) is a catch-all trampoline that marshals the exception instead.
 
-**2. Internal errors produce a crash report, then terminate.** These are bugs in Elegence
+**2. Internal errors produce a crash report, then terminate.** These are bugs in Elegance
 itself, which the developer can't handle meaningfully, and continuing would risk corrupted state.
 - **Sources**:
   - `ELG_ASSERT(cond, fmt, ...)` (always on, cheap checks) and `ELG_DEBUG_ASSERT` (debug only).
@@ -148,7 +148,7 @@ itself, which the developer can't handle meaningfully, and continuing would risk
   bad index) is treated as a bug and produces a crash report.
 - **Report contents**:
   - The message and source location, plus a `std::stacktrace`.
-  - The Elegence version and build hash, the OS, and the GPU, driver, and Vulkan version.
+  - The Elegance version and build hash, the OS, and the GPU, driver, and Vulkan version.
   - Window and DPI state.
   - The last ~200 log lines from an in-memory ring buffer.
   - Recent input events and frame packet summaries.
@@ -177,21 +177,21 @@ itself, which the developer can't handle meaningfully, and continuing would risk
   WebGPU compiles them when pipelines are created, so the build needs no shader compiler.
 - **Library type**: `SHARED` by default; `ELG_BUILD_SHARED=OFF` builds it static (the
   `windows-release-static` / `macos-release-static` presets). Static builds skip the hot reload
-  host, and `elegence_hot_reload()` refuses them (§9.6). The ABI surface uses `ELG_API` exports and
+  host, and `elegance_hot_reload()` refuses them (§9.6). The ABI surface uses `ELG_API` exports and
   pImpl at boundaries.
 - **Namespace**: `elg::` (decided). Macros use an `ELG_` prefix.
-- **Local setup**: the project uses the dedicated vcpkg at `G:\elegence-vcpkg`, which is also
+- **Local setup**: the project uses the dedicated vcpkg at `G:\elegance-vcpkg`, which is also
   the source of the `builtin-baseline` commit. `CMakeUserPresets.json` (gitignored, per-machine)
   defines `dev-debug` / `dev-release`, which set `VCPKG_ROOT` to that path. Other machines
   either set `VCPKG_ROOT` or add their own user presets.
-- **Runtime DLLs**: vcpkg only deploys an executable's direct dependencies. So `elegence` copies
+- **Runtime DLLs**: vcpkg only deploys an executable's direct dependencies. So `elegance` copies
   its own runtime DLLs (SDL3, …) into the shared `bin/` folder after each build.
 
 ### 3.4 License: MPL-2.0 (decided)
-- Elegence is licensed under the **Mozilla Public License 2.0** (`LICENSE` at the repo root).
+- Elegance is licensed under the **Mozilla Public License 2.0** (`LICENSE` at the repo root).
 - **Intent**: no closed, paid versions of the framework. Anyone who distributes a modified
-  Elegence must publish their changes to Elegence's files under MPL-2.0.
-- **Apps built with Elegence** can use any license, including closed-source and paid. MPL is
+  Elegance must publish their changes to Elegance's files under MPL-2.0.
+- **Apps built with Elegance** can use any license, including closed-source and paid. MPL is
   file-level copyleft, so the app's own files are unaffected, and it works with static linking
   and inlined header code (unlike LGPL).
 - MPL-2.0 can't forbid *selling*, and no open-source license can. It makes a closed paid fork
@@ -378,7 +378,7 @@ count.update([](int& c) { ++c; });
 ### SwiftUI-facing names
 The user-facing API uses SwiftUI vocabulary on top of the signal core:
 
-| SwiftUI              | Elegence                          | Underlying                        |
+| SwiftUI              | Elegance                          | Underlying                        |
 |----------------------|-----------------------------------|-----------------------------------|
 | `@State var x = 0`   | `auto x = State(0);`              | `Signal<int>` owned by the view   |
 | `@Binding var x`     | `Binding<int> x`                  | get/set pair (from State or store)|
@@ -545,7 +545,7 @@ A SwiftUI-style C++ API. Views are values, and modifiers chain.
 
 ### 9.1 Example
 ```cpp
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 using namespace elg;
 
 View Counter() {
@@ -624,7 +624,7 @@ a binding that updates exactly one property on one element.
 #### Principle: every modifier is a type, and every dot-method is sugar
 SwiftUI defines `.padding()` as an extension on `View` that just wraps a padding modifier:
 `extension View { func padding(...) -> some View { modifier(_PaddingLayout(...)) } }`.
-Elegence does the same:
+Elegance does the same:
 - Each built-in method only constructs a **public modifier struct** and passes it to the single
   entry point, `View::modifier()`.
 - The framework has **no private path**. Anything `.padding()` does, user code can do with
@@ -706,7 +706,7 @@ how to lower a modifier. Users can implement any of them.
   rendered output.
 
 #### User extensions (`extension View` equivalent)
-C++ has no extension methods, and C++26 adds no member injection or UFCS. Elegence gets real
+C++ has no extension methods, and C++26 adds no member injection or UFCS. Elegance gets real
 dot-syntax extensions with an **extension header** instead. This is the same technique as
 Eigen's `EIGEN_MATRIXBASE_PLUGIN` and Dear ImGui's `IM_VEC2_CLASS_EXTRA`: a user header is
 `#include`d *inside* the class body of `elg::View`.
@@ -720,11 +720,11 @@ View badge(elg::Prop<int> count) &&;
 View debug_border(elg::Color c = elg::Color::red) &&;
 ```
 
-**2. Define them as normal code**, either in a header after `<elg/elegence.h>` (mark them
+**2. Define them as normal code**, either in a header after `<elg/elegance.h>` (mark them
 `inline`) or in any `.cpp` of the module:
 ```cpp
 // app/view_extensions.cpp
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 #include "card.h"
 
 elg::View elg::View::card(float radius) && {
@@ -737,7 +737,7 @@ elg::View elg::View::badge(Prop<int> count) && {
 
 **3. Register the header per target** in CMake:
 ```cmake
-elegence_view_extensions(my_app_views app/view_extensions.h)
+elegance_view_extensions(my_app_views app/view_extensions.h)
 # sets ELG_VIEW_EXTENSIONS="app/view_extensions.h" on every TU of the target
 ```
 
@@ -864,7 +864,7 @@ rebuilding and reloading a DLL that contains the app's views.
 
 #### Mechanism
 ```
-app.exe / preview host  ──links──►  elegence.dll        (never reloaded)
+app.exe / preview host  ──links──►  elegance.dll        (never reloaded)
         │
         └─ LoadLibrary ──►  app_views_<N>.dll   (user views; rebuilt + reloaded on save)
 ```
@@ -884,7 +884,7 @@ app.exe / preview host  ──links──►  elegence.dll        (never reloade
    never `typeid` or static addresses.
 3. **Scoped ownership.** Every closure, effect, subscription, timer, and task belongs to a mount
    scope and can be torn down deterministically (§6 Lifetime).
-4. **One framework instance.** Hot reload builds use the shared `elegence.dll` (dev builds force
+4. **One framework instance.** Hot reload builds use the shared `elegance.dll` (dev builds force
    `ELG_BUILD_SHARED`) with the same compiler and CRT (`/MD`). A static framework would give
    each module its own globals.
 5. **Light headers.** Reload latency is compile + link time. Public headers keep declarations
@@ -995,7 +995,7 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
   (UIA / AT-SPI / NSAccessibility).
 - **Decided:** **AccessKit** through its C API (`accesskit-c`), rather than writing three backends.
   - CMake downloads the official prebuilt release (pinned version and SHA-256) and links it
-    statically (`ELG_ACCESSIBILITY`, on by default). Building Elegence needs no Rust toolchain.
+    statically (`ELG_ACCESSIBILITY`, on by default). Building Elegance needs no Rust toolchain.
     MIT / Apache-2.0.
 - Built-in components ship with correct roles. Keyboard navigation works everywhere, and
   `prefers-reduced-motion` and high-contrast settings are respected.
@@ -1085,13 +1085,13 @@ Text(file.name)
 - Items: `MenuItem` (title, optional icon, shortcut hint, `disabled`, `checked`, `role`),
   `Divider`, `Submenu`, and `Section` (a titled group).
 
-#### Rendering: drawn by Elegence, in a popup window (decided)
+#### Rendering: drawn by Elegance, in a popup window (decided)
 
 | Option | Pros | Cons |
 |---|---|---|
-| Native OS menus (`TrackPopupMenu`, `NSMenu`) | Exact platform feel | Unstyleable, no custom views, nothing native on Linux/Wayland, contradicts "Elegence draws everything" (§1) |
+| Native OS menus (`TrackPopupMenu`, `NSMenu`) | Exact platform feel | Unstyleable, no custom views, nothing native on Linux/Wayland, contradicts "Elegance draws everything" (§1) |
 | Overlay drawn inside the window | Simplest; uses the top layer | Clipped to the window: breaks near edges and in small windows |
-| **Elegence-drawn, in an SDL popup window** | Extends past the window, fully styleable, Wayland via `xdg_popup` | A small window with its own swapchain per popup |
+| **Elegance-drawn, in an SDL popup window** | Extends past the window, fully styleable, Wayland via `xdg_popup` | A small window with its own swapchain per popup |
 
 - Popups use `SDL_CreatePopupWindow` (`SDL_WINDOW_POPUP_MENU` / `SDL_WINDOW_TOOLTIP`).
 - To the rest of the framework a popup is just another window: its own element tree, event
@@ -1134,7 +1134,7 @@ alongside `sheet` and `popover`.
 
 ### 13.2 Built-in icon library
 
-Apps need icons everywhere: toolbars, buttons, menus, list rows, and empty states. Elegence ships
+Apps need icons everywhere: toolbars, buttons, menus, list rows, and empty states. Elegance ships
 an existing open-source icon set rather than drawing its own. **No generated icons:** every glyph
 comes verbatim from the upstream project, and the code table is generated mechanically from the
 project's own metadata.
@@ -1198,7 +1198,7 @@ MenuItem("Copy", copy, {.image = {.system_name = "lucide.copy"}, .shortcut = "Ct
 
 #### Adding an icon set (extensibility)
 
-Adding a set should take one line and no code: point Elegence at the files the set already ships.
+Adding a set should take one line and no code: point Elegance at the files the set already ships.
 The built-in sets are registered through this same public API (dogfooding), so it gets exercised
 for real.
 
@@ -1229,7 +1229,7 @@ set_default_icon_set("brand"); // for names without a set prefix
   - IcoMoon `selection.json` and Fontello `config.json`.
   - Without a map, the font's own glyph names (the `post` table / CFF names).
 - **CMake helper** to embed a set into an app, so there are no loose files at runtime:
-  `elegence_icon_set(my_app NAME brand FONT icons/brand.ttf NAMES icons/brand.json)`. It
+  `elegance_icon_set(my_app NAME brand FONT icons/brand.ttf NAMES icons/brand.json)`. It
   generates the registration call and, optionally, `Icons::brand::...` constants.
 - **SVG sets (once GPU paths exist):** `register_icon_set("brand", {.svg_directory = "icons/"})`,
   where each file name is an icon name and `heart-fill.svg` style suffixes can map to variants.
@@ -1238,7 +1238,7 @@ set_default_icon_set("brand"); // for names without a set prefix
   - Each built-in set is a separate, optional component (`ELG_ICON_SETS="lucide;phosphor"`),
     with its license file installed alongside.
   - Third parties can publish a set as a tiny vcpkg port or CMake package that calls
-    `elegence_icon_set`.
+    `elegance_icon_set`.
 - **Errors:**
   - Registering a name twice is a `UsageError` (unless `{.replace = true}`).
   - A missing file or unreadable map throws `ResourceError` with the path and what was expected.
@@ -1273,7 +1273,7 @@ set_default_icon_set("brand"); // for names without a set prefix
 
 ### 13.3 Media: images, audio, and video
 
-Elegence exists so desktop apps don't need a browser. What people reach for a browser for
+Elegance exists so desktop apps don't need a browser. What people reach for a browser for
 includes pictures, sound, and video, so these are built in rather than left to each app.
 Today `Image` only draws icons, and nothing plays sound or video.
 
@@ -1391,7 +1391,7 @@ plot) draw into a `GpuImage`, and `GpuImageView` shows it with no copies.
   made on the renderer's adapter once it's known. OpenGL imports them with
   `GL_EXT_memory_object_win32` / `GL_EXT_semaphore_win32`, Vulkan with external memory and
   semaphores, and Direct3D directly. The app signals the fence to the frame's value
-  (`Sync::fence`, GPU to GPU), or reports the work finished (`Sync::finished`) and Elegence
+  (`Sync::fence`, GPU to GPU), or reports the work finished (`Sync::finished`) and Elegance
   signals it. The renderer waits on it in `BeginAccess` and passes its `EndAccess` fence back.
 - **Vulkan backend** (Dawn can't import D3D textures there): `end_frame()` copies the frame
   through memory instead; slower, same API.
@@ -1490,7 +1490,7 @@ edge. Toggled inside `with_animation`, the other columns' frames ease to their n
   title of the page underneath). Alt+Left goes back too, while focus is inside the stack.
   - `root_title` is a `Prop`, so it can follow state (the selected folder).
   - There are no toolbar items or per-page title modifiers yet. Those need a way for a page to
-    pass values up to its container (SwiftUI's preferences), which Elegence doesn't have.
+    pass values up to its container (SwiftUI's preferences), which Elegance doesn't have.
 
 #### Not done yet
 - Keyboard resizing of dividers, and a splitter role for screen readers. Dividers are hidden
@@ -1625,7 +1625,7 @@ Separate render thread from day one (decided).
 **M1: Static UI**
 - [x] `View` type + `View::modifier()` + modifier protocols (view, layout, decoration) +
   lowering to the element tree
-- [x] User extensions via `elegence_view_extensions()` (the sandbox's `.card()`)
+- [x] User extensions via `elegance_view_extensions()` (the sandbox's `.card()`)
 - [x] Follow the hot-reload framework rules from day one (§9.6)
 - [x] Layout protocol + custom `Layout`: VStack/HStack/ZStack, Spacer, frame (fixed and
   flexible), padding, fixed_size, layout_priority, offset
@@ -1967,8 +1967,8 @@ Separate render thread from day one (decided).
   - A compute rasterizer (Vello-style) if path-heavy scenes need it.
   - SVG icon sets via `register_icon_set({.svg_directory})`.
 - [x] Persistent glyph cache on disk (`src/text/glyph_cache.*`):
-  - Generated glyph pixels are kept in `%LOCALAPPDATA%\Elegence\GlyphCache`, or
-    `~/Library/Caches/Elegence/GlyphCache` on macOS, or `$XDG_CACHE_HOME/elegence/glyphs` on
+  - Generated glyph pixels are kept in `%LOCALAPPDATA%\Elegance\GlyphCache`, or
+    `~/Library/Caches/Elegance/GlyphCache` on macOS, or `$XDG_CACHE_HOME/elegance/glyphs` on
     Linux. `ELG_GLYPH_CACHE` overrides the location, and `ELG_GLYPH_CACHE=off` disables it.
   - There is one file per font, named by a hash of the font's bytes, so an updated font gets a
     fresh file. The header records the format version and the generator settings.
@@ -2033,7 +2033,7 @@ Separate render thread from day one (decided).
   - A reload is a `ForEach` over a one-item "generation" list, so the existing machinery
     unmounts the old tree (its scope and effects) and mounts the new module's views. No new
     element type and no App remount logic.
-  - Modules load from unique copies (`%TEMP%/elegence-reload/<pid>/`), so the build can replace
+  - Modules load from unique copies (`%TEMP%/elegance-reload/<pid>/`), so the build can replace
     the file. The previous module stays loaded while its views fade out; older ones unload.
     Modules still loaded at exit are left loaded.
   - A watcher thread polls the watched folders every 250 ms.
@@ -2043,12 +2043,12 @@ Separate render thread from day one (decided).
       iteration, with a wake).
   - A status badge shows "Building…", the first compiler error (file, line, message) or
     "Reloaded (N ms)". A failed build keeps the last good views.
-  - CMake: `elegence_views_module(target sources...)` and
-    `elegence_hot_reload(host MODULE views [WATCH ...])`. The latter generates
+  - CMake: `elegance_views_module(target sources...)` and
+    `elegance_hot_reload(host MODULE views [WATCH ...])`. The latter generates
     `<host>_hot_reload.h` with `elg_hot_reload_options()`. On Windows the rebuild runs through a
     generated `rebuild.cmd` that restores the configure-time compiler environment (vcvars'
     INCLUDE/LIB/PATH), so an app started from an IDE or Explorer can still build.
-  - `elegence-preview` (apps/preview) shows a module's previews in a sidebar, or with `--root`
+  - `elegance-preview` (apps/preview) shows a module's previews in a sidebar, or with `--root`
     its root view. `--module/--build/--watch` point it at any module. Ships with a
     `gallery_views` demo module.
   - Measured: about a 3 s edit-to-screen loop for the gallery module in a debug build.
@@ -2323,7 +2323,7 @@ Separate render thread from day one (decided).
 - [x] `View::font_weight(Weight)` changes the inherited font's weight (text and icons).
 - [ ] Icon follow-ups:
   - Glyph-name maps from the font's `post` table; IcoMoon `selection.json` / Fontello configs.
-  - The `elegence_icon_set` CMake helper for apps.
+  - The `elegance_icon_set` CMake helper for apps.
   - Generated `Icons::phosphor::...` constants.
   - Light/thin/duotone weights opt-in.
   - `.resizable()`.

@@ -136,7 +136,7 @@ class ModuleHost : public std::enable_shared_from_this<ModuleHost> {
 public:
     explicit ModuleHost(HotReloadOptions options) : options_(std::move(options)) {
         std::error_code error;
-        copies_ = fs::temp_directory_path(error) / "elegence-reload" / std::to_string(elg_getpid());
+        copies_ = fs::temp_directory_path(error) / "elegance-reload" / std::to_string(elg_getpid());
         fs::remove_all(copies_, error);
         fs::create_directories(copies_, error);
     }
@@ -188,7 +188,7 @@ public:
             }
             const ModuleEntry* entry = entry_function();
             if (!entry || entry->abi != module_abi) {
-                throw ResourceError(std::format("{} was built against another Elegence version",
+                throw ResourceError(std::format("{} was built against another Elegance version",
                                                 options_.module.filename().string()));
             }
             modules_.push_back({std::move(library), entry});

@@ -2,16 +2,16 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// elegence-preview: shows a views module's previews (or its root view) and reloads them when
+// elegance-preview: shows a views module's previews (or its root view) and reloads them when
 // its sources change (design.md §9.6).
 //
-//   elegence-preview                       the gallery module built with it
-//   elegence-preview --root                the gallery's root view instead of its previews
-//   elegence-preview --module <file> [--build "<command>"] [--watch <folder>]...
+//   elegance-preview                       the gallery module built with it
+//   elegance-preview --root                the gallery's root view instead of its previews
+//   elegance-preview --module <file> [--build "<command>"] [--watch <folder>]...
 
-#include "elegence-preview_hot_reload.h"
+#include "elegance-preview_hot_reload.h"
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <cstdio>
 #include <string_view>
@@ -38,7 +38,7 @@ int main(int argc, char** argv) {
         } else if (i + 1 < argc && arg == "--watch") {
             options.watch.emplace_back(argv[++i]);
         } else {
-            std::fprintf(stderr, "usage: elegence-preview [--root] [--module <file> [--build \"<command>\"] [--watch <folder>]...]\n");
+            std::fprintf(stderr, "usage: elegance-preview [--root] [--module <file> [--build \"<command>\"] [--watch <folder>]...]\n");
             return 2;
         }
     }
@@ -58,7 +58,7 @@ int main(int argc, char** argv) {
         });
         return app.run();
     } catch (const elg::Error& e) {
-        std::fprintf(stderr, "elegence-preview: %s\n", e.what());
+        std::fprintf(stderr, "elegance-preview: %s\n", e.what());
         return 1;
     }
 }

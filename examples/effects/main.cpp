@@ -5,7 +5,7 @@
 // Effects: materials (background blur), blur, color adjustments, blend modes, shadows (layered,
 // spread, inner), gradients, rotation and scale, and masks.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <string>
 #include <utility>
@@ -18,7 +18,7 @@ View Backdrop() {
     return ZStack(Rectangle().fill(AngularGradient({Color::hex(0xFF5F6D), Color::hex(0xFFC371), Color::hex(0x47CF73),
                                                      Color::hex(0x3EA6FF), Color::hex(0xA36BFF), Color::hex(0xFF5F6D)})),
                   Circle().fill(Color::white.opacity(0.85f)).frame(70, 70).offset(-90, -30),
-                  Text("Elegence").font(Font::system(44, Weight::bold)).foreground_style(Color::black).offset(30, 30));
+                  Text("Elegance").font(Font::system(44, Weight::bold)).foreground_style(Color::black).offset(30, 30));
 }
 
 View Caption(View content, std::string label) {

@@ -86,7 +86,7 @@ Using a family that isn't registered throws `elg::ResourceError` when the text i
 
 ## Icons
 
-Elegence embeds [Phosphor](https://phosphoricons.com) (MIT licensed), about 1,500 icons, as its
+Elegance embeds [Phosphor](https://phosphoricons.com) (MIT licensed), about 1,500 icons, as its
 default icon set. Icons are glyphs: they take the font size, weight and foreground color of their
 environment, and sit on the text baseline next to text.
 

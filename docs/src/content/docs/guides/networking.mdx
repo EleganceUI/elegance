@@ -5,7 +5,7 @@ description: "HTTP requests with callbacks or as reactive state, and images from
 
 import Example from '../../../components/Example.astro';
 
-Elegence makes HTTP(S) requests with the system's own networking: WinHTTP on Windows, which uses
+Elegance makes HTTP(S) requests with the system's own networking: WinHTTP on Windows, which uses
 the system's certificates and proxy settings and supports HTTP/2 and compression. Requests run on
 background threads; results arrive on the UI thread, where you can write state.
 
@@ -60,7 +60,7 @@ Button("Refresh", [=] { profile.reload(); });
 it again, keeping the old result until the new one arrives. Copies share the request, and it's
 cancelled when the last copy goes.
 
-Elegence doesn't include a JSON library; use the one you like (nlohmann/json, Glaze, simdjson) on
+Elegance doesn't include a JSON library; use the one you like (nlohmann/json, Glaze, simdjson) on
 `response().text()`.
 
 ## WebSockets

@@ -8,7 +8,7 @@ depends: [foundations/core]
 
 ## What it's for
 
-Elegence runs a view's body **once**. Everything dynamic after that comes from this graph: state
+Elegance runs a view's body **once**. Everything dynamic after that comes from this graph: state
 you write, values derived from it, and effects that push new values into elements. A change
 re-runs exactly the code that read the changed state, once, with consistent inputs. No view tree
 is re-evaluated or diffed.

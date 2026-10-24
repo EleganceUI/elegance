@@ -6,7 +6,7 @@
 
 #include "palette.h"
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <algorithm>
 #include <format>

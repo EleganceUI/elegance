@@ -17,7 +17,7 @@ which lay out, paint into a display list, and handle input. App code never sees 
 - `design.md` §7 (Element tree), §9.1–9.4 (Authoring API, modifier protocols, user extensions)
 - `include/elg/view.h`, `include/elg/modifier.h`, `include/elg/modifiers/*.h`
 - `src/view/view_node.h`, `src/view/view.cpp`, `src/view/modifiers.cpp`, `src/view/element.*`
-- `cmake/ElegenceViewExtensions.cmake`, `apps/sandbox/view_extensions.*`
+- `cmake/EleganceViewExtensions.cmake`, `apps/sandbox/view_extensions.*`
 
 ## Tasks
 
@@ -51,7 +51,7 @@ which lay out, paint into a display list, and handle input. App code never sees 
 ### User extensions
 - [ ] `#include ELG_VIEW_EXTENSIONS` inside `class View` (and `ELG_TEXT_EXTENSIONS` / `ELG_SHAPE_EXTENSIONS`)
 - [ ] `static_assert`s: `sizeof(View) == sizeof(ViewRef)` and `!is_polymorphic_v<View>`
-- [ ] `elegence_view_extensions(target header)` sets the define per target
+- [ ] `elegance_view_extensions(target header)` sets the define per target
 - [ ] `.apply(fn)` for function-style modifiers
 
 ### Window mount

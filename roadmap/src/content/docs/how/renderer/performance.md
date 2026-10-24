@@ -13,7 +13,7 @@ findings and the design for the next steps.
 
 ## What it's for
 
-An idle Elegence window already costs nothing: no state changes, no frames. This page is about
+An idle Elegance window already costs nothing: no state changes, no frames. This page is about
 the other case: something is moving. That might be a sidebar sliding, a spinner, the music
 app's "now playing" bars, or a scroll. Moving things should cost about as much as the things
 that move. Windows nobody can see should cost nothing.

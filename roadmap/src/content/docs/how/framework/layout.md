@@ -8,7 +8,7 @@ depends: [framework/views-and-elements]
 
 ## What it's for
 
-Layout decides every element's frame. Elegence follows SwiftUI's negotiation rather than
+Layout decides every element's frame. Elegance follows SwiftUI's negotiation rather than
 flexbox: it's simpler, it composes predictably, and it's the model the rest of the API assumes.
 
 ## How it works

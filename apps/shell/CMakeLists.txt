@@ -9,7 +9,7 @@ add_executable(shell
         model.cpp
 )
 
-target_link_libraries(shell PRIVATE Elegence::Elegence)
+target_link_libraries(shell PRIVATE Elegance::Elegance)
 
 if (MSVC)
     target_compile_options(shell PRIVATE /W4 /permissive- /utf-8)

@@ -106,10 +106,10 @@ std::string describe(DWORD error) {
 // WebSockets need HTTP/1.1, so they get their own session (the HTTP one enables HTTP/2).
 HINTERNET session() {
     static const HINTERNET handle = [] {
-        HINTERNET opened = WinHttpOpen(L"Elegence/0.1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
+        HINTERNET opened = WinHttpOpen(L"Elegance/0.1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
                                        WINHTTP_NO_PROXY_BYPASS, 0);
         if (!opened) {
-            opened = WinHttpOpen(L"Elegence/0.1", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME,
+            opened = WinHttpOpen(L"Elegance/0.1", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME,
                                  WINHTTP_NO_PROXY_BYPASS, 0);
         }
         return opened;

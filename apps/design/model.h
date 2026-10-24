@@ -13,7 +13,7 @@
 // every change, normalize() puts the list back in tree order, lays out auto-layout frames, and
 // fits groups around their children.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <map>
 #include <memory>

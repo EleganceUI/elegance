@@ -5,7 +5,7 @@
 // Icon names and icon-set registration (design.md §13.2). Resolving a name needs no window; the
 // fonts are only loaded when an Image is shown.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>

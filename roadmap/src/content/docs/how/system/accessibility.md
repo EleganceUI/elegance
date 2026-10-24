@@ -9,7 +9,7 @@ depends: [controls/basic-controls, text/text-input, controls/scrolling-and-lists
 ## What it's for
 
 Screen readers and other assistive technology need a tree of what's on screen: roles, names,
-values, states, and actions they can perform. Elegence draws everything itself, so it must
+values, states, and actions they can perform. Elegance draws everything itself, so it must
 describe everything itself. It hands that description to **AccessKit**, which speaks each OS's
 accessibility API.
 
@@ -46,7 +46,7 @@ order, and hides the children.
 The adapter is AccessKit's **Windows subclassing adapter**: it hooks the window's `WM_GETOBJECT`
 and does nothing until a client (Narrator, NVDA, an automation tool) asks.
 
-- **First request**: AccessKit calls back synchronously on the UI thread. Elegence builds the
+- **First request**: AccessKit calls back synchronously on the UI thread. Elegance builds the
   whole tree (walk the elements, apply the modifier rules, assign ids), converts every node to an
   AccessKit node, and remembers what it sent. The adapter is now **active**.
 - **Ids**: each element's `accessibility_id()` is a process-unique number assigned on first use.
@@ -62,7 +62,7 @@ After each frame, while active (and coalesced when frames come quickly):
 2. Compare each node with the one **last sent** under the same id.
 3. Send only nodes that changed, plus focus if it moved. A scale change resends everything.
 
-Converting every node of a large window each frame cost milliseconds; diffing on Elegence's side
+Converting every node of a large window each frame cost milliseconds; diffing on Elegance's side
 keeps updates proportional to what changed. With no client, none of this runs, and idle CPU stays
 0.
 

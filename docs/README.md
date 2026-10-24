@@ -1,4 +1,4 @@
-# Elegence documentation
+# Elegance documentation
 
 The documentation site, built with [Astro Starlight](https://starlight.astro.build). Guides live in
 `src/content/docs/`; the API reference is generated from `include/elg/` by

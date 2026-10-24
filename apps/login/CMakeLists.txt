@@ -10,7 +10,7 @@ add_executable(login
 )
 
 target_link_libraries(login PRIVATE
-        Elegence::Elegence
+        Elegance::Elegance
         unofficial::nayuki-qr-code-generator::nayuki-qr-code-generator
 )
 

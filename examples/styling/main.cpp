@@ -5,7 +5,7 @@
 // Styling: a custom theme, light and dark mode, a ButtonStyle, a reusable ViewModifier, and a
 // custom environment value read by a component.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <string>
 #include <string_view>

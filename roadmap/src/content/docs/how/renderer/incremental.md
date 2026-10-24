@@ -7,7 +7,7 @@ depends: [renderer/ui-pipeline, framework/views-and-elements, framework/animatio
 ---
 
 :::caution[Design, not built]
-Today Elegence redraws the whole window whenever anything changes (see "Where it stands"). This
+Today Elegance redraws the whole window whenever anything changes (see "Where it stands"). This
 page is the design for redrawing only what changed.
 :::
 
@@ -30,7 +30,7 @@ A frame goes through five stages. The first two already scale with the change:
 | Plan (render thread) | `plan_frame` converts the whole list into instances | No |
 | GPU and present | Clear the target, draw every instance, present the whole image | No |
 
-Elegence already renders **only when something changed**: an idle window costs nothing. The goal
+Elegance already renders **only when something changed**: an idle window costs nothing. The goal
 here is that a frame that does render costs only what changed.
 
 ## How it should work

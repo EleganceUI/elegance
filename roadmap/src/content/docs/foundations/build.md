@@ -37,7 +37,7 @@ layers), CMake and Ninja (CLion bundles both), and a vcpkg checkout.
 - [ ] Refuse to configure inside a build tree that doesn't use the manifest (the repo blocks `cmake-build-debug/`)
 
 ### Library target
-- [ ] `ELG_BUILD_SHARED` option (ON by default): `elegence` builds as a DLL
+- [ ] `ELG_BUILD_SHARED` option (ON by default): `elegance` builds as a DLL
 - [ ] An `ELG_API` export macro (generated export header); export per member on `View` and `Shape`, not per class (see Gotchas)
 - [ ] `ELG_PRIVATE_MEMBERS_BEGIN/END` to silence C4251 around private STL members of exported classes
 - [ ] Use the dynamic CRT (`/MD`) everywhere: hot reload needs one CRT shared by host, framework and modules
@@ -50,7 +50,7 @@ layers), CMake and Ninja (CLion bundles both), and a vcpkg checkout.
 - [ ] Rebuild only when the source shader or file changes
 
 ### Targets
-- [ ] `sandbox` app that links `elegence`
+- [ ] `sandbox` app that links `elegance`
 - [ ] `examples/<name>/main.cpp`, each built as `example_<name>`
 - [ ] `tests` target with Catch2, registered with CTest
 

@@ -2,7 +2,7 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Shell: a desktop environment drawn entirely with Elegence, running fullscreen. A login screen,
+// Shell: a desktop environment drawn entirely with Elegance, running fullscreen. A login screen,
 // a desktop with movable, resizable windows, a top bar, a dock, a launcher, quick settings and
 // notifications, and sample apps: Settings, Files, Terminal, Notes, Calculator, System Monitor.
 // Uses only the public API.
@@ -19,7 +19,7 @@
 #include "chrome.h"
 #include "model.h"
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <cstdio>
 #include <sstream>
@@ -54,7 +54,7 @@ int main(int argc, char** argv) {
         shell::Desktop desktop;
         desktop.app = &app;
         const shell::Ticker ticker(desktop);
-        app.window({.title = "Elegence Desktop",
+        app.window({.title = "Elegance Desktop",
                     .width = 1600,
                     .height = 900,
                     .title_bar = windowed ? TitleBar::system : TitleBar::hidden,

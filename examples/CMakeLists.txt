@@ -7,7 +7,7 @@
 
 function(elg_example name)
     add_executable(example_${name} ${name}/main.cpp)
-    target_link_libraries(example_${name} PRIVATE Elegence::Elegence)
+    target_link_libraries(example_${name} PRIVATE Elegance::Elegance)
     set_target_properties(example_${name} PROPERTIES OUTPUT_NAME ${name} FOLDER examples)
     if (MSVC)
         target_compile_options(example_${name} PRIVATE /W4 /permissive- /utf-8)
@@ -33,7 +33,7 @@ elg_example(navigation)
 elg_example(grids)
 elg_example(effects)
 
-# OpenGL draws into a GpuImage (Windows only for now). SDL, Elegence's own dependency, provides
+# OpenGL draws into a GpuImage (Windows only for now). SDL, Elegance's own dependency, provides
 # the context.
 if (WIN32)
     find_package(SDL3 CONFIG REQUIRED)

@@ -610,9 +610,9 @@ void Platform::dispatch_live_resize(std::uint32_t window_id) noexcept {
 // --- Free functions ---
 
 std::filesystem::path pref_path() {
-    char* path = SDL_GetPrefPath("Elegence", "Elegence");
+    char* path = SDL_GetPrefPath("Elegance", "Elegance");
     if (!path) {
-        return std::filesystem::temp_directory_path() / "elegence";
+        return std::filesystem::temp_directory_path() / "elegance";
     }
     std::filesystem::path result(std::u8string_view(reinterpret_cast<const char8_t*>(path)));
     SDL_free(path);

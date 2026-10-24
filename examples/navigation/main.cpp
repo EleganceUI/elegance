@@ -5,7 +5,7 @@
 // Navigation: a notes app's layout. NavigationSplitView with a sidebar that hides, a
 // NavigationStack driven by a path (a folder's notes, then a note), and a VSplitView.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <algorithm>
 #include <string>

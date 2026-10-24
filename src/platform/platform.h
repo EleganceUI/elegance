@@ -224,7 +224,7 @@ private:
     LiveResizeCallback live_resize_;
 };
 
-// Per-user writable directory for Elegence data (crash reports, caches).
+// Per-user writable directory for Elegance data (crash reports, caches).
 std::filesystem::path pref_path();
 std::optional<std::string> environment_variable(const char* name);
 // Whether the OS is set to a dark appearance.

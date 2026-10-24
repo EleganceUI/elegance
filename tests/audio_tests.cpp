@@ -5,7 +5,7 @@
 // Audio loading (design.md §13.3). Playback itself needs an output device, so these check
 // decoding and errors; without a device, playing is a no-op.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <catch2/catch_test_macros.hpp>
 

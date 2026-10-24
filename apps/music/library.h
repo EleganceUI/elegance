@@ -8,7 +8,7 @@
 // The music library: a fixed, made-up catalog (artists, albums, tracks, stations), and the
 // playlists the user can add to.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <string>
 #include <vector>

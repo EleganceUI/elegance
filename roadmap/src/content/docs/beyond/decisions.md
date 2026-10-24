@@ -10,7 +10,7 @@ Each item is a decision, not code. Tick it once you've decided and recorded the 
 
 ## Tasks
 
-- [ ] Native-looking (OS-themed) widgets? Proposed: no; Elegence draws everything
+- [ ] Native-looking (OS-themed) widgets? Proposed: no; Elegance draws everything
 - [ ] A `WebView` hosting the system browser control, as an exception to the "no web content" non-goal (see [WebView](../../system/webview/)), and whether a bundled-engine variant may ever exist as a separate package
 - [ ] Bidi and line breaking library: SheenBidi, ICU4X, or libunibreak
 - [ ] SVG library: lunasvg or resvg (or our own path renderer only)

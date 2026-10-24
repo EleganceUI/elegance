@@ -9,7 +9,7 @@
 
 #include "model.h"
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <functional>
 #include <string>

@@ -5,7 +5,7 @@
 // Checklist progress, kept in this browser's localStorage. Items are identified by a hash of
 // their text, so reordering a page keeps its ticks; rewording an item clears that one.
 
-const STORAGE_KEY = 'elegence-roadmap';
+const STORAGE_KEY = 'elegance-roadmap';
 
 export interface Progress {
 	version: 1;

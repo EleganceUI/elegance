@@ -1,11 +1,11 @@
 ---
 title: Popups, menus, and tooltips
-description: Elegence-drawn menus in SDL popup windows, keyboard navigation, submenus, and tooltips.
+description: Elegance-drawn menus in SDL popup windows, keyboard navigation, submenus, and tooltips.
 sidebar:
   order: 3
 ---
 
-Menus, dropdowns, popovers and tooltips are drawn by Elegence into real popup windows, so they
+Menus, dropdowns, popovers and tooltips are drawn by Elegance into real popup windows, so they
 can extend past the main window. To the framework, a popup is just another window with its own
 tree.
 

@@ -5,7 +5,7 @@
 // Desktop integration (design.md §13.4). The dialogs, notifications, and tray need a running App
 // (and a person to click), so these check the rules around them.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <catch2/catch_test_macros.hpp>
 

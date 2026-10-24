@@ -80,7 +80,7 @@ std::string format_time(std::time_t time, const char* format) {
 Desktop::Desktop() {
     notes = std::vector<Note>{
         {1, "Welcome.txt",
-         "Welcome to the Elegence desktop.\n\nEverything here is drawn by the Elegence UI library: the windows, the "
+         "Welcome to the Elegance desktop.\n\nEverything here is drawn by the Elegance UI library: the windows, the "
          "dock, the launcher, and every app.\n\nTry dragging windows by their title bars, resizing them from the "
          "corner, and changing the wallpaper in Settings."},
         {2, "Groceries.txt", "Oat milk\nCoffee beans\nLemons\nBasil\nSourdough"},

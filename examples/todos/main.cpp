@@ -5,7 +5,7 @@
 // Todos: a list in state. TextField and Binding, ForEach keyed by id, If, Computed, and
 // animated insertions and removals.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <algorithm>
 #include <format>

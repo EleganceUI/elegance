@@ -172,10 +172,10 @@ std::string describe(DWORD error) {
 HINTERNET session() {
     static const HINTERNET handle = [] {
         // The system's proxy settings (automatic where Windows supports it).
-        HINTERNET opened = WinHttpOpen(L"Elegence/0.1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
+        HINTERNET opened = WinHttpOpen(L"Elegance/0.1", WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME,
                                        WINHTTP_NO_PROXY_BYPASS, 0);
         if (!opened) {
-            opened = WinHttpOpen(L"Elegence/0.1", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME,
+            opened = WinHttpOpen(L"Elegance/0.1", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY, WINHTTP_NO_PROXY_NAME,
                                  WINHTTP_NO_PROXY_BYPASS, 0);
         }
         if (opened) {

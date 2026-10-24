@@ -9,7 +9,7 @@ depends: [framework/shapes-and-effects]
 ## What it's for
 
 Apps need consistent fonts, colors and control looks without repeating them on every view.
-Elegence gets that from three mechanisms instead of stylesheets: **environment values**
+Elegance gets that from three mechanisms instead of stylesheets: **environment values**
 inherited down the tree, **themes** of semantic color tokens, and **style protocols** that let
 any control's appearance be replaced while it keeps its behavior.
 

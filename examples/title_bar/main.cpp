@@ -6,7 +6,7 @@
 // moves the window), window controls, and a rounded, translucent panel the desktop shows
 // through.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 using namespace elg;
 

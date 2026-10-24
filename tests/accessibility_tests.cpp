@@ -5,7 +5,7 @@
 // Accessibility modifiers (design.md §12). The tree itself is checked through Windows UI
 // Automation against the running sandbox (design.md, M5).
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <catch2/catch_test_macros.hpp>
 

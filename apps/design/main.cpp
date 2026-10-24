@@ -16,7 +16,7 @@
 #include "model.h"
 #include "panels.h"
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <cstdio>
 #include <memory>
@@ -40,7 +40,7 @@ int main(int argc, char** argv) {
     try {
         App app;
         const design::Document doc;
-        app.window({.title = "Elegence Design", .width = 1440, .height = 900, .min_size = Size{900, 560}},
+        app.window({.title = "Elegance Design", .width = 1440, .height = 900, .min_size = Size{900, 560}},
                    [&] {
                        if (!empty) {
                            doc.load_sample();

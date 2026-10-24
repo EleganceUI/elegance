@@ -22,7 +22,7 @@ framework and C runtime in every process, because hot reload depends on that.
 | `include/elg/` | The public API | Declarations only; no SDL, Vulkan or FreeType types |
 | `src/` | The library, by subsystem (`core`, `platform`, `gpu`, `render`, `reactive`, `view`, `text`, `media`, `net`, `geometry`, `animation`) | Internal headers live next to their sources |
 | `shaders/` | GLSL | Compiled at build time, embedded as SPIR-V |
-| `apps/` | `sandbox`, `login`, `preview` | Link `elegence`, nothing else from `src/` |
+| `apps/` | `sandbox`, `login`, `preview` | Link `elegance`, nothing else from `src/` |
 | `examples/` | One `main.cpp` per example | Target `example_<folder>` |
 | `tests/` | Catch2 tests | May include internal headers |
 | `cmake/` | Build helpers | Shaders, embedding, extensions, hot reload |
@@ -42,7 +42,7 @@ local checkout. Optional dependencies are vcpkg **features** (`tests`, `examples
 
 ### The library target
 
-`elegence` is a shared library by default (`ELG_BUILD_SHARED`). Exports go through a generated
+`elegance` is a shared library by default (`ELG_BUILD_SHARED`). Exports go through a generated
 `ELG_API` macro. Two details matter:
 
 - **Per-member exports on `View` and `Shape`.** App code defines extension methods on these
@@ -54,10 +54,10 @@ local checkout. Optional dependencies are vcpkg **features** (`tests`, `examples
   that use them live in the DLL.
 
 Every target uses the dynamic CRT (`/MD`). One process has exactly one heap, one `std::` runtime
-and one copy of Elegence's globals. Hot-reload modules allocate objects that the framework frees,
+and one copy of Elegance's globals. Hot-reload modules allocate objects that the framework frees,
 and the reverse, which is only safe with one CRT.
 
-All binaries go to one `bin/` folder. After building, `elegence` copies its own runtime DLLs
+All binaries go to one `bin/` folder. After building, `elegance` copies its own runtime DLLs
 (SDL3 and others) there, because vcpkg only deploys an executable's *direct* dependencies.
 
 ### Generated sources
@@ -78,7 +78,7 @@ C++23 on MSVC has no `#embed`, so binary data becomes source code at build time:
 - No SDL, Vulkan, FreeType, HarfBuzz or miniaudio type appears in `include/elg/`.
 - One CRT, one framework instance per process.
 - Every source file carries the MPL-2.0 header (§3.4 of the design explains the license choice:
-  file-level copyleft for Elegence, any license for apps).
+  file-level copyleft for Elegance, any license for apps).
 
 ## Edge cases
 

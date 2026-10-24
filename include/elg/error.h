@@ -16,8 +16,8 @@ namespace elg {
 #pragma warning(disable : 4275) // std::runtime_error is part of the C++ runtime, not our DLL
 #endif
 
-// Base class for errors Elegence reports to the developer (design.md §3.2). Bugs inside
-// Elegence itself are never thrown; they produce a crash report instead.
+// Base class for errors Elegance reports to the developer (design.md §3.2). Bugs inside
+// Elegance itself are never thrown; they produce a crash report instead.
 class ELG_API Error : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;

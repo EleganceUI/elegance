@@ -162,7 +162,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     limits.maxStorageBufferBindingSize = supported.maxStorageBufferBindingSize;
 
     wgpu::DeviceDescriptor descriptor;
-    descriptor.label = "Elegence";
+    descriptor.label = "Elegance";
     descriptor.requiredFeatureCount = features.size();
     descriptor.requiredFeatures = features.data();
     descriptor.requiredLimits = &limits;

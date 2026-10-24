@@ -52,7 +52,7 @@ Layer glyphs use **single-channel** distance fields, because layers overlap them
 
 COLRv1 glyphs are a graph of paint operations: layers, glyph outlines, references to other color
 glyphs, transforms (translate, scale, rotate, skew, with centers), and fills (solid, linear,
-radial, sweep gradients). FreeType exposes the graph. Elegence **flattens it once per glyph** into
+radial, sweep gradients). FreeType exposes the graph. Elegance **flattens it once per glyph** into
 a list of **regions**, each a filled polygon set in em units (y down) plus a paint:
 
 - walk the graph with a current transform;

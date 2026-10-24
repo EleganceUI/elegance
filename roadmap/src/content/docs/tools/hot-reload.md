@@ -10,14 +10,14 @@ reloading it. The framework rules that make this possible (copy, don't borrow; s
 scoped ownership) must hold from the start.
 
 :::note[Depends on]
-The whole framework, with `elegence` built shared and `/MD`. The rules apply from day one; the
+The whole framework, with `elegance` built shared and `/MD`. The rules apply from day one; the
 mechanism comes late.
 :::
 
 ## Read first
 
 - `design.md` §9.6 (Hot reload), M5 "Hot reload and previews"
-- `include/elg/hot_reload.h`, `src/view/hot_reload.cpp`, `cmake/ElegenceHotReload.cmake`, `apps/preview/`
+- `include/elg/hot_reload.h`, `src/view/hot_reload.cpp`, `cmake/EleganceHotReload.cmake`, `apps/preview/`
 
 ## Tasks
 
@@ -25,7 +25,7 @@ mechanism comes late.
 - [ ] **Copy, never borrow**: the framework never keeps a `string_view` or pointer into user data (string literals live in the module's memory)
 - [ ] **Stable keys**: environment keys, style IDs and modifier kinds use stable strings or hashes, never `typeid` or static addresses
 - [ ] **Scoped ownership**: every closure, effect, subscription, timer and task belongs to a mount scope and can be torn down
-- [ ] **One framework instance**: shared `elegence.dll`, same compiler and CRT
+- [ ] **One framework instance**: shared `elegance.dll`, same compiler and CRT
 - [ ] **Light headers**: declarations only in public headers; precompiled headers
 
 ### Module side
@@ -35,15 +35,15 @@ mechanism comes late.
 ### Host side
 - [ ] `HotReload({.module, .build_command, .watch, .show})` as a window's content
 - [ ] A reload is a `ForEach` over a one-item "generation" list, so the existing machinery unmounts the old tree and mounts the new one (no new element type)
-- [ ] Load modules from unique copies (`%TEMP%/elegence-reload/<pid>/`) so the build can replace the file; keep the previous module loaded while its views fade out; unload older ones; leave modules loaded at exit
+- [ ] Load modules from unique copies (`%TEMP%/elegance-reload/<pid>/`) so the build can replace the file; keep the previous module loaded while its views fade out; unload older ones; leave modules loaded at exit
 - [ ] A watcher thread polls watched folders every 250 ms; a change runs the build (output captured); a new module file reloads once it has settled
 - [ ] Results reach the UI thread through `post_ui_task`
 - [ ] Status badge: "Building…", the first compiler error (file, line, message), or "Reloaded (N ms)". A failed build keeps the last good views
 
 ### CMake and tools
-- [ ] `elegence_views_module(target sources...)` and `elegence_hot_reload(host MODULE views [WATCH ...])`, generating `<host>_hot_reload.h` with `elg_hot_reload_options()`
+- [ ] `elegance_views_module(target sources...)` and `elegance_hot_reload(host MODULE views [WATCH ...])`, generating `<host>_hot_reload.h` with `elg_hot_reload_options()`
 - [ ] On Windows, rebuild through a generated `rebuild.cmd` that restores the configure-time compiler environment (vcvars' INCLUDE/LIB/PATH), so an app started from an IDE or Explorer can still build
-- [ ] `elegence-preview`: a module's previews in a sidebar, or `--root` for its root view; `--module/--build/--watch` for any module; ships with a `gallery_views` demo module
+- [ ] `elegance-preview`: a module's previews in a sidebar, or `--root` for its root view; `--module/--build/--watch` for any module; ships with a `gallery_views` demo module
 
 ## Done when
 

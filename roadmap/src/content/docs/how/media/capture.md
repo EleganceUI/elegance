@@ -50,7 +50,7 @@ camera → Sample Grabber → Null Renderer.
 - The graph runs **without a reference clock**. Otherwise the Null Renderer holds each frame until
   its presentation time and stalls the stream after the first one.
 - Bottom-up RGB32 is flipped to top-down.
-- The Sample Grabber's interfaces are declared in Elegence, because `qedit.h` left the Windows SDK
+- The Sample Grabber's interfaces are declared in Elegance, because `qedit.h` left the Windows SDK
   while `qedit.dll` still ships.
 
 `camera_devices()` lists Media Foundation's cameras plus DirectShow-only ones (ids prefixed

@@ -77,18 +77,18 @@ std::optional<std::filesystem::path> GlyphDiskCache::default_directory() {
     }
 #if defined(_WIN32)
     if (const auto base = platform::environment_variable("LOCALAPPDATA")) {
-        return std::filesystem::path(*base) / "Elegence" / "GlyphCache";
+        return std::filesystem::path(*base) / "Elegance" / "GlyphCache";
     }
 #elif defined(__APPLE__)
     if (const auto home = platform::environment_variable("HOME")) {
-        return std::filesystem::path(*home) / "Library" / "Caches" / "Elegence" / "GlyphCache";
+        return std::filesystem::path(*home) / "Library" / "Caches" / "Elegance" / "GlyphCache";
     }
 #else
     if (const auto xdg = platform::environment_variable("XDG_CACHE_HOME")) {
-        return std::filesystem::path(*xdg) / "elegence" / "glyphs";
+        return std::filesystem::path(*xdg) / "elegance" / "glyphs";
     }
     if (const auto home = platform::environment_variable("HOME")) {
-        return std::filesystem::path(*home) / ".cache" / "elegence" / "glyphs";
+        return std::filesystem::path(*home) / ".cache" / "elegance" / "glyphs";
     }
 #endif
     return std::nullopt;

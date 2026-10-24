@@ -8,7 +8,7 @@
 // The desktop's state: the session, open windows and their stacking, settings, notifications, and
 // a clock. Everything is reactive (State), so the shell and the apps just read it.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <ctime>
 #include <map>

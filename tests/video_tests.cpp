@@ -5,7 +5,7 @@
 // The video player's state (design.md §13.3). Decoding starts once a renderer exists, so without
 // an App the player only records what it's asked to do.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <catch2/catch_test_macros.hpp>
 

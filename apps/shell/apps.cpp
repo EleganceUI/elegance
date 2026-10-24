@@ -243,10 +243,10 @@ View SettingsContent(const Desktop& d, int page) {
                                       .background(ShapeStyle(Gradient({Color::hex(0x5E5CE6), Color::hex(0x0A84FF)})),
                                                   RoundedRectangle(16)),
                                   VStack({.alignment = HorizontalAlignment::leading, .spacing = 4},
-                                         Text("Elegence Desktop").font(Font::system(20, Weight::bold)),
-                                         Text("A desktop environment demo, drawn entirely with the Elegence UI library.")
+                                         Text("Elegance Desktop").font(Font::system(20, Weight::bold)),
+                                         Text("A desktop environment demo, drawn entirely with the Elegance UI library.")
                                              .foreground_style(ThemeColor::secondary)))),
-                      Card(Row("Elegence", "", Text(std::string("Version ") + elg::version()).foreground_style(ThemeColor::secondary)),
+                      Card(Row("Elegance", "", Text(std::string("Version ") + elg::version()).foreground_style(ThemeColor::secondary)),
                            Row("Renderer", "", Text("WebGPU").foreground_style(ThemeColor::secondary)),
                            Row("Windows open", "",
                                Text([=] { return std::to_string(d.open_windows().size()); }).foreground_style(ThemeColor::secondary))));
@@ -308,7 +308,7 @@ std::vector<FileItem> folder_items(const Desktop& d, const std::string& path) {
         return {{"Grid Runner.flac", "file-audio", "32 MB"}, {"Paper Moons.mp3", "file-audio", "8 MB"}};
     }
     if (path == "Downloads") {
-        return {{"elegence-0.1.zip", "file-zip", "18 MB"}, {"invoice.pdf", "file-pdf", "96 KB"}};
+        return {{"elegance-0.1.zip", "file-zip", "18 MB"}, {"invoice.pdf", "file-pdf", "96 KB"}};
     }
     return {};
 }
@@ -408,14 +408,14 @@ struct TerminalLine {
 
 View TerminalApp(const Desktop& d, const Window& w) {
     const State<std::vector<std::string>> lines(std::vector<std::string>{
-        "Elegence Shell 0.1 - type 'help' for commands.", ""});
+        "Elegance Shell 0.1 - type 'help' for commands.", ""});
     const State<std::string> input;
     const State<bool> focused(true);
     const Settings s = d.settings;
     const auto prompt = [=] {
         std::string user = s.user_name.peek().substr(0, s.user_name.peek().find(' '));
         std::ranges::transform(user, user.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-        return user + "@elegence:~$ ";
+        return user + "@elegance:~$ ";
     };
     const auto run = [=] {
         const std::string line = input.peek();
@@ -475,8 +475,8 @@ View TerminalApp(const Desktop& d, const Window& w) {
             }
         } else if (command == "neofetch") {
             out.insert(out.end(), {"   ____   " + prompt().substr(0, prompt().size() - 4), "  / __/   ---------------",
-                                   " / _/     OS: Elegence Desktop (demo)",
-                                   "/___/     UI: Elegence " + std::string(elg::version()),
+                                   " / _/     OS: Elegance Desktop (demo)",
+                                   "/___/     UI: Elegance " + std::string(elg::version()),
                                    "          Renderer: WebGPU",
                                    "          Windows: " + std::to_string(d.open_windows.peek().size()),
                                    "          Theme: " + std::string(s.dark.peek() ? "dark" : "light")});
@@ -769,7 +769,7 @@ View MonitorApp(const Desktop& d) {
     const auto cpu = [=] { return d.cpu_history().back(); };
     const auto memory = [=] { return 0.32f + 0.05f * static_cast<float>(d.open_windows().size()); };
     const auto processes = [=] {
-        std::vector<Process> list{{-1, "elegence-shell", "squares-four"}, {-2, "compositor", "monitor"}};
+        std::vector<Process> list{{-1, "elegance-shell", "squares-four"}, {-2, "compositor", "monitor"}};
         for (int id : d.open_windows()) {
             const Window& w = d.window(id);
             list.push_back({id, app_info(w.app).name, app_info(w.app).icon});

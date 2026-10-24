@@ -10,7 +10,7 @@ depends: [foundations/core]
 
 Everything above this layer needs windows, input, a Vulkan surface, the clipboard, text input
 and a few OS facts (scale, dark mode, cache folders). SDL3 provides all of that on every target.
-This layer wraps it in a small interface of Elegence's own, so no other code sees SDL, and a
+This layer wraps it in a small interface of Elegance's own, so no other code sees SDL, and a
 native backend could replace it later without touching the rest.
 
 ## How it works
@@ -70,7 +70,7 @@ On Windows, dragging a window edge enters a modal OS loop, and the app's own eve
 running until the drag ends. Two hooks keep frames coming:
 
 1. SDL's expose event watch fires during the modal loop.
-2. Elegence also triggers on every pixel-size change while the thread is in the move/size loop
+2. Elegance also triggers on every pixel-size change while the thread is in the move/size loop
    (`GUI_INMOVESIZE`).
 
 Both call `dispatch_live_resize(window_id)`, which runs the callback the App registered: lay out,

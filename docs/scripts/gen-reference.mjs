@@ -18,7 +18,7 @@ const outDir = path.resolve(here, '../src/content/docs/reference');
 
 // One line per header for the index, in reading order.
 const headers = [
-	['elegence.h', 'The umbrella header: includes everything below.'],
+	['elegance.h', 'The umbrella header: includes everything below.'],
 	['app.h', 'App, windows, and the event loop.'],
 	['window.h', 'The window a view is in; custom title bars and window controls.'],
 	['view.h', 'View, the modifier methods, and the layout value types.'],
@@ -53,7 +53,7 @@ const headers = [
 	['http.h', 'HTTP requests.'],
 	['desktop.h', 'File dialogs, notifications, and the tray icon.'],
 	['hot_reload.h', 'Hot reload and previews.'],
-	['error.h', 'The exceptions Elegence throws.'],
+	['error.h', 'The exceptions Elegance throws.'],
 ];
 
 const slugOf = (header) => header.replace(/\.h$/, '').replace(/\//g, '-');
@@ -342,7 +342,7 @@ fs.mkdirSync(outDir, { recursive: true });
 const index = [
 	'---',
 	'title: API reference',
-	'description: Every public header of Elegence, generated from the headers themselves.',
+	'description: Every public header of Elegance, generated from the headers themselves.',
 	'editUrl: false',
 	'sidebar:',
 	'  order: 0',
@@ -351,7 +351,7 @@ const index = [
 	'',
 	'These pages are generated from the public headers in `include/elg/`, so they always match the',
 	'code. Each shows the header\'s declarations with the comments written above them; private',
-	'members and implementation details are left out. Include `<elg/elegence.h>` to get everything.',
+	'members and implementation details are left out. Include `<elg/elegance.h>` to get everything.',
 	'',
 	'| Header | Contents |',
 	'| --- | --- |',

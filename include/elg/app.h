@@ -25,7 +25,7 @@ enum class TitleBar {
 };
 
 struct WindowDesc {
-    std::string title = "Elegence";
+    std::string title = "Elegance";
     int width = 1280; // logical points
     int height = 720;
     bool resizable = true;

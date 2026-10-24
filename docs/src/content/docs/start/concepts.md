@@ -1,22 +1,22 @@
 ---
-title: Thinking in Elegence
+title: Thinking in Elegance
 description: "The model behind the API: views as values, modifiers, fine-grained reactivity, the environment, and the threads."
 ---
 
-A few ideas explain almost everything in Elegence. If you know SwiftUI, most will feel familiar;
+A few ideas explain almost everything in Elegance. If you know SwiftUI, most will feel familiar;
 the differences are called out.
 
 ## Views are descriptions
 
 A `View` is an immutable, cheaply copyable description of UI. Calling `Text("Hi")` creates nothing
-on screen. Elegence builds the real, retained elements when the view is *mounted* in a window,
+on screen. Elegance builds the real, retained elements when the view is *mounted* in a window,
 and keeps them until it's removed.
 
 Because views are values, you can store them, pass them around and reuse them:
 
 ```cpp
 const View badge = Text("PRO").padding(4).background(ThemeColor::accent, Capsule());
-HStack(Text("Elegence"), badge, Spacer(), badge.opacity(0.5f));
+HStack(Text("Elegance"), badge, Spacer(), badge.opacity(0.5f));
 ```
 
 A *component* is any type with a `View body() const`. It's used like a view:
@@ -55,7 +55,7 @@ event. Your own modifiers use the same protocols. See
 
 ## State is fine-grained
 
-Elegence has no "re-render the body" step. Instead, arguments can be **reactive**: a closure (or a
+Elegance has no "re-render the body" step. Instead, arguments can be **reactive**: a closure (or a
 `State`, `Binding` or `Computed`) where a value is expected.
 
 ```cpp
@@ -97,7 +97,7 @@ divide their space among their children; `.frame` constrains. See [Layout](../..
 ## Threads
 
 Your code runs on the **UI thread**: building views, event handlers, effects, and callbacks from
-Elegence (HTTP results, file dialogs, notifications). State may only be read and written there; doing so
+Elegance (HTTP results, file dialogs, notifications). State may only be read and written there; doing so
 from another thread throws `elg::UsageError`.
 
 A separate **render thread** turns each frame into GPU commands, so a slow frame never blocks
@@ -109,4 +109,4 @@ thread without touching the UI thread.
 Mistakes in using the API throw `elg::UsageError` with a message saying what was wrong (an
 unknown icon name, a malformed SVG path). Resources that fail to load throw `elg::ResourceError`.
 Exceptions from your callbacks propagate out of `app.run()` after a clean shutdown. Bugs inside
-Elegence itself produce a crash report instead. See [Debugging and errors](../../guides/debugging/).
+Elegance itself produce a crash report instead. See [Debugging and errors](../../guides/debugging/).

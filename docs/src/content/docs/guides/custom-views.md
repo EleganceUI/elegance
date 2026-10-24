@@ -83,7 +83,7 @@ Text("Rounder").modifier(Card(24));
 ## Dot-syntax extensions
 
 To write `.card()` instead of `.modifier(Card())`, add member functions to `View` itself. Put the
-declarations in a header, which Elegence includes **inside** the `View` class:
+declarations in a header, which Elegance includes **inside** the `View` class:
 
 ```cpp title="view_extensions.h"
 View card(float corner_radius = 16) const;
@@ -91,7 +91,7 @@ View badge_overlay(int count) const;
 ```
 
 ```cpp title="view_extensions.cpp"
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 elg::View elg::View::card(float corner_radius) const {
     return modifier(Card(corner_radius));
@@ -101,7 +101,7 @@ elg::View elg::View::card(float corner_radius) const {
 Then register the header for your target in CMake:
 
 ```cmake
-elegence_view_extensions(my_app view_extensions.h)
+elegance_view_extensions(my_app view_extensions.h)
 ```
 
 Every source file of the target now sees the extra members:

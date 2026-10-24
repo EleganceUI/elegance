@@ -9,7 +9,7 @@ depends: [graphics/images, framework/dynamic-content]
 ## What it's for
 
 Desktop apps talk to servers: they fetch JSON, show remote avatars, and keep live connections.
-Elegence does this on the **operating system's own networking** rather than bundling a library,
+Elegance does this on the **operating system's own networking** rather than bundling a library,
 so apps get the system's certificate store, proxy configuration, HTTP/2 and compression for free,
 and the binary stays small.
 

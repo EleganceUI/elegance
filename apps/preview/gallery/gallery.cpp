@@ -2,10 +2,10 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// A views module for hot reload (design.md §9.6): edit this file while elegence-preview (or
+// A views module for hot reload (design.md §9.6): edit this file while elegance-preview (or
 // hot_reload_demo) runs, save, and the views rebuild and reload in place.
 
-#include <elg/elegence.h>
+#include <elg/elegance.h>
 
 #include <format>
 #include <string>

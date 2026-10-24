@@ -73,7 +73,7 @@
     {
       "name": "static",
       "hidden": true,
-      "description": "Elegence as a static library, linked into each app (no hot reload)",
+      "description": "Elegance as a static library, linked into each app (no hot reload)",
       "cacheVariables": {
         "ELG_BUILD_SHARED": "OFF"
       }

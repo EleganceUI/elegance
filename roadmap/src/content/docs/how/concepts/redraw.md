@@ -12,7 +12,7 @@ approach in [Incremental rendering](../../renderer/incremental/), which is how t
 
 ## The problem
 
-Elegence only renders when something changes, and its reactivity and layout touch only what
+Elegance only renders when something changes, and its reactivity and layout touch only what
 changed. But once a frame is rendered, painting and drawing cover the **whole window**. In a
 large app, a hover highlight, a blinking caret or a small spinner then costs as much as redrawing
 every view on screen, at every resolution.
