@@ -434,6 +434,10 @@ public:
     // when it leaves (after the exit delay). The delay comes from the environment
     // (.hover_delay()) unless given here.
     ELG_API View on_hover(std::function<void(bool)> action) const;
+    // Called after initial layout and when physical dimensions change, including display scale.
+    // Dimensions are ceil(logical size * display scale), before visual transforms, and may be zero.
+    // Runs on the UI thread before paint: queue renderer input, do not mutate layout here.
+    ELG_API View on_size_change(std::function<void(PixelSize)> action) const;
     // Files or text dragged from other apps (Explorer, a browser) can be dropped here. The
     // innermost view under the pointer that takes that kind of thing gets it.
     ELG_API View on_drop(DropOptions options) const;

@@ -153,6 +153,8 @@ struct ColorFilter {
 // How the modified view's content is drawn and hit tested (design.md §9.4). Drawing applies
 // the clip first, then the transform, then the rest to the clipped result.
 struct Effects {
+    // Post-layout physical size observation; state is kept per mounted EffectElement.
+    std::function<void(PixelSize)> on_size_change;
     bool clip_to_bounds = false;
     std::optional<Shape> clip_shape; // fills the view's bounds
     Prop<float> opacity = 1.f;

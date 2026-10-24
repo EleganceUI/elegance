@@ -4,7 +4,6 @@
 
 #include "render/frame_plan.h"
 
-#include "core/log.h"
 #include "render/color_space.h"
 #include "text/atlas.h"
 
@@ -153,7 +152,7 @@ private:
     };
 
     void emit(PlanPass& pass, std::vector<QuadInstance>& out, QuadInstance instance, const Rect& extent,
-              const Clip& clip, Emit how = {}) {
+              const Clip& clip, Emit how) {
         if (clip.active && (!overlaps(extent, clip.scissor) || !overlaps(extent, clip.rect))) {
             return; // fully clipped
         }
@@ -299,7 +298,7 @@ private:
             return;
         }
         set_paint(instance, command.fill, r);
-        emit(pass, out, instance, r.inset(-1), clip);
+        emit(pass, out, instance, r.inset(-1), clip, {});
     }
 
     // A path: its fan triangles go to a coverage mask; the pass fills through the mask. With
@@ -413,7 +412,7 @@ private:
         if (!command.source || command.opacity <= 0) {
             return;
         }
-        const Rect r = to_pixels(command.rect, origin);
+        Rect r = to_pixels(command.rect, origin);
         if (r.width <= 0 || r.height <= 0) {
             return;
         }
@@ -427,6 +426,20 @@ private:
         if (index < 0) {
             index = static_cast<int>(plan_.videos.size());
             plan_.videos.push_back(command.source);
+            command.source->update();
+            plan_.video_frames.push_back(command.source->current());
+        }
+        const auto& frame = plan_.video_frames[index];
+        if (command.content_mode) {
+            if (!frame || frame->width == 0 || frame->height == 0) {
+                return;
+            }
+            const float sx = r.width / static_cast<float>(frame->width);
+            const float sy = r.height / static_cast<float>(frame->height);
+            const float scale = *command.content_mode == ContentMode::fit ? std::min(sx, sy) : std::max(sx, sy);
+            const float width = static_cast<float>(frame->width) * scale;
+            const float height = static_cast<float>(frame->height) * scale;
+            r = {r.x + (r.width - width) / 2, r.y + (r.height - height) / 2, width, height};
         }
         QuadInstance instance;
         instance.rect = {r.x, r.y, r.width, r.height};
@@ -475,7 +488,7 @@ private:
         instance.shape = {command.uv.x, command.uv.y, command.uv.x + command.uv.width, command.uv.y + command.uv.height};
         instance.color = to_linear_premultiplied(command.color);
         instance.params = {screen_range, static_cast<float>(QuadKind::glyph), 0, 0};
-        emit(pass, out, instance, q, clip);
+        emit(pass, out, instance, q, clip, {});
     }
 
     void add_box_shadow(const BoxShadowCommand& command, Point origin, PlanPass& pass,
@@ -488,7 +501,7 @@ private:
         instance.color = to_linear_premultiplied(command.color);
         instance.params = {0, static_cast<float>(QuadKind::box_shadow), 0, 0};
         instance.extra = {0, sigma, 0, 0};
-        emit(pass, out, instance, r.inset(-3 * sigma - 1), clip);
+        emit(pass, out, instance, r.inset(-3 * sigma - 1), clip, {});
     }
 
     void add_inner_shadow(const InnerShadowCommand& command, Point origin, PlanPass& pass,
@@ -502,7 +515,7 @@ private:
         instance.border_color = {command.offset.x * scale_, command.offset.y * scale_, 0, 0};
         instance.params = {command.spread * scale_, static_cast<float>(QuadKind::inner_shadow), 0, 0};
         instance.extra = {0, sigma, 0, 0};
-        emit(pass, out, instance, r.inset(-1), clip);
+        emit(pass, out, instance, r.inset(-1), clip, {});
     }
 
     Clip push_clip(const PushClipCommand& command, Point origin, const Clip& current) const {

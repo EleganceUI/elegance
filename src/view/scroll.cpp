@@ -266,6 +266,7 @@ EventResult ScrollElement::hover(bool inside) {
 
 EventResult ScrollElement::pointer(const PointerEvent& event, Rect) {
     switch (event.kind) {
+    case PointerEvent::Kind::hover: return {};
     case PointerEvent::Kind::down:
         if (event.button != MouseButton::left) {
             return {};

@@ -21,6 +21,9 @@ namespace elg::detail::gpu {
 // - Shared textures (VideoFrame::Kind::d3d11_shared): imported into WebGPU once each (shared
 //   texture memory) and sampled in place. The decoder writes them outside WebGPU, so every frame
 //   that samples one begins access to it first and ends access once submitted.
+// - External images (Kind::external): one access per immutable allocation, owned by the
+//   source/snapshots. Each recording batch pins that owner through submission; the last
+//   snapshot/batch queues asynchronous EndAccess and consumer-fence export, not GPU reuse.
 // - Frames in memory (Kind::cpu): written to a storage buffer and turned into a BGRA image by a
 //   pass (shaders/video_convert.wgsl) that also converts YUV, so every platform converts the same
 //   way. Queue ordering keeps frames in flight intact with one image per source.
@@ -36,7 +39,12 @@ public:
     // memory, recording the upload and conversion into `encoder`. Null if it can't be shown.
     wgpu::BindGroup acquire(const wgpu::CommandEncoder& encoder, const VideoFrame& frame,
                             std::vector<std::uint64_t>& acquired);
-    // Hands `acquired` back to the decoder. Call after the frame using them was submitted.
+    // Hands `acquired` back to the decoder/producer. Call only after ALL commands recorded
+    // using this batch were submitted; release each batch exactly once. Distinct outstanding
+    // batches independently pin a texture, even if they sample the same frame. External leases
+    // are released after Submit returns; their last owner exports completion fences. If recording
+    // or submit throws, leases stay held until this cache is destroyed; never submit that aborted
+    // recording afterwards.
     void release(const std::vector<std::uint64_t>& acquired);
 
     // Once per rendered frame: drops textures no frame has used for a while (a video that
@@ -50,6 +58,9 @@ private:
         wgpu::Texture copy; // Direct3D 11: sampled instead of `texture` (see import())
         wgpu::BindGroup group;
         std::weak_ptr<SharedTextureOwner> owner;
+        std::shared_ptr<void> lease; // external allocation: through submission
+        bool external = false; // EndAccess belongs to the last allocation/snapshot owner
+        std::size_t pending_batches = 0; // distinct acquire/release batches, not draw count
         std::uint64_t last_used = 0;
     };
     bool import(const VideoFrame& frame, Texture& texture);

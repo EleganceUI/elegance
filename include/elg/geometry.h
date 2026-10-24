@@ -6,10 +6,19 @@
 #define ELG_GEOMETRY_H
 
 #include <algorithm>
+#include <cstdint>
 
 namespace elg {
 
-// All geometry is in logical points; the renderer applies the window's display scale.
+// Physical render dimensions, unlike the logical-point geometry below.
+struct PixelSize {
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+
+    friend constexpr bool operator==(const PixelSize&, const PixelSize&) = default;
+};
+
+// All remaining geometry is in logical points; the renderer applies the window's display scale.
 
 struct Point {
     float x = 0;

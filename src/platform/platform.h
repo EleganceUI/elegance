@@ -17,7 +17,6 @@
 #include <functional>
 #include <optional>
 #include <string>
-#include <vector>
 
 struct SDL_Window;
 
@@ -84,7 +83,7 @@ struct Event {
     float wheel_y = 0;
     bool precise = false;
     // Text events: the text, and for editing (IME composition) the caret in bytes.
-    std::string text;
+    std::string text{};
     std::size_t text_cursor = 0;
     // Key events (modifiers also for pointer buttons and the wheel).
     Key key = Key::unknown;

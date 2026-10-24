@@ -89,8 +89,9 @@ struct FramePlan {
     std::vector<std::array<float, 2>> path_vertices;
     // Images drawn this frame (uploaded first if they aren't on the GPU yet).
     std::vector<std::shared_ptr<const DecodedImage>> images;
-    // Videos drawn this frame.
+    // Videos drawn this frame and the exact snapshots used for geometry and sampling.
     std::vector<std::shared_ptr<VideoSource>> videos;
+    std::vector<std::optional<VideoFrame>> video_frames;
     std::vector<PlanBackdrop> backdrops;
     // When the main pass reads a backdrop it draws offscreen; this instance copies the result to
     // the window.
@@ -99,6 +100,7 @@ struct FramePlan {
 
 // Converts logical points to pixels, resolves the clip stack per instance (culling instances
 // that are fully clipped), splits layers into their own passes, and collects gradient stops.
+// Updates and snapshots each video source once, on the render thread.
 // `width` x `height` is the window in pixels.
 FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t height);
 

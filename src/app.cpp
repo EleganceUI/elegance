@@ -286,6 +286,7 @@ WindowFrame build_frame(LiveWindow& live) {
     const FullLayoutScope full_layout(live.animating);
     const Size fitted = live.root->size_that_fits(proposal);
     live.root->place(aligned_position({0, 0, size.width, size.height}, fitted, Alignment::center), proposal);
+    live.root->notify_render_size(frame.scale);
     live.root->paint(frame.list);
     return frame;
 }

@@ -156,24 +156,15 @@ protected:
             return;
         }
         list.commands.push_back(RectCommand{bounds, {}, ShapeStyle(Color::black), Color::clear, 0});
-        if (size_.width <= 0 || size_.height <= 0) {
-            // Not loaded yet: the render thread starts the decoder when it first sees the video.
-            list.commands.push_back(VideoCommand{bounds, {0, 0, 1, 1}, source_, 1});
-            return;
-        }
-        // Fitted or filling, centered; a fill overflows and is clipped to the view.
-        const float k = mode_ == ContentMode::fit ? std::min(bounds.width / size_.width, bounds.height / size_.height)
-                                                  : std::max(bounds.width / size_.width, bounds.height / size_.height);
-        const Size shown{size_.width * k, size_.height * k};
-        const Rect picture{bounds.x + (bounds.width - shown.width) / 2, bounds.y + (bounds.height - shown.height) / 2,
-                           shown.width, shown.height};
+        // The render thread fits the exact frame it samples; size_ is only for layout.
+        // A fill overflows and is clipped to the view.
         const bool clip = mode_ == ContentMode::fill;
         if (clip) {
             list.commands.push_back(PushClipCommand{bounds, {}});
         }
         // Mirrored: the texture read right to left; flipped: bottom to top.
         const Rect uv{mirrored_ ? 1.f : 0.f, flipped_ ? 1.f : 0.f, mirrored_ ? -1.f : 1.f, flipped_ ? -1.f : 1.f};
-        list.commands.push_back(VideoCommand{picture, uv, source_, 1});
+        list.commands.push_back(VideoCommand{bounds, uv, source_, 1, mode_});
         if (clip) {
             list.commands.push_back(PopClipCommand{});
         }
@@ -241,9 +232,11 @@ View VideoFeedView(VideoFeed feed, ContentMode mode, bool mirrored) {
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(feed.source(), mode, mirrored));
 }
 
-View GpuImageView(GpuImage image, ContentMode mode) {
+View GpuImageView(const ElgGpuImage* image, ContentMode mode) {
+    const auto source = gpu_image_source(image);
+    if (!source) return View{};
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(
-        image.source(), mode, false, image.origin() == GpuImage::Origin::bottom_left));
+        source, mode, false, gpu_image_flipped(image)));
 }
 
 View VideoControls(VideoPlayer player) {

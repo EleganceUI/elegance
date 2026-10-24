@@ -8,9 +8,8 @@
 // Single include point for WebGPU (Dawn, design.md §5). Dawn runs it on Direct3D 12 or 11,
 // Vulkan, or Metal, whichever the platform has.
 
-#include <webgpu/webgpu_cpp.h>
+#include <webgpu/webgpu_cpp.h> // IWYU pragma: export
 
-#include <cstdint>
 #include <string>
 #include <string_view>
 

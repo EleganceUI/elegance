@@ -284,6 +284,15 @@ View View::on_tap_gesture(std::function<void()> action, int count) const {
     return modifier(TapGestureModifier(count, std::move(action)));
 }
 
+View View::on_size_change(std::function<void(PixelSize)> action) const {
+    struct Observer final : EffectModifier {
+        std::function<void(PixelSize)> action;
+        explicit Observer(std::function<void(PixelSize)> callback) : action(std::move(callback)) {}
+        void apply(Effects& effects) const override { effects.on_size_change = action; }
+    };
+    return modifier(Observer(std::move(action)));
+}
+
 View View::on_hover(std::function<void(bool)> action) const {
     return modifier(HoverModifier(std::move(action)));
 }

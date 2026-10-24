@@ -70,6 +70,14 @@ VideoTextures::VideoTextures(const Device& device, const wgpu::BindGroupLayout& 
 }
 
 bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
+    if (frame.kind == VideoFrame::Kind::external) {
+        if (frame.device.Get() != device_.handle().Get() || !frame.texture ||
+            !frame.external_view || !frame.texture_lease) return false;
+        texture.texture = frame.texture;
+        texture.external = true;
+        texture.group = create_image_group(device_.handle(), layout_, frame.external_view, sampler_);
+        return true;
+    }
     if (!frame.shared_handle || !device_.has_feature(wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle)) {
         return false;
     }
@@ -124,8 +132,8 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
         if (!import(frame, texture)) {
             if (!warned_) {
                 warned_ = true;
-                log_warning("video: can't import a frame texture into WebGPU (the GPU backend can't share "
-                            "Direct3D 11 textures)");
+                log_warning("video: can't use a frame texture on this WebGPU device (native texture import "
+                            "unsupported or incompatible producer device)");
             }
             return nullptr;
         }
@@ -134,9 +142,16 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
     Texture& texture = it->second;
     texture.last_used = frame_;
     texture.owner = frame.owner;
+    if (frame.kind == VideoFrame::Kind::external) {
+        if (std::ranges::find(acquired, frame.texture_id) == acquired.end()) {
+            acquired.push_back(frame.texture_id);
+            ++texture.pending_batches;
+        }
+        texture.lease = frame.texture_lease;
+        return texture.group;
+    }
     if (std::ranges::find(acquired, frame.texture_id) == acquired.end()) {
-        // Written outside WebGPU: by a decoder that has finished with it, or by the app, whose
-        // fence says when it has.
+        // Native decoder texture, written outside WebGPU.
         wgpu::SharedTextureMemoryBeginAccessDescriptor access;
         access.initialized = true;
         access.concurrentRead = false;
@@ -169,6 +184,14 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
 void VideoTextures::release(const std::vector<std::uint64_t>& acquired) {
     for (const std::uint64_t id : acquired) {
         if (const auto it = textures_.find(id); it != textures_.end()) {
+            if (!it->second.memory) {
+                // All reads in this batch were submitted. External allocations stay pinned
+                // by other snapshots/current frames, then EndAccess exports completion fences.
+                if (it->second.pending_batches != 0 && --it->second.pending_batches == 0) {
+                    it->second.lease.reset();
+                }
+                continue;
+            }
             // A decoder writes a different texture of its ring next, so it doesn't need the end
             // state's fences; an owner that listens gets them, to wait on before writing again.
             wgpu::SharedTextureMemoryEndAccessState state;
@@ -216,7 +239,11 @@ wgpu::SharedFence VideoTextures::fence(const VideoFrame& frame) {
 
 void VideoTextures::end_frame() noexcept {
     ++frame_;
-    std::erase_if(textures_, [&](const auto& entry) { return frame_ - entry.second.last_used > kIdleFrames; });
+    std::erase_if(textures_, [&](const auto& entry) {
+        // A pending external-image recording owns its lease until release(), regardless of age.
+        return !entry.second.lease &&
+               (entry.second.external || frame_ - entry.second.last_used > kIdleFrames);
+    });
     std::erase_if(targets_, [&](const auto& entry) { return frame_ - entry.second.last_used > kIdleFrames; });
     std::erase_if(fences_, [&](const auto& entry) { return frame_ - entry.second.last_used > kIdleFrames; });
 }

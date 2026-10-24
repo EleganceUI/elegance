@@ -4,20 +4,24 @@
 
 #include "gpu/device.h"
 
+#ifndef NDEBUG
 #include "core/crash.h"
+#endif
 #include "core/log.h"
 #include "platform/platform.h"
 
 #include <elg/error.h>
 
-#include <algorithm>
-#include <cstring>
-#include <filesystem>
 #include <format>
 #include <mutex>
+#include <unordered_map>
 #include <vector>
 
 #if defined(_WIN32)
+#include <algorithm>
+#include <cstring>
+#include <filesystem>
+
 #include <windows.h> // the build defines WIN32_LEAN_AND_MEAN and NOMINMAX
 #include <dxgi1_4.h>
 #include <wrl/client.h>
@@ -28,9 +32,33 @@ namespace elg::detail::gpu {
 struct Device::Errors {
     std::mutex mutex;
     std::string fatal; // device lost or out of memory: the next submit() throws it
+
+    // Dawn's repeatable uncaptured-error callback cannot own a capturing lambda. Look up a
+    // shared state by the callback's device instead of passing a dangling Errors* as userdata.
+    // Unregistration prevents late reports from retained native handles touching a dead Device;
+    // a callback already in progress retains its own reference through completion.
+    struct Registry {
+        std::mutex mutex;
+        std::unordered_map<WGPUDevice, std::weak_ptr<Errors>> devices;
+    };
+    static Registry& registry() {
+        // Retained Dawn handles can report errors during static teardown. Keep the small
+        // registry/mutex alive for the process; per-device entries are removed on shutdown.
+        static Registry* const registry = new Registry;
+        return *registry;
+    }
+    static std::shared_ptr<Errors> find(WGPUDevice device) {
+        auto& states = registry();
+        std::lock_guard lock(states.mutex);
+        const auto it = states.devices.find(device);
+        return it == states.devices.end() ? nullptr : it->second.lock();
+    }
 };
 
 namespace {
+
+std::mutex g_render_device_mutex;
+std::weak_ptr<RenderDevice> g_render_device;
 
 wgpu::BackendType requested_backend() {
     const std::string value = platform::environment_variable("ELG_GPU_BACKEND").value_or("");
@@ -101,7 +129,12 @@ bool dxc_available() {
 
 } // namespace
 
-Device::Device(const Instance& instance) : instance_(instance), errors_(std::make_unique<Errors>()) {
+std::shared_ptr<RenderDevice> render_device() {
+    std::lock_guard lock(g_render_device_mutex);
+    return g_render_device.lock();
+}
+
+Device::Device(const Instance& instance) : instance_(instance), errors_(std::make_shared<Errors>()) {
     wgpu::RequestAdapterOptions options;
     options.powerPreference = wgpu::PowerPreference::HighPerformance;
     options.backendType = requested_backend();
@@ -144,10 +177,19 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     luid_ = find_luid(info.vendorID, info.deviceID);
 #endif
 
-    // Optional features: sharing textures with Direct3D 11 (video frames, composition).
-    std::vector<wgpu::FeatureName> features;
+    // External-image publication imports resources from producer threads. Dawn's implicit
+    // synchronization keeps those operations safe alongside rendering and frame retirement.
+    if (!adapter_.HasFeature(wgpu::FeatureName::ImplicitDeviceSynchronization)) {
+        throw GpuError("Dawn must support ImplicitDeviceSynchronization for external-image publication");
+    }
+    std::vector<wgpu::FeatureName> features{wgpu::FeatureName::ImplicitDeviceSynchronization};
+    // Optional sharing features. Never require unavailable transports just to start the
+    // renderer: GpuImage reports Unsupported on the actual device at publication.
     for (const wgpu::FeatureName feature :
-         {wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle, wgpu::FeatureName::SharedFenceDXGISharedHandle}) {
+         {wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle, wgpu::FeatureName::SharedFenceDXGISharedHandle,
+                   wgpu::FeatureName::SharedTextureMemoryIOSurface, wgpu::FeatureName::SharedFenceMTLSharedEvent,
+                   wgpu::FeatureName::SharedTextureMemoryOpaqueFD, wgpu::FeatureName::SharedFenceVkSemaphoreOpaqueFD,
+                   wgpu::FeatureName::SharedTextureMemoryVkDedicatedAllocation}) {
         if (adapter_.HasFeature(feature)) {
             features.push_back(feature);
         }
@@ -168,18 +210,26 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     descriptor.requiredLimits = &limits;
     descriptor.SetDeviceLostCallback(
         wgpu::CallbackMode::AllowSpontaneous,
-        [errors = errors_.get()](const wgpu::Device&, wgpu::DeviceLostReason reason, wgpu::StringView message) {
-            if (reason == wgpu::DeviceLostReason::Destroyed || reason == wgpu::DeviceLostReason::CallbackCancelled) {
-                return; // our own shutdown
+        [errors = errors_](const wgpu::Device&, wgpu::DeviceLostReason reason, wgpu::StringView message) {
+            try {
+                if (reason == wgpu::DeviceLostReason::Destroyed || reason == wgpu::DeviceLostReason::CallbackCancelled) {
+                    return; // our own shutdown
+                }
+                std::lock_guard lock(errors->mutex);
+                errors->fatal = std::format("the GPU device was lost ({}); device loss recovery is not implemented yet",
+                                            std::string_view(message));
+            } catch (...) {
+                // A C callback: even allocation failures must not unwind through Dawn.
             }
-            std::lock_guard lock(errors->mutex);
-            errors->fatal = std::format("the GPU device was lost ({}); device loss recovery is not implemented yet",
-                                        std::string_view(message));
         });
     descriptor.SetUncapturedErrorCallback(
-        [](const wgpu::Device&, wgpu::ErrorType type, wgpu::StringView message, Errors* errors) {
+        [](const wgpu::Device& device, wgpu::ErrorType type, wgpu::StringView message) {
             // A C callback: nothing may unwind through it.
             try {
+                const auto errors = Errors::find(device.Get());
+                if (!errors) {
+                    return; // not published yet, or the renderer has shut down
+                }
                 if (type == wgpu::ErrorType::OutOfMemory) {
                     std::lock_guard lock(errors->mutex);
                     errors->fatal = std::format("the GPU ran out of memory: {}", std::string_view(message));
@@ -193,8 +243,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
 #endif
             } catch (...) {
             }
-        },
-        errors_.get());
+        });
 
     std::string device_error;
     instance.wait(adapter_.RequestDevice(
@@ -225,12 +274,42 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     });
 
     log_info("GPU: {} ({} through WebGPU)", name_, to_string(backend_));
+
+    published_ = std::make_shared<RenderDevice>();
+    published_->device = device_;
+    published_->queue = queue_;
+    published_->instance = instance.handle();
+    published_->backend = backend_;
+    {
+        auto& states = Errors::registry();
+        std::lock_guard lock(states.mutex);
+        // Also prune expired entries from constructors that failed after registration.
+        std::erase_if(states.devices, [](const auto& entry) { return entry.second.expired(); });
+        states.devices[device_.Get()] = errors_;
+    }
+    std::lock_guard lock(g_render_device_mutex);
+    g_render_device = published_;
 }
 
 Device::~Device() {
-    if (device_) {
-        device_.Destroy(); // finishes the GPU's work; the lost callback sees Destroyed
+    // Stop new publications, but let accepted external frames finish EndAccess using
+    // their retained device/instance after the render thread has stopped.
+    {
+        std::lock_guard lock(g_render_device_mutex);
+        if (g_render_device.lock() == published_) {
+            g_render_device.reset();
+        }
     }
+    {
+        auto& states = Errors::registry();
+        std::lock_guard lock(states.mutex);
+        states.devices.erase(device_.Get());
+    }
+    std::lock_guard lock(published_->mutex);
+    published_->active = false;
+    // Do not eagerly Destroy(): imported frames may still need to export completion
+    // fences. Dawn references held by those frames and submitted work own the remaining
+    // lifetime; releasing the renderer's references is not a GPU-completion assertion.
 }
 
 void Device::check() const {

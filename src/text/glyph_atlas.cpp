@@ -29,7 +29,7 @@ namespace {
 struct OutlineBuilder {
     msdfgen::Shape* shape;
     msdfgen::Contour* contour = nullptr;
-    msdfgen::Point2 position;
+    msdfgen::Point2 position{};
 
     static msdfgen::Point2 point(const FT_Vector* v) {
         return {static_cast<double>(v->x), static_cast<double>(v->y)};
