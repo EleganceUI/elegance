@@ -180,7 +180,7 @@ itself, which the developer can't handle meaningfully, and continuing would risk
   host, and `elegance_hot_reload()` refuses them (§9.6). The ABI surface uses `ELG_API` exports and
   pImpl at boundaries.
 - **Namespace**: `elg::` (decided). Macros use an `ELG_` prefix.
-- **Local setup**: the project uses the dedicated vcpkg at `G:\elegance-vcpkg`, which is also
+- **Local setup**: the project uses the dedicated vcpkg at `G:\elegence-vcpkg` (a local folder's name), which is also
   the source of the `builtin-baseline` commit. `CMakeUserPresets.json` (gitignored, per-machine)
   defines `dev-debug` / `dev-release`, which set `VCPKG_ROOT` to that path. Other machines
   either set `VCPKG_ROOT` or add their own user presets.
