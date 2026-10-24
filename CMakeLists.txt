@@ -48,6 +48,7 @@ option(ELG_ICONS_EXTRA_WEIGHTS "Also embed Phosphor's thin, light, and duotone s
 option(ELG_BUILD_EXAMPLES "Build the example apps (needs the vcpkg \"examples\" feature)" ${PROJECT_IS_TOP_LEVEL})
 option(ELG_BUILD_TESTS   "Build the unit tests (needs the vcpkg \"tests\" feature)" ${PROJECT_IS_TOP_LEVEL})
 option(ELG_ACCESSIBILITY "Screen reader support through AccessKit (downloads its prebuilt C library)" ON)
+option(ELG_ACCESSKIT_SHARED "Link AccessKit's shared library instead of its static one (needed by Rust apps)" OFF)
 
 # Put the library and every executable in one folder so the apps find the DLLs on Windows.
 if (PROJECT_IS_TOP_LEVEL)

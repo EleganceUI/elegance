@@ -111,6 +111,9 @@ generate_export_header(elegence
 )
 if (NOT ELG_BUILD_SHARED)
     target_compile_definitions(elegence PUBLIC ELG_STATIC_DEFINE)
+    # What linking it takes, for builds outside CMake (the Rust bindings), written at the end.
+    cmake_language(DEFER CALL elg_write_link_manifest elegence "${PROJECT_BINARY_DIR}/elegence-link.txt")
+    include(ElgLinkManifest)
 endif ()
 
 find_package(SDL3 CONFIG REQUIRED)
@@ -129,7 +132,13 @@ if (ELG_ACCESSIBILITY)
         SOURCE_SUBDIR no-cmake-here) # use the prebuilt libraries, don't build it
     FetchContent_MakeAvailable(accesskit_c)
     include("${accesskit_c_SOURCE_DIR}/accesskit-config.cmake")
-    target_link_libraries(elegence PRIVATE accesskit-static)
+    # Its static library is a Rust staticlib with its own Rust standard library, which clashes with
+    # a Rust app's own (the Rust bindings link a static Elegence with ELG_ACCESSKIT_SHARED).
+    if (ELG_ACCESSKIT_SHARED)
+        target_link_libraries(elegence PRIVATE accesskit-shared)
+    else ()
+        target_link_libraries(elegence PRIVATE accesskit-static)
+    endif ()
     target_compile_definitions(elegence PRIVATE ELG_HAVE_ACCESSKIT=1)
 endif ()
 
