@@ -35,6 +35,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         media/image_decode.cpp
         media/miniaudio.cpp
         media/recorder.cpp
+        media/gpu_image.cpp
         media/video_feed.cpp
         media/video_source.cpp
         net/http.cpp

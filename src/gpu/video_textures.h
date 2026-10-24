@@ -49,9 +49,12 @@ private:
         wgpu::Texture texture;
         wgpu::Texture copy; // Direct3D 11: sampled instead of `texture` (see import())
         wgpu::BindGroup group;
+        std::weak_ptr<SharedTextureOwner> owner;
         std::uint64_t last_used = 0;
     };
     bool import(const VideoFrame& frame, Texture& texture);
+    // The frame's shared fence to wait on, imported once.
+    wgpu::SharedFence fence(const VideoFrame& frame);
 
     // Frames in memory: per source, the converted image and its upload buffer.
     struct CpuTarget {
@@ -74,6 +77,11 @@ private:
     wgpu::BindGroupLayout layout_;
     wgpu::Sampler sampler_;
     std::unordered_map<std::uint64_t, Texture> textures_; // by VideoFrame::texture_id
+    struct Fence {
+        wgpu::SharedFence fence;
+        std::uint64_t last_used = 0;
+    };
+    std::unordered_map<std::uint64_t, Fence> fences_; // by VideoFrame::wait_fence_id
     std::unordered_map<std::uint64_t, CpuTarget> targets_; // by VideoFrame::source_id
     wgpu::BindGroupLayout frame_layout_; // one storage buffer
     wgpu::RenderPipeline convert_pipeline_;

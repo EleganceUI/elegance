@@ -32,3 +32,12 @@ elg_example(popover)
 elg_example(navigation)
 elg_example(grids)
 elg_example(effects)
+
+# OpenGL draws into a GpuImage (Windows only for now). SDL, Elegence's own dependency, provides
+# the context.
+if (WIN32)
+    find_package(SDL3 CONFIG REQUIRED)
+    find_package(OpenGL REQUIRED)
+    elg_example(opengl)
+    target_link_libraries(example_opengl PRIVATE SDL3::SDL3 OpenGL::GL)
+endif ()

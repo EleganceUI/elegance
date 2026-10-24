@@ -82,18 +82,21 @@ bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
     if (!texture.memory) {
         return false;
     }
-    // BGRA UNORM storage, sampled through an sRGB view. Direct3D 11 can't view the decoder's
-    // texture (typed B8G8R8A8_UNORM) as sRGB, so there each frame is copied into a texture of
-    // Dawn's own, which can be.
+    // BGRA (or RGBA) UNORM storage, sampled through an sRGB view. Direct3D 11 can't view the
+    // decoder's texture (typed B8G8R8A8_UNORM) as sRGB, so there each frame is copied into a
+    // texture of Dawn's own, which can be.
     const bool copies = device_.backend() == wgpu::BackendType::D3D11;
+    const bool rgba = frame.format == VideoFrame::Format::rgba;
+    const wgpu::TextureFormat stored = rgba ? wgpu::TextureFormat::RGBA8Unorm : kConvertedFormat;
+    const wgpu::TextureFormat sampled_format = rgba ? wgpu::TextureFormat::RGBA8UnormSrgb : kSampledFormat;
     wgpu::TextureDescriptor descriptor;
     descriptor.label = "video frame";
     descriptor.dimension = wgpu::TextureDimension::e2D;
     descriptor.size = {frame.width, frame.height, 1};
-    descriptor.format = kConvertedFormat;
+    descriptor.format = stored;
     descriptor.usage = copies ? wgpu::TextureUsage::CopySrc : wgpu::TextureUsage::TextureBinding;
     descriptor.viewFormatCount = copies ? 0 : 1;
-    descriptor.viewFormats = &kSampledFormat;
+    descriptor.viewFormats = &sampled_format;
     texture.texture = texture.memory.CreateTexture(&descriptor);
     if (!texture.texture) {
         return false;
@@ -104,7 +107,7 @@ bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
         texture.copy = device_.handle().CreateTexture(&descriptor);
     }
     wgpu::TextureViewDescriptor view;
-    view.format = kSampledFormat;
+    view.format = sampled_format;
     const wgpu::Texture& sampled = copies ? texture.copy : texture.texture;
     texture.group = create_image_group(device_.handle(), layout_, sampled.CreateView(&view), sampler_);
     return true;
@@ -130,16 +133,27 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
     }
     Texture& texture = it->second;
     texture.last_used = frame_;
+    texture.owner = frame.owner;
     if (std::ranges::find(acquired, frame.texture_id) == acquired.end()) {
-        // Written by the decoder (outside WebGPU), which has finished with it: its contents are
-        // the frame.
+        // Written outside WebGPU: by a decoder that has finished with it, or by the app, whose
+        // fence says when it has.
         wgpu::SharedTextureMemoryBeginAccessDescriptor access;
         access.initialized = true;
         access.concurrentRead = false;
+        wgpu::SharedFence wait;
+        if (frame.wait_fence && (wait = fence(frame))) {
+            access.fenceCount = 1;
+            access.fences = &wait;
+            access.signaledValueCount = 1;
+            access.signaledValues = &frame.wait_value;
+        }
         if (texture.memory.BeginAccess(texture.texture, &access) != wgpu::Status::Success) {
             return nullptr;
         }
         acquired.push_back(frame.texture_id);
+        if (const auto owner = texture.owner.lock()) {
+            owner->began_reading(frame.texture_id);
+        }
         if (texture.copy) {
             wgpu::TexelCopyTextureInfo source;
             source.texture = texture.texture;
@@ -155,18 +169,56 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
 void VideoTextures::release(const std::vector<std::uint64_t>& acquired) {
     for (const std::uint64_t id : acquired) {
         if (const auto it = textures_.find(id); it != textures_.end()) {
-            // The decoder writes a different texture of its ring next, so the end state's fences
-            // aren't needed.
+            // A decoder writes a different texture of its ring next, so it doesn't need the end
+            // state's fences; an owner that listens gets them, to wait on before writing again.
             wgpu::SharedTextureMemoryEndAccessState state;
             it->second.memory.EndAccess(it->second.texture, &state);
+            const auto owner = it->second.owner.lock();
+            if (!owner) {
+                continue;
+            }
+            void* handle = nullptr;
+            std::uint64_t value = 0;
+            for (std::size_t i = 0; i < state.fenceCount && i < state.signaledValueCount; ++i) {
+                wgpu::SharedFenceDXGISharedHandleExportInfo shared;
+                wgpu::SharedFenceExportInfo info;
+                info.nextInChain = &shared;
+                state.fences[i].ExportInfo(&info);
+                if (info.type == wgpu::SharedFenceType::DXGISharedHandle && shared.handle) {
+                    handle = shared.handle;
+                    value = state.signaledValues[i];
+                }
+            }
+            owner->finished_reading(id, handle, value);
         }
     }
+}
+
+wgpu::SharedFence VideoTextures::fence(const VideoFrame& frame) {
+    if (const auto it = fences_.find(frame.wait_fence_id); it != fences_.end()) {
+        it->second.last_used = frame_;
+        return it->second.fence;
+    }
+    if (!device_.has_feature(wgpu::FeatureName::SharedFenceDXGISharedHandle)) {
+        return nullptr;
+    }
+    wgpu::SharedFenceDXGISharedHandleDescriptor shared;
+    shared.handle = frame.wait_fence;
+    wgpu::SharedFenceDescriptor descriptor;
+    descriptor.nextInChain = &shared;
+    descriptor.label = "shared fence";
+    wgpu::SharedFence imported = device_.handle().ImportSharedFence(&descriptor);
+    if (imported) {
+        fences_.emplace(frame.wait_fence_id, Fence{imported, frame_});
+    }
+    return imported;
 }
 
 void VideoTextures::end_frame() noexcept {
     ++frame_;
     std::erase_if(textures_, [&](const auto& entry) { return frame_ - entry.second.last_used > kIdleFrames; });
     std::erase_if(targets_, [&](const auto& entry) { return frame_ - entry.second.last_used > kIdleFrames; });
+    std::erase_if(fences_, [&](const auto& entry) { return frame_ - entry.second.last_used > kIdleFrames; });
 }
 
 // --- Frames in memory ---

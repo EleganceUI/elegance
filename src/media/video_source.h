@@ -29,9 +29,21 @@ struct RenderAdapter {
 void set_render_adapter(RenderAdapter adapter);
 std::optional<RenderAdapter> render_adapter();
 
+// Told when the renderer reads a frame's shared texture (render thread), so its owner knows when
+// it may write it again.
+class SharedTextureOwner {
+public:
+    virtual ~SharedTextureOwner() = default;
+    virtual void began_reading(std::uint64_t texture_id) = 0;
+    // `fence` (Windows: a shared D3D fence's NT handle, valid for the call) reaches `value` once
+    // the GPU is done with it; null when there's nothing to wait for.
+    virtual void finished_reading(std::uint64_t texture_id, void* fence, std::uint64_t value) = 0;
+};
+
 // A frame for the renderer (design.md §13.3). How it gets to the GPU depends on the platform:
-// - `d3d11_shared`: a BGRA texture the decoder shares (Windows: an NT handle), sampled in place.
-//   `texture_id` changes when the texture does.
+// - `d3d11_shared`: a BGRA (or `rgba`) texture the decoder shares (Windows: an NT handle),
+//   sampled in place. `texture_id` changes when the texture does. With `wait_fence`, the GPU
+//   waits for that shared fence to reach `wait_value` before reading; `owner` hears about reads.
 // - `cpu`: pixels in memory, in `format`, packed (no row padding), top to bottom. The renderer
 //   uploads them and converts YUV to RGB in a GPU pass, the same on every platform. Any
 //   decoder or camera can start here.
@@ -39,7 +51,7 @@ std::optional<RenderAdapter> render_adapter();
 // `cpu` NV12 for now).
 struct VideoFrame {
     enum class Kind { d3d11_shared, cpu };
-    enum class Format : std::uint32_t { bgra = 0, nv12 = 1, yuy2 = 2, i420 = 3 };
+    enum class Format : std::uint32_t { bgra = 0, nv12 = 1, yuy2 = 2, i420 = 3, rgba = 4 }; // rgba: shared only
     enum class Matrix : std::uint32_t { bt601 = 0, bt709 = 1 };
 
     Kind kind = Kind::cpu;
@@ -48,6 +60,10 @@ struct VideoFrame {
     // d3d11_shared
     void* shared_handle = nullptr;
     std::uint64_t texture_id = 0;
+    void* wait_fence = nullptr;
+    std::uint64_t wait_fence_id = 0; // unique to the fence (handle values get reused)
+    std::uint64_t wait_value = 0;
+    std::weak_ptr<SharedTextureOwner> owner;
     // cpu
     Format format = Format::bgra;
     Matrix matrix = Matrix::bt709;

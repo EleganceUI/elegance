@@ -7,6 +7,7 @@
 
 #include <elg/video.h>
 #include <elg/capture.h>
+#include <elg/gpu_image.h>
 
 #include "media/video_source.h"
 #include "view/view_node.h"
@@ -123,8 +124,8 @@ constexpr Size kPlaceholder{320, 180}; // before the video's own size is known
 
 class VideoElement final : public Element {
 public:
-    VideoElement(std::shared_ptr<VideoSource> source, ContentMode mode, bool mirrored = false)
-        : source_(std::move(source)), mode_(mode), mirrored_(mirrored) {}
+    VideoElement(std::shared_ptr<VideoSource> source, ContentMode mode, bool mirrored = false, bool flipped = false)
+        : source_(std::move(source)), mode_(mode), mirrored_(mirrored), flipped_(flipped) {}
 
     void set_size(Size size) {
         if (size.width != size_.width || size.height != size_.height) {
@@ -170,8 +171,9 @@ protected:
         if (clip) {
             list.commands.push_back(PushClipCommand{bounds, {}});
         }
-        // Mirrored: the texture read right to left.
-        list.commands.push_back(VideoCommand{picture, mirrored_ ? Rect{1, 0, -1, 1} : Rect{0, 0, 1, 1}, source_, 1});
+        // Mirrored: the texture read right to left; flipped: bottom to top.
+        const Rect uv{mirrored_ ? 1.f : 0.f, flipped_ ? 1.f : 0.f, mirrored_ ? -1.f : 1.f, flipped_ ? -1.f : 1.f};
+        list.commands.push_back(VideoCommand{picture, uv, source_, 1});
         if (clip) {
             list.commands.push_back(PopClipCommand{});
         }
@@ -181,16 +183,17 @@ private:
     std::shared_ptr<VideoSource> source_;
     ContentMode mode_;
     bool mirrored_;
+    bool flipped_;
     Size size_{};
 };
 
 class VideoNode final : public ViewNode {
 public:
-    VideoNode(std::shared_ptr<VideoSource> source, ContentMode mode, bool mirrored = false)
-        : source_(std::move(source)), mode_(mode), mirrored_(mirrored) {}
+    VideoNode(std::shared_ptr<VideoSource> source, ContentMode mode, bool mirrored = false, bool flipped = false)
+        : source_(std::move(source)), mode_(mode), mirrored_(mirrored), flipped_(flipped) {}
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
-        auto element = std::make_unique<VideoElement>(source_, mode_, mirrored_);
+        auto element = std::make_unique<VideoElement>(source_, mode_, mirrored_, flipped_);
         VideoElement* const target = element.get();
         // The size arrives with the video's metadata.
         effect([target, source = source_, needs_frame = context.needs_frame] {
@@ -206,6 +209,7 @@ private:
     std::shared_ptr<VideoSource> source_;
     ContentMode mode_;
     bool mirrored_;
+    bool flipped_;
 };
 
 std::string clock(double seconds) {
@@ -235,6 +239,11 @@ View CameraView(Camera camera, ContentMode mode) {
 
 View VideoFeedView(VideoFeed feed, ContentMode mode, bool mirrored) {
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(feed.source(), mode, mirrored));
+}
+
+View GpuImageView(GpuImage image, ContentMode mode) {
+    return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(
+        image.source(), mode, false, image.origin() == GpuImage::Origin::bottom_left));
 }
 
 View VideoControls(VideoPlayer player) {

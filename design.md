@@ -1379,6 +1379,24 @@ when an app needs the same formats everywhere, or containers and codecs the OS l
   encoding raises the same licensing questions without a default that's both royalty-free and
   widely playable.
 
+#### GPU images (`elg/gpu_image.h`)
+Apps that render with their own GPU code (OpenGL, Vulkan, Direct3D: a 3D viewport, a game, a
+plot) draw into a `GpuImage`, and `GpuImageView` shows it with no copies.
+- **Buffers:** three textures, so the app draws the next frame while the renderer shows the last.
+  `begin_frame()` hands out the buffer used longest ago that's neither shown nor about to be, and
+  first waits (on the CPU; usually already done) for the renderer's fence from its last read.
+- **Windows:** shared D3D11 textures (`R8G8B8A8_UNORM`, NT handles) and one shared D3D fence,
+  made on the renderer's adapter once it's known. OpenGL imports them with
+  `GL_EXT_memory_object_win32` / `GL_EXT_semaphore_win32`, Vulkan with external memory and
+  semaphores, and Direct3D directly. The app signals the fence to the frame's value
+  (`Sync::fence`, GPU to GPU), or reports the work finished (`Sync::finished`) and Elegence
+  signals it. The renderer waits on it in `BeginAccess` and passes its `EndAccess` fence back.
+- **Vulkan backend** (Dawn can't import D3D textures there): `end_frame()` copies the frame
+  through memory instead; slower, same API.
+- **Origin:** `Origin::bottom_left` for OpenGL, which draws bottom row first; the view flips it.
+- **Not yet:** macOS (IOSurface + `MTLSharedEvent`) and Linux (DMA-BUF + sync file), resizing
+  an image (make a new one), and transparency (shown on black, like video).
+
 **Order:** raster images → audio → video → AsyncImage and networking → capture (mic, camera).
 
 ### 13.4 Desktop integration
