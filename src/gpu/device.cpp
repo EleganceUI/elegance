@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <filesystem>
 #include <format>
 #include <mutex>
 #include <vector>
@@ -69,6 +70,33 @@ std::optional<std::array<std::uint8_t, 8>> find_luid(std::uint32_t vendor, std::
     }
     return std::nullopt;
 }
+
+// Dawn's Direct3D 12 backend compiles shaders with the DirectX shader compiler, which it loads
+// from beside the module Dawn is in (webgpu_dawn.dll, or the app itself when it links Dawn
+// statically) or from System32. If it isn't there, creating the adapter fails instead of falling
+// back to the older FXC, so ask for FXC up front.
+bool dxc_available() {
+    std::vector<std::filesystem::path> folders;
+    HMODULE dawn = nullptr;
+    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                           reinterpret_cast<LPCWSTR>(&wgpuCreateInstance), &dawn)) {
+        wchar_t path[MAX_PATH];
+        const DWORD length = GetModuleFileNameW(dawn, path, MAX_PATH);
+        if (length > 0 && length < MAX_PATH) {
+            folders.push_back(std::filesystem::path(path).parent_path());
+        }
+    }
+    wchar_t system[MAX_PATH];
+    const UINT length = GetSystemDirectoryW(system, MAX_PATH);
+    if (length > 0 && length < MAX_PATH) {
+        folders.emplace_back(system);
+    }
+    std::error_code error;
+    return std::ranges::any_of(folders, [&](const std::filesystem::path& folder) {
+        return std::filesystem::exists(folder / L"dxcompiler.dll", error) &&
+               std::filesystem::exists(folder / L"dxil.dll", error);
+    });
+}
 #endif
 
 } // namespace
@@ -77,6 +105,16 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     wgpu::RequestAdapterOptions options;
     options.powerPreference = wgpu::PowerPreference::HighPerformance;
     options.backendType = requested_backend();
+#if defined(_WIN32)
+    const char* const no_dxc[] = {"use_dxc"};
+    wgpu::DawnTogglesDescriptor toggles;
+    if (!dxc_available()) {
+        toggles.disabledToggleCount = 1;
+        toggles.disabledToggles = no_dxc;
+        options.nextInChain = &toggles;
+        log_info("dxcompiler.dll and dxil.dll aren't beside the app: Direct3D 12 compiles shaders with FXC (slower)");
+    }
+#endif
     std::string adapter_error;
     instance.wait(instance.handle().RequestAdapter(
         &options, wgpu::CallbackMode::WaitAnyOnly,

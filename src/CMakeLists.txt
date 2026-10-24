@@ -190,8 +190,9 @@ if (WIN32 AND ELG_BUILD_SHARED)
     )
 endif ()
 
-# Dawn's Direct3D 12 backend loads the DirectX shader compiler at run time (without it, it falls
-# back to the older, much slower FXC), so it isn't among the linked DLLs above. It goes next to
+# Dawn's Direct3D 12 backend loads the DirectX shader compiler at run time (without it, the
+# device uses the older, much slower FXC: see dxc_available() in gpu/device.cpp), so it isn't
+# among the linked DLLs above. It goes next to
 # the apps: beside elegence.dll, or with a static Elegence, into the runtime output folder (set it,
 # or copy these two DLLs next to your app yourself).
 if (WIN32 AND DEFINED VCPKG_INSTALLED_DIR)
