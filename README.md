@@ -54,7 +54,6 @@ apps/sandbox/   most features in one window
 apps/preview/   the preview host for hot reload
 tests/          unit tests (Catch2)
 docs/           the documentation site (Astro Starlight)
-roadmap/        the roadmap site
 third_party/    vendored data (Phosphor icons)
 ```
 
