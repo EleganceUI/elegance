@@ -70,6 +70,14 @@ VideoTextures::VideoTextures(const Device& device, const wgpu::BindGroupLayout& 
 }
 
 bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
+    if (frame.kind == VideoFrame::Kind::external) {
+        if (frame.device.Get() != device_.handle().Get() || !frame.texture ||
+            !frame.external_view || !frame.texture_lease) return false;
+        texture.texture = frame.texture;
+        texture.external = true;
+        texture.group = create_image_group(device_.handle(), layout_, frame.external_view, sampler_);
+        return true;
+    }
     if (frame.kind == VideoFrame::Kind::webgpu) {
         // Ordinary Dawn texture, not external memory. Never try to import another device's
         // handles, even when its backend/physical adapter matches the renderer's.
@@ -151,9 +159,10 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
     Texture& texture = it->second;
     texture.last_used = frame_;
     texture.owner = frame.owner;
-    if (frame.kind == VideoFrame::Kind::webgpu) {
+    if (frame.kind == VideoFrame::Kind::webgpu || frame.kind == VideoFrame::Kind::external) {
         if (std::ranges::find(acquired, frame.texture_id) == acquired.end()) {
             acquired.push_back(frame.texture_id);
+            ++texture.pending_batches;
         }
         texture.lease = frame.texture_lease;
         return texture.group;
@@ -193,9 +202,12 @@ void VideoTextures::release(const std::vector<std::uint64_t>& acquired) {
     for (const std::uint64_t id : acquired) {
         if (const auto it = textures_.find(id); it != textures_.end()) {
             if (!it->second.memory) {
-                // The read was submitted before returning the buffer to its producer. GPU
-                // completion is unnecessary: producer overwrites use this exact same queue.
-                it->second.lease.reset();
+                // All reads in this batch were submitted. Same-device buffers return to
+                // their queue-ordered ring; external allocations stay pinned by other
+                // snapshots/current frames, then EndAccess exports their completion fences.
+                if (it->second.pending_batches != 0 && --it->second.pending_batches == 0) {
+                    it->second.lease.reset();
+                }
                 continue;
             }
             // A decoder writes a different texture of its ring next, so it doesn't need the end
@@ -247,7 +259,8 @@ void VideoTextures::end_frame() noexcept {
     ++frame_;
     std::erase_if(textures_, [&](const auto& entry) {
         // A pending WebGPU recording owns its reservation until release(), regardless of age.
-        return !entry.second.lease && frame_ - entry.second.last_used > kIdleFrames;
+        return !entry.second.lease &&
+               (entry.second.external || frame_ - entry.second.last_used > kIdleFrames);
     });
     std::erase_if(targets_, [&](const auto& entry) { return frame_ - entry.second.last_used > kIdleFrames; });
     std::erase_if(fences_, [&](const auto& entry) { return frame_ - entry.second.last_used > kIdleFrames; });

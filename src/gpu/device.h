@@ -27,6 +27,8 @@ struct RenderDevice {
     bool active = true;
     wgpu::Device device;
     wgpu::Queue queue;
+    wgpu::Instance instance; // external-image error scopes and Metal scheduling at retirement
+    wgpu::BackendType backend = wgpu::BackendType::Undefined;
 };
 std::shared_ptr<RenderDevice> render_device();
 

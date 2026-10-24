@@ -55,7 +55,7 @@ public:
 // Later: macOS IOSurfaces and Linux DMA-BUFs, imported like the D3D11 textures (macOS decodes to
 // `cpu` NV12 for now).
 struct VideoFrame {
-    enum class Kind { d3d11_shared, cpu, webgpu };
+    enum class Kind { d3d11_shared, cpu, webgpu, external };
     enum class Format : std::uint32_t { bgra = 0, nv12 = 1, yuy2 = 2, i420 = 3, rgba = 4 }; // rgba: texture storage
     enum class Matrix : std::uint32_t { bt601 = 0, bt709 = 1 };
 
@@ -72,6 +72,9 @@ struct VideoFrame {
     // webgpu: strong object references plus a snapshot reservation; no DXGI import/access.
     wgpu::Device device;
     wgpu::Texture texture;
+    // external: prevalidated sRGB view; lease owns one immutable imported allocation and its
+    // open Dawn access. Every snapshot and pending recording must retain it until submission.
+    wgpu::TextureView external_view;
     std::shared_ptr<void> texture_lease;
     // cpu (format also describes shared/WebGPU texture storage)
     Format format = Format::bgra;

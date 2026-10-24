@@ -12,6 +12,7 @@ add_executable(elegance_tests
         capture_tests.cpp
         desktop_tests.cpp
         environment_tests.cpp
+        external_gpu_image_tests.cpp
         grid_tests.cpp
         http_tests.cpp
         image_tests.cpp
@@ -28,3 +29,10 @@ else ()
 endif ()
 
 catch_discover_tests(elegance_tests)
+
+# Compile the public FFI surface as real C, not merely as C++ with extern "C" declarations.
+enable_language(C)
+add_executable(external_gpu_image_c_smoke external_gpu_image_c_smoke.c)
+set_target_properties(external_gpu_image_c_smoke PROPERTIES LINKER_LANGUAGE CXX C_STANDARD 11)
+target_link_libraries(external_gpu_image_c_smoke PRIVATE Elegance::Elegance)
+add_test(NAME external_gpu_image_c_smoke COMMAND external_gpu_image_c_smoke)

@@ -36,6 +36,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         media/miniaudio.cpp
         media/recorder.cpp
         media/gpu_image.cpp
+        media/external_gpu_image.cpp
         media/video_feed.cpp
         media/video_source.cpp
         net/http.cpp

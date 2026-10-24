@@ -180,9 +180,13 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
         throw GpuError("Dawn must support ImplicitDeviceSynchronization for GpuImage producers");
     }
     std::vector<wgpu::FeatureName> features{wgpu::FeatureName::ImplicitDeviceSynchronization};
-    // Optional features: sharing textures with Direct3D 11 (video frames, composition).
+    // Optional sharing features. Never require unavailable transports just to start the
+        // renderer: ExternalGpuImage reports Unsupported on the actual device at publication.
     for (const wgpu::FeatureName feature :
-         {wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle, wgpu::FeatureName::SharedFenceDXGISharedHandle}) {
+         {wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle, wgpu::FeatureName::SharedFenceDXGISharedHandle,
+                   wgpu::FeatureName::SharedTextureMemoryIOSurface, wgpu::FeatureName::SharedFenceMTLSharedEvent,
+                   wgpu::FeatureName::SharedTextureMemoryOpaqueFD, wgpu::FeatureName::SharedFenceVkSemaphoreOpaqueFD,
+                   wgpu::FeatureName::SharedTextureMemoryVkDedicatedAllocation}) {
         if (adapter_.HasFeature(feature)) {
             features.push_back(feature);
         }
@@ -271,6 +275,8 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     published_ = std::make_shared<RenderDevice>();
     published_->device = device_;
     published_->queue = queue_;
+        published_->instance = instance.handle();
+        published_->backend = backend_;
     {
         auto& states = Errors::registry();
         std::lock_guard lock(states.mutex);

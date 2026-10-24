@@ -1,0 +1,8 @@
+CompileFlags:
+  CompilationDatabase: build/local-offline-static
+---
+If:
+  PathMatch: .*\.c
+CompileFlags:
+  Remove: [-std=*, -x]
+  Add: [-xc, -std=c11]
