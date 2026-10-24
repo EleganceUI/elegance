@@ -19,7 +19,29 @@ if (DEFINED VCPKG_MANIFEST_MODE AND NOT VCPKG_MANIFEST_MODE)
             "\"Dev Debug\" profile and turn off vcpkg's integration into other CMake profiles.")
 endif ()
 
-option(ELG_BUILD_SHARED "Build Elegence as a shared library" ON)
+# vcpkg's *-static triplets (x64-windows-static) link every dependency statically, the C runtime
+# included (/MT): an app is then one executable. Elegence and the apps use the same runtime, and
+# Elegence is static too: its API passes std types, which a DLL with its own runtime can't share.
+# (*-static-md triplets keep the shared runtime.)
+set(ELG_STATIC_RUNTIME OFF)
+if (MSVC AND VCPKG_TARGET_TRIPLET MATCHES "-static$")
+    set(ELG_STATIC_RUNTIME ON)
+    if (NOT DEFINED CMAKE_MSVC_RUNTIME_LIBRARY)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif ()
+endif ()
+
+if (ELG_STATIC_RUNTIME)
+    set(elg_shared_default OFF)
+else ()
+    set(elg_shared_default ON)
+endif ()
+option(ELG_BUILD_SHARED "Build Elegence as a shared library (OFF: static, linked into each app; no hot reload)"
+       ${elg_shared_default})
+if (ELG_STATIC_RUNTIME AND ELG_BUILD_SHARED)
+    message(FATAL_ERROR "The ${VCPKG_TARGET_TRIPLET} triplet links the C runtime statically, so Elegence must be "
+                        "static too (ELG_BUILD_SHARED=OFF): its API passes std types between modules.")
+endif ()
 option(ELG_BUILD_SANDBOX "Build the sandbox test app"         ${PROJECT_IS_TOP_LEVEL})
 option(ELG_ICONS         "Embed the built-in icon set (Phosphor, MIT): regular, bold, fill (~1.4 MB)" ON)
 option(ELG_ICONS_EXTRA_WEIGHTS "Also embed Phosphor's thin, light, and duotone styles (~1.6 MB)" ON)
@@ -27,7 +49,7 @@ option(ELG_BUILD_EXAMPLES "Build the example apps (needs the vcpkg \"examples\" 
 option(ELG_BUILD_TESTS   "Build the unit tests (needs the vcpkg \"tests\" feature)" ${PROJECT_IS_TOP_LEVEL})
 option(ELG_ACCESSIBILITY "Screen reader support through AccessKit (downloads its prebuilt C library)" ON)
 
-# Put the library and every executable in one folder so the sandbox finds the DLL on Windows.
+# Put the library and every executable in one folder so the apps find the DLLs on Windows.
 if (PROJECT_IS_TOP_LEVEL)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
     set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
@@ -38,7 +60,9 @@ add_subdirectory(src)
 
 if (ELG_BUILD_SANDBOX)
     add_subdirectory(apps/sandbox)
-    add_subdirectory(apps/preview)
+    if (ELG_BUILD_SHARED) # the hot reload host
+        add_subdirectory(apps/preview)
+    endif ()
 endif ()
 
 if (ELG_BUILD_EXAMPLES)

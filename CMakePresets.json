@@ -69,6 +69,42 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
+    },
+    {
+      "name": "static",
+      "hidden": true,
+      "description": "Elegence as a static library, linked into each app (no hot reload)",
+      "cacheVariables": {
+        "ELG_BUILD_SHARED": "OFF"
+      }
+    },
+    {
+      "name": "windows-release-static",
+      "displayName": "Windows Release, static (MSVC)",
+      "inherits": ["static", "windows-release"]
+    },
+    {
+      "name": "fully-static",
+      "hidden": true,
+      "description": "Everything static, the C runtime included: each app is one executable (plus the optional DirectX shader compiler DLLs)",
+      "inherits": "static",
+      "cacheVariables": {
+        "VCPKG_TARGET_TRIPLET": "x64-windows-static"
+      }
+    },
+    {
+      "name": "windows-release-fully-static",
+      "displayName": "Windows Release, fully static (MSVC)",
+      "description": "Release without debug info: statically linked, each app's PDB would carry all of Dawn's (~700 MB)",
+      "inherits": ["fully-static", "windows-release"],
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "macos-release-static",
+      "displayName": "macOS Release, static (Apple Clang)",
+      "inherits": ["static", "macos-release"]
     }
   ],
   "buildPresets": [
@@ -87,6 +123,18 @@
     {
       "name": "macos-release",
       "configurePreset": "macos-release"
+    },
+    {
+      "name": "windows-release-static",
+      "configurePreset": "windows-release-static"
+    },
+    {
+      "name": "windows-release-fully-static",
+      "configurePreset": "windows-release-fully-static"
+    },
+    {
+      "name": "macos-release-static",
+      "configurePreset": "macos-release-static"
     }
   ]
 }

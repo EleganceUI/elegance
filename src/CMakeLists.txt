@@ -191,13 +191,26 @@ if (WIN32 AND ELG_BUILD_SHARED)
 endif ()
 
 # Dawn's Direct3D 12 backend loads the DirectX shader compiler at run time (without it, it falls
-# back to the older FXC), so it isn't among the linked DLLs above.
+# back to the older, much slower FXC), so it isn't among the linked DLLs above. It goes next to
+# the apps: beside elegence.dll, or with a static Elegence, into the runtime output folder (set it,
+# or copy these two DLLs next to your app yourself).
 if (WIN32 AND DEFINED VCPKG_INSTALLED_DIR)
     set(elg_dxc_dir "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>bin")
-    add_custom_command(TARGET elegence POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                    "${elg_dxc_dir}/dxcompiler.dll" "${elg_dxc_dir}/dxil.dll" $<TARGET_FILE_DIR:elegence>
-    )
+    if (ELG_BUILD_SHARED)
+        set(elg_runtime_dir $<TARGET_FILE_DIR:elegence>)
+    elseif (CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+        set(elg_runtime_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
+    else ()
+        message(STATUS "Elegence: copy dxcompiler.dll and dxil.dll from ${VCPKG_INSTALLED_DIR}/"
+                       "${VCPKG_TARGET_TRIPLET}/bin next to your app (CMAKE_RUNTIME_OUTPUT_DIRECTORY isn't set)")
+    endif ()
+    if (DEFINED elg_runtime_dir)
+        add_custom_command(TARGET elegence POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory "${elg_runtime_dir}"
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                        "${elg_dxc_dir}/dxcompiler.dll" "${elg_dxc_dir}/dxil.dll" "${elg_runtime_dir}"
+        )
+    endif ()
 endif ()
 
 target_include_directories(elegence

@@ -56,15 +56,17 @@ configure.
 
 </Steps>
 
-The presets are `windows-debug` and `windows-release` (RelWithDebInfo). Everything lands in
-`build/<preset>/bin`, next to `elegence.dll`.
+The presets are `windows-debug` and `windows-release` (RelWithDebInfo), plus two static ones (see
+[Linking statically](#linking-statically)): `windows-release-static` links Elegence into each app,
+and `windows-release-fully-static` links everything, so each app is a single executable.
+Everything lands in `build/<preset>/bin`.
 
 ## Build options
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `ELG_BUILD_SHARED` | `ON` | Build Elegence as a DLL. Hot reload needs this. |
-| `ELG_BUILD_SANDBOX` | top level | The sandbox and preview apps. |
+| `ELG_BUILD_SHARED` | `ON` | Build Elegence as a DLL. `OFF` links it statically into each app. Hot reload needs `ON`. |
+| `ELG_BUILD_SANDBOX` | top level | The sandbox and, with a shared build, the hot reload preview app. |
 | `ELG_BUILD_EXAMPLES` | top level | The examples in `examples/` and the login demo. |
 | `ELG_BUILD_TESTS` | top level | Unit tests (needs the vcpkg `tests` feature). |
 | `ELG_ICONS` | `ON` | Embed the Phosphor icon set (regular, bold, fill; about 1.4 MB). |
@@ -95,6 +97,40 @@ if (MSVC)
     target_compile_options(my_app PRIVATE /utf-8)
 endif ()
 ```
+
+### Linking statically
+
+Set `ELG_BUILD_SHARED` to `OFF` before adding Elegence, and the app ships without
+`elegence.dll`:
+
+```cmake title="CMakeLists.txt"
+set(ELG_BUILD_SHARED OFF CACHE BOOL "" FORCE)
+# Where Elegence copies the DirectX shader compiler (dxcompiler.dll, dxil.dll), which Direct3D 12
+# loads at run time. Without it, Direct3D 12 compiles shaders with the much slower FXC.
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+add_subdirectory(external/elegence)
+```
+
+Its dependencies (SDL, Dawn, FreeType, HarfBuzz) stay DLLs with the `x64-windows` triplet, and
+vcpkg copies them next to the app. Hot reload needs the shared library: one Elegence for the host
+and its reloadable modules, so `elegence_hot_reload()` stops with an error in a static build.
+
+#### One executable
+
+With vcpkg's `x64-windows-static` triplet (the `windows-release-fully-static` preset), the
+dependencies and the C runtime are static too (`/MT`), and an app needs nothing beside it but
+Windows. Elegence notices the triplet: it switches the build to the static runtime and builds
+itself static (a shared Elegence with its own runtime couldn't share `std` types with the app).
+
+```sh
+cmake --preset windows-release-fully-static   # the first time, vcpkg builds Dawn: allow ~30 minutes
+cmake --build --preset windows-release-fully-static
+```
+
+The preset builds Release without debug info: with everything linked in, each app's PDB would
+carry all of Dawn's (about 700 MB). An app is about 20 MB. `dxcompiler.dll` and `dxil.dll` (the
+DirectX shader compiler, which Microsoft ships only as DLLs) are optional beside it: without them,
+Direct3D 12 compiles shaders with the older FXC, so the first frames take longer.
 
 vcpkg only reads the manifest of the top-level project, so your project needs Elegence's
 dependencies in its own `vcpkg.json`:

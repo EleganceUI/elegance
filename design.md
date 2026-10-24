@@ -175,8 +175,10 @@ itself, which the developer can't handle meaningfully, and continuing would risk
   `x64-linux`, and `arm64-osx`.
 - **Shaders**: WGSL (`shaders/*.wgsl`), embedded as string literals by `cmake/ElgShaders.cmake`.
   WebGPU compiles them when pipelines are created, so the build needs no shader compiler.
-- **Library type**: `SHARED` by default, with static supported. The ABI surface uses `ELG_API`
-  exports and pImpl at boundaries.
+- **Library type**: `SHARED` by default; `ELG_BUILD_SHARED=OFF` builds it static (the
+  `windows-release-static` / `macos-release-static` presets). Static builds skip the hot reload
+  host, and `elegence_hot_reload()` refuses them (§9.6). The ABI surface uses `ELG_API` exports and
+  pImpl at boundaries.
 - **Namespace**: `elg::` (decided). Macros use an `ELG_` prefix.
 - **Local setup**: the project uses the dedicated vcpkg at `G:\elegence-vcpkg`, which is also
   the source of the `builtin-baseline` commit. `CMakeUserPresets.json` (gitignored, per-machine)

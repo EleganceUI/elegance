@@ -17,12 +17,23 @@
 #
 #     #include "app_hot_reload.h"
 #     app.window({.title = "App"}, [] { return elg::HotReload(elg_hot_reload_options()); });
+# Hot reload swaps a module that shares the host's Elegence: a static Elegence would give each
+# its own copy (its own state, windows, and renderer).
+function(_elegence_require_shared what)
+    get_target_property(type Elegence::Elegence TYPE)
+    if (type STREQUAL "STATIC_LIBRARY")
+        message(FATAL_ERROR "${what}: hot reload needs Elegence as a shared library (ELG_BUILD_SHARED=ON)")
+    endif ()
+endfunction()
+
 function(elegence_views_module target)
+    _elegence_require_shared("elegence_views_module(${target})")
     add_library(${target} SHARED ${ARGN})
     target_link_libraries(${target} PRIVATE Elegence::Elegence)
 endfunction()
 
 function(elegence_hot_reload host)
+    _elegence_require_shared("elegence_hot_reload(${host})")
     cmake_parse_arguments(ARG "" "MODULE" "WATCH" ${ARGN})
     if (NOT ARG_MODULE)
         message(FATAL_ERROR "elegence_hot_reload(${host}): MODULE <views target> is required")
