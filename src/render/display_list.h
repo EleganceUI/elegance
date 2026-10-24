@@ -89,6 +89,9 @@ struct VideoCommand {
     Rect uv{0, 0, 1, 1};
     std::shared_ptr<VideoSource> source;
     float opacity = 1;
+    // When set, rect is the destination viewport, not a precomputed picture rectangle.
+    // Resolve its aspect from the same frame snapshot that will be sampled.
+    std::optional<ContentMode> content_mode;
 };
 
 // Clips everything until the matching PopClipCommand to a rounded rect.

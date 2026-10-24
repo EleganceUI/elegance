@@ -1,6 +1,7 @@
 // This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
 #include <elg/external_gpu_image.h>
 
+#include "core/ui_tasks.h"
 #include "gpu/device.h"
 #include "media/video_source.h"
 
@@ -333,8 +334,8 @@ private:
 class ExternalImageSource final : public VideoSource {
 public:
     ExternalImageSource(std::uint32_t width, std::uint32_t height, bool flipped)
-        : width(width), height(height), flipped(flipped) {
-        size = Size{static_cast<float>(width), static_cast<float>(height)};
+        : flipped(flipped), natural_size_{static_cast<float>(width), static_cast<float>(height)} {
+        size = natural_size_;
         ready = true;
         // Keep the render-side update polling even after clear, so a cleared last image is
         // actually removed without requiring a UI state mutation from the producer thread.
@@ -348,7 +349,7 @@ public:
     void set_looping(bool) override {}
 
     std::uint32_t publish(const ElgExternalGpuImageFrame& input) {
-        if (input.width != width || input.height != height || !input.release ||
+        if (!input.width || !input.height || !input.release ||
             (input.format != ELG_EXTERNAL_RGBA8 && input.format != ELG_EXTERNAL_BGRA8) ||
             input.transport < ELG_EXTERNAL_IOSURFACE || input.transport > ELG_EXTERNAL_VULKAN_OPAQUE_FD ||
             input.vk_dedicated_allocation > 1) return ELG_EXTERNAL_INVALID_ARGUMENT;
@@ -376,8 +377,8 @@ public:
         if (status != ELG_EXTERNAL_OK) return status;
         VideoFrame frame;
         frame.kind = VideoFrame::Kind::external;
-        frame.width = width;
-        frame.height = height;
+        frame.width = input.width;
+        frame.height = input.height;
         frame.source_id = id;
         frame.texture_id = next_external_id.fetch_add(1, std::memory_order_relaxed);
         frame.frame_id = frame.texture_id;
@@ -385,12 +386,36 @@ public:
         frame.texture = external->texture;
         frame.external_view = external->sample_view;
         frame.texture_lease = external;
-        external->accept();
         std::optional<VideoFrame> old;
         {
             std::lock_guard lock(mutex_);
+            const Size next_size{static_cast<float>(input.width), static_cast<float>(input.height)};
+            if (!size_task_pending_ && (natural_size_.width != next_size.width ||
+                                       natural_size_.height != next_size.height)) {
+                // Queue before accepting ownership so allocation failure leaves the old frame
+                // intact. The task takes this mutex only after publication commits.
+                post_ui_task([weak = std::weak_ptr<ExternalImageSource>(
+                                  std::static_pointer_cast<ExternalImageSource>(shared_from_this()))] {
+                    if (const auto source = weak.lock()) {
+                        Size latest;
+                        {
+                            std::lock_guard lock(source->mutex_);
+                            latest = source->natural_size_;
+                            source->size_task_pending_ = false;
+                        }
+                        // Read the latest metadata, not captured dimensions or a GPU frame.
+                        // A racing publication queues the next task; UI tasks run in order.
+                        const auto previous = source->size.peek();
+                        if (previous.width != latest.width || previous.height != latest.height)
+                            source->size = latest;
+                    }
+                });
+                size_task_pending_ = true;
+            }
+            external->accept();
             old.swap(frame_);
             frame_ = std::move(frame);
+            natural_size_ = next_size;
             ++number_;
         }
         return ELG_EXTERNAL_OK; // old callbacks run outside the source lock
@@ -411,10 +436,11 @@ public:
         std::lock_guard lock(mutex_);
         return frame_; // strong snapshot reservation, not a weak owner notification
     }
-    const std::uint32_t width, height;
     const bool flipped;
 private:
     mutable std::mutex mutex_;
+    Size natural_size_;
+    bool size_task_pending_ = false;
     std::optional<VideoFrame> frame_;
     std::uint64_t number_ = 0, reported_ = 0;
 };

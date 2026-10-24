@@ -135,6 +135,9 @@ public:
     // Sizes the element for `proposal`, positions it, and lays out its children. A changed frame
     // eases to its new place during an animated update (design.md §9.5).
     void place(Point position, ProposedSize proposal);
+    // Post-layout, even with cached arrangement or culled painting (DPI can change independently).
+    // Observers must queue work, not change the retained tree during this traversal.
+    void notify_render_size(float scale);
     void paint(DisplayList& list) const {
         if (frame_.animating()) {
             list.animating = true;
@@ -267,6 +270,7 @@ protected:
     virtual void on_structure_changed() { notify_structure_changed(); }
     // This element's cached sizes were dropped (it, or something inside, changed).
     virtual void on_layout_invalidated() noexcept {}
+    virtual void on_render_size(float) {}
 
     // Hits nothing by default (spacers, empty views). Containers test their children.
     virtual bool hit_impl(Point, std::vector<Element*>&) { return false; }
@@ -655,8 +659,10 @@ protected:
     void arrange(Rect bounds, ProposedSize proposal) override { content_->place({bounds.x, bounds.y}, proposal); }
     void paint_impl(DisplayList& list) const override;
     bool hit_impl(Point point, std::vector<Element*>& path) override;
+    void on_render_size(float scale) override;
 
 private:
+    std::optional<PixelSize> last_render_size_;
     // The clip shape's fill when it's a path (it clips through a mask), cached per size and scale;
     // nullptr for the rounded-rect shapes, which clip analytically.
     const ShapeFill* clip_path(float scale) const;

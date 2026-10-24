@@ -412,7 +412,7 @@ private:
         if (!command.source || command.opacity <= 0) {
             return;
         }
-        const Rect r = to_pixels(command.rect, origin);
+        Rect r = to_pixels(command.rect, origin);
         if (r.width <= 0 || r.height <= 0) {
             return;
         }
@@ -426,6 +426,20 @@ private:
         if (index < 0) {
             index = static_cast<int>(plan_.videos.size());
             plan_.videos.push_back(command.source);
+            command.source->update();
+            plan_.video_frames.push_back(command.source->current());
+        }
+        const auto& frame = plan_.video_frames[index];
+        if (command.content_mode) {
+            if (!frame || frame->width == 0 || frame->height == 0) {
+                return;
+            }
+            const float sx = r.width / static_cast<float>(frame->width);
+            const float sy = r.height / static_cast<float>(frame->height);
+            const float scale = *command.content_mode == ContentMode::fit ? std::min(sx, sy) : std::max(sx, sy);
+            const float width = static_cast<float>(frame->width) * scale;
+            const float height = static_cast<float>(frame->height) * scale;
+            r = {r.x + (r.width - width) / 2, r.y + (r.height - height) / 2, width, height};
         }
         QuadInstance instance;
         instance.rect = {r.x, r.y, r.width, r.height};

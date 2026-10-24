@@ -409,10 +409,8 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
     }
     resources.textures.end_frame();
 
-    // Videos: the newest decoded frame of each, sampled where the decoder wrote it.
-    for (const auto& source : plan.videos) {
-        source->update();
-        const std::optional<VideoFrame> video_frame = source->current();
+    // Sample the same snapshots that determined the picture geometry.
+    for (const auto& video_frame : plan.video_frames) {
         groups.videos.push_back(video_frame ? resources.videos.acquire(encoder, *video_frame, acquired_videos)
                                             : wgpu::BindGroup());
     }

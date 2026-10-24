@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <limits>
 
 namespace elg::detail {
 
@@ -132,6 +133,14 @@ void Element::place(Point position, ProposedSize proposal) {
     needs_arrange_ = false; // first: an invalidation during arrange holds for the next layout
     arrange(target, proposal);
     update_paint_bounds();
+}
+
+void Element::notify_render_size(float scale) {
+    if (placed_) {
+        on_render_size(scale);
+    }
+    // Flattened containers may not be placed themselves, but their children are.
+    for_each_child([scale](Element& child) { child.notify_render_size(scale); });
 }
 
 void Element::move_exiting(const std::vector<Element*>& exiting) {
@@ -591,6 +600,26 @@ void LayoutModifierElement::arrange(Rect bounds, ProposedSize proposal) {
 }
 
 // --- EffectElement ---
+
+void EffectElement::on_render_size(float scale) {
+    if (!effects_.on_size_change || !std::isfinite(scale) || scale <= 0) {
+        return;
+    }
+    const auto pixels = [scale](float points) -> std::uint32_t {
+        if (!std::isfinite(points) || points <= 0) {
+            return 0;
+        }
+        const double value = std::ceil(static_cast<double>(points) * scale);
+        return static_cast<std::uint32_t>(std::min(value, static_cast<double>(std::numeric_limits<std::uint32_t>::max())));
+    };
+    const Size size = frame().size();
+    const PixelSize physical{pixels(size.width), pixels(size.height)};
+    if (last_render_size_ == physical) {
+        return;
+    }
+    last_render_size_ = physical;
+    effects_.on_size_change(physical);
+}
 
 const ShapeFill* EffectElement::clip_path(float scale) const {
     if (!effects_.clip_shape) {

@@ -74,13 +74,17 @@ typedef struct ElgExternalGpuImageFrame {
 } ElgExternalGpuImageFrame;
 
 // Unsafe, low-level native sharing API. No CPU upload/readback and no conversion fallback.
-// Publication requires a live renderer. Fixed dimensions/origin; one mip/layer/sample, 2D RGBA/BGRA
+// Publication requires a live renderer. Fixed origin; one mip/layer/sample, 2D RGBA/BGRA
 // UNORM storage, sRGB-encoded RGB, straight alpha. Import must permit an sRGB sampling view.
+// Create dimensions must be nonzero and supply the initial natural size until a frame is accepted.
+// Each publication may have different nonzero dimensions; successful frames update natural size
+// asynchronously on the UI thread without replacing the source. Clear retains the last natural size.
 // No YUV, keyed mutex, DMA-BUF, cross-adapter or device-loss recovery support.
 ELG_API ElgExternalGpuImage* elg_external_gpu_image_create(uint32_t width, uint32_t height, uint32_t origin);
 ELG_API void elg_external_gpu_image_destroy(ElgExternalGpuImage* image);
 // Thread-safe against publish/clear on a LIVE handle, not against destroy. Synchronous import;
-// returns a status above. On failure ownership stays with caller, no callback and no reads.
+// returns a status above. On failure ownership stays with caller, no callback and no reads;
+// the previous frame and natural size remain unchanged.
 // On success, exactly one release callback follows, possibly before publish returns if another
 // thread clears/replaces the frame. Keep userdata/resources alive until that callback.
 //
