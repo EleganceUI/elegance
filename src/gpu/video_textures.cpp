@@ -78,19 +78,6 @@ bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
         texture.group = create_image_group(device_.handle(), layout_, frame.external_view, sampler_);
         return true;
     }
-    if (frame.kind == VideoFrame::Kind::webgpu) {
-        // Ordinary Dawn texture, not external memory. Never try to import another device's
-        // handles, even when its backend/physical adapter matches the renderer's.
-        if (frame.device.Get() != device_.handle().Get() || !frame.texture || !frame.texture_lease) {
-            return false;
-        }
-        texture.texture = frame.texture;
-        wgpu::TextureViewDescriptor view;
-        view.format = wgpu::TextureFormat::RGBA8UnormSrgb;
-        view.usage = wgpu::TextureUsage::TextureBinding; // sRGB views cannot inherit StorageBinding
-        texture.group = create_image_group(device_.handle(), layout_, texture.texture.CreateView(&view), sampler_);
-        return true;
-    }
     if (!frame.shared_handle || !device_.has_feature(wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle)) {
         return false;
     }
@@ -139,10 +126,6 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
     if (frame.kind == VideoFrame::Kind::cpu) {
         return convert(encoder, frame);
     }
-    if (frame.kind == VideoFrame::Kind::webgpu &&
-        (frame.device.Get() != device_.handle().Get() || !frame.texture || !frame.texture_lease)) {
-        return nullptr;
-    }
     auto it = textures_.find(frame.texture_id);
     if (it == textures_.end()) {
         Texture texture;
@@ -159,7 +142,7 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
     Texture& texture = it->second;
     texture.last_used = frame_;
     texture.owner = frame.owner;
-    if (frame.kind == VideoFrame::Kind::webgpu || frame.kind == VideoFrame::Kind::external) {
+    if (frame.kind == VideoFrame::Kind::external) {
         if (std::ranges::find(acquired, frame.texture_id) == acquired.end()) {
             acquired.push_back(frame.texture_id);
             ++texture.pending_batches;
@@ -202,9 +185,8 @@ void VideoTextures::release(const std::vector<std::uint64_t>& acquired) {
     for (const std::uint64_t id : acquired) {
         if (const auto it = textures_.find(id); it != textures_.end()) {
             if (!it->second.memory) {
-                // All reads in this batch were submitted. Same-device buffers return to
-                // their queue-ordered ring; external allocations stay pinned by other
-                // snapshots/current frames, then EndAccess exports their completion fences.
+                // All reads in this batch were submitted. External allocations stay pinned
+                // by other snapshots/current frames, then EndAccess exports completion fences.
                 if (it->second.pending_batches != 0 && --it->second.pending_batches == 0) {
                     it->second.lease.reset();
                 }
@@ -258,7 +240,7 @@ wgpu::SharedFence VideoTextures::fence(const VideoFrame& frame) {
 void VideoTextures::end_frame() noexcept {
     ++frame_;
     std::erase_if(textures_, [&](const auto& entry) {
-        // A pending WebGPU recording owns its reservation until release(), regardless of age.
+        // A pending external-image recording owns its lease until release(), regardless of age.
         return !entry.second.lease &&
                (entry.second.external || frame_ - entry.second.last_used > kIdleFrames);
     });

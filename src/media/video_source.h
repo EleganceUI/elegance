@@ -46,16 +46,16 @@ public:
 // - `d3d11_shared`: a BGRA (or `rgba`) texture the decoder shares (Windows: an NT handle),
 //   sampled in place. `texture_id` changes when the texture does. With `wait_fence`, the GPU
 //   waits for that shared fence to reach `wait_value` before reading; `owner` hears about reads.
-// - `webgpu`: an RGBA8Unorm texture on the renderer's exact Dawn device, sampled through
-//   an sRGB view. Producer writes were submitted before publication. `texture_lease` reserves
-//   the ring buffer from current() until the renderer submits its reads (not GPU completion).
+// - `external`: an immutable imported allocation with an open Dawn access and an sRGB view.
+//   Snapshots and pending recordings retain its lease until submission; the last owner ends
+//   access and exports consumer fences before returning the allocation to its producer.
 // - `cpu`: pixels in memory, in `format`, packed (no row padding), top to bottom. The renderer
 //   uploads them and converts YUV to RGB in a GPU pass, the same on every platform. Any
 //   decoder or camera can start here.
 // Later: macOS IOSurfaces and Linux DMA-BUFs, imported like the D3D11 textures (macOS decodes to
 // `cpu` NV12 for now).
 struct VideoFrame {
-    enum class Kind { d3d11_shared, cpu, webgpu, external };
+    enum class Kind { d3d11_shared, cpu, external };
     enum class Format : std::uint32_t { bgra = 0, nv12 = 1, yuy2 = 2, i420 = 3, rgba = 4 }; // rgba: texture storage
     enum class Matrix : std::uint32_t { bt601 = 0, bt709 = 1 };
 
@@ -69,14 +69,14 @@ struct VideoFrame {
     std::uint64_t wait_fence_id = 0; // unique to the fence (handle values get reused)
     std::uint64_t wait_value = 0;
     std::weak_ptr<SharedTextureOwner> owner;
-    // webgpu: strong object references plus a snapshot reservation; no DXGI import/access.
+    // external: strong references to the importing device and texture.
     wgpu::Device device;
     wgpu::Texture texture;
     // external: prevalidated sRGB view; lease owns one immutable imported allocation and its
     // open Dawn access. Every snapshot and pending recording must retain it until submission.
     wgpu::TextureView external_view;
     std::shared_ptr<void> texture_lease;
-    // cpu (format also describes shared/WebGPU texture storage)
+    // cpu (format also describes shared/external texture storage)
     Format format = Format::bgra;
     Matrix matrix = Matrix::bt709;
     bool full_range = false; // YUV: 0...255 rather than 16...235

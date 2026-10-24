@@ -18,8 +18,6 @@
 namespace elg::detail::gpu {
 
 // Video frames' textures (design.md §13.3). Render thread only.
-// - Same-device WebGPU textures (Kind::webgpu): sampled directly. Keep the snapshot's lease
-//   through submission; subsequent producer writes on the same queue follow these reads.
 // - Shared textures (VideoFrame::Kind::d3d11_shared): imported into WebGPU once each (shared
 //   texture memory) and sampled in place. The decoder writes them outside WebGPU, so every frame
 //   that samples one begins access to it first and ends access once submitted.
@@ -43,10 +41,9 @@ public:
                             std::vector<std::uint64_t>& acquired);
     // Hands `acquired` back to the decoder/producer. Call only after ALL commands recorded
     // using this batch were submitted; release each batch exactly once. Distinct outstanding
-    // batches independently pin a texture, even if they sample the same frame. A WebGPU lease
-    // is released after Submit returns, not GPU completion: later producer writes must use the
-    // same queue. If recording or
-    // submit throws, leases stay held until this cache is destroyed; never submit that aborted
+    // batches independently pin a texture, even if they sample the same frame. External leases
+    // are released after Submit returns; their last owner exports completion fences. If recording
+    // or submit throws, leases stay held until this cache is destroyed; never submit that aborted
     // recording afterwards.
     void release(const std::vector<std::uint64_t>& acquired);
 
@@ -61,7 +58,7 @@ private:
         wgpu::Texture copy; // Direct3D 11: sampled instead of `texture` (see import())
         wgpu::BindGroup group;
         std::weak_ptr<SharedTextureOwner> owner;
-        std::shared_ptr<void> lease; // WebGPU reservation / external allocation: through submission
+        std::shared_ptr<void> lease; // external allocation: through submission
         bool external = false; // EndAccess belongs to the last allocation/snapshot owner
         std::size_t pending_batches = 0; // distinct acquire/release batches, not draw count
         std::uint64_t last_used = 0;

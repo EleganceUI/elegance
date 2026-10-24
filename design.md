@@ -1381,24 +1381,6 @@ when an app needs the same formats everywhere, or containers and codecs the OS l
   encoding raises the same licensing questions without a default that's both royalty-free and
   widely playable.
 
-#### GPU images (`elg/gpu_image.h`)
-Apps render a 3D viewport, game, or plot into a `GpuImage` using Elegance's own Dawn/WebGPU
-device and queue; `GpuImageView` samples its textures directly on any supported Dawn backend.
-- **Buffers:** three `RGBA8Unorm` textures, sampled through sRGB views. `begin_frame()` reserves
-  the oldest free buffer, or returns nothing if no device/buffer is available. Only one producer
-  reservation may be outstanding. Snapshot leases prevent reuse until renderer reads are submitted.
-- **Synchronization:** frames expose borrowed `WGPUDevice`, `WGPUQueue`, and `WGPUTexture`
-  handles plus an opaque sequence token. Submit all writes to that queue before `end_frame()`;
-  subsequent renderer reads and producer writes are ordered by the same queue, without native
-  shared fences, CPU waits, DXGI imports, or readback. `cancel_frame()` abandons a reservation.
-- **Lifetime:** keep the image alive while using its handles; never destroy/release them. Stop
-  producers before application/renderer shutdown. Devices do not migrate or recover from loss.
-- **Interop:** use the matching Dawn runtime/ABI, not a separate WebGPU device, Rust `wgpu`,
-  OpenGL, or Vulkan handles. Native cross-device/API sharing is not part of this interface.
-  Windows video decoding and transparent-window composition retain their native interop paths.
-- **Origin:** `Origin::bottom_left` flips display vertically; default is `top_left`.
-- **Not yet:** resizing an image (make a new one), device-loss recovery, and transparent view
-  composition (shown on black, like video).
 
 **Order:** raster images → audio → video → AsyncImage and networking → capture (mic, camera).
 

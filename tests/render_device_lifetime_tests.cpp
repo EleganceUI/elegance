@@ -7,7 +7,7 @@
 #include <memory>
 
 TEST_CASE("accepted frames can retain a usable device after renderer shutdown",
-          "[.gpu][external-gpu-image]") {
+          "[.gpu][gpu-image]") {
   using namespace elg::detail::gpu;
   std::shared_ptr<RenderDevice> retained;
   {

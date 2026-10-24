@@ -177,14 +177,14 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     luid_ = find_luid(info.vendorID, info.deviceID);
 #endif
 
-    // GpuImage producers use this same device/queue from their own thread. Without Dawn's
-    // implicit synchronization, even resource creation and concurrent queue submits are unsafe.
+    // External-image publication imports resources from producer threads. Dawn's implicit
+    // synchronization keeps those operations safe alongside rendering and frame retirement.
     if (!adapter_.HasFeature(wgpu::FeatureName::ImplicitDeviceSynchronization)) {
-        throw GpuError("Dawn must support ImplicitDeviceSynchronization for GpuImage producers");
+        throw GpuError("Dawn must support ImplicitDeviceSynchronization for external-image publication");
     }
     std::vector<wgpu::FeatureName> features{wgpu::FeatureName::ImplicitDeviceSynchronization};
     // Optional sharing features. Never require unavailable transports just to start the
-        // renderer: ExternalGpuImage reports Unsupported on the actual device at publication.
+    // renderer: GpuImage reports Unsupported on the actual device at publication.
     for (const wgpu::FeatureName feature :
          {wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle, wgpu::FeatureName::SharedFenceDXGISharedHandle,
                    wgpu::FeatureName::SharedTextureMemoryIOSurface, wgpu::FeatureName::SharedFenceMTLSharedEvent,

@@ -1,16 +1,16 @@
-# External GPU image input (native / Rust FFI)
+# GPU image input (native / Rust FFI)
 
-`include/elg/external_gpu_image.h` is a new API, independent of `GpuImage`. The C portion is valid C11 and can be bound directly by Rust (`repr(C)` descriptors, `u32` tags, opaque pointer, `extern "C"` callback). No Dawn, Vulkan, Metal or Windows headers are needed to include it. Native transport handles still require the producer's platform API.
+`include/elg/gpu_image.h` provides the native GPU image API for shared cross-device external backing. It succeeds the removed same-device Dawn `GpuImage`/`GpuFrame` API; it does not accept Dawn textures or expose that old API. The C portion is valid C11 and can be bound directly by Rust (`repr(C)` descriptors, `u32` tags, opaque pointer, `extern "C"` callback). No Dawn, Vulkan, Metal or Windows headers are needed to include it. Native transport handles still require the producer's platform API.
 
 ## Entry points
 
-- `elg_external_gpu_image_create(width, height, origin)` creates an opaque handle; null means invalid dimensions/origin or allocation failure. Creating an image does not require a renderer.
-- `elg_external_gpu_image_publish(image, &frame)` synchronously imports a fresh allocation and begins Dawn access. A renderer must already exist. Returns `OK`, `INVALID_ARGUMENT`, `DEVICE_UNAVAILABLE`, `UNSUPPORTED`, `IMPORT_FAILED`, or `INTERNAL_ERROR`. No ownership transfer/callback occurs on rejection.
-- `elg_external_gpu_image_clear(image)` retires the current frame, subject to outstanding snapshots/recordings.
-- `elg_external_gpu_image_destroy(image)` releases the FFI handle, not references owned by views. It is not a GPU drain.
-- Native `elg::ExternalGpuImageView(image, mode)` retains the source for layout/rendering. A Rust view binding can call it from its existing native shim; no C++ application/backend implementation is required. This change does **not** add Rust bindings or a C representation of `elg::View`.
+- `elg_gpu_image_create(width, height, origin)` creates an opaque handle; null means invalid dimensions/origin or allocation failure. Creating an image does not require a renderer.
+- `elg_gpu_image_publish(image, &frame)` synchronously imports a fresh allocation and begins Dawn access. A renderer must already exist. Returns `OK`, `INVALID_ARGUMENT`, `DEVICE_UNAVAILABLE`, `UNSUPPORTED`, `IMPORT_FAILED`, or `INTERNAL_ERROR`. No ownership transfer/callback occurs on rejection.
+- `elg_gpu_image_clear(image)` retires the current frame, subject to outstanding snapshots/recordings.
+- `elg_gpu_image_destroy(image)` releases the FFI handle, not references owned by views. It is not a GPU drain.
+- Native `elg::GpuImageView(image, mode)` retains the source for layout/rendering. A Rust view binding can call it from its existing native shim; no C++ application/backend implementation is required. This change does **not** add Rust bindings or a C representation of `elg::View`.
 
-`ElgExternalGpuImageFrame` contains the transport, format, dimensions, native allocation handle/FD, Vulkan metadata/layouts, producer fence, producer token, userdata, and a mandatory release callback. `ElgExternalGpuImageRelease` returns the token, status, **all** consumer fence handles/values, and Vulkan old/new layouts. Frame format is RGBA8 or BGRA8 UNORM storage with sRGB-encoded RGB and straight alpha, sampled directly through an sRGB view. Dimensions/origin are fixed per image.
+`ElgGpuImageFrame` contains the transport, format, dimensions, native allocation handle/FD, Vulkan metadata/layouts, producer fence, producer token, userdata, and a mandatory release callback. `ElgGpuImageRelease` returns the token, status, **all** consumer fence handles/values, and Vulkan old/new layouts. Frame format is RGBA8 or BGRA8 UNORM storage with sRGB-encoded RGB and straight alpha, sampled directly through an sRGB view. Origin is fixed per image. Each accepted publication may have different nonzero dimensions; natural size updates asynchronously on the UI thread, and clear retains the last accepted natural size.
 
 ## Implemented import paths and limits
 
@@ -43,13 +43,14 @@ Publish/clear may be concurrent on a live handle. Destroy must be externally syn
 
 The native `elegance` target builds against the installed Dawn headers in `build/local-offline-static/vcpkg_installed/arm64-osx/include/dawn`. Tests cover descriptor rejection/ownership, opaque-handle/view lifetime, and C header/ABI usage without creating a renderer.
 
-An ignored native-only headless integration harness is available in `build/local-offline-static/external_gpu_image_metal_smoke.mm`, with build/run driver `build/local-offline-static/run_external_gpu_image_metal_smoke.py`. Run from the native repo:
+Run the native targets and GPU image tests from the native repo (the `[gpu-image]` filter also explicitly selects hidden GPU tests):
 
 ```sh
-cmake --build build/local-offline-static --target elegance
-python3 build/local-offline-static/run_external_gpu_image_metal_smoke.py
+cmake --build build/local-offline-static --target elegance elegance_tests gpu_image_c_smoke
+ctest --test-dir build/local-offline-static --output-on-failure -R gpu_image_c_smoke
+build/local-offline-static/bin/elegance_tests '[gpu-image]'
 ```
 
-The live Apple M4 Pro test uses an independent native Metal producer device/queue, GPU-writes an IOSurface, publishes a producer event without a CPU completion prewait, samples through the actual Elegance `VideoTextures` path, and checks a red readback pixel. The producer then GPU-waits the exported consumer events, reuses the retired allocation, republishes with a new event value, and verifies a blue readback pixel. It also checks overlapping recorded batches, repeated acquires within a batch, separate window caches, source replacement with a retained old snapshot, consumer event completion, a deliberately stalled producer, nonblocking render-side retirement, renderer mutex availability, import rejection without callbacks, 32 live publications with concurrent retirement/import validation, and explicit `DEVICE_UNAVAILABLE` retirement after renderer destruction.
+An optional ignored native-only headless integration harness is available locally in `build/local-offline-static/gpu_image_metal_smoke.mm`; it is not part of the CMake test targets. The live Apple M4 Pro harness uses an independent native Metal producer device/queue, GPU-writes an IOSurface, publishes a producer event without a CPU completion prewait, samples through the actual Elegance `VideoTextures` path, and checks a red readback pixel. The producer then GPU-waits the exported consumer events, reuses the retired allocation, republishes with a new event value, and verifies a blue readback pixel. It also checks overlapping recorded batches, repeated acquires within a batch, separate window caches, source replacement with a retained old snapshot, consumer event completion, a deliberately stalled producer, nonblocking render-side retirement, renderer mutex availability, import rejection without callbacks, 32 live publications with concurrent retirement/import validation, and explicit `DEVICE_UNAVAILABLE` retirement after renderer destruction.
 
 This is native headless validation, not a Rust `wgpu` producer test or an OS-window presentation test. Windows/D3D12, Linux/Vulkan, physical multi-GPU systems and actual device-loss injection remain unvalidated. The ignored harness is intentionally not a production API or an application example.

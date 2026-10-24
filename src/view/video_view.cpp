@@ -8,7 +8,6 @@
 #include <elg/video.h>
 #include <elg/capture.h>
 #include <elg/gpu_image.h>
-#include <elg/external_gpu_image.h>
 
 #include "media/video_source.h"
 #include "view/view_node.h"
@@ -233,16 +232,11 @@ View VideoFeedView(VideoFeed feed, ContentMode mode, bool mirrored) {
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(feed.source(), mode, mirrored));
 }
 
-View GpuImageView(GpuImage image, ContentMode mode) {
-    return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(
-        image.source(), mode, false, image.origin() == GpuImage::Origin::bottom_left));
-}
-
-View ExternalGpuImageView(const ElgExternalGpuImage* image, ContentMode mode) {
-    const auto source = external_gpu_image_source(image);
+View GpuImageView(const ElgGpuImage* image, ContentMode mode) {
+    const auto source = gpu_image_source(image);
     if (!source) return View{};
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(
-        source, mode, false, external_gpu_image_flipped(image)));
+        source, mode, false, gpu_image_flipped(image)));
 }
 
 View VideoControls(VideoPlayer player) {
