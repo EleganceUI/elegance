@@ -17,7 +17,7 @@ DirectComposition, because Vulkan swapchains there can't be transparent.
 
 - `design.md` §4.1 (Window customization), §15 (Resize; every window through DirectComposition)
 - `include/elg/window.h`, `src/view/window_controls.cpp`, `src/view/window_drag.h`, `src/gpu/composition_win32.*`
-- `examples/title_bar/main.cpp`
+- `title-bar-cpp/main.cpp` (elegance-examples)
 
 ## Tasks
 

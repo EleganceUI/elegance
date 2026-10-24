@@ -1613,7 +1613,7 @@ Separate render thread from day one (decided).
 - [x] CMake structure: `include/elg/` (public API), `src/` (library), `apps/sandbox/` (test app)
 - [x] `shaders/` (GLSL compiled offline by `cmake/ElgShaders.cmake`, embedded as SPIR-V)
 - [x] `tests/` (Catch2 via the `tests` vcpkg feature, enabled in the presets)
-- [ ] `examples/`
+- [ ] Examples (the elegance-examples repository)
 - [x] SDL3 window + Vulkan init (volk, VMA) + swapchain + clear color
 - [x] Render thread + frame mailbox (§15); live resize via SDL's expose event watch
   (confirmed on Windows: no freezing or stretching while dragging a window edge)
@@ -1798,7 +1798,7 @@ Separate render thread from day one (decided).
     invisible element first and typing went nowhere.
   - Implemented with `FocusManager::watch` (focus entering or leaving a subtree) and
     `first_focusable`.
-- [x] Example app `apps/login` (`ELG_BUILD_EXAMPLES`, vcpkg feature `examples`): a modern
+- [x] Example app `login-cpp` (in elegance-examples): a modern
   web-style sign-in screen.
   - A gradient backdrop with glows.
   - A card with a credentials form (custom TextField and Button styles, validation messages,

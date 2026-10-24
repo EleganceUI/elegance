@@ -1,6 +1,7 @@
 ---
-// An example from the repository's examples/ folder: its screenshot and full source, read at
-// build time so the page always shows the code that compiles.
+// An example from the elegance-examples repository (<name>-cpp/main.cpp), checked out beside this
+// one: its screenshot and full source, read at build time so the page always shows the code that
+// compiles.
 //   <Example name="counter" />
 import { Code } from '@astrojs/starlight/components';
 import { Image } from 'astro:assets';
@@ -14,15 +15,15 @@ interface Props {
 
 const { name, collapsed = false } = Astro.props;
 
-const sources = import.meta.glob<string>('../../../examples/*/main.cpp', { query: '?raw', import: 'default', eager: true });
+const sources = import.meta.glob<string>('../../../../elegance-examples/*-cpp/main.cpp', { query: '?raw', import: 'default', eager: true });
 const shots = import.meta.glob<{ default: ImageMetadata }>('../assets/examples/*.png', { eager: true });
 
-const source = sources[`../../../examples/${name}/main.cpp`];
-if (!source) throw new Error(`Example "${name}" not found in examples/`);
+const source = sources[`../../../../elegance-examples/${name}-cpp/main.cpp`];
+if (!source) throw new Error(`Example "${name}" not found: check out elegance-examples beside elegance`);
 // The license header isn't interesting here.
 const code = source.replace(/^(\/\/.*\r?\n)+\r?\n/, '');
 const shot = shots[`../assets/examples/${name}.png`]?.default;
-const path = `examples/${name}/main.cpp`;
+const path = `${name}-cpp/main.cpp`;
 ---
 
 <figure class="elg-example">

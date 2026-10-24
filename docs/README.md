@@ -3,7 +3,8 @@
 The documentation site, built with [Astro Starlight](https://starlight.astro.build). Guides live in
 `src/content/docs/`; the API reference is generated from `include/elg/` by
 `scripts/gen-reference.mjs` on every build, and the guides show the sources and screenshots of
-`examples/`.
+the examples in [elegance-examples](https://github.com/EleganceUI/elegance-examples), which must
+be checked out beside this repository (`../elegance-examples`).
 
 ```sh
 npm ci          # once

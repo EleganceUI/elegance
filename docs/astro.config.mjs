@@ -13,6 +13,8 @@ const base = process.env.DOCS_BASE || '/';
 export default defineConfig({
 	site,
 	base,
+	// The examples' sources come from the elegance-examples checkout beside this repository.
+	vite: { server: { fs: { allow: ['..', '../../elegance-examples'] } } },
 	integrations: [
 		starlight({
 			title: 'Elegance',

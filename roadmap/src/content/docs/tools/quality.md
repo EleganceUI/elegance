@@ -14,7 +14,7 @@ Each item depends on the subsystem it covers.
 
 ## Read first
 
-- `tests/*.cpp`, `apps/sandbox/`, `apps/login/`, `examples/*/main.cpp`, `docs/`
+- `tests/*.cpp`, `apps/sandbox/`, `docs/`, and in elegance-examples `login-cpp/` and `*-cpp/main.cpp`
 
 ## Tasks
 
@@ -31,7 +31,7 @@ Each item depends on the subsystem it covers.
 
 ### Apps
 - [ ] `sandbox`: a kitchen-sink app exercising every feature, with generated assets (landscape JPEG, PNG with alpha @2x, EXIF-rotated JPEG, click/tune WAVs, a 10 s test clip)
-- [ ] `apps/login`: a web-style sign-in screen (gradient backdrop, custom styles, validation, `.focused`, a QR panel drawn with Canvas)
+- [ ] `login-cpp` (elegance-examples): a web-style sign-in screen (gradient backdrop, custom styles, validation, `.focused`, a QR panel drawn with Canvas)
 - [ ] Examples: `hello`, `counter`, `layout`, `styling`, `animation`, `drawing`, `todos`, `popover`, `title_bar`, `desktop`, `network`, `media_player`, `recorder`
 
 ### Docs site

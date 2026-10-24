@@ -47,12 +47,14 @@ configure.
    cmake --build --preset windows-debug
    ```
 
-4. Run the sandbox, which shows most features in one window, or any example:
+4. Run the sandbox, which shows most features in one window:
 
    ```sh
    build\windows-debug\bin\sandbox.exe
-   build\windows-debug\bin\counter.exe
    ```
+
+   The examples are in their own repository,
+   [elegance-examples](https://github.com/EleganceUI/elegance-examples).
 
 </Steps>
 
@@ -67,13 +69,17 @@ Everything lands in `build/<preset>/bin`.
 | --- | --- | --- |
 | `ELG_BUILD_SHARED` | `ON` | Build Elegance as a DLL. `OFF` links it statically into each app. Hot reload needs `ON`. |
 | `ELG_BUILD_SANDBOX` | top level | The sandbox and, with a shared build, the hot reload preview app. |
-| `ELG_BUILD_EXAMPLES` | top level | The examples in `examples/` and the login demo. |
 | `ELG_BUILD_TESTS` | top level | Unit tests (needs the vcpkg `tests` feature). |
 | `ELG_ICONS` | `ON` | Embed the Phosphor icon set (regular, bold, fill; about 1.4 MB). |
 | `ELG_ICONS_EXTRA_WEIGHTS` | `ON` | Also embed Phosphor's thin, light and duotone styles (about 1.6 MB). |
 | `ELG_ACCESSIBILITY` | `ON` | Screen reader support through AccessKit (downloads its prebuilt library). |
 
 ## Use it in your project
+
+The quickest start is to copy an example from
+[elegance-examples](https://github.com/EleganceUI/elegance-examples), such as `hello-cpp`: each
+one is a complete project, which downloads Elegance when there's no checkout beside it. Or set it
+up yourself:
 
 Add Elegance as a subdirectory, for example as a git submodule, and link `Elegance::Elegance`:
 

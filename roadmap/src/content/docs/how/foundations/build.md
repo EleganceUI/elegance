@@ -22,8 +22,7 @@ framework and C runtime in every process, because hot reload depends on that.
 | `include/elg/` | The public API | Declarations only; no SDL, Vulkan or FreeType types |
 | `src/` | The library, by subsystem (`core`, `platform`, `gpu`, `render`, `reactive`, `view`, `text`, `media`, `net`, `geometry`, `animation`) | Internal headers live next to their sources |
 | `shaders/` | GLSL | Compiled at build time, embedded as SPIR-V |
-| `apps/` | `sandbox`, `login`, `preview` | Link `elegance`, nothing else from `src/` |
-| `examples/` | One `main.cpp` per example | Target `example_<folder>` |
+| `apps/` | `sandbox`, `preview` | Link `elegance`, nothing else from `src/` |
 | `tests/` | Catch2 tests | May include internal headers |
 | `cmake/` | Build helpers | Shaders, embedding, extensions, hot reload |
 | `third_party/` | Vendored data (Phosphor fonts) | Verbatim upstream with its license |

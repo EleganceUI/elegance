@@ -20,7 +20,7 @@ that move. Windows nobody can see should cost nothing.
 
 ## Where it stands
 
-Measured on an RX 6650 XT at 1920×1080, 75 Hz, release build. The test app was `apps/music` at
+Measured on an RX 6650 XT at 1920×1080, 75 Hz, release build. The test app was `music-cpp` (elegance-examples) at
 1280×800, with an animation kept running (no input).
 
 | Stage, per frame | Listen Now (~800 commands) | Songs page, 123 rows (~1,200 commands) |

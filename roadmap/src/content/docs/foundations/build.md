@@ -23,7 +23,7 @@ layers), CMake and Ninja (CLion bundles both), and a vcpkg checkout.
 ## Tasks
 
 ### Repository and language
-- [ ] Lay out `include/elg/` (public headers only), `src/` (library), `shaders/`, `apps/sandbox/`, `tests/`, `examples/`, `cmake/`, `third_party/`
+- [ ] Lay out `include/elg/` (public headers only), `src/` (library), `shaders/`, `apps/sandbox/`, `tests/`, `cmake/`, `third_party/`
 - [ ] Require C++23 (`CMAKE_CXX_STANDARD 23`, no extensions). The design relies on deducing `this`, `std::expected`, `std::print`, `std::stacktrace`, `std::move_only_function`, `std::flat_map`
 - [ ] Turn on `/W4` (or `-Wall -Wextra`) for the library from day one
 - [ ] Add the MPL-2.0 `LICENSE` and the three-line MPL header to every source file
@@ -51,7 +51,7 @@ layers), CMake and Ninja (CLion bundles both), and a vcpkg checkout.
 
 ### Targets
 - [ ] `sandbox` app that links `elegance`
-- [ ] `examples/<name>/main.cpp`, each built as `example_<name>`
+- [ ] Examples in elegance-examples: `<name>-cpp/`, each a project of its own
 - [ ] `tests` target with Catch2, registered with CTest
 
 ## Done when

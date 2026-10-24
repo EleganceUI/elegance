@@ -16,7 +16,7 @@ and [Raster images](../../graphics/images/) (tray icons).
 ## Read first
 
 - `design.md` §13.4 (Desktop integration), M5 desktop items
-- `include/elg/desktop.h`, `src/platform/desktop_sdl.cpp`, `src/view/drop.*`, `tests/desktop_tests.cpp`, `examples/desktop/main.cpp`
+- `include/elg/desktop.h`, `src/platform/desktop_sdl.cpp`, `src/view/drop.*`, `tests/desktop_tests.cpp`, `desktop-cpp/main.cpp` (elegance-examples)
 
 ## Tasks
 

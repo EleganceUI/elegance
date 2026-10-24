@@ -42,9 +42,9 @@ display lists with the built-ins. They'd prove the "no private path" rule rather
 - **Sandbox** (`apps/sandbox`): a kitchen-sink app that exercises every feature, with generated
   assets: a landscape JPEG, a PNG with alpha at @2x, a JPEG stored sideways with EXIF orientation 6,
   click and tune WAVs, a 10 s H.264/AAC test clip. It's where a person checks visual results.
-- **Login** (`apps/login`): one realistic screen built only from the public API, with custom
+- **Login** (`login-cpp` in elegance-examples): one realistic screen built only from the public API, with custom
   styles, validation and focus handling, and a QR code drawn with Canvas.
-- **Examples** (`examples/<name>`): small, focused programs, each the source of a docs page's code
+- **Examples** (elegance-examples, `<name>-cpp` and `<name>-rs`): small, focused programs, each the source of a docs page's code
   and screenshot.
 
 ### The docs site

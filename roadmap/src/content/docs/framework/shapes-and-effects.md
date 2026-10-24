@@ -56,6 +56,6 @@ modifiers that change how content is drawn without changing layout.
 - Known gap: Button and tap "released inside" checks still use the un-offset frame.
 - Built since: `mask(View | ShapeStyle)`, `blur`, the color filters, `blend_mode`,
   `compositing_group`, `inner_shadow`, shadow `spread`, `rotation_effect`, `scale_effect`,
-  materials, and elliptical/angular gradients (see `examples/effects`).
+  materials, and elliptical/angular gradients (see `effects-cpp` in elegance-examples).
 - Not built yet: modifier fusion, hit testing through rotation/scale, `MeshGradient`, progressive
   (variable) blur, `rotation3d_effect`, custom shader effects, and OS window backdrops (Mica/Acrylic).
