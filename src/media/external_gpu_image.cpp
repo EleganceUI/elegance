@@ -156,9 +156,9 @@ public:
             bool ok = false;
             {
                 std::lock_guard lock(renderer_->mutex);
-                if (!renderer_->active) {
-                    result.status = ELG_EXTERNAL_DEVICE_UNAVAILABLE;
-                } else {
+                // active gates new publications only. This frame pins the Dawn device
+                // and instance through EndAccess/export, even after UI shutdown.
+                {
                     scope = std::make_unique<ValidationScope>(*renderer_);
                     if (descriptor_.transport == ELG_EXTERNAL_VULKAN_OPAQUE_FD) {
                         end.nextInChain = &vk;
@@ -211,9 +211,7 @@ public:
                         kRetirementWaitNs) == wgpu::WaitStatus::Success;
                 }
                 result.status = ok ? ELG_EXTERNAL_OK : ELG_EXTERNAL_SYNC_FAILED;
-                // Shutdown may have won while waits ran without the lifecycle mutex.
-                std::lock_guard lock(renderer_->mutex);
-                if (!renderer_->active) result.status = ELG_EXTERNAL_DEVICE_UNAVAILABLE;
+
             }
             if (result.status == ELG_EXTERNAL_OK) {
                 result.fences = fences.data();

@@ -3,6 +3,7 @@
 # https://mozilla.org/MPL/2.0/.
 
 find_package(Catch2 3 CONFIG REQUIRED)
+find_package(Dawn CONFIG REQUIRED)
 include(Catch)
 
 add_executable(elegance_tests
@@ -18,9 +19,13 @@ add_executable(elegance_tests
         image_tests.cpp
         path_tests.cpp
         reactive_tests.cpp
+        render_device_lifetime_tests.cpp
         video_tests.cpp
 )
 target_link_libraries(elegance_tests PRIVATE Elegance::Elegance Catch2::Catch2WithMain)
+target_include_directories(elegance_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(elegance_tests SYSTEM PRIVATE
+        $<TARGET_PROPERTY:dawn::webgpu_dawn,INTERFACE_INCLUDE_DIRECTORIES>)
 
 if (MSVC)
     target_compile_options(elegance_tests PRIVATE /W4 /permissive- /utf-8)

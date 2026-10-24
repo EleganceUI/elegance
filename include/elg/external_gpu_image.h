@@ -103,8 +103,10 @@ ELG_API void elg_external_gpu_image_destroy(ElgExternalGpuImage* image);
 // Retirement normally runs asynchronously on an internal worker; clear/destroy do not drain
 // callbacks. Metal scheduling waits are bounded (5 seconds), then report SYNC_FAILED.
 // Callback may run on any thread, must not throw/unwind, block waiting for renderer work, or
-// reenter this API. destroy is not a drain: views/snapshots may retain frames. clear, remove
-// views, and stop/join producers before application shutdown; retain callback state afterwards.
+// reenter this API. destroy is not a drain: views/snapshots may retain frames. Accepted frames
+// retain the Dawn device/instance for retirement after the UI renderer stops; new publications
+// then return DEVICE_UNAVAILABLE. Stop/join producers and clear images when the app exits,
+// retaining callback state until every accepted frame has retired.
 ELG_API uint32_t elg_external_gpu_image_publish(ElgExternalGpuImage* image, const ElgExternalGpuImageFrame* frame);
 ELG_API void elg_external_gpu_image_clear(ElgExternalGpuImage* image);
 

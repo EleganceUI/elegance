@@ -278,8 +278,8 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     published_ = std::make_shared<RenderDevice>();
     published_->device = device_;
     published_->queue = queue_;
-        published_->instance = instance.handle();
-        published_->backend = backend_;
+    published_->instance = instance.handle();
+    published_->backend = backend_;
     {
         auto& states = Errors::registry();
         std::lock_guard lock(states.mutex);
@@ -292,8 +292,8 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
 }
 
 Device::~Device() {
-    // Unpublish before shutdown. A producer that already took a snapshot still checks active
-    // under its mutex; it cannot create textures concurrently with Destroy().
+    // Stop new publications, but let accepted external frames finish EndAccess using
+    // their retained device/instance after the render thread has stopped.
     {
         std::lock_guard lock(g_render_device_mutex);
         if (g_render_device.lock() == published_) {
@@ -307,9 +307,9 @@ Device::~Device() {
     }
     std::lock_guard lock(published_->mutex);
     published_->active = false;
-    if (device_) {
-        device_.Destroy(); // finishes the GPU's work; the lost callback sees Destroyed
-    }
+    // Do not eagerly Destroy(): imported frames may still need to export completion
+    // fences. Dawn references held by those frames and submitted work own the remaining
+    // lifetime; releasing the renderer's references is not a GPU-completion assertion.
 }
 
 void Device::check() const {

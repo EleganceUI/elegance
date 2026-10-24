@@ -19,9 +19,9 @@ namespace elg::detail::gpu {
 
 // A retained snapshot of the renderer's exact Dawn device, not just its adapter.
 // Lock mutex while checking active and creating producer resources; shutdown uses the same
-// lock before destroying the device. If also locking a source, lock the source first; shutdown
-// never locks sources. Device/queue references are immutable after publication; only active
-// changes. Retaining this keeps handles alive, not the renderer.
+// lock to stop publication. If also locking a source, lock the source first; shutdown never
+// locks sources. Device/queue references are immutable after publication; only active changes.
+// Retaining this keeps the device/instance usable for accepted-frame retirement, not rendering.
 struct RenderDevice {
     std::mutex mutex;
     bool active = true;
