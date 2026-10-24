@@ -9,193 +9,121 @@
 #include <elg/error.h>
 
 #include <algorithm>
+#include <format>
 #include <initializer_list>
-#include <limits>
+#include <span>
 
 namespace elg::detail::gpu {
 
 namespace {
 
-VkSurfaceFormatKHR choose_format(VkPhysicalDevice physical, VkSurfaceKHR surface) {
-    std::uint32_t count = 0;
-    check(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, nullptr),
-          "query surface formats");
-    std::vector<VkSurfaceFormatKHR> formats(count);
-    check(vkGetPhysicalDeviceSurfaceFormatsKHR(physical, surface, &count, formats.data()),
-          "query surface formats");
-    if (formats.empty()) {
-        throw GpuError("the window surface reports no pixel formats");
-    }
-    // sRGB formats let the shaders work in linear space; the hardware encodes on write.
-    for (const VkSurfaceFormatKHR& format : formats) {
-        if ((format.format == VK_FORMAT_B8G8R8A8_SRGB || format.format == VK_FORMAT_R8G8B8A8_SRGB) &&
-            format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR) {
-            return format;
+// sRGB views let the shaders work in linear space; the hardware encodes on write. Surfaces
+// rarely offer sRGB formats themselves (Direct3D 12's don't), so 8-bit UNORM ones are
+// configured with an sRGB view format.
+wgpu::TextureFormat choose_format(std::span<const wgpu::TextureFormat> formats) {
+    for (const wgpu::TextureFormat preferred :
+         {wgpu::TextureFormat::BGRA8UnormSrgb, wgpu::TextureFormat::RGBA8UnormSrgb, wgpu::TextureFormat::BGRA8Unorm,
+          wgpu::TextureFormat::RGBA8Unorm}) {
+        if (std::ranges::find(formats, preferred) != formats.end()) {
+            return preferred;
         }
     }
-    return formats.front();
+    throw GpuError("the window surface offers no 8-bit color format");
 }
 
 // Transparent windows want the compositor to blend with our (premultiplied) alpha; opaque ones
 // want it ignored. INHERIT leaves it to the platform (e.g. a window made transparent with the
 // window system), which is the next best thing for transparency.
-VkCompositeAlphaFlagBitsKHR choose_composite_alpha(VkCompositeAlphaFlagsKHR supported, bool transparent) {
-    const auto pick = [&](std::initializer_list<VkCompositeAlphaFlagBitsKHR> modes) {
-        for (VkCompositeAlphaFlagBitsKHR mode : modes) {
-            if (supported & mode) {
+wgpu::CompositeAlphaMode choose_alpha(std::span<const wgpu::CompositeAlphaMode> supported, bool transparent) {
+    const auto pick = [&](std::initializer_list<wgpu::CompositeAlphaMode> modes) {
+        for (const wgpu::CompositeAlphaMode mode : modes) {
+            if (std::ranges::find(supported, mode) != supported.end()) {
                 return mode;
             }
         }
-        return VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+        return wgpu::CompositeAlphaMode::Auto;
     };
     if (transparent) {
-        return pick({VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR, VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
-                     VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR, VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR});
+        return pick({wgpu::CompositeAlphaMode::Premultiplied, wgpu::CompositeAlphaMode::Inherit,
+                     wgpu::CompositeAlphaMode::Unpremultiplied, wgpu::CompositeAlphaMode::Opaque});
     }
-    return pick({VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR, VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR,
-                 VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR, VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR});
+    return pick({wgpu::CompositeAlphaMode::Opaque, wgpu::CompositeAlphaMode::Inherit,
+                 wgpu::CompositeAlphaMode::Premultiplied, wgpu::CompositeAlphaMode::Unpremultiplied});
 }
 
 } // namespace
 
-Swapchain::Swapchain(const Device& device, VkSurfaceKHR surface, bool transparent)
-    : device_(device), surface_(surface), transparent_(transparent), format_(choose_format(device.physical(), surface)) {}
-
-Swapchain::~Swapchain() {
-    if (swapchain_ || !retired_.empty()) {
-        vkDeviceWaitIdle(device_.handle());
+Swapchain::Swapchain(const Device& device, wgpu::Surface surface, bool transparent)
+    : device_(device), surface_(std::move(surface)) {
+    wgpu::SurfaceCapabilities caps;
+    if (surface_.GetCapabilities(device.adapter(), &caps) != wgpu::Status::Success) {
+        throw GpuError(std::format("the GPU \"{}\" can't present to the window", device.name()));
     }
-    for (Retired& retired : retired_) {
-        destroy(retired);
-    }
-    if (swapchain_) {
-        destroy_images();
-        vkDestroySwapchainKHR(device_.handle(), swapchain_, nullptr);
+    format_ = choose_format({caps.formats, caps.formatCount});
+    view_format_ = srgb_variant(format_);
+    alpha_ = choose_alpha({caps.alphaModes, caps.alphaModeCount}, transparent);
+    if (transparent) {
+        log_debug("transparent surface: alpha mode {}", static_cast<unsigned>(alpha_));
     }
 }
 
-bool Swapchain::prepare(VkExtent2D fallback, const std::function<void()>& idle, std::uint64_t submitted) {
-    VkSurfaceCapabilitiesKHR caps;
-    check(vkGetPhysicalDeviceSurfaceCapabilitiesKHR(device_.physical(), surface_, &caps),
-          "query surface capabilities");
-
-    VkExtent2D extent = caps.currentExtent;
-    if (extent.width == std::numeric_limits<std::uint32_t>::max()) {
-        extent.width = std::clamp(fallback.width, caps.minImageExtent.width, caps.maxImageExtent.width);
-        extent.height = std::clamp(fallback.height, caps.minImageExtent.height, caps.maxImageExtent.height);
+Swapchain::~Swapchain() {
+    if (width_ != 0) {
+        surface_.Unconfigure();
     }
-    if (extent.width == 0 || extent.height == 0) {
+}
+
+bool Swapchain::prepare(std::uint32_t width, std::uint32_t height) {
+    if (width == 0 || height == 0) {
         return false;
     }
-    if (!stale_ && swapchain_ && extent.width == extent_.width && extent.height == extent_.height) {
+    if (!stale_ && width == width_ && height == height_) {
         return true;
     }
-    create(extent, caps, idle, submitted);
+    wgpu::SurfaceConfiguration config;
+    config.device = device_.handle();
+    config.format = format_;
+    config.usage = wgpu::TextureUsage::RenderAttachment;
+    config.width = width;
+    config.height = height;
+    if (view_format_ != format_) {
+        config.viewFormatCount = 1;
+        config.viewFormats = &view_format_;
+    }
+    config.alphaMode = alpha_;
+    config.presentMode = wgpu::PresentMode::Fifo; // always available; vsync, no tearing
+    surface_.Configure(&config);
+    width_ = width;
+    height_ = height;
+    stale_ = false;
     return true;
 }
 
-void Swapchain::create(VkExtent2D extent, const VkSurfaceCapabilitiesKHR& caps, const std::function<void()>& idle,
-                       std::uint64_t submitted) {
-    // Nothing may still use the old images: only this window's frames can (other windows keep
-    // drawing; a device-wide wait stalled every window on each step of a resize).
-    if (idle) {
-        idle();
+wgpu::TextureView Swapchain::acquire() {
+    wgpu::SurfaceTexture texture;
+    surface_.GetCurrentTexture(&texture);
+    switch (texture.status) {
+    case wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal: break;
+    case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal:
+        stale_ = true; // still presentable; reconfigured next frame
+        break;
+    case wgpu::SurfaceGetCurrentTextureStatus::Timeout:
+    case wgpu::SurfaceGetCurrentTextureStatus::Outdated:
+    case wgpu::SurfaceGetCurrentTextureStatus::Lost:
+        // Resizing, or the surface went away for a moment: reconfigure, skip this frame.
+        stale_ = true;
+        return nullptr;
+    default: throw_gpu_error("get the window's next image");
     }
-
-    // Two images: at most one frame waits for display. More would add a frame of latency, which
-    // shows while resizing as the compositor stretching an older, wrongly sized frame.
-    std::uint32_t image_count = std::max(caps.minImageCount, 2u);
-    if (caps.maxImageCount != 0) {
-        image_count = std::min(image_count, caps.maxImageCount);
-    }
-
-    VkSwapchainCreateInfoKHR info{VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR};
-    info.surface = surface_;
-    info.minImageCount = image_count;
-    info.imageFormat = format_.format;
-    info.imageColorSpace = format_.colorSpace;
-    info.imageExtent = extent;
-    info.imageArrayLayers = 1;
-    info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-    info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-    info.preTransform = caps.currentTransform;
-    info.compositeAlpha = choose_composite_alpha(caps.supportedCompositeAlpha, transparent_);
-    if (transparent_) {
-        log_debug("transparent swapchain: composite alpha supported 0x{:x}, using 0x{:x}",
-                  static_cast<unsigned>(caps.supportedCompositeAlpha), static_cast<unsigned>(info.compositeAlpha));
-    }
-    info.presentMode = VK_PRESENT_MODE_FIFO_KHR; // always available; vsync, no tearing
-    info.clipped = VK_TRUE;
-    info.oldSwapchain = swapchain_;
-
-    VkSwapchainKHR created = VK_NULL_HANDLE;
-    check(vkCreateSwapchainKHR(device_.handle(), &info, nullptr, &created), "create the swapchain");
-
-    // The old swapchain retires: a present queued with it may still be waiting on its semaphores.
-    if (swapchain_) {
-        retired_.push_back({swapchain_, std::move(views_), std::move(render_finished_), submitted});
-    }
-    views_.clear();
-    render_finished_.clear();
-    images_.clear();
-    swapchain_ = created;
-    extent_ = extent;
-    stale_ = false;
-
-    std::uint32_t count = 0;
-    check(vkGetSwapchainImagesKHR(device_.handle(), swapchain_, &count, nullptr), "get swapchain images");
-    images_.resize(count);
-    check(vkGetSwapchainImagesKHR(device_.handle(), swapchain_, &count, images_.data()),
-          "get swapchain images");
-
-    for (VkImage image : images_) {
-        VkImageViewCreateInfo view_info{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        view_info.image = image;
-        view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        view_info.format = format_.format;
-        view_info.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        VkImageView view = VK_NULL_HANDLE;
-        check(vkCreateImageView(device_.handle(), &view_info, nullptr, &view), "create an image view");
-        views_.push_back(view);
-
-        VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-        VkSemaphore semaphore = VK_NULL_HANDLE;
-        check(vkCreateSemaphore(device_.handle(), &semaphore_info, nullptr, &semaphore),
-              "create a semaphore");
-        render_finished_.push_back(semaphore);
-    }
+    wgpu::TextureViewDescriptor view;
+    view.format = view_format_;
+    return texture.texture.CreateView(&view);
 }
 
-void Swapchain::collect(std::uint64_t completed) noexcept {
-    std::erase_if(retired_, [&](Retired& retired) {
-        if (completed <= retired.submitted) {
-            return false;
-        }
-        destroy(retired);
-        return true;
-    });
-}
-
-void Swapchain::destroy(Retired& retired) noexcept {
-    for (VkImageView view : retired.views) {
-        vkDestroyImageView(device_.handle(), view, nullptr);
+void Swapchain::present() {
+    if (surface_.Present() != wgpu::Status::Success) {
+        stale_ = true;
     }
-    for (VkSemaphore semaphore : retired.semaphores) {
-        vkDestroySemaphore(device_.handle(), semaphore, nullptr);
-    }
-    vkDestroySwapchainKHR(device_.handle(), retired.swapchain, nullptr);
-}
-
-void Swapchain::destroy_images() noexcept {
-    for (VkImageView view : views_) {
-        vkDestroyImageView(device_.handle(), view, nullptr);
-    }
-    for (VkSemaphore semaphore : render_finished_) {
-        vkDestroySemaphore(device_.handle(), semaphore, nullptr);
-    }
-    views_.clear();
-    render_finished_.clear();
-    images_.clear();
 }
 
 } // namespace elg::detail::gpu

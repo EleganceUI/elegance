@@ -124,7 +124,8 @@ private:
 // it (overlay). The secondary view doesn't affect layout.
 class ELG_API DecorationModifier : public Modifier {
 public:
-    enum class Placement { behind, in_front };
+    // `mask`: the decoration isn't drawn; its alpha masks the content.
+    enum class Placement { behind, in_front, mask };
 
     ModifierProtocol protocol() const noexcept final { return ModifierProtocol::decoration; }
 
@@ -140,13 +141,33 @@ public:
     virtual void apply(EnvironmentValues& values) const = 0;
 };
 
+// A color adjustment (View::brightness, saturation, ...), applied to the content's pixels in sRGB
+// with straight alpha, as CSS filter functions are.
+struct ColorFilter {
+    enum class Kind { brightness, contrast, saturation, grayscale, hue_rotation, sepia, invert, multiply, luminance_to_alpha };
+    Kind kind = Kind::saturation;
+    Prop<float> amount = 1.f;      // degrees for hue_rotation; unused for multiply, luminance_to_alpha
+    Prop<Color> color = Color::white; // multiply only
+};
+
 // How the modified view's content is drawn and hit tested (design.md §9.4). Drawing applies
-// the clip first, then opacity and shadow of the clipped result.
+// the clip first, then the transform, then the rest to the clipped result.
 struct Effects {
     bool clip_to_bounds = false;
     std::optional<Shape> clip_shape; // fills the view's bounds
     Prop<float> opacity = 1.f;
     std::optional<Shadow> shadow;
+    std::optional<Shadow> inner_shadow;
+    std::optional<Prop<float>> blur; // radius in points
+    bool blur_opaque = false;
+    std::optional<ColorFilter> color_filter;
+    BlendMode blend_mode = BlendMode::normal;
+    bool compositing_group = false; // offscreen even when nothing else needs it
+    // Rotation (degrees, clockwise) and scale of the drawn content about `anchor`.
+    std::optional<Prop<float>> rotation;
+    std::optional<Prop<float>> scale_x;
+    std::optional<Prop<float>> scale_y;
+    UnitPoint anchor = UnitPoint::center;
     // Moves the drawn content (and where it's hit) without affecting layout.
     Prop<float> offset_x = 0.f;
     Prop<float> offset_y = 0.f;

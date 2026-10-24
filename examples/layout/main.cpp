@@ -64,7 +64,7 @@ View Tag(std::string title) {
 
 View ProfileCard() {
     std::vector<View> tags;
-    for (const char* tag : {"C++23", "Vulkan", "UI", "Reactive", "Layout", "Animation", "Accessibility", "Media",
+    for (const char* tag : {"C++23", "WebGPU", "UI", "Reactive", "Layout", "Animation", "Accessibility", "Media",
                             "Desktop", "Open source"}) {
         tags.push_back(Tag(tag));
     }

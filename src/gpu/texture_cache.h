@@ -5,57 +5,50 @@
 #ifndef ELG_GPU_TEXTURE_CACHE_H
 #define ELG_GPU_TEXTURE_CACHE_H
 
-#include "gpu/buffer.h"
 #include "gpu/device.h"
-#include "gpu/vk.h"
+#include "gpu/webgpu.h"
 #include "media/image_decode.h"
 
 #include <cstdint>
-#include <memory>
 #include <unordered_map>
-#include <vector>
 
 namespace elg::detail::gpu {
 
 // Images' GPU textures (design.md §13.3), shared by every window: sRGB RGBA with a full mip
 // chain, so photos drawn small stay smooth. A texture is uploaded the first time a frame draws
-// its image, inside that frame's command buffer, and dropped after it goes unused for a while.
-// Render thread only.
+// its image (its mips rendered in that frame's commands), and dropped after it goes unused for
+// a while. Render thread only.
 class TextureCache {
 public:
-    TextureCache(const Device& device, VkDescriptorSetLayout image_layout);
-    ~TextureCache();
+    TextureCache(const Device& device, const wgpu::BindGroupLayout& image_layout);
 
     TextureCache(const TextureCache&) = delete;
     TextureCache& operator=(const TextureCache&) = delete;
 
-    // The descriptor set (one combined image sampler) for `image`, recording its upload into
-    // `cmd` if it isn't on the GPU yet. The upload's staging buffer goes into `keep_alive`, which
-    // the caller holds until `cmd` has finished.
-    VkDescriptorSet acquire(VkCommandBuffer cmd, const DecodedImage& image, std::vector<Buffer>& keep_alive);
+    // The bind group (texture and sampler) for `image`, uploading it and recording its mips into
+    // `encoder` if it isn't on the GPU yet.
+    wgpu::BindGroup acquire(const wgpu::CommandEncoder& encoder, const DecodedImage& image);
 
     // Call once per rendered frame: drops textures unused for a while, and over the memory
-    // budget, the least recently used ones.
+    // budget, the least recently used ones. (WebGPU keeps a texture alive for frames still
+    // using it, so dropping one is always safe.)
     void end_frame() noexcept;
 
 private:
     struct Texture {
-        VkImage image = VK_NULL_HANDLE;
-        VmaAllocation allocation = VK_NULL_HANDLE;
-        VkImageView view = VK_NULL_HANDLE;
-        VkDescriptorSet set = VK_NULL_HANDLE;
+        wgpu::Texture texture;
+        wgpu::BindGroup group;
         std::size_t bytes = 0;
         std::uint64_t last_used = 0;
     };
 
+    void generate_mips(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture, std::uint32_t levels);
     void destroy(Texture& texture) noexcept;
-    VkDescriptorSet allocate_set();
 
     const Device& device_;
-    VkDescriptorSetLayout layout_;
-    VkSampler sampler_ = VK_NULL_HANDLE;
-    std::vector<VkDescriptorPool> pools_;
-    std::vector<VkDescriptorSet> free_sets_;
+    wgpu::BindGroupLayout layout_;
+    wgpu::Sampler sampler_;
+    wgpu::RenderPipeline mip_pipeline_;
     std::unordered_map<std::uint64_t, Texture> textures_; // by DecodedImage::id
     std::size_t bytes_ = 0;
     std::uint64_t frame_ = 0;

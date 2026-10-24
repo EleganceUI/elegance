@@ -4,284 +4,180 @@
 
 #include "gpu/path_renderer.h"
 
-#include "core/log.h"
-
-#include <elg/error.h>
-
-#include <cstddef>
-#include <iterator>
-
 namespace elg::detail::gpu {
 
 namespace {
 
-constexpr std::uint32_t kPathVertSpirv[] = {
-#include "shaders/path.vert.inc"
-};
-constexpr std::uint32_t kPathCoverVertSpirv[] = {
-#include "shaders/path_cover.vert.inc"
-};
-constexpr std::uint32_t kPathFragSpirv[] = {
-#include "shaders/path.frag.inc"
-};
+constexpr char kPathWgsl[] =
+#include "shaders/path.wgsl.inc"
+    ;
 
-struct PushConstants {
+struct Immediates {
     float viewport[2];
 };
-
-VkShaderModule create_module(VkDevice device, const std::uint32_t* code, std::size_t size) {
-    VkShaderModuleCreateInfo info{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
-    info.codeSize = size;
-    info.pCode = code;
-    VkShaderModule module = VK_NULL_HANDLE;
-    check(vkCreateShaderModule(device, &info, nullptr, &module), "create a shader module");
-    return module;
-}
-
-bool has_depth(VkFormat format) {
-    return format == VK_FORMAT_D24_UNORM_S8_UINT || format == VK_FORMAT_D32_SFLOAT_S8_UINT ||
-           format == VK_FORMAT_D16_UNORM_S8_UINT;
-}
-
-void image_barrier(VkCommandBuffer cmd, VkImage image, VkImageAspectFlags aspect, VkImageLayout from, VkImageLayout to,
-                   VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access, VkPipelineStageFlags2 dst_stage,
-                   VkAccessFlags2 dst_access) {
-    VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-    b.srcStageMask = src_stage;
-    b.srcAccessMask = src_access;
-    b.dstStageMask = dst_stage;
-    b.dstAccessMask = dst_access;
-    b.oldLayout = from;
-    b.newLayout = to;
-    b.image = image;
-    b.subresourceRange = {aspect, 0, 1, 0, 1};
-    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-    dependency.imageMemoryBarrierCount = 1;
-    dependency.pImageMemoryBarriers = &b;
-    vkCmdPipelineBarrier2(cmd, &dependency);
-}
 
 } // namespace
 
 PathRenderer::PathRenderer(const Device& device) : device_(device) {
-    // A stencil format the GPU can render to (not every GPU has every one: AMD lacks D24S8).
-    for (const VkFormat candidate : {VK_FORMAT_S8_UINT, VK_FORMAT_D24_UNORM_S8_UINT, VK_FORMAT_D32_SFLOAT_S8_UINT}) {
-        VkFormatProperties properties{};
-        vkGetPhysicalDeviceFormatProperties(device.physical(), candidate, &properties);
-        if (properties.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
-            stencil_format_ = candidate;
-            break;
-        }
-    }
-    if (stencil_format_ == VK_FORMAT_UNDEFINED) {
-        throw GpuError("the GPU has no stencil format to draw paths with");
-    }
-    stencil_aspect_ = has_depth(stencil_format_) ? VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT
-                                                 : VK_IMAGE_ASPECT_STENCIL_BIT;
+    const wgpu::Device& dev = device_.handle();
+    module_ = create_shader(dev, kPathWgsl, "path.wgsl");
 
-    // The most samples (anti-aliasing levels) both attachments support, up to 8.
-    VkPhysicalDeviceProperties properties{};
-    vkGetPhysicalDeviceProperties(device.physical(), &properties);
-    const VkSampleCountFlags supported =
-        properties.limits.framebufferColorSampleCounts & properties.limits.framebufferStencilSampleCounts;
-    for (const VkSampleCountFlagBits count : {VK_SAMPLE_COUNT_8_BIT, VK_SAMPLE_COUNT_4_BIT, VK_SAMPLE_COUNT_2_BIT}) {
-        if (supported & count) {
-            samples_ = count;
-            break;
-        }
-    }
-    log_debug("paths: stencil format {}, {}x MSAA", static_cast<int>(stencil_format_), static_cast<int>(samples_));
+    wgpu::PipelineLayoutDescriptor layout_info;
+    layout_info.label = "path";
+    layout_info.immediateSize = sizeof(Immediates);
+    layout_ = dev.CreatePipelineLayout(&layout_info);
+    stencil_non_zero_ = create_pipeline(false, false);
+    stencil_even_odd_ = create_pipeline(false, true);
+    cover_non_zero_ = create_pipeline(true, false);
+    cover_even_odd_ = create_pipeline(true, true);
 
-    try {
-        fill_vertex_ = create_module(device_.handle(), kPathVertSpirv, sizeof(kPathVertSpirv));
-        cover_vertex_ = create_module(device_.handle(), kPathCoverVertSpirv, sizeof(kPathCoverVertSpirv));
-        fragment_ = create_module(device_.handle(), kPathFragSpirv, sizeof(kPathFragSpirv));
-        VkPushConstantRange push{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants)};
-        VkPipelineLayoutCreateInfo layout_info{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};
-        layout_info.pushConstantRangeCount = 1;
-        layout_info.pPushConstantRanges = &push;
-        check(vkCreatePipelineLayout(device_.handle(), &layout_info, nullptr, &layout_), "create the path pipeline layout");
-        stencil_non_zero_ = create_pipeline(false, false);
-        stencil_even_odd_ = create_pipeline(false, true);
-        cover_non_zero_ = create_pipeline(true, false);
-        cover_even_odd_ = create_pipeline(true, true);
-    } catch (...) {
-        destroy();
-        throw;
-    }
+    // The resolve: reads every sample of the coverage, writes the mask.
+    wgpu::BindGroupLayoutEntry samples{};
+    samples.binding = 0;
+    samples.visibility = wgpu::ShaderStage::Fragment;
+    samples.texture.sampleType = wgpu::TextureSampleType::UnfilterableFloat;
+    samples.texture.viewDimension = wgpu::TextureViewDimension::e2D;
+    samples.texture.multisampled = true;
+    wgpu::BindGroupLayoutDescriptor group_info;
+    group_info.label = "path samples";
+    group_info.entryCount = 1;
+    group_info.entries = &samples;
+    resolve_layout_ = dev.CreateBindGroupLayout(&group_info);
+    wgpu::PipelineLayoutDescriptor resolve_layout_info;
+    resolve_layout_info.label = "path resolve";
+    resolve_layout_info.bindGroupLayoutCount = 1;
+    resolve_layout_info.bindGroupLayouts = &resolve_layout_;
+    const wgpu::PipelineLayout resolve_layout = dev.CreatePipelineLayout(&resolve_layout_info);
+
+    wgpu::ColorTargetState target;
+    target.format = kMaskFormat;
+    target.writeMask = wgpu::ColorWriteMask::Red;
+    wgpu::FragmentState fragment;
+    fragment.module = module_;
+    fragment.entryPoint = "fs_resolve";
+    fragment.targetCount = 1;
+    fragment.targets = &target;
+    wgpu::RenderPipelineDescriptor descriptor;
+    descriptor.label = "path resolve";
+    descriptor.layout = resolve_layout;
+    descriptor.vertex.module = module_;
+    descriptor.vertex.entryPoint = "vs_cover";
+    descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
+    descriptor.fragment = &fragment;
+    resolve_ = dev.CreateRenderPipeline(&descriptor);
 }
 
-PathRenderer::~PathRenderer() {
-    destroy();
-}
+wgpu::RenderPipeline PathRenderer::create_pipeline(bool cover, bool even_odd) {
+    const wgpu::VertexAttribute position{.format = wgpu::VertexFormat::Float32x2, .offset = 0, .shaderLocation = 0};
+    wgpu::VertexBufferLayout vertices;
+    vertices.stepMode = wgpu::VertexStepMode::Vertex;
+    vertices.arrayStride = 2 * sizeof(float);
+    vertices.attributeCount = 1;
+    vertices.attributes = &position;
 
-void PathRenderer::destroy() noexcept {
-    const VkDevice device = device_.handle();
-    for (VkPipeline* pipeline : {&stencil_non_zero_, &stencil_even_odd_, &cover_non_zero_, &cover_even_odd_}) {
-        vkDestroyPipeline(device, *pipeline, nullptr);
-        *pipeline = VK_NULL_HANDLE;
-    }
-    vkDestroyPipelineLayout(device, layout_, nullptr);
-    vkDestroyShaderModule(device, fragment_, nullptr);
-    vkDestroyShaderModule(device, cover_vertex_, nullptr);
-    vkDestroyShaderModule(device, fill_vertex_, nullptr);
-    layout_ = VK_NULL_HANDLE;
-    fragment_ = cover_vertex_ = fill_vertex_ = VK_NULL_HANDLE;
-}
-
-VkPipeline PathRenderer::create_pipeline(bool cover, bool even_odd) {
-    const VkPipelineShaderStageCreateInfo stages[] = {
-        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_VERTEX_BIT,
-         cover ? cover_vertex_ : fill_vertex_, "main", nullptr},
-        {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr, 0, VK_SHADER_STAGE_FRAGMENT_BIT, fragment_,
-         "main", nullptr},
-    };
-
-    const VkVertexInputBindingDescription binding{0, 2 * sizeof(float), VK_VERTEX_INPUT_RATE_VERTEX};
-    const VkVertexInputAttributeDescription attribute{0, 0, VK_FORMAT_R32G32_SFLOAT, 0};
-    VkPipelineVertexInputStateCreateInfo vertex_input{VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO};
-    if (!cover) {
-        vertex_input.vertexBindingDescriptionCount = 1;
-        vertex_input.pVertexBindingDescriptions = &binding;
-        vertex_input.vertexAttributeDescriptionCount = 1;
-        vertex_input.pVertexAttributeDescriptions = &attribute;
-    }
-
-    VkPipelineInputAssemblyStateCreateInfo input_assembly{VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO};
-    input_assembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-    VkPipelineViewportStateCreateInfo viewport{VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO};
-    viewport.viewportCount = 1;
-    viewport.scissorCount = 1;
-    VkPipelineRasterizationStateCreateInfo raster{VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-    raster.polygonMode = VK_POLYGON_MODE_FILL;
-    raster.cullMode = VK_CULL_MODE_NONE; // both facings count: that's the winding
-    raster.frontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-    raster.lineWidth = 1.0f;
-    VkPipelineMultisampleStateCreateInfo multisample{VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO};
-    multisample.rasterizationSamples = samples_;
-
-    VkPipelineDepthStencilStateCreateInfo depth_stencil{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
-    depth_stencil.stencilTestEnable = VK_TRUE;
-    VkStencilOpState front{};
-    VkStencilOpState back{};
+    wgpu::DepthStencilState depth_stencil;
+    depth_stencil.format = kStencilFormat;
+    depth_stencil.depthWriteEnabled = false;
+    depth_stencil.depthCompare = wgpu::CompareFunction::Always;
     if (!cover) {
         // Count windings: +1 for triangles one way round, -1 the other (non-zero), or flip the
         // low bit (even-odd).
-        front = {VK_STENCIL_OP_KEEP,
-                 even_odd ? VK_STENCIL_OP_INVERT : VK_STENCIL_OP_INCREMENT_AND_WRAP,
-                 VK_STENCIL_OP_KEEP,
-                 VK_COMPARE_OP_ALWAYS,
-                 0xFF,
-                 0xFF,
-                 0};
-        back = front;
-        back.passOp = even_odd ? VK_STENCIL_OP_INVERT : VK_STENCIL_OP_DECREMENT_AND_WRAP;
+        depth_stencil.stencilFront = {wgpu::CompareFunction::Always, wgpu::StencilOperation::Keep,
+                                      wgpu::StencilOperation::Keep,
+                                      even_odd ? wgpu::StencilOperation::Invert : wgpu::StencilOperation::IncrementWrap};
+        depth_stencil.stencilBack = depth_stencil.stencilFront;
+        depth_stencil.stencilBack.passOp =
+            even_odd ? wgpu::StencilOperation::Invert : wgpu::StencilOperation::DecrementWrap;
+        depth_stencil.stencilReadMask = 0xFF;
+        depth_stencil.stencilWriteMask = 0xFF;
     } else {
-        // Inside where the count is non-zero (or odd).
-        front = {VK_STENCIL_OP_KEEP, VK_STENCIL_OP_KEEP,  VK_STENCIL_OP_KEEP, VK_COMPARE_OP_NOT_EQUAL,
-                 even_odd ? 1u : 0xFFu, 0, 0};
-        back = front;
+        // Inside where the count is non-zero (or odd): compared with the reference, 0.
+        depth_stencil.stencilFront = {wgpu::CompareFunction::NotEqual, wgpu::StencilOperation::Keep,
+                                      wgpu::StencilOperation::Keep, wgpu::StencilOperation::Keep};
+        depth_stencil.stencilBack = depth_stencil.stencilFront;
+        depth_stencil.stencilReadMask = even_odd ? 1u : 0xFFu;
+        depth_stencil.stencilWriteMask = 0;
     }
-    depth_stencil.front = front;
-    depth_stencil.back = back;
 
-    VkPipelineColorBlendAttachmentState blend{};
-    blend.colorWriteMask = cover ? VK_COLOR_COMPONENT_R_BIT : 0;
-    VkPipelineColorBlendStateCreateInfo color_blend{VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO};
-    color_blend.attachmentCount = 1;
-    color_blend.pAttachments = &blend;
+    wgpu::ColorTargetState target;
+    target.format = kMaskFormat;
+    target.writeMask = cover ? wgpu::ColorWriteMask::Red : wgpu::ColorWriteMask::None;
+    wgpu::FragmentState fragment;
+    fragment.module = module_;
+    fragment.entryPoint = "fs_coverage";
+    fragment.targetCount = 1;
+    fragment.targets = &target;
 
-    const VkDynamicState dynamic_states[] = {VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR};
-    VkPipelineDynamicStateCreateInfo dynamic{VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO};
-    dynamic.dynamicStateCount = static_cast<std::uint32_t>(std::size(dynamic_states));
-    dynamic.pDynamicStates = dynamic_states;
-
-    const VkFormat color_format = kMaskFormat;
-    VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
-    rendering.colorAttachmentCount = 1;
-    rendering.pColorAttachmentFormats = &color_format;
-    rendering.depthAttachmentFormat = has_depth(stencil_format_) ? stencil_format_ : VK_FORMAT_UNDEFINED;
-    rendering.stencilAttachmentFormat = stencil_format_;
-
-    VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
-    info.pNext = &rendering;
-    info.stageCount = static_cast<std::uint32_t>(std::size(stages));
-    info.pStages = stages;
-    info.pVertexInputState = &vertex_input;
-    info.pInputAssemblyState = &input_assembly;
-    info.pViewportState = &viewport;
-    info.pRasterizationState = &raster;
-    info.pMultisampleState = &multisample;
-    info.pDepthStencilState = &depth_stencil;
-    info.pColorBlendState = &color_blend;
-    info.pDynamicState = &dynamic;
-    info.layout = layout_;
-    VkPipeline pipeline = VK_NULL_HANDLE;
-    check(vkCreateGraphicsPipelines(device_.handle(), VK_NULL_HANDLE, 1, &info, nullptr, &pipeline),
-          "create a path pipeline");
-    return pipeline;
+    wgpu::RenderPipelineDescriptor descriptor;
+    descriptor.label = cover ? "path cover" : "path stencil";
+    descriptor.layout = layout_;
+    descriptor.vertex.module = module_;
+    descriptor.vertex.entryPoint = cover ? "vs_cover" : "vs_fill";
+    descriptor.vertex.bufferCount = cover ? 0 : 1;
+    descriptor.vertex.buffers = cover ? nullptr : &vertices;
+    descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
+    descriptor.primitive.cullMode = wgpu::CullMode::None; // both facings count: that's the winding
+    descriptor.depthStencil = &depth_stencil;
+    descriptor.multisample.count = kSamples;
+    descriptor.fragment = &fragment;
+    return device_.handle().CreateRenderPipeline(&descriptor);
 }
 
-void PathRenderer::render(VkCommandBuffer cmd, const RenderImage& samples_color, const RenderImage& stencil,
-                          const RenderImage& mask, VkExtent2D extent, VkBuffer vertices, std::uint32_t first_vertex,
+void PathRenderer::render(const wgpu::CommandEncoder& encoder, const RenderImage& samples_color,
+                          const RenderImage& stencil, const RenderImage& mask, std::uint32_t width,
+                          std::uint32_t height, const wgpu::Buffer& vertices, std::uint32_t first_vertex,
                           std::uint32_t vertex_count, bool even_odd) {
-    image_barrier(cmd, samples_color.image(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                  VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                  VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-    image_barrier(cmd, mask.image(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_UNDEFINED,
-                  VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                  VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                  VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-    image_barrier(cmd, stencil.image(), stencil_aspect_, VK_IMAGE_LAYOUT_UNDEFINED,
-                  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                  VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                  VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                  VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                  VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT);
+    {
+        wgpu::RenderPassColorAttachment color;
+        color.view = samples_color.view();
+        color.loadOp = wgpu::LoadOp::Clear;
+        color.storeOp = wgpu::StoreOp::Store; // read by the resolve
+        wgpu::RenderPassDepthStencilAttachment depth_stencil;
+        depth_stencil.view = stencil.view();
+        depth_stencil.stencilLoadOp = wgpu::LoadOp::Clear;
+        depth_stencil.stencilStoreOp = wgpu::StoreOp::Discard;
+        wgpu::RenderPassDescriptor descriptor;
+        descriptor.label = "path coverage";
+        descriptor.colorAttachmentCount = 1;
+        descriptor.colorAttachments = &color;
+        descriptor.depthStencilAttachment = &depth_stencil;
+        const wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
+        pass.SetViewport(0, 0, static_cast<float>(width), static_cast<float>(height), 0, 1);
+        pass.SetScissorRect(0, 0, width, height);
 
-    VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-    color.imageView = samples_color.view();
-    color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    color.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    color.resolveMode = VK_RESOLVE_MODE_AVERAGE_BIT;
-    color.resolveImageView = mask.view();
-    color.resolveImageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    VkRenderingAttachmentInfo depth_stencil{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-    depth_stencil.imageView = stencil.view();
-    depth_stencil.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    depth_stencil.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    depth_stencil.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-    VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
-    rendering.renderArea = {{0, 0}, extent};
-    rendering.layerCount = 1;
-    rendering.colorAttachmentCount = 1;
-    rendering.pColorAttachments = &color;
-    rendering.pDepthAttachment = has_depth(stencil_format_) ? &depth_stencil : nullptr;
-    rendering.pStencilAttachment = &depth_stencil;
-    vkCmdBeginRendering(cmd, &rendering);
+        const Immediates immediates{{static_cast<float>(width), static_cast<float>(height)}};
+        pass.SetPipeline(even_odd ? stencil_even_odd_ : stencil_non_zero_);
+        pass.SetImmediates(0, &immediates, sizeof(immediates));
+        pass.SetVertexBuffer(0, vertices);
+        pass.Draw(vertex_count, 1, first_vertex, 0);
 
-    const VkViewport view{0, 0, static_cast<float>(extent.width), static_cast<float>(extent.height), 0, 1};
-    const VkRect2D scissor{{0, 0}, extent};
-    vkCmdSetViewport(cmd, 0, 1, &view);
-    vkCmdSetScissor(cmd, 0, 1, &scissor);
-    const PushConstants push{{static_cast<float>(extent.width), static_cast<float>(extent.height)}};
+        pass.SetPipeline(even_odd ? cover_even_odd_ : cover_non_zero_);
+        pass.Draw(3);
+        pass.End();
+    }
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, even_odd ? stencil_even_odd_ : stencil_non_zero_);
-    vkCmdPushConstants(cmd, layout_, VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
-    const VkDeviceSize offset = 0;
-    vkCmdBindVertexBuffers(cmd, 0, 1, &vertices, &offset);
-    vkCmdDraw(cmd, vertex_count, 1, first_vertex, 0);
+    wgpu::BindGroupEntry entry;
+    entry.binding = 0;
+    entry.textureView = samples_color.view();
+    wgpu::BindGroupDescriptor group;
+    group.layout = resolve_layout_;
+    group.entryCount = 1;
+    group.entries = &entry;
+    const wgpu::BindGroup samples = device_.handle().CreateBindGroup(&group);
 
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, even_odd ? cover_even_odd_ : cover_non_zero_);
-    vkCmdDraw(cmd, 3, 1, 0, 0);
-    vkCmdEndRendering(cmd);
-
-    image_barrier(cmd, mask.image(), VK_IMAGE_ASPECT_COLOR_BIT, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-                  VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-                  VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                  VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+    wgpu::RenderPassColorAttachment color;
+    color.view = mask.view();
+    color.loadOp = wgpu::LoadOp::Clear;
+    color.storeOp = wgpu::StoreOp::Store;
+    wgpu::RenderPassDescriptor descriptor;
+    descriptor.label = "path resolve";
+    descriptor.colorAttachmentCount = 1;
+    descriptor.colorAttachments = &color;
+    const wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
+    pass.SetPipeline(resolve_);
+    pass.SetBindGroup(0, samples);
+    pass.Draw(3);
+    pass.End();
 }
 
 } // namespace elg::detail::gpu

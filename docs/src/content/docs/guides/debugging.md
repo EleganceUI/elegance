@@ -25,7 +25,7 @@ Because it's a separate window, the inspector never changes the layout it's show
 Elegence logs to stderr, with a prefix per level:
 
 ```
-[elg:info] GPU: AMD Radeon RX 6650 XT (Vulkan 1.4.315)
+[elg:info] GPU: AMD Radeon RX 6650 XT (Direct3D 12 through WebGPU)
 [elg:warning] image: can't read assets/missing.png
 ```
 

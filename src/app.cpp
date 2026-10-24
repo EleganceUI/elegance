@@ -8,7 +8,6 @@
 #include "core/crash.h"
 #include "core/log.h"
 #include "core/scope_exit.h"
-#include "gpu/instance.h"
 #include "platform/platform.h"
 #include "reactive/runtime.h"
 #include "render/frame_mailbox.h"
@@ -162,13 +161,12 @@ EnvironmentValues with_window(EnvironmentValues environment, const std::shared_p
 }
 
 // A window while the app runs. Member order matters:
-// - the surface is destroyed before the window it belongs to;
 // - `dirty` and `scope` exist before mounting (the tree refers to them) and the scope outlives
 //   the tree, so effects are disposed after the elements they update are gone.
 struct LiveWindow {
-    LiveWindow(WindowEntry& entry, const gpu::Instance& instance, TextSystem& text, EnvironmentValues base,
+    LiveWindow(WindowEntry& entry, TextSystem& text, EnvironmentValues base,
                const PopupSink* popups, const platform::PopupSpec* popup = nullptr, int menu_level = -1)
-        : entry(&entry), window(entry.desc, popup), is_popup(popup != nullptr), surface(instance, window.create_surface(instance.handle())),
+        : entry(&entry), window(entry.desc, popup), is_popup(popup != nullptr),
           state(std::make_shared<WindowState>(WindowState{.window = &window})),
           environment(with_window(std::move(base), state)), services(make_services(window, popups, menu_level)),
           root(mount(text)) {
@@ -239,7 +237,6 @@ struct LiveWindow {
     WindowEntry* entry;
     platform::Window window;
     bool is_popup;
-    gpu::Surface surface;
     std::shared_ptr<WindowState> state; // behind this window's WindowHandles
     bool dirty = true;
     bool tree_changed = false; // If/ForEach added or removed elements
@@ -369,13 +366,11 @@ int App::run() {
     set_ui_thread(std::this_thread::get_id());
     ScopeExit release_ui_thread([] { set_ui_thread(std::nullopt); });
 
-    // Declaration order is teardown order in reverse: the render thread stops first, then
-    // surfaces and windows go, then the Vulkan instance, then SDL.
+    // Declaration order is teardown order in reverse: the render thread stops first (with the
+    // GPU and the windows' surfaces), then windows go, then SDL.
     CrashHandlerScope crash_handlers;
     platform::Platform platform;
     self.platform = &platform;
-    const std::vector<const char*> extensions = platform.vulkan_instance_extensions();
-    gpu::Instance instance(extensions);
 
     // Fonts and glyphs, shared by all windows; outlives every element tree. Glyphs finishing on
     // the atlas's workers wake the event loop to draw them.
@@ -451,17 +446,16 @@ int App::run() {
 
     std::vector<std::unique_ptr<LiveWindow>> windows;
     for (WindowEntry& entry : self.windows) {
-        windows.push_back(std::make_unique<LiveWindow>(entry, instance, text, base, &popup_sink));
+        windows.push_back(std::make_unique<LiveWindow>(entry, text, base, &popup_sink));
     }
     const auto find_window = [&](std::uint32_t id) {
         return std::ranges::find_if(windows, [&](const auto& live) { return live->window.id() == id; });
     };
 
     FrameMailbox mailbox;
-    RenderThread renderer(instance, windows.front()->surface.handle(), mailbox,
-                          [&platform] { platform.wake(); });
+    RenderThread renderer(mailbox, [&platform] { platform.wake(); });
     for (const auto& live : windows) {
-        mailbox.post(AddWindowCommand{live->window.id(), live->surface.handle(), live->entry->desc.transparent,
+        mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), live->entry->desc.transparent,
                                       live->window.native_handle()});
     }
 
@@ -625,7 +619,7 @@ int App::run() {
 
     const auto destroy_window = [&](std::uint32_t id) {
         if (auto it = find_window(id); it != windows.end()) {
-            // The render thread must release the swapchain before the surface goes.
+            // The render thread must release the window's surface before the window goes.
             mailbox.wait_until_done(mailbox.post(RemoveWindowCommand{id}));
             windows.erase(it);
         }
@@ -651,8 +645,8 @@ int App::run() {
         inspector_entry = std::make_unique<WindowEntry>();
         inspector_entry->desc = {.title = "Inspector — " + inspector->title.peek(), .width = 480, .height = 720};
         inspector_entry->content = [model = inspector] { return InspectorView(model); };
-        auto live = std::make_unique<LiveWindow>(*inspector_entry, instance, text, base, &popup_sink);
-        mailbox.post(AddWindowCommand{live->window.id(), live->surface.handle(), false, live->window.native_handle()});
+        auto live = std::make_unique<LiveWindow>(*inspector_entry, text, base, &popup_sink);
+        mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), false, live->window.native_handle()});
         post_frame(*live);
         text.atlas.wait_idle(kGlyphWarmup);
         mailbox.wait_until_done(post_frame(*live), kFirstFrameTimeout);
@@ -712,7 +706,7 @@ int App::run() {
         if (is_menu) {
             environment.set<HoverDelayKey>(HoverDelay{.enter = 0, .exit = 0});
         }
-        auto live = std::make_unique<LiveWindow>(*entry, instance, text, environment, &popup_sink, &spec,
+        auto live = std::make_unique<LiveWindow>(*entry, text, environment, &popup_sink, &spec,
                                                  is_tooltip ? -1 : request.level);
         live->events.set_menu_navigation(is_menu);
 
@@ -773,7 +767,7 @@ int App::run() {
         origin.y = std::clamp(origin.y, area.y, std::max(area.y, area.max_y() - panel.height));
         live->window.set_popup_frame({origin.x - kPopupMargin, origin.y - kPopupMargin, size.width, size.height});
 
-        mailbox.post(AddWindowCommand{live->window.id(), live->surface.handle(), true, live->window.native_handle()});
+        mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), true, live->window.native_handle()});
         post_frame(*live); // requests its glyphs
         text.atlas.wait_idle(kPopupGlyphWarmup);
         mailbox.wait_until_done(post_frame(*live), kFirstFrameTimeout);

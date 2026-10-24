@@ -19,15 +19,21 @@
 namespace elg::detail {
 
 // The GPU adapter the renderer uses (Windows: its LUID), published by the render thread once its
-// device exists. Video decoders must use the same adapter to share frames with it.
-void set_render_adapter(std::array<std::uint8_t, 8> luid);
-std::optional<std::array<std::uint8_t, 8>> render_adapter();
+// device exists. Video decoders must use the same adapter to share frames with it. When the
+// renderer can't import shared textures (Dawn's Vulkan backend on Windows), decoders hand over
+// `cpu` frames instead.
+struct RenderAdapter {
+    std::array<std::uint8_t, 8> luid{};
+    bool shares_textures = false;
+};
+void set_render_adapter(RenderAdapter adapter);
+std::optional<RenderAdapter> render_adapter();
 
 // A frame for the renderer (design.md §13.3). How it gets to the GPU depends on the platform:
 // - `d3d11_shared`: a BGRA texture the decoder shares (Windows: an NT handle), sampled in place.
 //   `texture_id` changes when the texture does.
 // - `cpu`: pixels in memory, in `format`, packed (no row padding), top to bottom. The renderer
-//   uploads them and converts YUV to RGB in a Vulkan pass, the same on every platform. Any
+//   uploads them and converts YUV to RGB in a GPU pass, the same on every platform. Any
 //   decoder or camera can start here.
 // Later: macOS IOSurfaces and Linux DMA-BUFs, imported like the D3D11 textures (macOS decodes to
 // `cpu` NV12 for now).

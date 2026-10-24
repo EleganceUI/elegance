@@ -1,4 +1,4 @@
-# Builds Elegence on macOS (Apple Clang, libc++, MoltenVK) and runs the unit tests.
+# Builds Elegence on macOS (Apple Clang, libc++, WebGPU on Metal) and runs the unit tests.
 name: macOS
 
 on:
@@ -21,10 +21,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # glslc comes from shaderc; MoltenVK and the loader are what volk finds at run time.
+      # Dawn (from vcpkg) builds with Python, which the runner has.
       - name: Install tools
         run: |
-          brew install cmake ninja pkgconf shaderc molten-vk vulkan-loader
+          brew install cmake ninja pkgconf
           cmake --version
 
       - name: Set up vcpkg

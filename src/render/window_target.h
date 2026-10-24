@@ -33,19 +33,19 @@ struct RenderResources {
     gpu::VideoTextures& videos;
     gpu::BlurRenderer& blur;
     gpu::PathRenderer& paths;
-    VkDescriptorSetLayout image_layout; // one combined image sampler (atlas, layers)
-    VkDescriptorSet atlas;
+    wgpu::BindGroupLayout image_layout; // a texture and its sampler (atlas, layers)
+    wgpu::BindGroup atlas;
 };
 
-// Everything the render thread needs to draw into one window: its swapchain plus the
-// per-frame-in-flight command buffers, sync objects, buffers, and pooled offscreen images.
+// Everything the render thread needs to draw into one window: its surface (or composition
+// target), the frame's buffers, and pooled offscreen images. WebGPU orders queue writes and
+// submissions, so one set serves every frame, even while earlier ones are still on the GPU.
 class WindowTarget {
 public:
-    // `native_window` (an HWND on Windows) lets transparent windows present through the
-    // platform compositor where Vulkan swapchains can't be transparent.
-    WindowTarget(const gpu::Device& device, VkSurfaceKHR surface, bool transparent = false,
+    // `native_window` (an HWND on Windows) lets windows present through the platform
+    // compositor, which can show transparency (WebGPU surfaces there can't).
+    WindowTarget(const gpu::Device& device, wgpu::Surface surface, bool transparent = false,
                  void* native_window = nullptr);
-    ~WindowTarget();
 
     WindowTarget(const WindowTarget&) = delete;
     WindowTarget& operator=(const WindowTarget&) = delete;
@@ -54,77 +54,103 @@ public:
     void render(const WindowFrame& frame, const RenderResources& resources);
 
 private:
-    struct FrameSlot {
-        VkCommandPool pool = VK_NULL_HANDLE;
-        VkCommandBuffer cmd = VK_NULL_HANDLE;
-        VkFence in_flight = VK_NULL_HANDLE;
-        VkSemaphore image_acquired = VK_NULL_HANDLE;
-        std::uint64_t submission = 0; // number of the last submission using this slot
-        std::vector<gpu::Buffer> uploads; // image staging buffers, freed once this slot's fence signals
-        gpu::Buffer instances;
-        gpu::Buffer stops;
-        gpu::Buffer path_vertices;
-        std::vector<VkDescriptorPool> descriptor_pools; // reset every frame
-        // Offscreen images, reused across frames once this slot's fence has signaled.
-        std::vector<gpu::RenderImage> layers;
-        std::vector<gpu::RenderImage> blur_horizontal;
-        std::vector<gpu::RenderImage> blur_vertical;
-        // Path masks: multisampled color and stencil scratch (the masks themselves are cached).
-        std::vector<gpu::RenderImage> path_samples;
-        std::vector<gpu::RenderImage> path_stencils;
+    struct LayerGroups {
+        wgpu::BindGroup content; // blurred, when the layer blurs
+        wgpu::BindGroup raw;     // as drawn
+        wgpu::BindGroup shadow;
+        wgpu::BindGroup inner_shadow;
     };
 
-    struct LayerSets {
-        VkDescriptorSet content = VK_NULL_HANDLE;
-        VkDescriptorSet shadow = VK_NULL_HANDLE;
-    };
-
-    // Where a frame goes: a swapchain image, or the composition target's shared image.
+    // Where a frame goes: a surface image, or the composition target's shared image.
     struct DrawTarget {
-        VkImage image;
-        VkImageView view;
-        VkFormat format;
-        VkExtent2D extent;
-        bool shared; // released to Direct3D (GENERAL, external queue family) instead of presented
+        wgpu::TextureView view;
+        wgpu::TextureFormat format;
+        std::uint32_t width;
+        std::uint32_t height;
+    };
+
+    // What a pass draws into. `texture` is set when it can be copied from (layers, the offscreen
+    // window image): only such passes can read backdrops.
+    struct PassTarget {
+        wgpu::Texture texture;
+        wgpu::TextureView view;
+        wgpu::TextureFormat format;
+        std::uint32_t width;
+        std::uint32_t height;
+        wgpu::Color clear;
+    };
+
+    // The images and groups a frame's passes sample.
+    struct FrameGroups {
+        wgpu::BindGroup stops;
+        std::vector<LayerGroups> layers;
+        std::vector<wgpu::BindGroup> paths;
+        std::vector<wgpu::BindGroup> images;
+        std::vector<wgpu::BindGroup> videos;
     };
 
     void render_composition(const WindowFrame& frame, const RenderResources& resources);
-    void record(FrameSlot& slot, const DrawTarget& target, const WindowFrame& frame, const FramePlan& plan,
-                const RenderResources& resources);
-    void draw_pass(VkCommandBuffer cmd, const PlanPass& pass, VkFormat format, VkExtent2D extent,
-                   const FrameSlot& slot, VkDescriptorSet stops, const std::vector<LayerSets>& layers,
-                   const std::vector<VkDescriptorSet>& paths, const std::vector<VkDescriptorSet>& images, const std::vector<VkDescriptorSet>& videos, const RenderResources& resources);
-    VkDescriptorSet allocate_set(FrameSlot& slot, VkDescriptorSetLayout layout);
-    VkDescriptorSet image_set(FrameSlot& slot, VkDescriptorSetLayout layout, VkImageView view);
-    gpu::RenderImage& pooled_image(std::vector<gpu::RenderImage>& pool, std::size_t index, VkFormat format,
-                                   std::uint32_t width, std::uint32_t height,
-                                   VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT,
-                                   VkImageUsageFlags usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
-                                   VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT);
-    void destroy() noexcept;
+    // Records the frame. `acquired_videos` collects the shared video textures it samples, to
+    // release once it's submitted.
+    wgpu::CommandBuffer record(const DrawTarget& target, const WindowFrame& frame, const RenderResources& resources,
+                               std::vector<std::uint64_t>& acquired_videos);
+    // Records a pass, split wherever its instances read a backdrop.
+    void draw_pass(const wgpu::CommandEncoder& encoder, const PassTarget& target, const PlanPass& plan_pass,
+                   const FramePlan& plan, const FrameGroups& groups, const RenderResources& resources);
+    // Copies a backdrop's region out of `texture` and blurs it as planned; returns its group.
+    wgpu::BindGroup take_backdrop(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture,
+                                  const PlanBackdrop& backdrop, std::size_t slot, const RenderResources& resources);
+    // Blurs a color image (`width` x `height` of it) into pooled images, downsampled by `factor`
+    // first; `slot` picks the pooled images. Returns the result's group.
+    wgpu::BindGroup blur_color(const wgpu::CommandEncoder& encoder, const wgpu::BindGroup& source, std::uint32_t width,
+                               std::uint32_t height, float sigma, std::uint32_t factor, bool clamp_edges,
+                               std::size_t slot, const RenderResources& resources);
+    const wgpu::BindGroup& empty_group(const RenderResources& resources);
+    wgpu::BindGroup image_group(const RenderResources& resources, const wgpu::TextureView& view) const;
+    gpu::RenderImage& pooled_image(std::vector<gpu::RenderImage>& pool, std::size_t index, wgpu::TextureFormat format,
+                                   std::uint32_t width, std::uint32_t height, std::uint32_t samples = 1,
+                                   wgpu::TextureUsage usage = wgpu::TextureUsage::RenderAttachment |
+                                                              wgpu::TextureUsage::TextureBinding);
 
     // Path coverage masks kept across frames by content (PlanPath::key): unchanged paths are only
     // composited, not rendered again.
     struct CachedMask {
         gpu::RenderImage mask;
+        wgpu::BindGroup group;
         std::uint64_t last_used = 0; // frame number
     };
-    const gpu::RenderImage* cached_mask(std::uint64_t key);
+    const CachedMask* cached_mask(std::uint64_t key);
     void evict_masks();
 
     const gpu::Device& device_;
     std::unordered_map<std::uint64_t, CachedMask> masks_;
     std::size_t mask_bytes_ = 0;
     std::uint64_t frame_number_ = 0;
-    gpu::Swapchain swapchain_;
+    std::unique_ptr<gpu::Swapchain> swapchain_; // unless the window presents through composition
 #if defined(_WIN32)
-    std::unique_ptr<gpu::CompositionTarget> composition_; // transparent windows on Windows
+    std::unique_ptr<gpu::CompositionTarget> composition_;
 #endif
-    VkSampler sampler_ = VK_NULL_HANDLE; // for sampling layers
-    std::vector<FrameSlot> slots_;
-    std::size_t next_slot_ = 0;
-    std::uint64_t submitted_ = 0; // queue submissions so far
-    std::uint64_t completed_ = 0; // the latest submission known to have finished
+    wgpu::Sampler sampler_; // for sampling layers
+    gpu::Buffer instances_;
+    gpu::Buffer stops_;
+    gpu::Buffer path_vertices_;
+    // Offscreen images, reused across frames.
+    std::vector<gpu::RenderImage> layers_;
+    std::vector<gpu::RenderImage> blur_horizontal_;
+    std::vector<gpu::RenderImage> blur_vertical_;
+    std::vector<gpu::RenderImage> inner_horizontal_;
+    std::vector<gpu::RenderImage> inner_vertical_;
+    // Color blurs (blurred layers by layer index, then backdrops): downsampled, then two passes.
+    std::vector<gpu::RenderImage> color_down_;
+    std::vector<gpu::RenderImage> color_horizontal_;
+    std::vector<gpu::RenderImage> color_vertical_;
+    std::vector<gpu::RenderImage> backdrop_copies_;
+    std::vector<gpu::RenderImage> frame_images_; // the window, drawn offscreen when it reads backdrops
+    std::optional<gpu::RenderImage> empty_;      // bound where no second image is
+    wgpu::BindGroup empty_group_;
+    // Path masks: multisampled color and stencil scratch (the masks themselves are cached).
+    std::vector<gpu::RenderImage> path_samples_;
+    std::vector<gpu::RenderImage> path_stencils_;
 };
 
 } // namespace elg::detail

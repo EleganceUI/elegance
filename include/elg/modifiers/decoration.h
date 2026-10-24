@@ -49,6 +49,23 @@ private:
 };
 
 // Composition only: an overlay of Rectangle().stroke_border(color, width).
+// Shows the content only where the mask view is opaque (View::mask).
+class ELG_API MaskModifier final : public DecorationModifier {
+public:
+    explicit MaskModifier(View view, Alignment alignment = Alignment::center)
+        : view_(std::move(view)), alignment_(alignment) {}
+
+    View decoration() const override { return view_; }
+    Placement placement() const override { return Placement::mask; }
+    Alignment alignment() const override { return alignment_; }
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    View view_;
+    Alignment alignment_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
 class ELG_API BorderModifier final : public ViewModifier {
 public:
     BorderModifier(Color color, float width) noexcept : color_(color), width_(width) {}

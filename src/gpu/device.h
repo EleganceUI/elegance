@@ -6,48 +6,60 @@
 #define ELG_GPU_DEVICE_H
 
 #include "gpu/instance.h"
-#include "gpu/vk.h"
+#include "gpu/webgpu.h"
 
+#include <array>
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <string>
-#include <string_view>
-#include <vector>
 
 namespace elg::detail::gpu {
 
-// The logical device, its graphics+present queue, and the memory allocator.
-// Requires Vulkan 1.3 with dynamic rendering and synchronization2. Owned by the render thread.
+// The adapter (GPU), the device and its queue. Owned by the render thread.
+// ELG_GPU_BACKEND=d3d12|d3d11|vulkan|metal|opengl picks the API Dawn runs on; by default it picks
+// the best one the platform has (Direct3D 12 on Windows, Metal on macOS, Vulkan on Linux).
 class Device {
 public:
-    // `surface` is used to pick a queue family that can present to the app's windows.
-    Device(const Instance& instance, VkSurfaceKHR surface);
+    explicit Device(const Instance& instance);
     ~Device();
 
     Device(const Device&) = delete;
     Device& operator=(const Device&) = delete;
 
-    VkDevice handle() const noexcept { return device_; }
-    VkPhysicalDevice physical() const noexcept { return physical_; }
-    VkQueue queue() const noexcept { return queue_; }
-    std::uint32_t queue_family() const noexcept { return queue_family_; }
-    VmaAllocator allocator() const noexcept { return allocator_; }
+    const wgpu::Device& handle() const noexcept { return device_; }
+    const wgpu::Adapter& adapter() const noexcept { return adapter_; }
+    const wgpu::Queue& queue() const noexcept { return queue_; }
+    const Instance& instance() const noexcept { return instance_; }
     const std::string& name() const noexcept { return name_; }
+    wgpu::BackendType backend() const noexcept { return backend_; }
 
-    bool can_present(VkSurfaceKHR surface) const;
-    // Whether the device was created with this extension.
-    bool has_extension(std::string_view name) const;
+    // Whether the device was created with this (optional) feature.
+    bool has_feature(wgpu::FeatureName feature) const { return device_.HasFeature(feature); }
+    // The adapter's LUID on Windows: Direct3D devices that share textures with this one (video
+    // decoding, composition) must run on the same adapter.
+    std::optional<std::array<std::uint8_t, 8>> luid() const noexcept { return luid_; }
+
+    // Submits `commands`, then throws elg::GpuError if the device was lost or ran out of memory.
+    void submit(const wgpu::CommandBuffer& commands) const;
+    // Blocks until everything submitted so far has finished.
     void wait_idle() const;
+    // Runs pending callbacks and lets Dawn release finished work. Once per frame.
+    void tick() const;
 
 private:
-    void destroy() noexcept;
+    // Errors reported by callbacks, which may run on Dawn's threads: checked by submit().
+    struct Errors;
+    void check() const;
 
-    VkPhysicalDevice physical_ = VK_NULL_HANDLE;
-    VkDevice device_ = VK_NULL_HANDLE;
-    VkQueue queue_ = VK_NULL_HANDLE;
-    std::uint32_t queue_family_ = 0;
-    VmaAllocator allocator_ = VK_NULL_HANDLE;
+    const Instance& instance_;
+    std::unique_ptr<Errors> errors_;
+    wgpu::Adapter adapter_;
+    wgpu::Device device_;
+    wgpu::Queue queue_;
     std::string name_;
-    std::vector<std::string> extensions_;
+    wgpu::BackendType backend_ = wgpu::BackendType::Undefined;
+    std::optional<std::array<std::uint8_t, 8>> luid_;
 };
 
 } // namespace elg::detail::gpu

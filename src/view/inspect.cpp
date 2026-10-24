@@ -70,8 +70,14 @@ std::string style_summary(const ShapeStyle& style) {
                 return format_color(value);
             } else if constexpr (std::is_same_v<T, LinearGradient>) {
                 return std::format("linear gradient, {} stops", value.stops.size());
-            } else {
+            } else if constexpr (std::is_same_v<T, RadialGradient>) {
                 return std::format("radial gradient, {} stops", value.stops.size());
+            } else if constexpr (std::is_same_v<T, EllipticalGradient>) {
+                return std::format("elliptical gradient, {} stops", value.stops.size());
+            } else if constexpr (std::is_same_v<T, AngularGradient>) {
+                return std::format("angular gradient, {} stops", value.stops.size());
+            } else {
+                return std::format("material, blur {}", value.blur);
             }
         },
         style.value());

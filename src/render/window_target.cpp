@@ -13,7 +13,6 @@
 #include <algorithm>
 #include <atomic>
 #include <cstdint>
-#include <limits>
 #include <span>
 
 namespace elg::detail {
@@ -22,90 +21,71 @@ namespace {
 // The longest a composition frame waits for the display to be ready (it's a hint for pacing).
 constexpr unsigned kReadyTimeoutMs = 50;
 
-// Vulkan swapchains on Windows are opaque only: transparent windows present through
-// DirectComposition there, or render opaque.
-#if defined(_WIN32)
-constexpr bool kTransparentSwapchains = false;
-#else
-constexpr bool kTransparentSwapchains = true;
-#endif
-
 #if defined(_WIN32)
 // Whether a window presents through DirectComposition (gpu/composition_win32.h) instead of its
-// Vulkan swapchain.
+// WebGPU surface.
 bool wants_composition(const gpu::Device& device, bool transparent, void* native_window) {
-    if (!gpu::composition_allowed() || !native_window || !gpu::CompositionTarget::supported(device)) {
+    if (!native_window) {
         return false;
     }
-    // ELG_PRESENT=vulkan: Vulkan swapchains for opaque windows only.
-    return transparent || platform::environment_variable("ELG_PRESENT").value_or("") != "vulkan";
+    // Before composition_allowed(), whose log line would otherwise claim DirectComposition.
+    if (!gpu::CompositionTarget::supported(device)) {
+        static std::atomic_flag logged;
+        if (!logged.test_and_set()) {
+            log_info("windows present through WebGPU surfaces (the GPU backend can't share textures with "
+                     "DirectComposition)");
+        }
+        return false;
+    }
+    if (!gpu::composition_allowed()) {
+        return false;
+    }
+    // ELG_PRESENT=surface: WebGPU surfaces for opaque windows only.
+    return transparent || platform::environment_variable("ELG_PRESENT").value_or("") != "surface";
 }
 #endif
-} // namespace
 
-namespace {
-
-constexpr std::size_t kFramesInFlight = 2;
-constexpr std::uint64_t kNoTimeout = std::numeric_limits<std::uint64_t>::max();
 // Layers hold premultiplied linear color; sRGB storage keeps 8-bit precision where it matters.
-constexpr VkFormat kLayerFormat = VK_FORMAT_R8G8B8A8_SRGB;
-constexpr VkImageSubresourceRange kColorRange{VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+constexpr wgpu::TextureFormat kLayerFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
+static_assert(kLayerFormat == gpu::BlurRenderer::kColorFormat);
+// Layers can be copied from, for backdrops read inside them.
+constexpr wgpu::TextureUsage kLayerUsage =
+    wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc;
 
 std::uint32_t round_up(std::uint32_t value, std::uint32_t multiple) {
     return (value + multiple - 1) / multiple * multiple;
 }
 
-void barrier(VkCommandBuffer cmd, VkImage image, VkImageLayout from, VkImageLayout to,
-             VkPipelineStageFlags2 src_stage, VkAccessFlags2 src_access, VkPipelineStageFlags2 dst_stage,
-             VkAccessFlags2 dst_access) {
-    VkImageMemoryBarrier2 b{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-    b.srcStageMask = src_stage;
-    b.srcAccessMask = src_access;
-    b.dstStageMask = dst_stage;
-    b.dstAccessMask = dst_access;
-    b.oldLayout = from;
-    b.newLayout = to;
-    b.image = image;
-    b.subresourceRange = kColorRange;
-    VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-    dependency.imageMemoryBarrierCount = 1;
-    dependency.pImageMemoryBarriers = &b;
-    vkCmdPipelineBarrier2(cmd, &dependency);
-}
-
-void begin_rendering(VkCommandBuffer cmd, VkImageView view, VkExtent2D extent, VkClearColorValue clear) {
-    VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
-    color.imageView = view;
-    color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    color.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-    color.clearValue.color = clear;
-    VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
-    rendering.renderArea = {{0, 0}, extent};
-    rendering.layerCount = 1;
-    rendering.colorAttachmentCount = 1;
-    rendering.pColorAttachments = &color;
-    vkCmdBeginRendering(cmd, &rendering);
+// Clears the target first, or with no `clear` continues on what it holds.
+wgpu::RenderPassEncoder begin_pass(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& view,
+                                   const std::optional<wgpu::Color>& clear, const char* label) {
+    wgpu::RenderPassColorAttachment color;
+    color.view = view;
+    color.loadOp = clear ? wgpu::LoadOp::Clear : wgpu::LoadOp::Load;
+    color.storeOp = wgpu::StoreOp::Store;
+    color.clearValue = clear.value_or(wgpu::Color{});
+    wgpu::RenderPassDescriptor descriptor;
+    descriptor.label = label;
+    descriptor.colorAttachmentCount = 1;
+    descriptor.colorAttachments = &color;
+    return encoder.BeginRenderPass(&descriptor);
 }
 
 // Brackets rendering into an offscreen image that is sampled afterwards.
 template <class Draw>
-void render_offscreen(VkCommandBuffer cmd, const gpu::RenderImage& target, VkExtent2D extent, Draw&& draw) {
-    barrier(cmd, target.image(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
-    begin_rendering(cmd, target.view(), extent, VkClearColorValue{});
-    draw();
-    vkCmdEndRendering(cmd);
-    barrier(cmd, target.image(), VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-            VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+void render_offscreen(const wgpu::CommandEncoder& encoder, const gpu::RenderImage& target, const char* label,
+                      Draw&& draw) {
+    const wgpu::RenderPassEncoder pass = begin_pass(encoder, target.view(), wgpu::Color{0, 0, 0, 0}, label);
+    draw(pass);
+    pass.End();
 }
 
 } // namespace
 
-WindowTarget::WindowTarget(const gpu::Device& device, VkSurfaceKHR surface, bool transparent, void* native_window)
-    : device_(device), swapchain_(device, surface, transparent && kTransparentSwapchains) {
+WindowTarget::WindowTarget(const gpu::Device& device, wgpu::Surface surface, bool transparent, void* native_window)
+    : device_(device), sampler_(gpu::create_linear_sampler(device.handle())),
+      instances_(device.handle(), wgpu::BufferUsage::Vertex), stops_(device.handle(), wgpu::BufferUsage::Storage),
+      path_vertices_(device.handle(), wgpu::BufferUsage::Vertex) {
 #if defined(_WIN32)
     // Every window presents through DirectComposition (no stretched frames while resizing, and
     // transparency), unless wants_composition() says otherwise.
@@ -113,90 +93,23 @@ WindowTarget::WindowTarget(const gpu::Device& device, VkSurfaceKHR surface, bool
         try {
             composition_ = std::make_unique<gpu::CompositionTarget>(device, native_window, transparent);
         } catch (const std::exception& error) {
-            log_warning("window falls back to a Vulkan swapchain: {}", error.what());
+            log_warning("window falls back to a WebGPU surface: {}", error.what());
         }
     }
     if (transparent && !composition_) {
         static std::atomic_flag warned;
         if (!warned.test_and_set()) {
-            log_warning("transparent windows render opaque: they present through Vulkan swapchains, which "
+            log_warning("transparent windows render opaque: they present through WebGPU surfaces, which "
                         "can't be transparent on Windows");
         }
+    }
+    if (composition_) {
+        return;
     }
 #else
     (void)native_window;
 #endif
-    const VkDevice dev = device_.handle();
-    try {
-        VkSamplerCreateInfo sampler_info{VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO};
-        sampler_info.magFilter = VK_FILTER_LINEAR;
-        sampler_info.minFilter = VK_FILTER_LINEAR;
-        sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
-        sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-        gpu::check(vkCreateSampler(dev, &sampler_info, nullptr, &sampler_), "create the layer sampler");
-
-        slots_.reserve(kFramesInFlight);
-        for (std::size_t i = 0; i < kFramesInFlight; ++i) {
-            FrameSlot& slot = slots_.emplace_back(FrameSlot{
-                .instances = gpu::Buffer(device_.allocator(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT),
-                .stops = gpu::Buffer(device_.allocator(), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT),
-                .path_vertices = gpu::Buffer(device_.allocator(), VK_BUFFER_USAGE_VERTEX_BUFFER_BIT),
-            });
-
-            VkCommandPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
-            pool_info.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
-            pool_info.queueFamilyIndex = device_.queue_family();
-            gpu::check(vkCreateCommandPool(dev, &pool_info, nullptr, &slot.pool), "create a command pool");
-
-            VkCommandBufferAllocateInfo cmd_info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
-            cmd_info.commandPool = slot.pool;
-            cmd_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-            cmd_info.commandBufferCount = 1;
-            gpu::check(vkAllocateCommandBuffers(dev, &cmd_info, &slot.cmd), "allocate a command buffer");
-
-            // Signaled so the first wait on each slot returns immediately.
-            VkFenceCreateInfo fence_info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
-            fence_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
-            gpu::check(vkCreateFence(dev, &fence_info, nullptr, &slot.in_flight), "create a fence");
-
-            VkSemaphoreCreateInfo semaphore_info{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO};
-            gpu::check(vkCreateSemaphore(dev, &semaphore_info, nullptr, &slot.image_acquired),
-                       "create a semaphore");
-        }
-    } catch (...) {
-        destroy();
-        throw;
-    }
-}
-
-WindowTarget::~WindowTarget() {
-    destroy();
-}
-
-void WindowTarget::destroy() noexcept {
-    const VkDevice dev = device_.handle();
-    for (FrameSlot& slot : slots_) {
-        if (slot.in_flight) {
-            vkWaitForFences(dev, 1, &slot.in_flight, VK_TRUE, kNoTimeout);
-        }
-    }
-    masks_.clear(); // the GPU is done with every frame
-    mask_bytes_ = 0;
-    for (FrameSlot& slot : slots_) {
-        if (slot.in_flight) {
-            vkDestroyFence(dev, slot.in_flight, nullptr);
-        }
-        vkDestroySemaphore(dev, slot.image_acquired, nullptr);
-        vkDestroyCommandPool(dev, slot.pool, nullptr);
-        for (VkDescriptorPool pool : slot.descriptor_pools) {
-            vkDestroyDescriptorPool(dev, pool, nullptr);
-        }
-    }
-    slots_.clear();
-    vkDestroySampler(dev, sampler_, nullptr);
-    sampler_ = VK_NULL_HANDLE;
+    swapchain_ = std::make_unique<gpu::Swapchain>(device, std::move(surface), transparent);
 }
 
 void WindowTarget::render(const WindowFrame& frame, const RenderResources& resources) {
@@ -206,154 +119,73 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
         return;
     }
 #endif
-    const VkExtent2D fallback{static_cast<std::uint32_t>(std::max(frame.pixel_width, 0)),
-                              static_cast<std::uint32_t>(std::max(frame.pixel_height, 0))};
-    const VkDevice dev = device_.handle();
-    const auto idle = [&] {
-        for (FrameSlot& s : slots_) {
-            gpu::check(vkWaitForFences(dev, 1, &s.in_flight, VK_TRUE, kNoTimeout), "wait for a frame");
-        }
-        completed_ = submitted_;
-    };
-    if (!swapchain_.prepare(fallback, idle, submitted_)) {
+    const auto width = static_cast<std::uint32_t>(std::max(frame.pixel_width, 0));
+    const auto height = static_cast<std::uint32_t>(std::max(frame.pixel_height, 0));
+    if (!swapchain_->prepare(width, height)) {
         return; // minimized
     }
-
-    FrameSlot& slot = slots_[next_slot_];
-    gpu::check(vkWaitForFences(dev, 1, &slot.in_flight, VK_TRUE, kNoTimeout), "wait for a frame");
-    completed_ = std::max(completed_, slot.submission);
-    swapchain_.collect(completed_); // swapchains retired by resizes, once their presents are done
-
-    std::uint32_t image_index = 0;
-    VkResult acquired = vkAcquireNextImageKHR(dev, swapchain_.handle(), kNoTimeout, slot.image_acquired,
-                                              VK_NULL_HANDLE, &image_index);
-    if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
-        swapchain_.mark_stale();
-        if (!swapchain_.prepare(fallback, idle, submitted_)) {
-            return;
-        }
-        acquired = vkAcquireNextImageKHR(dev, swapchain_.handle(), kNoTimeout, slot.image_acquired,
-                                         VK_NULL_HANDLE, &image_index);
-        if (acquired == VK_ERROR_OUT_OF_DATE_KHR) {
-            // Still resizing: skip this frame (the semaphore wasn't signaled, the fence not reset).
-            swapchain_.mark_stale();
+    wgpu::TextureView view = swapchain_->acquire();
+    if (!view) {
+        // Out of date: reconfigured, then once more; still resizing if that fails too.
+        if (!swapchain_->prepare(width, height) || !(view = swapchain_->acquire())) {
             return;
         }
     }
-    if (acquired == VK_SUBOPTIMAL_KHR) {
-        swapchain_.mark_stale(); // still presentable; recreate next frame
-    } else {
-        gpu::check(acquired, "acquire a swapchain image");
-    }
 
-    // Only reset once we're sure to submit, or the next wait on this fence would never return.
-    gpu::check(vkResetFences(dev, 1, &slot.in_flight), "reset a fence");
-
-    const FramePlan plan = plan_frame(frame.list);
-    slot.instances.write(std::as_bytes(std::span(plan.instances)));
-    slot.stops.write(std::as_bytes(std::span(plan.stops)));
-    if (!plan.path_vertices.empty()) {
-        slot.path_vertices.write(std::as_bytes(std::span(plan.path_vertices)));
-    }
-    record(slot,
-           {swapchain_.image(image_index), swapchain_.view(image_index), swapchain_.format(), swapchain_.extent(),
-            false},
-           frame, plan, resources);
-
-    VkSemaphoreSubmitInfo wait{VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-    wait.semaphore = slot.image_acquired;
-    wait.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-    VkSemaphoreSubmitInfo signal{VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO};
-    signal.semaphore = swapchain_.render_finished(image_index);
-    signal.stageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-    VkCommandBufferSubmitInfo cmd_info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
-    cmd_info.commandBuffer = slot.cmd;
-
-    VkSubmitInfo2 submit{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
-    submit.waitSemaphoreInfoCount = 1;
-    submit.pWaitSemaphoreInfos = &wait;
-    submit.commandBufferInfoCount = 1;
-    submit.pCommandBufferInfos = &cmd_info;
-    submit.signalSemaphoreInfoCount = 1;
-    submit.pSignalSemaphoreInfos = &signal;
-    gpu::check(vkQueueSubmit2(device_.queue(), 1, &submit, slot.in_flight), "submit a frame");
-    slot.submission = ++submitted_;
-
-    const VkSwapchainKHR swapchain = swapchain_.handle();
-    const VkSemaphore render_finished = swapchain_.render_finished(image_index);
-    VkPresentInfoKHR present{VK_STRUCTURE_TYPE_PRESENT_INFO_KHR};
-    present.waitSemaphoreCount = 1;
-    present.pWaitSemaphores = &render_finished;
-    present.swapchainCount = 1;
-    present.pSwapchains = &swapchain;
-    present.pImageIndices = &image_index;
-    const VkResult presented = vkQueuePresentKHR(device_.queue(), &present);
-    if (presented == VK_ERROR_OUT_OF_DATE_KHR || presented == VK_SUBOPTIMAL_KHR) {
-        swapchain_.mark_stale();
-    } else {
-        gpu::check(presented, "present a frame");
-    }
-
-    next_slot_ = (next_slot_ + 1) % slots_.size();
+    std::vector<std::uint64_t> acquired_videos;
+    const wgpu::CommandBuffer commands = record({view, swapchain_->view_format(), swapchain_->width(),
+                                                 swapchain_->height()},
+                                                frame, resources, acquired_videos);
+    device_.submit(commands);
+    resources.videos.release(acquired_videos); // back to the decoder
+    swapchain_->present();
+    device_.tick();
 }
 
 void WindowTarget::render_composition([[maybe_unused]] const WindowFrame& frame,
                                       [[maybe_unused]] const RenderResources& resources) {
 #if defined(_WIN32)
-    const VkExtent2D extent{static_cast<std::uint32_t>(std::max(frame.pixel_width, 0)),
-                            static_cast<std::uint32_t>(std::max(frame.pixel_height, 0))};
-    const VkDevice dev = device_.handle();
-    FrameSlot& slot = slots_[next_slot_];
-    gpu::check(vkWaitForFences(dev, 1, &slot.in_flight, VK_TRUE, kNoTimeout), "wait for a frame");
-    if (!composition_->prepare(extent)) {
+    const auto width = static_cast<std::uint32_t>(std::max(frame.pixel_width, 0));
+    const auto height = static_cast<std::uint32_t>(std::max(frame.pixel_height, 0));
+    if (!composition_->prepare(width, height)) {
         return; // minimized
     }
     composition_->wait_until_ready(kReadyTimeoutMs); // paced to the display
     const Color clear = frame.list.clear_color;
     composition_->set_background({clear.r, clear.g, clear.b, 1});
-    gpu::check(vkResetFences(dev, 1, &slot.in_flight), "reset a fence");
 
-    const FramePlan plan = plan_frame(frame.list);
-    slot.instances.write(std::as_bytes(std::span(plan.instances)));
-    slot.stops.write(std::as_bytes(std::span(plan.stops)));
-    if (!plan.path_vertices.empty()) {
-        slot.path_vertices.write(std::as_bytes(std::span(plan.path_vertices)));
-    }
-    record(slot, {composition_->image(), composition_->view(), composition_->format(), composition_->extent(), true},
-           frame, plan, resources);
-
-    VkCommandBufferSubmitInfo cmd_info{VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
-    cmd_info.commandBuffer = slot.cmd;
-    VkSubmitInfo2 submit{VK_STRUCTURE_TYPE_SUBMIT_INFO_2};
-    submit.commandBufferInfoCount = 1;
-    submit.pCommandBufferInfos = &cmd_info;
-    gpu::check(vkQueueSubmit2(device_.queue(), 1, &submit, slot.in_flight), "submit a frame");
+    const wgpu::TextureView view = composition_->begin_access();
+    std::vector<std::uint64_t> acquired_videos;
+    const wgpu::CommandBuffer commands = record({view, composition_->view_format(), composition_->width(),
+                                                 composition_->height()},
+                                                frame, resources, acquired_videos);
+    device_.submit(commands);
+    resources.videos.release(acquired_videos);
+    composition_->end_access();
     // Direct3D copies the image next, so the rendering must be finished.
-    gpu::check(vkWaitForFences(dev, 1, &slot.in_flight, VK_TRUE, kNoTimeout), "wait for a frame");
+    device_.wait_idle();
     composition_->present();
-    next_slot_ = (next_slot_ + 1) % slots_.size();
+    device_.tick();
 #endif
 }
 
-const gpu::RenderImage* WindowTarget::cached_mask(std::uint64_t key) {
+const WindowTarget::CachedMask* WindowTarget::cached_mask(std::uint64_t key) {
     const auto it = masks_.find(key);
     if (it == masks_.end()) {
         return nullptr;
     }
     it->second.last_used = frame_number_;
-    return &it->second.mask;
+    return &it->second;
 }
 
-// Drops masks nobody drew lately. Only masks unused for more frames than can be in flight are
-// candidates (the GPU may still read the others); past the budget the least recently used go
-// first, otherwise masks unused for a few seconds' worth of frames.
+// Drops masks nobody drew lately: past the budget the least recently used go first, otherwise
+// masks unused for a few seconds' worth of frames. (WebGPU keeps a mask alive for frames still
+// on the GPU, so dropping one is always safe.)
 void WindowTarget::evict_masks() {
-    constexpr std::size_t kBudget = 32u << 20;     // bytes of R8 coverage
-    constexpr std::uint64_t kIdleFrames = 240;     // frames drawn without the mask
-    const std::uint64_t safe = frame_number_ > kFramesInFlight ? frame_number_ - kFramesInFlight : 0;
+    constexpr std::size_t kBudget = 32u << 20; // bytes of R8 coverage
+    constexpr std::uint64_t kIdleFrames = 240; // frames drawn without the mask
     for (auto it = masks_.begin(); it != masks_.end();) {
-        const bool stale = it->second.last_used + kIdleFrames < frame_number_;
-        if (stale && it->second.last_used < safe) {
+        if (it->second.last_used + kIdleFrames < frame_number_) {
             mask_bytes_ -= std::size_t{it->second.mask.width()} * it->second.mask.height();
             it = masks_.erase(it);
         } else {
@@ -363,68 +195,26 @@ void WindowTarget::evict_masks() {
     while (mask_bytes_ > kBudget) {
         auto oldest = masks_.end();
         for (auto it = masks_.begin(); it != masks_.end(); ++it) {
-            if (it->second.last_used < safe && (oldest == masks_.end() || it->second.last_used < oldest->second.last_used)) {
+            if (it->second.last_used < frame_number_ &&
+                (oldest == masks_.end() || it->second.last_used < oldest->second.last_used)) {
                 oldest = it;
             }
         }
         if (oldest == masks_.end()) {
-            break; // everything is in use by recent frames
+            break; // everything is in use by this frame
         }
         mask_bytes_ -= std::size_t{oldest->second.mask.width()} * oldest->second.mask.height();
         masks_.erase(oldest);
     }
 }
 
-VkDescriptorSet WindowTarget::allocate_set(FrameSlot& slot, VkDescriptorSetLayout layout) {
-    VkDescriptorSetAllocateInfo info{VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO};
-    info.descriptorSetCount = 1;
-    info.pSetLayouts = &layout;
-    VkDescriptorSet set = VK_NULL_HANDLE;
-    for (VkDescriptorPool pool : slot.descriptor_pools) {
-        info.descriptorPool = pool;
-        const VkResult result = vkAllocateDescriptorSets(device_.handle(), &info, &set);
-        if (result == VK_SUCCESS) {
-            return set;
-        }
-        if (result != VK_ERROR_OUT_OF_POOL_MEMORY && result != VK_ERROR_FRAGMENTED_POOL) {
-            gpu::throw_vk_error(result, "allocate a descriptor set");
-        }
-    }
-
-    // All pools are full: add one.
-    const VkDescriptorPoolSize sizes[] = {
-        {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 64},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 8},
-    };
-    VkDescriptorPoolCreateInfo pool_info{VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO};
-    pool_info.maxSets = 72;
-    pool_info.poolSizeCount = 2;
-    pool_info.pPoolSizes = sizes;
-    VkDescriptorPool pool = VK_NULL_HANDLE;
-    gpu::check(vkCreateDescriptorPool(device_.handle(), &pool_info, nullptr, &pool), "create a descriptor pool");
-    slot.descriptor_pools.push_back(pool);
-    info.descriptorPool = pool;
-    gpu::check(vkAllocateDescriptorSets(device_.handle(), &info, &set), "allocate a descriptor set");
-    return set;
-}
-
-VkDescriptorSet WindowTarget::image_set(FrameSlot& slot, VkDescriptorSetLayout layout, VkImageView view) {
-    const VkDescriptorSet set = allocate_set(slot, layout);
-    const VkDescriptorImageInfo image{sampler_, view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL};
-    VkWriteDescriptorSet write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    write.dstSet = set;
-    write.dstBinding = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    write.pImageInfo = &image;
-    vkUpdateDescriptorSets(device_.handle(), 1, &write, 0, nullptr);
-    return set;
+wgpu::BindGroup WindowTarget::image_group(const RenderResources& resources, const wgpu::TextureView& view) const {
+    return gpu::create_image_group(device_.handle(), resources.image_layout, view, sampler_);
 }
 
 gpu::RenderImage& WindowTarget::pooled_image(std::vector<gpu::RenderImage>& pool, std::size_t index,
-                                             VkFormat format, std::uint32_t width, std::uint32_t height,
-                                             VkSampleCountFlagBits samples, VkImageUsageFlags usage,
-                                             VkImageAspectFlags aspect) {
+                                             wgpu::TextureFormat format, std::uint32_t width, std::uint32_t height,
+                                             std::uint32_t samples, wgpu::TextureUsage usage) {
     // Sizes are rounded up so small changes (animations, resizes) reuse the same image.
     if (index < pool.size() && pool[index].width() >= width && pool[index].height() >= height) {
         return pool[index];
@@ -434,211 +224,276 @@ gpu::RenderImage& WindowTarget::pooled_image(std::vector<gpu::RenderImage>& pool
     if (index < pool.size()) {
         capacity_width = std::max(capacity_width, pool[index].width());
         capacity_height = std::max(capacity_height, pool[index].height());
-        pool[index] = gpu::RenderImage(device_, format, capacity_width, capacity_height, samples, usage, aspect);
+        pool[index] = gpu::RenderImage(device_.handle(), format, capacity_width, capacity_height, samples, usage);
         return pool[index];
     }
-    return pool.emplace_back(device_, format, capacity_width, capacity_height, samples, usage, aspect);
+    return pool.emplace_back(device_.handle(), format, capacity_width, capacity_height, samples, usage);
 }
 
-void WindowTarget::draw_pass(VkCommandBuffer cmd, const PlanPass& pass, VkFormat format, VkExtent2D extent,
-                             const FrameSlot& slot, VkDescriptorSet stops, const std::vector<LayerSets>& layers,
-                             const std::vector<VkDescriptorSet>& paths, const std::vector<VkDescriptorSet>& images,
-                             const std::vector<VkDescriptorSet>& videos, const RenderResources& resources) {
-    resources.quads.begin(cmd, format, extent, slot.instances.handle(), resources.atlas, stops);
-    for (const PlanSegment& segment : pass.segments) {
-        if (segment.video >= 0) {
-            const VkDescriptorSet set = videos[static_cast<std::size_t>(segment.video)];
-            if (set) { // no frame yet: nothing drawn
-                resources.quads.bind_image(cmd, set);
-                resources.quads.draw(cmd, segment.first, segment.count);
-                resources.quads.bind_image(cmd, resources.atlas);
-            }
-            continue;
+const wgpu::BindGroup& WindowTarget::empty_group(const RenderResources& resources) {
+    if (!empty_group_) {
+        empty_ = gpu::RenderImage(device_.handle(), kLayerFormat, 1, 1); // zeroed: transparent
+        empty_group_ = image_group(resources, empty_->view());
+    }
+    return empty_group_;
+}
+
+wgpu::BindGroup WindowTarget::blur_color(const wgpu::CommandEncoder& encoder, const wgpu::BindGroup& source,
+                                         std::uint32_t width, std::uint32_t height, float sigma, std::uint32_t factor,
+                                         bool clamp_edges, std::size_t slot, const RenderResources& resources) {
+    wgpu::BindGroup input = source;
+    if (factor > 1) {
+        width = (width + factor - 1) / factor;
+        height = (height + factor - 1) / factor;
+        const gpu::RenderImage& down = pooled_image(color_down_, slot, kLayerFormat, width, height);
+        render_offscreen(encoder, down, "downsample", [&](const wgpu::RenderPassEncoder& pass) {
+            resources.blur.downsample(pass, source, width * factor, height * factor, factor, clamp_edges);
+        });
+        input = image_group(resources, down.view());
+        sigma /= static_cast<float>(factor);
+    }
+    const gpu::RenderImage& horizontal = pooled_image(color_horizontal_, slot, kLayerFormat, width, height);
+    render_offscreen(encoder, horizontal, "blur", [&](const wgpu::RenderPassEncoder& pass) {
+        resources.blur.blur(pass, input, width, height, true, sigma, gpu::BlurRenderer::Channel::color, clamp_edges);
+    });
+    const wgpu::BindGroup horizontal_group = image_group(resources, horizontal.view());
+    const gpu::RenderImage& vertical = pooled_image(color_vertical_, slot, kLayerFormat, width, height);
+    render_offscreen(encoder, vertical, "blur", [&](const wgpu::RenderPassEncoder& pass) {
+        resources.blur.blur(pass, horizontal_group, width, height, false, sigma, gpu::BlurRenderer::Channel::color,
+                            clamp_edges);
+    });
+    return image_group(resources, vertical.view());
+}
+
+wgpu::BindGroup WindowTarget::take_backdrop(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture,
+                                            const PlanBackdrop& backdrop, std::size_t slot,
+                                            const RenderResources& resources) {
+    // One set of images serves every backdrop: each is read by the pass right after it, before
+    // the next is taken (WebGPU keeps the order).
+    const gpu::RenderImage& copy =
+        pooled_image(backdrop_copies_, 0, kLayerFormat, backdrop.width, backdrop.height, 1,
+                     wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst);
+    wgpu::TexelCopyTextureInfo source;
+    source.texture = texture;
+    source.origin = {backdrop.x, backdrop.y, 0};
+    wgpu::TexelCopyTextureInfo destination;
+    destination.texture = copy.texture();
+    const wgpu::Extent3D size{backdrop.width, backdrop.height, 1};
+    encoder.CopyTextureToTexture(&source, &destination, &size);
+    const wgpu::BindGroup group = image_group(resources, copy.view());
+    if (backdrop.sigma <= 0) {
+        return group;
+    }
+    return blur_color(encoder, group, backdrop.width, backdrop.height, backdrop.sigma, backdrop.downsample, true,
+                      slot, resources);
+}
+
+void WindowTarget::draw_pass(const wgpu::CommandEncoder& encoder, const PassTarget& target, const PlanPass& plan_pass,
+                             const FramePlan& plan, const FrameGroups& groups, const RenderResources& resources) {
+    gpu::QuadRenderer& quads = resources.quads;
+    wgpu::BindGroup second = empty_group(resources);
+    wgpu::RenderPassEncoder pass;
+    const auto begin = [&](bool clear) {
+        pass = begin_pass(encoder, target.view, clear ? std::optional(target.clear) : std::nullopt, "pass");
+        quads.begin(pass, target.format, target.width, target.height, instances_.handle(), resources.atlas,
+                    groups.stops, second);
+    };
+    begin(true);
+    for (const PlanSegment& segment : plan_pass.segments) {
+        if (segment.backdrop >= 0 && target.texture) {
+            // What's been drawn so far, copied out between two passes.
+            pass.End();
+            // Its blur uses the pooled images after the blurred layers' (which live until composited).
+            second = take_backdrop(encoder, target.texture, plan.backdrops[static_cast<std::size_t>(segment.backdrop)],
+                                   plan.layers.size(), resources);
+            begin(false);
         }
-        if (segment.image >= 0) {
-            resources.quads.bind_image(cmd, images[static_cast<std::size_t>(segment.image)]);
-            resources.quads.draw(cmd, segment.first, segment.count);
-            resources.quads.bind_image(cmd, resources.atlas);
-            continue;
+
+        wgpu::BindGroup image;
+        if (segment.video >= 0) {
+            image = groups.videos[static_cast<std::size_t>(segment.video)];
+            if (!image) {
+                continue; // no frame yet: nothing drawn
+            }
+        } else if (segment.image >= 0) {
+            image = groups.images[static_cast<std::size_t>(segment.image)];
+        } else if (segment.path >= 0) {
+            image = groups.paths[static_cast<std::size_t>(segment.path)];
+        } else if (segment.layer >= 0) {
+            const LayerGroups& layer = groups.layers[static_cast<std::size_t>(segment.layer)];
+            switch (segment.layer_image) {
+            case LayerImage::content: image = layer.content; break;
+            case LayerImage::shadow: image = layer.shadow; break;
+            case LayerImage::inner_shadow:
+                image = layer.inner_shadow;
+                quads.bind_second_image(pass, layer.raw);
+                break;
+            }
+            if (!image) {
+                continue;
+            }
+        }
+
+        if (segment.mask) {
+            // Masks what the pass has drawn so far (a layer clipped to a path, or View::mask).
+            quads.set_masking(pass, target.format, true);
+        }
+        if (image) {
+            quads.bind_image(pass, image);
+        }
+        quads.draw(pass, segment.first, segment.count);
+        if (image) {
+            quads.bind_image(pass, resources.atlas);
         }
         if (segment.mask) {
-            // Masks what the pass has drawn so far (a layer clipped to a path).
-            resources.quads.set_masking(cmd, format, true);
-            if (segment.path >= 0) {
-                resources.quads.bind_image(cmd, paths[static_cast<std::size_t>(segment.path)]);
-            }
-            resources.quads.draw(cmd, segment.first, segment.count);
-            resources.quads.bind_image(cmd, resources.atlas);
-            resources.quads.set_masking(cmd, format, false);
-            continue;
+            quads.set_masking(pass, target.format, false);
         }
-        if (segment.path >= 0) {
-            resources.quads.bind_image(cmd, paths[static_cast<std::size_t>(segment.path)]);
-            resources.quads.draw(cmd, segment.first, segment.count);
-            resources.quads.bind_image(cmd, resources.atlas);
-            continue;
+        if (segment.layer_image == LayerImage::inner_shadow) {
+            quads.bind_second_image(pass, second);
         }
-        if (segment.layer < 0) {
-            resources.quads.draw(cmd, segment.first, segment.count);
-            continue;
-        }
-        const LayerSets& sets = layers[static_cast<std::size_t>(segment.layer)];
-        const VkDescriptorSet image = segment.shadow ? sets.shadow : sets.content;
-        if (!image) {
-            continue;
-        }
-        resources.quads.bind_image(cmd, image);
-        resources.quads.draw(cmd, segment.first, segment.count);
-        resources.quads.bind_image(cmd, resources.atlas);
     }
+    pass.End();
 }
 
-void WindowTarget::record(FrameSlot& slot, const DrawTarget& target, const WindowFrame& frame,
-                          const FramePlan& plan, const RenderResources& resources) {
-    const VkDevice dev = device_.handle();
-    gpu::check(vkResetCommandPool(dev, slot.pool, 0), "reset a command pool");
-    for (VkDescriptorPool pool : slot.descriptor_pools) {
-        gpu::check(vkResetDescriptorPool(dev, pool, 0), "reset a descriptor pool");
+wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowFrame& frame,
+                                         const RenderResources& resources,
+                                         std::vector<std::uint64_t>& acquired_videos) {
+    const FramePlan plan = plan_frame(frame.list, target.width, target.height);
+    instances_.write(std::as_bytes(std::span(plan.instances)));
+    stops_.write(std::as_bytes(std::span(plan.stops)));
+    if (!plan.path_vertices.empty()) {
+        path_vertices_.write(std::as_bytes(std::span(plan.path_vertices)));
     }
 
-    VkCommandBufferBeginInfo begin{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
-    begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-    gpu::check(vkBeginCommandBuffer(slot.cmd, &begin), "begin a command buffer");
-    const VkCommandBuffer cmd = slot.cmd;
-
-    // Gradient stops for every pass.
-    const VkDescriptorSet stops = allocate_set(slot, resources.quads.stops_layout());
-    const VkDescriptorBufferInfo stops_buffer{slot.stops.handle(), 0, VK_WHOLE_SIZE};
-    VkWriteDescriptorSet stops_write{VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET};
-    stops_write.dstSet = stops;
-    stops_write.dstBinding = 0;
-    stops_write.descriptorCount = 1;
-    stops_write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    stops_write.pBufferInfo = &stops_buffer;
-    vkUpdateDescriptorSets(dev, 1, &stops_write, 0, nullptr);
+    const wgpu::CommandEncoder encoder = device_.handle().CreateCommandEncoder();
+    FrameGroups groups;
+    // Gradient stops and color matrices for every pass.
+    groups.stops = resources.quads.stops_group(stops_.handle());
 
     // Path coverage masks first: any pass may fill through them. Masks with the same content as
     // in an earlier frame are reused; new ones render into the cache.
     ++frame_number_;
-    std::vector<VkDescriptorSet> path_sets(plan.paths.size());
+    groups.paths.resize(plan.paths.size());
     std::size_t rendered = 0;
     for (std::size_t i = 0; i < plan.paths.size(); ++i) {
         const PlanPath& path = plan.paths[i];
-        const gpu::RenderImage* mask = cached_mask(path.key);
+        const CachedMask* mask = cached_mask(path.key);
         if (!mask) {
             gpu::PathRenderer& paths = resources.paths;
-            const gpu::RenderImage& samples = pooled_image(
-                slot.path_samples, rendered, gpu::PathRenderer::kMaskFormat, path.width, path.height, paths.samples(),
-                VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT);
+            const gpu::RenderImage& samples =
+                pooled_image(path_samples_, rendered, gpu::PathRenderer::kMaskFormat, path.width, path.height,
+                             gpu::PathRenderer::kSamples);
             const gpu::RenderImage& stencil =
-                pooled_image(slot.path_stencils, rendered, paths.stencil_format(), path.width, path.height,
-                             paths.samples(),
-                             VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT,
-                             paths.stencil_aspect());
+                pooled_image(path_stencils_, rendered, gpu::PathRenderer::kStencilFormat, path.width, path.height,
+                             gpu::PathRenderer::kSamples, wgpu::TextureUsage::RenderAttachment);
             ++rendered;
-            CachedMask& cached = masks_.insert_or_assign(path.key, CachedMask{gpu::RenderImage(device_, gpu::PathRenderer::kMaskFormat,
-                                                                                               path.width, path.height),
-                                                                              frame_number_})
-                                     .first->second;
-            mask_bytes_ += std::size_t{path.width} * path.height;
-            paths.render(cmd, samples, stencil, cached.mask, {path.width, path.height}, slot.path_vertices.handle(),
+            gpu::RenderImage image(device_.handle(), gpu::PathRenderer::kMaskFormat, path.width, path.height);
+            paths.render(encoder, samples, stencil, image, path.width, path.height, path_vertices_.handle(),
                          path.first_vertex, path.vertex_count, path.even_odd);
-            mask = &cached.mask;
+            wgpu::BindGroup group = image_group(resources, image.view());
+            mask = &masks_.insert_or_assign(path.key, CachedMask{std::move(image), std::move(group), frame_number_})
+                        .first->second;
+            mask_bytes_ += std::size_t{path.width} * path.height;
         }
-        path_sets[i] = image_set(slot, resources.image_layout, mask->view());
+        groups.paths[i] = mask->group;
     }
     evict_masks();
 
     // Images: uploaded (with their mips) the first time a frame draws them.
-    slot.uploads.clear(); // this slot's previous frame has finished (its fence was waited)
-    std::vector<VkDescriptorSet> image_sets;
-    image_sets.reserve(plan.images.size());
+    groups.images.reserve(plan.images.size());
     for (const auto& image : plan.images) {
-        image_sets.push_back(resources.textures.acquire(cmd, *image, slot.uploads));
+        groups.images.push_back(resources.textures.acquire(encoder, *image));
     }
     resources.textures.end_frame();
 
     // Videos: the newest decoded frame of each, sampled where the decoder wrote it.
-    std::vector<VkDescriptorSet> video_sets;
-    std::vector<VkImage> acquired_videos;
     for (const auto& source : plan.videos) {
         source->update();
         const std::optional<VideoFrame> video_frame = source->current();
-        video_sets.push_back(video_frame ? resources.videos.acquire(cmd, *video_frame, acquired_videos) : VK_NULL_HANDLE);
+        groups.videos.push_back(video_frame ? resources.videos.acquire(encoder, *video_frame, acquired_videos)
+                                            : wgpu::BindGroup());
     }
     resources.videos.end_frame();
 
-    // Offscreen layers first, innermost first; each may also get a two-pass blurred shadow.
-    std::vector<LayerSets> layer_sets(plan.layers.size());
+    // Offscreen layers first, innermost first; each may also be blurred, and get a two-pass
+    // blurred shadow and inner shadow.
+    groups.layers.resize(plan.layers.size());
     std::size_t shadows = 0;
+    std::size_t inner_shadows = 0;
     for (std::size_t i = 0; i < plan.layers.size(); ++i) {
         const PlanPass& layer = plan.layers[i];
-        const VkExtent2D extent{layer.width, layer.height};
+        LayerGroups& layer_groups = groups.layers[i];
 
-        const gpu::RenderImage& content = pooled_image(slot.layers, i, kLayerFormat, layer.width, layer.height);
-        render_offscreen(cmd, content, extent, [&] {
-            draw_pass(cmd, layer, kLayerFormat, extent, slot, stops, layer_sets, path_sets, image_sets, video_sets, resources);
-        });
-        layer_sets[i].content = image_set(slot, resources.image_layout, content.view());
+        const gpu::RenderImage& content =
+            pooled_image(layers_, i, kLayerFormat, layer.width, layer.height, 1, kLayerUsage);
+        draw_pass(encoder, {content.texture(), content.view(), kLayerFormat, layer.width, layer.height, {0, 0, 0, 0}},
+                  layer, plan, groups, resources);
+        layer_groups.raw = image_group(resources, content.view());
+        layer_groups.content = layer_groups.raw;
 
         if (layer.shadow_sigma) {
             const float sigma = *layer.shadow_sigma;
             const gpu::RenderImage& horizontal =
-                pooled_image(slot.blur_horizontal, shadows, gpu::BlurRenderer::kFormat, layer.width, layer.height);
-            render_offscreen(cmd, horizontal, extent, [&] {
-                resources.blur.blur(cmd, layer_sets[i].content, layer.width, layer.height, true, sigma,
+                pooled_image(blur_horizontal_, shadows, gpu::BlurRenderer::kFormat, layer.width, layer.height);
+            render_offscreen(encoder, horizontal, "layer shadow", [&](const wgpu::RenderPassEncoder& pass) {
+                resources.blur.blur(pass, layer_groups.raw, layer.width, layer.height, true, sigma,
                                     gpu::BlurRenderer::Channel::alpha);
             });
-            const VkDescriptorSet horizontal_set = image_set(slot, resources.image_layout, horizontal.view());
+            const wgpu::BindGroup horizontal_group = image_group(resources, horizontal.view());
 
             const gpu::RenderImage& vertical =
-                pooled_image(slot.blur_vertical, shadows, gpu::BlurRenderer::kFormat, layer.width, layer.height);
-            render_offscreen(cmd, vertical, extent, [&] {
-                resources.blur.blur(cmd, horizontal_set, layer.width, layer.height, false, sigma,
+                pooled_image(blur_vertical_, shadows, gpu::BlurRenderer::kFormat, layer.width, layer.height);
+            render_offscreen(encoder, vertical, "layer shadow", [&](const wgpu::RenderPassEncoder& pass) {
+                resources.blur.blur(pass, horizontal_group, layer.width, layer.height, false, sigma,
                                     gpu::BlurRenderer::Channel::red);
             });
-            layer_sets[i].shadow = image_set(slot, resources.image_layout, vertical.view());
+            layer_groups.shadow = image_group(resources, vertical.view());
             ++shadows;
+        }
+        if (layer.inner_shadow_sigma) {
+            // The blurred inverse of the alpha: full outside the content, fading in from its edges.
+            const float sigma = *layer.inner_shadow_sigma;
+            const gpu::RenderImage& horizontal =
+                pooled_image(inner_horizontal_, inner_shadows, gpu::BlurRenderer::kFormat, layer.width, layer.height);
+            render_offscreen(encoder, horizontal, "inner shadow", [&](const wgpu::RenderPassEncoder& pass) {
+                resources.blur.blur(pass, layer_groups.raw, layer.width, layer.height, true, sigma,
+                                    gpu::BlurRenderer::Channel::inverse_alpha);
+            });
+            const wgpu::BindGroup horizontal_group = image_group(resources, horizontal.view());
+            const gpu::RenderImage& vertical =
+                pooled_image(inner_vertical_, inner_shadows, gpu::BlurRenderer::kFormat, layer.width, layer.height);
+            render_offscreen(encoder, vertical, "inner shadow", [&](const wgpu::RenderPassEncoder& pass) {
+                resources.blur.blur(pass, horizontal_group, layer.width, layer.height, false, sigma,
+                                    gpu::BlurRenderer::Channel::red, true);
+            });
+            layer_groups.inner_shadow = image_group(resources, vertical.view());
+            ++inner_shadows;
+        }
+        if (layer.blur_sigma) {
+            layer_groups.content = blur_color(encoder, layer_groups.raw, layer.width, layer.height, *layer.blur_sigma,
+                                              layer.blur_downsample, layer.blur_clamp, i, resources);
         }
     }
 
-    // The window itself.
-    const VkImage image = target.image;
-    // The acquire semaphore is waited at COLOR_ATTACHMENT_OUTPUT, so the layout transition
-    // starts at that stage too. The previous contents are discarded (UNDEFINED).
-    barrier(cmd, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+    // The window itself. Its previous contents are discarded (cleared). When it reads backdrops
+    // it draws offscreen (a surface image can't be copied from), then onto the window.
     const auto clear = to_linear_premultiplied(frame.list.clear_color);
-    begin_rendering(cmd, target.view, target.extent, VkClearColorValue{{clear[0], clear[1], clear[2], clear[3]}});
-    draw_pass(cmd, plan.main, target.format, target.extent, slot, stops, layer_sets, path_sets, image_sets, video_sets, resources);
-    vkCmdEndRendering(cmd);
-    if (target.shared) {
-        // Hand the image to Direct3D: GENERAL layout, released to the external queue family
-        // (which also resolves any compression the driver applied).
-        VkImageMemoryBarrier2 release{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
-        release.srcStageMask = VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT;
-        release.srcAccessMask = VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT;
-        release.dstStageMask = VK_PIPELINE_STAGE_2_NONE;
-        release.dstAccessMask = VK_ACCESS_2_NONE;
-        release.oldLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        release.newLayout = VK_IMAGE_LAYOUT_GENERAL;
-        release.srcQueueFamilyIndex = device_.queue_family();
-        release.dstQueueFamilyIndex = VK_QUEUE_FAMILY_EXTERNAL;
-        release.image = image;
-        release.subresourceRange = kColorRange;
-        VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
-        dependency.imageMemoryBarrierCount = 1;
-        dependency.pImageMemoryBarriers = &release;
-        vkCmdPipelineBarrier2(cmd, &dependency);
+    const wgpu::Color clear_color{clear[0], clear[1], clear[2], clear[3]};
+    if (plan.blit_instance) {
+        const gpu::RenderImage& image =
+            pooled_image(frame_images_, 0, kLayerFormat, target.width, target.height, 1, kLayerUsage);
+        draw_pass(encoder, {image.texture(), image.view(), kLayerFormat, target.width, target.height, clear_color},
+                  plan.main, plan, groups, resources);
+        const wgpu::RenderPassEncoder pass = begin_pass(encoder, target.view, clear_color, "window");
+        resources.quads.begin(pass, target.format, target.width, target.height, instances_.handle(),
+                              image_group(resources, image.view()), groups.stops, empty_group(resources));
+        resources.quads.draw(pass, *plan.blit_instance, 1);
+        pass.End();
     } else {
-        barrier(cmd, image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-                VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-                VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE);
+        draw_pass(encoder, {nullptr, target.view, target.format, target.width, target.height, clear_color}, plan.main,
+                  plan, groups, resources);
     }
-
-    resources.videos.release(cmd, acquired_videos); // back to the decoder
-    gpu::check(vkEndCommandBuffer(cmd), "end a command buffer");
+    return encoder.Finish();
 }
 
 } // namespace elg::detail

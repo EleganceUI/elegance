@@ -6,7 +6,7 @@ description: "What Elegence is, what it's for, and how it compares to other ways
 import { Aside, LinkCard, CardGrid } from '@astrojs/starlight/components';
 
 Elegence is a C++23 framework for building desktop app interfaces. You describe the UI as a tree
-of views, style them with chained modifiers, and connect them to reactive state. A Vulkan renderer
+of views, style them with chained modifiers, and connect them to reactive state. A WebGPU renderer
 draws the result.
 
 ```cpp
@@ -64,7 +64,7 @@ Text([=] { return on() ? "You'll be notified" : "Muted"; });
 
 <Aside type="note">
 Elegence is young. It's developed and tested on **Windows 10 and 11** (x64, MSVC). The renderer
-(SDL3 and Vulkan) is cross-platform, and Linux and macOS (through MoltenVK) are planned. Some
+(SDL3 and WebGPU, through Dawn) is cross-platform, and Linux (Vulkan) and macOS (Metal) are planned. Some
 backends, such as video, camera capture, file dialogs and notifications, are Windows-only for now.
 </Aside>
 

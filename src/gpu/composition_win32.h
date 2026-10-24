@@ -8,21 +8,22 @@
 #if defined(_WIN32)
 
 #include "gpu/device.h"
-#include "gpu/vk.h"
+#include "gpu/webgpu.h"
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <optional>
 
 namespace elg::detail::gpu {
 
 // How windows present on Windows (design.md §4.1): through DirectComposition. We render into a
-// D3D11 texture shared with Vulkan, then copy it into a composition swapchain.
+// D3D11 texture shared with WebGPU, then copy it into a composition swapchain.
 // - Transparent windows: the swapchain has premultiplied alpha, which DWM blends with the
-//   desktop (Vulkan swapchains on Windows are opaque only).
+//   desktop (WebGPU surfaces on Windows are opaque only).
 // - Every window: a composition swapchain is shown at its own pixel size, never stretched. While
 //   a window is resized faster than frames arrive, the newest frame stays put at the top-left and
-//   a background layer in the window's color fills the rest; a Vulkan swapchain's image would be
+//   a background layer in the window's color fills the rest; a surface's image would be
 //   stretched to the new size instead.
 class CompositionTarget {
 public:
@@ -33,22 +34,23 @@ public:
     CompositionTarget(const CompositionTarget&) = delete;
     CompositionTarget& operator=(const CompositionTarget&) = delete;
 
-    // (Re)creates the images for `extent`. False when there's no area (minimized).
-    bool prepare(VkExtent2D extent);
+    // (Re)creates the images for `width` x `height`. False when there's no area (minimized).
+    bool prepare(std::uint32_t width, std::uint32_t height);
 
-    // Render into this (sRGB view, premultiplied alpha), then release it to the external queue
-    // family in GENERAL layout.
-    VkImage image() const noexcept;
-    VkImageView view() const noexcept;
-    VkFormat format() const noexcept { return VK_FORMAT_B8G8R8A8_SRGB; }
-    VkExtent2D extent() const noexcept { return extent_; }
+    // Begins WebGPU's access to the shared image and returns the view to render into (sRGB,
+    // premultiplied alpha). end_access() once the frame's rendering is submitted.
+    wgpu::TextureView begin_access();
+    void end_access() noexcept;
+    wgpu::TextureFormat view_format() const noexcept { return wgpu::TextureFormat::BGRA8UnormSrgb; }
+    std::uint32_t width() const noexcept { return width_; }
+    std::uint32_t height() const noexcept { return height_; }
 
     // Waits (up to `timeout_ms`) until the compositor is ready for another frame: paces frames
     // to the display without queueing them.
     void wait_until_ready(unsigned timeout_ms);
     // The color shown where no frame covers the window yet (opaque windows; sRGB).
     void set_background(const std::array<float, 4>& srgb);
-    // Call once the rendering into image() has finished (its fence waited): shows it.
+    // Call once the rendering into the image has finished (Device::wait_idle()): shows it.
     void present();
 
     // Whether the device can do the interop at all.
@@ -60,13 +62,14 @@ private:
 
     const Device& device_;
     std::unique_ptr<Impl> impl_;
-    VkExtent2D extent_{};
+    std::uint32_t width_ = 0;
+    std::uint32_t height_ = 0;
     bool transparent_;
     std::optional<std::array<float, 4>> background_;
 };
 
 // Whether windows may present through DirectComposition in this process. Not when
-// ELG_PRESENT=swapchain asks for Vulkan swapchains, nor under RenderDoc: it supports neither
+// ELG_PRESENT=swapchain asks for WebGPU surfaces, nor under RenderDoc: it supports neither
 // DirectComposition nor sharing images with Direct3D, and the system's composition code crashes
 // on its wrapped D3D11 device. Decided on the first call, before any Direct3D object exists, and
 // logged.

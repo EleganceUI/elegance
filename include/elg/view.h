@@ -8,6 +8,7 @@
 #include <elg/color.h>
 #include <elg/export.h>
 #include <elg/geometry.h>
+#include <elg/gradient.h>
 
 #include <concepts>
 #include <filesystem>
@@ -198,11 +199,44 @@ constexpr bool contains(Edges set, Edges edge) noexcept {
 }
 
 // A drop shadow (design.md §9.4): `radius` is the blur radius in points, (x, y) the offset.
+// `spread` grows (or, negative, shrinks) the shape before blurring; it applies to single shapes
+// (rects, rounded rects, capsules, circles), as in Figma, and is ignored for other content.
+// Stack shadows by chaining: .shadow({.radius = 2, .y = 1}).shadow({.radius = 24, .y = 12}).
 struct Shadow {
     Color color = Color::black.opacity(0.33f);
     float radius = 8;
     float x = 0;
     float y = 0;
+    float spread = 0;
+};
+
+// How a view's pixels combine with what's behind them (design.md §9.4): the W3C compositing
+// modes, as in CSS mix-blend-mode, Figma, and SwiftUI. Blending reads the window behind the view
+// (or, inside an offscreen group, what the group drew behind it).
+enum class BlendMode {
+    normal,
+    // Darken
+    multiply,
+    darken,
+    color_burn,
+    plus_darker,
+    // Lighten
+    screen,
+    lighten,
+    color_dodge,
+    plus_lighter,
+    // Contrast
+    overlay,
+    soft_light,
+    hard_light,
+    // Inversion
+    difference,
+    exclusion,
+    // Component
+    hue,
+    saturation,
+    color,
+    luminosity,
 };
 
 // An optional length in points, for option structs. Unlike std::optional<float>, it takes any
@@ -344,6 +378,48 @@ public:
     ELG_API View opacity(Prop<float> opacity) const;
     // A blurred shadow of the view's content.
     ELG_API View shadow(Shadow shadow = {}) const;
+    // A shadow cast inside the view's content, from its edges inward (pressed-in, embossed).
+    ELG_API View inner_shadow(Shadow shadow = {.color = Color::black.opacity(0.25f), .radius = 6, .y = 2}) const;
+    // Gaussian blur of the content; `radius` in points. Reactive and animatable.
+    // `opaque`: the content fills its bounds; edges stay sharp instead of fading out.
+    ELG_API View blur(Prop<float> radius, bool opaque = false) const;
+    // Color adjustments (SwiftUI's, and CSS's filter functions). Each is reactive and animatable.
+    // Adds to each channel: -1 black ... 0 unchanged ... 1 white.
+    ELG_API View brightness(Prop<float> amount) const;
+    // 0 flat gray, 1 unchanged, above 1 more contrast.
+    ELG_API View contrast(Prop<float> amount) const;
+    // 0 gray, 1 unchanged, above 1 more vivid.
+    ELG_API View saturation(Prop<float> amount) const;
+    // 0 unchanged ... 1 fully gray.
+    ELG_API View grayscale(Prop<float> amount) const;
+    // Rotates hues around the color wheel by `degrees`.
+    ELG_API View hue_rotation(Prop<float> degrees) const;
+    // 0 unchanged ... 1 fully sepia-toned.
+    ELG_API View sepia(Prop<float> amount) const;
+    // Inverts the colors, or partly (0...1).
+    ELG_API View color_invert() const;
+    ELG_API View color_invert(Prop<float> amount) const;
+    // Multiplies every pixel by `color` (alpha too): tints white content, darkens the rest.
+    ELG_API View color_multiply(Prop<Color> color) const;
+    // Brightness becomes opacity: white stays, black disappears (for masks).
+    ELG_API View luminance_to_alpha() const;
+    // Blends the view with what's behind it.
+    ELG_API View blend_mode(BlendMode mode) const;
+    // Draws the content offscreen first, then composites it as one image: blend modes inside it
+    // blend with each other only, and a material inside sees only what the group drew.
+    ELG_API View compositing_group() const;
+    // Rotates the drawn content by `degrees` (clockwise) about `anchor`, without affecting layout
+    // or hit testing. Reactive and animatable.
+    ELG_API View rotation_effect(Prop<float> degrees, UnitPoint anchor = UnitPoint::center) const;
+    // Scales the drawn content about `anchor`, without affecting layout or hit testing. A uniform
+    // scale stays sharp (vector); an uneven one renders offscreen first. Reactive and animatable.
+    ELG_API View scale_effect(Prop<float> scale, UnitPoint anchor = UnitPoint::center) const;
+    ELG_API View scale_effect(Prop<float> x, Prop<float> y, UnitPoint anchor = UnitPoint::center) const;
+    // Shows the content only where `mask` (sized and aligned like an overlay) is opaque; its
+    // colors don't matter, only its alpha. A gradient fades the content out:
+    //   list.mask(LinearGradient({Color::black, Color::clear}, UnitPoint::center, UnitPoint::bottom))
+    ELG_API View mask(View mask, Alignment alignment = Alignment::center) const;
+    ELG_API View mask(Prop<ShapeStyle> style) const;
     // Hit tests against this shape (filling the bounds) instead of the drawn content, e.g.
     // content_shape(Rectangle()) makes the gaps in a stack tappable.
     ELG_API View content_shape(const Shape& shape) const;

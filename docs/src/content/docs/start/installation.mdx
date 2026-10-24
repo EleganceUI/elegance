@@ -15,9 +15,9 @@ configure.
 - **Visual Studio 2022 or later** with the C++ workload (MSVC with C++23 support).
 - **CMake 4.3** or later, and **Ninja** (both come with Visual Studio and CLion).
 - **vcpkg**, with the `VCPKG_ROOT` environment variable pointing at it.
-- A GPU and driver with **Vulkan 1.3**.
-- The **Vulkan SDK**: the build compiles the shaders with its `glslc` (found through the
-  `VULKAN_SDK` environment variable the installer sets).
+- A GPU with **Direct3D 12** (or Direct3D 11 or Vulkan) drivers. Elegence draws with WebGPU,
+  through Google's Dawn, which vcpkg builds from source the first time: allow about half an hour
+  and 20 GB of free disk space for that build.
 
 ## Build the repository
 
@@ -109,10 +109,8 @@ dependencies in its own `vcpkg.json`:
     "miniaudio",
     { "name": "msdfgen", "default-features": false },
     { "name": "stb", "platform": "!windows" },
-    { "name": "sdl3", "features": ["vulkan"] },
-    "volk",
-    "vulkan-headers",
-    "vulkan-memory-allocator"
+    "sdl3",
+    "dawn"
   ]
 }
 ```

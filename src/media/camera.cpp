@@ -4,8 +4,8 @@
 
 // Cameras (design.md §13.3). Windows: Media Foundation's source reader (or DirectShow, for
 // cameras only it sees) on a capture thread. Frames stay in the camera's format (NV12, YUY2,
-// I420 or BGRA) and go to the renderer as VideoFrame::Kind::cpu, which converts them on the GPU
-// in a Vulkan pass, the same on every platform.
+// I420 or BGRA) and go to the renderer as VideoFrame::Kind::cpu, which converts them on the GPU,
+// the same on every platform.
 
 #include <elg/capture.h>
 

@@ -7,6 +7,7 @@
 #include "core/crash.h"
 #include "core/log.h"
 #include "gpu/device.h"
+#include "gpu/instance.h"
 #include "gpu/atlas_texture.h"
 #include "gpu/blur_renderer.h"
 #include "gpu/quad_renderer.h"
@@ -16,7 +17,6 @@
 
 #include <format>
 #include <algorithm>
-#include <cstring>
 #include <array>
 #include <memory>
 #include <new>
@@ -33,12 +33,11 @@ struct Overloaded : Fs... {
 
 } // namespace
 
-RenderThread::RenderThread(const gpu::Instance& instance, VkSurfaceKHR compatibility_surface,
-                           FrameMailbox& mailbox, MoveOnlyFunction<void()> on_error)
-    : instance_(instance), mailbox_(mailbox), on_error_(std::move(on_error)) {
+RenderThread::RenderThread(FrameMailbox& mailbox, MoveOnlyFunction<void()> on_error)
+    : mailbox_(mailbox), on_error_(std::move(on_error)) {
     std::promise<void> ready;
     std::future<void> initialized = ready.get_future();
-    thread_ = std::thread(&RenderThread::run, this, compatibility_surface, std::move(ready));
+    thread_ = std::thread(&RenderThread::run, this, std::move(ready));
     try {
         initialized.get();
     } catch (...) {
@@ -59,7 +58,7 @@ std::exception_ptr RenderThread::error() const {
     return error_;
 }
 
-void RenderThread::run(VkSurfaceKHR compatibility_surface, std::promise<void> ready) noexcept {
+void RenderThread::run(std::promise<void> ready) noexcept {
     bool started = false;
     const auto fail = [&](std::exception_ptr error) {
         if (!started) {
@@ -75,26 +74,20 @@ void RenderThread::run(VkSurfaceKHR compatibility_surface, std::promise<void> re
 
     try {
         // Declaration order is destruction order in reverse: windows, then pipelines and the
-        // atlas, then the device.
-        gpu::Device device(instance_, compatibility_surface);
-        gpu::AtlasTexture atlas(device);
-        gpu::QuadRenderer quads(device, atlas.set_layout());
-        gpu::BlurRenderer blur(device, atlas.set_layout());
+        // atlas, then the device and the instance.
+        const gpu::Instance instance;
+        const gpu::Device device(instance);
+        const wgpu::BindGroupLayout image_layout = gpu::create_image_layout(device.handle());
+        gpu::AtlasTexture atlas(device, image_layout);
+        gpu::QuadRenderer quads(device, image_layout);
+        gpu::BlurRenderer blur(device, image_layout);
         gpu::PathRenderer paths(device);
-        gpu::TextureCache textures(device, atlas.set_layout()); // outlives the windows drawing with it
-        gpu::VideoTextures videos(device, atlas.set_layout());
-        const RenderResources resources{quads, textures, videos, blur, paths, atlas.set_layout(), atlas.descriptor_set()};
+        gpu::TextureCache textures(device, image_layout); // outlives the windows drawing with it
+        gpu::VideoTextures videos(device, image_layout);
+        const RenderResources resources{quads, textures, videos, blur, paths, image_layout, atlas.group()};
         // Video decoders share frames with this device: they must run on the same GPU.
-        {
-            VkPhysicalDeviceIDProperties ids{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
-            VkPhysicalDeviceProperties2 properties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
-            properties.pNext = &ids;
-            vkGetPhysicalDeviceProperties2(device.physical(), &properties);
-            if (ids.deviceLUIDValid) {
-                std::array<std::uint8_t, 8> luid{};
-                std::memcpy(luid.data(), ids.deviceLUID, luid.size());
-                set_render_adapter(luid);
-            }
+        if (const auto luid = device.luid()) {
+            set_render_adapter({*luid, device.has_feature(wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle)});
         }
         // The last frame of each window showing a video: redrawn when the video has a new frame.
         std::unordered_map<std::uint32_t, WindowFrame> video_frames;
@@ -144,14 +137,10 @@ void RenderThread::run(VkSurfaceKHR compatibility_surface, std::promise<void> re
             for (RenderCommand& command : batch.commands) {
                 std::visit(Overloaded{
                                [&](const AddWindowCommand& add) {
-                                   if (!device.can_present(add.surface)) {
-                                       throw GpuError(std::format(
-                                           "the GPU \"{}\" can't present to window {}",
-                                           device.name(), add.window_id));
-                                   }
                                    windows.emplace(add.window_id,
-                                                   std::make_unique<WindowTarget>(device, add.surface, add.transparent,
-                                                                                  add.native_window));
+                                                   std::make_unique<WindowTarget>(
+                                                       device, instance.create_surface(add.surface),
+                                                       add.transparent, add.native_window));
                                },
                                [&](const RemoveWindowCommand& remove) {
                                    windows.erase(remove.window_id);

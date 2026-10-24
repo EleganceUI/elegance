@@ -5,7 +5,7 @@
 #ifndef ELG_RENDER_FRAME_MAILBOX_H
 #define ELG_RENDER_FRAME_MAILBOX_H
 
-#include "gpu/vk.h"
+#include "platform/platform.h"
 #include "render/display_list.h"
 #include "text/atlas.h"
 
@@ -29,9 +29,9 @@ struct WindowFrame {
 
 struct AddWindowCommand {
     std::uint32_t window_id = 0;
-    VkSurfaceKHR surface = VK_NULL_HANDLE; // owned by the UI thread
+    platform::SurfaceSource surface; // the window's; the render thread makes its surface from it
     bool transparent = false;
-    void* native_window = nullptr; // HWND on Windows (transparent windows present through it)
+    void* native_window = nullptr; // HWND on Windows (windows present through the compositor with it)
 };
 
 struct RemoveWindowCommand {

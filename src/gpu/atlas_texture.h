@@ -5,49 +5,33 @@
 #ifndef ELG_GPU_ATLAS_TEXTURE_H
 #define ELG_GPU_ATLAS_TEXTURE_H
 
-#include "gpu/buffer.h"
 #include "gpu/device.h"
-#include "gpu/vk.h"
+#include "gpu/webgpu.h"
 #include "text/atlas.h"
 
-#include <functional>
 #include <span>
 
 namespace elg::detail::gpu {
 
-// The glyph atlas on the GPU: an RGBA8 MTSDF texture plus the descriptor set the UI shader
-// samples it through. Filled from GlyphUploads produced on the UI thread.
+// The glyph atlas on the GPU: an RGBA8 MTSDF texture plus the bind group the UI shader samples
+// it through. Filled from GlyphUploads produced on the UI thread.
 class AtlasTexture {
 public:
-    explicit AtlasTexture(const Device& device);
-    ~AtlasTexture();
+    AtlasTexture(const Device& device, const wgpu::BindGroupLayout& image_layout);
 
     AtlasTexture(const AtlasTexture&) = delete;
     AtlasTexture& operator=(const AtlasTexture&) = delete;
 
-    // Copies new glyphs into the texture. Blocks until done; glyphs are only uploaded the first
-    // time they're seen, so this is rare.
+    // Copies new glyphs into the texture. Queue writes are ordered with frames: frames submitted
+    // earlier still see the old contents, later ones the new.
     void upload(std::span<const GlyphUpload> uploads);
 
-    VkDescriptorSetLayout set_layout() const noexcept { return set_layout_; }
-    VkDescriptorSet descriptor_set() const noexcept { return descriptor_set_; }
+    const wgpu::BindGroup& group() const noexcept { return group_; }
 
 private:
-    void submit(const std::function<void(VkCommandBuffer)>& record);
-    void destroy() noexcept;
-
     const Device& device_;
-    VkImage image_ = VK_NULL_HANDLE;
-    VmaAllocation allocation_ = VK_NULL_HANDLE;
-    VkImageView view_ = VK_NULL_HANDLE;
-    VkSampler sampler_ = VK_NULL_HANDLE;
-    VkDescriptorSetLayout set_layout_ = VK_NULL_HANDLE;
-    VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
-    VkDescriptorSet descriptor_set_ = VK_NULL_HANDLE;
-    VkCommandPool command_pool_ = VK_NULL_HANDLE;
-    VkCommandBuffer cmd_ = VK_NULL_HANDLE;
-    VkFence fence_ = VK_NULL_HANDLE;
-    Buffer staging_;
+    wgpu::Texture texture_; // starts cleared: WebGPU zero-initializes
+    wgpu::BindGroup group_;
 };
 
 } // namespace elg::detail::gpu

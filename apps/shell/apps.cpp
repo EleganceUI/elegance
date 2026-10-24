@@ -247,7 +247,7 @@ View SettingsContent(const Desktop& d, int page) {
                                          Text("A desktop environment demo, drawn entirely with the Elegence UI library.")
                                              .foreground_style(ThemeColor::secondary)))),
                       Card(Row("Elegence", "", Text(std::string("Version ") + elg::version()).foreground_style(ThemeColor::secondary)),
-                           Row("Renderer", "", Text("Vulkan").foreground_style(ThemeColor::secondary)),
+                           Row("Renderer", "", Text("WebGPU").foreground_style(ThemeColor::secondary)),
                            Row("Windows open", "",
                                Text([=] { return std::to_string(d.open_windows().size()); }).foreground_style(ThemeColor::secondary))));
     }
@@ -477,7 +477,7 @@ View TerminalApp(const Desktop& d, const Window& w) {
             out.insert(out.end(), {"   ____   " + prompt().substr(0, prompt().size() - 4), "  / __/   ---------------",
                                    " / _/     OS: Elegence Desktop (demo)",
                                    "/___/     UI: Elegence " + std::string(elg::version()),
-                                   "          Renderer: Vulkan",
+                                   "          Renderer: WebGPU",
                                    "          Windows: " + std::to_string(d.open_windows.peek().size()),
                                    "          Theme: " + std::string(s.dark.peek() ? "dark" : "light")});
         } else {

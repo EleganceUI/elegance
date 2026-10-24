@@ -609,17 +609,96 @@ const ShapeFill* EffectElement::clip_path(float scale) const {
     return &clip_fill_;
 }
 
-// The content moves by the offset; a shadow spreads around it (by about three blur radii).
+// The content moves by the offset and turns or scales with the transform; a shadow spreads
+// around it (by about three blur radii), as does a blur.
 Rect EffectElement::paint_extent(Rect bounds) const {
     Rect moved = bounds;
     moved.x += offset_x_.current();
     moved.y += offset_y_.current();
+    if (const std::optional<LayerTransform> t = layer_transform()) {
+        moved = transformed_bounds(*t, moved);
+    }
     if (const std::optional<Shadow>& shadow = effects_.shadow) {
         moved = union_of(moved, Rect{moved.x + shadow->x, moved.y + shadow->y, moved.width, moved.height})
-                    .inset(-3 * shadow->radius);
+                    .inset(-3 * shadow->radius - std::max(shadow->spread, 0.f));
     }
+    moved = moved.inset(-3 * std::max(blur_.current(), 0.f));
     return union_of(bounds, moved);
 }
+
+// Rotation and scale about the anchor (which moves with the offset); nullopt when there's none.
+std::optional<LayerTransform> EffectElement::layer_transform() const {
+    const float degrees = rotation_.current();
+    const float sx = scale_x_.current();
+    const float sy = scale_y_.current();
+    if (degrees == 0 && sx == 1 && sy == 1) {
+        return std::nullopt;
+    }
+    const float radians = degrees * 3.14159265f / 180;
+    const float c = std::cos(radians);
+    const float s = std::sin(radians);
+    const Rect f = frame();
+    const Point pivot{f.x + offset_x_.current() + effects_.anchor.x * f.width,
+                      f.y + offset_y_.current() + effects_.anchor.y * f.height};
+    // Rotate(degrees) * Scale(sx, sy); y points down, so positive angles turn clockwise.
+    return LayerTransform{c * sx, s * sx, -s * sy, c * sy, pivot};
+}
+
+namespace {
+
+template <class... Fs>
+struct Overloaded : Fs... {
+    using Fs::operator()...;
+};
+
+// A style passed through a color matrix, when that can be done on its colors alone.
+std::optional<ShapeStyle> filtered(const ShapeStyle& style, const ColorMatrix& m) {
+    const auto stops = [&](std::vector<GradientStop> list) {
+        for (GradientStop& stop : list) {
+            stop.color = apply(m, stop.color);
+        }
+        return list;
+    };
+    return std::visit(Overloaded{
+                          [&](const Color& color) -> std::optional<ShapeStyle> { return apply(m, color); },
+                          [&](const LinearGradient& g) -> std::optional<ShapeStyle> {
+                              return LinearGradient(stops(g.stops), g.start, g.end);
+                          },
+                          [&](const RadialGradient& g) -> std::optional<ShapeStyle> {
+                              return RadialGradient(stops(g.stops), g.center, g.start_radius, g.end_radius);
+                          },
+                          [&](const EllipticalGradient& g) -> std::optional<ShapeStyle> {
+                              return EllipticalGradient(stops(g.stops), g.center, g.start_radius_fraction,
+                                                        g.end_radius_fraction);
+                          },
+                          [&](const AngularGradient& g) -> std::optional<ShapeStyle> {
+                              return AngularGradient(stops(g.stops), g.center, g.start_angle, g.end_angle);
+                          },
+                          [](const Material&) -> std::optional<ShapeStyle> { return std::nullopt; },
+                      },
+                      style.value());
+}
+
+// A single filled shape, perhaps with shadows already: [box shadows...] rect [inner shadows...].
+// Effects on it can be drawn without an offscreen layer. Returns the rect's index.
+std::optional<std::size_t> single_shape(std::vector<DrawCommand>& commands) {
+    std::size_t i = 0;
+    while (i < commands.size() && std::holds_alternative<BoxShadowCommand>(commands[i])) {
+        ++i;
+    }
+    const auto* rect = i < commands.size() ? std::get_if<RectCommand>(&commands[i]) : nullptr;
+    if (!rect || is_clear(rect->fill)) {
+        return std::nullopt;
+    }
+    for (std::size_t j = i + 1; j < commands.size(); ++j) {
+        if (!std::holds_alternative<InnerShadowCommand>(commands[j])) {
+            return std::nullopt;
+        }
+    }
+    return i;
+}
+
+} // namespace
 
 void EffectElement::paint_impl(DisplayList& list) const {
     // Paint the content (clipped) on its own first, to see what it consists of.
@@ -658,22 +737,41 @@ void EffectElement::paint_impl(DisplayList& list) const {
     if (clips) {
         content.commands.push_back(PopClipCommand{});
     }
-    if (offset_x_.animating() || offset_y_.animating()) {
+    if (drawing_moves() || opacity_.animating() || filter_amount_.animating() || filter_color_.animating()) {
         list.animating = true;
     }
     transform(content.commands, offset_x_.current(), offset_y_.current(), 1, {});
 
-    if (opacity_.animating()) {
-        list.animating = true;
+    // A uniform scale stays vector (sharp); rotation and uneven scales composite a layer.
+    std::optional<LayerTransform> layer_transform = this->layer_transform();
+    if (layer_transform) {
+        const float sx = scale_x_.current();
+        const float sy = scale_y_.current();
+        if (sx == 0 || sy == 0) {
+            return;
+        }
+        if (rotation_.current() == 0 && sx == sy) {
+            transform(content.commands, 0, 0, sx, layer_transform->pivot);
+            layer_transform.reset();
+        }
     }
+
     const float opacity = std::clamp(opacity_.current(), 0.f, 1.f);
     const std::optional<Shadow>& shadow = effects_.shadow;
+    const std::optional<Shadow>& inner_shadow = effects_.inner_shadow;
+    const float blur = std::max(blur_.current(), 0.f);
+    std::optional<ColorMatrix> matrix;
+    if (effects_.color_filter) {
+        matrix = color_matrix(effects_.color_filter->kind, filter_amount_.current(), filter_color_.current());
+    }
     const auto append_content = [&] {
         list.commands.insert(list.commands.end(), std::make_move_iterator(content.commands.begin()),
                              std::make_move_iterator(content.commands.end()));
     };
 
-    if (opacity >= 1 && !shadow) {
+    const bool needs_layer = blur > 0 || effects_.blend_mode != BlendMode::normal || effects_.compositing_group ||
+                             layer_transform.has_value();
+    if (opacity >= 1 && !shadow && !inner_shadow && !matrix && !needs_layer) {
         append_content();
         return;
     }
@@ -681,24 +779,51 @@ void EffectElement::paint_impl(DisplayList& list) const {
         return;
     }
 
-    // Fast path: a single filled shape. Fading it is an alpha multiply, and its shadow is an
-    // analytic blurred rounded rect; no offscreen layer needed.
-    if (content.commands.size() == 1) {
-        if (auto* rect = std::get_if<RectCommand>(&content.commands.front()); rect && !is_clear(rect->fill)) {
-            if (shadow) {
-                const Rect offset{rect->rect.x + shadow->x, rect->rect.y + shadow->y, rect->rect.width,
-                                  rect->rect.height};
-                list.commands.push_back(
-                    BoxShadowCommand{offset, rect->radii, shadow->color.opacity(opacity), shadow->radius});
+    // Fast path: a single filled shape. Fading it is an alpha multiply, a color filter changes
+    // its colors, and its shadows are analytic blurred rounded rects; no offscreen layer needed.
+    if (!needs_layer) {
+        if (const std::optional<std::size_t> at = single_shape(content.commands)) {
+            auto& rect = std::get<RectCommand>(content.commands[*at]);
+            std::optional<ShapeStyle> fill = matrix ? filtered(rect.fill, *matrix) : std::optional(rect.fill);
+            if (fill) {
+                const auto adjust = [&](Color color) {
+                    return (matrix ? apply(*matrix, color) : color).opacity(opacity);
+                };
+                for (DrawCommand& command : content.commands) {
+                    if (auto* box = std::get_if<BoxShadowCommand>(&command)) {
+                        box->color = adjust(box->color);
+                    } else if (auto* inner = std::get_if<InnerShadowCommand>(&command)) {
+                        inner->color = adjust(inner->color);
+                    }
+                }
+                rect.fill = with_opacity(*fill, opacity);
+                rect.border = adjust(rect.border);
+                const RectCommand shape = rect;
+                if (inner_shadow) {
+                    content.commands.push_back(InnerShadowCommand{shape.rect, shape.radii, adjust(inner_shadow->color),
+                                                                  inner_shadow->radius,
+                                                                  {inner_shadow->x, inner_shadow->y},
+                                                                  inner_shadow->spread});
+                }
+                if (shadow) {
+                    // Beneath the shape and any shadows it has already.
+                    const float spread = shadow->spread;
+                    const auto grow = [&](float r) { return std::max(r + spread, 0.f); };
+                    const Rect offset = Rect{shape.rect.x + shadow->x, shape.rect.y + shadow->y, shape.rect.width,
+                                             shape.rect.height}
+                                            .inset(-spread);
+                    const CornerRadii radii{grow(shape.radii.top_left), grow(shape.radii.top_right),
+                                            grow(shape.radii.bottom_right), grow(shape.radii.bottom_left)};
+                    content.commands.insert(content.commands.begin(),
+                                            BoxShadowCommand{offset, radii, adjust(shadow->color), shadow->radius});
+                }
+                append_content();
+                return;
             }
-            rect->fill = with_opacity(rect->fill, opacity);
-            rect->border = rect->border.opacity(opacity);
-            append_content();
-            return;
         }
     }
 
-    // General path: render offscreen, then composite with opacity and a blurred shadow.
+    // General path: render offscreen, then composite with the effects.
     std::optional<Rect> bounds;
     for (const DrawCommand& command : content.commands) {
         if (const std::optional<Rect> b = draw_bounds(command)) {
@@ -708,7 +833,14 @@ void EffectElement::paint_impl(DisplayList& list) const {
     if (!bounds) {
         return;
     }
-    list.commands.push_back(PushLayerCommand{*bounds, opacity, shadow});
+    PushLayerCommand layer{*bounds, opacity, shadow};
+    layer.blur = blur;
+    layer.blur_opaque = effects_.blur_opaque;
+    layer.color_matrix = matrix;
+    layer.blend = effects_.blend_mode;
+    layer.transform = layer_transform;
+    layer.inner_shadow = inner_shadow;
+    list.commands.push_back(std::move(layer));
     append_content();
     list.commands.push_back(PopLayerCommand{});
 }
@@ -725,6 +857,33 @@ void DecorationElement::arrange(Rect bounds, ProposedSize proposal) {
 }
 
 void DecorationElement::paint_impl(DisplayList& list) const {
+    if (modifier_->placement() == DecorationModifier::Placement::mask) {
+        // The content offscreen, then the mask's alpha keeps part of it.
+        DisplayList content;
+        content.scale = list.scale;
+        content_->paint(content);
+        DisplayList mask;
+        mask.scale = list.scale;
+        decoration_->paint(mask);
+        list.animating |= content.animating || mask.animating;
+        std::optional<Rect> bounds;
+        for (const DrawCommand& command : content.commands) {
+            if (const std::optional<Rect> b = draw_bounds(command)) {
+                bounds = bounds ? union_of(*bounds, *b) : *b;
+            }
+        }
+        if (!bounds) {
+            return;
+        }
+        list.commands.push_back(PushLayerCommand{*bounds});
+        list.commands.insert(list.commands.end(), std::make_move_iterator(content.commands.begin()),
+                             std::make_move_iterator(content.commands.end()));
+        list.commands.push_back(LayerMaskCommand{});
+        list.commands.insert(list.commands.end(), std::make_move_iterator(mask.commands.begin()),
+                             std::make_move_iterator(mask.commands.end()));
+        list.commands.push_back(PopLayerCommand{});
+        return;
+    }
     if (modifier_->placement() == DecorationModifier::Placement::behind) {
         decoration_->paint(list);
         content_->paint(list);

@@ -3,7 +3,7 @@
 // https://mozilla.org/MPL/2.0/.
 
 // Video sources (design.md §13.3). Windows: Media Foundation's media engine in frame-server
-// mode, rendering each new frame into a ring of D3D11 textures shared with Vulkan. macOS:
+// mode, rendering each new frame into a ring of D3D11 textures shared with WebGPU. macOS:
 // AVFoundation, in video_source_apple.mm.
 
 #include "media/video_source.h"
@@ -31,16 +31,16 @@ namespace {
 
 std::atomic<std::uint64_t> g_next_id{1};
 std::mutex g_adapter_mutex;
-std::optional<std::array<std::uint8_t, 8>> g_adapter;
+std::optional<RenderAdapter> g_adapter;
 
 } // namespace
 
-void set_render_adapter(std::array<std::uint8_t, 8> luid) {
+void set_render_adapter(RenderAdapter adapter) {
     std::lock_guard lock(g_adapter_mutex);
-    g_adapter = luid;
+    g_adapter = adapter;
 }
 
-std::optional<std::array<std::uint8_t, 8>> render_adapter() {
+std::optional<RenderAdapter> render_adapter() {
     std::lock_guard lock(g_adapter_mutex);
     return g_adapter;
 }
@@ -226,7 +226,10 @@ public:
         if (FAILED(engine_->TransferVideoFrame(ring_[slot].texture.Get(), nullptr, &target, &border))) {
             return false;
         }
-        // Vulkan samples it next: the copy must be done.
+        if (!shares_textures_) {
+            return read_back(ring_[slot].texture.Get(), slot);
+        }
+        // WebGPU samples it next: the copy must be done.
         context_->End(done_.Get());
         context_->Flush();
         while (context_->GetData(done_.Get(), nullptr, 0, 0) == S_FALSE) {
@@ -243,9 +246,17 @@ public:
         }
         const Slot& slot = ring_[current_];
         VideoFrame frame;
-        frame.kind = VideoFrame::Kind::d3d11_shared;
         frame.width = ring_width_;
         frame.height = ring_height_;
+        if (!shares_textures_) {
+            frame.kind = VideoFrame::Kind::cpu;
+            frame.format = VideoFrame::Format::bgra;
+            frame.pixels = pixels_;
+            frame.source_id = id;
+            frame.frame_id = frame_id_;
+            return frame;
+        }
+        frame.kind = VideoFrame::Kind::d3d11_shared;
         frame.shared_handle = slot.handle;
         frame.texture_id = slot.id;
         return frame;
@@ -336,12 +347,13 @@ private:
         if (failed_) {
             return false;
         }
-        const std::optional<std::array<std::uint8_t, 8>> adapter_luid = render_adapter();
-        if (!adapter_luid) {
+        const std::optional<RenderAdapter> adapter = render_adapter();
+        if (!adapter) {
             return false; // the renderer isn't up yet: what was asked for applies once it is
         }
+        shares_textures_ = adapter->shares_textures;
         try {
-            create_engine(*adapter_luid);
+            create_engine(adapter->luid);
         } catch (const std::exception& failure) {
             failed_ = true;
             const std::string message = failure.what();
@@ -457,8 +469,37 @@ private:
             }
             slot.id = g_next_id.fetch_add(1);
         }
+        if (!shares_textures_) {
+            desc.Usage = D3D11_USAGE_STAGING;
+            desc.BindFlags = 0;
+            desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+            desc.MiscFlags = 0;
+            if (FAILED(device_->CreateTexture2D(&desc, nullptr, &staging_))) {
+                return false;
+            }
+        }
         ring_width_ = width;
         ring_height_ = height;
+        return true;
+    }
+
+    // With the mutex held. The renderer can't import the texture: copies the frame into memory,
+    // packed, for the renderer to upload.
+    bool read_back(ID3D11Texture2D* texture, int slot) {
+        context_->CopyResource(staging_.Get(), texture);
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        if (FAILED(context_->Map(staging_.Get(), 0, D3D11_MAP_READ, 0, &mapped))) { // waits for the copy
+            return false;
+        }
+        const std::size_t row = std::size_t{ring_width_} * 4;
+        auto pixels = std::make_shared<std::vector<std::uint8_t>>(row * ring_height_);
+        for (std::uint32_t y = 0; y < ring_height_; ++y) {
+            std::memcpy(pixels->data() + row * y, static_cast<const std::uint8_t*>(mapped.pData) + std::size_t{mapped.RowPitch} * y, row);
+        }
+        context_->Unmap(staging_.Get(), 0);
+        pixels_ = std::move(pixels);
+        ++frame_id_;
+        current_ = slot;
         return true;
     }
 
@@ -477,6 +518,11 @@ private:
     std::uint32_t ring_width_ = 0;
     std::uint32_t ring_height_ = 0;
     int current_ = -1;
+    // Without texture sharing: frames go through memory.
+    bool shares_textures_ = true;
+    ComPtr<ID3D11Texture2D> staging_;
+    std::shared_ptr<const std::vector<std::uint8_t>> pixels_;
+    std::uint64_t frame_id_ = 0;
 };
 
 STDMETHODIMP EngineNotify::EventNotify(DWORD event, DWORD_PTR param1, DWORD) {

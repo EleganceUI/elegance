@@ -5,79 +5,39 @@
 #include "gpu/buffer.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cstring>
-#include <utility>
 
 namespace elg::detail::gpu {
 
 namespace {
 
-constexpr VkDeviceSize kMinCapacity = 64 * 1024;
+constexpr std::uint64_t kMinCapacity = 64 * 1024;
 
 }
 
-Buffer::Buffer(VmaAllocator allocator, VkBufferUsageFlags usage) noexcept
-    : allocator_(allocator), usage_(usage) {}
-
-Buffer::~Buffer() {
-    release();
-}
-
-Buffer::Buffer(Buffer&& other) noexcept
-    : allocator_(other.allocator_), usage_(other.usage_),
-      buffer_(std::exchange(other.buffer_, VK_NULL_HANDLE)),
-      allocation_(std::exchange(other.allocation_, VK_NULL_HANDLE)),
-      mapped_(std::exchange(other.mapped_, nullptr)), capacity_(std::exchange(other.capacity_, 0)) {}
-
-Buffer& Buffer::operator=(Buffer&& other) noexcept {
-    if (this != &other) {
-        release();
-        allocator_ = other.allocator_;
-        usage_ = other.usage_;
-        buffer_ = std::exchange(other.buffer_, VK_NULL_HANDLE);
-        allocation_ = std::exchange(other.allocation_, VK_NULL_HANDLE);
-        mapped_ = std::exchange(other.mapped_, nullptr);
-        capacity_ = std::exchange(other.capacity_, 0);
-    }
-    return *this;
-}
+Buffer::Buffer(const wgpu::Device& device, wgpu::BufferUsage usage) noexcept
+    : device_(device), usage_(usage | wgpu::BufferUsage::CopyDst) {}
 
 void Buffer::write(std::span<const std::byte> data) {
-    if (data.empty()) {
-        return;
-    }
-    if (data.size() > capacity_) {
-        release();
-        const VkDeviceSize capacity = std::max(kMinCapacity, std::bit_ceil(VkDeviceSize{data.size()}));
-
-        VkBufferCreateInfo buffer_info{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
-        buffer_info.size = capacity;
-        buffer_info.usage = usage_;
-        buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        VmaAllocationCreateInfo allocation_info{};
-        allocation_info.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT |
-                                VMA_ALLOCATION_CREATE_MAPPED_BIT;
-        allocation_info.usage = VMA_MEMORY_USAGE_AUTO;
-
-        VmaAllocationInfo result{};
-        check(vmaCreateBuffer(allocator_, &buffer_info, &allocation_info, &buffer_, &allocation_, &result),
-              "allocate a GPU buffer");
-        mapped_ = result.pMappedData;
+    if (!buffer_ || data.size() > capacity_) {
+        const std::uint64_t capacity = std::max(kMinCapacity, std::bit_ceil(std::uint64_t{data.size()}));
+        wgpu::BufferDescriptor descriptor;
+        descriptor.size = capacity;
+        descriptor.usage = usage_;
+        buffer_ = device_.CreateBuffer(&descriptor);
         capacity_ = capacity;
     }
-    std::memcpy(mapped_, data.data(), data.size());
-    check(vmaFlushAllocation(allocator_, allocation_, 0, data.size()), "flush a GPU buffer");
-}
-
-void Buffer::release() noexcept {
-    if (buffer_) {
-        vmaDestroyBuffer(allocator_, buffer_, allocation_);
-        buffer_ = VK_NULL_HANDLE;
-        allocation_ = VK_NULL_HANDLE;
-        mapped_ = nullptr;
-        capacity_ = 0;
+    // Queue writes come in multiples of 4 bytes: the last few go in a padded word.
+    const std::size_t whole = data.size() & ~std::size_t{3};
+    if (whole > 0) {
+        device_.GetQueue().WriteBuffer(buffer_, 0, data.data(), whole);
+    }
+    if (whole < data.size()) {
+        std::array<std::byte, 4> tail{};
+        std::memcpy(tail.data(), data.data() + whole, data.size() - whole);
+        device_.GetQueue().WriteBuffer(buffer_, whole, tail.data(), tail.size());
     }
 }
 

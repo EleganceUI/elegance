@@ -620,9 +620,30 @@ public:
         invalidate_paint_bounds();
     }
     void set_z_index(float z) noexcept { z_index_ = z; }
+    void set_blur(float radius, const Animation* animation) {
+        blur_.set(radius, animation);
+        invalidate_paint_bounds();
+    }
+    void set_filter_amount(float amount, const Animation* animation) { filter_amount_.set(amount, animation); }
+    void set_filter_color(Color color, const Animation* animation) { filter_color_.set(color, animation); }
+    void set_rotation(float degrees, const Animation* animation) {
+        rotation_.set(degrees, animation);
+        invalidate_paint_bounds();
+    }
+    void set_scale_x(float scale, const Animation* animation) {
+        scale_x_.set(scale, animation);
+        invalidate_paint_bounds();
+    }
+    void set_scale_y(float scale, const Animation* animation) {
+        scale_y_.set(scale, animation);
+        invalidate_paint_bounds();
+    }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
     Rect paint_extent(Rect bounds) const override;
-    bool drawing_moves() const override { return offset_x_.animating() || offset_y_.animating(); }
+    bool drawing_moves() const override {
+        return offset_x_.animating() || offset_y_.animating() || rotation_.animating() || scale_x_.animating() ||
+               scale_y_.animating() || blur_.animating();
+    }
     Point content_offset() const override { return {offset_x_.current(), offset_y_.current()}; }
 
     float layout_priority() const noexcept override { return content_->layout_priority(); }
@@ -639,6 +660,7 @@ private:
     // The clip shape's fill when it's a path (it clips through a mask), cached per size and scale;
     // nullptr for the rounded-rect shapes, which clip analytically.
     const ShapeFill* clip_path(float scale) const;
+    std::optional<LayerTransform> layer_transform() const;
 
     Effects effects_;
     std::unique_ptr<Element> content_;
@@ -648,6 +670,12 @@ private:
     Animated<float> opacity_{1.f}; // resolved from effects_.opacity
     Animated<float> offset_x_{0.f};
     Animated<float> offset_y_{0.f};
+    Animated<float> blur_{0.f};
+    Animated<float> filter_amount_{1.f};
+    Animated<Color> filter_color_{Color::white};
+    Animated<float> rotation_{0.f};
+    Animated<float> scale_x_{1.f};
+    Animated<float> scale_y_{1.f};
     std::optional<float> z_index_; // .z_index(...)
 };
 

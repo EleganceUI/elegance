@@ -34,6 +34,9 @@ bool is_clear(const ShapeStyle& style) {
                           [](const Color& color) { return color.a <= 0; },
                           [](const LinearGradient& gradient) { return stops_clear(gradient.stops); },
                           [](const RadialGradient& gradient) { return stops_clear(gradient.stops); },
+                          [](const EllipticalGradient& gradient) { return stops_clear(gradient.stops); },
+                          [](const AngularGradient& gradient) { return stops_clear(gradient.stops); },
+                          [](const Material&) { return false; },
                       },
                       style.value());
 }
@@ -48,6 +51,24 @@ ShapeStyle with_opacity(const ShapeStyle& style, float opacity) {
                           [&](const RadialGradient& gradient) {
                               return ShapeStyle(RadialGradient(fade(gradient.stops, opacity), gradient.center,
                                                                gradient.start_radius, gradient.end_radius));
+                          },
+                          [&](const EllipticalGradient& gradient) {
+                              return ShapeStyle(EllipticalGradient(fade(gradient.stops, opacity), gradient.center,
+                                                                   gradient.start_radius_fraction,
+                                                                   gradient.end_radius_fraction));
+                          },
+                          [&](const AngularGradient& gradient) {
+                              return ShapeStyle(AngularGradient(fade(gradient.stops, opacity), gradient.center,
+                                                                gradient.start_angle, gradient.end_angle));
+                          },
+                          // What shows through a material is opaque, so only its tint fades.
+                          [&](const Material& material) {
+                              Material faded = material;
+                              faded.tint = faded.tint.opacity(opacity);
+                              if (faded.dark_tint) {
+                                  faded.dark_tint = faded.dark_tint->opacity(opacity);
+                              }
+                              return ShapeStyle(faded);
                           },
                       },
                       style.value());
@@ -90,6 +111,13 @@ void transform(std::vector<DrawCommand>& commands, float dx, float dy, float sca
                            c.radii = radii(c.radii);
                            c.blur_radius *= scale;
                        },
+                       [&](InnerShadowCommand& c) {
+                           c.rect = rect(c.rect);
+                           c.radii = radii(c.radii);
+                           c.blur_radius *= scale;
+                           c.offset = {c.offset.x * scale, c.offset.y * scale};
+                           c.spread *= scale;
+                       },
                        [&](PushClipCommand& c) {
                            c.rect = rect(c.rect);
                            c.radii = radii(c.radii);
@@ -105,6 +133,16 @@ void transform(std::vector<DrawCommand>& commands, float dx, float dy, float sca
                                c.shadow->radius *= scale;
                                c.shadow->x *= scale;
                                c.shadow->y *= scale;
+                           }
+                           if (c.inner_shadow) {
+                               c.inner_shadow->radius *= scale;
+                               c.inner_shadow->x *= scale;
+                               c.inner_shadow->y *= scale;
+                           }
+                           c.blur *= scale;
+                           if (c.transform) {
+                               // A uniform scale commutes with the layer's own rotation and scale.
+                               c.transform->pivot = point(c.transform->pivot.x, c.transform->pivot.y);
                            }
                        },
                        [](auto&) {},
@@ -177,17 +215,116 @@ std::optional<Rect> draw_bounds(const DrawCommand& command) {
                               // The Gaussian is negligible beyond three sigma.
                               return c.rect.inset(-1.5f * c.blur_radius - 1);
                           },
+                          [](const InnerShadowCommand& c) -> std::optional<Rect> { return c.rect; },
                           [](const PushLayerCommand& c) -> std::optional<Rect> {
-                              if (!c.shadow) {
-                                  return c.bounds;
+                              Rect bounds = c.bounds.inset(-1.5f * c.blur);
+                              if (c.shadow) {
+                                  const Rect shadow{c.bounds.x + c.shadow->x, c.bounds.y + c.shadow->y,
+                                                    c.bounds.width, c.bounds.height};
+                                  bounds = union_of(bounds, shadow.inset(-1.5f * c.shadow->radius - 1));
                               }
-                              const Rect shadow{c.bounds.x + c.shadow->x, c.bounds.y + c.shadow->y,
-                                                c.bounds.width, c.bounds.height};
-                              return union_of(c.bounds, shadow.inset(-1.5f * c.shadow->radius - 1));
+                              return c.transform ? transformed_bounds(*c.transform, bounds) : bounds;
                           },
                           [](const auto&) -> std::optional<Rect> { return std::nullopt; },
                       },
                       command);
+}
+
+// The filter functions of CSS (Filter Effects Level 1), as SVG feColorMatrix values; brightness is
+// SwiftUI's (it adds), not CSS's (which multiplies).
+ColorMatrix color_matrix(ColorFilter::Kind kind, float amount, Color color) {
+    using Kind = ColorFilter::Kind;
+    ColorMatrix m{1, 0, 0, 0, 0, //
+                  0, 1, 0, 0, 0, //
+                  0, 0, 1, 0, 0, //
+                  0, 0, 0, 1, 0};
+    const auto rgb = [&](std::array<float, 9> k) {
+        for (int row = 0; row < 3; ++row) {
+            for (int col = 0; col < 3; ++col) {
+                m[row * 5 + col] = k[row * 3 + col];
+            }
+        }
+    };
+    const auto saturate = [&](float s) {
+        rgb({0.213f + 0.787f * s, 0.715f - 0.715f * s, 0.072f - 0.072f * s, //
+             0.213f - 0.213f * s, 0.715f + 0.285f * s, 0.072f - 0.072f * s, //
+             0.213f - 0.213f * s, 0.715f - 0.715f * s, 0.072f + 0.928f * s});
+    };
+    switch (kind) {
+    case Kind::brightness:
+        m[4] = m[9] = m[14] = amount;
+        break;
+    case Kind::contrast:
+        m[0] = m[6] = m[12] = amount;
+        m[4] = m[9] = m[14] = 0.5f - 0.5f * amount;
+        break;
+    case Kind::saturation: saturate(std::max(amount, 0.f)); break;
+    case Kind::grayscale: saturate(1 - std::clamp(amount, 0.f, 1.f)); break;
+    case Kind::hue_rotation: {
+        const float radians = amount * 3.14159265f / 180;
+        const float c = std::cos(radians);
+        const float s = std::sin(radians);
+        rgb({0.213f + c * 0.787f - s * 0.213f, 0.715f - c * 0.715f - s * 0.715f, 0.072f - c * 0.072f + s * 0.928f,
+             0.213f - c * 0.213f + s * 0.143f, 0.715f + c * 0.285f + s * 0.140f, 0.072f - c * 0.072f - s * 0.283f,
+             0.213f - c * 0.213f - s * 0.787f, 0.715f - c * 0.715f + s * 0.715f, 0.072f + c * 0.928f + s * 0.072f});
+        break;
+    }
+    case Kind::sepia: {
+        const float k = 1 - std::clamp(amount, 0.f, 1.f);
+        rgb({0.393f + 0.607f * k, 0.769f - 0.769f * k, 0.189f - 0.189f * k, //
+             0.349f - 0.349f * k, 0.686f + 0.314f * k, 0.168f - 0.168f * k, //
+             0.272f - 0.272f * k, 0.534f - 0.534f * k, 0.131f + 0.869f * k});
+        break;
+    }
+    case Kind::invert: {
+        const float a = std::clamp(amount, 0.f, 1.f);
+        m[0] = m[6] = m[12] = 1 - 2 * a;
+        m[4] = m[9] = m[14] = a;
+        break;
+    }
+    case Kind::multiply:
+        m[0] = color.r;
+        m[6] = color.g;
+        m[12] = color.b;
+        m[18] = color.a;
+        break;
+    case Kind::luminance_to_alpha:
+        m = {0, 0, 0, 0, 0, //
+             0, 0, 0, 0, 0, //
+             0, 0, 0, 0, 0, //
+             0.2125f, 0.7154f, 0.0721f, 0, 0};
+        break;
+    }
+    return m;
+}
+
+Color apply(const ColorMatrix& m, Color color) {
+    const std::array<float, 4> in{color.r, color.g, color.b, color.a};
+    std::array<float, 4> out{};
+    for (int row = 0; row < 4; ++row) {
+        float sum = m[row * 5 + 4];
+        for (int col = 0; col < 4; ++col) {
+            sum += m[row * 5 + col] * in[col];
+        }
+        out[row] = std::clamp(sum, 0.f, 1.f);
+    }
+    return {out[0], out[1], out[2], out[3]};
+}
+
+Rect transformed_bounds(const LayerTransform& t, const Rect& r) {
+    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    const Point corners[] = {{r.x, r.y}, {r.max_x(), r.y}, {r.x, r.max_y()}, {r.max_x(), r.max_y()}};
+    for (std::size_t i = 0; i < 4; ++i) {
+        const float dx = corners[i].x - t.pivot.x;
+        const float dy = corners[i].y - t.pivot.y;
+        const float x = t.pivot.x + t.a * dx + t.c * dy;
+        const float y = t.pivot.y + t.b * dx + t.d * dy;
+        x0 = i == 0 ? x : std::min(x0, x);
+        y0 = i == 0 ? y : std::min(y0, y);
+        x1 = i == 0 ? x : std::max(x1, x);
+        y1 = i == 0 ? y : std::max(y1, y);
+    }
+    return {x0, y0, x1 - x0, y1 - y0};
 }
 
 } // namespace elg::detail

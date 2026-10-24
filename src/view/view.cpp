@@ -184,6 +184,94 @@ View View::shadow(Shadow shadow) const {
     return modifier(ShadowModifier(shadow));
 }
 
+View View::inner_shadow(Shadow shadow) const {
+    return modifier(InnerShadowModifier(shadow));
+}
+
+View View::blur(Prop<float> radius, bool opaque) const {
+    return modifier(BlurModifier(std::move(radius), opaque));
+}
+
+namespace {
+ColorFilter color_filter(ColorFilter::Kind kind, Prop<float> amount) {
+    ColorFilter filter;
+    filter.kind = kind;
+    filter.amount = std::move(amount);
+    return filter;
+}
+} // namespace
+
+View View::brightness(Prop<float> amount) const {
+    return modifier(ColorFilterModifier(color_filter(ColorFilter::Kind::brightness, std::move(amount))));
+}
+
+View View::contrast(Prop<float> amount) const {
+    return modifier(ColorFilterModifier(color_filter(ColorFilter::Kind::contrast, std::move(amount))));
+}
+
+View View::saturation(Prop<float> amount) const {
+    return modifier(ColorFilterModifier(color_filter(ColorFilter::Kind::saturation, std::move(amount))));
+}
+
+View View::grayscale(Prop<float> amount) const {
+    return modifier(ColorFilterModifier(color_filter(ColorFilter::Kind::grayscale, std::move(amount))));
+}
+
+View View::hue_rotation(Prop<float> degrees) const {
+    return modifier(ColorFilterModifier(color_filter(ColorFilter::Kind::hue_rotation, std::move(degrees))));
+}
+
+View View::sepia(Prop<float> amount) const {
+    return modifier(ColorFilterModifier(color_filter(ColorFilter::Kind::sepia, std::move(amount))));
+}
+
+View View::color_invert() const {
+    return color_invert(1.f);
+}
+
+View View::color_invert(Prop<float> amount) const {
+    return modifier(ColorFilterModifier(color_filter(ColorFilter::Kind::invert, std::move(amount))));
+}
+
+View View::color_multiply(Prop<Color> color) const {
+    ColorFilter filter;
+    filter.kind = ColorFilter::Kind::multiply;
+    filter.color = std::move(color);
+    return modifier(ColorFilterModifier(std::move(filter)));
+}
+
+View View::luminance_to_alpha() const {
+    return modifier(ColorFilterModifier(color_filter(ColorFilter::Kind::luminance_to_alpha, 1.f)));
+}
+
+View View::blend_mode(BlendMode mode) const {
+    return modifier(BlendModeModifier(mode));
+}
+
+View View::compositing_group() const {
+    return modifier(CompositingGroupModifier());
+}
+
+View View::rotation_effect(Prop<float> degrees, UnitPoint anchor) const {
+    return modifier(RotationModifier(std::move(degrees), anchor));
+}
+
+View View::scale_effect(Prop<float> scale, UnitPoint anchor) const {
+    return modifier(ScaleModifier(scale, scale, anchor));
+}
+
+View View::scale_effect(Prop<float> x, Prop<float> y, UnitPoint anchor) const {
+    return modifier(ScaleModifier(std::move(x), std::move(y), anchor));
+}
+
+View View::mask(View mask, Alignment alignment) const {
+    return modifier(MaskModifier(std::move(mask), alignment));
+}
+
+View View::mask(Prop<ShapeStyle> style) const {
+    return mask(Rectangle().fill(std::move(style)));
+}
+
 View View::content_shape(const Shape& shape) const {
     return modifier(ContentShapeModifier(shape));
 }
@@ -567,8 +655,34 @@ std::unique_ptr<Element> ModifiedNode::lower(const LowerContext& context) const 
         const Prop<float> offset_x = effects.offset_x;
         const Prop<float> offset_y = effects.offset_y;
         const std::optional<Prop<float>> z_index = effects.z_index;
+        const std::optional<Prop<float>> blur = effects.blur;
+        const std::optional<ColorFilter> filter = effects.color_filter;
+        const std::optional<Prop<float>> rotation = effects.rotation;
+        const std::optional<Prop<float>> scale_x = effects.scale_x;
+        const std::optional<Prop<float>> scale_y = effects.scale_y;
         auto element = std::make_unique<EffectElement>(std::move(effects), detail::lower(content_, context));
         EffectElement* const target = element.get();
+        if (blur) {
+            detail::bind(*blur, context, [target](float value, const Animation* animation) { target->set_blur(value, animation); });
+        }
+        if (filter) {
+            detail::bind(filter->amount, context,
+                         [target](float value, const Animation* animation) { target->set_filter_amount(value, animation); });
+            detail::bind(filter->color, context,
+                         [target](Color value, const Animation* animation) { target->set_filter_color(value, animation); });
+        }
+        if (rotation) {
+            detail::bind(*rotation, context,
+                         [target](float value, const Animation* animation) { target->set_rotation(value, animation); });
+        }
+        if (scale_x) {
+            detail::bind(*scale_x, context,
+                         [target](float value, const Animation* animation) { target->set_scale_x(value, animation); });
+        }
+        if (scale_y) {
+            detail::bind(*scale_y, context,
+                         [target](float value, const Animation* animation) { target->set_scale_y(value, animation); });
+        }
         detail::bind(opacity, context, [target](float value, const Animation* animation) { target->set_opacity(value, animation); });
         detail::bind(offset_x, context, [target](float value, const Animation* animation) { target->set_offset_x(value, animation); });
         detail::bind(offset_y, context, [target](float value, const Animation* animation) { target->set_offset_y(value, animation); });
@@ -599,11 +713,34 @@ std::unique_ptr<Element> LayoutNode::lower(const LowerContext& context) const {
     return std::make_unique<LayoutElement>(layout_, std::move(children));
 }
 
+namespace {
+
+// Materials take their dark tint in dark mode; other styles pass through.
+Prop<ShapeStyle> adapt_materials(const Prop<ShapeStyle>& fill) {
+    if (const ShapeStyle* style = fill.static_value(); style && !std::holds_alternative<Material>(style->value())) {
+        return fill;
+    }
+    return Prop<ShapeStyle>([fill](const EnvironmentValues& environment) {
+        ShapeStyle style = fill.get(environment);
+        if (const auto* material = std::get_if<Material>(&style.value())) {
+            Material adapted = *material;
+            if (adapted.dark_tint && environment.get<ColorSchemeKey>() == ColorScheme::dark) {
+                adapted.tint = *adapted.dark_tint;
+            }
+            adapted.dark_tint.reset();
+            return ShapeStyle(adapted);
+        }
+        return style;
+    });
+}
+
+} // namespace
+
 std::unique_ptr<Element> ShapeNode::lower(const LowerContext& context) const {
     auto element = std::make_unique<ShapeElement>(spec_);
     ShapeElement* const target = element.get();
     if (spec_.fill) {
-        detail::bind(*spec_.fill, context,
+        detail::bind(adapt_materials(*spec_.fill), context,
              [target](ShapeStyle fill, const Animation* animation) { target->set_fill(std::move(fill), animation); });
     }
     if (spec_.stroke) {

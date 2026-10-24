@@ -100,8 +100,8 @@ Each stage runs only on the dirty subset of the tree. If nothing is dirty, no fr
 - Workarounds for missing C++26 features:
   - *Reflection*: `Store<T>` fields are declared with a macro (`ELG_STORE(T, field...)`), and
     stable type keys use explicit names (§9.6, rule 2).
-  - *`#embed`*: SPIR-V shaders and prebuilt font atlases are embedded through a CMake step that
-    generates byte-array sources.
+  - *`#embed`*: WGSL shaders (as string literals) and prebuilt font atlases are embedded through
+    a CMake step that generates sources.
   - *`std::inplace_vector`*: use a small in-house `SmallVector` for modifier chains.
 - Revisit when MSVC, GCC, and Clang all ship reflection. Then `Store<T>`, inspector panels, and
   theme-file binding can drop their macros.
@@ -173,8 +173,8 @@ itself, which the developer can't handle meaningfully, and continuing would risk
   presets up automatically.
 - **Triplets**: `x64-windows` (dynamic CRT `/MD`, which hot reload requires per §9.6 rule 4),
   `x64-linux`, and `arm64-osx`.
-- **Shaders**: GLSL is compiled offline with `glslc` (from the Vulkan SDK, or the vcpkg
-  `shaderc` port), and the SPIR-V is embedded via generated sources.
+- **Shaders**: WGSL (`shaders/*.wgsl`), embedded as string literals by `cmake/ElgShaders.cmake`.
+  WebGPU compiles them when pipelines are created, so the build needs no shader compiler.
 - **Library type**: `SHARED` by default, with static supported. The ABI surface uses `ELG_API`
   exports and pImpl at boundaries.
 - **Namespace**: `elg::` (decided). Macros use an `ELG_` prefix.
@@ -208,9 +208,8 @@ itself, which the developer can't handle meaningfully, and continuing would risk
 | Area              | Candidate                               | Notes                                |
 |-------------------|-----------------------------------------|--------------------------------------|
 | Windowing/input   | **SDL3** (decided)                      | IME, touch, clipboard, dialogs, DPI  |
-| Vulkan loading    | volk                                    | Avoids linking the loader statically |
-| Memory allocation | VulkanMemoryAllocator (VMA)             | Industry standard                    |
-| Shader compile    | Offline: glslc/slangc → SPIR-V embedded | Avoids a runtime compiler dependency |
+| GPU API           | **Dawn** (WebGPU, decided)              | D3D12/D3D11, Vulkan, Metal backends  |
+| Shader compile    | WGSL embedded; Tint compiles at startup | No offline compiler or SDK needed    |
 | Font loading      | FreeType                                | Outlines, metrics, color-glyph bitmaps |
 | Glyph generation  | **msdfgen** (decided: MTSDF)            | See §5 Text rendering                |
 | Text shaping      | HarfBuzz                                | Required for ligatures, complex text |
@@ -276,11 +275,15 @@ drag & drop, IME composition, cursors, native file dialogs, multi-window, and th
 
 ---
 
-## 5. Renderer (Vulkan)
+## 5. Renderer (WebGPU)
 
 ### Baseline
-- Target **Vulkan 1.3** (dynamic rendering, synchronization2), with a fallback path for 1.2 plus
-  extensions where needed. macOS goes through MoltenVK and the portability extension.
+- **WebGPU through Dawn**, Google's native implementation. Dawn runs on Direct3D 12 (or 11) on
+  Windows, Metal on macOS, and Vulkan on Linux; `ELG_GPU_BACKEND` picks one by hand. Immediates
+  (WebGPU's push constants) carry per-draw parameters. Optional Dawn features: shared texture
+  memory and fences (DXGI handles), for DirectComposition and zero-copy video.
+- (Before October 2026: Vulkan 1.3 with dynamic rendering and synchronization2, through volk and
+  VMA, and MoltenVK on macOS.)
 - Use bindless descriptor indexing for textures, which allows one big draw for many images.
 
 ### Primitives
@@ -799,8 +802,11 @@ Text("Hi").apply(card)                             // function-style: View card(
 | Text/Environment | `font`, `font_weight`, `italic`, `foreground_style`, `tint`,            | environment values        |
 |                  | `line_limit`, `multiline_text_alignment`, `line_spacing`, `kerning`     |                           |
 | Clipping/Masking | `clipped()`, `clip_shape(Shape)`, `mask(View)`, `content_shape(Shape)`  | see below                 |
-| Effects          | `opacity`, `shadow`, `blur`, `brightness`, `saturation`, `blend_mode`,  | layer paint props;        |
-|                  | `rotation_effect`, `scale_effect`, `background_material` (blur behind)  | offscreen only if needed  |
+| Effects          | `opacity`, `shadow` (with `spread`), `inner_shadow`, `blur`,            | layer paint props;        |
+|                  | `brightness`, `contrast`, `saturation`, `grayscale`, `hue_rotation`,    | offscreen only if needed  |
+|                  | `sepia`, `color_invert`, `color_multiply`, `luminance_to_alpha`,        |                           |
+|                  | `blend_mode`, `compositing_group`, `rotation_effect`, `scale_effect`,   |                           |
+|                  | `background(Material::regular)` (blur behind)                           |                           |
 | Interaction      | `on_tap_gesture`, `on_hover`, `gesture(...)`, `focusable`, `focused`,   | event handlers            |
 |                  | `on_key_press`, `keyboard_shortcut`, `context_menu`, `help` (tooltip)   |                           |
 | Lifecycle        | `on_appear`, `on_disappear`, `task(async fn)`, `on_change(value, fn)`   | effects tied to mount     |
@@ -817,12 +823,25 @@ Text("Hi").apply(card)                             // function-style: View card(
 - `mask(View)`: an arbitrary alpha mask. This needs an offscreen layer, so it's the most expensive
   option and the inspector should flag it.
 
+**Effect cost model**:
+- On a single shape (`[shadow*] shape [inner_shadow*]`), `opacity`, the color filters (computed on
+  the CPU as a 4x5 matrix applied to the fill), `shadow` (with spread) and `inner_shadow` are
+  analytic: no offscreen pass.
+- Anything else gets one offscreen layer that carries every effect at once: blur, color matrix,
+  blend mode, transform (rotation/scale; a uniform scale alone stays vector), inner shadow.
+- `blur` and materials blur at a reduced resolution once sigma passes 12 px (downsample up to 8x).
+- `blend_mode` and materials read the backdrop. The pass draws offscreen and is split there: what
+  it drew so far is copied (and for materials, blurred) before the view composites over it.
+  Inside a layer, the backdrop is that layer's content only.
+- Rotation and scale don't move hit testing yet.
+
 ### 9.5 Shapes, color, fonts, animation
 - **Shapes** are views: `Rectangle`, `RoundedRectangle(r, CornerStyle::continuous)` (squircle),
   `Capsule`, `Circle`, `Ellipse`, `Path`, and `UnevenRoundedRectangle`. Modify them with
   `.fill(style)`, `.stroke(style, width)`, and `.inset(by)`.
 - **ShapeStyles**: `Color` (sRGB/P3, `hex`, `opacity`, semantic tokens), `LinearGradient`,
-  `RadialGradient`, `AngularGradient`, `ImagePaint`, and `Material` (frosted blur).
+  `RadialGradient`, `EllipticalGradient`, `AngularGradient`, `ImagePaint`, and `Material`
+  (frosted blur: `ultra_thin` … `ultra_thick`, with a dark-mode tint).
 - **Fonts**: `Font::system(size, weight, design)`; semantic styles (`Font::large_title`,
   `title`, `headline`, `body`, `caption`) that scale with a global text-size setting; and
   `Font::custom("Inter", size)`. Text concatenation builds rich text:
@@ -1517,10 +1536,10 @@ Separate render thread from day one (decided).
     - Frames are paced by a frame-latency waitable swapchain (latency 1) instead of a blocking
       present. The present uses sync interval 1: with 0 the waitable is signaled as soon as the
       present is queued, and an animating window rendered ~900 fps on a 75 Hz display (~50% GPU).
-    - `ELG_PRESENT=vulkan` restores Vulkan swapchains for opaque windows.
+    - `ELG_PRESENT=surface` restores WebGPU surfaces for opaque windows.
     - `ELG_PRESENT=swapchain`, or RenderDoc being attached (`renderdoc.dll` loaded), puts every
-      window on a Vulkan swapchain and creates no Direct3D objects. RenderDoc can't capture
-      DirectComposition or D3D11/Vulkan sharing; the system's composition code crashed on its
+      window on a WebGPU surface and creates no Direct3D objects of its own. RenderDoc can't capture
+      DirectComposition or D3D11 texture sharing; the system's composition code crashed on its
       wrapped D3D11 device. Transparent windows render opaque then (logged once).
   - What triggers a live-resize frame: SDL's live-resize timer is a `WM_TIMER`, which Windows
     delivers only when no other message waits, so it fired irregularly during fast drags (one
@@ -1532,13 +1551,12 @@ Separate render thread from day one (decided).
     List's frame went from ~16 ms to ~1.6 ms in debug. Summing in `float` drifted by a whole row
     over 10,000 items.
   - Follow-ups:
-    - `VK_EXT_swapchain_maintenance1` 1:1 present scaling for the Vulkan path where drivers
-      expose it.
-    - Replace the CPU waits around the D3D11 copy with shared fences (keyed mutex or
-      `VK_KHR_external_semaphore_win32`).
+    - Replace the CPU waits around the D3D11 copy with shared fences (the end-access fences
+      Dawn's shared texture memory returns, waited on by D3D11).
 - **Embedding mode** (§4) runs without the render thread: the host calls `elg::render(cmd)` on
   its own render thread with the latest packet.
-- **Rule**: the UI thread never touches Vulkan objects, and the render thread never touches the
+- **Rule**: the UI thread never touches GPU objects (it hands the render thread each window's native
+  handles; the render thread creates the surfaces), and the render thread never touches the
   element tree or signals.
 
 ---

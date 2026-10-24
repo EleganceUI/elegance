@@ -6,73 +6,46 @@
 #define ELG_GPU_SWAPCHAIN_H
 
 #include "gpu/device.h"
-#include "gpu/vk.h"
+#include "gpu/webgpu.h"
 
 #include <cstdint>
-#include <functional>
-#include <vector>
 
 namespace elg::detail::gpu {
 
-// A window's swapchain: sRGB color images presented with FIFO (vsync).
+// A window's surface, configured as a swapchain: 8-bit images rendered through sRGB views,
+// presented with FIFO (vsync).
 class Swapchain {
 public:
     // `transparent`: the window shows through where the image's alpha is below 1 (needs a
     // compositor that blends; otherwise it stays opaque).
-    Swapchain(const Device& device, VkSurfaceKHR surface, bool transparent = false);
+    Swapchain(const Device& device, wgpu::Surface surface, bool transparent = false);
     ~Swapchain();
 
     Swapchain(const Swapchain&) = delete;
     Swapchain& operator=(const Swapchain&) = delete;
 
-    // (Re)creates the swapchain if it's stale or the surface size changed. `fallback` is used
-    // when the surface doesn't dictate its size. Returns false when the surface has no area
-    // (e.g. a minimized window); there is nothing to present then.
-    // `idle` is called before the swapchain is recreated: it waits for the window's frames in
-    // flight. `submitted` counts the window's queue submissions so far; the old swapchain's
-    // images and semaphores (a pending present may still wait on one) are kept until a later
-    // submission has completed (see collect()).
-    bool prepare(VkExtent2D fallback, const std::function<void()>& idle, std::uint64_t submitted);
-    // Destroys retired swapchains once submission number `completed` (and so everything queued
-    // before it, presents included) has finished.
-    void collect(std::uint64_t completed) noexcept;
+    // (Re)configures the surface if it's stale or the window's size changed. Returns false when
+    // the window has no area (e.g. minimized); there is nothing to present then.
+    bool prepare(std::uint32_t width, std::uint32_t height);
+    // The image to render the next frame into, or null when the surface must be reconfigured
+    // first (skip the frame).
+    wgpu::TextureView acquire();
+    void present();
 
-    // Forces recreation on the next prepare(), e.g. after VK_ERROR_OUT_OF_DATE_KHR.
-    void mark_stale() noexcept { stale_ = true; }
-
-    VkSwapchainKHR handle() const noexcept { return swapchain_; }
-    VkFormat format() const noexcept { return format_.format; }
-    VkExtent2D extent() const noexcept { return extent_; }
-    VkImage image(std::uint32_t index) const { return images_[index]; }
-    VkImageView view(std::uint32_t index) const { return views_[index]; }
-    // Signaled when rendering to the image finishes; one per image, since an image's previous
-    // present must be done with it before it's acquired again.
-    VkSemaphore render_finished(std::uint32_t index) const { return render_finished_[index]; }
+    // The format of the views acquire() returns (sRGB).
+    wgpu::TextureFormat view_format() const noexcept { return view_format_; }
+    std::uint32_t width() const noexcept { return width_; }
+    std::uint32_t height() const noexcept { return height_; }
 
 private:
-    void create(VkExtent2D extent, const VkSurfaceCapabilitiesKHR& caps, const std::function<void()>& idle,
-                std::uint64_t submitted);
-    void destroy_images() noexcept;
-
-    struct Retired {
-        VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-        std::vector<VkImageView> views;
-        std::vector<VkSemaphore> semaphores;
-        std::uint64_t submitted = 0; // submissions made before it was retired
-    };
-    void destroy(Retired& retired) noexcept;
-    std::vector<Retired> retired_;
-
     const Device& device_;
-    VkSurfaceKHR surface_;
-    bool transparent_;
-    VkSurfaceFormatKHR format_{};
-    VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
-    VkExtent2D extent_{};
+    wgpu::Surface surface_;
+    wgpu::TextureFormat format_ = wgpu::TextureFormat::Undefined;
+    wgpu::TextureFormat view_format_ = wgpu::TextureFormat::Undefined;
+    wgpu::CompositeAlphaMode alpha_ = wgpu::CompositeAlphaMode::Auto;
+    std::uint32_t width_ = 0;
+    std::uint32_t height_ = 0;
     bool stale_ = true;
-    std::vector<VkImage> images_;
-    std::vector<VkImageView> views_;
-    std::vector<VkSemaphore> render_finished_;
 };
 
 } // namespace elg::detail::gpu

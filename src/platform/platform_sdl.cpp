@@ -10,7 +10,7 @@
 #include <elg/error.h>
 
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
+#include <SDL3/SDL_metal.h>
 
 #include <algorithm>
 #include <cmath>
@@ -235,7 +235,13 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
         content_scale = 1;
     }
 
-    SDL_WindowFlags flags = SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN;
+    // macOS presents through a CAMetalLayer; elsewhere WebGPU takes the native window as is.
+#if defined(__APPLE__)
+    constexpr SDL_WindowFlags kGpuFlags = SDL_WINDOW_METAL;
+#else
+    constexpr SDL_WindowFlags kGpuFlags = 0;
+#endif
+    SDL_WindowFlags flags = kGpuFlags | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN;
     if (desc.resizable) {
         flags |= SDL_WINDOW_RESIZABLE;
     }
@@ -251,7 +257,7 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
 
     if (popup) {
         // Menus and tooltips: always transparent and undecorated (they draw their own panel).
-        flags = SDL_WINDOW_VULKAN | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN | SDL_WINDOW_TRANSPARENT |
+        flags = kGpuFlags | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN | SDL_WINDOW_TRANSPARENT |
                 (popup->tooltip ? SDL_WINDOW_TOOLTIP : SDL_WINDOW_POPUP_MENU);
         parent_ = popup->parent->window_;
         window_ = SDL_CreatePopupWindow(parent_, 0, 0,
@@ -266,6 +272,14 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
         throw_sdl_error("failed to create a window");
     }
     id_ = SDL_GetWindowID(window_);
+#if defined(__APPLE__)
+    // Views belong to the main thread, so the layer is made here rather than by the renderer.
+    metal_view_ = SDL_Metal_CreateView(window_);
+    if (!metal_view_) {
+        SDL_DestroyWindow(window_);
+        throw_sdl_error("failed to create a Metal view");
+    }
+#endif
 
     if (desc.min_size) {
         SDL_SetWindowMinimumSize(window_, static_cast<int>(std::lround(desc.min_size->width * content_scale)),
@@ -389,6 +403,9 @@ Window::~Window() {
     if (parent_text_input_) {
         SDL_StopTextInput(parent_); // closed with its text field focused
     }
+    if (metal_view_) {
+        SDL_Metal_DestroyView(static_cast<SDL_MetalView>(metal_view_));
+    }
     SDL_DestroyWindow(window_);
 }
 
@@ -489,12 +506,33 @@ void Window::show() {
     SDL_ShowWindow(window_);
 }
 
-VkSurfaceKHR Window::create_surface(VkInstance instance) const {
-    VkSurfaceKHR surface = VK_NULL_HANDLE;
-    if (!SDL_Vulkan_CreateSurface(window_, instance, nullptr, &surface)) {
-        throw GpuError(std::format("failed to create a Vulkan surface: {}", SDL_GetError()));
+SurfaceSource Window::surface_source() const {
+    const SDL_PropertiesID properties = SDL_GetWindowProperties(window_);
+    SurfaceSource source;
+#if defined(_WIN32)
+    source.kind = SurfaceSource::Kind::win32;
+    source.display = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, nullptr);
+    source.handle = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+#elif defined(__APPLE__)
+    (void)properties;
+    source.kind = SurfaceSource::Kind::metal;
+    source.handle = SDL_Metal_GetLayer(static_cast<SDL_MetalView>(metal_view_));
+#else
+    if (std::string_view(SDL_GetCurrentVideoDriver()) == "wayland") {
+        source.kind = SurfaceSource::Kind::wayland;
+        source.display = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, nullptr);
+        source.handle = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, nullptr);
+    } else {
+        source.kind = SurfaceSource::Kind::xlib;
+        source.display = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
+        source.xlib_window =
+            static_cast<std::uint64_t>(SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
     }
-    return surface;
+#endif
+    if (!source.handle && source.xlib_window == 0) {
+        throw GpuError(std::format("the window system gave no handle to draw into: {}", SDL_GetError()));
+    }
+    return source;
 }
 
 // --- Platform ---
@@ -518,15 +556,6 @@ Platform::~Platform() {
     SDL_RemoveEventWatch(&on_event_watch, this);
     SDL_Quit();
     g_platform_alive = false;
-}
-
-std::vector<const char*> Platform::vulkan_instance_extensions() const {
-    Uint32 count = 0;
-    const char* const* names = SDL_Vulkan_GetInstanceExtensions(&count);
-    if (!names) {
-        throw GpuError(std::format("Vulkan is not available: {}", SDL_GetError()));
-    }
-    return {names, names + count};
 }
 
 Event Platform::wait_event() {

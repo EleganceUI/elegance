@@ -17,8 +17,6 @@
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 
-#include <vulkan/vulkan_win32.h>
-
 #include <cstring>
 #include <format>
 #include <string>
@@ -35,12 +33,10 @@ void check_hr(HRESULT result, std::string_view what) {
     }
 }
 
-constexpr const char* kExternalMemoryWin32 = "VK_KHR_external_memory_win32";
-
 } // namespace
 
 struct CompositionTarget::Impl {
-    // D3D11 on the same adapter as the Vulkan device.
+    // D3D11 on the same adapter as the WebGPU device.
     ComPtr<ID3D11Device> d3d;
     ComPtr<ID3D11DeviceContext> context;
     ComPtr<ID3D11Query> done; // signaled when the copy into the swapchain has executed
@@ -53,38 +49,37 @@ struct CompositionTarget::Impl {
     ComPtr<IDCompositionSurface> background_surface;
     ComPtr<IDCompositionVisual> visual; // the frames
 
-    // The shared texture: created by D3D11, imported into Vulkan.
+    // The shared texture: created by D3D11, imported into WebGPU.
     ComPtr<ID3D11Texture2D> shared;
-    VkImage image = VK_NULL_HANDLE;
-    VkDeviceMemory memory = VK_NULL_HANDLE;
-    VkImageView view = VK_NULL_HANDLE;
-
-    PFN_vkGetMemoryWin32HandlePropertiesKHR get_handle_properties = nullptr;
+    wgpu::SharedTextureMemory memory;
+    wgpu::Texture texture;
+    wgpu::TextureView view;
+    bool accessing = false;
 };
 
 bool CompositionTarget::supported(const Device& device) {
-    return device.has_extension(kExternalMemoryWin32);
+    return device.has_feature(wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle) && device.luid().has_value();
 }
 
 bool composition_allowed() {
     static const bool allowed = [] {
         const std::string present = platform::environment_variable("ELG_PRESENT").value_or("");
         if (present == "swapchain") {
-            log_info("windows present through Vulkan swapchains (ELG_PRESENT=swapchain)");
+            log_info("windows present through WebGPU surfaces (ELG_PRESENT=swapchain)");
             return false;
         }
         // RenderDoc's capture library is injected when the process starts, before any window.
         if (GetModuleHandleA("renderdoc.dll") != nullptr) {
-            log_info("windows present through Vulkan swapchains (RenderDoc is attached, and it can't capture "
+            log_info("windows present through WebGPU surfaces (RenderDoc is attached, and it can't capture "
                      "DirectComposition)");
             return false;
         }
-        if (present == "vulkan") {
-            log_info("opaque windows present through Vulkan swapchains, transparent ones through "
-                     "DirectComposition (ELG_PRESENT=vulkan)");
+        if (present == "surface") {
+            log_info("opaque windows present through WebGPU surfaces, transparent ones through "
+                     "DirectComposition (ELG_PRESENT=surface)");
         } else {
             if (!present.empty()) {
-                log_warning("ELG_PRESENT={} is not recognized (use swapchain or vulkan)", present);
+                log_warning("ELG_PRESENT={} is not recognized (use swapchain or surface)", present);
             }
             log_info("windows present through DirectComposition");
         }
@@ -96,26 +91,14 @@ bool composition_allowed() {
 CompositionTarget::CompositionTarget(const Device& device, void* hwnd, bool transparent)
     : device_(device), impl_(std::make_unique<Impl>()), transparent_(transparent) {
     if (!supported(device)) {
-        throw GpuError("the GPU can't share images with Direct3D (no VK_KHR_external_memory_win32)");
-    }
-    // Loaded by hand: the Vulkan loader library may be built without the Win32 platform.
-    impl_->get_handle_properties = reinterpret_cast<PFN_vkGetMemoryWin32HandlePropertiesKHR>(
-        vkGetDeviceProcAddr(device.handle(), "vkGetMemoryWin32HandlePropertiesKHR"));
-    if (!impl_->get_handle_properties) {
-        throw GpuError("vkGetMemoryWin32HandlePropertiesKHR is missing");
+        throw GpuError(std::format("the GPU backend ({}) can't share images with Direct3D 11",
+                                   to_string(device.backend())));
     }
 
-    // The Vulkan device's adapter, by LUID.
-    VkPhysicalDeviceIDProperties ids{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES};
-    VkPhysicalDeviceProperties2 properties{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2};
-    properties.pNext = &ids;
-    vkGetPhysicalDeviceProperties2(device.physical(), &properties);
-    if (!ids.deviceLUIDValid) {
-        throw GpuError("the GPU has no adapter LUID to match with Direct3D");
-    }
+    // The WebGPU device's adapter, by LUID.
     LUID luid;
-    static_assert(sizeof(luid) == VK_LUID_SIZE);
-    std::memcpy(&luid, ids.deviceLUID, sizeof(luid));
+    static_assert(sizeof(luid) == 8);
+    std::memcpy(&luid, device.luid()->data(), sizeof(luid));
 
     ComPtr<IDXGIFactory4> factory;
     check_hr(CreateDXGIFactory2(0, IID_PPV_ARGS(&factory)), "create a DXGI factory");
@@ -197,40 +180,45 @@ void CompositionTarget::set_background(const std::array<float, 4>& srgb) {
 }
 
 void CompositionTarget::destroy_image() noexcept {
-    const VkDevice dev = device_.handle();
-    if (impl_->view) {
-        vkDestroyImageView(dev, impl_->view, nullptr);
-        impl_->view = VK_NULL_HANDLE;
-    }
-    if (impl_->image) {
-        vkDestroyImage(dev, impl_->image, nullptr);
-        impl_->image = VK_NULL_HANDLE;
-    }
-    if (impl_->memory) {
-        vkFreeMemory(dev, impl_->memory, nullptr);
-        impl_->memory = VK_NULL_HANDLE;
-    }
+    end_access();
+    impl_->view = nullptr;
+    impl_->texture = nullptr;
+    impl_->memory = nullptr;
     impl_->shared.Reset();
 }
 
-VkImage CompositionTarget::image() const noexcept {
-    return impl_->image;
-}
-
-VkImageView CompositionTarget::view() const noexcept {
+wgpu::TextureView CompositionTarget::begin_access() {
+    // Its previous contents don't matter: every frame clears it.
+    wgpu::SharedTextureMemoryBeginAccessDescriptor access;
+    access.initialized = false;
+    if (impl_->memory.BeginAccess(impl_->texture, &access) != wgpu::Status::Success) {
+        throw_gpu_error("access the shared texture");
+    }
+    impl_->accessing = true;
     return impl_->view;
 }
 
-bool CompositionTarget::prepare(VkExtent2D extent) {
-    if (extent.width == 0 || extent.height == 0) {
+void CompositionTarget::end_access() noexcept {
+    if (impl_->accessing) {
+        // Direct3D copies the texture only after the CPU waited for the rendering (present()),
+        // so the end state's fences aren't needed.
+        wgpu::SharedTextureMemoryEndAccessState state;
+        impl_->memory.EndAccess(impl_->texture, &state);
+        impl_->accessing = false;
+    }
+}
+
+bool CompositionTarget::prepare(std::uint32_t width, std::uint32_t height) {
+    if (width == 0 || height == 0) {
         return false;
     }
-    if (impl_->image && extent.width == extent_.width && extent.height == extent_.height) {
+    if (impl_->texture && width == width_ && height == height_) {
         return true;
     }
     // Nothing uses the old image: every frame waits for its rendering before presenting.
     destroy_image();
-    extent_ = extent;
+    width_ = width;
+    height_ = height;
 
     // The composition swapchain: premultiplied alpha, which DWM blends with what's behind.
     if (!impl_->swapchain) {
@@ -241,8 +229,8 @@ bool CompositionTarget::prepare(VkExtent2D extent) {
         ComPtr<IDXGIFactory2> factory;
         check_hr(adapter->GetParent(IID_PPV_ARGS(&factory)), "get the DXGI factory");
         DXGI_SWAP_CHAIN_DESC1 desc{};
-        desc.Width = extent.width;
-        desc.Height = extent.height;
+        desc.Width = width;
+        desc.Height = height;
         desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
         desc.SampleDesc.Count = 1;
         desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
@@ -260,15 +248,15 @@ bool CompositionTarget::prepare(VkExtent2D extent) {
         check_hr(impl_->visual->SetContent(impl_->swapchain.Get()), "show the swapchain");
         check_hr(impl_->dcomp->Commit(), "commit the composition");
     } else {
-        check_hr(impl_->swapchain->ResizeBuffers(0, extent.width, extent.height, DXGI_FORMAT_UNKNOWN,
+        check_hr(impl_->swapchain->ResizeBuffers(0, width, height, DXGI_FORMAT_UNKNOWN,
                                                  DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT),
                  "resize the composition swapchain");
     }
 
     // The shared texture, created by D3D11 with an NT handle...
     D3D11_TEXTURE2D_DESC texture{};
-    texture.Width = extent.width;
-    texture.Height = extent.height;
+    texture.Width = width;
+    texture.Height = height;
     texture.MipLevels = 1;
     texture.ArraySize = 1;
     texture.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
@@ -284,74 +272,31 @@ bool CompositionTarget::prepare(VkExtent2D extent) {
                                           &handle),
              "share the texture");
 
-    // ...and imported into Vulkan as an image we render to.
-    const VkDevice dev = device_.handle();
-    try {
-        VkExternalMemoryImageCreateInfo external{VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO};
-        external.handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT;
-        VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
-        info.pNext = &external;
-        info.flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT; // UNORM storage, sRGB view
-        info.imageType = VK_IMAGE_TYPE_2D;
-        info.format = VK_FORMAT_B8G8R8A8_UNORM;
-        info.extent = {extent.width, extent.height, 1};
-        info.mipLevels = 1;
-        info.arrayLayers = 1;
-        info.samples = VK_SAMPLE_COUNT_1_BIT;
-        info.tiling = VK_IMAGE_TILING_OPTIMAL;
-        info.usage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
-        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        check(vkCreateImage(dev, &info, nullptr, &impl_->image), "create the shared image");
-
-        VkMemoryRequirements requirements;
-        vkGetImageMemoryRequirements(dev, impl_->image, &requirements);
-        VkMemoryWin32HandlePropertiesKHR handle_properties{VK_STRUCTURE_TYPE_MEMORY_WIN32_HANDLE_PROPERTIES_KHR};
-        check(impl_->get_handle_properties(dev, VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT, handle,
-                                           &handle_properties),
-              "query the shared texture's memory");
-        const std::uint32_t allowed = requirements.memoryTypeBits & handle_properties.memoryTypeBits;
-        VkPhysicalDeviceMemoryProperties memory_properties;
-        vkGetPhysicalDeviceMemoryProperties(device_.physical(), &memory_properties);
-        std::uint32_t type = UINT32_MAX;
-        for (std::uint32_t i = 0; i < memory_properties.memoryTypeCount; ++i) {
-            if ((allowed & (1u << i)) == 0) {
-                continue;
-            }
-            if (type == UINT32_MAX ||
-                (memory_properties.memoryTypes[i].propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) {
-                type = i;
-            }
-        }
-        if (type == UINT32_MAX) {
-            throw GpuError("no memory type can hold the shared texture");
-        }
-
-        VkImportMemoryWin32HandleInfoKHR import{VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_KHR};
-        import.handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_D3D11_TEXTURE_BIT;
-        import.handle = handle;
-        VkMemoryDedicatedAllocateInfo dedicated{VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO};
-        dedicated.pNext = &import;
-        dedicated.image = impl_->image;
-        VkMemoryAllocateInfo allocate{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
-        allocate.pNext = &dedicated;
-        allocate.allocationSize = requirements.size;
-        allocate.memoryTypeIndex = type;
-        check(vkAllocateMemory(dev, &allocate, nullptr, &impl_->memory), "import the shared texture");
-        check(vkBindImageMemory(dev, impl_->image, impl_->memory, 0), "bind the shared texture");
-
-        VkImageViewCreateInfo view{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
-        view.image = impl_->image;
-        view.viewType = VK_IMAGE_VIEW_TYPE_2D;
-        view.format = format();
-        view.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
-        check(vkCreateImageView(dev, &view, nullptr, &impl_->view), "create the shared image view");
-    } catch (...) {
-        CloseHandle(handle);
-        destroy_image();
-        throw;
-    }
+    // ...and imported into WebGPU as a texture we render to.
+    wgpu::SharedTextureMemoryDXGISharedHandleDescriptor shared;
+    shared.handle = handle;
+    wgpu::SharedTextureMemoryDescriptor memory;
+    memory.nextInChain = &shared;
+    memory.label = "composition target";
+    impl_->memory = device_.handle().ImportSharedTextureMemory(&memory);
     CloseHandle(handle); // importing an NT handle doesn't take ownership of it
+    if (!impl_->memory) {
+        destroy_image();
+        throw_gpu_error("import the shared texture");
+    }
+    const wgpu::TextureFormat sampled = view_format();
+    wgpu::TextureDescriptor descriptor;
+    descriptor.label = "composition target";
+    descriptor.dimension = wgpu::TextureDimension::e2D;
+    descriptor.size = {width, height, 1};
+    descriptor.format = wgpu::TextureFormat::BGRA8Unorm; // UNORM storage, sRGB view
+    descriptor.usage = wgpu::TextureUsage::RenderAttachment;
+    descriptor.viewFormatCount = 1;
+    descriptor.viewFormats = &sampled;
+    impl_->texture = impl_->memory.CreateTexture(&descriptor);
+    wgpu::TextureViewDescriptor view;
+    view.format = sampled;
+    impl_->view = impl_->texture.CreateView(&view);
     return true;
 }
 
@@ -365,7 +310,7 @@ void CompositionTarget::present() {
     // as fast as the GPU allows (hundreds of frames a second). Latency stays at one frame: the wait
     // returns at a vblank, and the frame rendered right after it shows at the next.
     check_hr(impl_->swapchain->Present(1, 0), "present to the composition swapchain");
-    // Vulkan renders into the shared texture again next frame: let the copy finish first.
+    // WebGPU renders into the shared texture again next frame: let the copy finish first.
     impl_->context->End(impl_->done.Get());
     while (impl_->context->GetData(impl_->done.Get(), nullptr, 0, 0) == S_FALSE) {
         SwitchToThread();

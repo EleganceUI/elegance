@@ -28,6 +28,7 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         gpu/swapchain.cpp
         gpu/texture_cache.cpp
         gpu/video_textures.cpp
+        gpu/webgpu.cpp
         media/audio.cpp
         media/audio_stream.cpp
         media/camera.cpp
@@ -38,8 +39,6 @@ add_library(elegence ${ELG_LIBRARY_TYPE}
         media/video_source.cpp
         net/http.cpp
         net/websocket.cpp
-        gpu/vk.cpp
-        gpu/vma.cpp
         platform/accessibility_adapter.cpp
         platform/desktop_sdl.cpp
         platform/dynamic_library.cpp
@@ -114,8 +113,7 @@ if (NOT ELG_BUILD_SHARED)
 endif ()
 
 find_package(SDL3 CONFIG REQUIRED)
-find_package(volk CONFIG REQUIRED)
-find_package(VulkanMemoryAllocator CONFIG REQUIRED)
+find_package(Dawn CONFIG REQUIRED) # WebGPU (design.md §5)
 find_package(Freetype REQUIRED)
 find_package(harfbuzz CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
@@ -138,7 +136,7 @@ endif ()
 find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
 target_include_directories(elegence PRIVATE "${MINIAUDIO_INCLUDE_DIR}")
 
-# Private: no SDL or Vulkan types appear in public headers (design.md §4).
+# Private: no SDL or WebGPU types appear in public headers (design.md §4).
 # Built-in icon sets (design.md §13.2), embedded into the library.
 include(ElgEmbed)
 if (ELG_ICONS)
@@ -175,8 +173,7 @@ endif ()
 
 target_link_libraries(elegence PRIVATE
         SDL3::SDL3
-        volk::volk
-        GPUOpen::VulkanMemoryAllocator
+        dawn::webgpu_dawn
         Freetype::Freetype
         harfbuzz::harfbuzz
         msdfgen::msdfgen-core
@@ -192,6 +189,16 @@ if (WIN32 AND ELG_BUILD_SHARED)
     )
 endif ()
 
+# Dawn's Direct3D 12 backend loads the DirectX shader compiler at run time (without it, it falls
+# back to the older FXC), so it isn't among the linked DLLs above.
+if (WIN32 AND DEFINED VCPKG_INSTALLED_DIR)
+    set(elg_dxc_dir "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/$<$<CONFIG:Debug>:debug/>bin")
+    add_custom_command(TARGET elegence POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "${elg_dxc_dir}/dxcompiler.dll" "${elg_dxc_dir}/dxil.dll" $<TARGET_FILE_DIR:elegence>
+    )
+endif ()
+
 target_include_directories(elegence
         PUBLIC
             ${PROJECT_SOURCE_DIR}/include
@@ -201,19 +208,15 @@ target_include_directories(elegence
 )
 
 elg_add_shaders(elegence
-        ${PROJECT_SOURCE_DIR}/shaders/ui.vert
-        ${PROJECT_SOURCE_DIR}/shaders/ui.frag
-        ${PROJECT_SOURCE_DIR}/shaders/blur.vert
-        ${PROJECT_SOURCE_DIR}/shaders/blur.frag
-        ${PROJECT_SOURCE_DIR}/shaders/path.vert
-        ${PROJECT_SOURCE_DIR}/shaders/path_cover.vert
-        ${PROJECT_SOURCE_DIR}/shaders/path.frag
-        ${PROJECT_SOURCE_DIR}/shaders/video_convert.frag
+        ${PROJECT_SOURCE_DIR}/shaders/ui.wgsl
+        ${PROJECT_SOURCE_DIR}/shaders/blur.wgsl
+        ${PROJECT_SOURCE_DIR}/shaders/path.wgsl
+        ${PROJECT_SOURCE_DIR}/shaders/mipmap.wgsl
+        ${PROJECT_SOURCE_DIR}/shaders/video_convert.wgsl
 )
 
 target_compile_definitions(elegence PRIVATE
         ELG_VERSION_STRING="${PROJECT_VERSION}"
-        VK_NO_PROTOTYPES # every Vulkan function comes from volk
 )
 if (WIN32)
     target_compile_definitions(elegence PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

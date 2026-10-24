@@ -321,7 +321,7 @@ View Tag(std::string title, Color color) {
 
 View LayoutCards() {
     const auto tags = [] {
-        return FlowLayout{}(Tag("C++23", palette::blue), Tag("Vulkan", palette::red), Tag("SwiftUI-style", palette::mauve),
+        return FlowLayout{}(Tag("C++23", palette::blue), Tag("WebGPU", palette::red), Tag("SwiftUI-style", palette::mauve),
                             Tag("reactive", palette::green), Tag("MSDF text", palette::peach), Tag("GPU paths", palette::sky),
                             Tag("new row", palette::green).layout_value<RowBreak>(true), Tag("layout values", palette::mauve),
                             Tag("cached", palette::blue));

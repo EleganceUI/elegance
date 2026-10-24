@@ -8,12 +8,14 @@
 #include <elg/color.h>
 #include <elg/geometry.h>
 #include <elg/gradient.h>
+#include <elg/modifier.h>
 #include <elg/path.h>
 #include <elg/view.h>
 
 #include "media/image_decode.h"
 #include "media/video_source.h"
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <variant>
@@ -42,6 +44,17 @@ struct BoxShadowCommand {
     CornerRadii radii;
     Color color;
     float blur_radius = 0; // points; sigma is half of it
+};
+
+// An analytic shadow inside a rounded rect: the shape's own edge, moved by `offset` and grown
+// inward by `spread`, blurred, drawn inside the shape.
+struct InnerShadowCommand {
+    Rect rect; // the shape
+    CornerRadii radii;
+    Color color;
+    float blur_radius = 0; // points; sigma is half of it
+    Point offset;
+    float spread = 0;
 };
 
 // A filled vector path (design.md §5). The polygons (flattened, closed) are shared and in local
@@ -86,20 +99,43 @@ struct PushClipCommand {
 
 struct PopClipCommand {};
 
+// A color matrix over sRGB with straight alpha: four rows (red, green, blue, alpha out), each
+// four coefficients (red, green, blue, alpha in) and an offset.
+using ColorMatrix = std::array<float, 20>;
+
+// Rotates and scales a layer about `pivot` (window points): p' = pivot + M (p - pivot), with
+// x' = a x + c y and y' = b x + d y.
+struct LayerTransform {
+    float a = 1, b = 0, c = 0, d = 1;
+    Point pivot;
+};
+
 // Renders everything until the matching PopLayerCommand offscreen, then composites it with
 // `opacity` and an optional blurred shadow of its alpha. With a `mask`, only what the mask path
-// covers is kept (clip_shape with a path).
+// covers is kept (clip_shape with a path). The rest: a blur of the content, a color matrix, a
+// blend mode with what's behind, a transform, and a shadow inside it.
 struct PushLayerCommand {
     Rect bounds; // of the layer's content, before the shadow
     float opacity = 1;
     std::optional<Shadow> shadow;
     std::optional<PathCommand> mask; // its fill is ignored
+    float blur = 0;                  // radius in points
+    bool blur_opaque = false;        // edges read as the nearest pixel, not transparent
+    std::optional<ColorMatrix> color_matrix;
+    BlendMode blend = BlendMode::normal;
+    std::optional<LayerTransform> transform;
+    std::optional<Shadow> inner_shadow;
 };
+
+// Inside a layer: the commands after it (to the PopLayerCommand) are a mask; only where they're
+// opaque does the content before it show (View::mask).
+struct LayerMaskCommand {};
 
 struct PopLayerCommand {};
 
-using DrawCommand = std::variant<RectCommand, GlyphCommand, BoxShadowCommand, PathCommand, ImageCommand,
-                                 VideoCommand, PushClipCommand, PopClipCommand, PushLayerCommand, PopLayerCommand>;
+using DrawCommand = std::variant<RectCommand, GlyphCommand, BoxShadowCommand, InnerShadowCommand, PathCommand,
+                                 ImageCommand, VideoCommand, PushClipCommand, PopClipCommand, PushLayerCommand,
+                                 LayerMaskCommand, PopLayerCommand>;
 
 // Immutable-once-built draw commands for one window frame, in logical points and sRGB, in
 // painter's order. Holds copies of everything, never references into app memory
@@ -128,6 +164,11 @@ void transform(std::vector<DrawCommand>& commands, float dx, float dy, float sca
 // Appends `content` faded to `opacity` as a group: an alpha multiply for a single shape, an
 // offscreen layer otherwise.
 void append_faded(DisplayList& list, DisplayList&& content, float opacity);
+// The matrix for a color filter (straight sRGB), and applying one to a color.
+ColorMatrix color_matrix(ColorFilter::Kind kind, float amount, Color color);
+Color apply(const ColorMatrix& matrix, Color color);
+// Where `rect` lands under `transform`: the bounds of its four corners.
+Rect transformed_bounds(const LayerTransform& transform, const Rect& rect);
 
 } // namespace elg::detail
 

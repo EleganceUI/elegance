@@ -2,17 +2,19 @@
 # If a copy of the MPL was not distributed with this file, You can obtain one at
 # https://mozilla.org/MPL/2.0/.
 
-# Offline GLSL -> SPIR-V compilation with glslc from the Vulkan SDK (design.md §3.3).
-find_program(ELG_GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin" REQUIRED)
+# WGSL shaders, embedded as source text (design.md §3.3). WebGPU compiles them when the app
+# creates its pipelines, so the build needs no shader compiler.
+
+set(ELG_SHADER_STRING_SCRIPT "${CMAKE_CURRENT_LIST_DIR}/ElgShaderString.cmake")
 
 # elg_add_shaders(<target> <shader>...)
 #
-# Compiles each shader to SPIR-V words as text (glslc -mfmt=num) at
-# <binary dir>/generated/shaders/<file name>.inc, ready to embed:
+# Writes each shader as a C++ string literal at <binary dir>/generated/shaders/<file name>.inc,
+# ready to embed:
 #
-#   constexpr std::uint32_t kSpirv[] = {
-#   #include "shaders/rect.vert.inc"
-#   };
+#   constexpr char kUiWgsl[] =
+#   #include "shaders/ui.wgsl.inc"
+#   ;
 function(elg_add_shaders target)
     set(out_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/shaders")
     set(outputs)
@@ -22,10 +24,10 @@ function(elg_add_shaders target)
         set(output "${out_dir}/${name}.inc")
         add_custom_command(
                 OUTPUT "${output}"
-                COMMAND "${CMAKE_COMMAND}" -E make_directory "${out_dir}"
-                COMMAND "${ELG_GLSLC}" --target-env=vulkan1.3 -O -mfmt=num -o "${output}" "${source_path}"
-                DEPENDS "${source_path}"
-                COMMENT "Compiling shader ${name}"
+                COMMAND "${CMAKE_COMMAND}" -DINPUT=${source_path} -DOUTPUT=${output}
+                        -P "${ELG_SHADER_STRING_SCRIPT}"
+                DEPENDS "${source_path}" "${ELG_SHADER_STRING_SCRIPT}"
+                COMMENT "Embedding shader ${name}"
                 VERBATIM
         )
         list(APPEND outputs "${output}")

@@ -12,8 +12,6 @@
 #include <elg/events.h>
 #include <elg/geometry.h>
 
-#include <volk.h>
-
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -28,6 +26,15 @@ namespace elg::detail::platform {
 struct PixelSize {
     int width = 0;
     int height = 0;
+};
+
+// What the GPU layer needs to create a surface for a window: the window system's own handles.
+struct SurfaceSource {
+    enum class Kind { none, win32, metal, xlib, wayland };
+    Kind kind = Kind::none;
+    void* display = nullptr; // HINSTANCE | Display* | wl_display*
+    void* handle = nullptr;  // HWND | CAMetalLayer* | wl_surface*
+    std::uint64_t xlib_window = 0;
 };
 
 enum class EventType {
@@ -149,11 +156,13 @@ public:
     Rect usable_area() const;
     HitArea hit_test_at(Point point) const { return hit_test_ ? hit_test_(point) : HitArea::normal; }
 
-    // The caller owns the surface and must destroy it before this window.
-    [[nodiscard]] VkSurfaceKHR create_surface(VkInstance instance) const;
+    // The handles the render thread creates this window's surface from. The surface must be
+    // gone before this window.
+    SurfaceSource surface_source() const;
 
 private:
     SDL_Window* window_ = nullptr;
+    void* metal_view_ = nullptr; // SDL_MetalView on macOS: the window's CAMetalLayer
     // Popups: the window they belong to, which has the keyboard (they're never activated), and
     // whether text input was started there for the popup.
     SDL_Window* parent_ = nullptr;
@@ -195,8 +204,6 @@ public:
 
     Platform(const Platform&) = delete;
     Platform& operator=(const Platform&) = delete;
-
-    std::vector<const char*> vulkan_instance_extensions() const;
 
     // Blocks until an event arrives.
     Event wait_event();

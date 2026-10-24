@@ -4,173 +4,85 @@
 
 #include "gpu/instance.h"
 
-#include "core/crash.h"
-#include "core/log.h"
-#include "platform/platform.h"
-
 #include <elg/error.h>
 
-#include <algorithm>
-#include <cstring>
-#include <format>
-#include <vector>
+#include <limits>
+#include <span>
+#include <string>
+#include <string_view>
+
+#if defined(_WIN32)
+#include <dawn/native/DawnNative.h>
+#include <windows.h>
+#endif
 
 namespace elg::detail::gpu {
 
-namespace {
-
-constexpr const char* kValidationLayer = "VK_LAYER_KHRONOS_validation";
-
-bool validation_requested() {
-    if (auto value = platform::environment_variable("ELG_VULKAN_VALIDATION")) {
-        return *value != "0";
-    }
-#ifdef NDEBUG
-    return false;
-#else
-    return true;
+Instance::Instance() {
+    // WaitAny with a timeout: requesting the adapter and device, and waiting for the GPU.
+    const wgpu::InstanceFeatureName features[] = {wgpu::InstanceFeatureName::TimedWaitAny};
+    wgpu::InstanceDescriptor descriptor;
+    descriptor.requiredFeatureCount = std::size(features);
+    descriptor.requiredFeatures = features;
+#if defined(_WIN32)
+    // Dawn looks for d3dcompiler_47.dll (Direct3D 11) and vulkan-1.dll next to itself, then by
+    // bare name. That second try uses LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, which needs an absolute
+    // path, so it always fails (ERROR_INVALID_PARAMETER) and the system's copies are never found.
+    // Name System32 as a search path instead (Dawn appends the file name).
+    char system[MAX_PATH];
+    const UINT length = GetSystemDirectoryA(system, MAX_PATH);
+    std::string system_dir = length > 0 && length < MAX_PATH ? std::string(system, length) + '\\' : std::string();
+    std::string_view search_paths[] = {system_dir};
+    dawn::native::DawnInstanceDescriptor dawn_descriptor;
+    dawn_descriptor.additionalRuntimeSearchPaths = std::span(search_paths, system_dir.empty() ? 0 : 1);
+    descriptor.nextInChain = &dawn_descriptor;
 #endif
+    instance_ = wgpu::CreateInstance(&descriptor);
+    if (!instance_) {
+        throw GpuError("WebGPU is not available: the instance could not be created");
+    }
 }
 
-bool has_layer(const char* name) {
-    std::uint32_t count = 0;
-    vkEnumerateInstanceLayerProperties(&count, nullptr);
-    std::vector<VkLayerProperties> layers(count);
-    vkEnumerateInstanceLayerProperties(&count, layers.data());
-    return std::ranges::any_of(
-        layers, [&](const VkLayerProperties& layer) { return std::strcmp(layer.layerName, name) == 0; });
+void Instance::wait(wgpu::Future future) const {
+    if (instance_.WaitAny(future, std::numeric_limits<std::uint64_t>::max()) != wgpu::WaitStatus::Success) {
+        throw_gpu_error("wait for the GPU");
+    }
 }
 
-bool has_instance_extension(const char* name) {
-    std::uint32_t count = 0;
-    vkEnumerateInstanceExtensionProperties(nullptr, &count, nullptr);
-    std::vector<VkExtensionProperties> extensions(count);
-    vkEnumerateInstanceExtensionProperties(nullptr, &count, extensions.data());
-    return std::ranges::any_of(extensions, [&](const VkExtensionProperties& extension) {
-        return std::strcmp(extension.extensionName, name) == 0;
-    });
-}
-
-VKAPI_ATTR VkBool32 VKAPI_CALL on_validation_message(
-    VkDebugUtilsMessageSeverityFlagBitsEXT severity, VkDebugUtilsMessageTypeFlagsEXT types,
-    const VkDebugUtilsMessengerCallbackDataEXT* data, void*) {
-    // A C callback: nothing may unwind through it.
-    try {
-        if (types == VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT) {
-            // Loader chatter, mostly about third-party layers (overlays, recorders) we don't own.
-            log_debug("vulkan: {}", data->pMessage);
-        } else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
-#ifdef NDEBUG
-            log_error("vulkan: {}", data->pMessage);
-#else
-            // Every Vulkan object belongs to the framework, so a validation error is our bug.
-            internal_error(std::format("Vulkan validation error: {}", data->pMessage));
-#endif
-        } else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
-            log_warning("vulkan: {}", data->pMessage);
-        }
-    } catch (...) {
+wgpu::Surface Instance::create_surface(const platform::SurfaceSource& source) const {
+    using Kind = platform::SurfaceSource::Kind;
+    wgpu::SurfaceSourceWindowsHWND win32;
+    wgpu::SurfaceSourceMetalLayer metal;
+    wgpu::SurfaceSourceXlibWindow xlib;
+    wgpu::SurfaceSourceWaylandSurface wayland;
+    wgpu::SurfaceDescriptor descriptor;
+    switch (source.kind) {
+    case Kind::win32:
+        win32.hinstance = source.display;
+        win32.hwnd = source.handle;
+        descriptor.nextInChain = &win32;
+        break;
+    case Kind::metal:
+        metal.layer = source.handle;
+        descriptor.nextInChain = &metal;
+        break;
+    case Kind::xlib:
+        xlib.display = source.display;
+        xlib.window = source.xlib_window;
+        descriptor.nextInChain = &xlib;
+        break;
+    case Kind::wayland:
+        wayland.display = source.display;
+        wayland.surface = source.handle;
+        descriptor.nextInChain = &wayland;
+        break;
+    case Kind::none: throw GpuError("the window has nothing to draw into");
     }
-    return VK_FALSE;
-}
-
-VkDebugUtilsMessengerCreateInfoEXT messenger_info() {
-    VkDebugUtilsMessengerCreateInfoEXT info{VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT};
-    info.messageSeverity = VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT |
-                           VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT;
-    info.messageType = VK_DEBUG_UTILS_MESSAGE_TYPE_GENERAL_BIT_EXT |
-                       VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
-                       VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
-    info.pfnUserCallback = &on_validation_message;
-    return info;
-}
-
-} // namespace
-
-Instance::Instance(std::span<const char* const> required_extensions) {
-    if (volkInitialize() != VK_SUCCESS) {
-        throw GpuError("Vulkan is not available: the Vulkan loader could not be found");
+    wgpu::Surface surface = instance_.CreateSurface(&descriptor);
+    if (!surface) {
+        throw_gpu_error("create a window surface");
     }
-    const std::uint32_t loader_version = volkGetInstanceVersion();
-    if (loader_version < VK_API_VERSION_1_3) {
-        throw GpuError(std::format("Vulkan 1.3 is required, but the installed loader supports {}.{}",
-                                   VK_API_VERSION_MAJOR(loader_version),
-                                   VK_API_VERSION_MINOR(loader_version)));
-    }
-
-    // The window system's (VK_KHR_surface and the platform's surface extension): fail by name
-    // rather than with vkCreateInstance's VK_ERROR_EXTENSION_NOT_PRESENT.
-    for (const char* name : required_extensions) {
-        if (!has_instance_extension(name)) {
-            throw GpuError(std::format("Vulkan can't show windows: the instance extension {} is missing", name));
-        }
-    }
-    std::vector<const char*> extensions(required_extensions.begin(), required_extensions.end());
-    std::vector<const char*> layers;
-    VkInstanceCreateFlags flags = 0;
-
-    bool validation = false;
-    if (validation_requested()) {
-        if (has_layer(kValidationLayer) && has_instance_extension(VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
-            layers.push_back(kValidationLayer);
-            extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-            validation = true;
-        } else {
-            log_warning("Vulkan validation was requested, but {} is not installed", kValidationLayer);
-        }
-    }
-
-    // MoltenVK (macOS) is a "portability" implementation and is only listed when asked for.
-    if (has_instance_extension(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME)) {
-        extensions.push_back(VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME);
-        flags |= VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
-    }
-
-    VkApplicationInfo app{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-    app.pApplicationName = "Elegence app";
-    app.pEngineName = "Elegence";
-    app.apiVersion = VK_API_VERSION_1_3;
-
-    // Chaining the messenger info also reports problems during vkCreateInstance itself.
-    const VkDebugUtilsMessengerCreateInfoEXT debug_info = messenger_info();
-
-    VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
-    info.pNext = validation ? &debug_info : nullptr;
-    info.flags = flags;
-    info.pApplicationInfo = &app;
-    info.enabledLayerCount = static_cast<std::uint32_t>(layers.size());
-    info.ppEnabledLayerNames = layers.data();
-    info.enabledExtensionCount = static_cast<std::uint32_t>(extensions.size());
-    info.ppEnabledExtensionNames = extensions.data();
-
-    check(vkCreateInstance(&info, nullptr, &instance_), "create the Vulkan instance");
-    volkLoadInstance(instance_);
-
-    if (validation) {
-        const VkResult result = vkCreateDebugUtilsMessengerEXT(instance_, &debug_info, nullptr, &messenger_);
-        if (result != VK_SUCCESS) {
-            vkDestroyInstance(instance_, nullptr);
-            throw_vk_error(result, "create the validation messenger");
-        }
-    }
-
-    log_info("Vulkan instance created (loader {}.{}.{}, validation {})",
-             VK_API_VERSION_MAJOR(loader_version), VK_API_VERSION_MINOR(loader_version),
-             VK_API_VERSION_PATCH(loader_version), validation ? "on" : "off");
-}
-
-Instance::~Instance() {
-    if (messenger_) {
-        vkDestroyDebugUtilsMessengerEXT(instance_, messenger_, nullptr);
-    }
-    vkDestroyInstance(instance_, nullptr);
-}
-
-Surface::Surface(const Instance& instance, VkSurfaceKHR surface) noexcept
-    : instance_(instance.handle()), surface_(surface) {}
-
-Surface::~Surface() {
-    vkDestroySurfaceKHR(instance_, surface_, nullptr);
+    return surface;
 }
 
 } // namespace elg::detail::gpu
