@@ -335,4 +335,23 @@ void Device::tick() const {
     check();
 }
 
+void Device::finish_deferred() const {
+    // Deferred deletions wait for the next submit, and Dawn skips submits that record nothing.
+    wgpu::BufferDescriptor descriptor;
+    descriptor.size = 4;
+    descriptor.usage = wgpu::BufferUsage::CopyDst;
+    const wgpu::Buffer scrap = device_.CreateBuffer(&descriptor);
+    const auto submit_scrap = [&] {
+        const wgpu::CommandEncoder encoder = device_.CreateCommandEncoder();
+        encoder.ClearBuffer(scrap);
+        submit(encoder.Finish());
+    };
+    submit_scrap();
+    wait_idle();
+    // Waiting doesn't run the deletions; Tick does, but only while work is outstanding.
+    submit_scrap();
+    device_.Tick();
+    check();
+}
+
 } // namespace elg::detail::gpu

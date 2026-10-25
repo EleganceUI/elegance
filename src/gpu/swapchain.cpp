@@ -70,6 +70,15 @@ Swapchain::Swapchain(const Device& device, wgpu::Surface surface, bool transpare
 Swapchain::~Swapchain() {
     if (width_ != 0) {
         surface_.Unconfigure();
+        // Dawn keeps the native swapchain until the surface goes, then defers destroying it until
+        // the GPU is past it: possibly the device's destruction, after the window is gone when
+        // external frames keep the device alive (on Wayland that touches a dead wl_surface).
+        // Destroy it now, while the window still exists.
+        surface_ = nullptr;
+        try {
+            device_.finish_deferred();
+        } catch (...) {
+        }
     }
 }
 

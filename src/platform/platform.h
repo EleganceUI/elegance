@@ -136,6 +136,10 @@ public:
     void set_text_input_area(Rect area, float cursor);
 
     void show();
+    // Whether to show the window before drawing its first frame, rather than after. Wayland
+    // forbids drawing into a window before the compositor configures it, which showing does
+    // (and maps windows only once they have a frame, so they never appear blank there anyway).
+    bool shows_before_first_frame() const;
     // The window system's handle (HWND on Windows), or nullptr.
     void* native_handle() const;
 

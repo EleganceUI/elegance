@@ -505,6 +505,10 @@ void Window::show() {
     SDL_ShowWindow(window_);
 }
 
+bool Window::shows_before_first_frame() const {
+    return std::string_view(SDL_GetCurrentVideoDriver()) == "wayland";
+}
+
 SurfaceSource Window::surface_source() const {
     const SDL_PropertiesID properties = SDL_GetWindowProperties(window_);
     SurfaceSource source;
