@@ -2,53 +2,69 @@
 name: macOS
 
 on:
-  push:
-    branches: [main]
-    paths-ignore: [docs/**, design/**, "**.md"]
-  pull_request:
-    paths-ignore: [docs/**, design/**, "**.md"]
-  workflow_dispatch:
+    push:
+        branches: [main]
+        paths-ignore: [docs/**, design/**, "**.md"]
+    pull_request:
+        paths-ignore: [docs/**, design/**, "**.md"]
+    workflow_dispatch:
 
 permissions:
-  contents: read
+    contents: read
 
 jobs:
-  build:
-    runs-on: macos-15
-    env:
-      VCPKG_ROOT: ${{ github.workspace }}/../vcpkg
-      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/../vcpkg-cache
-    steps:
-      - uses: actions/checkout@v4
+    build:
+        runs-on: macos-15
+        env:
+            VCPKG_ROOT: ${{ github.workspace }}/../vcpkg
+            VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/../vcpkg-cache
+        steps:
+            - uses: actions/checkout@v7
 
-      # Xcode 16's libc++ does not expose std::jthread / std::stop_token.
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: "26"
+            # Xcode 16's libc++ does not expose std::jthread / std::stop_token.
+            - uses: maxim-lobanov/setup-xcode@v1
+              with:
+                  xcode-version: "26"
 
-      # Dawn (from vcpkg) builds with Python, which the runner has.
-      - name: Install tools
-        run: |
-          brew install cmake ninja pkgconf
-          cmake --version
+            # Dawn (from vcpkg) builds with Python, which the runner has.
+            - name: Install tools
+              run: |
+                  brew install cmake ninja pkgconf
+                  cmake --version
 
-      - name: Set up vcpkg
-        run: |
-          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
-          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
-          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+            - name: Set up vcpkg
+              run: |
+                  git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+                  baseline=$(python3 -c 'import json; print(json.load(open("vcpkg.json"))["builtin-baseline"])')
+                  git -C "$VCPKG_ROOT" checkout "$baseline"
+                  "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+                  mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
 
-      - uses: actions/cache@v4
-        with:
-          path: ${{ github.workspace }}/../vcpkg-cache
-          key: vcpkg-macos-15-xcode-26-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}
-          restore-keys: vcpkg-macos-15-xcode-26-
+            # Unique save keys allow ABI changes to refresh the binary cache.
+            - name: Restore vcpkg binaries
+              id: vcpkg-cache
+              uses: actions/cache/restore@v6
+              with:
+                  path: ${{ github.workspace }}/../vcpkg-cache
+                  key: vcpkg-v2-macos-15-xcode-26-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  restore-keys: |
+                      vcpkg-v2-macos-15-xcode-26-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-
+                      vcpkg-v2-macos-15-xcode-26-
+                      vcpkg-macos-15-xcode-26-
 
-      - name: Configure
-        run: cmake --preset macos-debug
+            - name: Configure (build or restore dependencies)
+              run: cmake --preset macos-debug
 
-      - name: Build
-        run: cmake --build --preset macos-debug
+            # Preserve completed packages even if configuration or a later build/test fails.
+            - name: Save vcpkg binaries
+              if: ${{ !cancelled() && steps.vcpkg-cache.outputs.cache-primary-key != '' }}
+              uses: actions/cache/save@v6
+              with:
+                  path: ${{ github.workspace }}/../vcpkg-cache
+                  key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
-      - name: Test
-        run: ctest --test-dir build/macos-debug --output-on-failure
+            - name: Build
+              run: cmake --build --preset macos-debug
+
+            - name: Test
+              run: ctest --test-dir build/macos-debug --output-on-failure
