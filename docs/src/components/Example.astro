@@ -19,7 +19,14 @@ const sources = import.meta.glob<string>('../../../../elegance-examples/*-cpp/ma
 const shots = import.meta.glob<{ default: ImageMetadata }>('../assets/examples/*.png', { eager: true });
 
 const source = sources[`../../../../elegance-examples/${name}-cpp/main.cpp`];
-if (!source) throw new Error(`Example "${name}" not found: check out elegance-examples beside elegance`);
+if (!source) {
+	const known = Object.keys(sources).map((key) => key.match(/([^/]+)-cpp\/main\.cpp$/)![1]);
+	throw new Error(
+		known.length === 0
+			? `Example "${name}" not found: check out elegance-examples beside elegance`
+			: `Example "${name}" not found in elegance-examples (has ${known.join(', ')})`,
+	);
+}
 // A license header, if an example has one, isn't interesting here; its description comment is.
 const code = source.replace(/^(\/\/.*\r?\n)*\/\/.*License.*\r?\n(\/\/.*\r?\n)*\r?\n/, '');
 const shot = shots[`../assets/examples/${name}.png`]?.default;

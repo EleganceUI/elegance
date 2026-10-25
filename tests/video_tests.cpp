@@ -41,6 +41,9 @@ public:
 } // namespace
 
 TEST_CASE("video players record requests before they load", "[video]") {
+#if !defined(_WIN32) && !defined(__APPLE__)
+    SKIP("video playback isn't implemented on this platform yet");
+#endif
     const VideoPlayer player("does-not-matter.mp4");
     CHECK_FALSE(player.is_playing());
     CHECK_FALSE(player.is_ready());

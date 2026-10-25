@@ -15,6 +15,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <cmath>
 #include <format>
 #include <fstream>
 #include <list>

@@ -31,8 +31,11 @@ int main() {
 
 Elegance builds with CMake 4.3+, Ninja, and [vcpkg](https://vcpkg.io) (manifest mode), with MSVC
 on Windows or Apple Clang from **Xcode 26+** on macOS (`std::jthread` and `std::stop_token`
-are required; Xcode 16's libc++ does not expose them). The macOS presets target Apple Silicon
-and macOS 13.3, including vcpkg dependencies. With `VCPKG_ROOT` set, from a developer prompt:
+are required; Xcode 16's libc++ does not expose them), or GCC 14+ on Linux. The macOS presets
+target Apple Silicon and macOS 13.3, including vcpkg dependencies. On Linux (`linux-debug`,
+`linux-release`), SDL3 and Dawn need the X11 and Wayland development headers and HTTP needs
+libcurl's (see `.github/workflows/linux.yml` for the Ubuntu packages); video playback isn't
+implemented there yet. With `VCPKG_ROOT` set, from a developer prompt:
 
 ```sh
 cmake --preset windows-debug

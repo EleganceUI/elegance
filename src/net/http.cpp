@@ -22,7 +22,7 @@
 #if defined(_WIN32)
 #include <windows.h>
 #include <winhttp.h>
-#elif __has_include(<curl/curl.h>)
+#elif defined(__APPLE__) || defined(ELG_HAVE_CURL) // ELG_HAVE_CURL: set by CMake when it links libcurl
 #define ELG_HAVE_CURL 1
 #include <curl/curl.h>
 #endif

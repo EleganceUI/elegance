@@ -81,6 +81,39 @@
             }
         },
         {
+            "name": "linux-base",
+            "hidden": true,
+            "inherits": "base",
+            "description": "GCC 14+ or Clang 18+; vcpkg picks the triplet for the host (x64-linux, arm64-linux)",
+            "condition": {
+                "type": "equals",
+                "lhs": "${hostSystemName}",
+                "rhs": "Linux"
+            },
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": true,
+                "VCPKG_MANIFEST_FEATURES": "tests"
+            }
+        },
+        {
+            "name": "linux-debug",
+            "displayName": "Linux Debug (shared)",
+            "inherits": "linux-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "ELG_BUILD_SHARED": true
+            }
+        },
+        {
+            "name": "linux-release",
+            "displayName": "Linux Release (static)",
+            "inherits": "linux-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "ELG_BUILD_SHARED": false
+            }
+        },
+        {
             "name": "static",
             "hidden": true,
             "description": "Elegance as a static library, linked into each app (no hot reload)",
@@ -161,6 +194,14 @@
             "targets": [
                 "elegance"
             ]
+        },
+        {
+            "name": "linux-debug",
+            "configurePreset": "linux-debug"
+        },
+        {
+            "name": "linux-release",
+            "configurePreset": "linux-release"
         },
         {
             "name": "windows-release-static",

@@ -109,7 +109,15 @@ generate_export_header(elegance
         EXPORT_FILE_NAME ${CMAKE_CURRENT_BINARY_DIR}/generated/elg/export.h
         CUSTOM_CONTENT_FROM_VARIABLE ELG_EXPORT_EXTRA
 )
-if (NOT ELG_BUILD_SHARED)
+if (NOT ELG_BUILD_SHARED AND ELG_STATIC_EXPORTS)
+    # Linked into a shared library that re-exports ELG_API (the Rust bindings' prebuilt library).
+    # The generated header leaves ELG_API empty for a static library unless it's already defined.
+    if (MSVC)
+        target_compile_definitions(elegance PUBLIC "ELG_API=__declspec(dllexport)")
+    else ()
+        target_compile_definitions(elegance PUBLIC "ELG_API=__attribute__((visibility(\"default\")))")
+    endif ()
+elseif (NOT ELG_BUILD_SHARED)
     target_compile_definitions(elegance PUBLIC ELG_STATIC_DEFINE)
     # What linking it takes, for builds outside CMake (the Rust bindings), written at the end.
     cmake_language(DEFER CALL elg_write_link_manifest elegance "${PROJECT_BINARY_DIR}/elegance-link.txt")
@@ -131,6 +139,15 @@ if (ELG_ACCESSIBILITY)
         DOWNLOAD_EXTRACT_TIMESTAMP TRUE
         SOURCE_SUBDIR no-cmake-here) # use the prebuilt libraries, don't build it
     FetchContent_MakeAvailable(accesskit_c)
+    # Sets ACCESSKIT_LIBRARIES_DIR. Not every platform has prebuilt libraries (Linux on ARM64 doesn't).
+    include("${accesskit_c_SOURCE_DIR}/accesskit.cmake")
+    if (NOT IS_DIRECTORY "${ACCESSKIT_LIBRARIES_DIR}")
+        message(WARNING "AccessKit has no prebuilt library for this platform (${ACCESSKIT_LIBRARIES_DIR}): "
+                        "building without screen reader support. Set ELG_ACCESSIBILITY=OFF to silence this.")
+        set(ELG_ACCESSIBILITY OFF)
+    endif ()
+endif ()
+if (ELG_ACCESSIBILITY)
     include("${accesskit_c_SOURCE_DIR}/accesskit-config.cmake")
     # Its static library is a Rust staticlib with its own Rust standard library, which clashes with
     # a Rust app's own (the Rust bindings link a static Elegance with ELG_ACCESSKIT_SHARED).
@@ -180,6 +197,19 @@ if (APPLE)
             "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework QuartzCore"
             "-framework Foundation" "-framework ImageIO" "-framework CoreGraphics" "-framework CoreFoundation"
             curl)
+endif ()
+
+# HTTP (net/http.cpp) uses the system's libcurl where there's no native HTTP API; without it,
+# requests fail with an error.
+if (NOT WIN32 AND NOT APPLE)
+    find_package(CURL)
+    if (CURL_FOUND)
+        target_link_libraries(elegance PRIVATE CURL::libcurl)
+        target_compile_definitions(elegance PRIVATE ELG_HAVE_CURL=1)
+    else ()
+        message(WARNING "libcurl not found (install libcurl4-openssl-dev or libcurl-devel): "
+                        "building without HTTP support")
+    endif ()
 endif ()
 
 target_link_libraries(elegance PRIVATE
@@ -247,9 +277,16 @@ if (WIN32)
     target_compile_definitions(elegance PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 endif ()
 
-# std::stacktrace lives in a separate library on GCC.
+# std::stacktrace lives in a separate library on GCC. Linked by path, so a link outside CMake (the
+# Rust bindings, linking with the system's default cc) gets this compiler's, not an older GCC's.
 if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    target_link_libraries(elegance PRIVATE stdc++exp)
+    execute_process(COMMAND "${CMAKE_CXX_COMPILER}" -print-file-name=libstdc++exp.a
+                    OUTPUT_VARIABLE elg_stdcxxexp OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if (IS_ABSOLUTE "${elg_stdcxxexp}")
+        target_link_libraries(elegance PRIVATE "${elg_stdcxxexp}")
+    else ()
+        target_link_libraries(elegance PRIVATE stdc++exp)
+    endif ()
 endif ()
 
 set_target_properties(elegance PROPERTIES

@@ -13,68 +13,15 @@
 #   runtime <file>       a DLL the app needs beside it at run time
 #   runtime-dir <dir>    a folder of such DLLs (vcpkg's, with their own dependencies)
 #   define <name[=value]> a compile definition for code that includes the headers
+#
+# Libraries come in link order, each before the libraries it depends on: GNU ld resolves static
+# libraries in one pass, left to right.
 function(elg_write_link_manifest target file)
-    set(lines "static $<TARGET_LINKER_FILE:${target}>")
-    get_target_property(queue ${target} LINK_LIBRARIES)
-    set(visited "")
-    while (queue)
-        list(POP_FRONT queue item)
-        # A static library's private dependencies come as $<LINK_ONLY:...>.
-        if (item MATCHES "^\\$<LINK_ONLY:(.+)>$")
-            set(item "${CMAKE_MATCH_1}")
-        endif ()
-        # CMake turns "-framework X" into $<LINK_LIBRARY:FRAMEWORK,X>, which only means something
-        # where targets link (file(GENERATE) rejects it): write the flag back. Other link features
-        # (WHOLE_ARCHIVE, ...) wrap ordinary libraries: take those as they are.
-        if (item MATCHES "^\\$<LINK_LIBRARY:([A-Za-z_]+),(.+)>$")
-            set(feature "${CMAKE_MATCH_1}")
-            string(REPLACE "," ";" wrapped "${CMAKE_MATCH_2}")
-            # The supported macOS deployment target (13+) provides these frameworks, so
-                        # external consumers can link optional SDL frameworks normally as well.
-                        if (feature STREQUAL "FRAMEWORK" OR feature STREQUAL "WEAK_FRAMEWORK")
-                foreach (framework IN LISTS wrapped)
-                    # A path (/System/Library/Frameworks/X.framework) links by its name.
-                    if (framework MATCHES "([^/]+)\\.framework/?$")
-                        set(framework "${CMAKE_MATCH_1}")
-                    endif ()
-                    if (NOT "lib -framework ${framework}" IN_LIST lines)
-                        list(APPEND lines "lib -framework ${framework}")
-                    endif ()
-                endforeach ()
-            else ()
-                list(PREPEND queue ${wrapped})
-            endif ()
-            continue()
-        endif ()
-        if (TARGET "${item}")
-            get_target_property(aliased "${item}" ALIASED_TARGET)
-            if (aliased)
-                set(item "${aliased}")
-            endif ()
-        endif ()
-        if (NOT item OR item IN_LIST visited)
-            continue()
-        endif ()
-        list(APPEND visited "${item}")
-
-        if (TARGET "${item}")
-            get_target_property(type "${item}" TYPE)
-            if (type STREQUAL "STATIC_LIBRARY")
-                list(APPEND lines "static $<TARGET_LINKER_FILE:${item}>")
-            elseif (type STREQUAL "SHARED_LIBRARY")
-                list(APPEND lines "lib $<TARGET_LINKER_FILE:${item}>" "runtime $<TARGET_FILE:${item}>")
-            elseif (type STREQUAL "UNKNOWN_LIBRARY")
-                list(APPEND lines "lib $<TARGET_LINKER_FILE:${item}>")
-            endif ()
-            get_target_property(deps "${item}" INTERFACE_LINK_LIBRARIES)
-            if (deps)
-                list(APPEND queue ${deps})
-            endif ()
-        else ()
-            # A file, a system library's name, or a generator expression for one.
-            list(APPEND lines "lib ${item}")
-        endif ()
-    endwhile ()
+    set_property(GLOBAL PROPERTY _elg_manifest_visited "")
+    set_property(GLOBAL PROPERTY _elg_manifest_order "")
+    get_target_property(deps ${target} LINK_LIBRARIES)
+    _elg_manifest_visit("${target}" "${deps}")
+    get_property(lines GLOBAL PROPERTY _elg_manifest_order)
 
     # The platform libraries CMake links into every C++ program (kernel32, user32, ... on Windows),
     # which the code relies on without naming them.
@@ -89,4 +36,80 @@ function(elg_write_link_manifest target file)
     endif ()
     string(JOIN "\n" content ${lines})
     file(GENERATE OUTPUT "${file}" CONTENT "${content}\n")
+endfunction()
+
+# Depth first: an item's lines go in front of the order once its dependencies are in, so it ends
+# up before all of them (reverse post-order). `deps` overrides the item's own (the root's private
+# LINK_LIBRARIES).
+function(_elg_manifest_visit item deps)
+    # A static library's private dependencies come as $<LINK_ONLY:...>.
+    if (item MATCHES "^\\$<LINK_ONLY:(.+)>$")
+        set(item "${CMAKE_MATCH_1}")
+    endif ()
+    # CMake turns "-framework X" into $<LINK_LIBRARY:FRAMEWORK,X>, which only means something
+    # where targets link (file(GENERATE) rejects it): write the flag back. Other link features
+    # (WHOLE_ARCHIVE, ...) wrap ordinary libraries: take those as they are.
+    if (item MATCHES "^\\$<LINK_LIBRARY:([A-Za-z_]+),(.+)>$")
+        set(feature "${CMAKE_MATCH_1}")
+        string(REPLACE "," ";" wrapped "${CMAKE_MATCH_2}")
+        if (feature STREQUAL "FRAMEWORK" OR feature STREQUAL "WEAK_FRAMEWORK")
+            get_property(order GLOBAL PROPERTY _elg_manifest_order)
+            foreach (framework IN LISTS wrapped)
+                # A path (/System/Library/Frameworks/X.framework) links by its name.
+                if (framework MATCHES "([^/]+)\\.framework/?$")
+                    set(framework "${CMAKE_MATCH_1}")
+                endif ()
+                if (NOT "lib -framework ${framework}" IN_LIST order)
+                    list(PREPEND order "lib -framework ${framework}")
+                endif ()
+            endforeach ()
+            set_property(GLOBAL PROPERTY _elg_manifest_order "${order}")
+        else ()
+            list(REVERSE wrapped)
+            foreach (library IN LISTS wrapped)
+                _elg_manifest_visit("${library}" "")
+            endforeach ()
+        endif ()
+        return()
+    endif ()
+    if (TARGET "${item}")
+        get_target_property(aliased "${item}" ALIASED_TARGET)
+        if (aliased)
+            set(item "${aliased}")
+        endif ()
+    endif ()
+    get_property(visited GLOBAL PROPERTY _elg_manifest_visited)
+    if (NOT item OR item IN_LIST visited)
+        return()
+    endif ()
+    set_property(GLOBAL APPEND PROPERTY _elg_manifest_visited "${item}")
+
+    set(lines "")
+    if (TARGET "${item}")
+        get_target_property(type "${item}" TYPE)
+        if (type STREQUAL "STATIC_LIBRARY")
+            set(lines "static $<TARGET_LINKER_FILE:${item}>")
+        elseif (type STREQUAL "SHARED_LIBRARY")
+            set(lines "lib $<TARGET_LINKER_FILE:${item}>" "runtime $<TARGET_FILE:${item}>")
+        elseif (type STREQUAL "UNKNOWN_LIBRARY")
+            set(lines "lib $<TARGET_LINKER_FILE:${item}>")
+        endif ()
+        if (NOT deps)
+            get_target_property(deps "${item}" INTERFACE_LINK_LIBRARIES)
+        endif ()
+        if (deps)
+            # Last first: each is prepended, so they keep their order where they don't depend on
+            # each other (libraries given as plain files, which carry no dependencies).
+            list(REVERSE deps)
+            foreach (dep IN LISTS deps)
+                _elg_manifest_visit("${dep}" "")
+            endforeach ()
+        endif ()
+    else ()
+        # A file, a system library's name, or a generator expression for one.
+        set(lines "lib ${item}")
+    endif ()
+    get_property(order GLOBAL PROPERTY _elg_manifest_order)
+    list(PREPEND order ${lines})
+    set_property(GLOBAL PROPERTY _elg_manifest_order "${order}")
 endfunction()

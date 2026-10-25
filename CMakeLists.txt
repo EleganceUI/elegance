@@ -72,6 +72,8 @@ option(ELG_ICONS_EXTRA_WEIGHTS "Also embed Phosphor's thin, light, and duotone s
 option(ELG_BUILD_TESTS   "Build the unit tests (needs the vcpkg \"tests\" feature)" ${PROJECT_IS_TOP_LEVEL})
 option(ELG_ACCESSIBILITY "Screen reader support through AccessKit (downloads its prebuilt C library)" ON)
 option(ELG_ACCESSKIT_SHARED "Link AccessKit's shared library instead of its static one (needed by Rust apps)" OFF)
+option(ELG_STATIC_EXPORTS "Static build only: keep ELG_API exported, for linking into a shared library that re-exports it"
+       OFF)
 
 # Put the library and every executable in one folder so the apps find the DLLs on Windows.
 if (PROJECT_IS_TOP_LEVEL)
@@ -89,7 +91,10 @@ if (ELG_BUILD_SANDBOX)
     endif ()
 endif ()
 
-if (ELG_BUILD_TESTS)
+if (ELG_BUILD_TESTS AND ELG_BUILD_SHARED)
+    # A shared library hides the internals they test (elg::detail).
+    message(STATUS "Elegance: skipping the unit tests, which need a static build (ELG_BUILD_SHARED=OFF)")
+elseif (ELG_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif ()

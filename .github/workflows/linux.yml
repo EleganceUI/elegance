@@ -1,0 +1,68 @@
+# Builds Elegance on Linux (GCC 14, libstdc++, WebGPU on Vulkan) and runs the unit tests.
+name: Linux
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: [docs/**, design/**, "**.md"]
+  pull_request:
+    paths-ignore: [docs/**, design/**, "**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    env:
+      CC: gcc-14
+      CXX: g++-14
+      VCPKG_ROOT: ${{ github.workspace }}/../vcpkg
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/../vcpkg-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      # SDL3 and Dawn need the X11/Wayland headers (they load the libraries at run time); HTTP uses
+      # the system libcurl. Elegance needs CMake 4.3, newer than Ubuntu's.
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc-14 g++-14 ninja-build pkg-config autoconf autoconf-archive automake libtool python3-jinja2 \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \
+            libxinerama-dev libx11-xcb-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev \
+            libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev libdrm-dev libgbm-dev \
+            libasound2-dev libpulse-dev libdbus-1-dev libibus-1.0-dev libudev-dev libcurl4-openssl-dev
+          pipx install 'cmake>=4.3'
+          cmake --version
+
+      - name: Set up vcpkg
+        run: |
+          git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+          "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+          mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+
+      - uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../vcpkg-cache
+          key: vcpkg-${{ matrix.runner }}-gcc-14-${{ hashFiles('vcpkg.json') }}
+          restore-keys: vcpkg-${{ matrix.runner }}-gcc-14-
+
+      # The shared library (what hot reload uses) and the static one, which the tests link.
+      - name: Build (shared)
+        run: |
+          cmake --preset linux-debug
+          cmake --build --preset linux-debug
+
+      - name: Build (static, with tests)
+        run: |
+          cmake --preset linux-release
+          cmake --build --preset linux-release
+
+      - name: Test
+        run: ctest --test-dir build/linux-release --output-on-failure
