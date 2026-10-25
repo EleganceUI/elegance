@@ -5,6 +5,29 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# C++23 mode alone does not guarantee the standard library provides these APIs (Xcode 16).
+include(CheckCXXSourceCompiles)
+check_cxx_source_compiles([=[
+    #include <condition_variable>
+    #include <mutex>
+    #include <stop_token>
+    #include <thread>
+    int main() {
+        std::condition_variable_any ready;
+        std::mutex mutex;
+        std::jthread worker([&](std::stop_token stop) {
+            std::unique_lock lock(mutex);
+            ready.wait(lock, stop, [] { return false; });
+        });
+        worker.request_stop();
+    }
+]=] ELG_HAVE_JTHREAD)
+if (NOT ELG_HAVE_JTHREAD)
+    message(FATAL_ERROR
+        "Elegance requires std::jthread, std::stop_token, and stop-aware condition variables. "
+        "On macOS, select Xcode 26 or later with xcode-select (Xcode 16's libc++ is insufficient).")
+endif ()
+
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(EleganceViewExtensions)
 include(EleganceHotReload)

@@ -43,6 +43,8 @@
             },
             "cacheVariables": {
                 "CMAKE_OSX_ARCHITECTURES": "arm64",
+                "CMAKE_OSX_DEPLOYMENT_TARGET": "13.3",
+                "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
                 "VCPKG_TARGET_TRIPLET": "arm64-osx",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": true,
                 "ELG_BUILD_TESTS": false,

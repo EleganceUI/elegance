@@ -30,7 +30,9 @@ int main() {
 ## Building
 
 Elegance builds with CMake 4.3+, Ninja, and [vcpkg](https://vcpkg.io) (manifest mode), with MSVC
-on Windows or Apple Clang on macOS. With `VCPKG_ROOT` set, from a developer prompt:
+on Windows or Apple Clang from **Xcode 26+** on macOS (`std::jthread` and `std::stop_token`
+are required; Xcode 16's libc++ does not expose them). The macOS presets target Apple Silicon
+and macOS 13.3, including vcpkg dependencies. With `VCPKG_ROOT` set, from a developer prompt:
 
 ```sh
 cmake --preset windows-debug
