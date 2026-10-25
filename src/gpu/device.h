@@ -62,6 +62,9 @@ public:
     void wait_idle() const;
     // Runs pending callbacks and lets Dawn release finished work. Once per frame.
     void tick() const;
+    // Blocks until Dawn has destroyed what it deferred until the GPU is past it (swapchains,
+    // say), which it otherwise may do no sooner than the device's destruction.
+    void finish_deferred() const;
 
 private:
     // Errors reported by callbacks, which may run on Dawn's threads: checked by submit().

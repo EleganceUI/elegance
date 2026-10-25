@@ -1,0 +1,29 @@
+--- a/src/dawn/native/vulkan/SwapChainVk.cpp
++++ b/src/dawn/native/vulkan/SwapChainVk.cpp
+@@ -305,9 +305,24 @@
+ 
+     config.alphaMode = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
+ #if !DAWN_PLATFORM_IS(ANDROID)
++    // Honor the requested alpha mode. The frontend already checked it against the surface's
++    // capabilities and resolved Auto to the first of them.
++    switch (GetAlphaMode()) {
++        case wgpu::CompositeAlphaMode::Premultiplied:
++            config.alphaMode = VK_COMPOSITE_ALPHA_PRE_MULTIPLIED_BIT_KHR;
++            break;
++        case wgpu::CompositeAlphaMode::Unpremultiplied:
++            config.alphaMode = VK_COMPOSITE_ALPHA_POST_MULTIPLIED_BIT_KHR;
++            break;
++        case wgpu::CompositeAlphaMode::Inherit:
++            config.alphaMode = VK_COMPOSITE_ALPHA_INHERIT_BIT_KHR;
++            break;
++        default:
++            break;
++    }
+     DAWN_INVALID_IF(
+-        (surfaceInfo.capabilities.supportedCompositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR) == 0,
+-        "Vulkan SwapChain must support opaque alpha.");
++        (surfaceInfo.capabilities.supportedCompositeAlpha & config.alphaMode) == 0,
++        "Vulkan SwapChain doesn't support the requested alpha mode.");
+ #else
+     // TODO(dawn:286): investigate composite alpha for WebGPU native
+     std::array<VkCompositeAlphaFlagBitsKHR, 4u> compositeAlphaFlags = {

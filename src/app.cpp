@@ -580,6 +580,9 @@ int App::run() {
     // glyphs), let the glyph workers finish (briefly), then draw with them.
     std::uint64_t first_frame = 0;
     for (const auto& live : windows) {
+        if (live->window.shows_before_first_frame()) {
+            live->window.show();
+        }
         first_frame = post_frame(*live);
     }
     if (!text.atlas.wait_idle(kGlyphWarmup)) {
@@ -591,7 +594,9 @@ int App::run() {
     mailbox.wait_until_done(first_frame, kFirstFrameTimeout);
     for (const auto& live : windows) {
         attach_accessibility(*live);
-        live->window.show();
+        if (!live->window.shows_before_first_frame()) {
+            live->window.show();
+        }
     }
 
     // While the user drags a window edge, the OS blocks the event loop below in a modal loop.
@@ -648,11 +653,17 @@ int App::run() {
         inspector_entry->content = [model = inspector] { return InspectorView(model); };
         auto live = std::make_unique<LiveWindow>(*inspector_entry, text, base, &popup_sink);
         mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), false, live->window.native_handle()});
+        const bool show_first = live->window.shows_before_first_frame();
+        if (show_first) {
+            live->window.show();
+        }
         post_frame(*live);
         text.atlas.wait_idle(kGlyphWarmup);
         mailbox.wait_until_done(post_frame(*live), kFirstFrameTimeout);
         attach_accessibility(*live);
-        live->window.show();
+        if (!show_first) {
+            live->window.show();
+        }
         inspector_window = live->window.id();
         windows.push_back(std::move(live));
         target.dirty = true;
@@ -769,10 +780,16 @@ int App::run() {
         live->window.set_popup_frame({origin.x - kPopupMargin, origin.y - kPopupMargin, size.width, size.height});
 
         mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), true, live->window.native_handle()});
+        const bool show_first = live->window.shows_before_first_frame();
+        if (show_first) {
+            live->window.show();
+        }
         post_frame(*live); // requests its glyphs
         text.atlas.wait_idle(kPopupGlyphWarmup);
         mailbox.wait_until_done(post_frame(*live), kFirstFrameTimeout);
-        live->window.show();
+        if (!show_first) {
+            live->window.show();
+        }
         const std::uint32_t id = live->window.id();
         windows.push_back(std::move(live));
         if (is_tooltip) {
