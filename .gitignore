@@ -3,3 +3,4 @@ cmake-build-*/
 vcpkg_installed/
 CMakeUserPresets.json
 .idea/workspace.xml
+.DS_Store
