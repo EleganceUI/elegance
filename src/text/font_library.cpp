@@ -12,8 +12,10 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_COLOR_H
+#include FT_MULTIPLE_MASTERS_H
 #include <hb.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <format>
 #include <fstream>
@@ -104,8 +106,9 @@ RegisteredFont registered_font(const Font& font) {
     return result;
 }
 
-// Font files to try for the system UI font, best match first.
-// TODO: real system font discovery (DirectWrite / CoreText / fontconfig), variable font axes.
+// Font files to try for the system UI font, best match first. (macOS's SF is a variable font:
+// one file draws every weight.)
+// TODO: real system font discovery (DirectWrite / CoreText / fontconfig).
 std::vector<std::filesystem::path> system_font_candidates(Weight weight, bool italic) {
     const int w = static_cast<int>(weight);
     std::vector<std::filesystem::path> files;
@@ -217,7 +220,7 @@ std::vector<std::filesystem::path> fallback_font_candidates() {
 // --- FontFace ---
 
 FontFace::FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigned char>> data,
-                   const std::string& name, std::uint32_t id, bool icon)
+                   const std::string& name, std::uint32_t id, bool icon, int weight)
     : id_(id), icon_(icon), data_(std::move(data)) {
     if (FT_New_Memory_Face(library, data_->data(), static_cast<FT_Long>(data_->size()), 0, &ft_face_) != 0) {
         throw ResourceError(std::format("\"{}\" isn't a supported font file", name));
@@ -230,6 +233,30 @@ FontFace::FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigne
     hb_font_ = hb_font_create(face);
     hb_face_destroy(face);
     hb_blob_destroy(blob);
+
+    // A variable font: its weight axis set for FreeType (outlines) and HarfBuzz (advances, metrics)
+    // alike; the other axes keep their defaults.
+    FT_MM_Var* axes = nullptr;
+    if (FT_HAS_MULTIPLE_MASTERS(ft_face_) && FT_Get_MM_Var(ft_face_, &axes) == 0) {
+        std::vector<FT_Fixed> coordinates(axes->num_axis);
+        for (FT_UInt i = 0; i < axes->num_axis; ++i) {
+            const FT_Var_Axis& axis = axes->axis[i];
+            coordinates[i] = axis.def;
+            if (axis.tag == FT_MAKE_TAG('w', 'g', 'h', 't')) {
+                has_weight_axis_ = true;
+                if (weight > 0) {
+                    coordinates[i] = std::clamp(static_cast<FT_Fixed>(weight) * 65536, axis.minimum, axis.maximum);
+                    variation_weight_ = static_cast<int>(coordinates[i] / 65536);
+                }
+            }
+        }
+        if (variation_weight_ > 0) {
+            FT_Set_Var_Design_Coordinates(ft_face_, axes->num_axis, coordinates.data());
+            const hb_variation_t variation{HB_TAG('w', 'g', 'h', 't'), static_cast<float>(variation_weight_)};
+            hb_font_set_variations(hb_font_, &variation, 1);
+        }
+        FT_Done_MM_Var(library, axes);
+    }
     // Positions come back in font units.
     hb_font_set_scale(hb_font_, static_cast<int>(units_per_em_), static_cast<int>(units_per_em_));
 
@@ -390,7 +417,21 @@ const FontFace& FontLibrary::resolve(const Font& font) {
         it = faces_.emplace(source.key, std::make_unique<FontFace>(library_, std::move(data), source.key, id, source.icon))
                  .first;
     }
-    return *it->second;
+    const FontFace& file_face = *it->second;
+    if (!file_face.has_weight_axis()) {
+        return file_face; // one weight per file: the closest was picked
+    }
+    // A variable font: an instance at exactly the requested weight, sharing the file's bytes.
+    const int weight = static_cast<int>(font.weight());
+    const std::string key = std::format("{}@wght={}", source.key, weight);
+    auto instance = faces_.find(key);
+    if (instance == faces_.end()) {
+        const auto id = static_cast<std::uint32_t>(faces_.size() + 1);
+        instance = faces_.emplace(key, std::make_unique<FontFace>(library_, file_face.shared_bytes(), key, id,
+                                                                  source.icon, weight))
+                       .first;
+    }
+    return *instance->second;
 }
 
 } // namespace elg::detail

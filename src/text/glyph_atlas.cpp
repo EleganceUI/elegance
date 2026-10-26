@@ -80,6 +80,170 @@ std::uint8_t to_byte(float value) {
     return static_cast<std::uint8_t>(std::clamp(value * 255.f + 0.5f, 0.f, 255.f));
 }
 
+float median(float a, float b, float c) {
+    return std::max(std::min(a, b), std::min(std::max(a, b), c));
+}
+
+// Whether the shape's contours overlap: somewhere (at a field pixel's center) the winding number
+// passes 1. Variable fonts build glyphs that way (a stroke drawn across a bowl).
+bool overlaps(const msdfgen::Shape& shape, const msdfgen::Projection& projection, int columns, int rows) {
+    msdfgen::Scanline scanline;
+    for (int row = 0; row < rows; ++row) {
+        shape.scanline(scanline, projection.unprojectY(row + 0.5));
+        for (int column = 0; column < columns; ++column) {
+            if (std::abs(scanline.sumIntersections(projection.unprojectX(column + 0.5))) > 1) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// One row or column of a squared Euclidean distance transform (Felzenszwalb and Huttenlocher):
+// d[q] = min over p of (q - p)^2 + f[p]. `v` and `z` are scratch of n and n + 1.
+void distance_transform(const float* f, float* d, int n, std::vector<int>& v, std::vector<float>& z) {
+    constexpr float kInfinity = 1e20f;
+    int k = 0;
+    v[0] = 0;
+    z[0] = -kInfinity;
+    z[1] = kInfinity;
+    for (int q = 1; q < n; ++q) {
+        float s = 0;
+        while (true) {
+            const auto p = static_cast<float>(v[static_cast<std::size_t>(k)]);
+            s = ((f[q] + static_cast<float>(q) * static_cast<float>(q)) - (f[v[static_cast<std::size_t>(k)]] + p * p)) /
+                (2.f * static_cast<float>(q) - 2.f * p);
+            if (s > z[static_cast<std::size_t>(k)] || k == 0) {
+                break;
+            }
+            --k;
+        }
+        ++k;
+        v[static_cast<std::size_t>(k)] = q;
+        z[static_cast<std::size_t>(k)] = s;
+        z[static_cast<std::size_t>(k) + 1] = kInfinity;
+    }
+    k = 0;
+    for (int q = 0; q < n; ++q) {
+        while (z[static_cast<std::size_t>(k) + 1] < static_cast<float>(q)) {
+            ++k;
+        }
+        const int p = v[static_cast<std::size_t>(k)];
+        d[q] = static_cast<float>((q - p) * (q - p)) + f[p];
+    }
+}
+
+// Squared distance from every pixel to the nearest one where `target` is set.
+std::vector<float> squared_distances(const std::vector<std::uint8_t>& target, int width, int height) {
+    std::vector<float> grid(target.size());
+    for (std::size_t i = 0; i < grid.size(); ++i) {
+        grid[i] = target[i] ? 0.f : 1e20f;
+    }
+    const auto n = static_cast<std::size_t>(std::max(width, height));
+    std::vector<float> line(n);
+    std::vector<float> result(n);
+    std::vector<float> z(n + 1);
+    std::vector<int> v(n);
+    const auto at = [&](int x, int y) -> float& { return grid[static_cast<std::size_t>(y) * width + x]; };
+    for (int x = 0; x < width; ++x) {
+        for (int y = 0; y < height; ++y) {
+            line[static_cast<std::size_t>(y)] = at(x, y);
+        }
+        distance_transform(line.data(), result.data(), height, v, z);
+        for (int y = 0; y < height; ++y) {
+            at(x, y) = result[static_cast<std::size_t>(y)];
+        }
+    }
+    for (int y = 0; y < height; ++y) {
+        distance_transform(&at(0, y), result.data(), width, v, z);
+        std::copy_n(result.begin(), width, &at(0, y));
+    }
+    return grid;
+}
+
+// The exact signed distance at each field pixel, as the field stores it (0.5 at the edge, rows
+// bottom first): from the shape filled with the non-zero rule (so where contours overlap, their
+// inner edges don't count) at kOversample times the resolution.
+std::vector<float> exact_distances(const msdfgen::Shape& shape, double scale, const msdfgen::Vector2& translate,
+                                   int width, int height) {
+    constexpr int kOversample = 8;
+    const int fine_width = width * kOversample;
+    const int fine_height = height * kOversample;
+    msdfgen::Bitmap<float, 1> fill(fine_width, fine_height);
+    msdfgen::rasterize(fill, shape, msdfgen::Projection(msdfgen::Vector2(scale * kOversample), translate),
+                       msdfgen::FILL_NONZERO);
+    std::vector<std::uint8_t> inside(static_cast<std::size_t>(fine_width) * fine_height);
+    std::vector<std::uint8_t> outside(inside.size());
+    for (int y = 0; y < fine_height; ++y) {
+        for (int x = 0; x < fine_width; ++x) {
+            const std::size_t i = static_cast<std::size_t>(y) * fine_width + x;
+            inside[i] = *fill(x, y) > 0.5f;
+            outside[i] = !inside[i];
+        }
+    }
+    const std::vector<float> to_inside = squared_distances(inside, fine_width, fine_height);
+    const std::vector<float> to_outside = squared_distances(outside, fine_width, fine_height);
+
+    std::vector<float> distances(static_cast<std::size_t>(width) * height);
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            // A field pixel's center lies between four fine pixels: their average.
+            double sum = 0;
+            for (int dy = 0; dy < 2; ++dy) {
+                for (int dx = 0; dx < 2; ++dx) {
+                    const std::size_t i =
+                        static_cast<std::size_t>(y * kOversample + kOversample / 2 - 1 + dy) * fine_width +
+                        static_cast<std::size_t>(x * kOversample + kOversample / 2 - 1 + dx);
+                    // From pixel centers to the boundary between pixels: half a pixel less.
+                    sum += inside[i] ? std::sqrt(to_outside[i]) - 0.5 : -(std::sqrt(to_inside[i]) - 0.5);
+                }
+            }
+            const double pixels = sum / 4 / kOversample; // field pixels, positive inside
+            distances[static_cast<std::size_t>(y) * width + x] = static_cast<float>(pixels / kDistanceRange + 0.5);
+        }
+    }
+    return distances;
+}
+
+// A multi-channel field of overlapping contours goes wrong along their inner edges: its sign
+// (fixed by scanning the fill) and its distances (fixed here). Where its median strays from the
+// exact distance, and a little around, the exact distance replaces it; elsewhere (the outline's
+// own edges and corners) the multi-channel field keeps its sharp corners.
+void resolve_overlaps(msdfgen::Bitmap<float, 4>& field, const msdfgen::Shape& shape,
+                      const msdfgen::Projection& projection, double scale, const msdfgen::Vector2& translate) {
+    const int width = field.width();
+    const int height = field.height();
+    msdfgen::distanceSignCorrection(field, shape, projection, 0.5f, msdfgen::FILL_NONZERO);
+    const std::vector<float> exact = exact_distances(shape, scale, translate, width, height);
+
+    constexpr float kTolerance = 0.25f; // pixels
+    constexpr int kAround = 2;          // pixels around a stray one also replaced (no seams between)
+    std::vector<std::uint8_t> stray(exact.size());
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            const float* pixel = field(x, y);
+            const std::size_t i = static_cast<std::size_t>(y) * width + x;
+            stray[i] = std::abs(median(pixel[0], pixel[1], pixel[2]) - exact[i]) * kDistanceRange > kTolerance;
+        }
+    }
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            bool replace = false;
+            for (int ny = std::max(y - kAround, 0); ny <= std::min(y + kAround, height - 1) && !replace; ++ny) {
+                for (int nx = std::max(x - kAround, 0); nx <= std::min(x + kAround, width - 1) && !replace; ++nx) {
+                    replace = stray[static_cast<std::size_t>(ny) * width + nx] != 0;
+                }
+            }
+            float* pixel = field(x, y);
+            const float distance = exact[static_cast<std::size_t>(y) * width + x];
+            if (replace) {
+                pixel[0] = pixel[1] = pixel[2] = distance;
+            }
+            pixel[3] = distance; // the true distance channel, without the inner edges
+        }
+    }
+}
+
 } // namespace
 
 const AtlasGlyph* GlyphAtlas::find_or_add(const FontFace& face, std::uint32_t glyph_id) {
@@ -131,6 +295,9 @@ GlyphUpload generate(const GlyphJob& job) {
         }
     } else {
         msdfgen::generateMTSDF(bitmap, job.shape, transformation);
+        if (overlaps(job.shape, projection, static_cast<int>(job.width), static_cast<int>(job.height))) {
+            resolve_overlaps(bitmap, job.shape, projection, job.scale, job.translate);
+        }
     }
 
     // msdfgen bitmaps are bottom row first; the atlas is top row first.
@@ -166,6 +333,7 @@ GlyphAtlas::~GlyphAtlas() {
 }
 
 void GlyphAtlas::submit(std::unique_ptr<GlyphJob> job) {
+    ++requested_;
     {
         std::lock_guard lock(mutex_);
         jobs_.push_back(std::move(job));

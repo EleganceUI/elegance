@@ -63,12 +63,15 @@ private:
         wgpu::BindGroup inner_shadow;
     };
 
-    // Where a frame goes: a surface image, or the composition target's shared image.
+    // Where a frame goes: a surface image, or the composition target's shared image. `texture`
+    // is set when it can be copied from: backdrops are then read from it directly, instead of
+    // the window drawing offscreen and being copied over.
     struct DrawTarget {
         wgpu::TextureView view;
         wgpu::TextureFormat format;
         std::uint32_t width;
         std::uint32_t height;
+        wgpu::Texture texture;
     };
 
     // What a pass draws into. `texture` is set when it can be copied from (layers, the offscreen
@@ -147,7 +150,9 @@ private:
     std::vector<gpu::RenderImage> color_horizontal_;
     std::vector<gpu::RenderImage> color_vertical_;
     std::vector<gpu::RenderImage> backdrop_copies_;
-    std::vector<gpu::RenderImage> frame_images_; // the window, drawn offscreen when it reads backdrops
+    std::vector<gpu::RenderImage> window_copies_; // backdrops read from the surface image (its format)
+    std::vector<gpu::RenderImage> frame_images_;  // the window, drawn offscreen when it reads backdrops
+    bool window_reads_backdrops_ = false;         // the last frame recorded did
     std::optional<gpu::RenderImage> empty_;      // bound where no second image is
     wgpu::BindGroup empty_group_;
     // Path masks: multisampled color and stencil scratch (the masks themselves are cached).

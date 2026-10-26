@@ -48,6 +48,10 @@ constexpr auto kFirstFrameTimeout = 1000ms;
 // How long a new window (or popup) waits for its glyphs before showing anyway.
 constexpr auto kGlyphWarmup = 1500ms;
 constexpr auto kPopupGlyphWarmup = 150ms;
+// How long a frame that needs new glyphs (text changing font or weight) waits for them, as
+// browsers hold a frame for its fonts: long enough for a few glyphs, short enough to stay
+// responsive. If they aren't ready by then the frame shows without them, and redraws when they are.
+constexpr auto kGlyphFrameHold = 50ms;
 // While animating, the loop paces itself by waiting for the previous frame's present (vsync);
 // this bounds the wait if presentation stalls.
 constexpr auto kAnimationFrameTimeout = 50ms;
@@ -535,6 +539,7 @@ int App::run() {
         live.dirty = false;
         const bool inspected = inspector && live.window.id() == inspector->target;
         const double build_start = inspected ? seconds_now() : 0;
+        const std::uint64_t glyphs_requested = text.atlas.requested();
         WindowFrame frame = build_frame(live);
         if (inspected) {
             const double now = seconds_now();
@@ -568,6 +573,9 @@ int App::run() {
             } else {
                 live.accessibility_stale = true; // sent by the main loop when it's time
             }
+        }
+        if (text.atlas.requested() != glyphs_requested) {
+            text.atlas.wait_idle(kGlyphFrameHold);
         }
         if (std::vector<GlyphUpload> uploads = text.atlas.take_uploads(); !uploads.empty()) {
             mailbox.post(AtlasUploadCommand{std::move(uploads)});

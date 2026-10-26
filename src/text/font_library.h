@@ -60,9 +60,10 @@ struct ColorPath {
 class FontFace {
 public:
     // `data` is the font file's bytes (shared: registered in-memory fonts aren't copied again);
-    // `name` is for messages.
+    // `name` is for messages. A variable font with a weight axis is set to `weight` (clamped to
+    // the axis); 0 keeps its default.
     FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigned char>> data, const std::string& name,
-             std::uint32_t id, bool icon = false);
+             std::uint32_t id, bool icon = false, int weight = 0);
     ~FontFace();
 
     FontFace(const FontFace&) = delete;
@@ -82,6 +83,11 @@ public:
     bool has_char(char32_t codepoint) const;
     // The font file's bytes.
     const std::vector<unsigned char>& bytes() const noexcept { return *data_; }
+    const std::shared_ptr<const std::vector<unsigned char>>& shared_bytes() const noexcept { return data_; }
+    // Whether the font has a weight axis (a variable font): any weight is drawn exactly.
+    bool has_weight_axis() const noexcept { return has_weight_axis_; }
+    // The weight axis's setting, or 0 for the font's default instance.
+    int variation_weight() const noexcept { return variation_weight_; }
     FT_Face ft_face() const noexcept { return ft_face_; }
     hb_font_t* hb_font() const noexcept { return hb_font_; }
     float units_per_em() const noexcept { return units_per_em_; }
@@ -92,6 +98,8 @@ public:
 private:
     std::uint32_t id_;
     bool icon_;
+    bool has_weight_axis_ = false;
+    int variation_weight_ = 0;
     std::vector<Color> palette_; // the default CPAL palette, sRGB
     mutable std::unordered_map<std::uint32_t, std::vector<ColorLayer>> color_layers_;
     mutable std::unordered_map<std::uint32_t, std::vector<ColorPath>> color_paths_;

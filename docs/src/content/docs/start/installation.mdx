@@ -13,8 +13,9 @@ configure.
 
 - **Windows 10 or 11**, x64.
 - **Visual Studio 2022 or later** with the C++ workload (MSVC with C++23 support).
-- **CMake 4.3** or later, and **Ninja** (both come with Visual Studio and CLion).
-- **vcpkg**, with the `VCPKG_ROOT` environment variable pointing at it.
+- **CMake 4.3** or later, and **git**. Ninja and vcpkg are optional: the configure fetches Ninja
+  when it isn't installed, and uses the vcpkg at `VCPKG_ROOT`, or clones its own into
+  `%LOCALAPPDATA%\elegance\vcpkg` (`~/.cache/elegance/vcpkg` on macOS and Linux).
 - A GPU with **Direct3D 12** (or Direct3D 11 or Vulkan) drivers. Elegance draws with WebGPU,
   through Google's Dawn, which vcpkg builds from source the first time: allow about half an hour
   and 20 GB of free disk space for that build.
@@ -23,15 +24,7 @@ configure.
 
 <Steps>
 
-1. Get vcpkg, if you don't have it:
-
-   ```sh
-   git clone https://github.com/microsoft/vcpkg
-   .\vcpkg\bootstrap-vcpkg.bat
-   setx VCPKG_ROOT "%CD%\vcpkg"
-   ```
-
-2. Configure with a preset. Run this from a **Developer Command Prompt** (or in CLion or Visual
+1. Configure with a preset. Run this from a **Developer Command Prompt** (or in CLion or Visual
    Studio, which set up the compiler for you):
 
    ```sh
@@ -41,13 +34,13 @@ configure.
    The first configure builds the dependencies (SDL3, FreeType, HarfBuzz, miniaudio and a few
    more), which takes a while. Later configures reuse them.
 
-3. Build:
+2. Build:
 
    ```sh
-   cmake --build --preset windows-debug
+   cmake --build build/windows-debug
    ```
 
-4. Run the sandbox, which shows most features in one window:
+3. Run the sandbox, which shows most features in one window:
 
    ```sh
    build\windows-debug\bin\sandbox.exe
@@ -68,11 +61,11 @@ Everything lands in `build/<preset>/bin`.
 Use **Xcode 26 or later**, selected with `xcode-select`. Xcode 16's libc++ does not expose
 `std::jthread` and `std::stop_token`, even in C++23 mode.
 
-With CMake, Ninja, and `VCPKG_ROOT` set:
+vcpkg needs `pkg-config` to build the dependencies (`brew install pkg-config`). Then:
 
 ```sh
 cmake --preset macos-debug
-cmake --build --preset macos-debug
+cmake --build build/macos-debug
 ```
 
 The macOS presets set `CMAKE_OSX_DEPLOYMENT_TARGET=13.3` and use the overlay triplet in
@@ -153,7 +146,7 @@ itself static (a shared Elegance with its own runtime couldn't share `std` types
 
 ```sh
 cmake --preset windows-release-fully-static   # the first time, vcpkg builds Dawn: allow ~30 minutes
-cmake --build --preset windows-release-fully-static
+cmake --build build/windows-release-fully-static
 ```
 
 The preset builds Release without debug info: with everything linked in, each app's PDB would

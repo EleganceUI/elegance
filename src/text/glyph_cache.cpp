@@ -16,7 +16,7 @@ namespace elg::detail {
 namespace {
 
 // Bump when generated pixels change for the same font and glyph (generator settings, fixes).
-constexpr std::uint32_t kVersion = 3; // 3: color-font glyphs use single-channel fields
+constexpr std::uint32_t kVersion = 4; // 4: overlapping contours resolved; 3: color glyphs single-channel
 constexpr char kFileMagic[4] = {'E', 'L', 'G', 'G'};
 constexpr std::uint32_t kRecordMagic = 0x504C5947; // "GYLP"
 constexpr std::uint64_t kMaxFileBytes = 64ull << 20;
@@ -115,7 +115,10 @@ GlyphDiskCache::FontCache& GlyphDiskCache::font(const FontFace& face) {
     }
     slot = std::make_unique<FontCache>();
     FontCache& cache = *slot;
-    cache.file = *directory_ / std::format("{:016x}.glyphs", hash_font(face.bytes()));
+    // A variable font's weights are different glyphs from the same file.
+    cache.file = *directory_ / (face.variation_weight() > 0 ? std::format("{:016x}-wght{}.glyphs", hash_font(face.bytes()),
+                                                                          face.variation_weight())
+                                                            : std::format("{:016x}.glyphs", hash_font(face.bytes())));
 
     // Load what's there; anything unreadable from some point on is ignored (and overwritten).
     std::ifstream in(cache.file, std::ios::binary | std::ios::ate);

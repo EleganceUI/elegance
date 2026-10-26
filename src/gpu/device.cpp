@@ -208,6 +208,16 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     descriptor.requiredFeatureCount = features.size();
     descriptor.requiredFeatures = features.data();
     descriptor.requiredLimits = &limits;
+    // ELG_GPU_LABELS=1: our labels reach the backend's objects, so GPU profilers (Instruments,
+    // PIX, RenderDoc) name each render pass ("blur", "layer shadow", "window", ...).
+    const char* const labels[] = {"use_user_defined_labels_in_backend"};
+    wgpu::DawnTogglesDescriptor device_toggles;
+    if (platform::environment_variable("ELG_GPU_LABELS").value_or("") == "1") {
+        device_toggles.enabledToggleCount = 1;
+        device_toggles.enabledToggles = labels;
+        descriptor.nextInChain = &device_toggles;
+        log_info("GPU objects carry their labels in the backend (ELG_GPU_LABELS)");
+    }
     descriptor.SetDeviceLostCallback(
         wgpu::CallbackMode::AllowSpontaneous,
         [errors = errors_](const wgpu::Device&, wgpu::DeviceLostReason reason, wgpu::StringView message) {
