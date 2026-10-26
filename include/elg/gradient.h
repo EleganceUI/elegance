@@ -65,13 +65,13 @@ struct LinearGradient {
     UnitPoint start = UnitPoint::top;
     UnitPoint end = UnitPoint::bottom;
 
-    LinearGradient(std::vector<GradientStop> stops, UnitPoint start = UnitPoint::top,
-                   UnitPoint end = UnitPoint::bottom)
-        : stops(std::move(stops)), start(start), end(end) {}
+    LinearGradient(std::vector<GradientStop> color_stops, UnitPoint from = UnitPoint::top,
+                   UnitPoint to = UnitPoint::bottom)
+        : stops(std::move(color_stops)), start(from), end(to) {}
     // Evenly spaced colors: LinearGradient({Color::hex(0x6E8BFF), Color::hex(0xA36BFF)})
-    LinearGradient(std::initializer_list<Color> colors, UnitPoint start = UnitPoint::top,
-                   UnitPoint end = UnitPoint::bottom)
-        : stops(detail::even_stops(colors)), start(start), end(end) {}
+    LinearGradient(std::initializer_list<Color> colors, UnitPoint from = UnitPoint::top,
+                   UnitPoint to = UnitPoint::bottom)
+        : stops(detail::even_stops(colors)), start(from), end(to) {}
 };
 
 // Colors blend outward from `center` between two radii in points.
@@ -81,13 +81,12 @@ struct RadialGradient {
     float start_radius = 0;
     float end_radius = 100;
 
-    RadialGradient(std::vector<GradientStop> stops, UnitPoint center = UnitPoint::center,
-                   float start_radius = 0, float end_radius = 100)
-        : stops(std::move(stops)), center(center), start_radius(start_radius), end_radius(end_radius) {}
-    RadialGradient(std::initializer_list<Color> colors, UnitPoint center = UnitPoint::center,
-                   float start_radius = 0, float end_radius = 100)
-        : stops(detail::even_stops(colors)), center(center), start_radius(start_radius),
-          end_radius(end_radius) {}
+    RadialGradient(std::vector<GradientStop> color_stops, UnitPoint at = UnitPoint::center,
+                   float from_radius = 0, float to_radius = 100)
+        : stops(std::move(color_stops)), center(at), start_radius(from_radius), end_radius(to_radius) {}
+    RadialGradient(std::initializer_list<Color> colors, UnitPoint at = UnitPoint::center,
+                   float from_radius = 0, float to_radius = 100)
+        : stops(detail::even_stops(colors)), center(at), start_radius(from_radius), end_radius(to_radius) {}
 };
 
 // Colors blend outward from `center` along ellipses shaped like the filled bounds. The radii are
@@ -98,14 +97,14 @@ struct EllipticalGradient {
     float start_radius_fraction = 0;
     float end_radius_fraction = 0.5f;
 
-    EllipticalGradient(std::vector<GradientStop> stops, UnitPoint center = UnitPoint::center,
-                       float start_radius_fraction = 0, float end_radius_fraction = 0.5f)
-        : stops(std::move(stops)), center(center), start_radius_fraction(start_radius_fraction),
-          end_radius_fraction(end_radius_fraction) {}
-    EllipticalGradient(std::initializer_list<Color> colors, UnitPoint center = UnitPoint::center,
-                       float start_radius_fraction = 0, float end_radius_fraction = 0.5f)
-        : stops(detail::even_stops(colors)), center(center), start_radius_fraction(start_radius_fraction),
-          end_radius_fraction(end_radius_fraction) {}
+    EllipticalGradient(std::vector<GradientStop> color_stops, UnitPoint at = UnitPoint::center,
+                       float from_fraction = 0, float to_fraction = 0.5f)
+        : stops(std::move(color_stops)), center(at), start_radius_fraction(from_fraction),
+          end_radius_fraction(to_fraction) {}
+    EllipticalGradient(std::initializer_list<Color> colors, UnitPoint at = UnitPoint::center,
+                       float from_fraction = 0, float to_fraction = 0.5f)
+        : stops(detail::even_stops(colors)), center(at), start_radius_fraction(from_fraction),
+          end_radius_fraction(to_fraction) {}
 };
 
 // Colors sweep around `center` (a conic gradient), clockwise from `start_angle` to `end_angle`,
@@ -116,12 +115,12 @@ struct AngularGradient {
     float start_angle = 0;
     float end_angle = 360;
 
-    AngularGradient(std::vector<GradientStop> stops, UnitPoint center = UnitPoint::center, float start_angle = 0,
-                    float end_angle = 360)
-        : stops(std::move(stops)), center(center), start_angle(start_angle), end_angle(end_angle) {}
-    AngularGradient(std::initializer_list<Color> colors, UnitPoint center = UnitPoint::center,
-                    float start_angle = 0, float end_angle = 360)
-        : stops(detail::even_stops(colors)), center(center), start_angle(start_angle), end_angle(end_angle) {}
+    AngularGradient(std::vector<GradientStop> color_stops, UnitPoint at = UnitPoint::center, float from_angle = 0,
+                    float to_angle = 360)
+        : stops(std::move(color_stops)), center(at), start_angle(from_angle), end_angle(to_angle) {}
+    AngularGradient(std::initializer_list<Color> colors, UnitPoint at = UnitPoint::center,
+                    float from_angle = 0, float to_angle = 360)
+        : stops(detail::even_stops(colors)), center(at), start_angle(from_angle), end_angle(to_angle) {}
 };
 
 // Frosted glass: the shape shows what's drawn behind it in the window, blurred, with its colors

@@ -39,6 +39,14 @@ public:
     virtual ~ButtonStyle();
     // Called once per button when it's built, while Environment<K>() is available.
     virtual View make_body(const ButtonConfiguration& button) const = 0;
+
+protected:
+    // Styles are copied as their concrete type, never as a ButtonStyle.
+    ButtonStyle() = default;
+    ButtonStyle(const ButtonStyle&) = default;
+    ButtonStyle(ButtonStyle&&) = default;
+    ButtonStyle& operator=(const ButtonStyle&) = default;
+    ButtonStyle& operator=(ButtonStyle&&) = default;
 };
 
 // Filled with the tint, label in ThemeColor::on_accent. The default.
@@ -74,6 +82,14 @@ public:
     virtual ~ToggleStyle();
     // Called once per toggle when it's built, while Environment<K>() is available.
     virtual View make_body(const ToggleConfiguration& toggle) const = 0;
+
+protected:
+    // Styles are copied as their concrete type, never as a ToggleStyle.
+    ToggleStyle() = default;
+    ToggleStyle(const ToggleStyle&) = default;
+    ToggleStyle(ToggleStyle&&) = default;
+    ToggleStyle& operator=(const ToggleStyle&) = default;
+    ToggleStyle& operator=(ToggleStyle&&) = default;
 };
 
 // The label, then a sliding switch in the tint. The default.
@@ -100,6 +116,14 @@ class ELG_API TextFieldStyle {
 public:
     virtual ~TextFieldStyle();
     virtual View make_body(const TextFieldConfiguration& field) const = 0;
+
+protected:
+    // Styles are copied as their concrete type, never as a TextFieldStyle.
+    TextFieldStyle() = default;
+    TextFieldStyle(const TextFieldStyle&) = default;
+    TextFieldStyle(TextFieldStyle&&) = default;
+    TextFieldStyle& operator=(const TextFieldStyle&) = default;
+    TextFieldStyle& operator=(TextFieldStyle&&) = default;
 };
 
 // A raised box with an outline that turns the tint while focused. The default.

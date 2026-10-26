@@ -165,8 +165,8 @@ std::shared_ptr<ImageAsset> load_asset(const fs::path& file, const std::shared_p
             return;
         }
         post_ui_task([weak, decoded] {
-            if (const auto asset = weak.lock()) {
-                asset->pixels = decoded;
+            if (const auto alive = weak.lock()) {
+                alive->pixels = decoded;
             }
         });
     });

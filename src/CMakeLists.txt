@@ -296,8 +296,7 @@ set_target_properties(elegance PROPERTIES
         VISIBILITY_INLINES_HIDDEN ON
 )
 
+elegance_warnings(elegance)
 if (MSVC)
-    target_compile_options(elegance PRIVATE /W4 /permissive- /utf-8)
-else ()
-    target_compile_options(elegance PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(elegance PRIVATE /utf-8)
 endif ()

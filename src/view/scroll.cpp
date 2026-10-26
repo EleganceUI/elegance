@@ -74,8 +74,9 @@ float unstretched(float shown, float max, float extent) {
 
 float ScrollElement::Rebound::at(double time) const {
     const double t = std::max(0.0, time - start);
-    return edge + static_cast<float>((displacement + (velocity + kReboundRate * displacement) * t) *
-                                     std::exp(-kReboundRate * t));
+    const auto x0 = static_cast<double>(displacement);
+    const auto v0 = static_cast<double>(velocity);
+    return edge + static_cast<float>((x0 + (v0 + kReboundRate * x0) * t) * std::exp(-kReboundRate * t));
 }
 
 bool ScrollElement::Rebound::settled(double time) const {
@@ -84,7 +85,8 @@ bool ScrollElement::Rebound::settled(double time) const {
 
 float ScrollElement::Coast::at(double time) const {
     const double t = std::max(0.0, time - start);
-    return from + static_cast<float>(velocity / kDeceleration * (1 - std::exp(-kDeceleration * t)));
+    const auto v0 = static_cast<double>(velocity);
+    return from + static_cast<float>(v0 / kDeceleration * (1 - std::exp(-kDeceleration * t)));
 }
 
 float ScrollElement::Coast::velocity_at(double time) const {
@@ -92,7 +94,7 @@ float ScrollElement::Coast::velocity_at(double time) const {
 }
 
 float ScrollElement::Coast::end() const {
-    return from + static_cast<float>(velocity / kDeceleration);
+    return from + static_cast<float>(static_cast<double>(velocity) / kDeceleration);
 }
 
 float ScrollElement::offset(Axis axis) const {
@@ -345,7 +347,7 @@ float ScrollElement::finger_velocity(double now) const {
     if (moves_.size() < 2 || span < 0.008) {
         return 0; // too few to tell (a tap of a scroll)
     }
-    return static_cast<float>(distance / span);
+    return static_cast<float>(static_cast<double>(distance) / span);
 }
 
 void ScrollElement::stop_motion() {

@@ -283,8 +283,6 @@ bool polygons_contain(const std::vector<std::vector<Point>>& polygons, Point p, 
     return rule == FillRule::non_zero ? winding != 0 : (winding % 2) != 0;
 }
 
-} // namespace
-
 // The shape's outline as a path, for a frame `local` at the origin.
 Path shape_path(const ShapeSpec& spec, Rect local) {
     if (spec.kind == ShapeKind::path && spec.path) {
@@ -310,6 +308,8 @@ Path shape_path(const ShapeSpec& spec, Rect local) {
 float flatten_tolerance(float scale) {
     return 0.25f / std::max(scale, 0.25f);
 }
+
+} // namespace
 
 ShapeFill shape_fill(const ShapeSpec& spec, Size size, float scale) {
     ShapeFill fill;
@@ -609,7 +609,7 @@ void EffectElement::on_render_size(float scale) {
         if (!std::isfinite(points) || points <= 0) {
             return 0;
         }
-        const double value = std::ceil(static_cast<double>(points) * scale);
+        const double value = std::ceil(static_cast<double>(points) * static_cast<double>(scale));
         return static_cast<std::uint32_t>(std::min(value, static_cast<double>(std::numeric_limits<std::uint32_t>::max())));
     };
     const Size size = frame().size();

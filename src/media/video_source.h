@@ -132,6 +132,11 @@ protected:
     std::atomic<bool> playing_now_{false};
 };
 
+#if defined(__APPLE__)
+// VideoSource::create's macOS backend (video_source_apple.mm).
+std::shared_ptr<VideoSource> create_avfoundation_source(std::string url);
+#endif
+
 } // namespace elg::detail
 
 #endif // ELG_MEDIA_VIDEO_SOURCE_H

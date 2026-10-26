@@ -239,8 +239,8 @@ ColorMatrix color_matrix(ColorFilter::Kind kind, float amount, Color color) {
                   0, 0, 1, 0, 0, //
                   0, 0, 0, 1, 0};
     const auto rgb = [&](std::array<float, 9> k) {
-        for (int row = 0; row < 3; ++row) {
-            for (int col = 0; col < 3; ++col) {
+        for (std::size_t row = 0; row < 3; ++row) {
+            for (std::size_t col = 0; col < 3; ++col) {
                 m[row * 5 + col] = k[row * 3 + col];
             }
         }
@@ -301,9 +301,9 @@ ColorMatrix color_matrix(ColorFilter::Kind kind, float amount, Color color) {
 Color apply(const ColorMatrix& m, Color color) {
     const std::array<float, 4> in{color.r, color.g, color.b, color.a};
     std::array<float, 4> out{};
-    for (int row = 0; row < 4; ++row) {
+    for (std::size_t row = 0; row < 4; ++row) {
         float sum = m[row * 5 + 4];
-        for (int col = 0; col < 4; ++col) {
+        for (std::size_t col = 0; col < 4; ++col) {
             sum += m[row * 5 + col] * in[col];
         }
         out[row] = std::clamp(sum, 0.f, 1.f);

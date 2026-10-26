@@ -99,6 +99,15 @@ bool overlaps(const msdfgen::Shape& shape, const msdfgen::Projection& projection
     return false;
 }
 
+// Where pixel (x, y) is in a row-major bitmap `width` pixels wide, and how many pixels one has.
+std::size_t pixel_index(int x, int y, int width) {
+    return static_cast<std::size_t>(y) * static_cast<std::size_t>(width) + static_cast<std::size_t>(x);
+}
+
+std::size_t pixel_count(int width, int height) {
+    return static_cast<std::size_t>(width) * static_cast<std::size_t>(height);
+}
+
 // One row or column of a squared Euclidean distance transform (Felzenszwalb and Huttenlocher):
 // d[q] = min over p of (q - p)^2 + f[p]. `v` and `z` are scratch of n and n + 1.
 void distance_transform(const float* f, float* d, int n, std::vector<int>& v, std::vector<float>& z) {
@@ -144,7 +153,7 @@ std::vector<float> squared_distances(const std::vector<std::uint8_t>& target, in
     std::vector<float> result(n);
     std::vector<float> z(n + 1);
     std::vector<int> v(n);
-    const auto at = [&](int x, int y) -> float& { return grid[static_cast<std::size_t>(y) * width + x]; };
+    const auto at = [&](int x, int y) -> float& { return grid[pixel_index(x, y, width)]; };
     for (int x = 0; x < width; ++x) {
         for (int y = 0; y < height; ++y) {
             line[static_cast<std::size_t>(y)] = at(x, y);
@@ -172,11 +181,11 @@ std::vector<float> exact_distances(const msdfgen::Shape& shape, double scale, co
     msdfgen::Bitmap<float, 1> fill(fine_width, fine_height);
     msdfgen::rasterize(fill, shape, msdfgen::Projection(msdfgen::Vector2(scale * kOversample), translate),
                        msdfgen::FILL_NONZERO);
-    std::vector<std::uint8_t> inside(static_cast<std::size_t>(fine_width) * fine_height);
+    std::vector<std::uint8_t> inside(pixel_count(fine_width, fine_height));
     std::vector<std::uint8_t> outside(inside.size());
     for (int y = 0; y < fine_height; ++y) {
         for (int x = 0; x < fine_width; ++x) {
-            const std::size_t i = static_cast<std::size_t>(y) * fine_width + x;
+            const std::size_t i = pixel_index(x, y, fine_width);
             inside[i] = *fill(x, y) > 0.5f;
             outside[i] = !inside[i];
         }
@@ -184,22 +193,22 @@ std::vector<float> exact_distances(const msdfgen::Shape& shape, double scale, co
     const std::vector<float> to_inside = squared_distances(inside, fine_width, fine_height);
     const std::vector<float> to_outside = squared_distances(outside, fine_width, fine_height);
 
-    std::vector<float> distances(static_cast<std::size_t>(width) * height);
+    std::vector<float> distances(pixel_count(width, height));
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             // A field pixel's center lies between four fine pixels: their average.
             double sum = 0;
             for (int dy = 0; dy < 2; ++dy) {
                 for (int dx = 0; dx < 2; ++dx) {
-                    const std::size_t i =
-                        static_cast<std::size_t>(y * kOversample + kOversample / 2 - 1 + dy) * fine_width +
-                        static_cast<std::size_t>(x * kOversample + kOversample / 2 - 1 + dx);
+                    const std::size_t i = pixel_index(x * kOversample + kOversample / 2 - 1 + dx,
+                                                      y * kOversample + kOversample / 2 - 1 + dy, fine_width);
                     // From pixel centers to the boundary between pixels: half a pixel less.
-                    sum += inside[i] ? std::sqrt(to_outside[i]) - 0.5 : -(std::sqrt(to_inside[i]) - 0.5);
+                    sum += inside[i] ? std::sqrt(static_cast<double>(to_outside[i])) - 0.5
+                                     : -(std::sqrt(static_cast<double>(to_inside[i])) - 0.5);
                 }
             }
             const double pixels = sum / 4 / kOversample; // field pixels, positive inside
-            distances[static_cast<std::size_t>(y) * width + x] = static_cast<float>(pixels / kDistanceRange + 0.5);
+            distances[pixel_index(x, y, width)] = static_cast<float>(pixels / static_cast<double>(kDistanceRange) + 0.5);
         }
     }
     return distances;
@@ -222,7 +231,7 @@ void resolve_overlaps(msdfgen::Bitmap<float, 4>& field, const msdfgen::Shape& sh
     for (int y = 0; y < height; ++y) {
         for (int x = 0; x < width; ++x) {
             const float* pixel = field(x, y);
-            const std::size_t i = static_cast<std::size_t>(y) * width + x;
+            const std::size_t i = pixel_index(x, y, width);
             stray[i] = std::abs(median(pixel[0], pixel[1], pixel[2]) - exact[i]) * kDistanceRange > kTolerance;
         }
     }
@@ -231,11 +240,11 @@ void resolve_overlaps(msdfgen::Bitmap<float, 4>& field, const msdfgen::Shape& sh
             bool replace = false;
             for (int ny = std::max(y - kAround, 0); ny <= std::min(y + kAround, height - 1) && !replace; ++ny) {
                 for (int nx = std::max(x - kAround, 0); nx <= std::min(x + kAround, width - 1) && !replace; ++nx) {
-                    replace = stray[static_cast<std::size_t>(ny) * width + nx] != 0;
+                    replace = stray[pixel_index(nx, ny, width)] != 0;
                 }
             }
             float* pixel = field(x, y);
-            const float distance = exact[static_cast<std::size_t>(y) * width + x];
+            const float distance = exact[pixel_index(x, y, width)];
             if (replace) {
                 pixel[0] = pixel[1] = pixel[2] = distance;
             }
@@ -275,7 +284,7 @@ GlyphUpload generate(const GlyphJob& job) {
     msdfgen::Bitmap<float, 4> bitmap(static_cast<int>(job.width), static_cast<int>(job.height));
     const msdfgen::Projection projection(msdfgen::Vector2(job.scale), job.translate);
     const msdfgen::SDFTransformation transformation(projection,
-                                                    msdfgen::DistanceMapping(msdfgen::Range(kDistanceRange / job.scale)));
+                                                    msdfgen::DistanceMapping(msdfgen::Range(static_cast<double>(kDistanceRange) / job.scale)));
     if (job.icon) {
         // Icon fonts build glyphs from overlapping outlines (strokes, rings, teeth), which a
         // multi-channel field turns into speckles and streaks. A true single-channel distance
@@ -469,8 +478,8 @@ std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_
 
     // Size the bitmap to the glyph at kGlyphEmPixels, plus room for the distance field.
     const msdfgen::Shape::Bounds bounds = shape.getBounds();
-    const double scale = kGlyphEmPixels / face.units_per_em(); // pixels per font unit
-    const double pad = kDistanceRange / 2.0 + 1.0;            // pixels
+    const double scale = static_cast<double>(kGlyphEmPixels / face.units_per_em()); // pixels per font unit
+    const double pad = static_cast<double>(kDistanceRange) / 2.0 + 1.0;             // pixels
     const auto width = static_cast<std::uint32_t>(std::ceil((bounds.r - bounds.l) * scale + 2 * pad));
     const auto height = static_cast<std::uint32_t>(std::ceil((bounds.t - bounds.b) * scale + 2 * pad));
 

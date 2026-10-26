@@ -30,6 +30,7 @@ function(elegance_views_module target)
     _elegance_require_shared("elegance_views_module(${target})")
     add_library(${target} SHARED ${ARGN})
     target_link_libraries(${target} PRIVATE Elegance::Elegance)
+    elegance_warnings(${target})
 endfunction()
 
 function(elegance_hot_reload host)

@@ -109,7 +109,7 @@ RegisteredFont registered_font(const Font& font) {
 // Font files to try for the system UI font, best match first. (macOS's SF is a variable font:
 // one file draws every weight.)
 // TODO: real system font discovery (DirectWrite / CoreText / fontconfig).
-std::vector<std::filesystem::path> system_font_candidates(Weight weight, bool italic) {
+std::vector<std::filesystem::path> system_font_candidates(Weight weight, [[maybe_unused]] bool italic) {
     const int w = static_cast<int>(weight);
     std::vector<std::filesystem::path> files;
 #if defined(_WIN32)
@@ -186,8 +186,6 @@ std::vector<unsigned char> read_file(const std::filesystem::path& path) {
     return data;
 }
 
-} // namespace
-
 // Fonts to fall back to for characters the requested font lacks, in order: symbols, emoji
 // (monochrome until color glyphs, design.md §11), CJK, then other scripts.
 std::vector<std::filesystem::path> fallback_font_candidates() {
@@ -216,6 +214,8 @@ std::vector<std::filesystem::path> fallback_font_candidates() {
 #endif
     return files;
 }
+
+} // namespace
 
 // --- FontFace ---
 

@@ -521,7 +521,7 @@ View DesktopCards() {
                                                   .tooltip = "Elegance Sandbox",
                                                   .menu = {{.title = "Say hello", .action = [=] { status = "Hello from the tray"; }},
                                                            {.title = "Notifications", .checked = true,
-                                                            .toggled = [=](bool on) { status = on ? "Checked" : "Unchecked"; }},
+                                                            .toggled = [=](bool checked) { status = checked ? "Checked" : "Unchecked"; }},
                                                            {},
                                                            {.title = "Hide icon", .action = [=] { tray_on = false; tray->reset(); }}}});
                                           }))

@@ -34,6 +34,13 @@ public:
     // Stable, RTTI-free dispatch (hot reload rule 2, design.md §9.6).
     virtual ModifierProtocol protocol() const noexcept = 0;
 
+protected:
+    // Modifiers are copied as their concrete type (into the views using them), never as a Modifier.
+    Modifier(const Modifier&) = default;
+    Modifier(Modifier&&) = default;
+    Modifier& operator=(const Modifier&) = default;
+    Modifier& operator=(Modifier&&) = default;
+
 private:
     // Only the protocol classes below derive from Modifier directly.
     Modifier() = default;

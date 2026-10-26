@@ -71,6 +71,7 @@ inline bool register_preview(const char* name, View (*body)(), const char* file,
 // Makes this shared library a views module, with `root` (a View() function, or nullptr) as the
 // app's content.
 #define ELG_MODULE(root)                                                                          \
+    ELG_MODULE_EXPORT const ::elg::ModuleEntry* elg_module_entry();                               \
     ELG_MODULE_EXPORT const ::elg::ModuleEntry* elg_module_entry() {                              \
         static const ::elg::ModuleEntry entry{::elg::module_abi, root, &::elg::detail::module_previews()}; \
         return &entry;                                                                            \

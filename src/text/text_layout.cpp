@@ -176,8 +176,6 @@ void wrap_paragraph(const ShapedParagraph& paragraph, std::size_t index, float s
     }
 }
 
-} // namespace
-
 // Re-shapes the parts `face` has no glyphs for (glyph 0) with fallback fonts, and emoji it can
 // only draw in one color (a text font's heart for U+2764 U+FE0F) with a color font.
 ShapedParagraph shape_with_fallback(const FontFace& face, std::string_view text, FontLibrary& fonts) {
@@ -254,6 +252,8 @@ ShapedParagraph shape_with_fallback(const FontFace& face, std::string_view text,
     }
     return result;
 }
+
+} // namespace
 
 std::vector<ShapedParagraph> shape_text(const FontFace& face, std::string_view text, FontLibrary* fonts) {
     std::vector<ShapedParagraph> paragraphs;

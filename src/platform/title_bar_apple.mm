@@ -146,8 +146,8 @@
     if (!container) {
         return;
     }
-    const CGFloat x = _position->x;
-    const CGFloat y = _position->y;
+    const auto x = static_cast<CGFloat>(_position->x);
+    const auto y = static_cast<CGFloat>(_position->y);
     const CGFloat height = NSHeight(buttons[0].frame) + 2 * y;
     _placing = YES;
     NSRect frame = container.frame;
@@ -157,7 +157,7 @@
         container.frame = frame;
     }
     for (NSUInteger i = 0; i < buttons.count; ++i) {
-        const NSPoint origin = NSMakePoint(x + i * _spacing, y);
+        const NSPoint origin = NSMakePoint(x + static_cast<CGFloat>(i) * _spacing, y);
         if (!NSEqualPoints(origin, buttons[i].frame.origin)) {
             [buttons[i] setFrameOrigin:origin];
         }

@@ -119,7 +119,7 @@ FrameStats count_frame(const DisplayList& list, double build_ms, std::size_t ele
             ++stats.paths;
         } else if (const auto* layer = std::get_if<PushLayerCommand>(&command)) {
             ++stats.layers;
-            stats.paths += layer->mask ? 1 : 0;
+            stats.paths += layer->mask ? 1u : 0u;
         }
     }
     return stats;

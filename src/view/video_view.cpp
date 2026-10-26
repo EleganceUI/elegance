@@ -106,7 +106,7 @@ Binding<float> VideoPlayer::progress_binding() const {
             const double length = self.duration();
             return length > 0 ? static_cast<float>(std::clamp(self.time() / length, 0.0, 1.0)) : 0.f;
         },
-        [self](float progress) { self.seek(progress * self.source_->duration.peek()); });
+        [self](float progress) { self.seek(static_cast<double>(progress) * self.source_->duration.peek()); });
 }
 
 Binding<float> VideoPlayer::volume_binding() const {

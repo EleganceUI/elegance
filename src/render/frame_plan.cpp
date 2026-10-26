@@ -196,7 +196,7 @@ private:
     // form instances carry (0: none).
     float add_matrix(const ColorMatrix& m) {
         const auto index = static_cast<float>(plan_.stops.size());
-        for (int row = 0; row < 4; ++row) {
+        for (std::size_t row = 0; row < 4; ++row) {
             plan_.stops.push_back({m[row * 5], m[row * 5 + 1], m[row * 5 + 2], m[row * 5 + 3]});
         }
         plan_.stops.push_back({m[4], m[9], m[14], m[19]});
@@ -429,7 +429,7 @@ private:
             command.source->update();
             plan_.video_frames.push_back(command.source->current());
         }
-        const auto& frame = plan_.video_frames[index];
+        const auto& frame = plan_.video_frames[static_cast<std::size_t>(index)];
         if (command.content_mode) {
             if (!frame || frame->width == 0 || frame->height == 0) {
                 return;

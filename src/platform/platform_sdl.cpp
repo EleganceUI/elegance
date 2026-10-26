@@ -277,18 +277,16 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
         flags |= SDL_WINDOW_FULLSCREEN; // borderless at the desktop's mode (no mode was set)
     }
 
+    const int width = static_cast<int>(std::lround(static_cast<float>(desc.width) * content_scale));
+    const int height = static_cast<int>(std::lround(static_cast<float>(desc.height) * content_scale));
     if (popup) {
         // Menus and tooltips: always transparent and undecorated (they draw their own panel).
         flags = kGpuFlags | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN | SDL_WINDOW_TRANSPARENT |
                 (popup->tooltip ? SDL_WINDOW_TOOLTIP : SDL_WINDOW_POPUP_MENU);
         parent_ = popup->parent->window_;
-        window_ = SDL_CreatePopupWindow(parent_, 0, 0,
-                                        std::max(1, static_cast<int>(std::lround(desc.width * content_scale))),
-                                        std::max(1, static_cast<int>(std::lround(desc.height * content_scale))), flags);
+        window_ = SDL_CreatePopupWindow(parent_, 0, 0, std::max(1, width), std::max(1, height), flags);
     } else {
-        window_ = SDL_CreateWindow(desc.title.c_str(),
-                                   static_cast<int>(std::lround(desc.width * content_scale)),
-                                   static_cast<int>(std::lround(desc.height * content_scale)), flags);
+        window_ = SDL_CreateWindow(desc.title.c_str(), width, height, flags);
     }
     if (!window_) {
         throw_sdl_error("failed to create a window");
