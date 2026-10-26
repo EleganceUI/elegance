@@ -400,7 +400,7 @@ bool AudioPlayer::is_looping() const {
 
 Binding<float> AudioPlayer::time_binding() const {
     const AudioPlayer self = *this;
-    return Binding<float>([self] { return static_cast<float>(self.time()); }, [self](float t) { self.seek(t); });
+    return Binding<float>([self] { return static_cast<float>(self.time()); }, [self](float t) { self.seek(static_cast<double>(t)); });
 }
 
 Binding<float> AudioPlayer::volume_binding() const {

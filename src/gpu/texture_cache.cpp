@@ -61,7 +61,7 @@ wgpu::BindGroup TextureCache::acquire(const wgpu::CommandEncoder& encoder, const
         it->second.last_used = frame_;
         return it->second.group;
     }
-    const std::uint32_t levels = std::bit_width(std::max(image.width, image.height));
+    const auto levels = static_cast<std::uint32_t>(std::bit_width(std::max(image.width, image.height)));
 
     Texture texture;
     wgpu::TextureDescriptor descriptor;

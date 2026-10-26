@@ -486,7 +486,8 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
     // The window itself. Its previous contents are discarded (cleared). When it reads backdrops
     // and its image can't be copied from, it draws offscreen, then onto the window.
     const auto clear = to_linear_premultiplied(frame.list.clear_color);
-    const wgpu::Color clear_color{clear[0], clear[1], clear[2], clear[3]};
+    const wgpu::Color clear_color{static_cast<double>(clear[0]), static_cast<double>(clear[1]),
+                                          static_cast<double>(clear[2]), static_cast<double>(clear[3])};
     window_reads_backdrops_ = plan.blit_instance.has_value();
     if (plan.blit_instance && !target.texture) {
         const gpu::RenderImage& image =

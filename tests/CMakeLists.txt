@@ -28,10 +28,9 @@ target_include_directories(elegance_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(elegance_tests SYSTEM PRIVATE
         $<TARGET_PROPERTY:dawn::webgpu_dawn,INTERFACE_INCLUDE_DIRECTORIES>)
 
+elegance_warnings(elegance_tests)
 if (MSVC)
-    target_compile_options(elegance_tests PRIVATE /W4 /permissive- /utf-8)
-else ()
-    target_compile_options(elegance_tests PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(elegance_tests PRIVATE /utf-8)
 endif ()
 
 catch_discover_tests(elegance_tests)

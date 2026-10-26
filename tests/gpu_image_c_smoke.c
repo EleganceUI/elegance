@@ -27,7 +27,7 @@ int main(void) {
     frame.userdata = &callbacks;
     frame.release = released;
     assert(elg_gpu_image_publish(image, NULL) == ELG_GPU_IMAGE_INVALID_ARGUMENT);
-    frame.width = 17;
+    frame.width = 0; // a frame may change size, but never to nothing
     assert(elg_gpu_image_publish(image, &frame) == ELG_GPU_IMAGE_INVALID_ARGUMENT);
     frame.width = 16;
     frame.release = NULL;

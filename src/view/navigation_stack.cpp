@@ -277,7 +277,7 @@ EventResult NavigationStackElement::scroll(const ScrollEvent& event) {
                 distance += moves_[i].delta;
             }
             const double span = moves_.back().time - moves_.front().time;
-            velocity = span > 0.008 ? static_cast<float>(-distance / span) : 0.f;
+            velocity = span > 0.008 ? static_cast<float>(-static_cast<double>(distance) / span) : 0.f;
         }
         const float moved = swipe_.target();
         if (event.phase == GesturePhase::ended && moved > 0 &&

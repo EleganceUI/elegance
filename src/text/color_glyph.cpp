@@ -54,7 +54,7 @@ constexpr std::size_t kMaxPaths = 512;
 class PaintWalker {
 public:
     PaintWalker(FT_Face face, std::span<const Color> palette, float units_per_em, std::vector<ColorPath>& out)
-        : face_(face), palette_(palette), em_(1.0 / units_per_em), out_(out) {}
+        : face_(face), palette_(palette), em_(1.0 / static_cast<double>(units_per_em)), out_(out) {}
 
     void walk(FT_OpaquePaint opaque, const Affine& m, int depth) {
         FT_COLR_Paint paint{};

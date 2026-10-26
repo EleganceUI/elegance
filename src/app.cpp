@@ -171,18 +171,18 @@ EnvironmentValues with_window(EnvironmentValues environment, const std::shared_p
 // - `dirty` and `scope` exist before mounting (the tree refers to them) and the scope outlives
 //   the tree, so effects are disposed after the elements they update are gone.
 struct LiveWindow {
-    LiveWindow(WindowEntry& entry, TextSystem& text, EnvironmentValues base,
+    LiveWindow(WindowEntry& window_entry, TextSystem& text, EnvironmentValues base,
                const PopupSink* popups, const platform::PopupSpec* popup = nullptr, int menu_level = -1)
-        : entry(&entry), window(entry.desc, popup), is_popup(popup != nullptr),
+        : entry(&window_entry), window(window_entry.desc, popup), is_popup(popup != nullptr),
           state(std::make_shared<WindowState>(WindowState{.window = &window,
-                                                          .title_bar = entry.desc.title_bar,
+                                                          .title_bar = window_entry.desc.title_bar,
                                                           .system_controls = State<Rect>(window.system_controls_frame())})),
           environment(with_window(std::move(base), state)), services(make_services(window, popups, menu_level)),
           root(mount(text)) {
         // Integrated title bars keep the system's frame only on macOS, which still needs the hit test
         // for .window_drag_area() (its edges resize natively).
-        if (entry.desc.title_bar == TitleBar::hidden ||
-            (entry.desc.title_bar == TitleBar::integrated && current_platform() == Platform::macos)) {
+        if (window_entry.desc.title_bar == TitleBar::hidden ||
+            (window_entry.desc.title_bar == TitleBar::integrated && current_platform() == Platform::macos)) {
             window.set_hit_test([this](Point point) { return hit_area(point); });
         }
     }

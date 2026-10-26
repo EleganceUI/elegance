@@ -1,5 +1,7 @@
-# Release applications use the platform's GUI launcher; debug builds retain terminal output.
+# Release applications use the platform's GUI launcher; debug builds retain terminal output. The
+# app compiles with Elegance's strict warnings (ElgWarnings.cmake).
 function(elegance_application target)
+    elegance_warnings(${target})
     if (WIN32)
         set_property(TARGET ${target} PROPERTY WIN32_EXECUTABLE "$<NOT:$<CONFIG:Debug>>")
         if (MSVC)

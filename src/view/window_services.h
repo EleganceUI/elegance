@@ -45,6 +45,15 @@ class WindowServices {
 public:
     virtual ~WindowServices() = default;
 
+protected:
+    WindowServices() = default;
+    WindowServices(const WindowServices&) = default;
+    WindowServices(WindowServices&&) = default;
+    WindowServices& operator=(const WindowServices&) = default;
+    WindowServices& operator=(WindowServices&&) = default;
+
+public:
+
     // Text input on/off (on while a text field has focus): typed text and IME composition
     // arrive as TextInputEvents.
     virtual void start_text_input() = 0;

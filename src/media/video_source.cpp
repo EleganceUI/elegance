@@ -537,10 +537,6 @@ STDMETHODIMP EngineNotify::EventNotify(DWORD event, DWORD_PTR param1, DWORD) {
 
 } // namespace
 
-#if defined(__APPLE__)
-std::shared_ptr<VideoSource> create_avfoundation_source(std::string url); // video_source_apple.mm
-#endif
-
 std::shared_ptr<VideoSource> VideoSource::create(std::string url) {
 #if defined(_WIN32)
     return std::make_shared<MediaEngineSource>(std::move(url));

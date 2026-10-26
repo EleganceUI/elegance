@@ -12,8 +12,7 @@ target_link_libraries(sandbox PRIVATE Elegance::Elegance)
 # Sample images (generated; see assets/).
 target_compile_definitions(sandbox PRIVATE "ELG_SANDBOX_ASSETS=\"${CMAKE_CURRENT_SOURCE_DIR}/assets\"")
 
+elegance_warnings(sandbox)
 if (MSVC)
-    target_compile_options(sandbox PRIVATE /W4 /permissive- /utf-8)
-else ()
-    target_compile_options(sandbox PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(sandbox PRIVATE /utf-8)
 endif ()

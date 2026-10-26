@@ -333,8 +333,8 @@ private:
 
 class ExternalImageSource final : public VideoSource {
 public:
-    ExternalImageSource(std::uint32_t width, std::uint32_t height, bool flipped)
-        : flipped(flipped), natural_size_{static_cast<float>(width), static_cast<float>(height)} {
+    ExternalImageSource(std::uint32_t width, std::uint32_t height, bool flip)
+        : flipped(flip), natural_size_{static_cast<float>(width), static_cast<float>(height)} {
         size = natural_size_;
         ready = true;
         // Keep the render-side update polling even after clear, so a cleared last image is
@@ -399,7 +399,7 @@ public:
                     if (const auto source = weak.lock()) {
                         Size latest;
                         {
-                            std::lock_guard lock(source->mutex_);
+                            std::lock_guard source_lock(source->mutex_);
                             latest = source->natural_size_;
                             source->size_task_pending_ = false;
                         }

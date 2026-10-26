@@ -370,12 +370,15 @@ struct TrayIcon::State {
             auto dot = std::make_shared<detail::DecodedImage>();
             dot->width = dot->height = 32;
             dot->rgba.resize(32 * 32 * 4);
-            for (int y = 0; y < 32; ++y) {
-                for (int x = 0; x < 32; ++x) {
-                    const float d = std::hypot(x - 15.5f, y - 15.5f);
+            for (std::size_t y = 0; y < 32; ++y) {
+                for (std::size_t x = 0; x < 32; ++x) {
+                    const float d = std::hypot(static_cast<float>(x) - 15.5f, static_cast<float>(y) - 15.5f);
                     const auto alpha = static_cast<std::uint8_t>(std::clamp(13.f - d, 0.f, 1.f) * 255);
                     std::uint8_t* p = &dot->rgba[(y * 32 + x) * 4];
-                    p[0] = 0x8A, p[1] = 0xAD, p[2] = 0xF4, p[3] = alpha;
+                    p[0] = 0x8A;
+                    p[1] = 0xAD;
+                    p[2] = 0xF4;
+                    p[3] = alpha;
                 }
             }
             pixels = dot;

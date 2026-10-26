@@ -64,7 +64,7 @@ public:
         for (std::size_t i = 0; i < items_.size(); ++i) {
             if (const auto size = sizes_.find(items_[i].key); size != sizes_.end()) {
                 known_[i] = size->second;
-                known_sum_ += size->second;
+                known_sum_ += static_cast<double>(size->second);
                 ++known_count_;
             }
         }
@@ -91,7 +91,7 @@ public:
             if (items_[i].key == key) {
                 return static_cast<float>(position);
             }
-            position += size_at(i, estimate) + spacing_;
+            position += static_cast<double>(size_at(i, estimate) + spacing_);
         }
         return std::nullopt;
     }
@@ -180,12 +180,12 @@ private:
     }
     void set_size(std::size_t index, float size) {
         if (known_[index] >= 0) {
-            known_sum_ -= known_[index];
+            known_sum_ -= static_cast<double>(known_[index]);
         } else {
             ++known_count_;
         }
         known_[index] = size;
-        known_sum_ += size;
+        known_sum_ += static_cast<double>(size);
         sizes_[items_[index].key] = size;
     }
 
@@ -235,15 +235,15 @@ void LazyStackElement::arrange(Rect bounds, ProposedSize) {
 
     // The visible stretch along the main axis (local coordinates), with half a viewport of
     // margin each way so items exist before they scroll in.
-    float low = -std::numeric_limits<float>::infinity();
-    float high = std::numeric_limits<float>::infinity();
+    double low = -std::numeric_limits<double>::infinity(); // double, as positions are
+    double high = std::numeric_limits<double>::infinity();
     std::optional<float> visible_start; // inside a scroll view: where its visible part begins
     for (const Element* ancestor = parent(); ancestor; ancestor = ancestor->parent()) {
         if (const std::optional<Rect> visible = ancestor->visible_rect()) {
             const float start = vertical ? visible->y - bounds.y : visible->x - bounds.x;
             const float length = vertical ? visible->height : visible->width;
-            low = start - length / 2;
-            high = start + length * 1.5f;
+            low = static_cast<double>(start - length / 2);
+            high = static_cast<double>(start + length * 1.5f);
             visible_start = start;
             break;
         }
@@ -266,7 +266,7 @@ void LazyStackElement::arrange(Rect bounds, ProposedSize) {
     for (std::size_t i = 0; i < items_.size(); ++i) {
         const ForEachItem& item = items_[i];
         float size = size_at(i, estimate);
-        if (position + size >= low && position <= high) {
+        if (position + static_cast<double>(size) >= low && position <= high) {
             auto existing = rows_.find(item.key);
             Row row;
             if (existing != rows_.end()) {
@@ -290,7 +290,7 @@ void LazyStackElement::arrange(Rect bounds, ProposedSize) {
         if (anchor_ && item.key == anchor_->key) {
             anchor_now = static_cast<float>(position);
         }
-        position += size + spacing_;
+        position += static_cast<double>(size + spacing_);
     }
 
     // Scroll anchoring: rows above the one at the top of the view changed size (estimates became

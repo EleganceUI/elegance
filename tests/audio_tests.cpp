@@ -30,7 +30,7 @@ std::vector<unsigned char> wav(int rate, int frames) {
     std::vector<unsigned char> out;
     const auto tag = [&](const char* t) { out.insert(out.end(), t, t + 4); };
     tag("RIFF");
-    put32(out, 36 + frames * 2);
+    put32(out, static_cast<std::uint32_t>(36 + frames * 2));
     tag("WAVE");
     tag("fmt ");
     put32(out, 16);
