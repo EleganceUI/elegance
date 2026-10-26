@@ -115,14 +115,6 @@ public:
     void set_text_input_area(Rect area, float cursor) override { window_->set_text_input_area(area, cursor); }
     std::string clipboard_text() override { return platform::clipboard_text(); }
     void set_clipboard_text(const std::string& text) override { platform::set_clipboard_text(text); }
-    void set_cursor(CursorShape shape) override {
-        switch (shape) {
-        case CursorShape::arrow: platform::set_cursor(platform::SystemCursor::arrow); break;
-        case CursorShape::text: platform::set_cursor(platform::SystemCursor::text); break;
-        case CursorShape::resize_horizontal: platform::set_cursor(platform::SystemCursor::resize_horizontal); break;
-        case CursorShape::resize_vertical: platform::set_cursor(platform::SystemCursor::resize_vertical); break;
-        }
-    }
     void wake_at(double seconds) override {
         if (!wake_ || seconds < *wake_) {
             wake_ = seconds;
@@ -486,6 +478,7 @@ int App::run() {
     std::unique_ptr<WindowEntry> inspector_entry;
     std::uint32_t inspector_window = 0;
     bool inspector_changed = false; // its states were written outside an event: flush and draw
+    PointerStyle pointer_style = PointerStyle::arrow; // the shape last shown
     double inspector_rows_at = -1;   // when its tree was last refreshed
     bool inspector_rows_stale = false;
     std::optional<ElementPath> inspector_seen_selection;
@@ -1267,6 +1260,18 @@ int App::run() {
                 }
             }
         }
+        // The pointer's shape follows what's under it, here after layout: content that moved,
+        // appeared, or went away under a still pointer changes it too. A popup over its window
+        // comes later in the list, and wins.
+        for (auto it = windows.rbegin(); it != windows.rend(); ++it) {
+            if ((*it)->events.pointer_inside()) {
+                if (const PointerStyle style = (*it)->events.pointer_style(); style != pointer_style) {
+                    pointer_style = style;
+                    platform::set_pointer_style(style);
+                }
+                break;
+            }
+        }
         // Frames of the inspected window update the inspector's states: show them now, not at the
         // next event.
         if (std::exchange(inspector_changed, false)) {
@@ -1284,22 +1289,6 @@ int App::run() {
         }
     }
     return 0;
-}
-
-void set_cursor(Cursor cursor) {
-    detail::check_ui_thread();
-    switch (cursor) {
-    case Cursor::arrow: platform::set_cursor(platform::SystemCursor::arrow); break;
-    case Cursor::text: platform::set_cursor(platform::SystemCursor::text); break;
-    case Cursor::pointer: platform::set_cursor(platform::SystemCursor::pointer); break;
-    case Cursor::crosshair: platform::set_cursor(platform::SystemCursor::crosshair); break;
-    case Cursor::move: platform::set_cursor(platform::SystemCursor::move); break;
-    case Cursor::resize_horizontal: platform::set_cursor(platform::SystemCursor::resize_horizontal); break;
-    case Cursor::resize_vertical: platform::set_cursor(platform::SystemCursor::resize_vertical); break;
-    case Cursor::resize_nwse: platform::set_cursor(platform::SystemCursor::resize_nwse); break;
-    case Cursor::resize_nesw: platform::set_cursor(platform::SystemCursor::resize_nesw); break;
-    case Cursor::not_allowed: platform::set_cursor(platform::SystemCursor::not_allowed); break;
-    }
 }
 
 const char* version() {

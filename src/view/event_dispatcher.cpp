@@ -473,6 +473,25 @@ bool EventDispatcher::drags_window_at(Point location) {
     return false;
 }
 
+PointerStyle EventDispatcher::pointer_style() {
+    std::vector<Element*> path;
+    if (captured_) {
+        for (Element* element = captured_; element; element = element->parent()) {
+            path.insert(path.begin(), element);
+        }
+    } else {
+        path = path_at(last_location_);
+    }
+    for (auto it = path.rbegin(); it != path.rend(); ++it) {
+        if (const EventHandler* handler = (*it)->event_handler()) {
+            if (const PointerStyle style = handler->pointer_style(last_location_); style != PointerStyle::automatic) {
+                return style;
+            }
+        }
+    }
+    return PointerStyle::arrow;
+}
+
 bool EventDispatcher::refresh_hover() {
     return pointer_inside_ && update_hover(path_at(last_location_));
 }

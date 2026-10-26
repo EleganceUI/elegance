@@ -31,9 +31,8 @@ class SplitElement;
 // side when dragged. Its frame is the area it can be grabbed in, around its line.
 class SplitDividerElement final : public Element, private EventHandler {
 public:
-    SplitDividerElement(SplitElement& split, std::size_t index, Axis axis, WindowServices* services,
-                        EnvironmentValues environment)
-        : split_(&split), index_(index), axis_(axis), services_(services), environment_(std::move(environment)) {}
+    SplitDividerElement(SplitElement& split, std::size_t index, Axis axis, EnvironmentValues environment)
+        : split_(&split), index_(index), axis_(axis), environment_(std::move(environment)) {}
 
     EventHandler* event_handler() noexcept override { return this; }
     HoverDelay effective_hover_delay() const override { return {0, 0}; } // the cursor changes at once
@@ -49,19 +48,15 @@ protected:
 private:
     EventResult pointer(const PointerEvent& event, Rect) override;
     EventResult hover(bool inside) override;
-    float along(Point point) const { return axis_ == Axis::horizontal ? point.x : point.y; }
-    void show_cursor(bool resize) const {
-        if (services_) {
-            services_->set_cursor(!resize                     ? CursorShape::arrow
-                                  : axis_ == Axis::horizontal ? CursorShape::resize_horizontal
-                                                              : CursorShape::resize_vertical);
-        }
+    // Also while dragged: a fast drag outruns the divider, and keeps its cursor until it ends.
+    PointerStyle pointer_style(Point) const override {
+        return axis_ == Axis::horizontal ? PointerStyle::resize_horizontal : PointerStyle::resize_vertical;
     }
+    float along(Point point) const { return axis_ == Axis::horizontal ? point.x : point.y; }
 
     SplitElement* split_;
     std::size_t index_; // between laid-out panes index_ and index_ + 1
     Axis axis_;
-    WindowServices* services_;
     EnvironmentValues environment_;
     bool hovered_ = false;
     bool dragging_ = false;
@@ -179,9 +174,6 @@ EventResult SplitDividerElement::pointer(const PointerEvent& event, Rect) {
     case PointerEvent::Kind::up:
     case PointerEvent::Kind::cancel:
         dragging_ = false;
-        if (!hovered_) {
-            show_cursor(false); // released away from the divider
-        }
         return {.consumed = true, .redraw = true};
     }
     return {};
@@ -189,9 +181,6 @@ EventResult SplitDividerElement::pointer(const PointerEvent& event, Rect) {
 
 EventResult SplitDividerElement::hover(bool inside) {
     hovered_ = inside;
-    if (inside || !dragging_) { // a fast drag outruns the divider: keep the cursor until it ends
-        show_cursor(inside);
-    }
     return {.redraw = true};
 }
 
@@ -225,8 +214,7 @@ void SplitElement::rebuild_children() {
             dividers_.pop_back();
         }
         while (dividers_.size() < count) {
-            auto divider = std::make_unique<SplitDividerElement>(*this, dividers_.size(), axis_, context_.services,
-                                                                 context_.environment);
+            auto divider = std::make_unique<SplitDividerElement>(*this, dividers_.size(), axis_, context_.environment);
             adopt(*divider);
             dividers_.push_back(std::move(divider));
         }

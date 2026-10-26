@@ -887,10 +887,11 @@ EventResult TextFieldElement::pointer(const PointerEvent& event, Rect) {
 
 EventResult TextFieldElement::hover(bool inside) {
     hovered_ = inside;
-    if (services_) {
-        services_->set_cursor(inside ? CursorShape::text : CursorShape::arrow);
-    }
     return {};
+}
+
+PointerStyle TextFieldElement::pointer_style(Point) const {
+    return untrack(enabled_) ? PointerStyle::text : PointerStyle::automatic;
 }
 
 EventResult TextFieldElement::key(const KeyEvent& event) {

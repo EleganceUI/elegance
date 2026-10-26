@@ -93,11 +93,6 @@ ELG_API void post_to_ui_thread(std::function<void()> task);
 // Library version string, e.g. "0.1.0".
 ELG_API const char* version();
 
-// Sets the mouse pointer's shape until something else sets it. For custom views: set it from
-// PointerEvent::Kind::hover events (it can depend on what's under the pointer), and back to
-// Cursor::arrow when hover(false) says the pointer left. Call on the UI thread.
-ELG_API void set_cursor(Cursor cursor);
-
 } // namespace elg
 
 #endif // ELG_APP_H

@@ -10,6 +10,7 @@
 #include <elg/events.h>
 #include <elg/export.h>
 #include <elg/modifier.h>
+#include <elg/prop.h>
 
 #include <functional>
 #include <memory>
@@ -81,6 +82,18 @@ public:
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
     std::function<void(Point)> action_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
+// The pointer's shape over the view (View::pointer_style()).
+class ELG_API PointerStyleModifier final : public EventModifier {
+public:
+    explicit PointerStyleModifier(Prop<PointerStyle> style) : style_(std::move(style)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    Prop<PointerStyle> style_;
     ELG_PRIVATE_MEMBERS_END
 };
 

@@ -507,7 +507,7 @@ void set_clipboard_text(const std::string& text) {
     SDL_SetClipboardText(text.c_str());
 }
 
-void set_cursor(SystemCursor cursor) {
+void set_pointer_style(PointerStyle style) {
     // Created on first use; SDL frees them at shutdown.
     const auto system = [](SDL_SystemCursor id) {
         static SDL_Cursor* cursors[SDL_SYSTEM_CURSOR_COUNT] = {};
@@ -517,17 +517,20 @@ void set_cursor(SystemCursor cursor) {
         return cursors[id];
     };
     SDL_SystemCursor id = SDL_SYSTEM_CURSOR_DEFAULT;
-    switch (cursor) {
-    case SystemCursor::arrow: id = SDL_SYSTEM_CURSOR_DEFAULT; break;
-    case SystemCursor::text: id = SDL_SYSTEM_CURSOR_TEXT; break;
-    case SystemCursor::resize_horizontal: id = SDL_SYSTEM_CURSOR_EW_RESIZE; break;
-    case SystemCursor::resize_vertical: id = SDL_SYSTEM_CURSOR_NS_RESIZE; break;
-    case SystemCursor::pointer: id = SDL_SYSTEM_CURSOR_POINTER; break;
-    case SystemCursor::crosshair: id = SDL_SYSTEM_CURSOR_CROSSHAIR; break;
-    case SystemCursor::move: id = SDL_SYSTEM_CURSOR_MOVE; break;
-    case SystemCursor::resize_nwse: id = SDL_SYSTEM_CURSOR_NWSE_RESIZE; break;
-    case SystemCursor::resize_nesw: id = SDL_SYSTEM_CURSOR_NESW_RESIZE; break;
-    case SystemCursor::not_allowed: id = SDL_SYSTEM_CURSOR_NOT_ALLOWED; break;
+    switch (style) {
+    case PointerStyle::automatic:
+    case PointerStyle::arrow: id = SDL_SYSTEM_CURSOR_DEFAULT; break;
+    case PointerStyle::pointer: id = SDL_SYSTEM_CURSOR_POINTER; break;
+    case PointerStyle::text: id = SDL_SYSTEM_CURSOR_TEXT; break;
+    case PointerStyle::crosshair: id = SDL_SYSTEM_CURSOR_CROSSHAIR; break;
+    case PointerStyle::move: id = SDL_SYSTEM_CURSOR_MOVE; break;
+    case PointerStyle::wait: id = SDL_SYSTEM_CURSOR_WAIT; break;
+    case PointerStyle::progress: id = SDL_SYSTEM_CURSOR_PROGRESS; break;
+    case PointerStyle::resize_horizontal: id = SDL_SYSTEM_CURSOR_EW_RESIZE; break;
+    case PointerStyle::resize_vertical: id = SDL_SYSTEM_CURSOR_NS_RESIZE; break;
+    case PointerStyle::resize_nwse: id = SDL_SYSTEM_CURSOR_NWSE_RESIZE; break;
+    case PointerStyle::resize_nesw: id = SDL_SYSTEM_CURSOR_NESW_RESIZE; break;
+    case PointerStyle::not_allowed: id = SDL_SYSTEM_CURSOR_NOT_ALLOWED; break;
     }
     SDL_SetCursor(system(id));
 }

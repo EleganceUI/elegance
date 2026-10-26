@@ -203,9 +203,9 @@ private:
 class TextFieldElement final : public Element, private EventHandler {
 public:
     TextFieldElement(std::shared_ptr<TextEditor> editor, std::unique_ptr<Element> content, State<bool> focused,
-                     State<bool> hovered, std::function<bool()> enabled, WindowServices* services)
+                     State<bool> hovered, std::function<bool()> enabled)
         : editor_(std::move(editor)), content_(std::move(content)), focused_(std::move(focused)),
-          hovered_(std::move(hovered)), enabled_(std::move(enabled)), services_(services) {
+          hovered_(std::move(hovered)), enabled_(std::move(enabled)) {
         adopt(*content_);
     }
 
@@ -226,6 +226,7 @@ protected:
 private:
     EventResult pointer(const PointerEvent& event, Rect frame) override;
     EventResult hover(bool inside) override;
+    PointerStyle pointer_style(Point) const override;
     EventResult key(const KeyEvent& event) override;
     bool focusable() const override;
     EventResult focus(bool focused) override;
@@ -238,7 +239,6 @@ private:
     State<bool> focused_;
     State<bool> hovered_;
     std::function<bool()> enabled_;
-    WindowServices* services_;
 };
 
 } // namespace elg::detail

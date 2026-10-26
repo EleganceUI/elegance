@@ -14,8 +14,6 @@
 
 namespace elg::detail {
 
-enum class CursorShape { arrow, text, resize_horizontal, resize_vertical };
-
 // A popup window to open (design.md §13.1), anchored to a rect in the opener's window.
 struct PopupRequest {
     // Popovers share the menus' stack (and their closing on outside clicks, Esc, and focus
@@ -63,8 +61,6 @@ public:
 
     virtual std::string clipboard_text() = 0;
     virtual void set_clipboard_text(const std::string& text) = 0;
-
-    virtual void set_cursor(CursorShape shape) = 0;
 
     // Requests a new frame at `seconds` (steady clock), e.g. for a blinking caret.
     virtual void wake_at(double seconds) = 0;
