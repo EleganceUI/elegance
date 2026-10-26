@@ -63,6 +63,23 @@ Tile().on_hover(show_preview, HoverDelay{.enter = 0.5});
 
 `.help("...")` shows a tooltip after the pointer rests on a view for a moment.
 
+## Pointer style
+
+`.pointer_style()` sets the pointer's shape over a view, like CSS's `cursor`. The innermost view
+under the pointer with a style decides; with none, it's the arrow. Text fields show the I-beam
+and split view dividers the resize arrows on their own.
+
+```cpp
+Card().on_tap_gesture(open).pointer_style(PointerStyle::pointer); // a hand: this opens something
+Canvas(draw).pointer_style(PointerStyle::crosshair);
+Content().pointer_style([=] { return busy() ? PointerStyle::progress : PointerStyle::automatic; });
+```
+
+The shape follows the pointer and the views: when a view goes away or moves out from under a
+still pointer, its style goes with it. `PointerStyle::automatic` leaves the decision to the views
+around. A custom `EventHandler` whose shape depends on where the pointer is (a canvas's resize
+handles) overrides `pointer_style(Point location)` instead.
+
 ## Hit testing
 
 A view is hit where its content draws: shapes by their outline, text by its frame. Two modifiers

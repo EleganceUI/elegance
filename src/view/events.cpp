@@ -30,6 +30,10 @@ EventResult EventHandler::scroll(const ScrollEvent&) {
     return {};
 }
 
+PointerStyle EventHandler::pointer_style(Point) const {
+    return PointerStyle::automatic;
+}
+
 EventResult EventHandler::magnify(const MagnifyEvent&) {
     return {};
 }
@@ -180,7 +184,23 @@ private:
     std::function<void(Point)> action_;
 };
 
+class PointerStyleHandler final : public EventHandler {
+public:
+    explicit PointerStyleHandler(Prop<PointerStyle> style) : style_(std::move(style)) {}
+
+    // Read when the pointer moves or the views change, not in an effect: a reactive style is
+    // picked up at the next frame.
+    PointerStyle pointer_style(Point) const override { return untrack([&] { return style_.get(); }); }
+
+private:
+    Prop<PointerStyle> style_;
+};
+
 } // namespace
+
+std::unique_ptr<EventHandler> PointerStyleModifier::make_handler() const {
+    return std::make_unique<PointerStyleHandler>(style_);
+}
 
 std::unique_ptr<EventHandler> MagnifyGestureModifier::make_handler() const {
     return std::make_unique<MagnifyHandler>(action_);

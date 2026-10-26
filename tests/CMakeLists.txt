@@ -18,6 +18,7 @@ add_executable(elegance_tests
         http_tests.cpp
         image_tests.cpp
         path_tests.cpp
+        pointer_style_tests.cpp
         reactive_tests.cpp
         render_device_lifetime_tests.cpp
         size_observer_tests.cpp

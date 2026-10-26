@@ -296,6 +296,10 @@ View View::on_smart_magnify(std::function<void(Point)> action) const {
     return modifier(SmartMagnifyModifier(std::move(action)));
 }
 
+View View::pointer_style(Prop<PointerStyle> style) const {
+    return modifier(PointerStyleModifier(std::move(style)));
+}
+
 View View::on_size_change(std::function<void(PixelSize)> action) const {
     struct Observer final : EffectModifier {
         std::function<void(PixelSize)> action;
@@ -872,7 +876,7 @@ std::unique_ptr<Element> TextFieldNode::lower(const LowerContext& context) const
         body = style->make_body(configuration);
     }
     auto element = std::make_unique<TextFieldElement>(editor, detail::lower(body, context.nested()), focused, hovered,
-                                                      enabled, context.services);
+                                                      enabled);
     if (context.focus) {
         element->set_focus_manager(context.focus, {}); // the style shows focus
     }

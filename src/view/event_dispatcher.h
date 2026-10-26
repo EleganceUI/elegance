@@ -32,6 +32,10 @@ public:
     bool pointer_button(PointerEvent::Kind kind, Point location, MouseButton button, int click_count,
                         KeyModifiers modifiers);
     bool pointer_left();
+    // Whether the pointer is over this window, and its shape there: the innermost style under it
+    // (or along the view a press is captured by), else the arrow.
+    bool pointer_inside() const noexcept { return pointer_inside_; }
+    PointerStyle pointer_style();
     bool key(const KeyEvent& event);
     // Menus: unhandled Up/Down move focus like Shift+Tab/Tab, Home/End to the first/last item.
     void set_menu_navigation(bool enabled) noexcept { menu_navigation_ = enabled; }

@@ -59,6 +59,7 @@ struct HoverDelay;
 struct KeyEvent;
 struct MagnifyEvent;
 struct RotateEvent;
+enum class PointerStyle;
 enum class Key;
 enum class Weight;
 template <class T>
@@ -438,6 +439,10 @@ public:
     ELG_API View on_magnify(std::function<void(const MagnifyEvent&)> action) const;
     ELG_API View on_rotate(std::function<void(const RotateEvent&)> action) const;
     ELG_API View on_smart_magnify(std::function<void(Point)> action) const;
+    // The pointer's shape over the view, like CSS's `cursor`: .pointer_style(PointerStyle::pointer)
+    // over something to click. Views inside can set their own (a text field's I-beam). Reactive:
+    // .pointer_style([=] { return busy() ? PointerStyle::wait : PointerStyle::automatic; })
+    ELG_API View pointer_style(Prop<PointerStyle> style) const;
     // Called with true when the pointer has rested on the view for the hover delay, and false
     // when it leaves (after the exit delay). The delay comes from the environment
     // (.hover_delay()) unless given here.

@@ -63,13 +63,18 @@ constexpr KeyModifiers primary_modifier() noexcept {
 #endif
 }
 
-// The mouse pointer's shape (set_cursor()).
-enum class Cursor {
-    arrow,
-    text,     // the I-beam
-    pointer,  // a hand, over links
+// The mouse pointer's shape over a view, like CSS's `cursor` (View::pointer_style()). The
+// innermost view under the pointer with a style other than `automatic` decides; with none, it's
+// the arrow. It follows the pointer and the views: one going away takes its style with it.
+enum class PointerStyle {
+    automatic, // no style of its own: the views around it decide
+    arrow,     // CSS's default
+    pointer,   // a hand, over links and other things to click
+    text,      // the I-beam, over text to select or edit
     crosshair,
     move,
+    wait,     // busy: nothing can be done until it's over
+    progress, // busy, but it still takes input
     resize_horizontal,
     resize_vertical,
     resize_nwse, // corners: top-left to bottom-right
@@ -177,6 +182,11 @@ public:
     virtual EventResult pointer(const PointerEvent& event, Rect frame);
     // The pointer entered (true) or left (false) the view, after the hover delay.
     virtual EventResult hover(bool inside);
+    // The pointer's shape at `location` (window points) over this view. Asked innermost first,
+    // and of the view a press is captured by while it is; `automatic` leaves it to the views
+    // around. For styles that depend on where the pointer is (a canvas's resize handles); a fixed
+    // one is View::pointer_style().
+    virtual PointerStyle pointer_style(Point location) const;
 
     // Wheel and trackpad scrolling: goes to the handlers under the pointer, innermost first,
     // until one consumes it.
