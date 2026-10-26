@@ -38,7 +38,12 @@ public:
     // Focuses an element (no ring), e.g. a menu item under the pointer.
     bool focus(Element* element) { return focus_->focus(element, false); }
     bool text_input(const TextInputEvent& event);
-    bool scroll(Point location, float dx, float dy, bool precise, KeyModifiers modifiers = KeyModifiers::none);
+    bool scroll(const ScrollEvent& event);
+    // Trackpad gestures. MagnifyEvent::scale and RotateEvent::degrees are filled in here, from the
+    // deltas since `began`.
+    bool magnify(MagnifyEvent event);
+    bool rotate(RotateEvent event);
+    bool smart_magnify(Point location);
     // Whether pressing at `location` should move the window: the innermost handler there is a
     // .window_drag_area() (controls inside one take their clicks).
     bool drags_window_at(Point location);
@@ -77,10 +82,16 @@ private:
     bool pointer_inside_ = false;
     // Wheel latching: a scroll gesture stays with the element that took its first event (a page
     // scrolled past a horizontal shelf keeps scrolling) until the wheel pauses or the pointer
-    // moves.
+    // moves. Trackpad gestures with phases stay until the next one begins, momentum included.
     Element* wheel_latched_ = nullptr;
+    bool wheel_phased_ = false; // the latched gesture has phases
     double last_wheel_ = 0;     // when the last wheel event came
     Point last_wheel_location_; // where
+    // Pinch and rotate gestures go to whoever took their `began`.
+    Element* magnify_latched_ = nullptr;
+    Element* rotate_latched_ = nullptr;
+    float magnify_scale_ = 1;
+    float rotate_degrees_ = 0;
 };
 
 } // namespace elg::detail

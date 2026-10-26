@@ -8,6 +8,7 @@
 #include "view/view_node.h"
 
 #include <elg/font.h>
+#include <elg/platform.h>
 #include <elg/shapes.h>
 #include <elg/styles.h>
 #include <elg/text.h>
@@ -130,11 +131,12 @@ View WindowControls(WindowControlsOptions options) {
         const WindowHandle window = Environment<WindowKey>()();
         WindowControlsStyle style = options.style;
         if (style == WindowControlsStyle::automatic) {
-#if defined(__APPLE__)
-            style = WindowControlsStyle::traffic_lights;
-#else
-            style = WindowControlsStyle::caption;
-#endif
+            // Never stand in for the system's own controls: only windows without them get these.
+            if (window.title_bar() != TitleBar::hidden) {
+                return EmptyView();
+            }
+            style = current_platform() == Platform::macos ? WindowControlsStyle::traffic_lights
+                                                          : WindowControlsStyle::caption;
         }
         // Like native caption buttons, they never take keyboard focus.
         return (style == WindowControlsStyle::traffic_lights ? traffic_lights(options, window)

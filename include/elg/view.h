@@ -57,6 +57,8 @@ class ToggleStyle;
 class TextFieldStyle;
 struct HoverDelay;
 struct KeyEvent;
+struct MagnifyEvent;
+struct RotateEvent;
 enum class Key;
 enum class Weight;
 template <class T>
@@ -430,6 +432,12 @@ public:
 
     // Runs `action` on a tap (`count` = 2 for a double tap). The innermost tap gesture wins.
     ELG_API View on_tap_gesture(std::function<void()> action, int count = 1) const;
+    // Trackpad gestures over the view (began ... ended): pinching, turning two fingers, and a
+    // two-finger double tap. The innermost view handling one under the pointer takes it.
+    //   .on_magnify([=](const MagnifyEvent& e) { zoom = std::clamp(start_zoom * e.scale, 0.5f, 8.f); })
+    ELG_API View on_magnify(std::function<void(const MagnifyEvent&)> action) const;
+    ELG_API View on_rotate(std::function<void(const RotateEvent&)> action) const;
+    ELG_API View on_smart_magnify(std::function<void(Point)> action) const;
     // Called with true when the pointer has rested on the view for the hover delay, and false
     // when it leaves (after the exit delay). The delay comes from the environment
     // (.hover_delay()) unless given here.

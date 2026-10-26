@@ -191,10 +191,12 @@ endif ()
 if (APPLE)
     # Video playback through AVFoundation (Objective-C++, ARC); images through ImageIO.
     enable_language(OBJCXX)
-    target_sources(elegance PRIVATE media/video_source_apple.mm)
-    set_source_files_properties(media/video_source_apple.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    # Integrated title bars and trackpad gestures through AppKit.
+    set(elg_apple_sources media/video_source_apple.mm platform/input_apple.mm platform/title_bar_apple.mm)
+    target_sources(elegance PRIVATE ${elg_apple_sources})
+    set_source_files_properties(${elg_apple_sources} PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_link_libraries(elegance PRIVATE
-            "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework QuartzCore"
+            "-framework AppKit" "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework QuartzCore"
             "-framework Foundation" "-framework ImageIO" "-framework CoreGraphics" "-framework CoreFoundation"
             curl)
 endif ()

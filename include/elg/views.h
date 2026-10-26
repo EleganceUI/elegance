@@ -281,6 +281,7 @@ struct ScrollViewOptions {
 // Shows `content` at its ideal size along the scroll axes, clipped to the space the scroll view
 // takes (all it's offered). Wheel, trackpad, scroll-bar drags, and keys (arrows, Page Up/Down,
 // Home/End, unhandled by the focused view) scroll it; Tab scrolls focused views into sight.
+// Trackpad gestures (macOS) follow the axis they start along, stretch past the ends, and coast.
 //   ScrollView(VStack(rows...))
 ELG_API View ScrollView(View content);
 ELG_API View ScrollView(ScrollViewOptions options, View content);

@@ -13,6 +13,7 @@
 #include <elg/theme.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <optional>
 
@@ -22,6 +23,19 @@ namespace {
 
 // How far the page underneath moves while another slides over it, as a fraction of the width.
 constexpr float kUnderneathShift = 0.3f;
+// Swiping back: let go past this fraction of the width, or faster than this (points per second)
+// toward it, and the page goes; otherwise it slides back.
+constexpr float kSwipeCommit = 0.35f;
+constexpr float kSwipeFlick = 400;
+constexpr double kSwipeVelocityWindow = 0.1; // the fingers' speed is their average over this long
+
+double now_seconds() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+bool contains(const Rect& rect, Point point) {
+    return point.x >= rect.x && point.y >= rect.y && point.x < rect.max_x() && point.y < rect.max_y();
+}
 
 // A page of the stack: its content, alive while its route is in the path. While covered by
 // another page it can't take focus (Tab, clicks) and screen readers don't see it; hit testing
@@ -48,12 +62,15 @@ private:
     bool covered_ = false;
 };
 
-class NavigationStackElement final : public Element {
+class NavigationStackElement final : public Element, private EventHandler {
 public:
-    NavigationStackElement(std::unique_ptr<Element> root, LowerContext context)
-        : root_{nullptr, std::make_unique<PageElement>(std::move(root)), nullptr}, context_(std::move(context)) {
+    NavigationStackElement(std::unique_ptr<Element> root, LowerContext context, std::function<void()> pop)
+        : root_{nullptr, std::make_unique<PageElement>(std::move(root)), nullptr}, context_(std::move(context)),
+          pop_(std::move(pop)) {
         adopt(*root_.element);
     }
+
+    EventHandler* event_handler() noexcept override { return this; }
 
     // Shows the root followed by a page per item. Pages whose routes are unchanged from the start of
     // the path are kept; the rest are rebuilt.
@@ -73,7 +90,7 @@ public:
             visit(*leaving_->element);
         }
     }
-    bool drawing_moves() const override { return progress_.animating(); }
+    bool drawing_moves() const override { return progress_.animating() || swiping(); }
 
 protected:
     Size measure(ProposedSize proposal) override {
@@ -86,9 +103,14 @@ protected:
     }
     void arrange(Rect bounds, ProposedSize) override;
     void paint_impl(DisplayList& list) const override;
-    bool hit_impl(Point point, std::vector<Element*>& path) override { return top().hit_test(point, path); }
+    bool hit_impl(Point point, std::vector<Element*>& path) override {
+        // With a page to go back to, the whole stack takes two-finger swipes, not only its content.
+        return top().hit_test(point, path) || (!pages_.empty() && contains(frame(), point));
+    }
     // While a transition runs, and once more after it to let go of a popped page.
-    bool always_arranges() const override { return progress_.animating() || leaving_.has_value(); }
+    bool always_arranges() const override {
+        return progress_.animating() || leaving_.has_value() || swiping();
+    }
 
 private:
     // Declaration order matters: the scope is destroyed before the element (see FragmentElement).
@@ -98,8 +120,18 @@ private:
         std::unique_ptr<Scope> scope;
     };
 
+    EventResult scroll(const ScrollEvent& event) override;
+
     Page mount(const ForEachItem& item);
     PageElement& top() const { return pages_.empty() ? *root_.element : *pages_.back().element; }
+    // The page a swipe back reveals.
+    PageElement& below() const {
+        return pages_.size() < 2 ? *root_.element : *pages_[pages_.size() - 2].element;
+    }
+    // A swipe back is moving the top page, or it's sliding back after one.
+    bool swiping() const { return swipe_active_ || swipe_.animating(); }
+    // Paints `over` slid in by `in` (1: in place) over `under`.
+    void paint_slide(DisplayList& list, const PageElement& under, const PageElement& over, float in) const;
     void tree_changed() const {
         if (context_.needs_frame) {
             *context_.needs_frame = true;
@@ -119,6 +151,17 @@ private:
     bool popping_ = false;
     Animated<float> progress_{1.f};
     bool initialized_ = false;
+    std::function<void()> pop_;
+    // Swiping back with two fingers: how far the top page has moved, as a fraction of the width.
+    Animated<float> swipe_{0.f};
+    bool swipe_active_ = false;   // following the fingers
+    bool swipe_declined_ = false; // this gesture isn't a swipe back
+    float swipe_start_ = 0;       // a pop that finishes a swipe starts here (progress_)
+    struct Move {
+        double time; // ScrollEvent::time
+        float delta;
+    };
+    std::vector<Move> moves_;
 };
 
 bool same_route(const std::shared_ptr<const void>& old_value, const ForEachItem& item) {
@@ -185,11 +228,16 @@ void NavigationStackElement::set_pages(const std::vector<ForEachItem>& items) {
     // A pop reveals a page that was there; anything else (a push, a replaced route) slides a page in.
     popping_ = removed_top && kept == items.size();
     leaving_.reset(); // an unfinished transition ends here
-    if (animation) {
+    // A swipe back that let go far enough: the pop carries on from where the fingers left the page.
+    const float start = std::exchange(swipe_start_, 0.f);
+    swipe_active_ = false;
+    swipe_.set(0.f, nullptr);
+    if (animation || start > 0) {
+        static const Animation kFinish = Animation::smooth(0.3);
         from_ = old_top;
         leaving_ = std::move(removed_top);
-        progress_.set(0.f, nullptr);
-        progress_.set(1.f, animation);
+        progress_.set(popping_ ? start : 0.f, nullptr);
+        progress_.set(1.f, start > 0 ? &kFinish : animation);
     } else {
         from_ = nullptr;
         progress_.set(1.f, nullptr);
@@ -198,7 +246,75 @@ void NavigationStackElement::set_pages(const std::vector<ForEachItem>& items) {
     tree_changed();
 }
 
+EventResult NavigationStackElement::scroll(const ScrollEvent& event) {
+    if (event.phase == GesturePhase::none || pages_.empty() || progress_.animating()) {
+        return {};
+    }
+    if (event.momentum) {
+        return {.consumed = swipe_active_};
+    }
+    const float width = std::max(frame().width, 1.f);
+    const double now = event.time > 0 ? event.time : now_seconds();
+    if (event.phase == GesturePhase::began) {
+        swipe_declined_ = false;
+        moves_.clear();
+        if (event.dx == 0 && event.dy == 0) {
+            return {}; // fingers down: the scroll views under them hear it too
+        }
+    }
+    if (swipe_declined_) {
+        return {};
+    }
+    if (event.phase == GesturePhase::ended || event.phase == GesturePhase::cancelled) {
+        if (!swipe_active_) {
+            return {};
+        }
+        swipe_active_ = false;
+        float velocity = 0; // toward going back
+        if (moves_.size() > 1 && now - moves_.back().time < 0.06) {
+            float distance = 0;
+            for (std::size_t i = 1; i < moves_.size(); ++i) {
+                distance += moves_[i].delta;
+            }
+            const double span = moves_.back().time - moves_.front().time;
+            velocity = span > 0.008 ? static_cast<float>(-distance / span) : 0.f;
+        }
+        const float moved = swipe_.target();
+        if (event.phase == GesturePhase::ended && moved > 0 &&
+            (moved > kSwipeCommit || velocity > kSwipeFlick)) {
+            swipe_start_ = moved; // set_pages picks it up when the path changes
+            pop_();
+        } else {
+            static const Animation kBack = Animation::smooth(0.3);
+            swipe_.set(0.f, &kBack);
+        }
+        invalidate_layout();
+        return {.consumed = true, .redraw = true};
+    }
+    if (!swipe_active_) {
+        // A swipe back: sideways, fingers moving toward the start (dx < 0, like scrolling left).
+        // Scroll views inside took it already if they could scroll that way.
+        if (std::abs(event.dx) <= std::abs(event.dy) || event.dx >= 0) {
+            swipe_declined_ = true;
+            return {};
+        }
+        swipe_active_ = true;
+        swipe_.set(0.f, nullptr);
+    }
+    std::erase_if(moves_, [&](const Move& move) { return move.time < now - kSwipeVelocityWindow; });
+    moves_.push_back({now, event.dx});
+    swipe_.set(std::clamp(swipe_.target() - event.dx / width, 0.f, 1.f), nullptr);
+    invalidate_layout();
+    return {.consumed = true, .redraw = true};
+}
+
 void NavigationStackElement::arrange(Rect bounds, ProposedSize) {
+    if (swiping()) {
+        const ProposedSize proposal{bounds.width, bounds.height};
+        below().place({bounds.x, bounds.y}, proposal);
+        top().place({bounds.x, bounds.y}, proposal);
+        return;
+    }
     if (!progress_.animating()) {
         from_ = nullptr;
         if (leaving_) {
@@ -214,16 +330,26 @@ void NavigationStackElement::arrange(Rect bounds, ProposedSize) {
 }
 
 void NavigationStackElement::paint_impl(DisplayList& list) const {
+    if (swiping()) {
+        list.animating |= swipe_.animating();
+        paint_slide(list, below(), top(), 1 - swipe_.current());
+        return;
+    }
     if (!from_ || !progress_.animating()) {
         top().paint(list);
         return;
     }
     list.animating = true;
-    const Rect bounds = frame();
-    // The page on top slides over the one underneath, which moves a little the same way and dims.
+    // The page on top slides over the one underneath.
     const PageElement& under = popping_ ? top() : *from_;
     const PageElement& over = popping_ ? *from_ : top();
-    const float in = popping_ ? 1 - progress_.current() : progress_.current(); // 1: `over` in place
+    paint_slide(list, under, over, popping_ ? 1 - progress_.current() : progress_.current());
+}
+
+void NavigationStackElement::paint_slide(DisplayList& list, const PageElement& under, const PageElement& over,
+                                         float in) const {
+    const Rect bounds = frame();
+    // The one underneath moves a little the same way and dims.
     const auto paint_moved = [&](const PageElement& page, float dx) {
         DisplayList content;
         content.scale = list.scale;
@@ -247,12 +373,12 @@ void NavigationStackElement::paint_impl(DisplayList& list) const {
 
 class NavigationStackNode final : public ViewNode {
 public:
-    NavigationStackNode(View root, std::function<std::vector<ForEachItem>()> pages)
-        : root_(std::move(root)), pages_(std::move(pages)) {}
+    NavigationStackNode(View root, std::function<std::vector<ForEachItem>()> pages, std::function<void()> pop)
+        : root_(std::move(root)), pages_(std::move(pages)), pop_(std::move(pop)) {}
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const LowerContext nested = context.nested();
-        auto element = std::make_unique<NavigationStackElement>(detail::lower(root_, nested), nested);
+        auto element = std::make_unique<NavigationStackElement>(detail::lower(root_, nested), nested, pop_);
         NavigationStackElement* const target = element.get();
         // Reading the path subscribes this effect; building the pages doesn't (mount untracks).
         effect([target, pages = pages_] { target->set_pages(pages()); });
@@ -262,6 +388,7 @@ public:
 private:
     View root_;
     std::function<std::vector<ForEachItem>()> pages_;
+    std::function<void()> pop_;
 };
 
 // The bar over the pages: the top page's title, and once a page is pushed, a back button named
@@ -297,7 +424,8 @@ using detail::ViewAccess;
 View detail::make_navigation_stack(View root, std::function<std::vector<ForEachItem>()> pages,
                                    std::function<std::vector<std::string>()> titles, std::function<void()> pop,
                                    bool shows_bar) {
-    View stack = ViewAccess::make(std::make_shared<const NavigationStackNode>(std::move(root), std::move(pages)));
+    View stack =
+        ViewAccess::make(std::make_shared<const NavigationStackNode>(std::move(root), std::move(pages), pop));
     if (shows_bar) {
         stack = VStack({.spacing = 0}, navigation_bar(titles, pop), Divider(), std::move(stack));
     }

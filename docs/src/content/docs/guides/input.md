@@ -19,6 +19,29 @@ under the pointer wins.
 Views made clickable with gestures should tell screen readers what they are; see
 [Accessibility](../accessibility/).
 
+## Trackpad gestures
+
+Pinching, turning two fingers, and a two-finger double tap (smart zoom) go to the innermost view
+under the pointer that handles them, from `began` to `ended`:
+
+```cpp
+const State<float> zoom{1};
+const State<float> start{1};
+const State<float> angle{0};
+Photo()
+    .on_magnify([=](const MagnifyEvent& e) {
+        if (e.phase == GesturePhase::began) {
+            start = zoom();
+        }
+        zoom = std::clamp(start() * e.scale, 0.5f, 8.f); // scale is since the gesture began
+    })
+    .on_rotate([=](const RotateEvent& e) { angle = e.degrees; }) // clockwise, since it began
+    .on_smart_magnify([=](Point) { zoom = zoom() == 1 ? 2.f : 1.f; });
+```
+
+Rotation and smart zoom come from macOS trackpads. Pinching also works where SDL reports it on
+other platforms.
+
 ## Hover
 
 `on_hover` reports when the pointer has rested on a view, and when it leaves:

@@ -47,6 +47,43 @@ private:
     ELG_PRIVATE_MEMBERS_END
 };
 
+// Calls `action` as the user pinches over the view (began ... ended). The innermost one under the
+// pointer takes the gesture.
+class ELG_API MagnifyGestureModifier final : public EventModifier {
+public:
+    explicit MagnifyGestureModifier(std::function<void(const MagnifyEvent&)> action) : action_(std::move(action)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::function<void(const MagnifyEvent&)> action_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
+// Calls `action` as the user turns two fingers over the view (began ... ended).
+class ELG_API RotateGestureModifier final : public EventModifier {
+public:
+    explicit RotateGestureModifier(std::function<void(const RotateEvent&)> action) : action_(std::move(action)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::function<void(const RotateEvent&)> action_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
+// Calls `action` with the location on a two-finger double tap over the view (macOS's smart zoom).
+class ELG_API SmartMagnifyModifier final : public EventModifier {
+public:
+    explicit SmartMagnifyModifier(std::function<void(Point)> action) : action_(std::move(action)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::function<void(Point)> action_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
 // Lets the view take keyboard focus (Tab order, clicks), so key handlers on it receive keys.
 class ELG_API FocusableModifier final : public EventModifier {
 public:

@@ -25,6 +25,7 @@
 #include <elg/error.h>
 #include <elg/animation.h>
 #include <elg/environment.h>
+#include <elg/platform.h>
 #include <elg/reactive.h>
 
 #include <algorithm>
@@ -152,8 +153,10 @@ private:
 namespace detail {
 struct WindowState {
     platform::Window* window = nullptr;
+    TitleBar title_bar = TitleBar::system;
     State<bool> maximized{false};
     State<bool> active{true};
+    State<Rect> system_controls{Rect{}};
 };
 } // namespace detail
 
@@ -171,10 +174,15 @@ struct LiveWindow {
     LiveWindow(WindowEntry& entry, TextSystem& text, EnvironmentValues base,
                const PopupSink* popups, const platform::PopupSpec* popup = nullptr, int menu_level = -1)
         : entry(&entry), window(entry.desc, popup), is_popup(popup != nullptr),
-          state(std::make_shared<WindowState>(WindowState{.window = &window})),
+          state(std::make_shared<WindowState>(WindowState{.window = &window,
+                                                          .title_bar = entry.desc.title_bar,
+                                                          .system_controls = State<Rect>(window.system_controls_frame())})),
           environment(with_window(std::move(base), state)), services(make_services(window, popups, menu_level)),
           root(mount(text)) {
-        if (entry.desc.title_bar == TitleBar::hidden) {
+        // Integrated title bars keep the system's frame only on macOS, which still needs the hit test
+        // for .window_drag_area() (its edges resize natively).
+        if (entry.desc.title_bar == TitleBar::hidden ||
+            (entry.desc.title_bar == TitleBar::integrated && current_platform() == Platform::macos)) {
             window.set_hit_test([this](Point point) { return hit_area(point); });
         }
     }
@@ -330,6 +338,14 @@ bool WindowHandle::is_maximized() const {
 
 bool WindowHandle::is_active() const {
     return !state_ || state_->active();
+}
+
+TitleBar WindowHandle::title_bar() const {
+    return state_ ? state_->title_bar : TitleBar::system;
+}
+
+Rect WindowHandle::system_controls_frame() const {
+    return state_ ? state_->system_controls() : Rect{};
 }
 
 App::~App() = default;
@@ -1011,18 +1027,40 @@ int App::run() {
         case platform::EventType::wheel:
             pending.close_tooltip = pending.close_tooltip || tooltip.has_value();
             if (auto it = find_window(event.window_id); it != windows.end()) {
-                constexpr float kPointsPerNotch = 48;
                 LiveWindow& live = **it;
-                float dx = event.wheel_x * kPointsPerNotch;
-                float dy = -event.wheel_y * kPointsPerNotch;
+                ScrollEvent scroll{.location = live.window.to_logical(event.x, event.y),
+                                   .dx = event.scroll_dx,
+                                   .dy = event.scroll_dy,
+                                   .precise = event.precise,
+                                   .modifiers = event.modifiers,
+                                   .phase = event.phase,
+                                   .momentum = event.momentum,
+                                   .time = event.time};
                 // Shift turns a plain wheel sideways, as in browsers.
-                if (has(event.modifiers, KeyModifiers::shift) && dx == 0) {
-                    std::swap(dx, dy);
+                if (!event.precise && has(event.modifiers, KeyModifiers::shift) && scroll.dx == 0) {
+                    std::swap(scroll.dx, scroll.dy);
                 }
-                if (live.events.scroll(live.window.to_logical(event.x, event.y), dx, dy, event.precise,
-                                       event.modifiers)) {
+                if (live.events.scroll(scroll)) {
                     live.dirty = true;
                 }
+            }
+            break;
+        case platform::EventType::magnify:
+        case platform::EventType::rotate:
+        case platform::EventType::smart_magnify:
+            pending.close_tooltip = pending.close_tooltip || tooltip.has_value();
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                LiveWindow& live = **it;
+                const Point location = live.window.to_logical(event.x, event.y);
+                bool redraw = false;
+                if (event.type == platform::EventType::magnify) {
+                    redraw = live.events.magnify({.location = location, .delta = 1 + event.amount, .phase = event.phase});
+                } else if (event.type == platform::EventType::rotate) {
+                    redraw = live.events.rotate({.location = location, .delta = event.amount, .phase = event.phase});
+                } else {
+                    redraw = live.events.smart_magnify(location);
+                }
+                live.dirty |= redraw;
             }
             break;
         case platform::EventType::text_input:
@@ -1096,6 +1134,12 @@ int App::run() {
                 }
             }
             check_popup_focus = check_popup_focus || event.type == platform::EventType::window_focus_lost;
+            break;
+        case platform::EventType::window_fullscreen_changed:
+            // The traffic lights leave with the title bar in fullscreen.
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                (*it)->state->system_controls = (*it)->window.system_controls_frame();
+            }
             break;
         case platform::EventType::window_moved:
             // Menus stay where they opened; moving their window closes them.

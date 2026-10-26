@@ -95,7 +95,8 @@ ELG_API View make_navigation_stack(View root, std::function<std::vector<ForEachI
 //                   [](int id) { return NoteView(id); }, {.root_title = "Notes"})
 // Pages slide in when pushed and out when popped. Pages under the top one stay alive, keeping
 // their state and scroll positions, until they're removed from the path. The bar shows the title
-// and a back button; Alt+Left goes back too. Routes are compared with ==: a page is rebuilt when
+// and a back button; Alt+Left goes back too, and so does swiping right with two fingers on a
+// trackpad (macOS), the page following them. Routes are compared with ==: a page is rebuilt when
 // its route changes.
 template <class Route>
     requires std::equality_comparable<Route>

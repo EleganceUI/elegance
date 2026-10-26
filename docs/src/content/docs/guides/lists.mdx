@@ -101,6 +101,12 @@ second or the mouse moves. Scrolling a page down past a horizontal shelf keeps s
 page; stopping over the shelf and scrolling again scrolls it sideways (a mouse wheel's vertical
 notches scroll a horizontal-only view). Shift+wheel always scrolls sideways.
 
+On a macOS trackpad, scrolling follows the fingers directly. Each swipe follows the axis it
+started along, like AppKit, so a sideways swipe over a shelf scrolls the shelf, and an upward one
+over the shelf scrolls the page. Past the ends the content stretches with resistance and springs
+back when you let go. Let go while moving and it glides on at your fingers' speed, slowing down
+like UIScrollView, and bounces off the ends. Touching the trackpad again stops it.
+
 ### Scrolling from code
 
 Create a `ScrollPosition`, pass it in the options, and call it from event handlers:

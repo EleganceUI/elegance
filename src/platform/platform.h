@@ -13,12 +13,14 @@
 #include <elg/geometry.h>
 
 #include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
 
 struct SDL_Window;
+union SDL_Event;
 
 namespace elg::detail::platform {
 
@@ -58,6 +60,10 @@ enum class EventType {
     window_focus_gained,
     window_focus_lost,
     window_moved,
+    window_fullscreen_changed,
+    magnify,       // trackpad pinch
+    rotate,        // two fingers turning
+    smart_magnify, // two-finger double tap
     system_theme_changed,
     // Drag and drop from other apps: begin, position (while over the window), a file or text
     // (one event each), complete (dropped, or the drag left).
@@ -78,10 +84,18 @@ struct Event {
     float y = 0;
     PointerButton button = PointerButton::left;
     int clicks = 1;
-    // Wheel events: notches (fractional for trackpads), positive right / away from the user.
-    float wheel_x = 0;
-    float wheel_y = 0;
+    // Wheel events: points, positive toward the end of the content (right, down); precise for
+    // trackpads, whose deltas apply as they come, rather than a wheel's notches.
+    float scroll_dx = 0;
+    float scroll_dy = 0;
     bool precise = false;
+    // Wheel, magnify and rotate events: the trackpad gesture's phase (scrolls: then momentum).
+    GesturePhase phase = GesturePhase::none;
+    bool momentum = false;
+    // Magnify: the change in scale (0.1 = 10% larger). Rotate: degrees, clockwise.
+    float amount = 0;
+    // Wheel events: when they happened (seconds; the clock depends on the source), or 0.
+    double time = 0;
     // Text events: the text, and for editing (IME composition) the caret in bytes.
     std::string text{};
     std::size_t text_cursor = 0;
@@ -148,6 +162,10 @@ public:
     bool maximized() const;
     // Asks to close, like the system close button (arrives as window_close_requested).
     void request_close();
+    // Where the system draws its window controls over the content (TitleBar::integrated on
+    // macOS), in logical points; empty elsewhere and in fullscreen. Integrates the title bar again
+    // first, as leaving fullscreen undoes it: call after window_fullscreen_changed.
+    Rect system_controls_frame();
     // Decides drag and resize areas (logical points) for windows without system decorations.
     // Called from inside event processing, on the UI thread.
     void set_hit_test(std::function<HitArea(Point)> test);
@@ -166,6 +184,7 @@ public:
 private:
     SDL_Window* window_ = nullptr;
     void* metal_view_ = nullptr; // SDL_MetalView on macOS: the window's CAMetalLayer
+    void* title_bar_ = nullptr;  // TitleBar::integrated on macOS (platform/title_bar_apple.h)
     // Popups: the window they belong to, which has the keyboard (they're never activated), and
     // whether text input was started there for the popup.
     SDL_Window* parent_ = nullptr;
@@ -223,7 +242,14 @@ public:
     void dispatch_live_resize(std::uint32_t window_id) noexcept;
 
 private:
+    Event translate(const SDL_Event& event);
+
     std::uint32_t wake_event_ = 0;
+    // Events taken from the OS directly (macOS trackpads), queued in order with SDL's: each one
+    // pushes an SDL event of this type, which takes the next from native_events_.
+    std::uint32_t native_event_ = 0;
+    std::deque<Event> native_events_;
+    void* input_monitor_ = nullptr;
     LiveResizeCallback live_resize_;
 };
 
