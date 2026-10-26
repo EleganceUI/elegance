@@ -12,6 +12,13 @@
 // For room around a window's own controls, prefer WindowHandle::system_controls_frame()
 // (elg/window.h): it also follows fullscreen and the controls' position.
 
+// GCC and Clang predefine `linux` as 1 on Linux in GNU modes (-std=gnu++23, CMake's default for
+// targets without CXX_EXTENSIONS OFF), which would turn Platform::linux into Platform::1. Hide it
+// here and restore it after, so including this header works in either mode. Code naming
+// Platform::linux in a GNU mode needs `#undef linux` first (no code should use the macro).
+#pragma push_macro("linux")
+#undef linux
+
 namespace elg {
 
 enum class Platform {
@@ -31,5 +38,7 @@ constexpr Platform current_platform() noexcept {
 }
 
 } // namespace elg
+
+#pragma pop_macro("linux")
 
 #endif // ELG_PLATFORM_H
