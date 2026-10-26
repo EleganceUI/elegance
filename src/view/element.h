@@ -854,6 +854,14 @@ public:
         }
     }
 
+    // ScrollViewOptions::shows_indicators and ::sticks_to_end.
+    void set_shows_indicators(bool shows) { shows_indicators_ = shows; }
+    void set_sticks_to_end(bool sticks) {
+        if (std::exchange(sticks_to_end_, sticks) != sticks) {
+            invalidate_layout();
+        }
+    }
+
     EventHandler* event_handler() noexcept override { return this; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
     void reveal(Rect rect) override;
@@ -925,6 +933,8 @@ private:
     void apply_request();
 
     ScrollViewOptions options_;
+    bool shows_indicators_ = true;
+    bool sticks_to_end_ = false;
     std::unique_ptr<Element> content_;
     std::function<Color()> indicator_color_;
     Rect viewport_;     // from the last arrange

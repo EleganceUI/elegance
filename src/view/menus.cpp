@@ -110,7 +110,7 @@ struct RowState {
     State<bool> focused{false};
 };
 
-View menu_row(View content, RowState state, bool destructive, EnvironmentValues environment) {
+View menu_row(View content, RowState state, Prop<bool> destructive, EnvironmentValues environment) {
     const auto enabled = [environment] { return !environment.get<DisabledKey>(); };
     return content.padding(EdgeInsets::symmetric(10, 6))
         .frame({.max_width = infinity, .alignment = Alignment::leading})
@@ -118,7 +118,7 @@ View menu_row(View content, RowState state, bool destructive, EnvironmentValues 
             if (!enabled()) {
                 return env.color(ThemeColor::tertiary);
             }
-            return destructive ? env.color(ThemeColor::danger) : env.color(ThemeColor::primary);
+            return destructive.get(env) ? env.color(ThemeColor::danger) : env.color(ThemeColor::primary);
         })
         .background(
             [=](const EnvironmentValues& env) {
@@ -159,7 +159,7 @@ std::unique_ptr<ButtonElement> make_row_element(const View& row, RowState state,
 
 class MenuItemNode final : public ViewNode {
 public:
-    MenuItemNode(std::string title, std::function<void()> action, MenuItemOptions options)
+    MenuItemNode(Prop<std::string> title, std::function<void()> action, MenuItemOptions options)
         : title_(std::move(title)), action_(std::move(action)), options_(std::move(options)) {}
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
@@ -174,8 +174,14 @@ public:
         }
         parts.push_back(Text(title_));
         parts.push_back(Spacer(24));
-        if (!options_.shortcut.empty()) {
-            parts.push_back(Text(options_.shortcut).font(Font::system(12)).foreground_style(ThemeColor::tertiary));
+        const Prop<std::string>& shortcut = options_.shortcut;
+        const View hint = Text(shortcut).font(Font::system(12)).foreground_style(ThemeColor::tertiary);
+        if (const std::string* value = shortcut.static_value()) {
+            if (!value->empty()) {
+                parts.push_back(hint);
+            }
+        } else {
+            parts.push_back(If([shortcut](const EnvironmentValues& env) { return !shortcut.get(env).empty(); }, hint));
         }
         const View row = menu_row(HStackLayout(VerticalAlignment::center, 8)(std::move(parts)), state,
                                   options_.destructive, context.environment);
@@ -192,7 +198,7 @@ public:
     }
 
 private:
-    std::string title_;
+    Prop<std::string> title_;
     std::function<void()> action_;
     MenuItemOptions options_;
 };
@@ -213,7 +219,7 @@ private:
 
 class SubmenuNode final : public ViewNode {
 public:
-    SubmenuNode(std::string title, std::function<View()> menu) : title_(std::move(title)), menu_(std::move(menu)) {}
+    SubmenuNode(Prop<std::string> title, std::function<View()> menu) : title_(std::move(title)), menu_(std::move(menu)) {}
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const RowState state;
@@ -248,7 +254,7 @@ public:
     }
 
 private:
-    std::string title_;
+    Prop<std::string> title_;
     std::function<View()> menu_;
 };
 
@@ -431,7 +437,11 @@ private:
             .centered = true,
             .anchor = drawn_frame(),
             .content = [content = popover_, padded = options_.padded] {
-                View panel = padded ? content().padding(12) : content();
+                const bool* fixed = padded.static_value();
+                const View panel =
+                    fixed ? (*fixed ? content().padding(12) : content())
+                          : content().padding(Prop<float>(
+                                [padded](const EnvironmentValues& env) { return padded.get(env) ? 12.f : 0.f; }));
                 return panel.clip_shape(RoundedRectangle(10))
                     .background(ThemeColor::surface, RoundedRectangle(10))
                     .overlay(RoundedRectangle(10).stroke_border(ThemeColor::outline, 1));
@@ -503,8 +513,8 @@ public:
         const State<bool> focused(false);
         const EnvironmentValues environment = context.environment;
         const ButtonConfiguration configuration{
-            .label = options_.shows_indicator ? HStack({.spacing = 6}, label_, icon(Icon::chevron_down, 12, Weight::bold))
-                                              : label_,
+            .label = If(options_.shows_indicator, HStack({.spacing = 6}, label_, icon(Icon::chevron_down, 12, Weight::bold)),
+                        label_),
             .is_pressed = [pressed] { return pressed(); },
             .is_hovered = [hovered] { return hovered(); },
             .is_enabled = [environment] { return !environment.get<DisabledKey>(); },
@@ -557,12 +567,12 @@ View Divider() {
     return Rectangle().fill(ThemeColor::outline).frame({.max_width = infinity, .min_height = 1, .max_height = 1});
 }
 
-View MenuItem(std::string title, std::function<void()> action, MenuItemOptions options) {
+View MenuItem(Prop<std::string> title, std::function<void()> action, MenuItemOptions options) {
     return ViewAccess::make(
         std::make_shared<const detail::MenuItemNode>(std::move(title), std::move(action), std::move(options)));
 }
 
-View Submenu(std::string title, std::function<View()> menu) {
+View Submenu(Prop<std::string> title, std::function<View()> menu) {
     return ViewAccess::make(std::make_shared<const detail::SubmenuNode>(std::move(title), std::move(menu)));
 }
 
@@ -583,7 +593,7 @@ View MenuButton(View label, std::function<View()> menu, MenuButtonOptions option
     return ViewAccess::make(std::make_shared<const detail::MenuButtonNode>(std::move(label), std::move(menu), options));
 }
 
-View MenuButton(std::string title, std::function<View()> menu) {
+View MenuButton(Prop<std::string> title, std::function<View()> menu) {
     return MenuButton(Text(std::move(title)), std::move(menu));
 }
 
@@ -592,7 +602,7 @@ View View::context_menu(std::function<View()> menu) const {
         detail::PopupTriggerElement::Kind::context_menu, *this, std::move(menu)));
 }
 
-View View::help(std::string text) const {
+View View::help(Prop<std::string> text) const {
     auto tooltip = [text = std::move(text)] {
         return Text(text)
             .font(Font::system(12))

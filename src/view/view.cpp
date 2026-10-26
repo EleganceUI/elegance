@@ -41,13 +41,21 @@ View View::deferred(std::function<View()> body) {
     return View(std::make_shared<const detail::DeferredNode>(std::move(body)));
 }
 
-View View::padding(float length) const {
-    return padding(EdgeInsets::all(length));
+View View::padding(Prop<float> length) const {
+    return padding(Edges::all, std::move(length));
 }
 
-View View::padding(Edges edges, float length) const {
-    const auto on = [&](Edges edge) { return contains(edges, edge) ? length : 0.f; };
-    return padding(EdgeInsets{on(Edges::top), on(Edges::leading), on(Edges::bottom), on(Edges::trailing)});
+View View::padding(Edges edges, Prop<float> length) const {
+    const auto insets = [edges](float length) {
+        const auto on = [&](Edges edge) { return contains(edges, edge) ? length : 0.f; };
+        return EdgeInsets{on(Edges::top), on(Edges::leading), on(Edges::bottom), on(Edges::trailing)};
+    };
+    if (const float* value = length.static_value()) {
+        return padding(insets(*value));
+    }
+    return padding(Prop<EdgeInsets>([length = std::move(length), insets](const EnvironmentValues& environment) {
+        return insets(length.get(environment));
+    }));
 }
 
 View View::padding(EdgeInsets insets) const {
@@ -123,6 +131,66 @@ private:
 
 View View::frame(Prop<Size> size, Alignment alignment) const {
     return ViewAccess::make(std::make_shared<const BoundFrameNode>(*this, std::move(size), alignment));
+}
+
+namespace {
+
+// .padding(Prop<EdgeInsets>): padding bound to state; lays out like PaddingModifier.
+class BoundPaddingElement final : public detail::Element {
+public:
+    explicit BoundPaddingElement(std::unique_ptr<Element> content) : content_(std::move(content)) {
+        adopt(*content_);
+    }
+
+    void set_insets(EdgeInsets insets) {
+        if (insets.top != insets_.top || insets.leading != insets_.leading || insets.bottom != insets_.bottom ||
+            insets.trailing != insets_.trailing) {
+            insets_ = insets;
+            invalidate_layout();
+        }
+    }
+    void inspect(detail::Inspection& out) const override { out.name = "Padding"; }
+    float layout_priority() const noexcept override { return content_->layout_priority(); }
+    float z_index() const noexcept override { return content_->z_index(); }
+    void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
+
+protected:
+    Size measure(ProposedSize proposal) override {
+        return PaddingModifier(insets_).size_that_fits(proposal, LayoutChild(*content_));
+    }
+    void arrange(Rect bounds, ProposedSize proposal) override {
+        PaddingModifier(insets_).place(bounds, proposal, LayoutChild(*content_));
+    }
+    void paint_impl(detail::DisplayList& list) const override { content_->paint(list); }
+    bool hit_impl(Point point, std::vector<Element*>& path) override { return content_->hit_test(point, path); }
+
+private:
+    EdgeInsets insets_;
+    std::unique_ptr<Element> content_;
+};
+
+class BoundPaddingNode final : public detail::ViewNode {
+public:
+    BoundPaddingNode(View content, Prop<EdgeInsets> insets) : content_(std::move(content)), insets_(std::move(insets)) {}
+    std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
+        auto element = std::make_unique<BoundPaddingElement>(detail::lower(content_, context));
+        BoundPaddingElement* const target = element.get();
+        detail::bind(insets_, context, [target](EdgeInsets insets) { target->set_insets(insets); });
+        return element;
+    }
+
+private:
+    View content_;
+    Prop<EdgeInsets> insets_;
+};
+
+} // namespace
+
+View View::padding(Prop<EdgeInsets> insets) const {
+    if (const EdgeInsets* value = insets.static_value()) {
+        return padding(*value);
+    }
+    return ViewAccess::make(std::make_shared<const BoundPaddingNode>(*this, std::move(insets)));
 }
 
 View View::fixed_size(bool horizontal, bool vertical) const {
@@ -479,7 +547,7 @@ View Button(View label, std::function<void()> action) {
     return ViewAccess::make(std::make_shared<const detail::ButtonNode>(std::move(label), std::move(action)));
 }
 
-View Button(std::string title, std::function<void()> action) {
+View Button(Prop<std::string> title, std::function<void()> action) {
     return Button(Text(std::move(title)), std::move(action));
 }
 
@@ -530,7 +598,7 @@ View Toggle(View label, Binding<bool> is_on) {
     return ViewAccess::make(std::make_shared<const detail::ToggleNode>(std::move(label), std::move(is_on)));
 }
 
-View Toggle(std::string title, Binding<bool> is_on) {
+View Toggle(Prop<std::string> title, Binding<bool> is_on) {
     return Toggle(Text(std::move(title)), std::move(is_on));
 }
 
@@ -888,9 +956,13 @@ std::unique_ptr<Element> TextFieldNode::lower(const LowerContext& context) const
 
 std::unique_ptr<Element> ScrollNode::lower(const LowerContext& context) const {
     const EnvironmentValues environment = context.environment;
-    return std::make_unique<ScrollElement>(options_, detail::lower(content_, context.nested()),
-                                           [environment] { return environment.color(ThemeColor::secondary); },
-                                           context.needs_frame);
+    auto element = std::make_unique<ScrollElement>(options_, detail::lower(content_, context.nested()),
+                                                   [environment] { return environment.color(ThemeColor::secondary); },
+                                                   context.needs_frame);
+    ScrollElement* const target = element.get();
+    detail::bind(options_.shows_indicators, context, [target](bool shows) { target->set_shows_indicators(shows); });
+    detail::bind(options_.sticks_to_end, context, [target](bool sticks) { target->set_sticks_to_end(sticks); });
+    return element;
 }
 
 std::unique_ptr<Element> ToggleNode::lower(const LowerContext& context) const {

@@ -46,6 +46,9 @@ HStack(Button("Upgrade", upgrade), Button("Later", later)).button_style(PillButt
 still over it), `is_hovered`, `is_enabled` and `is_focused`. `make_body` can read the environment
 with `Environment<Key>()`, as above.
 
+The readers are `Signal<bool>`s: read-only values that change. Call one inside a closure to follow
+it, or pass it straight to anything that takes a `Prop<bool>`, like `If(button.is_hovered, ...)`.
+
 ## Toggle styles
 
 A `ToggleConfiguration` has the `label`, `is_on`, a `toggle()` function that flips it (animated),

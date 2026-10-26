@@ -99,7 +99,34 @@ const Binding<bool> done(
 Binding<float> percent([=] { return volume() * 100; }, [=](float p) { volume = p / 100; });
 ```
 
-`Binding<T>::constant(value)` ignores writes, which is handy in previews.
+`constant(value)` makes a binding that ignores writes, for a control that should show a fixed
+value (and in previews): `Toggle("Always on", constant(true))`. It's never implicit, so passing a
+plain value where a control edits one doesn't compile instead of quietly ignoring edits.
+
+## Prop or Binding
+
+Elegance's API follows one rule:
+
+- An argument a view only **reads** is a `Prop<T>`: a plain value, a `State`, a `Binding`, a
+  `Computed`, or a closure. `.opacity(0.5f)`, `.opacity(fade)` and
+  `.opacity([=] { return hovered() ? 1.f : 0.6f; })` all work, and so do option fields like
+  `{.destructive = true}` and `ScrollView({.sticks_to_end = following})`.
+- An argument a view **writes** is a `Binding<T>`: the text of a `TextField`, a `Toggle`'s value,
+  a `Slider`'s value, `.popover(is_presented, ...)`.
+
+Your own components and styles should take arguments the same way:
+
+```cpp
+View SidebarItem(std::string title, Prop<bool> selected, std::function<void()> action);
+
+SidebarItem("Inbox", true, open_inbox);
+SidebarItem("Inbox", [=] { return page() == Page::inbox; }, open_inbox);
+```
+
+Read a `Prop` with `get()`, or `get(env)` inside a closure that takes the environment (a prop can
+depend on it, like a `ThemeColor`).
+
+Layout structure — a stack's spacing and alignment, a scroll view's axes — is plain values.
 
 ## Computed
 

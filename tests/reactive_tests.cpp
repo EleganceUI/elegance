@@ -214,3 +214,30 @@ TEST_CASE("effects that keep re-triggering each other are reported") {
     effect([=] { a = b() + 1; });
     CHECK_THROWS_AS(detail::flush_effects(), UsageError);
 }
+
+TEST_CASE("constant() makes a binding that ignores writes") {
+    const Binding<bool> on = constant(true);
+    on = false;
+    CHECK(on());
+    const Binding<std::string> name = constant<std::string>("Ada");
+    CHECK(name() == "Ada");
+}
+
+TEST_CASE("a Signal reads a State, a Binding, or a closure, and works as a Prop") {
+    Owner owner;
+    State<bool> hovered(false);
+    const Signal<bool> from_state = hovered;
+    const Signal<bool> from_binding = hovered.binding();
+    const Signal<bool> negated = [=] { return !hovered(); };
+    CHECK_FALSE(from_state());
+    CHECK_FALSE(from_binding());
+    CHECK(negated());
+
+    const Prop<bool> prop = from_state;
+    CHECK(prop.is_reactive());
+    std::vector<bool> seen;
+    effect([&] { seen.push_back(prop.get()); }); // reading through the Signal subscribes
+    hovered = true;
+    detail::flush_effects();
+    CHECK(seen == std::vector<bool>{false, true});
+}

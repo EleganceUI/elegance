@@ -14,6 +14,7 @@
 #include <elg/views.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace elg::detail {
@@ -35,21 +36,24 @@ constexpr float kDefaultWidth = 160;
 class SliderElement final : public Element, private EventHandler {
 public:
     SliderElement(Binding<float> value, SliderOptions options, EnvironmentValues environment)
-        : value_(std::move(value)), options_(std::move(options)), environment_(std::move(environment)) {
-        if (!(options_.max > options_.min)) {
-            options_.max = options_.min + 1;
-        }
-    }
+        : value_(std::move(value)), options_(std::move(options)), environment_(std::move(environment)) {}
 
     void set_value(float value, const Animation* animation) { shown_.set(fraction(value), animation); }
+    // SliderOptions' min, max, and step; the knob moves to where the value is in the new range.
+    void set_range(float min, float max, float step) {
+        min_ = min;
+        max_ = max > min ? max : min + 1;
+        step_ = step;
+        shown_.set(fraction(untrack([&] { return value_(); })), nullptr);
+    }
 
     EventHandler* event_handler() noexcept override { return this; }
 
     void accessibility(AccessibilityInfo& out) const override {
         out.role = AccessRole::slider;
         out.numeric = untrack([&] { return value_(); });
-        out.minimum = options_.min;
-        out.maximum = options_.max;
+        out.minimum = min_;
+        out.maximum = max_;
         out.step = adjust_step();
         out.disabled = !enabled();
         out.can_adjust = out.can_set_value = out.can_focus = !out.disabled;
@@ -81,10 +85,10 @@ private:
     static constexpr float kTrack = 4;
 
     float fraction(float value) const {
-        return std::clamp((value - options_.min) / (options_.max - options_.min), 0.f, 1.f);
+        return std::clamp((value - min_) / (max_ - min_), 0.f, 1.f);
     }
     // What a screen reader's increment moves: the step, else a twentieth of the range.
-    float adjust_step() const { return options_.step > 0 ? options_.step : (options_.max - options_.min) / 20; }
+    float adjust_step() const { return step_ > 0 ? step_ : (max_ - min_) / 20; }
     bool enabled() const {
         return !untrack([&] { return environment_.get<DisabledKey>(); });
     }
@@ -93,10 +97,10 @@ private:
 
     // Writes `value`, snapped to the step and clamped to the range.
     void write(float value, const Animation* animation) {
-        if (options_.step > 0) {
-            value = options_.min + std::round((value - options_.min) / options_.step) * options_.step;
+        if (step_ > 0) {
+            value = min_ + std::round((value - min_) / step_) * step_;
         }
-        value = std::clamp(value, options_.min, options_.max);
+        value = std::clamp(value, min_, max_);
         if (animation) {
             with_animation(*animation, [&] { value_.set(value); });
         } else {
@@ -105,7 +109,7 @@ private:
     }
     void write_at(float x) {
         const float f = std::clamp((x - track_start()) / track_length(), 0.f, 1.f);
-        write(options_.min + f * (options_.max - options_.min), nullptr);
+        write(min_ + f * (max_ - min_), nullptr);
     }
 
     EventResult pointer(const PointerEvent& event, Rect) override {
@@ -149,8 +153,8 @@ private:
         if (event.kind != KeyEvent::Kind::down || !enabled()) {
             return {};
         }
-        const float range = options_.max - options_.min;
-        const float increment = options_.step > 0 ? options_.step : range / 20;
+        const float range = max_ - min_;
+        const float increment = step_ > 0 ? step_ : range / 20;
         const float page = std::max(increment, range / 10);
         const float current = untrack([&] { return value_(); });
         float target;
@@ -161,8 +165,8 @@ private:
         case Key::up: target = current + increment; break;
         case Key::page_down: target = current - page; break;
         case Key::page_up: target = current + page; break;
-        case Key::home: target = options_.min; break;
-        case Key::end: target = options_.max; break;
+        case Key::home: target = min_; break;
+        case Key::end: target = max_; break;
         default: return {};
         }
         static const Animation animation = Animation::ease_out(0.12);
@@ -174,6 +178,9 @@ private:
 
     Binding<float> value_;
     SliderOptions options_;
+    float min_ = 0;
+    float max_ = 1;
+    float step_ = 0;
     EnvironmentValues environment_;
     Animated<float> shown_{0.f}; // the knob's position, 0...1
     bool dragging_ = false;
@@ -277,6 +284,18 @@ public:
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto element = std::make_unique<SliderElement>(value_, options_, context.environment);
         SliderElement* const target = element.get();
+        // The range first, so the value's first fraction is in it.
+        const float* min = options_.min.static_value();
+        const float* max = options_.max.static_value();
+        const float* step = options_.step.static_value();
+        if (min && max && step) {
+            target->set_range(*min, *max, *step);
+        } else {
+            const Prop<std::array<float, 3>> range([options = options_](const EnvironmentValues& env) {
+                return std::array{options.min.get(env), options.max.get(env), options.step.get(env)};
+            });
+            detail::bind(range, context, [target](std::array<float, 3> r) { target->set_range(r[0], r[1], r[2]); });
+        }
         detail::bind(Prop<float>(value_), context,
                      [target](float value, const Animation* animation) { target->set_value(value, animation); });
         if (context.focus) {
@@ -409,7 +428,7 @@ View Stepper(View label, Binding<int> value, StepperOptions options) {
     return HStack({.spacing = 12}, std::move(label), Spacer(), buttons);
 }
 
-View Stepper(std::string title, Binding<int> value, StepperOptions options) {
+View Stepper(Prop<std::string> title, Binding<int> value, StepperOptions options) {
     return Stepper(Text(std::move(title)), std::move(value), options);
 }
 

@@ -28,10 +28,10 @@ namespace elg {
 // reads, so use them inside reactive arguments; the body itself runs once.
 struct ButtonConfiguration {
     View label;
-    std::function<bool()> is_pressed; // pressed with the pointer still over it
-    std::function<bool()> is_hovered;
-    std::function<bool()> is_enabled; // false inside .disabled(true)
-    std::function<bool()> is_focused; // has keyboard focus
+    Signal<bool> is_pressed; // pressed with the pointer still over it
+    Signal<bool> is_hovered;
+    Signal<bool> is_enabled; // false inside .disabled(true)
+    Signal<bool> is_focused; // has keyboard focus
 };
 
 class ELG_API ButtonStyle {
@@ -70,11 +70,11 @@ public:
 // What a ToggleStyle gets to build a toggle's appearance from.
 struct ToggleConfiguration {
     View label;
-    std::function<bool()> is_on;      // a tracked read
-    std::function<void()> toggle;     // flips it (animated)
-    std::function<bool()> is_pressed;
-    std::function<bool()> is_hovered;
-    std::function<bool()> is_enabled;
+    Signal<bool> is_on;           // a tracked read
+    std::function<void()> toggle; // flips it (animated)
+    Signal<bool> is_pressed;
+    Signal<bool> is_hovered;
+    Signal<bool> is_enabled;
 };
 
 class ELG_API ToggleStyle {
@@ -107,9 +107,9 @@ public:
 // What a TextFieldStyle gets: the editable text (put it where the text goes) and its state.
 struct TextFieldConfiguration {
     View field;
-    std::function<bool()> is_focused;
-    std::function<bool()> is_hovered;
-    std::function<bool()> is_enabled;
+    Signal<bool> is_focused;
+    Signal<bool> is_hovered;
+    Signal<bool> is_enabled;
 };
 
 class ELG_API TextFieldStyle {

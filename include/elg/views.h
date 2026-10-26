@@ -95,7 +95,7 @@ ELG_API View Canvas(std::function<void(GraphicsContext&)> draw);
 // hovered and darker while pressed. `action` runs when it's clicked (or activated with Space or
 // Enter while focused). Its look comes from the ButtonStyle (.button_style(), elg/styles.h).
 ELG_API View Button(View label, std::function<void()> action);
-ELG_API View Button(std::string title, std::function<void()> action);
+ELG_API View Button(Prop<std::string> title, std::function<void()> action);
 
 struct TextFieldOptions {
     std::function<void()> on_submit; // Enter
@@ -119,9 +119,9 @@ ELG_API View TextField(std::string placeholder, Binding<std::string> text, TextF
 ELG_API View SecureField(std::string placeholder, Binding<std::string> text, TextFieldOptions options = {});
 
 struct SliderOptions {
-    float min = 0;
-    float max = 1;
-    float step = 0; // 0: continuous
+    Prop<float> min = 0.f;
+    Prop<float> max = 1.f;
+    Prop<float> step = 0.f; // 0: continuous
     // Called with true when a drag starts and false when it ends (e.g. to commit an expensive
     // change only once).
     std::function<void(bool)> on_editing_changed;
@@ -141,7 +141,7 @@ struct StepperOptions {
 // The label, then - and + buttons that change `value` by `step` within [min, max].
 //   Stepper(Text([=] { return std::format("Guests: {}", guests()); }), guests.binding(), {.min = 1})
 ELG_API View Stepper(View label, Binding<int> value, StepperOptions options = {});
-ELG_API View Stepper(std::string title, Binding<int> value, StepperOptions options = {});
+ELG_API View Stepper(Prop<std::string> title, Binding<int> value, StepperOptions options = {});
 
 // A bar filled to `fraction` (0...1); animates with the value.
 ELG_API View ProgressView(Prop<float> fraction);
@@ -191,7 +191,7 @@ View Picker(Binding<T> selection, std::vector<std::pair<T, std::string>> options
 // An on/off control bound to `is_on`; its look comes from the ToggleStyle (a switch by default).
 // Click, Space, or Enter flips it.
 ELG_API View Toggle(View label, Binding<bool> is_on);
-ELG_API View Toggle(std::string title, Binding<bool> is_on);
+ELG_API View Toggle(Prop<std::string> title, Binding<bool> is_on);
 
 // --- Structure: views that appear, disappear, and repeat with state (design.md §6) ---
 
@@ -271,11 +271,11 @@ private:
 
 struct ScrollViewOptions {
     ScrollAxes axes = ScrollAxes::vertical;
-    bool shows_indicators = true; // scroll bars, shown while scrolling or hovered
+    Prop<bool> shows_indicators = true; // scroll bars, shown while scrolling or hovered
     std::optional<ScrollPosition> position;
     // Chat logs: starts at the end, and while scrolled to the end it stays there as the content
     // grows (new messages, images loading), without animating. Scrolled back, it stays put.
-    bool sticks_to_end = false;
+    Prop<bool> sticks_to_end = false;
 };
 
 // Shows `content` at its ideal size along the scroll axes, clipped to the space the scroll view
@@ -338,17 +338,17 @@ View ForEach(Source items, ContentFunction content) {
 ELG_API View Divider();
 
 struct MenuItemOptions {
-    std::string shortcut;              // a hint shown on the right, e.g. "Ctrl+R"
-    bool destructive = false;          // shown in the danger color
-    std::optional<Prop<bool>> checked; // a check mark in front, e.g. for options
-    std::optional<ImageSource> image;  // an icon in front: {.image = {{.system_name = "copy"}}}
+    Prop<std::string> shortcut = std::string(); // a hint shown on the right, e.g. "Ctrl+R"
+    Prop<bool> destructive = false;             // shown in the danger color
+    std::optional<Prop<bool>> checked;          // a check mark in front, e.g. for options
+    std::optional<ImageSource> image;           // an icon in front: {.image = {{.system_name = "copy"}}}
 };
 
 // A menu command. Choosing it closes the menu, then runs `action`. Disable it with .disabled().
-ELG_API View MenuItem(std::string title, std::function<void()> action, MenuItemOptions options = {});
+ELG_API View MenuItem(Prop<std::string> title, std::function<void()> action, MenuItemOptions options = {});
 
 // A menu item that opens another menu beside it (on hover, click, or Right).
-ELG_API View Submenu(std::string title, std::function<View()> menu);
+ELG_API View Submenu(Prop<std::string> title, std::function<View()> menu);
 
 namespace detail {
 ELG_API View make_menu(std::vector<View> items);
@@ -365,14 +365,14 @@ View Menu(Items&&... items) {
 enum class MenuEdge { below, above };
 
 struct MenuButtonOptions {
-    MenuEdge opens = MenuEdge::below; // above: for buttons near the bottom, like a message box's
-    bool shows_indicator = true;      // the chevron after the label
+    MenuEdge opens = MenuEdge::below;  // above: for buttons near the bottom, like a message box's
+    Prop<bool> shows_indicator = true; // the chevron after the label
 };
 
 // A button that opens the menu `menu` builds, below it (or as `options` say).
 ELG_API View MenuButton(View label, std::function<View()> menu);
 ELG_API View MenuButton(View label, std::function<View()> menu, MenuButtonOptions options);
-ELG_API View MenuButton(std::string title, std::function<View()> menu);
+ELG_API View MenuButton(Prop<std::string> title, std::function<View()> menu);
 
 struct LazyVStackOptions {
     HorizontalAlignment alignment = HorizontalAlignment::center;

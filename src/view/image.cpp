@@ -503,7 +503,7 @@ View Image(std::string_view system_name) {
     return Image(ImageSource{.system_name = std::string(system_name)});
 }
 
-View Label(std::string title, ImageSource icon) {
+View Label(Prop<std::string> title, ImageSource icon) {
     return HStack({.spacing = 6}, Image(std::move(icon)), Text(std::move(title)));
 }
 

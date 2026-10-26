@@ -83,7 +83,7 @@ ELG_API View AsyncImage(std::string url, AsyncImageOptions options = {});
 ELG_API View AsyncImage(std::string url, std::function<View(const AsyncImagePhase&)> content, float scale = 1);
 
 // An icon followed by a title, spaced for buttons, menus, and lists.
-ELG_API View Label(std::string title, ImageSource icon);
+ELG_API View Label(Prop<std::string> title, ImageSource icon);
 
 // --- Icon sets ---
 

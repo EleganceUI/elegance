@@ -9,6 +9,7 @@
 #include <elg/export.h>
 #include <elg/geometry.h>
 #include <elg/gradient.h>
+#include <elg/prop.h>
 
 #include <concepts>
 #include <filesystem>
@@ -71,8 +72,6 @@ class Shape;
 class ShapeStyle;
 struct Theme;
 enum class ColorScheme;
-template <class T>
-class Prop;
 template <class Key>
 class EnvironmentKeyModifier;
 template <class Key>
@@ -162,7 +161,7 @@ enum class PopoverEdge { below, above, trailing, leading };
 
 struct PopoverOptions {
     PopoverEdge opens = PopoverEdge::below;
-    bool padded = true; // false: the content reaches the panel's edges (images, lists)
+    Prop<bool> padded = true; // false: the content reaches the panel's edges (images, lists)
 };
 
 // How content with an aspect ratio fills space (aspect_ratio()).
@@ -318,9 +317,10 @@ public:
 
     // --- Layout (elg/modifiers/layout.h) ---
 
-    ELG_API View padding(float length = 16) const;
-    ELG_API View padding(Edges edges, float length = 16) const;
-    ELG_API View padding(EdgeInsets insets) const;
+    ELG_API View padding(Prop<float> length = 16.f) const;
+    ELG_API View padding(Edges edges, Prop<float> length = 16.f) const;
+    ELG_API View padding(EdgeInsets insets) const; // also takes {.top = 4, ...}
+    ELG_API View padding(Prop<EdgeInsets> insets) const;
 
     ELG_API View frame(FrameOptions options) const;
     ELG_API View frame(float width, float height, Alignment alignment = Alignment::center) const;
@@ -486,7 +486,7 @@ public:
     //                                                  MenuItem("Delete", remove, {.destructive = true})); })
     ELG_API View context_menu(std::function<View()> menu) const;
     // A tooltip with `text`, shown after the pointer rests on the view for a moment.
-    ELG_API View help(std::string text) const;
+    ELG_API View help(Prop<std::string> text) const;
     // A panel of `content` beside the view, shown while `is_presented` is true. Clicking outside
     // it, Esc, or switching apps closes it and sets `is_presented` back to false. The builder runs
     // each time it opens; the content can be anything, e.g. a small form.
