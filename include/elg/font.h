@@ -13,6 +13,9 @@
 
 namespace elg {
 
+// The named weights, and any between them: Weight{550}, or static_cast<Weight>(w) from a value in
+// 1...1000. Variable fonts (macOS's system font, a variable file passed to register_font) draw
+// each weight exactly; other fonts use their closest weight.
 enum class Weight {
     ultra_light = 100,
     thin = 200,
@@ -86,7 +89,8 @@ inline const Font Font::caption = Font::system(12);
 inline const Font Font::caption2 = Font::system(11);
 
 // Makes a font file available as Font::custom(family, ...). Register each weight's file
-// separately; the closest registered weight is used. Thread-safe.
+// separately; the closest registered weight is used. A variable font (one file with a weight
+// axis) needs registering once: it draws every weight. Thread-safe.
 ELG_API void register_font(std::string family, std::filesystem::path file, Weight weight = Weight::regular);
 // The same from font data in memory (e.g. embedded in the app); the bytes are copied.
 ELG_API void register_font(std::string family, std::span<const unsigned char> data, Weight weight = Weight::regular);
