@@ -137,11 +137,16 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
 
     std::vector<std::uint64_t> acquired_videos;
     const wgpu::CommandBuffer commands = record({view, swapchain_->view_format(), swapchain_->width(),
-                                                 swapchain_->height()},
+                                                 swapchain_->height(), swapchain_->copy_source()},
                                                 frame, resources, acquired_videos);
     device_.submit(commands);
     resources.videos.release(acquired_videos); // back to the decoder
     swapchain_->present();
+    if (window_reads_backdrops_) {
+        // From the next frame on, backdrops come straight from the window's images (when the
+        // surface allows): no offscreen window, no full-window copy.
+        swapchain_->request_copy_source();
+    }
     device_.tick();
 }
 
@@ -272,10 +277,12 @@ wgpu::BindGroup WindowTarget::take_backdrop(const wgpu::CommandEncoder& encoder,
                                             const PlanBackdrop& backdrop, std::size_t slot,
                                             const RenderResources& resources) {
     // One set of images serves every backdrop: each is read by the pass right after it, before
-    // the next is taken (WebGPU keeps the order).
+    // the next is taken (WebGPU keeps the order). A copy's format must match the source's, up
+    // to sRGB: layers are kLayerFormat, the window's surface image may differ (e.g. BGRA).
+    const wgpu::TextureFormat format = gpu::srgb_variant(texture.GetFormat());
     const gpu::RenderImage& copy =
-        pooled_image(backdrop_copies_, 0, kLayerFormat, backdrop.width, backdrop.height, 1,
-                     wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst);
+        pooled_image(format == kLayerFormat ? backdrop_copies_ : window_copies_, 0, format, backdrop.width,
+                     backdrop.height, 1, wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst);
     wgpu::TexelCopyTextureInfo source;
     source.texture = texture;
     source.origin = {backdrop.x, backdrop.y, 0};
@@ -477,10 +484,11 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
     }
 
     // The window itself. Its previous contents are discarded (cleared). When it reads backdrops
-    // it draws offscreen (a surface image can't be copied from), then onto the window.
+    // and its image can't be copied from, it draws offscreen, then onto the window.
     const auto clear = to_linear_premultiplied(frame.list.clear_color);
     const wgpu::Color clear_color{clear[0], clear[1], clear[2], clear[3]};
-    if (plan.blit_instance) {
+    window_reads_backdrops_ = plan.blit_instance.has_value();
+    if (plan.blit_instance && !target.texture) {
         const gpu::RenderImage& image =
             pooled_image(frame_images_, 0, kLayerFormat, target.width, target.height, 1, kLayerUsage);
         draw_pass(encoder, {image.texture(), image.view(), kLayerFormat, target.width, target.height, clear_color},
@@ -491,8 +499,11 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
         resources.quads.draw(pass, *plan.blit_instance, 1);
         pass.End();
     } else {
-        draw_pass(encoder, {nullptr, target.view, target.format, target.width, target.height, clear_color}, plan.main,
-                  plan, groups, resources);
+        if (target.texture) {
+            frame_images_.clear(); // drawn directly from now on
+        }
+        draw_pass(encoder, {target.texture, target.view, target.format, target.width, target.height, clear_color},
+                  plan.main, plan, groups, resources);
     }
     return encoder.Finish();
 }

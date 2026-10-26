@@ -62,6 +62,7 @@ Swapchain::Swapchain(const Device& device, wgpu::Surface surface, bool transpare
     format_ = choose_format({caps.formats, caps.formatCount});
     view_format_ = srgb_variant(format_);
     alpha_ = choose_alpha({caps.alphaModes, caps.alphaModeCount}, transparent);
+    can_copy_ = (caps.usages & wgpu::TextureUsage::CopySrc) == wgpu::TextureUsage::CopySrc;
     if (transparent) {
         log_debug("transparent surface: alpha mode {}", static_cast<unsigned>(alpha_));
     }
@@ -93,6 +94,9 @@ bool Swapchain::prepare(std::uint32_t width, std::uint32_t height) {
     config.device = device_.handle();
     config.format = format_;
     config.usage = wgpu::TextureUsage::RenderAttachment;
+    if (wants_copy_) {
+        config.usage |= wgpu::TextureUsage::CopySrc;
+    }
     config.width = width;
     config.height = height;
     if (view_format_ != format_) {
@@ -105,7 +109,15 @@ bool Swapchain::prepare(std::uint32_t width, std::uint32_t height) {
     width_ = width;
     height_ = height;
     stale_ = false;
+    copyable_ = wants_copy_;
     return true;
+}
+
+void Swapchain::request_copy_source() {
+    if (can_copy_ && !wants_copy_) {
+        wants_copy_ = true;
+        stale_ = true; // reconfigured by the next prepare()
+    }
 }
 
 wgpu::TextureView Swapchain::acquire() {
@@ -124,12 +136,14 @@ wgpu::TextureView Swapchain::acquire() {
         return nullptr;
     default: throw_gpu_error("get the window's next image");
     }
+    texture_ = texture.texture;
     wgpu::TextureViewDescriptor view;
     view.format = view_format_;
     return texture.texture.CreateView(&view);
 }
 
 void Swapchain::present() {
+    texture_ = nullptr;
     if (surface_.Present() != wgpu::Status::Success) {
         stale_ = true;
     }

@@ -32,6 +32,13 @@ public:
     wgpu::TextureView acquire();
     void present();
 
+    // Asks for images that can be copied from (to read backdrops straight from the window
+    // instead of drawing it offscreen), from the next prepare() on, if the surface allows it.
+    // Plain images stay the default: some platforms compress them only when nothing else reads them.
+    void request_copy_source();
+    // The acquired image when it can be copied from, else null.
+    wgpu::Texture copy_source() const { return copyable_ ? texture_ : wgpu::Texture(); }
+
     // The format of the views acquire() returns (sRGB).
     wgpu::TextureFormat view_format() const noexcept { return view_format_; }
     std::uint32_t width() const noexcept { return width_; }
@@ -46,6 +53,10 @@ private:
     std::uint32_t width_ = 0;
     std::uint32_t height_ = 0;
     bool stale_ = true;
+    bool can_copy_ = false;   // the surface offers CopySrc images
+    bool wants_copy_ = false; // request_copy_source() was called
+    bool copyable_ = false;   // the current configuration has CopySrc
+    wgpu::Texture texture_;   // the acquired image, until presented
 };
 
 } // namespace elg::detail::gpu
