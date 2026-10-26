@@ -118,3 +118,46 @@ jobs:
 
             - name: Test
               run: ctest --test-dir build/linux-release --output-on-failure
+
+            # The Rust bindings' C++ shim must still compile against these headers, or merging this
+            # breaks elegance-rs. A change that needs a shim change comes with an elegance-rs branch of
+            # the same name: it's checked here instead of main, and once this merges, elegance-rs's
+            # update-elegance.yml merges that branch together with the new pin. GNU mode, as the
+            # native library builds the shim (GCC's predefined macros like `linux` show up here). Pull
+            # requests only: on main, the bindings catch up on their own, after a native build.
+            - name: Bindings branch
+              id: bindings
+              if: github.event_name == 'pull_request'
+              env:
+                  BRANCH: ${{ github.head_ref || github.ref_name }}
+              run: |
+                  url=https://github.com/${{ github.repository_owner }}/elegance-rs
+                  if [ "$BRANCH" != main ] && git ls-remote --exit-code --heads "$url" "refs/heads/$BRANCH" >/dev/null; then
+                    echo "ref=$BRANCH" >> "$GITHUB_OUTPUT"
+                    echo "Checking the shim on elegance-rs's $BRANCH branch."
+                  else
+                    echo "ref=main" >> "$GITHUB_OUTPUT"
+                    echo "elegance-rs has no $BRANCH branch: checking the shim on its main."
+                  fi
+            - uses: actions/checkout@v7
+              if: github.event_name == 'pull_request'
+              with:
+                  repository: ${{ github.repository_owner }}/elegance-rs
+                  ref: ${{ steps.bindings.outputs.ref }}
+                  path: elegance-rs
+            - name: Compile the bindings' shim
+              if: github.event_name == 'pull_request'
+              env:
+                  BRANCH: ${{ github.head_ref }}
+                  CHECKED: ${{ steps.bindings.outputs.ref }}
+              run: |
+                  status=0
+                  for f in elegance-rs/elegance-sys/shim/*.cpp; do
+                    echo "::group::$f"
+                    "$CXX" -std=gnu++23 -fsyntax-only -DELG_SHIM_SHARED -Iinclude -Ibuild/linux-release/src/generated "$f" || status=1
+                    echo "::endgroup::"
+                  done
+                  if [ "$status" != 0 ]; then
+                    echo "::error::The shim on elegance-rs's $CHECKED doesn't compile against this Elegance. Push an elegance-rs branch named $BRANCH with the shim changes it needs, then rerun this job."
+                  fi
+                  exit "$status"
