@@ -1,0 +1,31 @@
+# Tells the Rust bindings (elegance-rs) about each push to main, so its update-elegance.yml builds
+# the prebuilt library for this commit and pins it right away instead of at its next scheduled
+# check (every six hours).
+#
+# Needs the secret ELEGANCE_RS_TOKEN: a fine-grained personal access token (or a GitHub App's) with
+# Contents: read and write on elegance-rs, which sending it a repository_dispatch event requires.
+# Without the secret this does nothing, and the scheduled check picks the commit up.
+name: Notify bindings
+
+on:
+    push:
+        branches: [main]
+        paths-ignore: [docs/**, design/**, "**.md", .github/**]
+
+permissions: {}
+
+jobs:
+    dispatch:
+        runs-on: ubuntu-latest
+        env:
+            GH_TOKEN: ${{ secrets.ELEGANCE_RS_TOKEN }}
+        steps:
+            - name: Dispatch elegance-updated to elegance-rs
+              if: env.GH_TOKEN != ''
+              run: |
+                  gh api "repos/${{ github.repository_owner }}/elegance-rs/dispatches" \
+                    -f event_type=elegance-updated -f "client_payload[rev]=$GITHUB_SHA"
+                  echo "Asked elegance-rs to build and pin $GITHUB_SHA."
+            - name: No token
+              if: env.GH_TOKEN == ''
+              run: echo "ELEGANCE_RS_TOKEN isn't set; elegance-rs picks this commit up at its next scheduled check."
