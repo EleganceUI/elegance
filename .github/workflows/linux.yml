@@ -11,6 +11,13 @@ on:
 
 permissions:
     contents: read
+    actions: write # deleting superseded caches
+
+# One run at a time per branch, so each starts from the previous one's cache (pull requests:
+# replace the older run).
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
     build:
@@ -23,7 +30,8 @@ jobs:
             CC: gcc-14
             CXX: g++-14
             VCPKG_ROOT: ${{ github.workspace }}/../vcpkg
-            VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/../vcpkg-cache
+            # Inside the workspace: actions/cache rejects paths with "..", and saved nothing.
+            VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
         steps:
             - uses: actions/checkout@v7
 
@@ -54,26 +62,51 @@ jobs:
               id: vcpkg-cache
               uses: actions/cache/restore@v6
               with:
-                  path: ${{ github.workspace }}/../vcpkg-cache
+                  path: ${{ github.workspace }}/.vcpkg-cache
                   key: vcpkg-v2-${{ matrix.runner }}-gcc-14-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
                   restore-keys: |
                       vcpkg-v2-${{ matrix.runner }}-gcc-14-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-
                       vcpkg-v2-${{ matrix.runner }}-gcc-14-
-                      vcpkg-${{ matrix.runner }}-gcc-14-
 
             # Configure both presets before saving their dependencies, including test packages.
             - name: Configure (build or restore dependencies)
+              id: configure
               run: |
                   cmake --preset linux-debug
                   cmake --preset linux-release
 
+            # Keep only the archives this build installed (each is named after the SHA-256 of its
+            # package's vcpkg_abi_info.txt). Otherwise every superseded build stays in the cache, which
+            # grows past GitHub's 10 GB per repository and gets the other caches evicted.
+            - name: Prune vcpkg binaries
+              if: ${{ steps.configure.outcome == 'success' }}
+              run: |
+                  keep=$(for f in build/*/vcpkg_installed/*/share/*/vcpkg_abi_info.txt; do sha256sum "$f" | cut -c1-64; done)
+                  [ -n "$keep" ] || { echo "No installed packages found: not pruning"; exit 0; }
+                  find "$VCPKG_DEFAULT_BINARY_CACHE" -name '*.zip' | while read -r zip; do
+                    grep -qx "$(basename "$zip" .zip)" <<< "$keep" || rm -f "$zip"
+                  done
+                  du -sh "$VCPKG_DEFAULT_BINARY_CACHE"
+
             # Preserve completed packages even if configuration or a later build/test fails.
             - name: Save vcpkg binaries
+              id: save
               if: ${{ !cancelled() && steps.vcpkg-cache.outputs.cache-primary-key != '' }}
               uses: actions/cache/save@v6
               with:
-                  path: ${{ github.workspace }}/../vcpkg-cache
+                  path: ${{ github.workspace }}/.vcpkg-cache
                   key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+            # Each run saves under a new key: drop the older ones, so main keeps one per runner.
+            - name: Delete superseded vcpkg caches
+              if: ${{ steps.save.outcome == 'success' && github.ref == 'refs/heads/main' }}
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  CURRENT: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+              run: |
+                  gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "vcpkg-v2-${{ matrix.runner }}-gcc-14-" \
+                    --limit 100 --json id,key --jq ".[] | select(.key != \"$CURRENT\") | .id" |
+                    while read -r id; do gh cache delete "$id" --repo "$GITHUB_REPOSITORY"; done
 
             # The shared library (what hot reload uses) and the static one, which the tests link.
             - name: Build (shared)
