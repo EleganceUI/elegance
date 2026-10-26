@@ -77,10 +77,10 @@ jobs:
 
             # The shared library (what hot reload uses) and the static one, which the tests link.
             - name: Build (shared)
-              run: cmake --build --preset linux-debug
+              run: cmake --build build/linux-debug
 
             - name: Build (static, with tests)
-              run: cmake --build --preset linux-release
+              run: cmake --build build/linux-release
 
             - name: Test
               run: ctest --test-dir build/linux-release --output-on-failure

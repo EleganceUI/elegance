@@ -64,7 +64,7 @@ jobs:
                   key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
             - name: Build
-              run: cmake --build --preset macos-debug
+              run: cmake --build build/macos-debug --target elegance
 
             - name: Test
               run: ctest --test-dir build/macos-debug --output-on-failure

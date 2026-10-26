@@ -6,7 +6,7 @@
             "hidden": true,
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/build/${presetName}",
-            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+            "description": "cmake/ElgBootstrap.cmake picks the vcpkg toolchain: $VCPKG_ROOT, or a clone it manages"
         },
         {
             "name": "windows-base",
@@ -168,64 +168,6 @@
                 "VCPKG_MANIFEST_INSTALL": false,
                 "FETCHCONTENT_SOURCE_DIR_ACCESSKIT_C": "${sourceDir}/build/local-offline-static/_deps/accesskit_c-src"
             }
-        }
-    ],
-    "buildPresets": [
-        {
-            "name": "windows-debug",
-            "configurePreset": "windows-debug"
-        },
-        {
-            "name": "windows-release",
-            "configurePreset": "windows-release"
-        },
-        {
-            "name": "macos-debug",
-            "configurePreset": "macos-debug",
-            "jobs": 8,
-            "targets": [
-                "elegance"
-            ]
-        },
-        {
-            "name": "macos-release",
-            "configurePreset": "macos-release",
-            "jobs": 8,
-            "targets": [
-                "elegance"
-            ]
-        },
-        {
-            "name": "linux-debug",
-            "configurePreset": "linux-debug"
-        },
-        {
-            "name": "linux-release",
-            "configurePreset": "linux-release"
-        },
-        {
-            "name": "windows-release-static",
-            "configurePreset": "windows-release-static"
-        },
-        {
-            "name": "windows-release-fully-static",
-            "configurePreset": "windows-release-fully-static"
-        },
-        {
-            "name": "macos-release-static",
-            "configurePreset": "macos-release-static",
-            "jobs": 8,
-            "targets": [
-                "elegance"
-            ]
-        },
-        {
-            "name": "local-offline-static",
-            "configurePreset": "local-offline-static",
-            "jobs": 8,
-            "targets": [
-                "elegance"
-            ]
         }
     ]
 }

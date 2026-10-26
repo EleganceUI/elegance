@@ -180,10 +180,10 @@ itself, which the developer can't handle meaningfully, and continuing would risk
   host, and `elegance_hot_reload()` refuses them (§9.6). The ABI surface uses `ELG_API` exports and
   pImpl at boundaries.
 - **Namespace**: `elg::` (decided). Macros use an `ELG_` prefix.
-- **Local setup**: the project uses the dedicated vcpkg at `G:\elegence-vcpkg` (a local folder's name), which is also
-  the source of the `builtin-baseline` commit. `CMakeUserPresets.json` (gitignored, per-machine)
-  defines `dev-debug` / `dev-release`, which set `VCPKG_ROOT` to that path. Other machines
-  either set `VCPKG_ROOT` or add their own user presets.
+- **Local setup**: `cmake/ElgBootstrap.cmake` runs before `project()` and picks vcpkg: the
+  toolchain file passed in, then `VCPKG_ROOT`, then a clone it manages in the user's cache folder,
+  updated to `vcpkg.json`'s `builtin-baseline`. It also fetches Ninja when it isn't installed.
+  Per-machine presets go in the gitignored `CMakeUserPresets.json`.
 - **Runtime DLLs**: vcpkg only deploys an executable's direct dependencies. So `elegance` copies
   its own runtime DLLs (SDL3, …) into the shared `bin/` folder after each build.
 

@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 4.3)
+include(cmake/ElgBootstrap.cmake)
 project(Elegance VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
@@ -39,8 +40,8 @@ if (DEFINED VCPKG_MANIFEST_MODE AND NOT VCPKG_MANIFEST_MODE)
     message(FATAL_ERROR
             "vcpkg is running in classic mode (VCPKG_MANIFEST_MODE=OFF), so the dependencies in "
             "vcpkg.json aren't installed. Configure with a preset from CMakePresets.json / "
-            "CMakeUserPresets.json (e.g. `cmake --preset dev-debug`), or in CLion enable the "
-            "\"Dev Debug\" profile and turn off vcpkg's integration into other CMake profiles.")
+            "CMakeUserPresets.json (e.g. `cmake --preset windows-debug`), or in CLion enable a preset "
+            "profile and turn off vcpkg's integration into other CMake profiles.")
 endif ()
 
 # vcpkg's *-static triplets (x64-windows-static) link every dependency statically, the C runtime
