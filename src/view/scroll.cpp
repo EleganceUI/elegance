@@ -149,11 +149,11 @@ void ScrollElement::arrange(Rect bounds, ProposedSize) {
             const float extent = vertical ? viewport_.height : viewport_.width;
             // A critically damped spring launched at v peaks at v / (rate * e).
             const float limit = kMaxBounce * extent * static_cast<float>(kReboundRate * std::numbers::e);
-            (vertical ? rebound_y_ : rebound_x_) = {.start = now,
-                                                    .edge = edge,
-                                                    .displacement = position - edge,
-                                                    .velocity = std::clamp(velocity, -limit, limit),
-                                                    .active = true};
+            (vertical ? rebound_y_ : rebound_x_) = Rebound{.start = now,
+                                                           .edge = edge,
+                                                           .displacement = position - edge,
+                                                           .velocity = std::clamp(velocity, -limit, limit),
+                                                           .active = true};
             coast.active = false;
         } else if (std::abs(velocity) < kMinCoast / 4) {
             coast.active = false;
@@ -410,10 +410,10 @@ EventResult ScrollElement::gesture(const ScrollEvent& event) {
         const float edge = std::clamp(shown, 0.f, range);
         if (shown != edge) {
             // Let go past an edge: spring back to it.
-            rebound = {.start = frame_time(), .edge = edge, .displacement = shown - edge, .active = true};
+            rebound = Rebound{.start = frame_time(), .edge = edge, .displacement = shown - edge, .active = true};
         } else if (const float velocity = finger_velocity(now); std::abs(velocity) >= kMinCoast) {
             // Let go while moving: glide on at the fingers' speed, slowing down.
-            coast = {.start = frame_time(), .from = shown, .velocity = velocity, .active = true};
+            coast = Coast{.start = frame_time(), .from = shown, .velocity = velocity, .active = true};
             shown = std::clamp(coast.end(), 0.f, range);
         }
         fade_indicators();
