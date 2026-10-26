@@ -56,6 +56,9 @@ public:
     void set_on_ready(std::function<void()> on_ready);
     // Waits until every requested glyph is generated, or `timeout` passes; true when done.
     bool wait_idle(std::chrono::milliseconds timeout);
+    // How many glyphs have been sent to the workers so far (UI thread): a frame that raised it
+    // draws glyphs that aren't generated yet.
+    std::uint64_t requested() const noexcept { return requested_; }
     // Keeps generated glyphs on disk in `directory` between runs (nullopt: don't). Call before
     // the first glyph.
     void set_disk_cache(std::optional<std::filesystem::path> directory);
@@ -79,6 +82,7 @@ private:
     std::function<void()> on_ready_;
     std::vector<std::jthread> workers_;
 
+    std::uint64_t requested_ = 0;
     std::uint32_t shelf_x_ = 0;
     std::uint32_t shelf_y_ = 0;
     std::uint32_t shelf_height_ = 0;

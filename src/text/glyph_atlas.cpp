@@ -333,6 +333,7 @@ GlyphAtlas::~GlyphAtlas() {
 }
 
 void GlyphAtlas::submit(std::unique_ptr<GlyphJob> job) {
+    ++requested_;
     {
         std::lock_guard lock(mutex_);
         jobs_.push_back(std::move(job));
