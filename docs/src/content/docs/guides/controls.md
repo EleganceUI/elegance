@@ -50,21 +50,41 @@ Toggle("Remember me", remember).toggle_style(CheckboxToggleStyle{});
 `SwitchToggleStyle` (the default) shows the label then a switch; `CheckboxToggleStyle` shows a
 check box then the label.
 
-## TextField and SecureField
+## TextField and TextArea
 
-A single-line editor bound to a `std::string`:
+A `TextField` is a single-line editor bound to a `std::string`:
 
 ```cpp
 const State<std::string> name;
 TextField("Name", name);
 TextField("Search", query, {.on_submit = [=] { search(query()); }});
-SecureField("Password", password);
+TextField("Password", password, {.secure = true});
 ```
 
 Text fields support typing, IME composition (Chinese, Japanese, Korean input), selection with the
 pointer and Shift+arrows, word selection by double-click, select-all by triple-click, word
-movement with Ctrl+arrows, the clipboard, and undo and redo. `SecureField` shows a bullet per
-character and can't be copied from.
+movement with Ctrl+arrows, the clipboard, and undo and redo.
+
+`.secure` shows a bullet per character, and the text can't be copied out. It's a `Prop<bool>`, so
+a button can reveal the password:
+
+```cpp
+const State<bool> reveal(false);
+HStack(TextField("Password", password, {.secure = [=] { return !reveal(); }}),
+       Button(Image("eye"), [=] { reveal = !reveal(); }));
+```
+
+With `.line_limit` above 1, a field wraps and grows up to that many lines, then scrolls, like a
+chat box. Enter submits and Shift+Enter starts a new line. A secure field is always one line.
+
+A `TextArea` is for longer text: notes, messages, documents. Enter starts a new line and
+Ctrl+Enter (Cmd+Enter on macOS) runs `on_submit`. It takes the height it's offered and scrolls
+through longer text; inside a `ScrollView` it grows with its text instead:
+
+```cpp
+TextArea("Notes", note).frame({.height = 200});
+ScrollView(TextArea("Start writing...", body));
+```
 
 Style text fields with `.text_field_style(...)`: `RoundedBorderTextFieldStyle` (the default) or
 `PlainTextFieldStyle`.

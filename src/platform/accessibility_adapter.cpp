@@ -42,6 +42,7 @@ accesskit_role role_of(AccessRole role) {
     case AccessRole::stepper: return ACCESSKIT_ROLE_SPIN_BUTTON;
     case AccessRole::progress: return ACCESSKIT_ROLE_PROGRESS_INDICATOR;
     case AccessRole::text_field: return ACCESSKIT_ROLE_TEXT_INPUT;
+    case AccessRole::text_area: return ACCESSKIT_ROLE_MULTILINE_TEXT_INPUT;
     case AccessRole::password_field: return ACCESSKIT_ROLE_PASSWORD_INPUT;
     case AccessRole::image: return ACCESSKIT_ROLE_IMAGE;
     case AccessRole::video: return ACCESSKIT_ROLE_VIDEO;
@@ -120,7 +121,8 @@ struct AccessibilityAdapter::Impl {
             } else if (!info.label.empty()) {
                 accesskit_node_set_label(node, info.label.c_str());
             }
-            const bool text_field = info.role == AccessRole::text_field || info.role == AccessRole::password_field;
+            const bool text_field = info.role == AccessRole::text_field || info.role == AccessRole::text_area ||
+                                    info.role == AccessRole::password_field;
             if (!info.value.empty() || text_field) { // fields always have a value, even an empty one
                 accesskit_node_set_value(node, info.value.c_str());
             }

@@ -551,14 +551,22 @@ View Button(Prop<std::string> title, std::function<void()> action) {
     return Button(Text(std::move(title)), std::move(action));
 }
 
-View TextField(std::string placeholder, Binding<std::string> text, TextFieldOptions options) {
+View TextField(Prop<std::string> placeholder, Binding<std::string> text, TextFieldOptions options) {
+    const bool* secure = options.secure.static_value();
+    const int* lines = options.line_limit.static_value();
+    if (secure && *secure && lines && *lines > 1) {
+        throw UsageError("TextField: a secure field is one line (line_limit must be 1)");
+    }
     return ViewAccess::make(std::make_shared<const detail::TextFieldNode>(std::move(placeholder), std::move(text),
                                                                          std::move(options), false));
 }
 
-View SecureField(std::string placeholder, Binding<std::string> text, TextFieldOptions options) {
+View TextArea(Prop<std::string> placeholder, Binding<std::string> text, TextAreaOptions options) {
+    TextFieldOptions field{.on_submit = std::move(options.on_submit),
+                           .styler = std::move(options.styler),
+                           .on_key = std::move(options.on_key)};
     return ViewAccess::make(std::make_shared<const detail::TextFieldNode>(std::move(placeholder), std::move(text),
-                                                                         std::move(options), true));
+                                                                         std::move(field), true));
 }
 
 ScrollPosition::ScrollPosition() : target_(std::make_shared<detail::ScrollTarget>()) {}
@@ -920,9 +928,14 @@ private:
 std::unique_ptr<Element> TextFieldNode::lower(const LowerContext& context) const {
     ELG_ASSERT(context.text, "lowering a TextField without a text system");
     const EnvironmentValues environment = context.environment;
-    const auto editor = std::make_shared<TextEditor>(*context.text, text_, placeholder_, options_.on_submit,
-                                                     context.services, context.focus, environment, secure_);
-    editor->configure(options_.max_lines, options_.styler);
+    const auto editor = std::make_shared<TextEditor>(*context.text, text_, options_.on_submit, context.services,
+                                                     context.focus, environment, area_);
+    editor->set_styler(options_.styler);
+    detail::bind(placeholder_, context, [editor](std::string placeholder) { editor->set_placeholder(std::move(placeholder)); });
+    if (!area_) {
+        detail::bind(options_.secure, context, [editor](bool secure) { editor->set_secure(secure); });
+        detail::bind(options_.line_limit, context, [editor](int lines) { editor->set_line_limit(lines); });
+    }
     // The text follows the binding (when changed elsewhere). The font is bound where the style
     // places the field (TextEditorNode).
     detail::bind(Prop<std::string>(text_), context,

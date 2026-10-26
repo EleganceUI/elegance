@@ -13,7 +13,7 @@ one modifier styles every control inside a view.
 | --- | --- |
 | `Button` | `ProminentButtonStyle` (default), `BorderedButtonStyle`, `PlainButtonStyle` |
 | `Toggle` | `SwitchToggleStyle` (default), `CheckboxToggleStyle` |
-| `TextField`, `SecureField` | `RoundedBorderTextFieldStyle` (default), `PlainTextFieldStyle` |
+| `TextField`, `TextArea` | `RoundedBorderTextFieldStyle` (default), `PlainTextFieldStyle` |
 
 ```cpp
 Form().button_style(BorderedButtonStyle{});

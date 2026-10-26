@@ -58,20 +58,58 @@ std::size_t to_boundary(const std::string& text, std::size_t byte) {
 
 } // namespace
 
-TextEditor::TextEditor(TextSystem& text, Binding<std::string> binding, std::string placeholder,
-                       std::function<void()> on_submit, WindowServices* services, FocusManager* focus,
-                       EnvironmentValues environment, bool secure)
-    : text_system_(&text), secure_(secure), binding_(std::move(binding)), on_submit_(std::move(on_submit)), services_(services),
-      focus_(focus), environment_(std::move(environment)), placeholder_(single_line(std::move(placeholder))) {}
+TextEditor::TextEditor(TextSystem& text, Binding<std::string> binding, std::function<void()> on_submit,
+                       WindowServices* services, FocusManager* focus, EnvironmentValues environment, bool area)
+    : text_system_(&text), area_(area), binding_(std::move(binding)), on_submit_(std::move(on_submit)), services_(services),
+      focus_(focus), environment_(std::move(environment)) {}
 
 bool TextEditor::enabled() const {
     return !untrack([&] { return environment_.get<DisabledKey>(); });
 }
 
-void TextEditor::configure(int max_lines, std::function<std::vector<TextSpan>(std::string_view)> styler) {
-    max_lines_ = std::max(1, max_lines);
-    styler_ = secure_ ? nullptr : std::move(styler); // a password's shape stays hidden
-    text_ = clean(std::move(text_));
+void TextEditor::set_placeholder(std::string placeholder) {
+    placeholder_ = single_line(std::move(placeholder));
+    if (face_) {
+        shape_placeholder();
+        layout_changed();
+    }
+}
+
+void TextEditor::set_secure(bool secure) {
+    if (secure == secure_) {
+        return;
+    }
+    secure_ = secure;
+    composition_.clear(); // no IME in secure fields
+    composition_cursor_ = 0;
+    lines_changed();
+}
+
+void TextEditor::set_line_limit(int lines) {
+    lines = std::max(1, lines);
+    if (lines == max_lines_) {
+        return;
+    }
+    max_lines_ = lines;
+    lines_changed();
+}
+
+void TextEditor::lines_changed() {
+    std::string cleaned = clean(text_);
+    if (cleaned == text_) {
+        reshape();
+        return;
+    }
+    // A multiline text in a field that's now one line: it becomes that line.
+    text_ = std::move(cleaned);
+    caret_ = anchor_ = text_.size();
+    undo_.clear();
+    redo_.clear();
+    changed();
+}
+
+void TextEditor::set_styler(std::function<std::vector<TextSpan>(std::string_view)> styler) {
+    styler_ = std::move(styler);
     reshape();
 }
 
@@ -90,13 +128,17 @@ void TextEditor::set_font(const Font& font) {
     size_ = font.size();
     ascent_ = face_->ascender() * size_;
     line_height_ = (face_->ascender() - face_->descender() + face_->line_gap()) * size_;
+    shape_placeholder();
+    reshape();
+}
+
+void TextEditor::shape_placeholder() {
     const std::vector<ShapedParagraph> placeholder = shape_text(*face_, placeholder_, &text_system_->fonts);
     placeholder_shaped_ = placeholder.empty() ? ShapedParagraph{} : placeholder.front();
     placeholder_width_ = 0;
     for (const ShapedGlyph& glyph : placeholder_shaped_.glyphs) {
         placeholder_width_ += glyph.advance * size_;
     }
-    reshape();
 }
 
 void TextEditor::set_text(std::string value) {
@@ -193,6 +235,7 @@ void TextEditor::reshape() {
             i = next;
         }
     } else {
+        // A secure field never styles: a password's shape stays hidden.
         std::vector<TextSpan> spans = styler_ ? styler_(text_) : std::vector<TextSpan>{};
         std::size_t at = 0;
         for (TextSpan& span : spans) {
@@ -406,8 +449,14 @@ Size TextEditor::measure(ProposedSize proposal) const {
     if (!multiline()) {
         return {width, line_height};
     }
-    // Grows a line at a time up to max_lines, then scrolls.
     const TextLayoutResult wrapped = layout_for(std::max(width - kCaretWidth, 1.f));
+    const float content = line_height * static_cast<float>(std::max<std::size_t>(wrapped.lines.size(), 1));
+    if (area_) {
+        // The height it's offered; ideally (in a scroll view), its text's.
+        const float height = proposal.height.value_or(content);
+        return {width, std::isfinite(height) ? height : content};
+    }
+    // Grows a line at a time up to the line limit, then scrolls.
     const std::size_t lines = std::clamp<std::size_t>(wrapped.lines.size(), 1, static_cast<std::size_t>(max_lines_));
     return {width, line_height * static_cast<float>(lines)};
 }
@@ -421,14 +470,19 @@ void TextEditor::arranged(Rect frame) {
     const float line_height = shape_.line_height > 0 ? shape_.line_height : line_height_;
     const CaretStop& caret = stop_at(to_shown(caret_) + (composing() ? composition_cursor_ : 0));
     if (multiline()) {
-        // Keep the caret's line in sight when there are more lines than shown.
+        // Keep the caret's line in sight when there are more lines than shown, when the caret
+        // moved or the field resized; otherwise it stays where the wheel put it.
         scroll_x_ = 0;
         const float content = static_cast<float>(layout_.lines.size()) * line_height;
         const float top = static_cast<float>(caret.line) * line_height;
-        if (top < scroll_y_) {
-            scroll_y_ = top;
-        } else if (top + line_height > scroll_y_ + frame.height) {
-            scroll_y_ = top + line_height - frame.height;
+        if (caret.byte != revealed_caret_ || frame.height != revealed_height_) {
+            if (top < scroll_y_) {
+                scroll_y_ = top;
+            } else if (top + line_height > scroll_y_ + frame.height) {
+                scroll_y_ = top + line_height - frame.height;
+            }
+            revealed_caret_ = caret.byte;
+            revealed_height_ = frame.height;
         }
         scroll_y_ = std::clamp(scroll_y_, 0.f, std::max(content - frame.height, 0.f));
     } else {
@@ -600,7 +654,9 @@ void TextEditor::replace_all(std::string value) {
 }
 
 void TextFieldElement::accessibility(AccessibilityInfo& out) const {
-    out.role = editor_->secure() ? AccessRole::password_field : AccessRole::text_field;
+    out.role = editor_->secure() ? AccessRole::password_field
+               : editor_->area()   ? AccessRole::text_area
+                                   : AccessRole::text_field;
     out.value = editor_->accessible_text();
     out.placeholder = editor_->placeholder();
     out.label = editor_->placeholder();
@@ -729,8 +785,10 @@ EventResult TextEditor::key(const KeyEvent& event) {
             }
             return handled;
         case Key::enter:
-            if (multiline() && shift) {
-                replace_selection("\n", false); // Shift+Enter: a new line; Enter submits
+            // A field: Enter submits, Shift+Enter starts a new line (multiline). An area: Enter
+            // starts a new line, Ctrl+Enter (Cmd+Enter on macOS) submits.
+            if (multiline() && (area_ ? !primary : shift)) {
+                replace_selection("\n", false);
                 return handled;
             }
             if (on_submit_) {
@@ -844,6 +902,20 @@ EventResult TextEditor::pointer(const PointerEvent& event) {
     return {};
 }
 
+EventResult TextEditor::scroll(const ScrollEvent& event) {
+    if (!multiline() || event.dy == 0) {
+        return {};
+    }
+    const float line_height = shape_.line_height > 0 ? shape_.line_height : line_height_;
+    const float content = static_cast<float>(layout_.lines.size()) * line_height;
+    const float to = std::clamp(scroll_y_ + event.dy, 0.f, std::max(content - frame_.height, 0.f));
+    if (to == scroll_y_) {
+        return {}; // at the end: an outer scroll view may take it
+    }
+    scroll_y_ = to;
+    return {.consumed = true, .redraw = true};
+}
+
 void TextEditor::focus_changed(bool focused) {
     focused_ = focused;
     dragging_ = false;
@@ -899,6 +971,10 @@ EventResult TextFieldElement::key(const KeyEvent& event) {
         return {.consumed = true, .redraw = true};
     }
     return editor_->key(event);
+}
+
+EventResult TextFieldElement::scroll(const ScrollEvent& event) {
+    return editor_->scroll(event);
 }
 
 EventResult TextFieldElement::focus(bool focused) {

@@ -99,9 +99,13 @@ ELG_API View Button(Prop<std::string> title, std::function<void()> action);
 
 struct TextFieldOptions {
     std::function<void()> on_submit; // Enter
+    // Passwords: a bullet per character, no copying, no input method, and one line. Bind it to
+    // let the user see what they typed:
+    //   TextField("Password", password.binding(), {.secure = [=] { return !reveal(); }})
+    Prop<bool> secure = false;
     // More than 1: the field wraps and grows up to this many lines, then scrolls. Enter submits;
-    // Shift+Enter starts a new line.
-    int max_lines = 1;
+    // Shift+Enter starts a new line. For longer text (notes, documents), use TextArea.
+    Prop<int> line_limit = 1;
     // Styles ranges of the text as it's edited (markdown, mentions shown as chips: TextSpan). Spans
     // are sorted and don't overlap. Called after every change.
     std::function<std::vector<TextSpan>(std::string_view text)> styler;
@@ -114,9 +118,21 @@ struct TextFieldOptions {
 // border by default). Typing, IME composition, selection (pointer, Shift+arrows, double-click
 // word, triple-click all), word movement, clipboard, and undo/redo.
 //   TextField("Name", name.binding(), {.on_submit = save})
-ELG_API View TextField(std::string placeholder, Binding<std::string> text, TextFieldOptions options = {});
-// A TextField for passwords: shows a bullet per character, and can't be copied from.
-ELG_API View SecureField(std::string placeholder, Binding<std::string> text, TextFieldOptions options = {});
+//   TextField("Password", password.binding(), {.secure = true})
+ELG_API View TextField(Prop<std::string> placeholder, Binding<std::string> text, TextFieldOptions options = {});
+
+struct TextAreaOptions {
+    std::function<void()> on_submit; // Ctrl+Enter (Cmd+Enter on macOS); Enter starts a new line
+    // As TextFieldOptions::styler and ::on_key.
+    std::function<std::vector<TextSpan>(std::string_view text)> styler;
+    std::function<bool(const KeyEvent&)> on_key;
+};
+
+// A multiline text editor bound to `text`, for notes, messages, and documents. It edits like a
+// TextField, takes the height it's offered, and scrolls through longer text (in a ScrollView, it
+// grows with its text instead). Its look comes from the TextFieldStyle.
+//   TextArea("Notes", note.binding()).frame({.height = 200})
+ELG_API View TextArea(Prop<std::string> placeholder, Binding<std::string> text, TextAreaOptions options = {});
 
 struct SliderOptions {
     Prop<float> min = 0.f;

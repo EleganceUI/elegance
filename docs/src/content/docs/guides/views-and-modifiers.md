@@ -13,7 +13,7 @@ adjusting them with modifiers.
 | Containers | `VStack`, `HStack`, `ZStack`, `LazyVStack`, `LazyHStack`, `ScrollView`, `List` |
 | Content | `Text`, `Image`, `Label`, `AsyncImage`, `VideoView`, `CameraView`, `Canvas` |
 | Shapes | `Rectangle`, `RoundedRectangle`, `Capsule`, `Circle`, `PathShape`, `CustomShape` |
-| Controls | `Button`, `Toggle`, `TextField`, `SecureField`, `Slider`, `Stepper`, `Picker`, `ProgressView`, `MenuButton` |
+| Controls | `Button`, `Toggle`, `TextField`, `TextArea`, `Slider`, `Stepper`, `Picker`, `ProgressView`, `MenuButton` |
 | Structure | `If`, `ForEach`, `Spacer`, `Divider`, `EmptyView` |
 | Menus | `Menu`, `MenuItem`, `Submenu` |
 

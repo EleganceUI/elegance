@@ -15,7 +15,7 @@ Built-in views describe themselves:
 - `Button` is a button named by its label's text, and screen readers can press it.
 - `Toggle` is a check box or switch with its state, and can be toggled.
 - `Slider` and `Stepper` expose their value and range, and can be set.
-- `TextField` exposes and accepts its value; `SecureField` is marked as a password.
+- `TextField` and `TextArea` expose and accept their value; a secure `TextField` is marked as a password.
 - `ProgressView` and images have their roles.
 - Keyboard focus is reported, so screen readers follow Tab.
 

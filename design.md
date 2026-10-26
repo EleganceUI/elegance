@@ -1768,9 +1768,15 @@ Separate render thread from day one (decided).
   - `.z_index(Prop<float>)` (reactive) sets stacking order among siblings in any stack. Higher
     values draw in front and are hit first; ties keep declaration order. Children animating out
     keep their z.
-- [x] `SecureField(placeholder, binding, options)`:
+- [x] Secure entry, first `SecureField(placeholder, binding, options)`, now
+  `TextField(placeholder, binding, {.secure = ...})` (a `Prop<bool>`, so it can be revealed):
   - Bullets, one per character; caret stops map back to the text's bytes.
   - No copy or cut. Word movement and double-click take the whole field. No IME composition.
+  - One line: a static `.secure = true` with `.line_limit` above 1 throws `UsageError`.
+- [x] `TextArea(placeholder, binding, options)`: the TextField editor in multiline mode. Enter
+  starts a new line, Ctrl/Cmd+Enter submits; it takes the height it's offered (its text's in a
+  ScrollView) and scrolls with the wheel, following the caret when it moves. Replaces
+  `TextField` with a huge `max_lines`, which is now `line_limit` (a `Prop<int>`).
 - [x] Fix: a TextField's text takes its font and colors from where the style places `field`, so
   a style's `.font()` and `.foreground_style()` apply.
 - [x] Fix: `.focused(binding)` follows SwiftUI semantics.

@@ -197,15 +197,16 @@ private:
 
 class TextFieldNode final : public ViewNode {
 public:
-    TextFieldNode(std::string placeholder, Binding<std::string> text, TextFieldOptions options, bool secure)
-        : placeholder_(std::move(placeholder)), text_(std::move(text)), options_(std::move(options)), secure_(secure) {}
+    // `area`: a TextArea, whose options are a TextField's that don't apply (secure, line_limit).
+    TextFieldNode(Prop<std::string> placeholder, Binding<std::string> text, TextFieldOptions options, bool area)
+        : placeholder_(std::move(placeholder)), text_(std::move(text)), options_(std::move(options)), area_(area) {}
     std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
-    std::string placeholder_;
+    Prop<std::string> placeholder_;
     Binding<std::string> text_;
     TextFieldOptions options_;
-    bool secure_;
+    bool area_;
 };
 
 class ToggleNode final : public ViewNode {

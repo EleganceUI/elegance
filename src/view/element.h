@@ -49,6 +49,7 @@ enum class AccessRole {
     stepper,
     progress,
     text_field,
+    text_area, // multiline
     password_field,
     image,
     video,
