@@ -69,7 +69,7 @@ struct Pending {
     std::optional<AccessRole> role;
     bool combine = false;
     std::function<void()> action;
-    std::function<std::optional<bool>()> toggled;
+    std::function<std::optional<ToggleState>()> toggled;
     std::function<bool()> selected;
 
     bool any() const { return label || value || hint || role || combine || action || toggled || selected; }

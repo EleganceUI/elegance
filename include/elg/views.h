@@ -209,6 +209,19 @@ View Picker(Binding<T> selection, std::vector<std::pair<T, std::string>> options
 ELG_API View Toggle(View label, Binding<bool> is_on);
 ELG_API View Toggle(Prop<std::string> title, Binding<bool> is_on);
 
+struct CheckboxOptions {
+    // Some of what it stands for is checked, e.g. "Select all" over a partly selected list:
+    //   Checkbox("Select all", all, {.mixed = [=] { return some() && !every(); }})
+    // Shown with a dash; checking it then checks it fully. Read by screen readers as mixed.
+    Prop<bool> mixed = false;
+};
+
+// A check box bound to `is_checked`, for choosing something (as part of a form or a list), where
+// a Toggle switches something on. Its look comes from the CheckboxStyle (a box by default).
+// Click, Space, or Enter checks or unchecks it.
+ELG_API View Checkbox(View label, Binding<bool> is_checked, CheckboxOptions options = {});
+ELG_API View Checkbox(Prop<std::string> title, Binding<bool> is_checked, CheckboxOptions options = {});
+
 // --- Structure: views that appear, disappear, and repeat with state (design.md §6) ---
 
 // Shows `then_view` while `condition` holds, otherwise `else_view` (nothing by default):

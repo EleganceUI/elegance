@@ -136,7 +136,9 @@ struct AccessibilityAdapter::Impl {
                 accesskit_node_set_disabled(node);
             }
             if (info.toggled) {
-                accesskit_node_set_toggled(node, *info.toggled ? ACCESSKIT_TOGGLED_TRUE : ACCESSKIT_TOGGLED_FALSE);
+                accesskit_node_set_toggled(node, *info.toggled == ToggleState::mixed ? ACCESSKIT_TOGGLED_MIXED
+                                                 : *info.toggled == ToggleState::on  ? ACCESSKIT_TOGGLED_TRUE
+                                                                                     : ACCESSKIT_TOGGLED_FALSE);
             }
             if (info.expanded) {
                 accesskit_node_set_expanded(node, *info.expanded);

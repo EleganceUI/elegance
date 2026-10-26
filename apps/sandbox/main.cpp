@@ -775,23 +775,29 @@ View StateCards(std::function<void()> quit) {
                   Captioned(fade, "Reactive opacity").card());
 }
 
-// Toggles in both styles, and keyboard focus: Tab / Shift+Tab move between controls, Space and
-// Enter press them.
+// Switches, check boxes (one mixed), and keyboard focus: Tab / Shift+Tab move between controls,
+// Space and Enter press them.
 View ControlCards() {
     const auto wifi = State(true);
     const auto sounds = State(false);
     const View switches = VStack({.spacing = 10},
                                  Toggle("Wi-Fi", wifi.binding()),
                                  Toggle("Sounds", sounds.binding()).tint(palette::green),
-                                 Toggle("Airplane mode", Binding<bool>::constant(false)).disabled())
+                                 Toggle("Airplane mode", constant(false)).disabled())
+                              .toggle_style(SwitchToggleStyle{{.fills_width = true}})
                               .frame({.width = 220});
 
     const auto remember = State(true);
     const auto reports = State(false);
+    const Binding<bool> both([=] { return remember() && reports(); },
+                             [=](bool on) {
+                                 remember = on;
+                                 reports = on;
+                             });
     const View checks = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
-                               Toggle("Remember me", remember.binding()),
-                               Toggle("Send crash reports", reports.binding()))
-                            .toggle_style(CheckboxToggleStyle{});
+                               Checkbox("All", both, {.mixed = [=] { return remember() != reports(); }}),
+                               Checkbox("Remember me", remember.binding()).padding(Edges::leading, 26),
+                               Checkbox("Send crash reports", reports.binding()).padding(Edges::leading, 26));
 
     // A focusable view with its own keys; the button focuses it through the binding.
     const auto is_focused = State(false);

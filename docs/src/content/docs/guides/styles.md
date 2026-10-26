@@ -12,12 +12,14 @@ one modifier styles every control inside a view.
 | Control | Styles |
 | --- | --- |
 | `Button` | `ProminentButtonStyle` (default), `BorderedButtonStyle`, `PlainButtonStyle` |
-| `Toggle` | `SwitchToggleStyle` (default), `CheckboxToggleStyle` |
+| `Toggle` | `SwitchToggleStyle` (default) |
+| `Checkbox` | `BoxCheckboxStyle` (default) |
 | `TextField`, `TextArea` | `RoundedBorderTextFieldStyle` (default), `PlainTextFieldStyle` |
 
 ```cpp
 Form().button_style(BorderedButtonStyle{});
-Toggle("Remember me", remember).toggle_style(CheckboxToggleStyle{});
+Toggle("Wi-Fi", wifi).toggle_style(SwitchToggleStyle{{.fills_width = true}});
+Checkbox("Remember me", remember).checkbox_style(BoxCheckboxStyle{{.size = 16}});
 TextField("Search", query).text_field_style(PlainTextFieldStyle{});
 ```
 
@@ -51,8 +53,9 @@ it, or pass it straight to anything that takes a `Prop<bool>`, like `If(button.i
 
 ## Toggle styles
 
-A `ToggleConfiguration` has the `label`, `is_on`, a `toggle()` function that flips it (animated),
-and `is_pressed`, `is_hovered` and `is_enabled`:
+A `ToggleConfiguration` has the `label`, `is_on`, a `toggle()` function that flips it, and
+`is_pressed`, `is_hovered`, `is_enabled` and `is_focused`. Override `animation()` to change how a
+flip animates, or return `std::nullopt` to flip at once:
 
 ```cpp
 struct StarToggleStyle : ToggleStyle {
@@ -65,6 +68,28 @@ struct StarToggleStyle : ToggleStyle {
 ```
 
 The control handles the click and keyboard; the style only draws.
+
+## Checkbox styles
+
+A `CheckboxConfiguration` has the same parts, with `is_checked` for `is_on`, and `is_mixed` for
+a check box that's partly checked (`CheckboxOptions::mixed`):
+
+```cpp
+struct RadioLikeCheckboxStyle : CheckboxStyle {
+    View make_body(const CheckboxConfiguration& box) const override {
+        return HStack({.spacing = 8},
+                      Circle()
+                          .stroke_border(ThemeColor::outline, 1.5f)
+                          .overlay(Circle().fill(ThemeColor::accent).padding(4).opacity([=] {
+                              return box.is_checked() || box.is_mixed() ? 1.f : 0.f;
+                          }))
+                          .frame(18, 18),
+                      box.label);
+    }
+};
+```
+
+Toggle and Checkbox share one implementation, so a style can't change how they respond to input.
 
 ## Text field styles
 

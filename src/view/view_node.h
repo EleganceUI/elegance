@@ -209,14 +209,20 @@ private:
     bool area_;
 };
 
+// Toggle and Checkbox: one control, a button that flips a binding, with each one's style and
+// accessibility role. A check box can be mixed.
 class ToggleNode final : public ViewNode {
 public:
-    ToggleNode(View label, Binding<bool> is_on) : label_(std::move(label)), is_on_(std::move(is_on)) {}
+    enum class Kind { toggle, checkbox };
+    ToggleNode(Kind kind, View label, Binding<bool> value, Prop<bool> mixed = false)
+        : kind_(kind), label_(std::move(label)), value_(std::move(value)), mixed_(std::move(mixed)) {}
     std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
+    Kind kind_;
     View label_;
-    Binding<bool> is_on_;
+    Binding<bool> value_;
+    Prop<bool> mixed_;
 };
 
 // `.focused(binding)`.

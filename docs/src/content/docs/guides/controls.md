@@ -36,19 +36,38 @@ Button("Delete", remove).tint(Color::hex(0xFF453A));
 Button("Submit", submit).disabled([=] { return !form_valid(); });
 ```
 
-## Toggle
+## Toggle and Checkbox
 
-An on/off switch bound to a `bool`. Click, Space or Enter flips it.
+A `Toggle` is an on/off switch bound to a `bool`: it turns something on, like Wi-Fi. A
+`Checkbox` chooses something, like an option in a form or an item in a list. Click, Space or
+Enter flips either. Screen readers announce them as a switch and a check box.
 
 ```cpp
 const State<bool> wifi(true);
 Toggle("Wi-Fi", wifi);
 Toggle(Label("Notifications", {.system_name = "bell"}), notifications);
-Toggle("Remember me", remember).toggle_style(CheckboxToggleStyle{});
+Checkbox("Remember me", remember);
 ```
 
-`SwitchToggleStyle` (the default) shows the label then a switch; `CheckboxToggleStyle` shows a
-check box then the label.
+Both are as wide as their label and control. For a settings row, with the label at one edge and
+the switch at the other, use `SwitchToggleStyle{{.fills_width = true}}`.
+
+A check box can be mixed: some of what it stands for is checked. It shows a dash, screen readers
+read it as mixed, and checking it checks it fully:
+
+```cpp
+const Binding<bool> all([=] { return std::ranges::all_of(files(), &File::selected); },
+                        [=](bool on) { select_all(on); });
+Checkbox("Select all", all, {.mixed = [=] { return some_selected() && !all(); }});
+```
+
+Style them with `.toggle_style(...)` and `.checkbox_style(...)`. The built-in
+`SwitchToggleStyle` and `BoxCheckboxStyle` take options for their colors, sizes and animation:
+
+```cpp
+Toggle("Wi-Fi", wifi).toggle_style(SwitchToggleStyle{{.on = ThemeColor::success, .width = 48, .height = 28}});
+Checkbox("Agree", agreed).checkbox_style(BoxCheckboxStyle{{.size = 16, .corner_radius = 3}});
+```
 
 ## TextField and TextArea
 

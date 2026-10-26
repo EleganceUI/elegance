@@ -62,6 +62,9 @@ enum class AccessRole {
     popup_button, // a button that opens a menu (MenuButton, Picker)
 };
 
+// A switch's or check box's state.
+enum class ToggleState { off, on, mixed };
+
 struct AccessibilityInfo {
     AccessRole role = AccessRole::none;
     std::string label;       // its name
@@ -71,7 +74,7 @@ struct AccessibilityInfo {
     bool hidden = false;          // it and everything inside are left out (decorative)
     bool combine = false;         // children's text becomes its label; they aren't exposed themselves
     bool disabled = false;
-    std::optional<bool> toggled;  // switches and check boxes
+    std::optional<ToggleState> toggled; // switches and check boxes
     std::optional<bool> expanded;
     bool selected = false;
     std::optional<double> numeric; // sliders, steppers, progress

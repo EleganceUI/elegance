@@ -1719,7 +1719,8 @@ Separate render thread from day one (decided).
   - Buttons respond to Space and Enter.
   - `.focusable()`, `.focused(binding)`, and `.on_key_press(...)`.
 - [x] `Toggle(label, Binding<bool>)` with a `ToggleStyle` protocol:
-  - `SwitchToggleStyle` is the default; `CheckboxToggleStyle` is the alternative.
+  - `SwitchToggleStyle` is the default; `CheckboxToggleStyle` was the alternative, until
+    `Checkbox` became its own control (below).
   - `.toggle_style(...)` applies a style.
   - A toggle reuses the button's behavior (click, Space, Enter), and the flip is animated.
   - The checkbox shows a filled mark rather than a check mark until vector paths land (and

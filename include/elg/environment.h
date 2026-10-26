@@ -38,6 +38,7 @@ namespace elg {
 
 class ButtonStyle;
 class ToggleStyle;
+class CheckboxStyle;
 class TextFieldStyle;
 
 class EnvironmentValues {
@@ -140,6 +141,12 @@ struct ToggleStyleKey {
     using Value = std::shared_ptr<const ToggleStyle>;
     static constexpr std::string_view name = "elg.toggle_style";
     ELG_API static std::shared_ptr<const ToggleStyle> default_value(const EnvironmentValues&);
+};
+
+struct CheckboxStyleKey {
+    using Value = std::shared_ptr<const CheckboxStyle>;
+    static constexpr std::string_view name = "elg.checkbox_style";
+    ELG_API static std::shared_ptr<const CheckboxStyle> default_value(const EnvironmentValues&);
 };
 
 // The hover delay for everything inside (on_hover handlers without their own, and controls).

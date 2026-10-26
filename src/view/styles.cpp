@@ -49,6 +49,13 @@ std::shared_ptr<const ToggleStyle> ToggleStyleKey::default_value(const Environme
 
 ToggleStyle::~ToggleStyle() = default;
 
+std::shared_ptr<const CheckboxStyle> CheckboxStyleKey::default_value(const EnvironmentValues&) {
+    static const auto style = std::make_shared<const BoxCheckboxStyle>();
+    return style;
+}
+
+CheckboxStyle::~CheckboxStyle() = default;
+
 std::shared_ptr<const TextFieldStyle> TextFieldStyleKey::default_value(const EnvironmentValues&) {
     static const auto style = std::make_shared<const RoundedBorderTextFieldStyle>();
     return style;
@@ -150,18 +157,17 @@ View PlainButtonStyle::make_body(const ButtonConfiguration& button) const {
 }
 
 View SwitchToggleStyle::make_body(const ToggleConfiguration& toggle) const {
-    constexpr float kWidth = 40;
-    constexpr float kHeight = 24;
-    constexpr float kKnob = 20;
-    constexpr float kTravel = (kWidth - kHeight) / 2;
-    const auto tint = Environment<TintKey>();
-    const auto theme = Environment<ThemeKey>();
-    const auto scheme = Environment<ColorSchemeKey>();
-    const auto colors = [=] { return theme().colors(scheme()); };
+    const SwitchToggleStyleOptions& o = options_;
+    const float knob = std::max(o.height - 2 * o.knob_inset, 0.f);
+    const float travel = (o.width - o.height) / 2;
+    const std::optional<Prop<Color>> on = o.on;
+    const Prop<Color> off = o.off;
 
     View track = Capsule()
-                     .fill([=] {
-                         Color base = toggle.is_on() ? tint() : colors().outline;
+                     .fill([=](const EnvironmentValues& env) {
+                         Color base = !toggle.is_on() ? off.get(env)
+                                      : on            ? on->get(env)
+                                                      : env.get<TintKey>();
                          if (!toggle.is_enabled()) {
                              return base.opacity(0.4f);
                          }
@@ -170,38 +176,51 @@ View SwitchToggleStyle::make_body(const ToggleConfiguration& toggle) const {
                          }
                          return toggle.is_hovered() ? base.mix(Color::white, 0.1f) : base;
                      })
-                     .frame(kWidth, kHeight)
+                     .frame(o.width, o.height)
                      .overlay(Circle()
-                                  .fill(Color::white)
-                                  .frame(kKnob, kKnob)
+                                  .fill([knob_color = o.knob](const EnvironmentValues& env) { return knob_color.get(env); })
+                                  .frame(knob, knob)
                                   .shadow({.color = Color::black.opacity(0.25f), .radius = 3, .y = 1})
-                                  .offset([=] { return toggle.is_on() ? kTravel : -kTravel; }, 0.f));
-    return HStack(toggle.label.foreground_style([=] { return toggle.is_enabled() ? colors().primary : colors().tertiary; }),
-                  Spacer(), std::move(track));
+                                  .offset([=] { return toggle.is_on() ? travel : -travel; }, 0.f));
+    View label = toggle.label.foreground_style([=](const EnvironmentValues& env) {
+        return env.color(toggle.is_enabled() ? ThemeColor::primary : ThemeColor::tertiary);
+    });
+    if (o.fills_width) {
+        return HStack({.spacing = o.spacing}, std::move(label), Spacer(), std::move(track));
+    }
+    return HStack({.spacing = o.spacing}, std::move(label), std::move(track));
 }
 
-View CheckboxToggleStyle::make_body(const ToggleConfiguration& toggle) const {
-    constexpr float kSize = 18;
-    constexpr float kRadius = 5;
-    const auto tint = Environment<TintKey>();
-    const auto theme = Environment<ThemeKey>();
-    const auto scheme = Environment<ColorSchemeKey>();
-    const auto colors = [=] { return theme().colors(scheme()); };
-    const auto dim = [=](Color color) { return toggle.is_enabled() ? color : color.opacity(0.4f); };
+View BoxCheckboxStyle::make_body(const CheckboxConfiguration& checkbox) const {
+    const BoxCheckboxStyleOptions& o = options_;
+    const std::optional<Prop<Color>> fill = o.fill;
+    const Prop<Color> empty = o.empty;
+    const Prop<Color> border = o.border;
+    const auto marked = [=] { return checkbox.is_checked() || checkbox.is_mixed(); };
+    const auto dim = [=](Color color) { return checkbox.is_enabled() ? color : color.opacity(0.4f); };
+    const auto filled = [=](const EnvironmentValues& env) { return fill ? fill->get(env) : env.get<TintKey>(); };
 
-    View box = RoundedRectangle(kRadius)
-                   .fill([=] {
-                       const Color base = toggle.is_on() ? tint() : colors().surface_raised;
-                       return dim(toggle.is_pressed() ? base.mix(Color::black, 0.15f) : base);
+    View check = o.check.value_or(detail::icon(detail::Icon::check, o.size * 0.72f, Weight::bold));
+    View dash = o.dash.value_or(
+        Capsule().fill([mark = o.mark](const EnvironmentValues& env) { return mark.get(env); }).frame(o.size * 0.5f, 2));
+    View box = RoundedRectangle(o.corner_radius)
+                   .fill([=](const EnvironmentValues& env) {
+                       const Color base = marked() ? filled(env) : empty.get(env);
+                       return dim(checkbox.is_pressed() ? base.mix(Color::black, 0.15f) : base);
                    })
-                   .frame(kSize, kSize)
-                   .overlay(RoundedRectangle(kRadius).stroke_border(
-                       [=] { return dim(toggle.is_on() ? tint() : colors().outline); }, 1.5f))
-                   .overlay(detail::icon(detail::Icon::check, 13, Weight::bold)
-                                .foreground_style(ThemeColor::on_accent)
-                                .opacity([=] { return toggle.is_on() ? 1.f : 0.f; }));
-    return HStack(std::move(box),
-                  toggle.label.foreground_style([=] { return toggle.is_enabled() ? colors().primary : colors().tertiary; }));
+                   .frame(o.size, o.size)
+                   .overlay(RoundedRectangle(o.corner_radius)
+                                .stroke_border([=](const EnvironmentValues& env) {
+                                    return dim(marked() ? filled(env) : border.get(env));
+                                }, o.border_width))
+                   .overlay(std::move(check).foreground_style(o.mark).opacity([=] {
+                       return checkbox.is_checked() && !checkbox.is_mixed() ? 1.f : 0.f;
+                   }))
+                   .overlay(std::move(dash).opacity([=] { return checkbox.is_mixed() ? 1.f : 0.f; }));
+    View label = checkbox.label.foreground_style([=](const EnvironmentValues& env) {
+        return env.color(checkbox.is_enabled() ? ThemeColor::primary : ThemeColor::tertiary);
+    });
+    return HStack({.spacing = o.spacing}, std::move(box), std::move(label));
 }
 
 } // namespace elg

@@ -493,6 +493,10 @@ View View::toggle_style_impl(std::shared_ptr<const ToggleStyle> style) const {
     return modifier(ToggleStyleModifier(std::move(style)));
 }
 
+View View::checkbox_style_impl(std::shared_ptr<const CheckboxStyle> style) const {
+    return modifier(CheckboxStyleModifier(std::move(style)));
+}
+
 View View::text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const {
     return modifier(TextFieldStyleModifier(std::move(style)));
 }
@@ -603,11 +607,21 @@ View ScrollView(ScrollViewOptions options, View content) {
 }
 
 View Toggle(View label, Binding<bool> is_on) {
-    return ViewAccess::make(std::make_shared<const detail::ToggleNode>(std::move(label), std::move(is_on)));
+    return ViewAccess::make(
+        std::make_shared<const detail::ToggleNode>(detail::ToggleNode::Kind::toggle, std::move(label), std::move(is_on)));
 }
 
 View Toggle(Prop<std::string> title, Binding<bool> is_on) {
     return Toggle(Text(std::move(title)), std::move(is_on));
+}
+
+View Checkbox(View label, Binding<bool> is_checked, CheckboxOptions options) {
+    return ViewAccess::make(std::make_shared<const detail::ToggleNode>(
+        detail::ToggleNode::Kind::checkbox, std::move(label), std::move(is_checked), std::move(options.mixed)));
+}
+
+View Checkbox(Prop<std::string> title, Binding<bool> is_checked, CheckboxOptions options) {
+    return Checkbox(Text(std::move(title)), std::move(is_checked), std::move(options));
 }
 
 View If(Prop<bool> condition, View then_view, View else_view) {
@@ -979,33 +993,73 @@ std::unique_ptr<Element> ScrollNode::lower(const LowerContext& context) const {
 }
 
 std::unique_ptr<Element> ToggleNode::lower(const LowerContext& context) const {
-    // A button whose action flips the binding; the ToggleStyle draws it.
+    // A button whose action flips the binding (and checks a mixed check box); the style draws it.
     const State<bool> pressed(false);
     const State<bool> hovered(false);
+    const State<bool> focused(false);
     const EnvironmentValues environment = context.environment;
-    const Binding<bool> is_on = is_on_;
-    const auto toggle = [is_on] {
-        with_animation(Animation::smooth(0.3), [&] { is_on.set(!untrack([&] { return is_on(); })); });
-    };
-    const ToggleConfiguration configuration{
-        .label = label_,
-        .is_on = [is_on] { return is_on(); },
-        .toggle = toggle,
-        .is_pressed = [pressed] { return pressed(); },
-        .is_hovered = [hovered] { return hovered(); },
-        .is_enabled = [environment] { return !environment.get<DisabledKey>(); },
+    const Binding<bool> value = value_;
+    const Prop<bool> mixed = mixed_;
+    const bool checkbox = kind_ == Kind::checkbox;
+
+    // The style is chosen when the control is built, and with it how a flip animates.
+    std::shared_ptr<const ToggleStyle> toggle_style;
+    std::shared_ptr<const CheckboxStyle> checkbox_style;
+    std::optional<Animation> animation;
+    if (checkbox) {
+        checkbox_style = untrack([&] { return environment.get<CheckboxStyleKey>(); });
+        animation = checkbox_style->animation();
+    } else {
+        toggle_style = untrack([&] { return environment.get<ToggleStyleKey>(); });
+        animation = toggle_style->animation();
+    }
+    const auto toggle = [value, mixed, environment, animation] {
+        const bool next = untrack([&] { return mixed.get(environment) || !value(); });
+        if (animation) {
+            with_animation(*animation, [&] { value.set(next); });
+        } else {
+            value.set(next);
+        }
     };
 
-    const std::shared_ptr<const ToggleStyle> style = untrack([&] { return environment.get<ToggleStyleKey>(); });
     View body;
     {
         const EnvironmentScope scope(environment);
-        body = style->make_body(configuration);
+        const Signal<bool> is_enabled = [environment] { return !environment.get<DisabledKey>(); };
+        if (checkbox) {
+            body = checkbox_style->make_body({
+                .label = label_,
+                .is_checked = value,
+                .is_mixed = [mixed, environment] { return mixed.get(environment); },
+                .toggle = toggle,
+                .is_pressed = pressed,
+                .is_hovered = hovered,
+                .is_enabled = is_enabled,
+                .is_focused = focused,
+            });
+        } else {
+            body = toggle_style->make_body({
+                .label = label_,
+                .is_on = value,
+                .toggle = toggle,
+                .is_pressed = pressed,
+                .is_hovered = hovered,
+                .is_enabled = is_enabled,
+                .is_focused = focused,
+            });
+        }
     }
     AccessibilitySpec semantics;
-    semantics.role = AccessRole::toggle;
-    semantics.toggled = [is_on]() -> std::optional<bool> { return is_on(); };
-    return with_accessibility(make_button_element(body, toggle, pressed, hovered, context), std::move(semantics));
+    semantics.role = checkbox ? AccessRole::checkbox : AccessRole::toggle;
+    semantics.toggled = [value, mixed, environment]() -> std::optional<ToggleState> {
+        if (mixed.get(environment)) {
+            return ToggleState::mixed;
+        }
+        return value() ? ToggleState::on : ToggleState::off;
+    };
+    auto element = make_button_element(body, toggle, pressed, hovered, context);
+    element->set_focus_state(focused);
+    return with_accessibility(std::move(element), std::move(semantics));
 }
 
 // Like SwiftUI: the binding is true while focus is anywhere inside the view, and setting it
