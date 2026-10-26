@@ -29,6 +29,7 @@
 #include <elg/modifier.h>
 #include <elg/navigation.h>
 #include <elg/path.h>
+#include <elg/platform.h>
 #include <elg/modifiers/decoration.h>
 #include <elg/modifiers/effects.h>
 #include <elg/modifiers/environment.h>

@@ -877,11 +877,45 @@ private:
     EventResult hover(bool inside) override;
     EventResult scroll(const ScrollEvent& event) override;
     EventResult key(const KeyEvent& event) override;
+    // Mouse wheels, and trackpads whose gestures the platform doesn't follow.
+    EventResult wheel(const ScrollEvent& event);
+    // Trackpad gestures: the content follows the fingers, stretches past the edges, and coasts.
+    EventResult gesture(const ScrollEvent& event);
+
+    // A critically damped spring back to an edge: after letting go past it, or bouncing off it.
+    struct Rebound {
+        double start = 0;       // frame_time()
+        float edge = 0;
+        float displacement = 0; // from the edge at the start
+        float velocity = 0;     // points per second, at the start
+        bool active = false;
+
+        float at(double time) const;
+        bool settled(double time) const;
+    };
+    // Gliding on after the fingers lift, slowing down exponentially.
+    struct Coast {
+        double start = 0; // frame_time()
+        float from = 0;
+        float velocity = 0; // points per second, at the start
+        bool active = false;
+
+        float at(double time) const;
+        float velocity_at(double time) const;
+        float end() const;
+    };
 
     bool scrolls(Axis axis) const noexcept;
     ProposedSize content_proposal(ProposedSize proposal) const noexcept;
     Point max_offset() const noexcept;
-    Point current_offset() const { return {offset_x_.current(), offset_y_.current()}; }
+    float offset(Axis axis) const;
+    Point current_offset() const { return {offset(Axis::horizontal), offset(Axis::vertical)}; }
+    // Whether a gesture, a coast or a rebound moves the offset (maybe past the edges).
+    bool stretching() const noexcept {
+        return touching_ || coast_x_.active || coast_y_.active || rebound_x_.active || rebound_y_.active;
+    }
+    void stop_motion();
+    float finger_velocity(double now) const;
     // Scrolls to `target` (clamped to the content); false if that's where it already is.
     bool scroll_to(Point target, const Animation* animation);
     std::optional<Thumb> thumb(Axis axis) const;
@@ -899,6 +933,20 @@ private:
     Animated<float> offset_x_{0.f};
     Animated<float> offset_y_{0.f};
     Animated<float> indicators_{0.f}; // scroll bar opacity
+    // Trackpad gestures.
+    std::optional<Axis> lock_;   // the axis the gesture follows: the one it started along
+    bool touching_ = false;      // the fingers are scrolling this view
+    Point stretch_;              // where the fingers have taken the offset, before resistance
+    // The fingers' recent movements along lock_, for their speed when they lift.
+    struct Move {
+        double time; // ScrollEvent::time
+        float delta;
+    };
+    std::vector<Move> moves_;
+    Coast coast_x_;
+    Coast coast_y_;
+    Rebound rebound_x_;
+    Rebound rebound_y_;
     bool pinned_ = true; // at the end (sticks_to_end follows it); the first layout counts
     bool hovered_ = false;
     std::optional<Axis> dragging_; // a scroll bar thumb being dragged

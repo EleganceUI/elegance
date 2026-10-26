@@ -284,6 +284,18 @@ View View::on_tap_gesture(std::function<void()> action, int count) const {
     return modifier(TapGestureModifier(count, std::move(action)));
 }
 
+View View::on_magnify(std::function<void(const MagnifyEvent&)> action) const {
+    return modifier(MagnifyGestureModifier(std::move(action)));
+}
+
+View View::on_rotate(std::function<void(const RotateEvent&)> action) const {
+    return modifier(RotateGestureModifier(std::move(action)));
+}
+
+View View::on_smart_magnify(std::function<void(Point)> action) const {
+    return modifier(SmartMagnifyModifier(std::move(action)));
+}
+
 View View::on_size_change(std::function<void(PixelSize)> action) const {
     struct Observer final : EffectModifier {
         std::function<void(PixelSize)> action;

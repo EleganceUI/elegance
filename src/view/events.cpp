@@ -30,6 +30,18 @@ EventResult EventHandler::scroll(const ScrollEvent&) {
     return {};
 }
 
+EventResult EventHandler::magnify(const MagnifyEvent&) {
+    return {};
+}
+
+EventResult EventHandler::rotate(const RotateEvent&) {
+    return {};
+}
+
+EventResult EventHandler::smart_magnify(Point) {
+    return {};
+}
+
 EventResult EventHandler::key(const KeyEvent&) {
     return {};
 }
@@ -120,7 +132,67 @@ private:
     std::function<bool(const KeyEvent&)> action_;
 };
 
+class MagnifyHandler final : public EventHandler {
+public:
+    explicit MagnifyHandler(std::function<void(const MagnifyEvent&)> action) : action_(std::move(action)) {}
+
+    EventResult magnify(const MagnifyEvent& event) override {
+        if (!action_) {
+            return {};
+        }
+        action_(event);
+        return {.consumed = true};
+    }
+
+private:
+    std::function<void(const MagnifyEvent&)> action_;
+};
+
+class RotateHandler final : public EventHandler {
+public:
+    explicit RotateHandler(std::function<void(const RotateEvent&)> action) : action_(std::move(action)) {}
+
+    EventResult rotate(const RotateEvent& event) override {
+        if (!action_) {
+            return {};
+        }
+        action_(event);
+        return {.consumed = true};
+    }
+
+private:
+    std::function<void(const RotateEvent&)> action_;
+};
+
+class SmartMagnifyHandler final : public EventHandler {
+public:
+    explicit SmartMagnifyHandler(std::function<void(Point)> action) : action_(std::move(action)) {}
+
+    EventResult smart_magnify(Point location) override {
+        if (!action_) {
+            return {};
+        }
+        action_(location);
+        return {.consumed = true};
+    }
+
+private:
+    std::function<void(Point)> action_;
+};
+
 } // namespace
+
+std::unique_ptr<EventHandler> MagnifyGestureModifier::make_handler() const {
+    return std::make_unique<MagnifyHandler>(action_);
+}
+
+std::unique_ptr<EventHandler> RotateGestureModifier::make_handler() const {
+    return std::make_unique<RotateHandler>(action_);
+}
+
+std::unique_ptr<EventHandler> SmartMagnifyModifier::make_handler() const {
+    return std::make_unique<SmartMagnifyHandler>(action_);
+}
 
 std::unique_ptr<EventHandler> FocusableModifier::make_handler() const {
     return std::make_unique<detail::FocusableHandler>(focusable_);

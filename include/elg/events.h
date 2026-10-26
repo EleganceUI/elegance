@@ -77,6 +77,15 @@ enum class Cursor {
     not_allowed,
 };
 
+// Where a trackpad gesture is. Mouse wheels have none.
+enum class GesturePhase {
+    none,      // not part of a gesture (a mouse wheel, or a trackpad the platform doesn't follow)
+    began,     // fingers touched down (scrolls: possibly before moving, with no delta)
+    changed,
+    ended,     // fingers lifted
+    cancelled, // the system took the gesture over
+};
+
 // A mouse wheel or trackpad scroll. Deltas are in points, positive toward the end of the content
 // (wheel down: positive dy).
 struct ScrollEvent {
@@ -85,6 +94,29 @@ struct ScrollEvent {
     float dy = 0;
     bool precise = false; // trackpad-style fine deltas (apply directly) rather than wheel notches
     KeyModifiers modifiers = KeyModifiers::none; // held while scrolling (Ctrl+wheel: zoom)
+    // Trackpads on macOS: the fingers' gesture (began ... ended), then, after a flick, the system's
+    // momentum (momentum = true, began ... ended) as the scroll coasts to a stop.
+    GesturePhase phase = GesturePhase::none;
+    bool momentum = false;
+    // When it happened, in seconds on the event source's clock (for speeds between events); 0 if
+    // unknown.
+    double time = 0;
+};
+
+// Pinching on a trackpad (or a touch screen).
+struct MagnifyEvent {
+    Point location;
+    float scale = 1;     // since the gesture began: 2 = twice as big
+    float delta = 1;     // since the last event, as a factor
+    GesturePhase phase = GesturePhase::changed;
+};
+
+// Turning two fingers on a trackpad.
+struct RotateEvent {
+    Point location;
+    float degrees = 0;   // since the gesture began, clockwise
+    float delta = 0;     // since the last event
+    GesturePhase phase = GesturePhase::changed;
 };
 
 // Text from the keyboard or an input method, for views that accept text (TextField).
@@ -149,6 +181,11 @@ public:
     // Wheel and trackpad scrolling: goes to the handlers under the pointer, innermost first,
     // until one consumes it.
     virtual EventResult scroll(const ScrollEvent& event);
+    // Trackpad gestures: the handler under the pointer that consumes `began` gets the rest of the
+    // gesture, innermost first. smart_magnify is a two-finger double tap (zoom to fit, in Safari).
+    virtual EventResult magnify(const MagnifyEvent& event);
+    virtual EventResult rotate(const RotateEvent& event);
+    virtual EventResult smart_magnify(Point location);
 
     // Keyboard (design.md §10): key events go to the focused view's handler first, then bubble
     // to the handlers around it until consumed.

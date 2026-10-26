@@ -214,7 +214,7 @@ bool EventDispatcher::pointer_moved(Point location) {
     // right after a wheel event, when a hand on the wheel jiggles the mouse.
     constexpr double kWheelMoveGrace = 0.1;
     constexpr float kWheelMoveSlop = 4;
-    if (wheel_latched_ && now_seconds() - last_wheel_ > kWheelMoveGrace &&
+    if (wheel_latched_ && !wheel_phased_ && now_seconds() - last_wheel_ > kWheelMoveGrace &&
         std::hypot(location.x - last_wheel_location_.x, location.y - last_wheel_location_.y) > kWheelMoveSlop) {
         wheel_latched_ = nullptr;
     }
@@ -343,16 +343,21 @@ bool EventDispatcher::move_focus(bool forward) {
     return redraw;
 }
 
-bool EventDispatcher::scroll(Point location, float dx, float dy, bool precise, KeyModifiers modifiers) {
-    // A gesture ends after this long without wheel events.
+bool EventDispatcher::scroll(const ScrollEvent& event) {
+    // A wheel gesture ends after this long without wheel events.
     constexpr double kWheelGesturePause = 0.5;
+    const Point location = event.location;
     last_location_ = location;
     pointer_inside_ = true;
-    const ScrollEvent event{location, dx, dy, precise, modifiers};
     const double now = now_seconds();
-    if (now - last_wheel_ > kWheelGesturePause) {
+    const bool phased = event.phase != GesturePhase::none;
+    // Fingers touching down start a new gesture; until they move, every scroll view under them
+    // hears it (to stop a bounce), and the first to take a delta keeps the gesture.
+    if (phased ? event.phase == GesturePhase::began && !event.momentum
+               : wheel_phased_ || now - last_wheel_ > kWheelGesturePause) {
         wheel_latched_ = nullptr;
     }
+    wheel_phased_ = phased;
     last_wheel_ = now;
     last_wheel_location_ = location;
 
@@ -375,6 +380,67 @@ bool EventDispatcher::scroll(Point location, float dx, float dy, bool precise, K
                 if (!wheel_latched_) {
                     wheel_latched_ = *it;
                 }
+                break;
+            }
+        }
+    }
+    return redraw;
+}
+
+namespace {
+
+// Pinch and rotate: `began` goes to the innermost handler under the pointer that takes it, the rest
+// of the gesture to that one.
+template <class Event, class Deliver>
+bool gesture(Element*& latched, const std::vector<Element*>& path, const Event& event, Deliver deliver) {
+    bool redraw = false;
+    if (event.phase == GesturePhase::began || event.phase == GesturePhase::none) {
+        latched = nullptr;
+        for (auto it = path.rbegin(); it != path.rend(); ++it) {
+            if (EventHandler* handler = (*it)->event_handler()) {
+                const EventResult result = deliver(*handler, event);
+                redraw |= result.redraw;
+                if (result.consumed) {
+                    latched = *it;
+                    break;
+                }
+            }
+        }
+    } else if (latched) {
+        if (EventHandler* handler = latched->event_handler()) {
+            redraw = deliver(*handler, event).redraw;
+        }
+    }
+    if (event.phase == GesturePhase::ended || event.phase == GesturePhase::cancelled) {
+        latched = nullptr;
+    }
+    return redraw;
+}
+
+} // namespace
+
+bool EventDispatcher::magnify(MagnifyEvent event) {
+    magnify_scale_ = event.phase == GesturePhase::began ? event.delta : magnify_scale_ * event.delta;
+    event.scale = magnify_scale_;
+    return gesture(magnify_latched_, path_at(event.location), event,
+                   [](EventHandler& handler, const MagnifyEvent& e) { return handler.magnify(e); });
+}
+
+bool EventDispatcher::rotate(RotateEvent event) {
+    rotate_degrees_ = event.phase == GesturePhase::began ? event.delta : rotate_degrees_ + event.delta;
+    event.degrees = rotate_degrees_;
+    return gesture(rotate_latched_, path_at(event.location), event,
+                   [](EventHandler& handler, const RotateEvent& e) { return handler.rotate(e); });
+}
+
+bool EventDispatcher::smart_magnify(Point location) {
+    bool redraw = false;
+    const std::vector<Element*> path = path_at(location);
+    for (auto it = path.rbegin(); it != path.rend(); ++it) {
+        if (EventHandler* handler = (*it)->event_handler()) {
+            const EventResult result = handler->smart_magnify(location);
+            redraw |= result.redraw;
+            if (result.consumed) {
                 break;
             }
         }
@@ -424,8 +490,10 @@ bool EventDispatcher::revalidate() {
     if (captured_ && !alive.contains(captured_)) {
         captured_ = nullptr;
     }
-    if (wheel_latched_ && !alive.contains(wheel_latched_)) {
-        wheel_latched_ = nullptr;
+    for (Element** latched : {&wheel_latched_, &magnify_latched_, &rotate_latched_}) {
+        if (*latched && !alive.contains(*latched)) {
+            *latched = nullptr;
+        }
     }
     return pointer_inside_ ? update_hover(path_at(last_location_)) : false;
 }

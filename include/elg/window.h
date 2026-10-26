@@ -15,6 +15,7 @@
 //                     Content());
 //   });
 
+#include <elg/app.h>
 #include <elg/environment.h>
 #include <elg/export.h>
 #include <elg/view.h>
@@ -45,6 +46,14 @@ public:
     bool is_maximized() const;
     // Whether the window has keyboard focus (title bars usually dim when it doesn't).
     bool is_active() const;
+    // The window's WindowDesc::title_bar.
+    TitleBar title_bar() const;
+    // Where the system draws its window controls over the content (the traffic lights of a
+    // TitleBar::integrated window on macOS), in the window's logical points. Empty where it
+    // doesn't (other title bars and platforms, fullscreen). Keep content clear of it:
+    //   VStack(EmptyView().frame([=] { return Size{0, window().system_controls_frame().max_y()}; }),
+    //          content)
+    Rect system_controls_frame() const;
 
     friend bool operator==(const WindowHandle& a, const WindowHandle& b) noexcept { return a.state_ == b.state_; }
 
@@ -74,6 +83,9 @@ struct WindowControlsOptions {
 
 // Minimize, maximize/restore, and close buttons for a custom title bar. They act on the window
 // they're in, and dim while the window isn't active.
+// With WindowControlsStyle::automatic they show only in TitleBar::hidden windows: wherever the
+// system draws its own controls (TitleBar::system and integrated), this is empty, so the same
+// layout works with either.
 ELG_API View WindowControls(WindowControlsOptions options = {});
 
 } // namespace elg

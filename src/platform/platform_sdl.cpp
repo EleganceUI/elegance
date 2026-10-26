@@ -11,6 +11,11 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_metal.h>
 
+#if defined(__APPLE__)
+#include "platform/input_apple.h"
+#include "platform/title_bar_apple.h"
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <format>
@@ -113,6 +118,9 @@ KeyModifiers translate_modifiers(SDL_Keymod mod) {
     return result;
 }
 
+// A mouse wheel notch, in points.
+constexpr float kPointsPerNotch = 48;
+
 Event translate(const SDL_Event& event, std::uint32_t wake_event) {
     if (event.type == wake_event) {
         return {EventType::wake};
@@ -133,6 +141,8 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
     case SDL_EVENT_WINDOW_FOCUS_GAINED: return {EventType::window_focus_gained, event.window.windowID};
     case SDL_EVENT_WINDOW_FOCUS_LOST: return {EventType::window_focus_lost, event.window.windowID};
     case SDL_EVENT_WINDOW_MOVED: return {EventType::window_moved, event.window.windowID};
+    case SDL_EVENT_WINDOW_ENTER_FULLSCREEN:
+    case SDL_EVENT_WINDOW_LEAVE_FULLSCREEN: return {EventType::window_fullscreen_changed, event.window.windowID};
     case SDL_EVENT_SYSTEM_THEME_CHANGED:
         return {EventType::system_theme_changed};
     case SDL_EVENT_DROP_BEGIN:
@@ -195,13 +205,26 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
     }
     case SDL_EVENT_MOUSE_WHEEL: {
         // x/y already follow the user's "natural scrolling" setting (direction says if flipped).
+        // SDL gives no other sign of a trackpad than fractional notches.
         Event result{EventType::wheel, event.wheel.windowID};
         result.x = event.wheel.mouse_x;
         result.y = event.wheel.mouse_y;
-        result.wheel_x = event.wheel.x;
-        result.wheel_y = event.wheel.y;
+        result.scroll_dx = event.wheel.x * kPointsPerNotch;
+        result.scroll_dy = -event.wheel.y * kPointsPerNotch;
         result.precise = event.wheel.x != std::trunc(event.wheel.x) || event.wheel.y != std::trunc(event.wheel.y);
+        result.time = static_cast<double>(event.wheel.timestamp) * 1e-9;
         result.modifiers = translate_modifiers(SDL_GetModState());
+        return result;
+    }
+    case SDL_EVENT_PINCH_BEGIN:
+    case SDL_EVENT_PINCH_UPDATE:
+    case SDL_EVENT_PINCH_END: {
+        Event result{EventType::magnify, event.pinch.windowID};
+        SDL_GetMouseState(&result.x, &result.y);
+        result.amount = event.type == SDL_EVENT_PINCH_UPDATE ? event.pinch.scale - 1 : 0;
+        result.phase = event.type == SDL_EVENT_PINCH_BEGIN    ? GesturePhase::began
+                       : event.type == SDL_EVENT_PINCH_UPDATE ? GesturePhase::changed
+                                                              : GesturePhase::ended;
         return result;
     }
     case SDL_EVENT_KEY_DOWN:
@@ -277,6 +300,11 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
     if (!metal_view_) {
         SDL_DestroyWindow(window_);
         throw_sdl_error("failed to create a Metal view");
+    }
+    if (desc.title_bar == TitleBar::integrated && !popup) {
+        title_bar_ = apple::integrate_title_bar(
+            SDL_GetPointerProperty(SDL_GetWindowProperties(window_), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr),
+            desc.traffic_lights_position);
     }
 #endif
 
@@ -361,6 +389,16 @@ bool Window::maximized() const {
     return (SDL_GetWindowFlags(window_) & SDL_WINDOW_MAXIMIZED) != 0;
 }
 
+Rect Window::system_controls_frame() {
+#if defined(__APPLE__)
+    if (title_bar_) {
+        apple::refresh_title_bar(title_bar_);
+        return apple::system_controls_frame(title_bar_); // points are logical points on macOS
+    }
+#endif
+    return {};
+}
+
 void Window::request_close() {
     SDL_Event event{};
     event.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
@@ -402,6 +440,11 @@ Window::~Window() {
     if (parent_text_input_) {
         SDL_StopTextInput(parent_); // closed with its text field focused
     }
+#if defined(__APPLE__)
+    if (title_bar_) {
+        apple::release_title_bar(title_bar_);
+    }
+#endif
     if (metal_view_) {
         SDL_Metal_DestroyView(static_cast<SDL_MetalView>(metal_view_));
     }
@@ -551,11 +594,58 @@ Platform::Platform() {
     }
     g_platform_alive = true;
 
-    wake_event_ = SDL_RegisterEvents(1);
+    wake_event_ = SDL_RegisterEvents(2);
+    native_event_ = wake_event_ + 1;
     SDL_AddEventWatch(&on_event_watch, this);
+#if defined(__APPLE__)
+    input_monitor_ = apple::install_input_monitor([this](const apple::NativeInput& input) {
+        SDL_Window* window = nullptr;
+        int count = 0;
+        if (SDL_Window** windows = SDL_GetWindows(&count)) {
+            for (int i = 0; i < count && !window; ++i) {
+                if (SDL_GetPointerProperty(SDL_GetWindowProperties(windows[i]), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER,
+                                           nullptr) == input.ns_window) {
+                    window = windows[i];
+                }
+            }
+            SDL_free(windows);
+        }
+        if (!window) {
+            return false;
+        }
+        Event event;
+        event.window_id = SDL_GetWindowID(window);
+        event.x = input.x; // SDL's window coordinates are points on macOS
+        event.y = input.y;
+        event.phase = input.phase;
+        event.amount = input.amount;
+        event.time = input.time;
+        event.modifiers = translate_modifiers(SDL_GetModState());
+        switch (input.kind) {
+        case apple::NativeInput::Kind::scroll:
+            event.type = EventType::wheel;
+            event.precise = input.precise;
+            event.momentum = input.momentum;
+            event.scroll_dx = input.precise ? input.dx : input.dx * kPointsPerNotch;
+            event.scroll_dy = input.precise ? input.dy : input.dy * kPointsPerNotch;
+            break;
+        case apple::NativeInput::Kind::magnify: event.type = EventType::magnify; break;
+        case apple::NativeInput::Kind::rotate: event.type = EventType::rotate; break;
+        case apple::NativeInput::Kind::smart_magnify: event.type = EventType::smart_magnify; break;
+        }
+        native_events_.push_back(std::move(event));
+        SDL_Event marker{};
+        marker.type = native_event_;
+        SDL_PushEvent(&marker);
+        return true;
+    });
+#endif
 }
 
 Platform::~Platform() {
+#if defined(__APPLE__)
+    apple::remove_input_monitor(input_monitor_);
+#endif
     SDL_RemoveEventWatch(&on_event_watch, this);
     SDL_Quit();
     g_platform_alive = false;
@@ -566,7 +656,7 @@ Event Platform::wait_event() {
     if (!SDL_WaitEvent(&event)) {
         throw_sdl_error("failed to wait for events");
     }
-    return translate(event, wake_event_);
+    return translate(event);
 }
 
 Event Platform::wait_event(double seconds) {
@@ -575,7 +665,7 @@ Event Platform::wait_event(double seconds) {
     if (!SDL_WaitEventTimeout(&event, milliseconds)) {
         return {}; // timed out
     }
-    return translate(event, wake_event_);
+    return translate(event);
 }
 
 std::optional<Event> Platform::poll_event() {
@@ -583,7 +673,19 @@ std::optional<Event> Platform::poll_event() {
     if (!SDL_PollEvent(&event)) {
         return std::nullopt;
     }
-    return translate(event, wake_event_);
+    return translate(event);
+}
+
+Event Platform::translate(const SDL_Event& event) {
+    if (event.type == native_event_) {
+        if (native_events_.empty()) {
+            return {};
+        }
+        Event result = std::move(native_events_.front());
+        native_events_.pop_front();
+        return result;
+    }
+    return platform::translate(event, wake_event_);
 }
 
 void Platform::wake() {
