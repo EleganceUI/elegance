@@ -5,13 +5,13 @@ description: "Context menus, menu buttons, submenus, menu pickers, popovers, and
 
 ## Menus
 
-A `Menu` is a panel of items: `MenuItem`s, `Submenu`s, `Divider`s, or any view.
+A `Menu` is a panel of items: `MenuItem`s, `Submenu`s, `Separator`s, or any view.
 
 ```cpp
 Menu(MenuItem("Rename", rename, {.shortcut = "F2"}),
      MenuItem("Duplicate", duplicate, {.image = ImageSource{.system_name = "copy"}}),
      Submenu("Move to", [=] { return Menu(MenuItem("Archive", archive), MenuItem("Trash", trash)); }),
-     Divider(),
+     Separator(),
      MenuItem("Delete", remove, {.destructive = true}));
 ```
 
@@ -31,7 +31,7 @@ focus. The builder runs each time the menu opens, so it can reflect the current 
 Text(file.name).context_menu([=] {
     return Menu(MenuItem("Open", open),
                 MenuItem("Pin", toggle_pin, {.checked = pinned}),
-                Divider(),
+                Separator(),
                 MenuItem("Delete", remove, {.destructive = true}));
 });
 ```

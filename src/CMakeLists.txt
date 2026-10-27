@@ -77,6 +77,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         view/navigation_stack.cpp
         view/number_input.cpp
         view/progress.cpp
+        view/separator.cpp
         view/scroll.cpp
         view/shapes.cpp
         view/split_view.cpp

@@ -88,6 +88,19 @@ View ZStack(Children&&... children) {
 // Flexible space that expands along its stack's axis.
 ELG_API View Spacer(OptionalLength min_length = {});
 
+struct SeparatorOptions {
+    Prop<Color> color = ThemeColor::outline;
+    float thickness = 1;
+    float inset = 0; // left clear at both ends
+};
+
+// A thin line between groups: horizontal (as wide as offered: in a VStack, a menu, a grid row) or
+// vertical (as tall as offered: in an HStack). Assistive technology sees a separator, which isn't
+// focusable; .accessibility_hidden() makes it purely decorative.
+//   VStack(Header(), Separator(), Body())
+//   HStack(Bold(), Italic(), Separator(Axis::vertical, {.inset = 4}), Link())
+ELG_API View Separator(Axis axis = Axis::horizontal, SeparatorOptions options = {});
+
 ELG_API View EmptyView();
 
 // Immediate-mode drawing; `draw` runs every time the view is drawn. Takes the proposed size.
@@ -412,9 +425,6 @@ View ForEach(Source items, ContentFunction content) {
 
 // --- Menus and popups (design.md §13.1) ---
 
-// A thin line separating groups: horizontal in a VStack (and menus), full width.
-ELG_API View Divider();
-
 struct MenuItemOptions {
     Prop<std::string> shortcut = std::string(); // a hint shown on the right, e.g. "Ctrl+R"
     Prop<bool> destructive = false;             // shown in the danger color
@@ -432,7 +442,7 @@ namespace detail {
 ELG_API View make_menu(std::vector<View> items);
 } // namespace detail
 
-// The menu panel: items (MenuItem, Submenu, Divider, or any view) stacked in a styled panel.
+// The menu panel: items (MenuItem, Submenu, Separator, or any view) stacked in a styled panel.
 // Up/Down move between items, Enter chooses, Esc closes, Left/Right leave and enter submenus.
 template <std::convertible_to<View>... Items>
 View Menu(Items&&... items) {

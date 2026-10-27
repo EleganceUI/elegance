@@ -63,14 +63,14 @@ A `Grid` holds `GridRow`s. Columns line up across rows, each as wide as its wide
 ```cpp
 Grid({.alignment = Alignment::leading, .horizontal_spacing = 24},
      GridRow(Text("Game").font(Font::headline), Text("Mods").font(Font::headline)),
-     Divider(),
+     Separator(),
      ForEach(games, &Game::id, [](const Game& game) {
          return GridRow(Text(game.name), Text(std::format("{}", game.mods)));
      }),
      GridRow(Text("Mods include disabled ones.").grid_cell_columns(2)));
 ```
 
-- A child that isn't a `GridRow` (the `Divider` above, or a heading) takes a row of its own, as
+- A child that isn't a `GridRow` (the `Separator` above, or a heading) takes a row of its own, as
   wide as the grid.
 - Repeat rows with `ForEach` (each item a `GridRow`), as above. A `ForEach` inside a `GridRow`
   is one cell, not several.

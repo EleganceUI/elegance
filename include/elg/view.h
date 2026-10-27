@@ -489,7 +489,7 @@ public:
 
     // Right-click (or Shift+F10 / the Menu key while focused) opens the menu `menu` builds,
     // usually a Menu(...). The builder runs each time it opens; item actions run after it closes.
-    //   Text(file.name).context_menu([=] { return Menu(MenuItem("Rename", rename), Divider(),
+    //   Text(file.name).context_menu([=] { return Menu(MenuItem("Rename", rename), Separator(),
     //                                                  MenuItem("Delete", remove, {.destructive = true})); })
     ELG_API View context_menu(std::function<View()> menu) const;
     // A tooltip with `text`, shown after the pointer rests on the view for a moment.

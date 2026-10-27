@@ -436,7 +436,7 @@ Layout follows SwiftUI's negotiation rather than flexbox:
 Containers and layout tools:
 - `VStack` / `HStack` / `ZStack`, with `spacing` and `alignment`. Stacks give space to the least
   flexible children first, and `.layout_priority(n)` changes that order.
-- `Spacer()` (flexible gap) and `Divider()`.
+- `Spacer()` (flexible gap) and `Separator()` / `Separator(Axis::vertical, {.color, .thickness, .inset})`.
 - `.frame(width, height, alignment)` and
   `.frame({.min_width, .ideal_width, .max_width = infinity, ...})`.
 - `.padding(...)`, `.fixed_size()`, `.aspect_ratio(r, ContentMode::fit/fill)`, `.offset(x, y)`.
@@ -1011,7 +1011,9 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
   - Sliders have their value, range, step, increment/decrement and set value.
   - `Progress` has its fraction (none while indeterminate). Text fields have their text (never a secure field's),
     placeholder and set value.
-  - Images, video and scroll views have their roles. `NumberInput` is a spin button with its
+  - Images, video and scroll views have their roles. A `Separator` is a separator (AccessKit's
+    splitter, as browsers map `<hr>`), not focusable; `.accessibility_hidden()` makes it
+    decorative. `NumberInput` is a spin button with its
     value, range, step, increment/decrement and set value; its arrow buttons are named "Decrease"
     and "Increase".
 - **Modifiers:** `.accessibility_label`, `_value`, `_hint` (reactive), `_hidden`, `_role`,
@@ -1040,7 +1042,7 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
 
 | Category   | Components                                                                 |
 |------------|----------------------------------------------------------------------------|
-| Layout     | VStack, HStack, ZStack, Spacer, Divider, Grid, LazyVStack/HStack,          |
+| Layout     | VStack, HStack, ZStack, Spacer, Separator, Grid, LazyVStack/HStack,        |
 |            | LazyVGrid/HGrid, ScrollView, ViewThatFits, GeometryReader, HSplitView      |
 | Shapes     | Rectangle, RoundedRectangle, Capsule, Circle, Ellipse, Path                |
 | Basic      | Text, Label (icon + text), Image, AsyncImage, Link, Badge                  |
@@ -1074,7 +1076,7 @@ Text(file.name)
             MenuItem("Rename", rename).shortcut("F2"),
             MenuItem("Duplicate", duplicate),
             If([=] { return can_share(); }, MenuItem("Share", share)),
-            Divider(),
+            Separator(),
             Submenu("Move to", ForEach(folders, key, [=](const Folder& f) { return MenuItem(f.name, move_to(f)); })),
             MenuItem("Delete", remove).role(ButtonRole::destructive).disabled([=] { return locked(); }));
     })
@@ -1084,7 +1086,7 @@ Text(file.name)
   current state, and nothing stays subscribed while the menu is closed.
 - Item actions run after the menu has closed, so an action can open a dialog or another menu.
 - Items: `MenuItem` (title, optional icon, shortcut hint, `disabled`, `checked`, `role`),
-  `Divider`, `Submenu`, and `Section` (a titled group).
+  `Separator`, `Submenu`, and `Section` (a titled group).
 
 #### Rendering: drawn by Elegance, in a popup window (decided)
 
@@ -1867,7 +1869,7 @@ Separate render thread from day one (decided).
     - Moving or resizing the window, or focus leaving the app, closes them.
   - `.context_menu(builder)`: right-click (on release), the Menu key, or Shift+F10.
   - `Menu(items...)`, `MenuItem(title, action, {.shortcut, .destructive, .checked})`,
-    `Submenu(title, builder)` (opens on hover after the delay, click, or Right), `Divider()`.
+    `Submenu(title, builder)` (opens on hover after the delay, click, or Right), `Separator()`.
   - Choosing an item closes every menu, then runs its action.
   - `MenuButton(label, builder)`, and `Picker(..., PickerStyle::menu)`.
   - `.help("…")` tooltips: after 0.6 s; closed by leaving, pressing, scrolling, or typing.

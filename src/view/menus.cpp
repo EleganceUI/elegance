@@ -565,10 +565,6 @@ namespace elg {
 
 using detail::ViewAccess;
 
-View Divider() {
-    return Rectangle().fill(ThemeColor::outline).frame({.max_width = infinity, .min_height = 1, .max_height = 1});
-}
-
 View MenuItem(Prop<std::string> title, std::function<void()> action, MenuItemOptions options) {
     return ViewAccess::make(
         std::make_shared<const detail::MenuItemNode>(std::move(title), std::move(action), std::move(options)));

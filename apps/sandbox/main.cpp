@@ -105,13 +105,13 @@ View MenuCards() {
                 return Menu(MenuItem("Rename", say("Rename"), {.shortcut = "F2", .image = {{.system_name = "pencil-simple"}}}),
                             MenuItem("Duplicate", say("Duplicate"),
                                      {.shortcut = "Ctrl+D", .image = {{.system_name = "copy-simple"}}}),
-                            Divider(),
+                            Separator(),
                             Submenu("Move to", [=] {
                                 return Menu(MenuItem("Documents", say("Moved to Documents")),
                                             MenuItem("Pictures", say("Moved to Pictures")),
                                             MenuItem("Archive", say("Moved to Archive")).disabled());
                             }),
-                            Divider(),
+                            Separator(),
                             MenuItem("Delete", say("Delete"), {.destructive = true, .image = {{.system_name = "trash"}}}));
             });
 
@@ -120,7 +120,7 @@ View MenuCards() {
     const View view_menu = MenuButton("View", [=] {
         return Menu(MenuItem("Show grid", [=] { grid = !grid(); }, {.checked = grid}),
                     MenuItem("Show rulers", [=] { rulers = !rulers(); }, {.checked = rulers}),
-                    Divider(),
+                    Separator(),
                     MenuItem("Zoom to fit", say("Zoom to fit"), {.shortcut = "Ctrl+0"}));
     }).button_style(BorderedButtonStyle{});
 

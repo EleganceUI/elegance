@@ -494,7 +494,7 @@ View BarNavigationStackStyle::make_body(const NavigationStackConfiguration& stac
     if (!o.shows_divider) {
         return VStack({.spacing = 0}, bar, stack.pages);
     }
-    return VStack({.spacing = 0}, bar, Divider(), stack.pages);
+    return VStack({.spacing = 0}, bar, Separator(), stack.pages);
 }
 
 View detail::make_navigation_stack(View root, std::function<std::vector<ForEachItem>()> pages,

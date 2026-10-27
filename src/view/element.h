@@ -60,6 +60,7 @@ enum class AccessRole {
     menu,
     menu_item,
     popup_button, // a button that opens a menu (MenuButton, Picker)
+    separator,    // a line between groups; not focusable
 };
 
 // A switch's or check box's state.

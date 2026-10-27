@@ -14,10 +14,10 @@
 //   VGrid({.columns = {GridItem::fixed(48), GridItem::flexible()}}, icon1, name1, icon2, name2)
 //
 // Grid is a table: its children are GridRows, and each column is as wide as its widest cell.
-// Other children (a Divider, a heading) take a row of their own, as wide as the grid.
+// Other children (a Separator, a heading) take a row of their own, as wide as the grid.
 //
 //   Grid(GridRow(Text("Name"), Text("Size")),
-//        Divider(),
+//        Separator(),
 //        GridRow(Text("Skyrim"), Text("12 GB").grid_column_alignment(HorizontalAlignment::trailing)),
 //        GridRow(Text("A note that spans both columns").grid_cell_columns(2)))
 //

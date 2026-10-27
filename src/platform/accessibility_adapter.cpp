@@ -53,6 +53,7 @@ accesskit_role role_of(AccessRole role) {
     case AccessRole::menu: return ACCESSKIT_ROLE_MENU;
     case AccessRole::menu_item: return ACCESSKIT_ROLE_MENU_ITEM;
     case AccessRole::popup_button: return ACCESSKIT_ROLE_COMBO_BOX;
+    case AccessRole::separator: return ACCESSKIT_ROLE_SPLITTER; // ARIA's separator (Chromium does the same)
     }
     return ACCESSKIT_ROLE_GROUP;
 }

@@ -65,7 +65,9 @@ A `Spacer` expands along its stack's axis, pushing its siblings apart:
 HStack(Text("Settings").font(Font::headline), Spacer(), Button("Done", done));
 ```
 
-`Spacer(20)` has a minimum length. A `Divider` is a thin line across its container.
+`Spacer(20)` has a minimum length. A `Separator` is a thin line across its container: `Separator()` is horizontal (for a
+`VStack`), `Separator(Axis::vertical)` vertical (for an `HStack`), and
+`Separator(Axis::vertical, {.color, .thickness, .inset})` changes how it looks.
 
 ## Padding
 

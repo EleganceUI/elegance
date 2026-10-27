@@ -14,7 +14,7 @@ adjusting them with modifiers.
 | Content | `Text`, `Image`, `Label`, `AsyncImage`, `VideoView`, `CameraView`, `Canvas` |
 | Shapes | `Rectangle`, `RoundedRectangle`, `Capsule`, `Circle`, `PathShape`, `CustomShape` |
 | Controls | `Button`, `Toggle`, `TextField`, `TextArea`, `Slider`, `NumberInput`, `Picker`, `Progress`, `MenuButton` |
-| Structure | `If`, `ForEach`, `Spacer`, `Divider`, `EmptyView` |
+| Structure | `If`, `ForEach`, `Spacer`, `Separator`, `EmptyView` |
 | Menus | `Menu`, `MenuItem`, `Submenu` |
 
 Each is a function returning a `View` (or a `Text` or `Shape`, which are views with extra
