@@ -223,10 +223,10 @@ bool EventDispatcher::pointer_moved(Point location) {
     const std::vector<Element*> path = path_at(location);
     bool redraw = update_hover(path);
     if (captured_) {
-        const PointerEvent event{PointerEvent::Kind::move, location};
+        const PointerEvent event{.kind = PointerEvent::Kind::move, .location = location, .window_location = location};
         redraw |= deliver(event, *captured_).redraw;
     } else {
-        redraw |= bubble(path, PointerEvent{PointerEvent::Kind::hover, location});
+        redraw |= bubble(path, PointerEvent{.kind = PointerEvent::Kind::hover, .location = location, .window_location = location});
     }
     return redraw;
 }
@@ -235,7 +235,12 @@ bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, Mo
                                      int click_count, KeyModifiers modifiers) {
     last_location_ = location;
     pointer_inside_ = true;
-    const PointerEvent event{kind, location, button, click_count, modifiers};
+    const PointerEvent event{.kind = kind,
+                             .location = location,
+                             .button = button,
+                             .click_count = click_count,
+                             .modifiers = modifiers,
+                             .window_location = location};
     const std::vector<Element*> path = path_at(location);
     bool redraw = update_hover(path);
 
@@ -343,10 +348,11 @@ bool EventDispatcher::move_focus(bool forward) {
     return redraw;
 }
 
-bool EventDispatcher::scroll(const ScrollEvent& event) {
+bool EventDispatcher::scroll(ScrollEvent event) {
     // A wheel gesture ends after this long without wheel events.
     constexpr double kWheelGesturePause = 0.5;
     const Point location = event.location;
+    event.window_location = location;
     last_location_ = location;
     pointer_inside_ = true;
     const double now = now_seconds();
@@ -374,7 +380,7 @@ bool EventDispatcher::scroll(const ScrollEvent& event) {
     bool redraw = false;
     for (auto it = path.rbegin(); it != path.rend(); ++it) {
         if (EventHandler* handler = (*it)->event_handler()) {
-            const EventResult result = handler->scroll(event);
+            const EventResult result = handler->scroll(event, (*it)->frame());
             redraw |= result.redraw;
             if (result.consumed) {
                 if (!wheel_latched_) {

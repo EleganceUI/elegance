@@ -26,7 +26,7 @@ EventResult EventHandler::hover(bool) {
     return {};
 }
 
-EventResult EventHandler::scroll(const ScrollEvent&) {
+EventResult EventHandler::scroll(const ScrollEvent&, Rect) {
     return {};
 }
 
@@ -133,19 +133,60 @@ private:
     std::optional<HoverDelay> delay_;
 };
 
-class KeyPressHandler final : public EventHandler {
+class KeyEventHandler final : public EventHandler {
 public:
-    explicit KeyPressHandler(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
+    explicit KeyEventHandler(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
 
-    EventResult key(const KeyEvent& event) override {
-        if (event.kind == KeyEvent::Kind::down && action_ && action_(event)) {
-            return {.consumed = true};
-        }
-        return {};
-    }
+    EventResult key(const KeyEvent& event) override { return {.consumed = action_ && action_(event)}; }
 
 private:
     std::function<bool(const KeyEvent&)> action_;
+};
+
+class PointerHandler final : public EventHandler {
+public:
+    explicit PointerHandler(std::function<bool(const PointerEvent&)> action) : action_(std::move(action)) {}
+
+    EventResult pointer(const PointerEvent& event, Rect frame) override {
+        if (!action_) {
+            return {};
+        }
+        PointerEvent local = event;
+        local.location = {event.location.x - frame.x, event.location.y - frame.y};
+        return {.consumed = action_(local)};
+    }
+
+private:
+    std::function<bool(const PointerEvent&)> action_;
+};
+
+class ScrollHandler final : public EventHandler {
+public:
+    explicit ScrollHandler(std::function<bool(const ScrollEvent&)> action) : action_(std::move(action)) {}
+
+    EventResult scroll(const ScrollEvent& event, Rect frame) override {
+        if (!action_) {
+            return {};
+        }
+        ScrollEvent local = event;
+        local.location = {event.location.x - frame.x, event.location.y - frame.y};
+        return {.consumed = action_(local)};
+    }
+
+private:
+    std::function<bool(const ScrollEvent&)> action_;
+};
+
+class TextInputHandler final : public EventHandler {
+public:
+    explicit TextInputHandler(std::function<bool(const TextInputEvent&)> action) : action_(std::move(action)) {}
+
+    bool focusable() const override { return true; }
+    bool accepts_text_input() const override { return true; }
+    EventResult text_input(const TextInputEvent& event) override { return {.consumed = action_ && action_(event)}; }
+
+private:
+    std::function<bool(const TextInputEvent&)> action_;
 };
 
 class MagnifyHandler final : public EventHandler {
@@ -230,8 +271,20 @@ std::unique_ptr<EventHandler> FocusableModifier::make_handler() const {
     return std::make_unique<detail::FocusableHandler>(focusable_);
 }
 
-std::unique_ptr<EventHandler> KeyPressModifier::make_handler() const {
-    return std::make_unique<KeyPressHandler>(action_);
+std::unique_ptr<EventHandler> KeyEventModifier::make_handler() const {
+    return std::make_unique<KeyEventHandler>(action_);
+}
+
+std::unique_ptr<EventHandler> PointerModifier::make_handler() const {
+    return std::make_unique<PointerHandler>(action_);
+}
+
+std::unique_ptr<EventHandler> ScrollModifier::make_handler() const {
+    return std::make_unique<ScrollHandler>(action_);
+}
+
+std::unique_ptr<EventHandler> TextInputModifier::make_handler() const {
+    return std::make_unique<TextInputHandler>(action_);
 }
 
 std::unique_ptr<EventHandler> ClickModifier::make_handler() const {

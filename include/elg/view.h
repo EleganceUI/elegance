@@ -490,6 +490,14 @@ public:
     //   .on_pointer_enter([=] { hovered = true; }).on_pointer_leave([=] { hovered = false; })
     ELG_API View on_pointer_enter(std::function<void()> action) const;
     ELG_API View on_pointer_leave(std::function<void()> action) const;
+    // Raw pointer events over the view (down, up, moves while captured, hover moves, cancel),
+    // located in its own coordinates. Return true to consume one; consuming a down captures the
+    // pointer, so the moves and the up come here wherever it goes. For drawing and custom
+    // controls; prefer on_click and gestures otherwise.
+    ELG_API View on_pointer(std::function<bool(const PointerEvent&)> action) const;
+    // Wheel and trackpad scrolling over the view, located in its own coordinates. Return true to
+    // consume it (scroll views around it then don't scroll).
+    ELG_API View on_scroll(std::function<bool(const ScrollEvent&)> action) const;
     // Hover intent: called with true once the pointer has rested on the view for the hover delay
     // (moving across it doesn't count), and false when it leaves (after the exit delay): for
     // previews and other things that shouldn't flash as the pointer passes. The delay comes from
@@ -555,8 +563,12 @@ public:
     ELG_API View focused(Binding<bool> is_focused) const;
     // Runs `action` when `key` is pressed while the view (or something inside) has focus.
     ELG_API View on_key_press(Key key, std::function<void()> action) const;
-    // Sees every key press while focused; return true if handled (unhandled keys bubble out).
-    ELG_API View on_key_press(std::function<bool(const KeyEvent&)> action) const;
+    // Sees every key down and up while the view (or something inside) has focus; return true if
+    // handled (unhandled keys bubble out).
+    ELG_API View on_key(std::function<bool(const KeyEvent&)> action) const;
+    // Makes the view focusable and sees the text typed while it has focus: commits, and an IME's
+    // compositions in progress. Keys still go to on_key. Return true if handled.
+    ELG_API View on_text_input(std::function<bool(const TextInputEvent&)> action) const;
 
     // --- Environment (elg/modifiers/environment.h): inherited by everything inside. ---
 

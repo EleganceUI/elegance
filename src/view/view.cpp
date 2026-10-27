@@ -468,8 +468,8 @@ View View::focused(Binding<bool> is_focused) const {
 }
 
 View View::on_key_press(Key key, std::function<void()> action) const {
-    return on_key_press([key, action = std::move(action)](const KeyEvent& event) {
-        if (event.key != key) {
+    return on_key([key, action = std::move(action)](const KeyEvent& event) {
+        if (event.kind != KeyEvent::Kind::down || event.key != key) {
             return false;
         }
         if (action) {
@@ -479,8 +479,20 @@ View View::on_key_press(Key key, std::function<void()> action) const {
     });
 }
 
-View View::on_key_press(std::function<bool(const KeyEvent&)> action) const {
-    return modifier(KeyPressModifier(std::move(action)));
+View View::on_key(std::function<bool(const KeyEvent&)> action) const {
+    return modifier(KeyEventModifier(std::move(action)));
+}
+
+View View::on_text_input(std::function<bool(const TextInputEvent&)> action) const {
+    return modifier(TextInputModifier(std::move(action)));
+}
+
+View View::on_pointer(std::function<bool(const PointerEvent&)> action) const {
+    return modifier(PointerModifier(std::move(action)));
+}
+
+View View::on_scroll(std::function<bool(const ScrollEvent&)> action) const {
+    return modifier(ScrollModifier(std::move(action)));
 }
 
 View View::tint(Prop<Color> color) const {

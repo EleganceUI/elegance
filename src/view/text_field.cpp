@@ -973,7 +973,7 @@ EventResult TextFieldElement::key(const KeyEvent& event) {
     return editor_->key(event);
 }
 
-EventResult TextFieldElement::scroll(const ScrollEvent& event) {
+EventResult TextFieldElement::scroll(const ScrollEvent& event, Rect) {
     return editor_->scroll(event);
 }
 

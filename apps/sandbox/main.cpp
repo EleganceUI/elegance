@@ -811,7 +811,10 @@ View ControlCards() {
                    .padding(EdgeInsets::symmetric(12, 8))
                    .background(ThemeColor::surface_raised, RoundedRectangle(8))
                    .focused(is_focused.binding())
-                   .on_key_press([=](const KeyEvent& event) {
+                   .on_key([=](const KeyEvent& event) {
+                       if (event.kind != KeyEvent::Kind::down) {
+                           return false;
+                       }
                        switch (event.key) {
                        case Key::left: value -= 1; return true;
                        case Key::right: value += 1; return true;
@@ -824,7 +827,7 @@ View ControlCards() {
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
                   Captioned(switches, "Toggle (switch)").card(),
                   Captioned(checks, "Toggle (checkbox)").card(),
-                  Captioned(keys, "focused + on_key_press").card());
+                  Captioned(keys, "focused + on_key").card());
 }
 
 // Text fields: the default rounded style, the plain style, and a disabled one.

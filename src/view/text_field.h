@@ -242,7 +242,7 @@ private:
     EventResult hover(bool inside) override;
     PointerStyle pointer_style(Point) const override;
     EventResult key(const KeyEvent& event) override;
-    EventResult scroll(const ScrollEvent& event) override;
+    EventResult scroll(const ScrollEvent& event, Rect frame) override;
     bool focusable() const override;
     EventResult focus(bool focused) override;
     bool accepts_text_input() const override { return true; }

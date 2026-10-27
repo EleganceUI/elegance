@@ -118,8 +118,8 @@ one handles them.
 ```cpp
 Editor().on_key_press(Key::escape, [=] { close(); });
 
-Canvas(draw).focusable().on_key_press([=](const KeyEvent& e) {
-    if (e.key == Key::s && has(e.modifiers, primary_modifier())) {
+Canvas(draw).focusable().on_key([=](const KeyEvent& e) {
+    if (e.kind == KeyEvent::Kind::down && e.key == Key::s && has(e.modifiers, primary_modifier())) {
         save();
         return true;  // handled: stops here
     }
@@ -127,8 +127,20 @@ Canvas(draw).focusable().on_key_press([=](const KeyEvent& e) {
 });
 ```
 
-`primary_modifier()` is Ctrl on Windows and Linux and Cmd on macOS. `KeyEvent` also says whether a
-key is auto-repeating.
+`on_key_press` runs on key downs; `on_key` sees downs and ups. `primary_modifier()` is Ctrl on
+Windows and Linux and Cmd on macOS. `KeyEvent` also says whether a key is auto-repeating.
+
+Typed text is separate from keys: `on_text_input` makes a view focusable and receives what's typed
+into it, including an IME's composition in progress.
+
+```cpp
+Canvas(draw).on_text_input([=](const TextInputEvent& e) {
+    if (e.kind == TextInputEvent::Kind::commit) {
+        insert(e.text);
+    }
+    return true;
+});
+```
 
 ## Focus
 
@@ -169,37 +181,35 @@ DropZone()
 The innermost view under the pointer that takes that kind of content gets it. `targeted` reports
 when a drag that the view can take is over it, for a highlight.
 
-## Custom event handling
+## Raw pointer and scroll events
 
-For full control, write an `EventModifier` that creates an `EventHandler`. A handler receives
-pointer, hover, scroll, key, focus and text input events for its view; returning
-`{.consumed = true}` stops an event from bubbling further, and consuming a pointer `down`
-captures the pointer until the matching `up`.
+`on_pointer` and `on_scroll` hand over the events themselves, located in the view's own
+coordinates (`window_location` has the window's). Return true to consume an event; consuming a
+pointer `down` captures the pointer, so the moves and the `up` come to the view wherever the
+pointer goes:
 
 ```cpp
-struct DragHandler : EventHandler {
-    explicit DragHandler(State<Point> position) : position(position) {}
-    State<Point> position;
-    EventResult pointer(const PointerEvent& e, Rect frame) override {
-        if (e.kind == PointerEvent::Kind::down || e.kind == PointerEvent::Kind::move) {
-            position = Point{e.location.x - frame.x, e.location.y - frame.y};
-            return {.consumed = true};
-        }
-        return {};
-    }
-};
-
-class Draggable : public EventModifier {
-public:
-    explicit Draggable(State<Point> position) : position_(position) {}
-    std::unique_ptr<EventHandler> make_handler() const override { return std::make_unique<DragHandler>(position_); }
-
-private:
-    State<Point> position_;
-};
-
 const State<Point> cursor;
-Canvas(draw).modifier(Draggable(cursor));
+Canvas(draw).on_pointer([=](const PointerEvent& e) {
+    if (e.kind == PointerEvent::Kind::down || e.kind == PointerEvent::Kind::move) {
+        cursor = e.location;
+        return true;
+    }
+    return false;
+});
+
+Canvas(draw).on_scroll([=](const ScrollEvent& e) {
+    if (!has(e.modifiers, primary_modifier())) {
+        return false; // the scroll view around it scrolls
+    }
+    zoom_by(e.dy, e.location);
+    return true;
+});
 ```
+
+For anything more, such as one handler that takes several kinds of events, write an
+`EventModifier` that creates an `EventHandler`. A handler receives pointer, hover, scroll, key,
+focus and text input events for its view, in window coordinates along with the view's frame;
+returning `{.consumed = true}` stops an event from bubbling further.
 
 See [`<elg/events.h>`](../../reference/events/) for every event type.

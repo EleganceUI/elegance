@@ -954,8 +954,9 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
   - A destroyed element lets go of focus in its destructor, so removing a focused row is safe.
   - Controls are focusable: Enter activates a button on press; Space shows it pressed and
     activates on release.
-  - `.focusable()`, `.focused(Binding<bool>)` (two-way), and `.on_key_press(Key, action)` /
-    `.on_key_press([](const KeyEvent&) -> bool)`.
+  - `.focusable()`, `.focused(Binding<bool>)` (two-way), `.on_key_press(Key, action)` (key
+    downs), `.on_key([](const KeyEvent&) -> bool)` (downs and ups) and
+    `.on_text_input([](const TextInputEvent&) -> bool)` (makes the view focusable).
   - `KeyEvent` carries the layout-mapped `Key`, `KeyModifiers`, and `repeat`.
     `primary_modifier()` is Cmd on macOS and Ctrl elsewhere.
   - Still to do: focus scopes and traps; text input and IME (with TextField); keys while

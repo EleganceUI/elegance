@@ -5,8 +5,8 @@
 #ifndef ELG_MODIFIERS_EVENTS_H
 #define ELG_MODIFIERS_EVENTS_H
 
-// Built-in event modifiers. View::on_click(), on_pointer_enter/leave() and on_hover_change() are
-// sugar over these.
+// Built-in event modifiers. View::on_click(), on_pointer_enter/leave(), on_hover_change(),
+// on_pointer(), on_scroll(), on_key() and on_text_input() are sugar over these.
 
 #include <elg/events.h>
 #include <elg/export.h>
@@ -125,16 +125,55 @@ private:
     bool focusable_;
 };
 
-// Calls `action` for key presses while the view (or something inside it) has focus. `action`
-// returns true if it handled the key; unhandled keys bubble outwards.
-class ELG_API KeyPressModifier final : public EventModifier {
+// Calls `action` for key downs and ups while the view (or something inside it) has focus.
+// `action` returns true if it handled the key; unhandled keys bubble outwards.
+class ELG_API KeyEventModifier final : public EventModifier {
 public:
-    explicit KeyPressModifier(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
+    explicit KeyEventModifier(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
     std::function<bool(const KeyEvent&)> action_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
+// Calls `action` with the view's pointer events, located in the view's own coordinates.
+// Returning true consumes the event; consuming a `down` captures the pointer until the `up`.
+class ELG_API PointerModifier final : public EventModifier {
+public:
+    explicit PointerModifier(std::function<bool(const PointerEvent&)> action) : action_(std::move(action)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::function<bool(const PointerEvent&)> action_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
+// Calls `action` with wheel and trackpad scrolling over the view, located in its own coordinates.
+// Returning true consumes it.
+class ELG_API ScrollModifier final : public EventModifier {
+public:
+    explicit ScrollModifier(std::function<bool(const ScrollEvent&)> action) : action_(std::move(action)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::function<bool(const ScrollEvent&)> action_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
+// Makes the view focusable and calls `action` with the text typed (and IME compositions) while it
+// has focus. Returning true consumes it.
+class ELG_API TextInputModifier final : public EventModifier {
+public:
+    explicit TextInputModifier(std::function<bool(const TextInputEvent&)> action) : action_(std::move(action)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::function<bool(const TextInputEvent&)> action_;
     ELG_PRIVATE_MEMBERS_END
 };
 

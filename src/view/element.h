@@ -907,7 +907,7 @@ private:
 
     EventResult pointer(const PointerEvent& event, Rect frame) override;
     EventResult hover(bool inside) override;
-    EventResult scroll(const ScrollEvent& event) override;
+    EventResult scroll(const ScrollEvent& event, Rect frame) override;
     EventResult key(const KeyEvent& event) override;
     // Mouse wheels, and trackpads whose gestures the platform doesn't follow.
     EventResult wheel(const ScrollEvent& event);

@@ -95,7 +95,10 @@ enum class GesturePhase {
 // A mouse wheel or trackpad scroll. Deltas are in points, positive toward the end of the content
 // (wheel down: positive dy).
 struct ScrollEvent {
+    // Where the pointer is: in window coordinates for an EventHandler, in the view's own for
+    // View::on_scroll.
     Point location;
+    Point window_location; // always in the window's coordinates
     float dx = 0;
     float dy = 0;
     bool precise = false; // trackpad-style fine deltas (apply directly) rather than wheel notches
@@ -159,10 +162,12 @@ struct PointerEvent {
     };
 
     Kind kind = Kind::move;
-    Point location; // window coordinates, in points
+    // In points: window coordinates for an EventHandler, the view's own for View::on_pointer.
+    Point location;
     MouseButton button = MouseButton::left;
     int click_count = 1; // 2 for the second click of a double click, ...
     KeyModifiers modifiers = KeyModifiers::none; // held when the button went down / up
+    Point window_location;                       // always in the window's coordinates
 };
 
 // A click on a view (View::on_click): pressed and released inside it.
@@ -206,8 +211,8 @@ public:
     virtual PointerStyle pointer_style(Point location) const;
 
     // Wheel and trackpad scrolling: goes to the handlers under the pointer, innermost first,
-    // until one consumes it.
-    virtual EventResult scroll(const ScrollEvent& event);
+    // until one consumes it. `frame` as for pointer().
+    virtual EventResult scroll(const ScrollEvent& event, Rect frame);
     // Trackpad gestures: the handler under the pointer that consumes `began` gets the rest of the
     // gesture, innermost first. smart_magnify is a two-finger double tap (zoom to fit, in Safari).
     virtual EventResult magnify(const MagnifyEvent& event);

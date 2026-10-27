@@ -122,7 +122,7 @@ private:
         std::unique_ptr<Scope> scope;
     };
 
-    EventResult scroll(const ScrollEvent& event) override;
+    EventResult scroll(const ScrollEvent& event, Rect frame) override;
 
     Page mount(const ForEachItem& item);
     PageElement& top() const { return pages_.empty() ? *root_.element : *pages_.back().element; }
@@ -250,7 +250,7 @@ void NavigationStackElement::set_pages(const std::vector<ForEachItem>& items) {
     tree_changed();
 }
 
-EventResult NavigationStackElement::scroll(const ScrollEvent& event) {
+EventResult NavigationStackElement::scroll(const ScrollEvent& event, Rect) {
     if (!behavior_.back_gestures || event.phase == GesturePhase::none || pages_.empty() || progress_.animating()) {
         return {};
     }
@@ -508,7 +508,7 @@ View detail::make_navigation_stack(View root, std::function<std::vector<ForEachI
         return stack;
     }
     // Alt+Left goes back, as in browsers and file managers.
-    return std::move(stack).on_key_press([titles, pop](const KeyEvent& event) {
+    return std::move(stack).on_key([titles, pop](const KeyEvent& event) {
         if (event.kind != KeyEvent::Kind::down || event.key != Key::left || !has(event.modifiers, KeyModifiers::alt) ||
             untrack([&] { return titles().size(); }) < 2) {
             return false;

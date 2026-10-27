@@ -329,7 +329,7 @@ void ScrollElement::fade_indicators() {
     indicators_.set(0.f, &fade);
 }
 
-EventResult ScrollElement::scroll(const ScrollEvent& event) {
+EventResult ScrollElement::scroll(const ScrollEvent& event, Rect) {
     return event.phase == GesturePhase::none ? wheel(event) : gesture(event);
 }
 

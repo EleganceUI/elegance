@@ -42,7 +42,7 @@ public:
     // Focuses an element (no ring), e.g. a menu item under the pointer.
     bool focus(Element* element) { return focus_->focus(element, false); }
     bool text_input(const TextInputEvent& event);
-    bool scroll(const ScrollEvent& event);
+    bool scroll(ScrollEvent event);
     // Trackpad gestures. MagnifyEvent::scale and RotateEvent::degrees are filled in here, from the
     // deltas since `began`.
     bool magnify(MagnifyEvent event);
