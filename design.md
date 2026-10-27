@@ -961,9 +961,15 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
     `primary_modifier()` is Cmd on macOS and Ctrl elsewhere.
   - Still to do: focus scopes and traps; text input and IME (with TextField); keys while
     nothing is focused (window-level shortcuts).
-- **Gestures**: tap, double-tap, long-press, drag, magnify, rotate, and kinetic scrolling.
-  Attach them with `.gesture(...)`, compose them (`simultaneously`, `sequenced`, `exclusively`),
-  and track in-progress state with `GestureState<T>`.
+- **Gestures** (`elg/gestures.h`): `.recognize(DragGesture(...)/LongPressGesture(...)/
+  MagnifyGesture()/RotateGesture()/SmartMagnifyGesture(...))`, built up with `on_began`,
+  `on_changed`, `on_ended`, `on_cancelled`; shorthands `on_drag`, `on_long_press`, `on_magnify`,
+  `on_rotate`, `on_smart_magnify`.
+  - Pointer gestures (`detail::GestureRecognizer`) watch a press without taking it. The innermost
+    that recognizes it takes it over; whatever had the press gets `cancel`. Handlers that took
+    the down keep it from recognizers around them unless they returned `cancellable`
+    (buttons, on_click, on_activate, links do; sliders, text fields, custom handlers don't).
+  - Still to do: composing gestures (simultaneous, exclusive) and kinetic scrolling helpers.
 - **Shortcuts**: global and scoped keybindings, with a command registry.
 
 ---
@@ -1689,7 +1695,7 @@ Separate render thread from day one (decided).
     Tooltips wait 0.6 s.
   - The idle loop wakes for the next pending hover change (an SDL wait with timeout) and
     otherwise stays at 0% CPU.
-- [ ] Input follow-ups: synthetic input for UI tests (§16), drag/scroll gestures, cursors,
+- [ ] Input follow-ups: synthetic input for UI tests (§16), gesture composition, cursors,
   keyboard and focus (M4)
 
 **M2: Reactive**

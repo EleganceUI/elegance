@@ -319,7 +319,7 @@ private:
             open(PopupRequest::Kind::menu, PopupRequest::Placement::at_point,
                  {event.location.x + drawn.x - laid_out.x, event.location.y + drawn.y - laid_out.y, 0, 0});
         }
-        return {.consumed = true};
+        return {.consumed = true, .cancellable = true};
     }
 
     EventResult hover(bool inside) override {

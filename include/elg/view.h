@@ -9,6 +9,7 @@
 #include <elg/events.h>
 #include <elg/export.h>
 #include <elg/geometry.h>
+#include <elg/gestures.h>
 #include <elg/gradient.h>
 #include <elg/prop.h>
 
@@ -475,9 +476,20 @@ public:
     // accessibility role stays its own. Disabled views (.disabled) don't activate.
     //   Tile(album).on_activate([=] { open(album); }).accessibility_label(album.title)
     ELG_API View on_activate(std::function<void()> action) const;
-    // Trackpad gestures over the view (began ... ended): pinching, turning two fingers, and a
-    // two-finger double tap. The innermost view handling one under the pointer takes it.
-    //   .on_magnify([=](const MagnifyEvent& e) { zoom = std::clamp(start_zoom * e.scale, 0.5f, 8.f); })
+    // Gestures (elg/gestures.h): drags and long presses take a press over once they recognize it
+    // (a button or on_click under them then doesn't fire); pinches, rotations and smart zoom come
+    // from trackpads.
+    //   .recognize(DragGesture().on_began([=] { start = offset.peek(); })
+    //                           .on_changed([=](const DragEvent& e) { offset = start() + e.translation; }))
+    ELG_API View recognize(DragGesture gesture) const;
+    ELG_API View recognize(LongPressGesture gesture) const;
+    ELG_API View recognize(MagnifyGesture gesture) const;
+    ELG_API View recognize(RotateGesture gesture) const;
+    ELG_API View recognize(SmartMagnifyGesture gesture) const;
+    // Shorthands: recognize(DragGesture().on_changed(action)), recognize(LongPressGesture(action)),
+    // recognize(MagnifyGesture().on_changed(action)), ...
+    ELG_API View on_drag(std::function<void(const DragEvent&)> action) const;
+    ELG_API View on_long_press(std::function<void()> action) const;
     ELG_API View on_magnify(std::function<void(const MagnifyEvent&)> action) const;
     ELG_API View on_rotate(std::function<void(const RotateEvent&)> action) const;
     ELG_API View on_smart_magnify(std::function<void(Point)> action) const;

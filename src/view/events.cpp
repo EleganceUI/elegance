@@ -85,7 +85,7 @@ public:
                 return {};
             }
             pressed_ = true;
-            return {.consumed = true};
+            return {.consumed = true, .cancellable = true};
         case PointerEvent::Kind::up: {
             const bool fire = pressed_ && contains(frame, event.location) && event.click_count >= count &&
                               (event.click_count - count) % count == 0;
@@ -189,54 +189,6 @@ private:
     std::function<bool(const TextInputEvent&)> action_;
 };
 
-class MagnifyHandler final : public EventHandler {
-public:
-    explicit MagnifyHandler(std::function<void(const MagnifyEvent&)> action) : action_(std::move(action)) {}
-
-    EventResult magnify(const MagnifyEvent& event) override {
-        if (!action_) {
-            return {};
-        }
-        action_(event);
-        return {.consumed = true};
-    }
-
-private:
-    std::function<void(const MagnifyEvent&)> action_;
-};
-
-class RotateHandler final : public EventHandler {
-public:
-    explicit RotateHandler(std::function<void(const RotateEvent&)> action) : action_(std::move(action)) {}
-
-    EventResult rotate(const RotateEvent& event) override {
-        if (!action_) {
-            return {};
-        }
-        action_(event);
-        return {.consumed = true};
-    }
-
-private:
-    std::function<void(const RotateEvent&)> action_;
-};
-
-class SmartMagnifyHandler final : public EventHandler {
-public:
-    explicit SmartMagnifyHandler(std::function<void(Point)> action) : action_(std::move(action)) {}
-
-    EventResult smart_magnify(Point location) override {
-        if (!action_) {
-            return {};
-        }
-        action_(location);
-        return {.consumed = true};
-    }
-
-private:
-    std::function<void(Point)> action_;
-};
-
 class PointerStyleHandler final : public EventHandler {
 public:
     explicit PointerStyleHandler(Prop<PointerStyle> style) : style_(std::move(style)) {}
@@ -253,18 +205,6 @@ private:
 
 std::unique_ptr<EventHandler> PointerStyleModifier::make_handler() const {
     return std::make_unique<PointerStyleHandler>(style_);
-}
-
-std::unique_ptr<EventHandler> MagnifyGestureModifier::make_handler() const {
-    return std::make_unique<MagnifyHandler>(action_);
-}
-
-std::unique_ptr<EventHandler> RotateGestureModifier::make_handler() const {
-    return std::make_unique<RotateHandler>(action_);
-}
-
-std::unique_ptr<EventHandler> SmartMagnifyModifier::make_handler() const {
-    return std::make_unique<SmartMagnifyHandler>(action_);
 }
 
 std::unique_ptr<EventHandler> FocusableModifier::make_handler() const {
@@ -436,7 +376,7 @@ EventResult ButtonElement::pointer(const PointerEvent& event, Rect frame) {
         }
         down_ = true;
         pressed_ = true;
-        return {.consumed = true};
+        return {.consumed = true, .cancellable = true};
     case PointerEvent::Kind::move:
         // Looks pressed only while the pointer is over it, like native buttons.
         if (down_) {

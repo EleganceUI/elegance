@@ -395,16 +395,44 @@ View View::on_activate(std::function<void()> action) const {
     return View(std::make_shared<const detail::ActivateNode>(*this, std::move(action)));
 }
 
+View View::recognize(DragGesture gesture) const {
+    return modifier(DragGestureModifier(std::move(gesture)));
+}
+
+View View::recognize(LongPressGesture gesture) const {
+    return modifier(LongPressGestureModifier(std::move(gesture)));
+}
+
+View View::recognize(MagnifyGesture gesture) const {
+    return modifier(MagnifyGestureModifier(std::move(gesture)));
+}
+
+View View::recognize(RotateGesture gesture) const {
+    return modifier(RotateGestureModifier(std::move(gesture)));
+}
+
+View View::recognize(SmartMagnifyGesture gesture) const {
+    return modifier(SmartMagnifyModifier(std::move(gesture)));
+}
+
+View View::on_drag(std::function<void(const DragEvent&)> action) const {
+    return recognize(DragGesture().on_changed(std::move(action)));
+}
+
+View View::on_long_press(std::function<void()> action) const {
+    return recognize(LongPressGesture(std::move(action)));
+}
+
 View View::on_magnify(std::function<void(const MagnifyEvent&)> action) const {
-    return modifier(MagnifyGestureModifier(std::move(action)));
+    return recognize(MagnifyGesture().on_changed(std::move(action)));
 }
 
 View View::on_rotate(std::function<void(const RotateEvent&)> action) const {
-    return modifier(RotateGestureModifier(std::move(action)));
+    return recognize(RotateGesture().on_changed(std::move(action)));
 }
 
 View View::on_smart_magnify(std::function<void(Point)> action) const {
-    return modifier(SmartMagnifyModifier(std::move(action)));
+    return recognize(SmartMagnifyGesture(std::move(action)));
 }
 
 View View::pointer_style(Prop<PointerStyle> style) const {
@@ -807,7 +835,7 @@ public:
                 return {};
             }
             pressed_ = true;
-            return {.consumed = true};
+            return {.consumed = true, .cancellable = true};
         case PointerEvent::Kind::up: {
             const bool inside = event.location.x >= frame.x && event.location.x < frame.max_x() &&
                                 event.location.y >= frame.y && event.location.y < frame.max_y();

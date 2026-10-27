@@ -159,7 +159,7 @@ bool EventDispatcher::update_hover(const std::vector<Element*>& path) {
 
 bool EventDispatcher::tick() {
     const double now = now_seconds();
-    bool redraw = false;
+    bool redraw = expire_watchers();
     // Leaves innermost first, then enters outermost first, like the DOM's mouseleave/enter.
     for (auto it = hovers_.rbegin(); it != hovers_.rend(); ++it) {
         if (it->due >= 0 && it->due <= now && !it->over) {
@@ -182,6 +182,11 @@ bool EventDispatcher::tick() {
 
 std::optional<double> EventDispatcher::next_deadline() const {
     std::optional<double> next;
+    for (const Watcher& watcher : watchers_) {
+        if (const auto due = watcher.recognizer->deadline(); due && (!next || *due < *next)) {
+            next = due;
+        }
+    }
     for (const Hover& hover : hovers_) {
         if (hover.due >= 0 && (!next || hover.due < *next)) {
             next = hover.due;
@@ -202,6 +207,7 @@ bool EventDispatcher::bubble(const std::vector<Element*>& path, const PointerEve
         if (result.consumed) {
             if (event.kind == PointerEvent::Kind::down) {
                 captured_ = *it;
+                captured_cancellable_ = result.cancellable;
             }
             break;
         }
@@ -222,13 +228,14 @@ bool EventDispatcher::pointer_moved(Point location) {
     pointer_inside_ = true;
     const std::vector<Element*> path = path_at(location);
     bool redraw = update_hover(path);
+    redraw |= expire_watchers();
+    const PointerEvent move{.kind = PointerEvent::Kind::move, .location = location, .window_location = location};
     if (captured_) {
-        const PointerEvent event{.kind = PointerEvent::Kind::move, .location = location, .window_location = location};
-        redraw |= deliver(event, *captured_).redraw;
+        redraw |= deliver(move, *captured_).redraw;
     } else {
         redraw |= bubble(path, PointerEvent{.kind = PointerEvent::Kind::hover, .location = location, .window_location = location});
     }
-    return redraw;
+    return redraw | watch(move);
 }
 
 bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, MouseButton button,
@@ -258,11 +265,77 @@ bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, Mo
             redraw |= focus_->focus(target, false);
         }
     }
-    if (kind == PointerEvent::Kind::up && captured_) {
-        Element* target = std::exchange(captured_, nullptr);
-        return redraw | deliver(event, *target).redraw;
+    if (kind == PointerEvent::Kind::up) {
+        // A long press that came due before the release takes it.
+        redraw |= expire_watchers();
+        if (Element* target = std::exchange(captured_, nullptr)) {
+            redraw |= deliver(event, *target).redraw;
+        } else {
+            redraw |= bubble(path, event);
+        }
+        redraw |= watch(event);
+        watchers_.clear();
+        return redraw;
     }
-    return redraw | bubble(path, event);
+    redraw |= bubble(path, event);
+    if (kind == PointerEvent::Kind::down) {
+        // Recognizers under the press watch it: those inside the handler that took it, and those
+        // around it if it lets them.
+        for (const Watcher& watcher : watchers_) {
+            watcher.recognizer->reset();
+        }
+        watchers_.clear();
+        bool inside_captor = true; // innermost first: until passing captured_
+        for (auto it = path.rbegin(); it != path.rend(); ++it) {
+            if (*it == captured_) {
+                inside_captor = false;
+            }
+            auto* recognizer = dynamic_cast<GestureRecognizer*>((*it)->event_handler());
+            if (recognizer && (inside_captor || captured_cancellable_)) {
+                watchers_.push_back({*it, recognizer});
+            }
+        }
+        redraw |= watch(event);
+    }
+    return redraw;
+}
+
+bool EventDispatcher::watch(const PointerEvent& event) {
+    for (const Watcher& watcher : watchers_) {
+        if (watcher.recognizer->observe(local_event(event, *watcher.element), watcher.element->frame())) {
+            return take_press(watcher);
+        }
+    }
+    return false;
+}
+
+bool EventDispatcher::expire_watchers() {
+    if (watchers_.empty()) {
+        return false;
+    }
+    const double now = now_seconds();
+    for (const Watcher& watcher : watchers_) {
+        if (const auto due = watcher.recognizer->deadline(); due && *due <= now && watcher.recognizer->expire()) {
+            return take_press(watcher);
+        }
+    }
+    return false;
+}
+
+bool EventDispatcher::take_press(const Watcher& winner) {
+    const Watcher taken = winner; // watchers_ is cleared below
+    if (Element* previous = std::exchange(captured_, taken.element); previous && previous != taken.element) {
+        deliver(PointerEvent{.kind = PointerEvent::Kind::cancel, .location = last_location_, .window_location = last_location_},
+                *previous);
+    }
+    for (const Watcher& watcher : watchers_) {
+        if (watcher.element != taken.element) {
+            watcher.recognizer->reset();
+        }
+    }
+    watchers_.clear();
+    captured_cancellable_ = false;
+    return true;
 }
 
 bool EventDispatcher::pointer_left() {
@@ -515,6 +588,7 @@ bool EventDispatcher::revalidate() {
     if (captured_ && !alive.contains(captured_)) {
         captured_ = nullptr;
     }
+    std::erase_if(watchers_, [&](const Watcher& watcher) { return !alive.contains(watcher.element); });
     for (Element** latched : {&wheel_latched_, &magnify_latched_, &rotate_latched_}) {
         if (*latched && !alive.contains(*latched)) {
             *latched = nullptr;

@@ -1,6 +1,6 @@
 ---
 title: Input, focus, and gestures
-description: "Clicks and activation, hover, keyboard shortcuts, focus and Tab order, hit testing, and dropping files."
+description: "Clicks and activation, gestures, hover, keyboard shortcuts, focus and Tab order, hit testing, and dropping files."
 ---
 
 Controls handle their own input. For everything else, event modifiers attach handlers to any
@@ -32,7 +32,40 @@ AlbumTile(album).on_activate([=] { open(album); }).accessibility_label(album.tit
 
 Give custom controls a role and label too; see [Accessibility](../accessibility/).
 
-## Trackpad gestures
+## Gestures
+
+`recognize` attaches a gesture, built up with the callbacks it needs:
+
+```cpp
+const State<Point> offset;
+const State<Point> start;
+Card()
+    .offset([=] { return offset().x; }, [=] { return offset().y; })
+    .recognize(DragGesture({.minimum_distance = 8})
+                   .on_began([=] { start = offset.peek(); })
+                   .on_changed([=](const DragEvent& e) {
+                       offset = Point{start().x + e.translation.x, start().y + e.translation.y};
+                   })
+                   .on_ended([=](const DragEvent& e) { settle(e.velocity); }))
+    .on_click(open);
+
+Thumbnail(photo).recognize(
+    LongPressGesture(show_details, {.duration = 0.4, .pressing = [=](bool held) { pressed = held; }}));
+```
+
+`DragEvent` has where the pointer is and where the press went down (in the view's coordinates),
+the translation since the press, the velocity in points per second, the button and the modifiers.
+
+A drag or long press watches presses without taking them. When it recognizes one (the pointer
+moves `minimum_distance`, or the press is held for `duration`), it takes the press over, and a
+button or `on_click` it started on doesn't fire. So the card above opens on a click and moves on
+a drag. Controls that track the pointer themselves, like sliders and text fields, keep their
+presses: dragging a slider in a draggable card moves the slider.
+
+`on_drag(action)` and `on_long_press(action)` are shorthands for a gesture with only
+`on_changed` or the action.
+
+### Trackpad gestures
 
 Pinching, turning two fingers, and a two-finger double tap (smart zoom) go to the innermost view
 under the pointer that handles them, from `began` to `ended`:
@@ -42,12 +75,10 @@ const State<float> zoom{1};
 const State<float> start{1};
 const State<float> angle{0};
 Photo()
-    .on_magnify([=](const MagnifyEvent& e) {
-        if (e.phase == GesturePhase::began) {
-            start = zoom();
-        }
-        zoom = std::clamp(start() * e.scale, 0.5f, 8.f); // scale is since the gesture began
-    })
+    .recognize(MagnifyGesture()
+                   .on_began([=] { start = zoom(); })
+                   // scale is since the gesture began
+                   .on_changed([=](const MagnifyEvent& e) { zoom = std::clamp(start() * e.scale, 0.5f, 8.f); }))
     .on_rotate([=](const RotateEvent& e) { angle = e.degrees; }) // clockwise, since it began
     .on_smart_magnify([=](Point) { zoom = zoom() == 1 ? 2.f : 1.f; });
 ```

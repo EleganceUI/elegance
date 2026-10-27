@@ -192,6 +192,10 @@ struct EventResult {
     bool consumed = false;
     // The handler changed how something looks; the window needs a new frame.
     bool redraw = false;
+    // With `consumed` on a down: gesture recognizers around the view (View::recognize) may take
+    // the press over, and the handler then gets `cancel`. For presses that are clicks (buttons);
+    // handlers that track the pointer themselves (sliders) leave it false.
+    bool cancellable = false;
 };
 
 // Receives events for one mounted view. Created by an EventModifier when the view mounts.

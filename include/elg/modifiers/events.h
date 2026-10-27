@@ -6,10 +6,11 @@
 #define ELG_MODIFIERS_EVENTS_H
 
 // Built-in event modifiers. View::on_click(), on_pointer_enter/leave(), on_hover_change(),
-// on_pointer(), on_scroll(), on_key() and on_text_input() are sugar over these.
+// on_pointer(), on_scroll(), on_key(), on_text_input() and recognize() are sugar over these.
 
 #include <elg/events.h>
 #include <elg/export.h>
+#include <elg/gestures.h>
 #include <elg/modifier.h>
 #include <elg/prop.h>
 
@@ -66,40 +67,59 @@ private:
     ELG_PRIVATE_MEMBERS_END
 };
 
-// Calls `action` as the user pinches over the view (began ... ended). The innermost one under the
-// pointer takes the gesture.
+// The gestures View::recognize() attaches (elg/gestures.h).
+class ELG_API DragGestureModifier final : public EventModifier {
+public:
+    explicit DragGestureModifier(DragGesture gesture) : gesture_(std::move(gesture)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    DragGesture gesture_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
+class ELG_API LongPressGestureModifier final : public EventModifier {
+public:
+    explicit LongPressGestureModifier(LongPressGesture gesture) : gesture_(std::move(gesture)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    LongPressGesture gesture_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
 class ELG_API MagnifyGestureModifier final : public EventModifier {
 public:
-    explicit MagnifyGestureModifier(std::function<void(const MagnifyEvent&)> action) : action_(std::move(action)) {}
+    explicit MagnifyGestureModifier(MagnifyGesture gesture) : gesture_(std::move(gesture)) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
-    std::function<void(const MagnifyEvent&)> action_;
+    MagnifyGesture gesture_;
     ELG_PRIVATE_MEMBERS_END
 };
 
-// Calls `action` as the user turns two fingers over the view (began ... ended).
 class ELG_API RotateGestureModifier final : public EventModifier {
 public:
-    explicit RotateGestureModifier(std::function<void(const RotateEvent&)> action) : action_(std::move(action)) {}
+    explicit RotateGestureModifier(RotateGesture gesture) : gesture_(std::move(gesture)) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
-    std::function<void(const RotateEvent&)> action_;
+    RotateGesture gesture_;
     ELG_PRIVATE_MEMBERS_END
 };
 
-// Calls `action` with the location on a two-finger double tap over the view (macOS's smart zoom).
 class ELG_API SmartMagnifyModifier final : public EventModifier {
 public:
-    explicit SmartMagnifyModifier(std::function<void(Point)> action) : action_(std::move(action)) {}
+    explicit SmartMagnifyModifier(SmartMagnifyGesture gesture) : gesture_(std::move(gesture)) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
-    std::function<void(Point)> action_;
+    SmartMagnifyGesture gesture_;
     ELG_PRIVATE_MEMBERS_END
 };
 

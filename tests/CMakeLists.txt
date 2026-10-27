@@ -19,6 +19,7 @@ add_executable(elegance_tests
         hover_tests.cpp
         click_tests.cpp
         raw_input_tests.cpp
+        gesture_tests.cpp
         http_tests.cpp
         image_tests.cpp
         navigation_tests.cpp
