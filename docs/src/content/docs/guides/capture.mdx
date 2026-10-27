@@ -19,7 +19,7 @@ An `AudioRecorder` records from a microphone into memory:
 const AudioRecorder recorder;                       // the default input, 48 kHz mono
 
 Button(Text([=] { return recorder.is_recording() ? "Stop" : "Record"; }), [=] { recorder.toggle(); });
-ProgressView([=] { return recorder.level(); });     // a live input meter
+Progress([=] { return recorder.level(); });         // a live input meter
 Text([=] { return std::format("{:.1f} s", recorder.duration()); });
 ```
 

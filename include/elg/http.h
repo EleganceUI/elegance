@@ -14,7 +14,7 @@
 //   });
 //
 //   const http::Fetch profile("https://api.example.com/me");     // reactive: loads when made
-//   If([=] { return profile.is_loading(); }, ProgressView(), ...)
+//   If([=] { return profile.is_loading(); }, Progress(), ...)
 //   Text([=] { return profile.ok() ? profile.response().text() : profile.error(); })
 
 #include <elg/export.h>

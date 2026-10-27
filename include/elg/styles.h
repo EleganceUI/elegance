@@ -236,6 +236,63 @@ public:
     View make_body(const NumberInputConfiguration& input) const override;
 };
 
+// What a ProgressStyle gets: how far along it is.
+struct ProgressConfiguration {
+    Signal<std::optional<float>> fraction; // 0...1; empty: indeterminate (activity of unknown length)
+};
+
+class ELG_API ProgressStyle {
+public:
+    virtual ~ProgressStyle();
+    // Called once per Progress when it's built, while Environment<K>() is available.
+    virtual View make_body(const ProgressConfiguration& progress) const = 0;
+
+protected:
+    // Styles are copied as their concrete type, never as a ProgressStyle.
+    ProgressStyle() = default;
+    ProgressStyle(const ProgressStyle&) = default;
+    ProgressStyle(ProgressStyle&&) = default;
+    ProgressStyle& operator=(const ProgressStyle&) = default;
+    ProgressStyle& operator=(ProgressStyle&&) = default;
+};
+
+struct LinearProgressStyleOptions {
+    Prop<Color> track = ThemeColor::outline;
+    std::optional<Prop<Color>> fill; // nullopt: the tint
+    float thickness = 6;
+};
+
+// A bar as wide as offered, filled to the fraction, or with a segment sweeping across while
+// indeterminate. The default.
+//   Progress(upload.fraction()).progress_style(LinearProgressStyle{{.thickness = 3}})
+class ELG_API LinearProgressStyle final : public ProgressStyle {
+public:
+    explicit LinearProgressStyle(LinearProgressStyleOptions options = {}) : options_(std::move(options)) {}
+    View make_body(const ProgressConfiguration& progress) const override;
+
+private:
+    LinearProgressStyleOptions options_;
+};
+
+struct CircularProgressStyleOptions {
+    Prop<Color> track = ThemeColor::outline;
+    std::optional<Prop<Color>> fill; // nullopt: the tint
+    float size = 20;      // the ring's diameter
+    float line_width = 3;
+};
+
+// A ring filled clockwise from the top to the fraction, or with an arc spinning while
+// indeterminate.
+//   Progress().progress_style(CircularProgressStyle{{.size = 14, .line_width = 2}})
+class ELG_API CircularProgressStyle final : public ProgressStyle {
+public:
+    explicit CircularProgressStyle(CircularProgressStyleOptions options = {}) : options_(std::move(options)) {}
+    View make_body(const ProgressConfiguration& progress) const override;
+
+private:
+    CircularProgressStyleOptions options_;
+};
+
 // What a TextFieldStyle gets: the editable text (put it where the text goes) and its state.
 struct TextFieldConfiguration {
     View field;

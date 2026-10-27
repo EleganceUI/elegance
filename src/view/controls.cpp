@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Slider and ProgressView (elements that draw themselves), and Stepper and the segmented Picker
-// (composed from the public API, like an app's own controls would be).
+// Slider (an element that draws itself) and the segmented Picker (composed from the public API,
+// like an app's own controls would be).
 
 #include "view/view_node.h"
 
@@ -217,67 +217,6 @@ void SliderElement::paint_impl(DisplayList& list) const {
                                         colors.outline.opacity(0.6f), 0.5f});
 }
 
-// --- ProgressView ---
-
-class ProgressElement final : public Element {
-public:
-    ProgressElement(bool determinate, EnvironmentValues environment)
-        : determinate_(determinate), environment_(std::move(environment)) {}
-
-    void set_fraction(float fraction, const Animation* animation) {
-        fraction_.set(std::clamp(fraction, 0.f, 1.f), animation);
-    }
-
-    void accessibility(AccessibilityInfo& out) const override {
-        out.role = AccessRole::progress;
-        if (determinate_) {
-            out.numeric = fraction_.target();
-            out.minimum = 0;
-            out.maximum = 1;
-        }
-    }
-
-protected:
-    Size measure(ProposedSize proposal) override {
-        const float width = proposal.width.value_or(kDefaultWidth);
-        return {std::isfinite(width) ? width : kDefaultWidth, kHeight};
-    }
-    void arrange(Rect, ProposedSize) override {}
-    void paint_impl(DisplayList& list) const override {
-        const Rect bounds = frame();
-        const Color tint = environment_.get<TintKey>();
-        const ColorTokens colors = environment_.get<ThemeKey>().colors(environment_.get<ColorSchemeKey>());
-        list.commands.push_back(capsule(bounds, colors.outline));
-        if (determinate_) {
-            if (fraction_.animating()) {
-                list.animating = true;
-            }
-            const float width = bounds.width * fraction_.current();
-            if (width > 0) {
-                list.commands.push_back(capsule({bounds.x, bounds.y, std::max(width, bounds.height), bounds.height}, tint));
-            }
-            return;
-        }
-        // A segment sweeping across, easing in and out each pass.
-        list.animating = true;
-        constexpr double kPeriod = 1.4;
-        const double t = std::fmod(frame_time(), kPeriod) / kPeriod;
-        const float eased = static_cast<float>(t * t * (3 - 2 * t));
-        const float segment = bounds.width * 0.3f;
-        const float x = bounds.x - segment + (bounds.width + segment) * eased;
-        list.commands.push_back(PushClipCommand{bounds, CornerRadii::all(bounds.height / 2)});
-        list.commands.push_back(capsule({x, bounds.y, segment, bounds.height}, tint));
-        list.commands.push_back(PopClipCommand{});
-    }
-
-private:
-    static constexpr float kHeight = 6;
-
-    bool determinate_;
-    EnvironmentValues environment_;
-    Animated<float> fraction_{0.f};
-};
-
 class SliderNode final : public ViewNode {
 public:
     SliderNode(Binding<float> value, SliderOptions options) : value_(std::move(value)), options_(std::move(options)) {}
@@ -310,24 +249,7 @@ private:
     SliderOptions options_;
 };
 
-class ProgressNode final : public ViewNode {
-public:
-    explicit ProgressNode(std::optional<Prop<float>> fraction) : fraction_(std::move(fraction)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
-        auto element = std::make_unique<ProgressElement>(fraction_.has_value(), context.environment);
-        if (fraction_) {
-            ProgressElement* const target = element.get();
-            detail::bind(*fraction_, context,
-                         [target](float value, const Animation* animation) { target->set_fraction(value, animation); });
-        }
-        return element;
-    }
-
-private:
-    std::optional<Prop<float>> fraction_;
-};
-
-// --- Stepper and Picker: composed from the public API ---
+// --- Picker: composed from the public API ---
 
 // A picker segment: the selected one is raised.
 class PickerSegmentStyle final : public ButtonStyle {
@@ -374,14 +296,6 @@ using detail::ViewAccess;
 
 View Slider(Binding<float> value, SliderOptions options) {
     return ViewAccess::make(std::make_shared<const detail::SliderNode>(std::move(value), std::move(options)));
-}
-
-View ProgressView(Prop<float> fraction) {
-    return ViewAccess::make(std::make_shared<const detail::ProgressNode>(std::move(fraction)));
-}
-
-View ProgressView() {
-    return ViewAccess::make(std::make_shared<const detail::ProgressNode>(std::nullopt));
 }
 
 View detail::make_segmented_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,

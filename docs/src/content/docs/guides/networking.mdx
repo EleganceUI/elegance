@@ -50,7 +50,7 @@ HTTP error status is still a response, so check `ok()` (a 2xx status). A `Respon
 const http::Fetch profile("https://api.example.com/me");
 
 If([=] { return profile.is_loading(); },
-   ProgressView(),
+   Progress(),
    Text([=] { return profile.ok() ? profile.response().text() : profile.error(); }));
 
 Button("Refresh", [=] { profile.reload(); });

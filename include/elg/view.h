@@ -57,6 +57,7 @@ class ButtonStyle;
 class ToggleStyle;
 class CheckboxStyle;
 class NumberInputStyle;
+class ProgressStyle;
 class TextFieldStyle;
 struct HoverDelay;
 struct KeyEvent;
@@ -554,6 +555,12 @@ public:
     View number_input_style(Style style) const {
         return number_input_style_impl(std::make_shared<const Style>(std::move(style)));
     }
+    // The style of every Progress inside (elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, ProgressStyle>
+    View progress_style(Style style) const {
+        return progress_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
     // The style of every TextField inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, TextFieldStyle>
@@ -604,6 +611,7 @@ private:
     ELG_API View toggle_style_impl(std::shared_ptr<const ToggleStyle> style) const;
     ELG_API View checkbox_style_impl(std::shared_ptr<const CheckboxStyle> style) const;
     ELG_API View number_input_style_impl(std::shared_ptr<const NumberInputStyle> style) const;
+    ELG_API View progress_style_impl(std::shared_ptr<const ProgressStyle> style) const;
     ELG_API View text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const;
     ELG_API View animation_impl(const Animation& animation, std::function<bool()> changed) const;
     ELG_API static View deferred(std::function<View()> body);

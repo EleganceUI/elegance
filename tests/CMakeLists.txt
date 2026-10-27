@@ -19,6 +19,7 @@ add_executable(elegance_tests
         image_tests.cpp
         number_input_tests.cpp
         path_tests.cpp
+        progress_tests.cpp
         prop_argument_tests.cpp
         pointer_style_tests.cpp
         reactive_tests.cpp

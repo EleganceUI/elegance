@@ -505,6 +505,10 @@ View View::number_input_style_impl(std::shared_ptr<const NumberInputStyle> style
     return modifier(NumberInputStyleModifier(std::move(style)));
 }
 
+View View::progress_style_impl(std::shared_ptr<const ProgressStyle> style) const {
+    return modifier(ProgressStyleModifier(std::move(style)));
+}
+
 View View::text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const {
     return modifier(TextFieldStyleModifier(std::move(style)));
 }

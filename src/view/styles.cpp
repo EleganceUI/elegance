@@ -63,6 +63,13 @@ std::shared_ptr<const NumberInputStyle> NumberInputStyleKey::default_value(const
 
 NumberInputStyle::~NumberInputStyle() = default;
 
+std::shared_ptr<const ProgressStyle> ProgressStyleKey::default_value(const EnvironmentValues&) {
+    static const auto style = std::make_shared<const LinearProgressStyle>();
+    return style;
+}
+
+ProgressStyle::~ProgressStyle() = default;
+
 std::shared_ptr<const TextFieldStyle> TextFieldStyleKey::default_value(const EnvironmentValues&) {
     static const auto style = std::make_shared<const RoundedBorderTextFieldStyle>();
     return style;

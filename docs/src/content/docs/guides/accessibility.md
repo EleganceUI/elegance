@@ -17,7 +17,7 @@ Built-in views describe themselves:
 - `Slider` and `NumberInput` expose their value and range, and can be set, incremented and
   decremented.
 - `TextField` and `TextArea` expose and accept their value; a secure `TextField` is marked as a password.
-- `ProgressView` and images have their roles.
+- `Progress` (with its fraction, when it has one) and images have their roles.
 - Keyboard focus is reported, so screen readers follow Tab.
 
 Accessibility is on by default (the `ELG_ACCESSIBILITY` CMake option). The tree is only built

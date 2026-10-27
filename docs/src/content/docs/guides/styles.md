@@ -15,6 +15,7 @@ one modifier styles every control inside a view.
 | `Toggle` | `SwitchToggleStyle` (default) |
 | `Checkbox` | `BoxCheckboxStyle` (default) |
 | `NumberInput` | `BoxNumberInputStyle` (default), `PlainNumberInputStyle` |
+| `Progress` | `LinearProgressStyle` (default), `CircularProgressStyle` |
 | `TextField`, `TextArea` | `RoundedBorderTextFieldStyle` (default), `PlainTextFieldStyle` |
 
 ```cpp

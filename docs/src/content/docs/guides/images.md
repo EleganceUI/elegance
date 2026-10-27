@@ -61,7 +61,7 @@ To draw each phase yourself, pass a function:
 ```cpp
 AsyncImage(url, [](const AsyncImagePhase& phase) -> View {
     switch (phase.kind) {
-    case AsyncImagePhase::Kind::loading: return ProgressView();
+    case AsyncImagePhase::Kind::loading: return Progress();
     case AsyncImagePhase::Kind::success: return phase.image.resizable().aspect_ratio(ContentMode::fit);
     case AsyncImagePhase::Kind::failure: return Text(phase.error).foreground_style(ThemeColor::danger);
     }

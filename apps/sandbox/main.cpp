@@ -548,7 +548,7 @@ View CaptureCards() {
                Button("Play", [=] { recorder.sound().play(); }).disabled([=] { return recorder.duration() <= 0; }),
                Button("Clear", [=] { recorder.clear(); }))
             .button_style(BorderedButtonStyle{}),
-        ProgressView([=] { return recorder.level(); }).frame({.width = 220}).accessibility_label("Input level"),
+        Progress([=] { return recorder.level(); }).frame({.width = 220}).accessibility_label("Input level"),
         Text([=] {
             const std::string error = recorder.error();
             return error.empty() ? clock(recorder.duration()) + std::format(" · {} inputs", inputs) : error;
@@ -863,13 +863,14 @@ View TextFieldCards() {
 
 enum class Accent { blue, green, peach };
 
-// Slider, ProgressView, Stepper, and Picker.
+// Slider, Progress, NumberInput, and Picker.
 View MoreControlCards() {
     const auto volume = State(40.f);
     const View slider = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
                                Text([=] { return std::format("Volume: {:.0f}", volume()); }),
                                Slider(volume.binding(), {.min = 0, .max = 100, .step = 1}),
-                               ProgressView([=] { return volume() / 100; }))
+                               HStack({.spacing = 12}, Progress([=] { return volume() / 100; }),
+                                      Progress([=] { return volume() / 100; }).progress_style(CircularProgressStyle{})))
                             .frame({.width = 220});
 
     const auto guests = State(2);
@@ -879,7 +880,8 @@ View MoreControlCards() {
                                        NumberInput(guests.binding(), {.min = 1, .max = 8}).frame({.width = 72})),
                                 Toggle("Loading", loading.binding()),
                                 // Indeterminate progress renders continuously, so it's only shown on request.
-                                If(loading, ProgressView()))
+                                If(loading, HStack({.spacing = 12}, Progress(),
+                                                   Progress().progress_style(CircularProgressStyle{}))))
                              .frame({.width = 220});
 
     const auto accent = State(Accent::blue);
@@ -897,8 +899,8 @@ View MoreControlCards() {
                             .frame({.width = 240});
 
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(slider, "Slider + ProgressView").card(),
-                  Captioned(stepper, "Stepper, indeterminate progress").card(),
+                  Captioned(slider, "Slider + Progress").card(),
+                  Captioned(stepper, "NumberInput, indeterminate progress").card(),
                   Captioned(picker, "Picker (segmented)").card());
 }
 

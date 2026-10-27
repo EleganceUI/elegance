@@ -163,7 +163,7 @@ View AsyncImage(std::string url, AsyncImageOptions options) {
         std::move(url),
         [mode = options.content_mode](const AsyncImagePhase& phase) -> View {
             switch (phase.kind) {
-            case AsyncImagePhase::Kind::loading: return ProgressView();
+            case AsyncImagePhase::Kind::loading: return Progress();
             case AsyncImagePhase::Kind::failure:
                 return Image("image-broken").foreground_style(ThemeColor::tertiary).help(phase.error);
             case AsyncImagePhase::Kind::success:

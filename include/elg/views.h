@@ -198,10 +198,14 @@ View NumberInput(const State<T>& value, NumberInputOptions options = {}) {
     return NumberInput(value.binding(), std::move(options));
 }
 
-// A bar filled to `fraction` (0...1); animates with the value.
-ELG_API View ProgressView(Prop<float> fraction);
-// Indeterminate: activity of unknown length. Renders continuously while shown.
-ELG_API View ProgressView();
+// How far along something is: a fraction (0...1), or, while it's empty, activity of unknown
+// length. Drawn by a ProgressStyle (a bar by default; CircularProgressStyle for a ring); the
+// fraction animates with the update that changed it.
+//   Progress(0.4f)
+//   Progress([=] { return download.fraction(); }) // a std::optional<float>: empty until it's known
+//   Progress()                                    // indeterminate
+// Name it with .accessibility_label, or put a Text beside it.
+ELG_API View Progress(Prop<std::optional<float>> fraction = std::nullopt);
 
 enum class PickerStyle {
     segmented, // every option visible, as segments

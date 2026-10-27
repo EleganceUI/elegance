@@ -1,6 +1,6 @@
 ---
 title: Controls
-description: "Buttons, toggles, text fields, sliders, steppers, pickers and progress views."
+description: "Buttons, toggles, text fields, sliders, number inputs, pickers and progress indicators."
 ---
 
 Controls own their behavior: hover and press states, keyboard focus, keyboard activation and
@@ -176,16 +176,40 @@ Picker(size, {{Size::small, "Small"}, {Size::medium, "Medium"}, {Size::large, "L
 The value type needs `==`. `PickerStyle::segmented` shows every option; `PickerStyle::menu` shows
 the chosen one on a button that opens a menu.
 
-## ProgressView
+## Progress
 
 ```cpp
-ProgressView(0.4f);                          // a bar, 40% full
-ProgressView([=] { return downloaded() / total(); });
-ProgressView();                              // indeterminate activity
+Progress(0.4f);                              // a bar, 40% full
+Progress([=] { return downloaded() / total(); });
+Progress();                                  // indeterminate activity
 ```
 
-A determinate bar animates to its new value. The indeterminate one draws continuously while it's
-shown, so remove it (with `If`) when the work is done.
+The fraction is a `std::optional<float>`: while it's empty the indicator shows activity of unknown
+length, so one view can wait for a size and then fill up:
+
+```cpp
+Progress([=]() -> std::optional<float> {
+    if (total() == 0) {
+        return std::nullopt;                 // not known yet
+    }
+    return float(downloaded()) / total();
+});
+```
+
+How it looks is its style, separate from whether the fraction is known.
+`LinearProgressStyle` (a bar, the default) and `CircularProgressStyle` (a ring) each take a track
+and fill color (the tint by default) and their thickness:
+
+```cpp
+Progress().progress_style(CircularProgressStyle{{.size = 14, .line_width = 2}});
+Progress(upload).progress_style(LinearProgressStyle{{.fill = ThemeColor::success, .thickness = 3}});
+```
+
+A custom `ProgressStyle` gets the fraction in its `ProgressConfiguration`; a `Canvas` that calls
+`request_frame()` can animate the indeterminate state. A determinate fraction animates when the
+update that changed it is animated. The indeterminate one draws continuously while it's shown, so
+remove it (with `If`) when the work is done. Progress has no label: name it with
+`.accessibility_label`, or put a `Text` beside it.
 
 ## Menus
 

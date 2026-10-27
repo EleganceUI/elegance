@@ -512,7 +512,7 @@ struct PillButtonStyle : elg::ButtonStyle {
 VStack(Button("Save", save), Button("Cancel", cancel))
     .button_style(PillButtonStyle{});   // applies to every Button in the subtree
 ```
-The same pattern applies to `ToggleStyle`, `TextFieldStyle`, `ProgressViewStyle`, `ListStyle`,
+The same pattern applies to `ToggleStyle`, `TextFieldStyle`, `ProgressStyle`, `ListStyle`,
 and others. Each built-in control ships with a default style plus a few alternates.
 
 ### Custom modifiers
@@ -1009,7 +1009,7 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
   - `Toggle` is a switch with its state. `MenuButton` and `Picker(.menu)` are pop-up buttons
     (combo boxes).
   - Sliders have their value, range, step, increment/decrement and set value.
-  - `ProgressView` has its fraction. Text fields have their text (never a secure field's),
+  - `Progress` has its fraction (none while indeterminate). Text fields have their text (never a secure field's),
     placeholder and set value.
   - Images, video and scroll views have their roles. `NumberInput` is a spin button with its
     value, range, step, increment/decrement and set value; its arrow buttons are named "Decrease"
@@ -1050,7 +1050,7 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
 |            | DisclosureGroup                                                            |
 | Overlay    | sheet, popover, alert, confirmation_dialog, Menu, context_menu, help       |
 |            | (tooltip), Toast                                                           |
-| Feedback   | ProgressView (linear/circular), Gauge, redacted (skeleton)                 |
+| Feedback   | Progress (linear/circular), Gauge, redacted (skeleton)                     |
 | Navigation | NavigationStack (push/pop with transitions), NavigationSplitView, TabView  |
 
 - Presentations (sheets, popovers, menus) render into a top layer so they escape clips.
@@ -1745,14 +1745,17 @@ Separate render thread from day one (decided).
     rounds. Up/Down step (Shift ×10), the style's stacked arrows are disabled at the bounds, and
     dragging sideways over the unfocused field scrubs. `.number_input_style(...)` takes
     `BoxNumberInputStyle` (default) or `PlainNumberInputStyle`.
-  - `ProgressView(Prop<float>)` is determinate and animates with its value. `ProgressView()` is
-    indeterminate: it renders continuously while shown.
+  - `Progress(Prop<std::optional<float>>)` replaced `ProgressView`: a fraction, or, while it's
+    empty (`Progress()`), activity of unknown length that renders continuously while shown. The
+    fraction animates with the update that changed it. Presentation is the style's:
+    `.progress_style(LinearProgressStyle{...})` (default) or `CircularProgressStyle{...}`, with
+    track and fill colors and thickness; custom styles get `ProgressConfiguration::fraction`.
   - `Picker(Binding<T>, {{value, "Label"}, ...})` is segmented, built from Buttons; the selection
     change animates.
   - Follow-ups:
     - A menu presentation and `.picker_style(...)` (needs §13.1 popups).
     - NumberInput arrow auto-repeat while held.
-    - Style protocols for Slider and ProgressView.
+    - A style protocol for Slider.
     - A sliding selection indicator for the segmented picker (needs matched geometry).
 - [x] `ScrollView` / `ScrollView({.axes, .shows_indicators}, content)`:
   - Takes all the space it's offered. The content gets its ideal size along the scroll axes and
