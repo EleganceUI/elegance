@@ -105,8 +105,15 @@ View ContactsWindow(State<ColorScheme> scheme) {
                          Button("End", [=] { position.scroll_to_end(); }))
                       .button_style(BorderedButtonStyle{}),
                   // Only the rows near the visible part are built, however long the list is.
-                  List({.position = position},
-                       ForEach(shown, &Contact::id, [](const Contact& contact) { return ContactRow(contact); })))
+                  ScrollView({.position = position},
+                             LazyVStack({.spacing = 0, .separators = StackSeparators{.inset = 16}},
+                                        ForEach(shown, &Contact::id,
+                                                [](const Contact& contact) {
+                                                    return ContactRow(contact)
+                                                        .padding(EdgeInsets::symmetric(16, 10))
+                                                        .frame({.max_width = infinity, .alignment = Alignment::leading});
+                                                }))
+                                 .background(ThemeColor::surface, RoundedRectangle(10))))
         .padding(20)
         .frame({.max_width = infinity, .max_height = infinity})
         .background(ThemeColor::background)

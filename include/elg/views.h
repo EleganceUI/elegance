@@ -289,7 +289,7 @@ public:
 
     void scroll_to_top(bool animated = true) const;
     void scroll_to_end(bool animated = true) const;
-    // Scrolls the item with this ForEach key (in a lazy stack or List inside) to the top.
+    // Scrolls the item with this ForEach key (in a lazy stack inside) to the top.
     template <class K>
     void scroll_to(const K& id) const {
         scroll_to_key(detail::to_item_key(id));
@@ -409,14 +409,24 @@ ELG_API View MenuButton(View label, std::function<View()> menu);
 ELG_API View MenuButton(View label, std::function<View()> menu, MenuButtonOptions options);
 ELG_API View MenuButton(Prop<std::string> title, std::function<View()> menu);
 
+// Lines between a lazy stack's items, in the middle of the spacing:
+//   LazyVStack({.spacing = 0, .separators = StackSeparators{.inset = 16}}, ForEach(...))
+struct StackSeparators {
+    Prop<Color> color = ThemeColor::outline;
+    float inset = 0; // from the leading edge (the top, in a LazyHStack)
+    float thickness = 1;
+};
+
 struct LazyVStackOptions {
     HorizontalAlignment alignment = HorizontalAlignment::center;
     OptionalLength spacing; // default_stack_spacing
+    std::optional<StackSeparators> separators;
 };
 
 struct LazyHStackOptions {
     VerticalAlignment alignment = VerticalAlignment::center;
     OptionalLength spacing;
+    std::optional<StackSeparators> separators;
 };
 
 // Like VStack / HStack over a ForEach, but only the items in or near the visible part of the
@@ -428,16 +438,6 @@ ELG_API View LazyVStack(LazyVStackOptions options, View for_each);
 ELG_API View LazyVStack(View for_each);
 ELG_API View LazyHStack(LazyHStackOptions options, View for_each);
 ELG_API View LazyHStack(View for_each);
-
-// A scrolling list of rows: lazy, with separators, row padding, and a hover highlight, on a
-// rounded surface. `for_each` must be a ForEach.
-//   List(ForEach(contacts, &Contact::id, [](const Contact& c) { return ContactRow(c); }))
-struct ListOptions {
-    std::optional<ScrollPosition> position; // to scroll it from code
-};
-
-ELG_API View List(View for_each);
-ELG_API View List(ListOptions options, View for_each);
 
 } // namespace elg
 

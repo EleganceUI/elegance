@@ -1,6 +1,6 @@
 ---
 title: Lists and dynamic content
-description: "Showing views conditionally and repeating them for collections - If, ForEach, ScrollView, lazy stacks and List."
+description: "Showing views conditionally and repeating them for collections - If, ForEach, ScrollView and lazy stacks."
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -147,17 +147,22 @@ ScrollView(LazyVStack({.spacing = 4}, ForEach(messages, &Message::id, MessageRow
 
 The argument must be a `ForEach`. Lazy stacks handle tens of thousands of items.
 
-## List
+## Lists of rows
 
-`List` is a lazy, scrolling list of rows with separators, row padding and a hover highlight, on a
-rounded surface:
+There's no `List` view: a list is a lazy stack in a scroll view, styled like any other view. A
+`LazyVStack` can draw lines between its items (`separators`), in the middle of its spacing:
 
 ```cpp
-List(ForEach(contacts, &Contact::id, [](const Contact& c) { return ContactRow(c); }));
-
-const auto position = ScrollPosition();
-List({.position = position}, ForEach(contacts, &Contact::id, ContactRow));
+ScrollView(LazyVStack({.spacing = 0, .separators = StackSeparators{.inset = 16}},
+                      ForEach(contacts, &Contact::id, [](const Contact& c) {
+                          return ContactRow(c).padding(EdgeInsets::symmetric(16, 10));
+                      }))
+               .background(ThemeColor::surface, RoundedRectangle(10)));
 ```
 
+`StackSeparators` takes a `color` (`ThemeColor::outline` by default, and reactive), an `inset`
+from the leading edge, and a `thickness`. Give rows their own padding, background, and hover or
+selected look; the stack only places them.
+
 See the [todos example](../../examples/#todos) for a complete list with adding, removing and
-toggling items.
+checking off items.

@@ -65,7 +65,7 @@ struct NavigationSplitViewOptions {
 // The usual layout of a desktop app: a sidebar to choose from, and the detail of what's chosen,
 // with a draggable divider between. The detail takes the rest of the width. The sidebar sits on
 // the theme's surface color.
-//   NavigationSplitView(List(ForEach(folders, &Folder::id, FolderRow)), NoteEditor(selected))
+//   NavigationSplitView(ScrollView(LazyVStack(ForEach(folders, &Folder::id, FolderRow))), NoteEditor(selected))
 ELG_API View NavigationSplitView(View sidebar, View detail, NavigationSplitViewOptions options = {});
 // Three columns: sidebar, content (e.g. a list of what's in the chosen folder), detail.
 ELG_API View NavigationSplitView(View sidebar, View content, View detail, NavigationSplitViewOptions options = {});

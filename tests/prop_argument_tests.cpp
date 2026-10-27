@@ -62,3 +62,25 @@ TEST_CASE("a slider's range follows state", "[prop]") {
     CHECK(info.maximum == 50.0);
     CHECK(value() == 5.f); // a new range doesn't write the value
 }
+
+TEST_CASE("a lazy stack draws separators between its items", "[prop]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    State<Color> line(Color::black);
+    const View rows = LazyVStack({.spacing = 10, .separators = StackSeparators{.color = line, .inset = 4}},
+                                 ForEach(std::vector<int>{1, 2, 3}, [](int) { return Rectangle().frame(20, 20); }));
+    auto root = detail::lower(rows, {});
+    root->place({}, {100.f, 200.f});
+    detail::DisplayList list;
+    root->paint(list);
+    std::vector<Rect> lines;
+    for (const auto& command : list.commands) {
+        if (const auto* rect = std::get_if<detail::RectCommand>(&command); rect && rect->rect.height == 1) {
+            lines.push_back(rect->rect);
+        }
+    }
+    REQUIRE(lines.size() == 2); // between items, not after the last
+    CHECK(lines[0].x == 4);
+    CHECK(lines[0].width == 96);
+    CHECK(lines[0].y == 24.5f); // in the middle of the spacing after the first item
+}

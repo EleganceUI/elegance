@@ -1805,9 +1805,13 @@ Separate render thread from day one (decided).
     dropped (rebuilt if still in view).
   - Elements built or destroyed during layout are revalidated in the dispatcher right after
     layout.
-- [x] `List(ForEach(...))` / `List({.position}, ...)`:
+- [x] `List(ForEach(...))` / `List({.position}, ...)`, since removed:
   - A lazy vertical stack in a ScrollView on a rounded surface.
   - Row padding, inset separators drawn by the stack, and a hover highlight.
+  - Removed because none of that could be changed, and its highlight lagged behind the pointer
+    (`.on_hover`'s enter delay, restarted for each row scrolling past). Lists are now
+    `ScrollView(LazyVStack({.separators = StackSeparators{...}}, ...))` with rows styled like any
+    view. Row selection is a later topic.
 - [x] `ScrollPosition`: `scroll_to_top()`, `scroll_to_end()` and `scroll_to(id)` (a lazy item's
   key), passed as `ScrollViewOptions::position`.
   - Requests are applied in the scroll view's next layout.
