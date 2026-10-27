@@ -293,6 +293,9 @@ class View {
 public:
     // An empty view: takes no space and draws nothing.
     ELG_API View() noexcept;
+    // Whether this is an empty view (View(), EmptyView()), e.g. a style's label for a control
+    // made without one.
+    ELG_API bool is_empty() const noexcept;
 
     // Components: any type with `View body() const` can be used as a view.
     template <class Component>

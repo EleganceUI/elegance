@@ -208,6 +208,9 @@ View Picker(Binding<T> selection, std::vector<std::pair<T, std::string>> options
 // Click, Space, or Enter flips it.
 ELG_API View Toggle(View label, Binding<bool> is_on);
 ELG_API View Toggle(Prop<std::string> title, Binding<bool> is_on);
+// Just the switch, for where a label is beside it already (a settings row). Give it an
+// .accessibility_label(...) so screen readers can name it.
+ELG_API View Toggle(Binding<bool> is_on);
 
 struct CheckboxOptions {
     // Some of what it stands for is checked, e.g. "Select all" over a partly selected list:
@@ -221,6 +224,9 @@ struct CheckboxOptions {
 // Click, Space, or Enter checks or unchecks it.
 ELG_API View Checkbox(View label, Binding<bool> is_checked, CheckboxOptions options = {});
 ELG_API View Checkbox(Prop<std::string> title, Binding<bool> is_checked, CheckboxOptions options = {});
+// Just the box, for where a label is beside it already (a table row). Give it an
+// .accessibility_label(...) so screen readers can name it.
+ELG_API View Checkbox(Binding<bool> is_checked, CheckboxOptions options = {});
 
 // --- Structure: views that appear, disappear, and repeat with state (design.md §6) ---
 

@@ -50,7 +50,15 @@ Checkbox("Remember me", remember);
 ```
 
 Both are as wide as their label and control. For a settings row, with the label at one edge and
-the switch at the other, use `SwitchToggleStyle{{.fills_width = true}}`.
+the switch at the other, use `SwitchToggleStyle{{.fills_width = true}}`. Where the label is laid
+out separately, `Toggle(binding)` is just the switch and `Checkbox(binding)` just the box; give
+them an `.accessibility_label(...)`:
+
+```cpp
+HStack(VStack(Text("Wi-Fi"), Text("Connected").foreground_style(ThemeColor::secondary)),
+       Spacer(),
+       Toggle(wifi).accessibility_label("Wi-Fi"));
+```
 
 A check box can be mixed: some of what it stands for is checked. It shows a dash, screen readers
 read it as mixed, and checking it checks it fully:

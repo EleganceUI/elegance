@@ -96,3 +96,27 @@ TEST_CASE("a check box's style sets its size", "[toggle]") {
     CHECK(size.width == 24 + 6 + 10);
     CHECK(size.height == 24);
 }
+
+TEST_CASE("a toggle without a label is just its switch", "[toggle]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    State<bool> on(false);
+    const Mounted bare(Toggle(on.binding()));
+    CHECK(bare.root->size_that_fits({300.f, std::nullopt}).width == 40);
+    const Mounted row(Toggle(on.binding()).toggle_style(SwitchToggleStyle{{.fills_width = true}}));
+    CHECK(row.root->size_that_fits({300.f, std::nullopt}).width == 300);
+    bare.click();
+    CHECK(on());
+}
+
+TEST_CASE("a check box without a label is just its box", "[toggle]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    State<bool> checked(false);
+    CHECK(EmptyView().is_empty());
+    CHECK_FALSE(kLabel.is_empty());
+    const Mounted bare(Checkbox(checked.binding()));
+    CHECK(bare.root->size_that_fits({300.f, std::nullopt}).width == 18);
+    bare.click();
+    CHECK(checked());
+}

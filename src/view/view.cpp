@@ -33,6 +33,10 @@ View::View() noexcept = default;
 
 View::View(std::shared_ptr<const detail::ViewNode> node) noexcept : node_(std::move(node)) {}
 
+bool View::is_empty() const noexcept {
+    return !node_;
+}
+
 View View::with_modifier(std::shared_ptr<const Modifier> modifier) const {
     return View(std::make_shared<const detail::ModifiedNode>(*this, std::move(modifier)));
 }
@@ -613,6 +617,14 @@ View Toggle(View label, Binding<bool> is_on) {
 
 View Toggle(Prop<std::string> title, Binding<bool> is_on) {
     return Toggle(Text(std::move(title)), std::move(is_on));
+}
+
+View Toggle(Binding<bool> is_on) {
+    return Toggle(EmptyView(), std::move(is_on));
+}
+
+View Checkbox(Binding<bool> is_checked, CheckboxOptions options) {
+    return Checkbox(EmptyView(), std::move(is_checked), std::move(options));
 }
 
 View Checkbox(View label, Binding<bool> is_checked, CheckboxOptions options) {

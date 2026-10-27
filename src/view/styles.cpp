@@ -182,6 +182,9 @@ View SwitchToggleStyle::make_body(const ToggleConfiguration& toggle) const {
                                   .frame(knob, knob)
                                   .shadow({.color = Color::black.opacity(0.25f), .radius = 3, .y = 1})
                                   .offset([=] { return toggle.is_on() ? travel : -travel; }, 0.f));
+    if (toggle.label.is_empty()) { // Toggle(binding): no label, and no space for one
+        return o.fills_width ? HStack({.spacing = 0}, Spacer(), std::move(track)) : track;
+    }
     View label = toggle.label.foreground_style([=](const EnvironmentValues& env) {
         return env.color(toggle.is_enabled() ? ThemeColor::primary : ThemeColor::tertiary);
     });
@@ -217,6 +220,9 @@ View BoxCheckboxStyle::make_body(const CheckboxConfiguration& checkbox) const {
                        return checkbox.is_checked() && !checkbox.is_mixed() ? 1.f : 0.f;
                    }))
                    .overlay(std::move(dash).opacity([=] { return checkbox.is_mixed() ? 1.f : 0.f; }));
+    if (checkbox.label.is_empty()) { // Checkbox(binding): no label, and no space for one
+        return box;
+    }
     View label = checkbox.label.foreground_style([=](const EnvironmentValues& env) {
         return env.color(checkbox.is_enabled() ? ThemeColor::primary : ThemeColor::tertiary);
     });

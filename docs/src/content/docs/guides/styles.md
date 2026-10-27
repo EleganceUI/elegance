@@ -91,6 +91,9 @@ struct RadioLikeCheckboxStyle : CheckboxStyle {
 
 Toggle and Checkbox share one implementation, so a style can't change how they respond to input.
 
+A control made without a label (`Toggle(binding)`, `Checkbox(binding)`) gets an empty one;
+check `label.is_empty()` to leave out the space you'd put beside it.
+
 ## Text field styles
 
 A `TextFieldConfiguration` has the editable `field` (put it where the text goes), and
