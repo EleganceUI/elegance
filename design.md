@@ -808,7 +808,7 @@ Text("Hi").apply(card)                             // function-style: View card(
 |                  | `brightness`, `contrast`, `saturation`, `grayscale`, `hue_rotation`,    | offscreen only if needed  |
 |                  | `sepia`, `color_invert`, `color_multiply`, `luminance_to_alpha`,        |                           |
 |                  | `blend_mode`, `compositing_group`, `rotation_effect`, `scale_effect`,   |                           |
-|                  | `background(Material::regular)` (blur behind)                           |                           |
+|                  | `backdrop_blur(radius, shape, {saturation, brightness, noise})`         |                           |
 | Interaction      | `on_tap_gesture`, `on_hover`, `gesture(...)`, `focusable`, `focused`,   | event handlers            |
 |                  | `on_key_press`, `keyboard_shortcut`, `context_menu`, `help` (tooltip)   |                           |
 | Lifecycle        | `on_appear`, `on_disappear`, `task(async fn)`, `on_change(value, fn)`   | effects tied to mount     |
@@ -831,10 +831,15 @@ Text("Hi").apply(card)                             // function-style: View card(
   analytic: no offscreen pass.
 - Anything else gets one offscreen layer that carries every effect at once: blur, color matrix,
   blend mode, transform (rotation/scale; a uniform scale alone stays vector), inner shadow.
-- `blur` and materials blur at a reduced resolution once sigma passes 12 px (downsample up to 8x).
-- `blend_mode` and materials read the backdrop. The pass draws offscreen and is split there: what
-  it drew so far is copied (and for materials, blurred) before the view composites over it.
-  Inside a layer, the backdrop is that layer's content only.
+- `blur` and `backdrop_blur` blur at a reduced resolution once sigma passes 12 px (downsample up to 8x).
+- `blend_mode` and `backdrop_blur` read the backdrop. The pass draws offscreen and is split
+  there: what it drew so far is copied (and for a backdrop blur, blurred and color-adjusted)
+  before the view composites over it. Inside a layer, the backdrop is that layer's content only.
+- **Ordering:** effects are separate modifiers, applied in the order written. `backdrop_blur`,
+  like `background`, goes behind everything it wraps, so a tint is a `.background(color)` written
+  before it: `content.background(tint).backdrop_blur(30)` draws the blurred backdrop, then the
+  tint, then the content. A `.blur()` after that blurs all three. There are no material presets:
+  frosted glass is a backdrop blur (with some saturation and noise) under a translucent tint.
 - Rotation and scale don't move hit testing yet.
 
 ### 9.5 Shapes, color, fonts, animation
@@ -842,8 +847,7 @@ Text("Hi").apply(card)                             // function-style: View card(
   `Capsule`, `Circle`, `Ellipse`, `Path`, and `UnevenRoundedRectangle`. Modify them with
   `.fill(style)`, `.stroke(style, width)`, and `.inset(by)`.
 - **ShapeStyles**: `Color` (sRGB/P3, `hex`, `opacity`, semantic tokens), `LinearGradient`,
-  `RadialGradient`, `EllipticalGradient`, `AngularGradient`, `ImagePaint`, and `Material`
-  (frosted blur: `ultra_thin` … `ultra_thick`, with a dark-mode tint).
+  `RadialGradient`, `EllipticalGradient`, `AngularGradient`, and `ImagePaint`.
 - **Fonts**: `Font::system(size, weight, design)`; semantic styles (`Font::large_title`,
   `title`, `headline`, `body`, `caption`) that scale with a global text-size setting; and
   `Font::custom("Inter", size)`. Text concatenation builds rich text:

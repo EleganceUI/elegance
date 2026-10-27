@@ -123,48 +123,31 @@ struct AngularGradient {
         : stops(detail::even_stops(colors)), center(at), start_angle(from_angle), end_angle(to_angle) {}
 };
 
-// Frosted glass: the shape shows what's drawn behind it in the window, blurred, with its colors
-// boosted, under a translucent tint and a little grain. The presets follow the color scheme
-// (a light tint in light mode, a dark one in dark mode):
-//
-//   Text("Now playing").padding(12).background(Material::regular, RoundedRectangle(12))
-//   Rectangle().fill(Material::thin)
-//
-// Inside an offscreen group (opacity below 1, a shadow, a blur, ...) a material sees only what
+namespace detail {
+// What .backdrop_blur() fills its shape with: what's drawn behind it in the window, blurred, then
+// adjusted. Inside an offscreen group (opacity below 1, a shadow, a blur, ...) it sees only what
 // the group drew behind it, as CSS's backdrop-filter does.
-struct Material {
-    float blur = 30;           // radius in points
-    float saturation = 1.8f;   // of what shows through; 1 keeps the colors
-    Color tint = Color{0.97f, 0.97f, 0.98f, 0.55f};
-    // The tint in dark mode; unset uses `tint` in both.
-    std::optional<Color> dark_tint = Color{0.11f, 0.11f, 0.12f, 0.6f};
-    float noise = 0.02f;       // grain, 0...1, so smooth gradients don't band
-
-    static const Material ultra_thin;
-    static const Material thin;
-    static const Material regular;
-    static const Material thick;
-    static const Material ultra_thick;
+struct BackdropFill {
+    float blur = 0;       // radius in points
+    float saturation = 1; // 1 keeps the colors
+    float brightness = 0; // added to each channel: -1 black ... 1 white
+    float noise = 0;      // grain, 0...1, so smooth gradients don't band
 };
+} // namespace detail
 
-inline constexpr Material Material::ultra_thin{24, 1.8f, {0.97f, 0.97f, 0.98f, 0.2f}, Color{0.11f, 0.11f, 0.12f, 0.3f}, 0.02f};
-inline constexpr Material Material::thin{28, 1.8f, {0.97f, 0.97f, 0.98f, 0.38f}, Color{0.11f, 0.11f, 0.12f, 0.45f}, 0.02f};
-inline constexpr Material Material::regular{30, 1.8f, {0.97f, 0.97f, 0.98f, 0.55f}, Color{0.11f, 0.11f, 0.12f, 0.6f}, 0.02f};
-inline constexpr Material Material::thick{36, 1.8f, {0.97f, 0.97f, 0.98f, 0.72f}, Color{0.11f, 0.11f, 0.12f, 0.74f}, 0.02f};
-inline constexpr Material Material::ultra_thick{40, 1.8f, {0.97f, 0.97f, 0.98f, 0.86f}, Color{0.11f, 0.11f, 0.12f, 0.86f}, 0.02f};
-
-// What a shape or background is filled with: a color, a gradient, or a material. Converts
-// implicitly, so .fill(Color::red), .fill(LinearGradient({...})) and .fill(Material::thin) all work.
+// What a shape or background is filled with: a color or a gradient. Converts implicitly, so
+// .fill(Color::red) and .fill(LinearGradient({...})) both work. (.backdrop_blur() fills with a
+// detail::BackdropFill.)
 class ShapeStyle {
 public:
-    using Value = std::variant<Color, LinearGradient, RadialGradient, EllipticalGradient, AngularGradient, Material>;
+    using Value = std::variant<Color, LinearGradient, RadialGradient, EllipticalGradient, AngularGradient, detail::BackdropFill>;
 
     ShapeStyle(Color color) : value_(color) {}
     ShapeStyle(LinearGradient gradient) : value_(std::move(gradient)) {}
     ShapeStyle(RadialGradient gradient) : value_(std::move(gradient)) {}
     ShapeStyle(EllipticalGradient gradient) : value_(std::move(gradient)) {}
     ShapeStyle(AngularGradient gradient) : value_(std::move(gradient)) {}
-    ShapeStyle(Material material) : value_(material) {}
+    ShapeStyle(detail::BackdropFill backdrop) : value_(backdrop) {}
 
     const Value& value() const noexcept { return value_; }
 

@@ -204,6 +204,14 @@ constexpr bool contains(Edges set, Edges edge) noexcept {
     return (static_cast<unsigned>(set) & static_cast<unsigned>(edge)) != 0;
 }
 
+// Adjustments to what .backdrop_blur() shows through, after the blur. Each is reactive and
+// animatable.
+struct BackdropOptions {
+    Prop<float> saturation = 1.f; // 0 gray, 1 unchanged, above 1 more vivid
+    Prop<float> brightness = 0.f; // added to each channel: -1 black ... 0 unchanged ... 1 white
+    Prop<float> noise = 0.f;      // grain, 0...1, so smooth gradients don't band
+};
+
 // A drop shadow (design.md §9.4): `radius` is the blur radius in points, (x, y) the offset.
 // `spread` grows (or, negative, shrinks) the shape before blurring; it applies to single shapes
 // (rects, rounded rects, capsules, circles), as in Figma, and is ignored for other content.
@@ -393,6 +401,17 @@ public:
     // Gaussian blur of the content; `radius` in points. Reactive and animatable.
     // `opaque`: the content fills its bounds; edges stay sharp instead of fading out.
     ELG_API View blur(Prop<float> radius, bool opaque = false) const;
+    // Blurs what's drawn behind the view in the window (frosted glass), inside `shape` (the
+    // view's bounds by default); `radius` in points. Reactive and animatable. Like .background,
+    // it goes behind everything it wraps, so a tint goes on before it:
+    //   Text("Now playing").padding(12)
+    //       .background(Color::white.opacity(0.5f), RoundedRectangle(12))
+    //       .backdrop_blur(30, RoundedRectangle(12), {.saturation = 1.8f, .noise = 0.02f})
+    // .blur() after it blurs the view, backdrop included. Inside an offscreen group (opacity below
+    // 1, a shadow, a blur, ...) it sees only what the group drew behind it, as CSS's
+    // backdrop-filter does.
+    ELG_API View backdrop_blur(Prop<float> radius, BackdropOptions options = {}) const;
+    ELG_API View backdrop_blur(Prop<float> radius, const Shape& shape, BackdropOptions options = {}) const;
     // Color adjustments (SwiftUI's, and CSS's filter functions). Each is reactive and animatable.
     // Adds to each channel: -1 black ... 0 unchanged ... 1 white.
     ELG_API View brightness(Prop<float> amount) const;

@@ -36,7 +36,7 @@ bool is_clear(const ShapeStyle& style) {
                           [](const RadialGradient& gradient) { return stops_clear(gradient.stops); },
                           [](const EllipticalGradient& gradient) { return stops_clear(gradient.stops); },
                           [](const AngularGradient& gradient) { return stops_clear(gradient.stops); },
-                          [](const Material&) { return false; },
+                          [](const BackdropFill&) { return false; },
                       },
                       style.value());
 }
@@ -61,15 +61,8 @@ ShapeStyle with_opacity(const ShapeStyle& style, float opacity) {
                               return ShapeStyle(AngularGradient(fade(gradient.stops, opacity), gradient.center,
                                                                 gradient.start_angle, gradient.end_angle));
                           },
-                          // What shows through a material is opaque, so only its tint fades.
-                          [&](const Material& material) {
-                              Material faded = material;
-                              faded.tint = faded.tint.opacity(opacity);
-                              if (faded.dark_tint) {
-                                  faded.dark_tint = faded.dark_tint->opacity(opacity);
-                              }
-                              return ShapeStyle(faded);
-                          },
+                          // What shows through a backdrop is opaque: it doesn't fade.
+                          [&](const BackdropFill& backdrop) { return ShapeStyle(backdrop); },
                       },
                       style.value());
 }

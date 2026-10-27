@@ -703,7 +703,7 @@ std::optional<ShapeStyle> filtered(const ShapeStyle& style, const ColorMatrix& m
                           [&](const AngularGradient& g) -> std::optional<ShapeStyle> {
                               return AngularGradient(stops(g.stops), g.center, g.start_angle, g.end_angle);
                           },
-                          [](const Material&) -> std::optional<ShapeStyle> { return std::nullopt; },
+                          [](const BackdropFill&) -> std::optional<ShapeStyle> { return std::nullopt; },
                       },
                       style.value());
 }

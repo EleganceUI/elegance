@@ -264,6 +264,26 @@ View View::blur(Prop<float> radius, bool opaque) const {
     return modifier(BlurModifier(std::move(radius), opaque));
 }
 
+View View::backdrop_blur(Prop<float> radius, BackdropOptions options) const {
+    return backdrop_blur(std::move(radius), Rectangle(), std::move(options));
+}
+
+View View::backdrop_blur(Prop<float> radius, const Shape& shape, BackdropOptions options) const {
+    const float* blur = radius.static_value();
+    const float* saturation = options.saturation.static_value();
+    const float* brightness = options.brightness.static_value();
+    const float* noise = options.noise.static_value();
+    if (blur && saturation && brightness && noise) {
+        return background(detail::BackdropFill{*blur, *saturation, *brightness, *noise}, shape);
+    }
+    return background(Prop<ShapeStyle>([radius, options](const EnvironmentValues& environment) {
+                          return ShapeStyle(detail::BackdropFill{
+                              radius.get(environment), options.saturation.get(environment),
+                              options.brightness.get(environment), options.noise.get(environment)});
+                      }),
+                      shape);
+}
+
 namespace {
 ColorFilter color_filter(ColorFilter::Kind kind, Prop<float> amount) {
     ColorFilter filter;
@@ -852,34 +872,11 @@ std::unique_ptr<Element> LayoutNode::lower(const LowerContext& context) const {
     return std::make_unique<LayoutElement>(layout_, std::move(children));
 }
 
-namespace {
-
-// Materials take their dark tint in dark mode; other styles pass through.
-Prop<ShapeStyle> adapt_materials(const Prop<ShapeStyle>& fill) {
-    if (const ShapeStyle* style = fill.static_value(); style && !std::holds_alternative<Material>(style->value())) {
-        return fill;
-    }
-    return Prop<ShapeStyle>([fill](const EnvironmentValues& environment) {
-        ShapeStyle style = fill.get(environment);
-        if (const auto* material = std::get_if<Material>(&style.value())) {
-            Material adapted = *material;
-            if (adapted.dark_tint && environment.get<ColorSchemeKey>() == ColorScheme::dark) {
-                adapted.tint = *adapted.dark_tint;
-            }
-            adapted.dark_tint.reset();
-            return ShapeStyle(adapted);
-        }
-        return style;
-    });
-}
-
-} // namespace
-
 std::unique_ptr<Element> ShapeNode::lower(const LowerContext& context) const {
     auto element = std::make_unique<ShapeElement>(spec_);
     ShapeElement* const target = element.get();
     if (spec_.fill) {
-        detail::bind(adapt_materials(*spec_.fill), context,
+        detail::bind(*spec_.fill, context,
              [target](ShapeStyle fill, const Animation* animation) { target->set_fill(std::move(fill), animation); });
     }
     if (spec_.stroke) {

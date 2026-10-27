@@ -62,12 +62,20 @@ inline Rect interpolate(const Rect& a, const Rect& b, double t) {
             interpolate(a.height, b.height, t)};
 }
 
-// Solid colors blend; anything involving a gradient switches to the target.
+// Solid colors blend, and so do backdrops; anything involving a gradient switches to the target.
 inline ShapeStyle interpolate(const ShapeStyle& a, const ShapeStyle& b, double t) {
     const Color* from = std::get_if<Color>(&a.value());
     const Color* to = std::get_if<Color>(&b.value());
     if (from && to) {
         return interpolate(*from, *to, t);
+    }
+    const auto* from_backdrop = std::get_if<BackdropFill>(&a.value());
+    const auto* to_backdrop = std::get_if<BackdropFill>(&b.value());
+    if (from_backdrop && to_backdrop) {
+        return BackdropFill{interpolate(from_backdrop->blur, to_backdrop->blur, t),
+                            interpolate(from_backdrop->saturation, to_backdrop->saturation, t),
+                            interpolate(from_backdrop->brightness, to_backdrop->brightness, t),
+                            interpolate(from_backdrop->noise, to_backdrop->noise, t)};
     }
     return b;
 }
