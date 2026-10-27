@@ -56,6 +56,12 @@ With `content_mode` the image is resizable and keeps its aspect ratio that way; 
 shown at its own size. Downloads are cached in memory, so a list that scrolls back doesn't fetch
 the same images again.
 
+Downloads use Boost.Beast and OpenSSL. They follow redirects, but never from https to http.
+Certificates are checked against the system's root certificates and the host name. A download
+times out after 30 seconds, and images over 64 MB are refused. Proxies aren't supported. To load
+images some other way (a proxy, authentication, a disk cache), download the bytes with your own
+library and show them with `Image({.data = bytes})`.
+
 To draw each phase yourself, pass a function:
 
 ```cpp

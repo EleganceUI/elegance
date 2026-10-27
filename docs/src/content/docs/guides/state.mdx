@@ -36,8 +36,8 @@ notifies, since it can't tell what changed.
 
 <Aside type="caution">
 State belongs to the UI thread. Reading or writing it from another thread throws
-`elg::UsageError`. Work on other threads should hand results back with an API that calls back on
-the UI thread, as [HTTP requests](../networking/) do.
+`elg::UsageError`. Work on other threads should hand its results back with `post_to_ui_thread`, as
+in [Networking](../networking/).
 </Aside>
 
 ## Reading state reactively

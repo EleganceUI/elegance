@@ -1356,8 +1356,10 @@ AsyncImage("https://example.com/avatar.png", [](AsyncImagePhase phase) { ... }) 
   downscaling. Decoded sizes follow the drawn size (no 4000 px decode for a 64 pt thumbnail).
 - `ImageCommand` in the display list draws a textured quad with corner radii, opacity, and the
   clip stack, through the same ubershader as layers.
-- `AsyncImage` loads over HTTP(S) through the platform: WinHTTP, NSURLSession, or libcurl. It
-  has a memory cache plus an optional disk cache.
+- `AsyncImage` downloads over HTTP(S) with Boost.Beast, Asio and OpenSSL, internally. It has a
+  memory cache. Elegance has no public networking API: apps use an established library of
+  their own (libcurl, Boost.Beast, cpp-httplib) and hand results to the UI with
+  `post_to_ui_thread`.
 
 **2. Audio**
 ```cpp
@@ -1412,8 +1414,7 @@ when an app needs the same formats everywhere, or containers and codecs the OS l
   (this design doesn't give legal advice).
 - **Architecture:** a second `VideoSource` implementation behind the same `VideoPlayer`,
   `VideoView` and `VideoControls`. The renderer and views don't change.
-  - **Demux** (libavformat): files, and HTTP(S)/HLS through FFmpeg's protocols (or our HTTP
-    layer).
+  - **Demux** (libavformat): files, and HTTP(S)/HLS through FFmpeg's protocols.
   - **Decode** on a decoder thread: hardware first, software as the fallback. FFmpeg's Vulkan
     hwaccel decodes into `VkImage`s on our device, so frames are sampled with no copy; the
     multi-planar NV12/P010 formats use a YCbCr sampler conversion. D3D11VA → the existing shared
@@ -2248,33 +2249,37 @@ Separate render thread from day one (decided).
   - HDR/10-bit, subtitles and audio track selection.
   - Fullscreen.
   - Frame pacing from the display's vsync rather than 4 ms polling.
-- [x] Media part 4, HTTP and `AsyncImage`:
-  - **`elg/http.h`:** on the system's networking, with no bundled HTTP library.
-    - WinHTTP on Windows: system certificates and proxy settings (automatic proxy where
-      supported), HTTP/2, gzip/deflate, redirects. libcurl on Linux when present; NSURLSession
-      on macOS is a follow-up.
-    - Readable errors: timeout, name not resolved, TLS failure, cancelled...
-  - **`http::fetch(Request, done)`:** a worker thread per request (up to 6). `done` runs on the
-    UI thread. It returns a `Task`, and `cancel()` closes the WinHTTP handle so a blocking call
-    stops at once.
-  - **`http::Fetch`:** a request as reactive state (`is_loading`, `has_response`, `ok`,
-    `response`, `error`, `reload`), cancelled with its last copy.
+- [x] Media part 4, `AsyncImage`:
+  - **Downloads (`src/net/fetch.h`, internal):** Boost.Beast (HTTP/1.1) and Asio on one network
+    thread, each request a coroutine, with TLS through OpenSSL (TLS 1.2 or later). There's no
+    public HTTP or WebSocket API (the direction review: no custom networking code paths, and no
+    promise of a network API). `elg/http.h` and `elg/websocket.h`, on WinHTTP and libcurl, were
+    removed.
+    - Certificates are checked against the system's roots (the Windows ROOT store, the macOS
+      keychain's anchors, the distribution's bundle on Linux; vcpkg's OpenSSL doesn't know
+      them) and the host name. SNI.
+    - Redirects (up to 5), never from https to http. Parsed and resolved with Boost.URL.
+    - A 30 s timeout for the whole request, a 64 MB body limit, and readable errors (`HTTP 404`,
+      timed out, name not resolved, the secure connection failed: why).
+    - `cancel()` emits a terminal cancellation on the network thread; the callback doesn't run.
   - **`AsyncImage(url, {.scale, .content_mode})`** and `AsyncImage(url, content(phase))`:
     - Fetched when lowered (so List rows not built don't download) and cancelled when the view
       goes. Responses are checked to be images (`probe_image`).
     - Downloads are cached in memory by URL (64 MB LRU), so scrolling back doesn't fetch again.
     - The phase is the key of a one-item ForEach, so the spinner fades into the image. Failure
       shows `image-broken` with the error as a tooltip.
-  - **Sandbox:** a Wikimedia photo (fill + rounded clip), a GitHub avatar in a circle, a failing
-    `.invalid` URL, and an `http::Fetch` status line with Reload. Idle CPU stays 0.
-  - **Tests:** header lookup, cancellation, AsyncImage construction and errors.
-- [ ] Networking follow-ups:
-  - NSURLSession (macOS).
+  - **Sandbox:** a Wikimedia photo (fill + rounded clip), a GitHub avatar in a circle, and a
+    failing `.invalid` URL.
+  - **Tests (`fetch_tests.cpp`):** a local Beast server for redirects, loops, 404s, the body
+    limit, timeouts and cancellation; over TLS with a test CA for untrusted certificates, the
+    wrong host name and https-to-http redirects. `[.network]` (hidden) checks the system roots
+    against example.com.
+  - **Example:** network-cpp uses cpp-httplib (its own vcpkg dependency) on a background thread
+    with `post_to_ui_thread`.
+- [ ] Image download follow-ups:
+  - Proxies (system settings), HTTP/2, connection reuse.
   - A disk cache honoring `Cache-Control`/`ETag`.
-  - Upload/download progress and streaming bodies.
-  - WebSockets: `http::WebSocket` (elg/websocket.h) on WinHTTP; libcurl's WebSocket API elsewhere.
-  - Optional JSON adapter (`elg/json.h` + `Response::json()`) behind a vcpkg feature, so apps
-    that already use a JSON library don't get a second one.
+  - Revocation checks (OCSP/CRL) aren't done.
 - [x] Desktop integration (§13.4): file dialogs, drag and drop in, notifications and the tray
   icon, with a sandbox Desktop row and tests for the rules around them. The interactive parts
   (dialogs, toasts, tray menu, drops) still need a person to try them.

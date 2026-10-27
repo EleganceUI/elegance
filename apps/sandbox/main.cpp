@@ -411,25 +411,11 @@ View VideoCards() {
                   Captioned(filled, "The same video, fill + Circle").card());
 }
 
-// Networking (design.md §13.3): AsyncImage loads over HTTPS when shown (spinner, then the image,
-// or a placeholder on failure); http::Fetch is a request as reactive state.
+// Remote images (design.md §13.3): AsyncImage downloads when shown (spinner, then the image, or a
+// placeholder on failure).
 View NetworkCards() {
     const std::string landscape = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/Fronalpstock_big.jpg/500px-Fronalpstock_big.jpg";
     const std::string avatar = "https://avatars.githubusercontent.com/u/9919?s=96";
-    const http::Fetch page("https://example.com/");
-    const View status = VStack({.alignment = HorizontalAlignment::leading, .spacing = 6},
-                               Text([=] {
-                                   if (page.is_loading()) {
-                                       return std::string("Loading example.com…");
-                                   }
-                                   if (!page.has_response()) {
-                                       return "Failed: " + page.error();
-                                   }
-                                   const http::Response response = page.response();
-                                   return std::format("HTTP {} · {} bytes · {}", response.status, response.body.size(),
-                                                      response.header("content-type"));
-                               }),
-                               Button("Reload", [=] { page.reload(); }).button_style(BorderedButtonStyle{}));
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
                   Captioned(AsyncImage(landscape, {.content_mode = ContentMode::fill})
                                 .frame(200, 120)
@@ -440,8 +426,7 @@ View NetworkCards() {
                                    AsyncImage(avatar, {.content_mode = ContentMode::fill}).frame(56, 56).clip_shape(Circle()),
                                    AsyncImage("https://example.invalid/missing.png").frame(56, 56)),
                             "Avatar; a failing URL")
-                      .card(),
-                  Captioned(status, "http::Fetch").card());
+                      .card());
 }
 
 // Desktop integration (design.md §13.4): dropping files, the system's file dialogs,

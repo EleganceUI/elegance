@@ -8,12 +8,13 @@
 
 #include <elg/image.h>
 
+#include "core/ui_tasks.h"
 #include "media/image_decode.h"
+#include "net/fetch.h"
 #include "view/raster_image.h"
 #include "view/view_node.h"
 
 #include <elg/error.h>
-#include <elg/http.h>
 #include <elg/shapes.h>
 #include <elg/theme.h>
 #include <elg/views.h>
@@ -73,7 +74,7 @@ private:
 
 struct Loader {
     std::string url;
-    http::Task task;
+    net::FetchTask task;
     State<int> phase{0}; // AsyncImagePhase::Kind
     std::shared_ptr<const Bytes> bytes;
     std::string error;
@@ -85,30 +86,30 @@ struct Loader {
             phase = static_cast<int>(AsyncImagePhase::Kind::success);
             return;
         }
-        task = http::fetch({.url = url}, [weak = std::weak_ptr(self)](const http::Result& result) {
-            const auto loader = weak.lock();
-            if (!loader) {
-                return;
-            }
-            if (!result) {
-                loader->fail(result.error());
-                return;
-            }
-            if (!result->ok()) {
-                loader->fail(std::format("HTTP {}", result->status));
-                return;
-            }
-            auto data = std::make_shared<const Bytes>(result->body);
-            try {
-                probe_image(*data); // an error page or HTML isn't an image
-            } catch (const std::exception& failure) {
-                loader->fail(failure.what());
-                return;
-            }
-            DownloadCache::instance().store(loader->url, data);
-            loader->bytes = std::move(data);
-            loader->phase = static_cast<int>(AsyncImagePhase::Kind::success);
+        task = net::fetch(url, [weak = std::weak_ptr(self)](net::FetchResult result) {
+            post_ui_task([weak, result = std::move(result)] { finish(weak, result); });
         });
+    }
+
+    static void finish(const std::weak_ptr<Loader>& weak, const net::FetchResult& result) {
+        const auto loader = weak.lock();
+        if (!loader) {
+            return;
+        }
+        if (!result) {
+            loader->fail(result.error());
+            return;
+        }
+        auto data = std::make_shared<const Bytes>(*result);
+        try {
+            probe_image(*data); // an error page or HTML isn't an image
+        } catch (const std::exception& failure) {
+            loader->fail(failure.what());
+            return;
+        }
+        DownloadCache::instance().store(loader->url, data);
+        loader->bytes = std::move(data);
+        loader->phase = static_cast<int>(AsyncImagePhase::Kind::success);
     }
 
     void fail(std::string why) {

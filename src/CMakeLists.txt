@@ -38,8 +38,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         media/gpu_image.cpp
         media/video_feed.cpp
         media/video_source.cpp
-        net/http.cpp
-        net/websocket.cpp
+        net/fetch.cpp
         platform/accessibility_adapter.cpp
         platform/desktop_sdl.cpp
         platform/dynamic_library.cpp
@@ -134,6 +133,10 @@ find_package(Dawn CONFIG REQUIRED) # WebGPU (design.md §5)
 find_package(Freetype REQUIRED)
 find_package(harfbuzz CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
+# AsyncImage downloads (net/fetch.cpp)
+find_package(boost_beast CONFIG REQUIRED)
+find_package(boost_url CONFIG REQUIRED)
+find_package(OpenSSL REQUIRED)
 # Accessibility (design.md §12): AccessKit's official prebuilt C library (MIT / Apache-2.0),
 # linked statically, so building Elegance needs no Rust toolchain.
 if (ELG_ACCESSIBILITY)
@@ -190,7 +193,7 @@ endif ()
 if (WIN32)
     target_sources(elegance PRIVATE gpu/composition_win32.cpp)
     # dwmapi: rounded corners for undecorated windows; d3d11/dxgi/dcomp: transparent windows.
-    target_link_libraries(elegance PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid mf mfreadwrite strmiids oleaut32 winhttp shell32)
+    target_link_libraries(elegance PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid mf mfreadwrite strmiids oleaut32 shell32 crypt32)
 endif ()
 
 if (APPLE)
@@ -203,20 +206,7 @@ if (APPLE)
     target_link_libraries(elegance PRIVATE
             "-framework AppKit" "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework QuartzCore"
             "-framework Foundation" "-framework ImageIO" "-framework CoreGraphics" "-framework CoreFoundation"
-            curl)
-endif ()
-
-# HTTP (net/http.cpp) uses the system's libcurl where there's no native HTTP API; without it,
-# requests fail with an error.
-if (NOT WIN32 AND NOT APPLE)
-    find_package(CURL)
-    if (CURL_FOUND)
-        target_link_libraries(elegance PRIVATE CURL::libcurl)
-        target_compile_definitions(elegance PRIVATE ELG_HAVE_CURL=1)
-    else ()
-        message(WARNING "libcurl not found (install libcurl4-openssl-dev or libcurl-devel): "
-                        "building without HTTP support")
-    endif ()
+            "-framework Security")
 endif ()
 
 target_link_libraries(elegance PRIVATE
@@ -225,6 +215,10 @@ target_link_libraries(elegance PRIVATE
         Freetype::Freetype
         harfbuzz::harfbuzz
         msdfgen::msdfgen-core
+        Boost::beast
+        Boost::url
+        OpenSSL::SSL
+        OpenSSL::Crypto
 )
 
 # vcpkg only deploys an executable's direct DLL dependencies, so copy ours (SDL3, ...) next to

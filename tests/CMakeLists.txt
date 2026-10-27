@@ -4,6 +4,8 @@
 
 find_package(Catch2 3 CONFIG REQUIRED)
 find_package(Dawn CONFIG REQUIRED)
+find_package(boost_beast CONFIG REQUIRED) # fetch_tests.cpp's local server
+find_package(OpenSSL REQUIRED)
 include(Catch)
 
 add_executable(elegance_tests
@@ -21,7 +23,7 @@ add_executable(elegance_tests
         raw_input_tests.cpp
         gesture_tests.cpp
         floating_tests.cpp
-        http_tests.cpp
+        fetch_tests.cpp
         image_tests.cpp
         navigation_tests.cpp
         number_input_tests.cpp
@@ -38,7 +40,7 @@ add_executable(elegance_tests
         toggle_tests.cpp
         video_tests.cpp
 )
-target_link_libraries(elegance_tests PRIVATE Elegance::Elegance Catch2::Catch2WithMain)
+target_link_libraries(elegance_tests PRIVATE Elegance::Elegance Catch2::Catch2WithMain Boost::beast OpenSSL::SSL)
 target_include_directories(elegance_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(elegance_tests SYSTEM PRIVATE
         $<TARGET_PROPERTY:dawn::webgpu_dawn,INTERFACE_INCLUDE_DIRECTORIES>)
