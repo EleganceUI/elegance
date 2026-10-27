@@ -169,10 +169,4 @@ void LayoutPriorityModifier::place(Rect bounds, ProposedSize proposal, const Lay
     content.place({bounds.x, bounds.y}, proposal);
 }
 
-// --- BorderModifier ---
-
-View BorderModifier::body(View content) const {
-    return content.overlay(Rectangle().stroke_border(color_, width_));
-}
-
 } // namespace elg

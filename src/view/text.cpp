@@ -39,12 +39,12 @@ Text::Text(Prop<std::string> content)
 
 Text::Text(std::shared_ptr<const TextNode> node) : View(detail::ViewAccess::make(std::move(node))) {}
 
-Text Text::font(Font font) const {
+Text Text::font(Prop<Font> font) const {
     return with_style(*this, [&](TextStyle& style) { style.font = std::move(font); });
 }
 
-Text Text::font_weight(Weight weight) const {
-    return with_style(*this, [&](TextStyle& style) { style.weight = weight; });
+Text Text::font_weight(Prop<Weight> weight) const {
+    return with_style(*this, [&](TextStyle& style) { style.weight = std::move(weight); });
 }
 
 Text Text::bold() const {

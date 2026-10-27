@@ -18,7 +18,7 @@ one modifier styles every control inside a view.
 | `Progress` | `LinearProgressStyle` (default), `CircularProgressStyle` |
 | `TextField`, `TextArea` | `RoundedBorderTextFieldStyle` (default), `PlainTextFieldStyle` |
 | `popover` | `DefaultPopoverStyle` (default), `PlainPopoverStyle` |
-| `tooltip`, `help` | `DefaultTooltipStyle` (default), `PlainTooltipStyle` |
+| `tooltip` | `DefaultTooltipStyle` (default), `PlainTooltipStyle` |
 | `Menu` | `DefaultMenuStyle` (default), `PlainMenuStyle` |
 
 ```cpp

@@ -57,7 +57,7 @@ The modifiers, grouped by what they do:
 | Layout | `padding`, `frame`, `fixed_size`, `aspect_ratio`, `resizable`, `layout_priority`, `z_index`, `offset` |
 | Decoration | `background`, `overlay`, `border` |
 | Effects | `clipped`, `clip_shape`, `corner_radius`, `opacity`, `shadow`, `content_shape`, `allows_hit_testing` |
-| Events | `on_click`, `on_double_click`, `on_activate`, `recognize`, `on_drag`, `on_long_press`, `on_magnify`, `on_rotate`, `on_smart_magnify`, `on_pointer_enter`, `on_pointer_leave`, `on_hover_change`, `on_pointer`, `on_scroll`, `on_drop`, `on_key_press`, `on_key`, `on_text_input`, `focusable`, `focused`, `context_menu`, `floating`, `popover`, `tooltip`, `help`, `window_drag_area` |
+| Events | `on_click`, `on_double_click`, `on_activate`, `recognize`, `on_drag`, `on_long_press`, `on_magnify`, `on_rotate`, `on_two_finger_double_tap`, `on_pointer_enter`, `on_pointer_leave`, `on_hover_change`, `on_pointer`, `on_scroll`, `on_drop`, `on_key_press`, `on_key`, `on_text_input`, `focusable`, `focused`, `context_menu`, `floating`, `popover`, `tooltip`, `help`, `window_drag_area` |
 | Environment | `font`, `font_weight`, `foreground_style`, `tint`, `color_scheme`, `theme`, `disabled`, `button_style`, `toggle_style`, `text_field_style`, `hover_delay`, `environment<Key>` |
 | Animation | `animation`, `transition`, `animates_layout` |
 | Accessibility | `accessibility_label`, `accessibility_value`, `accessibility_hint`, `accessibility_hidden`, `accessibility_role`, `accessibility_element`, `accessibility_action` |

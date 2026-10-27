@@ -514,12 +514,12 @@ bool EventDispatcher::rotate(RotateEvent event) {
                    [](EventHandler& handler, const RotateEvent& e) { return handler.rotate(e); });
 }
 
-bool EventDispatcher::smart_magnify(Point location) {
+bool EventDispatcher::two_finger_double_tap(Point location) {
     bool redraw = false;
     const std::vector<Element*> path = path_at(location);
     for (auto it = path.rbegin(); it != path.rend(); ++it) {
         if (EventHandler* handler = (*it)->event_handler()) {
-            const EventResult result = handler->smart_magnify(location);
+            const EventResult result = handler->two_finger_double_tap(location);
             redraw |= result.redraw;
             if (result.consumed) {
                 break;

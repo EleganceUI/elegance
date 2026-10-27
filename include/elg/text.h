@@ -38,8 +38,8 @@ public:
     // Static or reactive: Text("Hello") or Text([=] { return std::format("{} items", count()); })
     ELG_API explicit Text(Prop<std::string> content);
 
-    ELG_API Text font(Font font) const;
-    ELG_API Text font_weight(Weight weight) const;
+    ELG_API Text font(Prop<Font> font) const;
+    ELG_API Text font_weight(Prop<Weight> weight) const;
     ELG_API Text bold() const;
     ELG_API Text foreground_style(Prop<Color> color) const;
     // Maximum number of lines; 0 for no limit.

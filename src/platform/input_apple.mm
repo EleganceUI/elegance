@@ -80,7 +80,7 @@ void* install_input_monitor(std::function<bool(const NativeInput&)> handle) {
             input.amount = -event.rotation; // AppKit's is counterclockwise
             input.phase = phase(event.phase);
             break;
-        case NSEventTypeSmartMagnify: input.kind = NativeInput::Kind::smart_magnify; break;
+        case NSEventTypeSmartMagnify: input.kind = NativeInput::Kind::two_finger_double_tap; break;
         default: return event;
         }
         return handle(input) ? nil : event;

@@ -237,7 +237,7 @@ View View::background(Prop<ShapeStyle> style, const Shape& shape) const {
 }
 
 View View::clipped() const {
-    return modifier(ClippedModifier());
+    return clip_shape(Rectangle());
 }
 
 View View::clip_shape(const Shape& shape) const {
@@ -315,10 +315,6 @@ View View::hue_rotation(Prop<float> degrees) const {
 
 View View::sepia(Prop<float> amount) const {
     return modifier(ColorFilterModifier(color_filter(ColorFilter::Kind::sepia, std::move(amount))));
-}
-
-View View::color_invert() const {
-    return color_invert(1.f);
 }
 
 View View::color_invert(Prop<float> amount) const {
@@ -411,8 +407,8 @@ View View::recognize(RotateGesture gesture) const {
     return modifier(RotateGestureModifier(std::move(gesture)));
 }
 
-View View::recognize(SmartMagnifyGesture gesture) const {
-    return modifier(SmartMagnifyModifier(std::move(gesture)));
+View View::recognize(TwoFingerDoubleTapGesture gesture) const {
+    return modifier(TwoFingerDoubleTapModifier(std::move(gesture)));
 }
 
 View View::on_drag(std::function<void(const DragEvent&)> action) const {
@@ -431,8 +427,8 @@ View View::on_rotate(std::function<void(const RotateEvent&)> action) const {
     return recognize(RotateGesture().on_changed(std::move(action)));
 }
 
-View View::on_smart_magnify(std::function<void(Point)> action) const {
-    return recognize(SmartMagnifyGesture(std::move(action)));
+View View::on_two_finger_double_tap(std::function<void(Point)> action) const {
+    return recognize(TwoFingerDoubleTapGesture(std::move(action)));
 }
 
 View View::pointer_style(Prop<PointerStyle> style) const {
@@ -458,10 +454,6 @@ View View::on_pointer_leave(std::function<void()> action) const {
 
 View View::on_hover_change(std::function<void(bool)> action) const {
     return modifier(HoverModifier(std::move(action)));
-}
-
-View View::on_hover_change(std::function<void(bool)> action, HoverDelay delay) const {
-    return modifier(HoverModifier(std::move(action), delay));
 }
 
 View View::hover_delay(HoverDelay delay) const {
@@ -531,17 +523,23 @@ View View::overlay(View view, Alignment alignment) const {
     return modifier(OverlayModifier(std::move(view), alignment));
 }
 
-View View::border(Color color, float width) const {
-    return modifier(BorderModifier(color, width));
+View View::border(Prop<Color> color, float width) const {
+    return border(std::move(color), width, Rectangle());
+}
+
+View View::border(Prop<Color> color, float width, const Shape& shape) const {
+    return overlay(shape.stroke_border(std::move(color), width));
 }
 
 View View::font(Prop<Font> font) const {
     return modifier(FontModifier(std::move(font)));
 }
 
-View View::font_weight(Weight weight) const {
+View View::font_weight(Prop<Weight> weight) const {
     // Resolved against the surrounding environment, so this reads the font from outside.
-    return font([weight](const EnvironmentValues& environment) { return environment.get<FontKey>().weight(weight); });
+    return font([weight = std::move(weight)](const EnvironmentValues& environment) {
+        return environment.get<FontKey>().weight(weight.get(environment));
+    });
 }
 
 View View::foreground_style(Prop<Color> color) const {
@@ -558,10 +556,6 @@ View View::theme(Theme theme) const {
 
 View View::disabled(Prop<bool> disabled) const {
     return modifier(DisabledModifier(std::move(disabled)));
-}
-
-View View::disabled() const {
-    return disabled(true);
 }
 
 View View::animation_impl(const Animation& animation, std::function<bool()> changed) const {
@@ -1026,10 +1020,12 @@ std::unique_ptr<Element> TextNode::lower(const LowerContext& context) const {
     TextElement* const target = element.get();
 
     // The font: the Text's own, else the environment's; then any weight override.
-    Prop<Font> font = style_.font ? Prop<Font>(*style_.font)
+    Prop<Font> font = style_.font ? style_.font->resolved_in(environment)
                                   : Prop<Font>([environment] { return environment.get<FontKey>(); });
     if (style_.weight) {
-        font = Prop<Font>([font, weight = *style_.weight] { return font.get().weight(weight); });
+        font = Prop<Font>([font, weight = style_.weight->resolved_in(environment)] {
+            return font.get().weight(weight.get());
+        });
     }
     detail::bind(font, context, [target](const Font& value) { target->set_font(value); });
     detail::bind(content_, context, [target](const std::string& content) { target->set_content(content); });

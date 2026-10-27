@@ -449,18 +449,18 @@ View Menu(Items&&... items) {
     return detail::make_menu({View(std::forward<Items>(items))...});
 }
 
-// Which side of its button a MenuButton's menu opens on (it flips if there isn't room).
-enum class MenuEdge { below, above };
-
 struct MenuButtonOptions {
-    MenuEdge opens = MenuEdge::below;  // above: for buttons near the bottom, like a message box's
+    // Where the menu opens, as for floating content: below the button by default, flipping when
+    // there isn't room. Above, for buttons near the bottom like a message box's:
+    //   {.placement = {.edge = FloatingEdge::top, .spacing = 4}}
+    FloatingPlacement placement{.spacing = 4};
     Prop<bool> shows_indicator = true; // the chevron after the label
+    std::optional<PopupMotion> motion; // nullopt: the MenuStyle's
 };
 
-// A button that opens the menu `menu` builds, below it (or as `options` say).
-ELG_API View MenuButton(View label, std::function<View()> menu);
-ELG_API View MenuButton(View label, std::function<View()> menu, MenuButtonOptions options);
-ELG_API View MenuButton(Prop<std::string> title, std::function<View()> menu);
+// A button that opens the menu `menu` builds, in a popup window.
+ELG_API View MenuButton(View label, std::function<View()> menu, MenuButtonOptions options = {});
+ELG_API View MenuButton(Prop<std::string> title, std::function<View()> menu, MenuButtonOptions options = {});
 
 // Lines between a lazy stack's items, in the middle of the spacing:
 //   LazyVStack({.spacing = 0, .separators = StackSeparators{.inset = 16}}, ForEach(...))

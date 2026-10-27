@@ -51,7 +51,7 @@ public:
     // deltas since `began`.
     bool magnify(MagnifyEvent event);
     bool rotate(RotateEvent event);
-    bool smart_magnify(Point location);
+    bool two_finger_double_tap(Point location);
     // Whether pressing at `location` should move the window: the innermost handler there is a
     // .window_drag_area() (controls inside one take their clicks).
     bool drags_window_at(Point location);

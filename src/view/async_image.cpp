@@ -166,7 +166,7 @@ View AsyncImage(std::string url, AsyncImageOptions options) {
             switch (phase.kind) {
             case AsyncImagePhase::Kind::loading: return Progress();
             case AsyncImagePhase::Kind::failure:
-                return Image("image-broken").foreground_style(ThemeColor::tertiary).help(phase.error);
+                return Image("image-broken").foreground_style(ThemeColor::tertiary).tooltip(phase.error);
             case AsyncImagePhase::Kind::success:
                 return mode ? phase.image.resizable().aspect_ratio(*mode) : phase.image;
             }

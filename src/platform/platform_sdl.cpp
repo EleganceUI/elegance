@@ -302,7 +302,7 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
     if (desc.title_bar == TitleBar::integrated && !popup) {
         title_bar_ = apple::integrate_title_bar(
             SDL_GetPointerProperty(SDL_GetWindowProperties(window_), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr),
-            desc.traffic_lights_position);
+            desc.system_controls_position);
     }
 #endif
 
@@ -633,7 +633,7 @@ Platform::Platform() {
             break;
         case apple::NativeInput::Kind::magnify: event.type = EventType::magnify; break;
         case apple::NativeInput::Kind::rotate: event.type = EventType::rotate; break;
-        case apple::NativeInput::Kind::smart_magnify: event.type = EventType::smart_magnify; break;
+        case apple::NativeInput::Kind::two_finger_double_tap: event.type = EventType::two_finger_double_tap; break;
         }
         native_events_.push_back(std::move(event));
         SDL_Event marker{};

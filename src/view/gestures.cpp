@@ -35,7 +35,7 @@ struct GestureAccess {
     static std::unique_ptr<EventHandler> handler(const LongPressGesture& gesture);
     template <class Event>
     static std::unique_ptr<EventHandler> handler(const PhasedGesture<Event>& gesture);
-    static std::unique_ptr<EventHandler> handler(const SmartMagnifyGesture& gesture);
+    static std::unique_ptr<EventHandler> handler(const TwoFingerDoubleTapGesture& gesture);
 };
 
 namespace {
@@ -289,11 +289,11 @@ private:
     PhasedCallbacks<RotateEvent> callbacks_;
 };
 
-class SmartMagnifyHandler final : public EventHandler {
+class TwoFingerDoubleTapHandler final : public EventHandler {
 public:
-    explicit SmartMagnifyHandler(std::function<void(Point)> action) : action_(std::move(action)) {}
+    explicit TwoFingerDoubleTapHandler(std::function<void(Point)> action) : action_(std::move(action)) {}
 
-    EventResult smart_magnify(Point location) override {
+    EventResult two_finger_double_tap(Point location) override {
         if (!action_) {
             return {};
         }
@@ -326,8 +326,8 @@ std::unique_ptr<EventHandler> GestureAccess::handler(const PhasedGesture<Event>&
     }
 }
 
-std::unique_ptr<EventHandler> GestureAccess::handler(const SmartMagnifyGesture& gesture) {
-    return std::make_unique<SmartMagnifyHandler>(gesture.action_);
+std::unique_ptr<EventHandler> GestureAccess::handler(const TwoFingerDoubleTapGesture& gesture) {
+    return std::make_unique<TwoFingerDoubleTapHandler>(gesture.action_);
 }
 
 } // namespace detail
@@ -348,7 +348,7 @@ std::unique_ptr<EventHandler> RotateGestureModifier::make_handler() const {
     return detail::GestureAccess::handler(gesture_);
 }
 
-std::unique_ptr<EventHandler> SmartMagnifyModifier::make_handler() const {
+std::unique_ptr<EventHandler> TwoFingerDoubleTapModifier::make_handler() const {
     return detail::GestureAccess::handler(gesture_);
 }
 

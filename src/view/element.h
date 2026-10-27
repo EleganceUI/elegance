@@ -440,8 +440,8 @@ private:
 };
 
 struct TextStyle {
-    std::optional<Font> font;
-    std::optional<Weight> weight;
+    std::optional<Prop<Font>> font;
+    std::optional<Prop<Weight>> weight;
     std::optional<Prop<Color>> color;
     int line_limit = 0; // 0: unlimited
     TextAlignment alignment = TextAlignment::leading;

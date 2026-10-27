@@ -779,7 +779,7 @@ void EffectElement::paint_impl(DisplayList& list) const {
         content.commands.push_back(PopLayerCommand{});
         list.animating |= content.animating;
     }
-    const bool clips = !mask && (effects_.clip_to_bounds || effects_.clip_shape);
+    const bool clips = !mask && effects_.clip_shape.has_value();
     if (clips) {
         ShapeOutline clip{frame(), {}};
         if (effects_.clip_shape) {

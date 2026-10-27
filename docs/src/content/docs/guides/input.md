@@ -67,7 +67,7 @@ presses: dragging a slider in a draggable card moves the slider.
 
 ### Trackpad gestures
 
-Pinching, turning two fingers, and a two-finger double tap (smart zoom) go to the innermost view
+Pinching, turning two fingers, and a two-finger double tap go to the innermost view
 under the pointer that handles them, from `began` to `ended`:
 
 ```cpp
@@ -80,10 +80,10 @@ Photo()
                    // scale is since the gesture began
                    .on_changed([=](const MagnifyEvent& e) { zoom = std::clamp(start() * e.scale, 0.5f, 8.f); }))
     .on_rotate([=](const RotateEvent& e) { angle = e.degrees; }) // clockwise, since it began
-    .on_smart_magnify([=](Point) { zoom = zoom() == 1 ? 2.f : 1.f; });
+    .on_two_finger_double_tap([=](Point) { zoom = zoom() == 1 ? 2.f : 1.f; });
 ```
 
-Rotation and smart zoom come from macOS trackpads. Pinching also works where SDL reports it on
+Rotation and two-finger double taps come from macOS trackpads. Pinching also works where SDL reports it on
 other platforms.
 
 ## Hover
@@ -102,17 +102,17 @@ Row()
 
 `on_hover_change` is hover *intent*: it reports true only once the pointer has rested on the view
 (0.1 s by default), so sweeping across a grid doesn't start a preview on every tile, and false
-when it leaves. Change the delays for a subtree or for one handler:
+when it leaves. Change the delays with `.hover_delay`, for everything inside it:
 
 ```cpp
 Grid().hover_delay({.enter = 0.3, .exit = 0.2});
-Tile().on_hover_change(show_preview, HoverDelay{.enter = 0.5});
+Tile().on_hover_change(show_preview).hover_delay({.enter = 0.5}); // just this handler
 ```
 
 Controls' own highlights (buttons, menu buttons, toggles) follow the pointer at once; the hover
 delay doesn't apply to them.
 
-`.help("...")` shows a tooltip after the pointer rests on a view for a moment.
+`.tooltip("...")` shows a tooltip after the pointer rests on a view for a moment.
 
 ## Pointer style
 

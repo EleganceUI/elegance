@@ -364,7 +364,7 @@ public:
 
 // What a TooltipStyle wraps: the tooltip's content.
 struct TooltipConfiguration {
-    View content; // .help(text): the text
+    View content; // .tooltip(text): the text
 };
 
 class ELG_API TooltipStyle {

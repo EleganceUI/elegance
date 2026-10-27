@@ -63,7 +63,7 @@ enum class EventType {
     window_fullscreen_changed,
     magnify,       // trackpad pinch
     rotate,        // two fingers turning
-    smart_magnify, // two-finger double tap
+    two_finger_double_tap, // two-finger double tap
     system_theme_changed,
     // Drag and drop from other apps: begin, position (while over the window), a file or text
     // (one event each), complete (dropped, or the drag left).

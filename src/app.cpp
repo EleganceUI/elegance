@@ -1140,7 +1140,7 @@ int App::run() {
             break;
         case platform::EventType::magnify:
         case platform::EventType::rotate:
-        case platform::EventType::smart_magnify:
+        case platform::EventType::two_finger_double_tap:
             pending.close_tooltip = pending.close_tooltip || tooltip.has_value();
             if (auto it = find_window(event.window_id); it != windows.end()) {
                 LiveWindow& live = **it;
@@ -1151,7 +1151,7 @@ int App::run() {
                 } else if (event.type == platform::EventType::rotate) {
                     redraw = live.events.rotate({.location = location, .delta = event.amount, .phase = event.phase});
                 } else {
-                    redraw = live.events.smart_magnify(location);
+                    redraw = live.events.two_finger_double_tap(location);
                 }
                 live.dirty |= redraw;
             }

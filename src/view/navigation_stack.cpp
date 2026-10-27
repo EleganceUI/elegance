@@ -483,7 +483,7 @@ View BarNavigationStackStyle::make_body(const NavigationStackConfiguration& stac
                               return env.get<TintKey>();
                           })))
                           .accessibility_label("Back")
-                          .help("Back (Alt+Left)");
+                          .tooltip("Back (Alt+Left)");
     const View bar = ZStack(Text(current).font(o.title_font).line_limit(1).padding(EdgeInsets::symmetric(96, 0)),
                             HStack(If(stack.can_go_back, back), Spacer()))
                          .padding(EdgeInsets::symmetric(12, 0))

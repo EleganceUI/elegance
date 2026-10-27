@@ -381,17 +381,16 @@ public:
         WindowServices* const services = context.services;
         auto element = make_button_element(
             body,
-            [services, element_slot, menu = menu_, environment, edge = options_.opens] {
+            [services, element_slot, menu = menu_, environment, placement = options_.placement,
+             motion = options_.motion] {
                 if (services && *element_slot) {
                     services->open_popup({.kind = PopupRequest::Kind::menu,
-                                          .placement = {.edge = edge == MenuEdge::above ? FloatingEdge::top
-                                                                                        : FloatingEdge::bottom,
-                                                        .spacing = 4},
+                                          .placement = placement,
                                           .anchor = (*element_slot)->drawn_frame(),
                                           .content = menu,
                                           .environment = environment,
                                           .level = services->menu_level() + 1,
-                                          .motion = menu_motion(environment)});
+                                          .motion = motion ? *motion : menu_motion(environment)});
                 }
             },
             pressed, hovered, context);
@@ -455,16 +454,13 @@ View PlainMenuStyle::make_body(const MenuConfiguration& menu) const {
     return menu.items;
 }
 
-View MenuButton(View label, std::function<View()> menu) {
-    return MenuButton(std::move(label), std::move(menu), MenuButtonOptions{});
-}
-
 View MenuButton(View label, std::function<View()> menu, MenuButtonOptions options) {
-    return ViewAccess::make(std::make_shared<const detail::MenuButtonNode>(std::move(label), std::move(menu), options));
+    return ViewAccess::make(
+        std::make_shared<const detail::MenuButtonNode>(std::move(label), std::move(menu), std::move(options)));
 }
 
-View MenuButton(Prop<std::string> title, std::function<View()> menu) {
-    return MenuButton(Text(std::move(title)), std::move(menu));
+View MenuButton(Prop<std::string> title, std::function<View()> menu, MenuButtonOptions options) {
+    return MenuButton(Text(std::move(title)), std::move(menu), std::move(options));
 }
 
 View View::context_menu(std::function<View()> menu) const {

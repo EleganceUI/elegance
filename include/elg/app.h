@@ -23,7 +23,7 @@ enum class TitleBar {
     hidden, // none: the content fills the window. Draw your own title bar with
             // .window_drag_area() and WindowControls() (elg/window.h); edges still resize.
     // The content fills the window, and the system's own window controls stay over it, where the
-    // platform has them: the traffic lights on macOS (see WindowDesc::traffic_lights_position).
+    // platform has them: the traffic lights on macOS (see WindowDesc::system_controls_position).
     // Leave room with WindowHandle::system_controls_frame() and drag with .window_drag_area().
     // Elsewhere the window keeps its system title bar (as TitleBar::system).
     integrated,
@@ -40,9 +40,10 @@ struct WindowDesc {
     // clear for transparent windows.
     std::optional<Color> background;
     TitleBar title_bar = TitleBar::system;
-    // macOS, TitleBar::integrated: where the close button's top-left corner sits, in points from
-    // the window's top-left corner (the others follow it). Default: where macOS puts them.
-    std::optional<Point> traffic_lights_position;
+    // TitleBar::integrated: where the system's window controls go, as the first one's top-left
+    // corner in points from the window's top-left corner (the others follow it). Default: where
+    // the system puts them. Only macOS draws its controls over the content, so only macOS uses it.
+    std::optional<Point> system_controls_position;
     // The desktop shows through wherever the window's content (and background) isn't opaque:
     // rounded or shaped windows, glassy panels. Usually with TitleBar::hidden. Needs a compositing
     // window system; where transparency isn't available the window stays opaque.

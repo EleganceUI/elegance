@@ -5,7 +5,8 @@
 #ifndef ELG_MODIFIERS_DECORATION_H
 #define ELG_MODIFIERS_DECORATION_H
 
-// Built-in decoration modifiers. View::background(), overlay(), border() are sugar over these.
+// Built-in decoration modifiers. View::background() and overlay() are sugar over these; border()
+// is an overlay of a stroked shape.
 
 #include <elg/color.h>
 #include <elg/export.h>
@@ -64,17 +65,6 @@ private:
     View view_;
     Alignment alignment_;
     ELG_PRIVATE_MEMBERS_END
-};
-
-class ELG_API BorderModifier final : public ViewModifier {
-public:
-    BorderModifier(Color color, float width) noexcept : color_(color), width_(width) {}
-
-    View body(View content) const override;
-
-private:
-    Color color_;
-    float width_;
 };
 
 } // namespace elg

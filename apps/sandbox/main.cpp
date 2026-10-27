@@ -144,8 +144,8 @@ View MenuCards() {
                             "MenuButton, Picker(.menu)")
                       .card(),
                   Captioned(Button("Hover for help", say("Help button")).button_style(BorderedButtonStyle{})
-                                .help("Tooltips open after a short rest"),
-                            ".help()")
+                                .tooltip("Tooltips open after a short rest"),
+                            ".tooltip()")
                       .card());
 }
 

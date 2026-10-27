@@ -673,8 +673,8 @@ View View::tooltip(std::function<View()> content, TooltipOptions options) const 
     return detail::ViewAccess::make(std::make_shared<const detail::TooltipNode>(*this, std::move(content), std::move(options)));
 }
 
-View View::help(Prop<std::string> text) const {
-    return tooltip([text = std::move(text)] { return Text(text); });
+View View::tooltip(Prop<std::string> text, TooltipOptions options) const {
+    return tooltip([text = std::move(text)] { return Text(text); }, std::move(options));
 }
 
 // --- Styles ---

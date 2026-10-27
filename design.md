@@ -682,7 +682,7 @@ how to lower a modifier. Users can implement any of them.
 | `LayoutModifier`        | `size_that_fits(proposal, child)`, `place(bounds, child)`  | `PaddingModifier`, `FrameModifier`, `AspectRatioModifier`,          |
 |                         |                                                            | `FixedSizeModifier`, `OffsetModifier`, `LayoutPriorityModifier`     |
 | `EnvironmentModifier<K>`| value for key `K` in the subtree                           | `font`, `foreground_style`, `tint`, `disabled`, `button_style`, …   |
-| `DecorationModifier`    | secondary view, alignment, z-order (behind/in front)       | `BackgroundModifier`, `OverlayModifier`, `BorderModifier`           |
+| `DecorationModifier`    | secondary view, alignment, z-order (behind/in front)       | `BackgroundModifier`, `OverlayModifier`                             |
 | `DrawModifier`          | `draw(DrawContext&, Rect bounds)` before/after content     | `ShadowModifier`; also used for custom paint effects                |
 | `EffectModifier`        | layer props: opacity, transform, clip, mask, filter, blend | `OpacityModifier`, `ClipShapeModifier`, `MaskModifier`,             |
 |                         |                                                            | `BlurModifier`, `ScaleEffectModifier`, `RotationEffectModifier`     |
@@ -812,7 +812,7 @@ Text("Hi").apply(card)                             // function-style: View card(
 |                  | `backdrop_blur(radius, shape, {saturation, brightness, noise})`         |                           |
 | Interaction      | `on_click`, `on_activate`, `on_pointer_enter/leave`, `on_hover_change`, | event handlers            |
 |                  | `focusable`, `focused`,                                                 |                           |
-|                  | `on_key_press`, `keyboard_shortcut`, `context_menu`, `help` (tooltip)   |                           |
+|                  | `on_key_press`, `keyboard_shortcut`, `context_menu`, `tooltip`          |                           |
 | Lifecycle        | `on_appear`, `on_disappear`, `task(async fn)`, `on_change(value, fn)`   | effects tied to mount     |
 | Presentation     | `sheet`, `popover`, `alert`, `confirmation_dialog`, `overlay` portals   | top-layer elements        |
 | Accessibility    | `accessibility_label`, `accessibility_hint`, `accessibility_hidden`     | semantic tree             |
@@ -962,9 +962,9 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
   - Still to do: focus scopes and traps; text input and IME (with TextField); keys while
     nothing is focused (window-level shortcuts).
 - **Gestures** (`elg/gestures.h`): `.recognize(DragGesture(...)/LongPressGesture(...)/
-  MagnifyGesture()/RotateGesture()/SmartMagnifyGesture(...))`, built up with `on_began`,
+  MagnifyGesture()/RotateGesture()/TwoFingerDoubleTapGesture(...))`, built up with `on_began`,
   `on_changed`, `on_ended`, `on_cancelled`; shorthands `on_drag`, `on_long_press`, `on_magnify`,
-  `on_rotate`, `on_smart_magnify`.
+  `on_rotate`, `on_two_finger_double_tap`.
   - Pointer gestures (`detail::GestureRecognizer`) watch a press without taking it. The innermost
     that recognizes it takes it over; whatever had the press gets `cancel`. Handlers that took
     the down keep it from recognizers around them unless they returned `cancellable`
@@ -1072,7 +1072,7 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
 |            | Picker (menu/segmented/radio), DatePicker, ColorPicker                     |
 | Data       | List (virtualized, sections, selection), Table, OutlineGroup (tree),       |
 |            | DisclosureGroup                                                            |
-| Overlay    | sheet, popover, alert, confirmation_dialog, Menu, context_menu, help       |
+| Overlay    | sheet, popover, alert, confirmation_dialog, Menu, context_menu, tooltip    |
 |            | (tooltip), Toast                                                           |
 | Feedback   | Progress (linear/circular), Gauge, redacted (skeleton)                     |
 | Navigation | NavigationStack (push/pop with transitions), NavigationSplitView, TabView  |
@@ -1085,7 +1085,7 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
 ### 13.1 Popups and context menus
 
 Context menus share one **popup presentation layer** with everything else anchored to a view:
-`Menu` buttons, `Picker` / `ComboBox` dropdowns, `popover`, and tooltips (`.help()`).
+`Menu` buttons, `Picker` / `ComboBox` dropdowns, `popover`, and tooltips (`.tooltip()`).
 
 #### API
 SwiftUI-shaped. Menu contents are ordinary views, so `If`, `ForEach`, and reactive arguments
@@ -1142,7 +1142,7 @@ Text(file.name)
   display), re-placed when that or the anchor changes (`move_popup`).
 - Chrome is replaceable: `PopoverStyle`, `TooltipStyle`, `MenuStyle` (`make_body(configuration)`,
   environment keys, like `ButtonStyle`), resolved in the popup's environment (the opener's).
-  `.tooltip(content, TooltipOptions)` takes any view; `.help(text)` is a text tooltip.
+  `.tooltip(content, TooltipOptions)` takes any view; `.tooltip(text)` is a text tooltip.
 - Open/close: `PopupMotion{transition, animation}` from the options, else the style's
   `motion()` (none by default). In the window, the layer wraps the panel in a
   `TransitionElement` and keeps it drawn (not hit, not a child for events) until it has
@@ -1714,8 +1714,8 @@ Separate render thread from day one (decided).
   submenus). Hover starts only after the pointer rests for `enter` (default 0.1 s), and ends
   `exit` after it leaves (default 0); passing over, or coming back in time, cancels the pending
   change.
-  - Set for a subtree with `.hover_delay({...})` (an environment value), or per handler with
-    `.on_hover_change(action, {...})`.
+  - Set with `.hover_delay({...})` (an environment value) for everything inside; for one handler,
+    `.on_hover_change(action).hover_delay({...})`.
   - Pointer enter/leave and controls' highlights (buttons, menu buttons, text fields, dividers)
     don't wait: a highlight that lags the pointer looks wrong (it was List's hover bug).
     Tooltips wait 0.6 s.
@@ -1927,7 +1927,7 @@ Separate render thread from day one (decided).
     `Submenu(title, builder)` (opens on hover after the delay, click, or Right), `Separator()`.
   - Choosing an item closes every menu, then runs its action.
   - `MenuButton(label, builder)`, and `Picker(..., PickerStyle::menu)`.
-  - `.help("…")` tooltips: after 0.6 s; closed by leaving, pressing, scrolling, or typing.
+  - `.tooltip("…")` tooltips: after 0.6 s; closed by leaving, pressing, scrolling, or typing.
   - Hovering a menu row focuses it, so the hover and keyboard highlights stay one.
   - Menu popups have zero hover delay: rows highlight on the first move, like native menus.
     Submenus open after resting 0.25 s (their own hover handler).

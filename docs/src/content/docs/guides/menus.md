@@ -47,6 +47,14 @@ MenuButton(Label("Sort", {.system_name = "sort-ascending"}), [=] {
 });
 ```
 
+Its options place the menu like [floating content](#floating-content) (above a button near the
+bottom of the window, say), hide the chevron, or give it its own motion:
+
+```cpp
+MenuButton("Attach", attach_menu, {.placement = {.edge = FloatingEdge::top, .spacing = 4},
+                                   .shows_indicator = false});
+```
+
 For choosing one value from a list, `Picker` with `PickerStyle::menu` does this for you; see
 [Controls](../controls/#picker).
 
@@ -121,13 +129,13 @@ every popup it draws.
 ## Tooltips
 
 ```cpp
-Button(Image("gear"), settings).help("Settings");
+Button(Image("gear"), settings).tooltip("Settings");
 Avatar(user).tooltip([=] { return HStack(Image("user"), Text(user.name)); },
                      {.placement = {.edge = FloatingEdge::trailing, .spacing = 6}, .delay = 0.3});
 ```
 
 A tooltip appears after the pointer rests on the view for a moment (`delay`, 0.6 seconds by
-default), and goes when it leaves or presses. `help(text)` is a tooltip with that text. Its
+default), and goes when it leaves or presses. `tooltip("text")` is a tooltip with that text. Its
 `placement` and `boundary` work as for [floating content](#floating-content); an in-window tooltip
 lets the pointer through to what's under it.
 

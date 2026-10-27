@@ -15,7 +15,7 @@
 namespace elg::detail::platform::apple {
 
 struct NativeInput {
-    enum class Kind { scroll, magnify, rotate, smart_magnify };
+    enum class Kind { scroll, magnify, rotate, two_finger_double_tap };
 
     Kind kind = Kind::scroll;
     void* ns_window = nullptr; // the NSWindow it happened in

@@ -49,7 +49,8 @@ TEST_CASE("pointer enter and leave fire at once; hover intent waits", "[hover]")
                       .fill(Color::black)
                       .on_pointer_enter([&] { ++entered; })
                       .on_pointer_leave([&] { ++left; })
-                      .on_hover_change([&](bool inside) { intent = inside; }, HoverDelay{.enter = 60, .exit = 0}));
+                      .on_hover_change([&](bool inside) { intent = inside; })
+                      .hover_delay({.enter = 60, .exit = 0}));
 
     window.events->pointer_moved({20, 20});
     CHECK(entered == 1);

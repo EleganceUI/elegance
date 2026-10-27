@@ -151,11 +151,11 @@ using MagnifyGesture = PhasedGesture<MagnifyEvent>;
 // Turning two fingers: degrees clockwise since the gesture began.
 using RotateGesture = PhasedGesture<RotateEvent>;
 
-// A two-finger double tap on a trackpad (zoom to fit, in Safari). `action` gets where it was, in
+// A two-finger double tap on a trackpad (usually: zoom to fit). `action` gets where it was, in
 // window coordinates.
-class SmartMagnifyGesture {
+class TwoFingerDoubleTapGesture {
 public:
-    explicit SmartMagnifyGesture(std::function<void(Point)> action) : action_(std::move(action)) {}
+    explicit TwoFingerDoubleTapGesture(std::function<void(Point)> action) : action_(std::move(action)) {}
 
 private:
     friend struct detail::GestureAccess;

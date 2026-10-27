@@ -444,6 +444,7 @@ public:
     //   .background(style)        == .background(Rectangle().fill(style))
     //   .background(style, shape) == .background(shape.fill(style))
     //   .border(color, width)     == .overlay(Rectangle().stroke_border(color, width))
+    //   .border(color, width, shape) == .overlay(shape.stroke_border(color, width))
     //   .corner_radius(r)         == .clip_shape(RoundedRectangle(r))
     // A shape takes the same points whether it's filled, a clip_shape or a content_shape; a
     // stroke-only shape takes only its line.
@@ -454,12 +455,13 @@ public:
     ELG_API View background(Prop<ShapeStyle> style) const;
     ELG_API View background(Prop<ShapeStyle> style, const Shape& shape) const;
     ELG_API View overlay(View view, Alignment alignment = Alignment::center) const;
-    // A border drawn inside the view's bounds.
-    ELG_API View border(Color color, float width = 1) const;
+    // A border drawn inside the view's bounds, or along the given shape.
+    ELG_API View border(Prop<Color> color, float width = 1) const;
+    ELG_API View border(Prop<Color> color, float width, const Shape& shape) const;
 
     // --- Effects (elg/modifiers/effects.h) ---
 
-    // Clips the content to the view's bounds.
+    // Clips the content to the view's bounds: clip_shape(Rectangle()).
     ELG_API View clipped() const;
     // Clips the content to a shape filling the view's bounds (cheap for rounded rects/circles).
     ELG_API View clip_shape(const Shape& shape) const;
@@ -499,8 +501,7 @@ public:
     // 0 unchanged ... 1 fully sepia-toned.
     ELG_API View sepia(Prop<float> amount) const;
     // Inverts the colors, or partly (0...1).
-    ELG_API View color_invert() const;
-    ELG_API View color_invert(Prop<float> amount) const;
+    ELG_API View color_invert(Prop<float> amount = 1.f) const;
     // Multiplies every pixel by `color` (alpha too): tints white content, darkens the rest.
     ELG_API View color_multiply(Prop<Color> color) const;
     // Brightness becomes opacity: white stays, black disappears (for masks).
@@ -547,22 +548,22 @@ public:
     //   Tile(album).on_activate([=] { open(album); }).accessibility_label(album.title)
     ELG_API View on_activate(std::function<void()> action) const;
     // Gestures (elg/gestures.h): drags and long presses take a press over once they recognize it
-    // (a button or on_click under them then doesn't fire); pinches, rotations and smart zoom come
-    // from trackpads.
+    // (a button or on_click under them then doesn't fire); pinches, rotations and two-finger double
+    // taps come from trackpads.
     //   .recognize(DragGesture().on_began([=] { start = offset.peek(); })
     //                           .on_changed([=](const DragEvent& e) { offset = start() + e.translation; }))
     ELG_API View recognize(DragGesture gesture) const;
     ELG_API View recognize(LongPressGesture gesture) const;
     ELG_API View recognize(MagnifyGesture gesture) const;
     ELG_API View recognize(RotateGesture gesture) const;
-    ELG_API View recognize(SmartMagnifyGesture gesture) const;
+    ELG_API View recognize(TwoFingerDoubleTapGesture gesture) const;
     // Shorthands: recognize(DragGesture().on_changed(action)), recognize(LongPressGesture(action)),
     // recognize(MagnifyGesture().on_changed(action)), ...
     ELG_API View on_drag(std::function<void(const DragEvent&)> action) const;
     ELG_API View on_long_press(std::function<void()> action) const;
     ELG_API View on_magnify(std::function<void(const MagnifyEvent&)> action) const;
     ELG_API View on_rotate(std::function<void(const RotateEvent&)> action) const;
-    ELG_API View on_smart_magnify(std::function<void(Point)> action) const;
+    ELG_API View on_two_finger_double_tap(std::function<void(Point)> action) const;
     // The pointer's shape over the view, like CSS's `cursor`: .pointer_style(PointerStyle::pointer)
     // over something to click. Views inside can set their own (a text field's I-beam). Reactive:
     // .pointer_style([=] { return busy() ? PointerStyle::wait : PointerStyle::automatic; })
@@ -583,9 +584,8 @@ public:
     // Hover intent: called with true once the pointer has rested on the view for the hover delay
     // (moving across it doesn't count), and false when it leaves (after the exit delay): for
     // previews and other things that shouldn't flash as the pointer passes. The delay comes from
-    // the environment (.hover_delay()) unless given.
+    // the environment: .on_hover_change(action).hover_delay({.enter = 0.5})
     ELG_API View on_hover_change(std::function<void(bool)> action) const;
-    ELG_API View on_hover_change(std::function<void(bool)> action, HoverDelay delay) const;
     // Called after initial layout and when physical dimensions change, including display scale.
     // Dimensions are ceil(logical size * display scale), before visual transforms, and may be zero.
     // Runs on the UI thread before paint: queue renderer input, do not mutate layout here.
@@ -628,8 +628,9 @@ public:
     // the view for a moment, until it leaves or presses. Screen readers don't see it.
     //   Avatar(user).tooltip([=] { return HStack(Image("user"), Text(user.name)); })
     ELG_API View tooltip(std::function<View()> content, TooltipOptions options = {}) const;
-    // A text tooltip: tooltip(Text(text)).
-    ELG_API View help(Prop<std::string> text) const;
+    // A text tooltip: tooltip([=] { return Text(text); }, options).
+    //   Button(Image("gear"), settings).tooltip("Settings")
+    ELG_API View tooltip(Prop<std::string> text, TooltipOptions options = {}) const;
     // `content` floating above everything by the view, while `is_presented` is true, with no
     // chrome of its own. The builder runs each time it opens. What closes it (and sets the
     // binding back to false), where it goes and whether it may leave the window are `options`'.
@@ -668,7 +669,7 @@ public:
 
     // The weight of the font inside, keeping its size and family (text, and icons of sets with
     // weights): Image("gear").font_weight(Weight::bold).
-    ELG_API View font_weight(Weight weight) const;
+    ELG_API View font_weight(Prop<Weight> weight) const;
     ELG_API View font(Prop<Font> font) const;
     // The color of text and unfilled shapes. Also takes a ThemeColor.
     ELG_API View foreground_style(Prop<Color> color) const;
@@ -678,8 +679,7 @@ public:
     ELG_API View color_scheme(Prop<ColorScheme> scheme) const;
     ELG_API View theme(Theme theme) const;
     // Controls inside stop responding and look disabled.
-    ELG_API View disabled(Prop<bool> disabled) const;
-    ELG_API View disabled() const;
+    ELG_API View disabled(Prop<bool> disabled = true) const;
     // The style of every Button inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, ButtonStyle>

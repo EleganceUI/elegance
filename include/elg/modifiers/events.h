@@ -53,17 +53,16 @@ private:
 };
 
 // Hover intent: calls `action(true)` when the pointer has rested on the view for the hover delay
-// and `action(false)` when it leaves (after the exit delay). `delay` overrides the environment's.
+// and `action(false)` when it leaves (after the exit delay), both from the environment's
+// HoverDelay (.hover_delay()).
 class ELG_API HoverModifier final : public EventModifier {
 public:
-    explicit HoverModifier(std::function<void(bool)> action, std::optional<HoverDelay> delay = std::nullopt)
-        : action_(std::move(action)), delay_(delay) {}
+    explicit HoverModifier(std::function<void(bool)> action) : action_(std::move(action)) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
     std::function<void(bool)> action_;
-    std::optional<HoverDelay> delay_;
     ELG_PRIVATE_MEMBERS_END
 };
 
@@ -112,14 +111,14 @@ private:
     ELG_PRIVATE_MEMBERS_END
 };
 
-class ELG_API SmartMagnifyModifier final : public EventModifier {
+class ELG_API TwoFingerDoubleTapModifier final : public EventModifier {
 public:
-    explicit SmartMagnifyModifier(SmartMagnifyGesture gesture) : gesture_(std::move(gesture)) {}
+    explicit TwoFingerDoubleTapModifier(TwoFingerDoubleTapGesture gesture) : gesture_(std::move(gesture)) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
-    SmartMagnifyGesture gesture_;
+    TwoFingerDoubleTapGesture gesture_;
     ELG_PRIVATE_MEMBERS_END
 };
 

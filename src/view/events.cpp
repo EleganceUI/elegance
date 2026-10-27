@@ -42,7 +42,7 @@ EventResult EventHandler::rotate(const RotateEvent&) {
     return {};
 }
 
-EventResult EventHandler::smart_magnify(Point) {
+EventResult EventHandler::two_finger_double_tap(Point) {
     return {};
 }
 
@@ -116,7 +116,8 @@ private:
 
 class HoverHandler final : public EventHandler {
 public:
-    HoverHandler(std::function<void(bool)> action, std::optional<HoverDelay> delay)
+    // `delay` nullopt: the environment's.
+    explicit HoverHandler(std::function<void(bool)> action, std::optional<HoverDelay> delay = std::nullopt)
         : action_(std::move(action)), delay_(delay) {}
 
     EventResult hover(bool inside) override {
@@ -232,7 +233,7 @@ std::unique_ptr<EventHandler> ClickModifier::make_handler() const {
 }
 
 std::unique_ptr<EventHandler> HoverModifier::make_handler() const {
-    return std::make_unique<HoverHandler>(action_, delay_);
+    return std::make_unique<HoverHandler>(action_);
 }
 
 std::unique_ptr<EventHandler> PointerBoundaryModifier::make_handler() const {
@@ -339,9 +340,6 @@ bool EffectElement::hit_impl(Point point, std::vector<Element*>& path) {
         return true;
     }
     if (effects_.clip_shape && !clip_area_.contains(spec_of(*effects_.clip_shape), point, frame())) {
-        return false;
-    }
-    if (effects_.clip_to_bounds && !contains(frame(), point)) {
         return false;
     }
     return content_->hit_test(point, path);

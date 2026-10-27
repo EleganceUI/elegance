@@ -19,8 +19,8 @@ namespace elg {
 // Hover intent (on_hover_change, submenus): how long the pointer must rest on a view before it
 // counts as hovered (`enter`), and how long after it leaves before it stops counting (`exit`), in
 // seconds. Moving across a view faster than `enter` doesn't hover it; coming back within `exit`
-// cancels the leave. Set for a subtree with .hover_delay({...}), or per handler with
-// .on_hover_change(action, {...}). Pointer enter/leave (and controls' highlights) don't wait.
+// cancels the leave. Set with .hover_delay({...}) for everything inside, one handler included:
+// .on_hover_change(action).hover_delay({...}). Pointer enter/leave (and controls' highlights) don't wait.
 struct HoverDelay {
     double enter = 0.1;
     double exit = 0.0;
@@ -218,10 +218,10 @@ public:
     // until one consumes it. `frame` as for pointer().
     virtual EventResult scroll(const ScrollEvent& event, Rect frame);
     // Trackpad gestures: the handler under the pointer that consumes `began` gets the rest of the
-    // gesture, innermost first. smart_magnify is a two-finger double tap (zoom to fit, in Safari).
+    // gesture, innermost first. A two-finger double tap usually zooms to fit.
     virtual EventResult magnify(const MagnifyEvent& event);
     virtual EventResult rotate(const RotateEvent& event);
-    virtual EventResult smart_magnify(Point location);
+    virtual EventResult two_finger_double_tap(Point location);
 
     // Keyboard (design.md §10): key events go to the focused view's handler first, then bubble
     // to the handlers around it until consumed.

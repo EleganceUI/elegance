@@ -138,9 +138,6 @@ void EffectElement::inspect(Inspection& out) const {
         }
         summary += part;
     };
-    if (effects_.clip_to_bounds) {
-        add("clipped");
-    }
     if (effects_.clip_shape) {
         const auto& node = static_cast<const ShapeNode&>(*ViewAccess::node(*effects_.clip_shape));
         add(std::format("clip_shape({})", shape_name(node.spec().kind)));
