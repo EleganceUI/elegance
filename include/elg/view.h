@@ -191,16 +191,39 @@ struct FloatingDismiss {
     bool escape = true; // Esc, unless something focused handles it first
 };
 
+// How popup content opens and closes: `transition` run with `animation` (elg/animation.h).
+//   PopupMotion(Transition::opacity().combined(Transition::scale(0.96f, Alignment::top)),
+//               Animation::ease_out(0.15))
+class ELG_API PopupMotion {
+public:
+    PopupMotion(const Transition& transition, const Animation& animation);
+    // At once, with no animation (the built-in styles' default).
+    static PopupMotion none() { return PopupMotion(); }
+
+    const Transition* transition() const noexcept { return transition_.get(); }
+    const Animation* animation() const noexcept { return animation_.get(); }
+    bool animates() const noexcept { return transition_ && animation_; }
+
+private:
+    PopupMotion() = default;
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::shared_ptr<const Transition> transition_;
+    std::shared_ptr<const Animation> animation_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
 struct FloatingOptions {
     FloatingPlacement placement;
     FloatingBoundary boundary = FloatingBoundary::screen;
     FloatingDismiss dismiss;
+    std::optional<PopupMotion> motion; // nullopt: none
 };
 
 struct TooltipOptions {
     FloatingPlacement placement{.spacing = 4}; // below the view by default
     FloatingBoundary boundary = FloatingBoundary::screen;
     double delay = 0.6; // seconds the pointer rests on the view before it shows
+    std::optional<PopupMotion> motion; // nullopt: the TooltipStyle's
 };
 
 struct PopoverOptions {
@@ -208,6 +231,7 @@ struct PopoverOptions {
     FloatingPlacement placement{.alignment = FloatingAlignment::center, .spacing = 4};
     FloatingBoundary boundary = FloatingBoundary::screen;
     Prop<bool> padded = true; // false: the content reaches the panel's edges (images, lists)
+    std::optional<PopupMotion> motion; // nullopt: the PopoverStyle's
 };
 
 // How content with an aspect ratio fills space (aspect_ratio()).

@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 
 namespace elg::detail {
@@ -31,6 +32,7 @@ struct PopupRequest {
     std::function<void()> on_close;  // menus and floating content: runs after it closes, for any reason
     bool modal = true;               // floating content: in the menus' stack
     std::uint64_t token = 0;         // floating content: for close_popup() and move_popup()
+    std::optional<PopupMotion> motion; // how it opens and closes; none: at once
 };
 
 // What elements need from the window they're in, beyond drawing: text input (IME), the

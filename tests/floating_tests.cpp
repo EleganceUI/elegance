@@ -5,7 +5,9 @@
 // Floating content: where it goes by its anchor, and in-window floating content (drawn by the
 // window's floating layer) opening, closing, and taking presses.
 
+#include "render/display_list.h"
 #include "text/text_system.h"
+#include "view/animated.h"
 #include "view/event_dispatcher.h"
 #include "view/floating.h"
 #include "view/focus.h"
@@ -13,6 +15,7 @@
 
 #include <elg/events.h>
 #include <elg/shapes.h>
+#include <elg/animation.h>
 #include <elg/error.h>
 #include <elg/reactive.h>
 #include <elg/styles.h>
@@ -259,4 +262,92 @@ TEST_CASE("a menu's panel comes from the environment's MenuStyle", "[floating]")
     };
     Window window(Menu(MenuItem("Open", [] {})).menu_style(Recording(&built)));
     CHECK(built == 1);
+}
+
+namespace {
+
+struct Painted {
+    std::size_t commands = 0;
+    bool animating = false;
+};
+
+Painted paint(detail::Element& root) {
+    detail::DisplayList list;
+    root.paint(list);
+    return {list.commands.size(), list.animating};
+}
+
+} // namespace
+
+TEST_CASE("a scale transition can grow from an edge", "[floating]") {
+    const Transition::Pose top = Transition::scale(0.5f, Alignment::top_leading).pose(0, false, {100, 40});
+    CHECK(top.scale == 0.5f);
+    CHECK(top.anchor_x == 0);
+    CHECK(top.anchor_y == 0);
+    const Transition::Pose middle = Transition::opacity().combined(Transition::scale(0.5f)).pose(0, false, {100, 40});
+    CHECK(middle.anchor_x == 0.5f);
+    // Combined, the anchored one's point wins.
+    const Transition::Pose bottom =
+        Transition::opacity().combined(Transition::scale(0.9f, Alignment::bottom)).pose(0, true, {100, 40});
+    CHECK(bottom.anchor_y == 1);
+}
+
+TEST_CASE("in-window floating content with a motion animates in, then out before it goes", "[floating]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    detail::set_frame_time(100);
+    const State<bool> shown(false);
+    int anchor_clicks = 0;
+    int content_clicks = 0;
+    Window window(Anchored(shown, anchor_clicks, content_clicks,
+                           {.motion = PopupMotion(Transition::opacity(), Animation::linear(1))}));
+    const Painted closed = paint(*window.root);
+
+    shown = true;
+    window.layout();
+    CHECK(paint(*window.root).animating);
+    detail::set_frame_time(100.5); // halfway: drawn, faded
+    const Painted opening = paint(*window.root);
+    CHECK(opening.animating);
+    CHECK(opening.commands > closed.commands);
+
+    detail::set_frame_time(102);
+    window.layout();
+    CHECK_FALSE(paint(*window.root).animating);
+
+    shown = false;
+    window.layout();
+    const Painted leaving = paint(*window.root);
+    CHECK(leaving.animating);
+    CHECK(leaving.commands > closed.commands); // still drawn
+    CHECK(children(*window.root) == 1);         // but no longer part of the tree for events
+    window.click({110, 105});                    // the anchor, no longer guarded
+    CHECK(anchor_clicks == 1);
+
+    detail::set_frame_time(104);
+    window.layout();
+    window.layout(); // pruned once finished
+    CHECK(paint(*window.root).commands == closed.commands);
+}
+
+TEST_CASE("a popover takes its motion from its style unless its options give one", "[floating]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    detail::set_frame_time(100);
+    struct Fading final : PopoverStyle {
+        View make_body(const PopoverConfiguration& popover) const override { return popover.content; }
+        PopupMotion motion() const override { return {Transition::opacity(), Animation::linear(1)}; }
+    };
+    const State<bool> styled(true);
+    const State<bool> overridden(true);
+    Window window(VStack(Rectangle().frame(50, 20).popover(styled.binding(), [] { return Rectangle().frame(80, 40); },
+                                                           {.boundary = FloatingBoundary::window}),
+                         Rectangle().frame(50, 20).popover(overridden.binding(), [] { return Rectangle().frame(80, 40); },
+                                                           {.boundary = FloatingBoundary::window,
+                                                            .motion = PopupMotion::none()}))
+                      .popover_style(Fading{}));
+    window.layout();
+    int transitions = 0;
+    window.root->for_each_child([&](detail::Element& child) { transitions += child.as_transition() ? 1 : 0; });
+    CHECK(transitions == 1);
 }

@@ -254,6 +254,7 @@ struct LiveWindow {
     WindowEntry* entry;
     platform::Window window;
     bool is_popup;
+    bool closing = false; // a popup animating out: it takes no input
     // Popups: where they go, kept by their anchor and re-fitted as their content changes size.
     struct PopupFit {
         FloatingPlacement placement;
@@ -437,9 +438,12 @@ int App::run() {
         std::function<void()> on_close;
         std::uint64_t token = 0;   // floating content
         std::uint32_t opener = 0;  // the window it belongs to
+        PopupMotion motion = PopupMotion::none();
+        std::shared_ptr<TransitionElement*> exit; // its content's transition, with a motion
     };
     std::vector<OpenPopup> menus;
-    std::vector<OpenPopup> floats; // non-modal floating content
+    std::vector<OpenPopup> floats;  // non-modal floating content
+    std::vector<OpenPopup> closing; // animating out; they take no input
     std::optional<OpenPopup> tooltip;
     struct PendingPopups {
         std::optional<int> close_level;
@@ -711,7 +715,13 @@ int App::run() {
 
     std::function<void(std::uint32_t)> destroy_window;
     destroy_window = [&](std::uint32_t id) {
-        // Floating content beside the window goes first: a popup window can't outlive its parent.
+        // Popups of the window go first: a popup window can't outlive its parent.
+        for (auto it = std::ranges::find(closing, id, &OpenPopup::opener); it != closing.end();
+             it = std::ranges::find(closing, id, &OpenPopup::opener)) {
+            const std::uint32_t child = it->id;
+            closing.erase(it);
+            destroy_window(child);
+        }
         for (auto it = std::ranges::find(floats, id, &OpenPopup::opener); it != floats.end();
              it = std::ranges::find(floats, id, &OpenPopup::opener)) {
             OpenPopup popup = std::move(*it);
@@ -766,12 +776,44 @@ int App::run() {
         target.dirty = true;
     };
 
+    // Closes a popup's window: at once, or after its content animates out by its motion.
+    const auto retire = [&](OpenPopup popup) {
+        auto it = find_window(popup.id);
+        if (it == windows.end()) {
+            return;
+        }
+        TransitionElement* transition = popup.exit ? *popup.exit : nullptr;
+        if (transition && transition->remove(popup.motion.animation())) {
+            (*it)->closing = true;
+            (*it)->dirty = true;
+            popup.on_close = nullptr;
+            closing.push_back(std::move(popup));
+        } else {
+            destroy_window(popup.id);
+        }
+    };
+    // Closing popups whose animation has finished go.
+    const auto finish_closing = [&] {
+        for (auto it = closing.begin(); it != closing.end();) {
+            const auto window = find_window(it->id);
+            const bool done = window == windows.end() || !*it->exit || (*it->exit)->exit_finished();
+            if (!done) {
+                ++it;
+                continue;
+            }
+            const std::uint32_t id = it->id;
+            it = closing.erase(it);
+            destroy_window(id);
+            it = closing.begin(); // destroying may have removed others (its children)
+        }
+    };
     const auto close_menus_from = [&](int level) {
         // Deepest first: a submenu is a child window of the menu that opened it.
         while (!menus.empty() && menus.back().level >= level) {
-            destroy_window(menus.back().id);
-            const std::function<void()> on_close = std::move(menus.back().on_close);
+            OpenPopup popup = std::move(menus.back());
             menus.pop_back();
+            const std::function<void()> on_close = std::move(popup.on_close);
+            retire(std::move(popup));
             if (on_close) {
                 on_close(); // e.g. a popover's binding goes back to false
             }
@@ -779,8 +821,9 @@ int App::run() {
     };
     const auto close_tooltip_now = [&] {
         if (tooltip) {
-            destroy_window(tooltip->id);
+            OpenPopup popup = std::move(*tooltip);
             tooltip.reset();
+            retire(std::move(popup));
         }
     };
     const auto top_menu = [&]() -> LiveWindow* {
@@ -802,8 +845,13 @@ int App::run() {
         auto entry = std::make_unique<WindowEntry>();
         entry->desc = {.title = "", .width = 1, .height = 1, .resizable = false,
                        .title_bar = TitleBar::hidden, .transparent = true};
-        // The content draws its own chrome (menu panels, popovers); the margin leaves its shadow room.
-        entry->content = [content = request.content] { return content().padding(kPopupMargin); };
+        // The content draws its own chrome (menu panels, popovers); the margin leaves its shadow
+        // room. With a motion, it animates in (and later out, before the window closes).
+        const PopupMotion motion = request.motion.value_or(PopupMotion::none());
+        auto exit = std::make_shared<TransitionElement*>(nullptr);
+        entry->content = [content = request.content, motion, exit] {
+            return with_popup_motion(content().padding(kPopupMargin), motion, exit);
+        };
         const platform::PopupSpec spec{.parent = &opener.window, .tooltip = is_tooltip};
         // Menu rows respond to the pointer at once, like native menus (submenus have their own
         // opening delay).
@@ -830,7 +878,8 @@ int App::run() {
         }
         const std::uint32_t id = live->window.id();
         windows.push_back(std::move(live));
-        OpenPopup popup{std::move(entry), id, request.level, std::move(request.on_close), request.token, opener_id};
+        OpenPopup popup{std::move(entry), id,     request.level, std::move(request.on_close), request.token,
+                        opener_id,        motion, exit};
         if (is_tooltip) {
             tooltip = std::move(popup);
         } else if (request.modal) {
@@ -857,9 +906,10 @@ int App::run() {
                 if (auto it = std::ranges::find(floats, token, &OpenPopup::token); it != floats.end()) {
                     OpenPopup popup = std::move(*it);
                     floats.erase(it);
-                    destroy_window(popup.id);
-                    if (popup.on_close) {
-                        popup.on_close();
+                    const std::function<void()> on_close = std::move(popup.on_close);
+                    retire(std::move(popup));
+                    if (on_close) {
+                        on_close();
                     }
                 }
             }
@@ -1017,6 +1067,9 @@ int App::run() {
             }
             if (auto it = find_window(event.window_id); it != windows.end()) {
                 LiveWindow& live = **it;
+                if (live.closing) {
+                    break;
+                }
                 // While a menu is open it has the pointer: elsewhere, a press closes the menus
                 // (and isn't passed on), and nothing else reacts.
                 if (!menus.empty() && !live.is_popup) {
@@ -1293,6 +1346,7 @@ int App::run() {
         flush_effects();
         const std::shared_ptr<const Animation> transaction = take_flush_animation();
         const LayoutAnimationScope layout_animation(transaction.get());
+        finish_closing();
         for (const auto& live : windows) {
             if (std::exchange(live->tree_changed, false)) {
                 if (live->events.revalidate()) {

@@ -102,6 +102,22 @@ Avatar(user).floating(card_shown.binding(), [=] { return ProfileCard(user); },
 
 Its size follows its content as that changes, and it follows the view when the view moves.
 
+### Opening and closing
+
+Popups appear and disappear at once by default. A `PopupMotion` makes them come and go with a
+transition, run with an animation; it plays both ways, and a popup stays on screen (without taking
+input) until it has animated out:
+
+```cpp
+const PopupMotion grow(Transition::opacity().combined(Transition::scale(0.95f, Alignment::top)),
+                       Animation::ease_out(0.15));
+Button("Details", [=] { showing = true; }).popover(showing.binding(), details, {.motion = grow});
+```
+
+`floating`, `popover` and `tooltip` take `.motion` in their options. Without one, popovers,
+tooltips and menus use their style's `motion()`, which a custom style can override to animate
+every popup it draws.
+
 ## Tooltips
 
 ```cpp

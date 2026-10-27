@@ -124,6 +124,8 @@ These draw the panel around popup content: a `PopoverConfiguration` has the `con
 `is_padded`, a `TooltipConfiguration` the `content`, and a `MenuConfiguration` the stacked
 `items`. The style where the view that opens it is placed applies, so one `.popover_style(...)`
 near the root styles every popover in the window. The plain styles draw nothing around the content.
+A style's `motion()` says how its popups open and close (at once, by default); see
+[Menus and popups](../menus/#opening-and-closing).
 
 ```cpp
 struct CardPopoverStyle : PopoverStyle {

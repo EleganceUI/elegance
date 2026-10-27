@@ -338,6 +338,8 @@ public:
     virtual ~PopoverStyle();
     // Called each time it opens, while Environment<K>() is available.
     virtual View make_body(const PopoverConfiguration& popover) const = 0;
+    // How it opens and closes; at once by default.
+    virtual PopupMotion motion() const { return PopupMotion::none(); }
 
 protected:
     // Styles are copied as their concrete type, never as a PopoverStyle.
@@ -370,6 +372,8 @@ public:
     virtual ~TooltipStyle();
     // Called each time it opens, while Environment<K>() is available.
     virtual View make_body(const TooltipConfiguration& tooltip) const = 0;
+    // How it opens and closes; at once by default.
+    virtual PopupMotion motion() const { return PopupMotion::none(); }
 
 protected:
     // Styles are copied as their concrete type, never as a TooltipStyle.
@@ -402,6 +406,8 @@ public:
     virtual ~MenuStyle();
     // Called each time it opens, while Environment<K>() is available.
     virtual View make_body(const MenuConfiguration& menu) const = 0;
+    // How it opens and closes; at once by default.
+    virtual PopupMotion motion() const { return PopupMotion::none(); }
 
 protected:
     // Styles are copied as their concrete type, never as a MenuStyle.

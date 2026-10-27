@@ -16,11 +16,13 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace elg::detail {
 
 class Scope;
+class TransitionElement;
 
 // Where content of `size` goes by `anchor` (its top-leading corner), flipped to the other side
 // of the anchor when it doesn't fit on its own and kept inside `area`. All in one coordinate space.
@@ -28,6 +30,10 @@ Point place_floating(Size size, Rect anchor, const FloatingPlacement& placement,
 
 // The environment a popup's content is being built in (for its style), or the default one.
 EnvironmentValues styling_environment();
+
+// Popup window content that comes and goes by `motion`: it animates in when built, and `exit`
+// is set to its transition, to animate it out before the window closes.
+View with_popup_motion(View content, const PopupMotion& motion, std::shared_ptr<TransitionElement*> exit);
 
 // A token for one opening of floating content, unique in the process.
 std::uint64_t next_floating_token() noexcept;
@@ -44,6 +50,7 @@ public:
         FloatingDismiss dismiss;
         std::function<void()> dismissed; // closed by the user: Esc or an outside click
         bool interactive = true;         // false: the pointer passes through it (tooltips)
+        std::optional<PopupMotion> motion; // how it comes and goes (element is then a transition)
         std::unique_ptr<Element> element; // null for content hosted elsewhere (a popup window)
         std::unique_ptr<Scope> scope;     // the content's effects; destroyed first
     };
@@ -54,7 +61,10 @@ public:
     // The layer `element` is in, if any.
     static FloatingLayerElement* of(Element& element);
 
+    // Shows `panel`, animating it in by its motion.
     void add(Panel panel);
+    // Takes the panel away: with a motion, it animates out first (drawn, but not hit or seen by
+    // the event dispatcher).
     void remove(std::uint64_t token);
 
     float layout_priority() const noexcept override { return content_->layout_priority(); }
@@ -68,7 +78,7 @@ protected:
     void paint_impl(DisplayList& list) const override;
     bool hit_impl(Point point, std::vector<Element*>& path) override;
     // Anchors move without telling the layer.
-    bool always_arranges() const override { return !panels_.empty(); }
+    bool always_arranges() const override { return !panels_.empty() || !exiting_.empty(); }
 
 private:
     EventResult pointer(const PointerEvent& event, Rect frame) override;
@@ -78,7 +88,8 @@ private:
     void dismiss(Panel& panel);
 
     std::unique_ptr<Element> content_;
-    std::vector<Panel> panels_; // oldest first
+    std::vector<Panel> panels_;  // oldest first
+    std::vector<Panel> exiting_; // animating out
     bool closing_ = false;
 };
 

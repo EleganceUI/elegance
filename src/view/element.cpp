@@ -606,10 +606,12 @@ void TransitionElement::paint_impl(DisplayList& list) const {
     content.scale = list.scale;
     content_->paint(content);
     list.animating |= content.animating;
-    // Scaled about the middle of what's drawn: content inside .offset is drawn away from this
-    // frame (a window placed by its offset grows from its own middle, not the desktop's corner).
+    // Scaled about its anchor (the middle, unless the transition names another point) in what's
+    // drawn: content inside .offset is drawn away from this frame (a window placed by its offset
+    // grows from its own middle, not the desktop's corner).
     const Point offset = content_->content_offset();
-    const Point center{bounds.center().x + offset.x, bounds.center().y + offset.y};
+    const Point center{bounds.x + bounds.width * pose.anchor_x + offset.x,
+                       bounds.y + bounds.height * pose.anchor_y + offset.y};
     transform(content.commands, pose.x, pose.y, pose.scale, center);
     append_faded(list, std::move(content), pose.opacity);
 }

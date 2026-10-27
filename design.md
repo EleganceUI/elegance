@@ -1143,7 +1143,13 @@ Text(file.name)
 - Chrome is replaceable: `PopoverStyle`, `TooltipStyle`, `MenuStyle` (`make_body(configuration)`,
   environment keys, like `ButtonStyle`), resolved in the popup's environment (the opener's).
   `.tooltip(content, TooltipOptions)` takes any view; `.help(text)` is a text tooltip.
-- Still to do: open/close animation; a parent boundary; menu row styling.
+- Open/close: `PopupMotion{transition, animation}` from the options, else the style's
+  `motion()` (none by default). In the window, the layer wraps the panel in a
+  `TransitionElement` and keeps it drawn (not hit, not a child for events) until it has
+  animated out. A popup window wraps its content the same way; closing marks it `closing` (no
+  input) and the app destroys it once the exit finishes. `Transition::scale(from, anchor)`
+  grows from a point of the frame.
+- Still to do: a parent boundary; menu row styling.
 
 #### Behavior
 - **Opening:**

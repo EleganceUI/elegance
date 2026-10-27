@@ -104,6 +104,11 @@ namespace {
 
 // --- Menu items ---
 
+// How menus opened from where `environment` is come and go: their MenuStyle's motion.
+PopupMotion menu_motion(const EnvironmentValues& environment) {
+    return untrack([&] { return environment.get<MenuStyleKey>(); })->motion();
+}
+
 constexpr float kItemRadius = 5;
 
 // A menu row's look: highlighted while hovered or focused (keyboard), dimmed when disabled.
@@ -238,7 +243,8 @@ public:
                                       .anchor = (*element_slot)->drawn_frame(),
                                       .content = menu,
                                       .environment = environment,
-                                      .level = level});
+                                      .level = level,
+                                      .motion = menu_motion(environment)});
             }
         };
         // Click, Enter, Space, and Right open it at once; resting the pointer on it opens it after
@@ -291,7 +297,8 @@ private:
                                    .anchor = anchor,
                                    .content = popup_,
                                    .environment = environment_,
-                                   .level = services_->menu_level() + 1});
+                                   .level = services_->menu_level() + 1,
+                                   .motion = menu_motion(environment_)});
         }
     }
 
@@ -383,7 +390,8 @@ public:
                                           .anchor = (*element_slot)->drawn_frame(),
                                           .content = menu,
                                           .environment = environment,
-                                          .level = services->menu_level() + 1});
+                                          .level = services->menu_level() + 1,
+                                          .motion = menu_motion(environment)});
                 }
             },
             pressed, hovered, context);

@@ -114,6 +114,7 @@ FloatingLayerElement::FloatingLayerElement(std::unique_ptr<Element> content) : c
 FloatingLayerElement::~FloatingLayerElement() {
     // Panels first (their content may hold floating content of its own, which removes itself
     // here), then the window's content, whose floating views find nothing left to remove.
+    exiting_.clear();
     while (!panels_.empty()) {
         const Panel panel = std::move(panels_.back());
         panels_.pop_back();
@@ -132,6 +133,11 @@ FloatingLayerElement* FloatingLayerElement::of(Element& element) {
 }
 
 void FloatingLayerElement::add(Panel panel) {
+    if (panel.element && panel.motion && panel.motion->animates()) {
+        auto transition = std::make_unique<TransitionElement>(*panel.motion->transition(), std::move(panel.element));
+        transition->insert(panel.motion->animation());
+        panel.element = std::move(transition);
+    }
     if (panel.element) {
         adopt(*panel.element);
     }
@@ -148,9 +154,14 @@ void FloatingLayerElement::remove(std::uint64_t token) {
         return;
     }
     // Out of the list before it's destroyed: floating content inside it removes itself too.
-    const Panel panel = std::move(*it);
+    Panel panel = std::move(*it);
     panels_.erase(it);
     invalidate_layout();
+    TransitionElement* transition = panel.element ? panel.element->as_transition() : nullptr;
+    if (transition && panel.motion && transition->remove(panel.motion->animation())) {
+        panel.anchor = nullptr; // its view may go away meanwhile
+        exiting_.push_back(std::move(panel));
+    }
 }
 
 void FloatingLayerElement::for_each_child(const std::function<void(Element&)>& visit) {
@@ -163,6 +174,10 @@ void FloatingLayerElement::for_each_child(const std::function<void(Element&)>& v
 }
 
 void FloatingLayerElement::arrange(Rect bounds, ProposedSize proposal) {
+    std::erase_if(exiting_, [](const Panel& panel) {
+        TransitionElement* transition = panel.element->as_transition();
+        return !transition || transition->exit_finished();
+    });
     content_->place({bounds.x, bounds.y}, proposal);
     // Then the panels, by their anchors as laid out now: at their own size, up to the window's.
     for (const Panel& panel : panels_) {
@@ -180,6 +195,9 @@ void FloatingLayerElement::arrange(Rect bounds, ProposedSize proposal) {
 
 void FloatingLayerElement::paint_impl(DisplayList& list) const {
     content_->paint(list);
+    for (const Panel& panel : exiting_) {
+        panel.element->paint(list);
+    }
     for (const Panel& panel : panels_) {
         if (panel.element) {
             panel.element->paint(list);
@@ -261,6 +279,9 @@ public:
         : content_(std::move(content)), floating_(std::move(floating)), options_(std::move(options)),
           is_presented_(std::move(is_presented)), context_(context.nested()),
           level_(context.services ? context.services->menu_level() + 1 : 0) {
+        if (!options_.motion) {
+            options_.motion = PopupMotion::none();
+        }
         adopt(*content_);
     }
     ~FloatingElement() override {
@@ -345,6 +366,7 @@ private:
                 .on_close = on_dismissed(),
                 .modal = modal(),
                 .token = token_,
+                .motion = options_.motion,
             });
             // Esc closes a popup that leaves the window usable through the window's layer.
             if (!modal() && layer_ && options_.dismiss.escape) {
@@ -366,6 +388,7 @@ private:
                                           .placement = options_.placement,
                                           .dismiss = options_.dismiss,
                                           .dismissed = on_dismissed(),
+                                          .motion = options_.motion,
                                           .scope = std::make_unique<Scope>()};
         {
             Scope::Use use(*panel.scope);
@@ -419,12 +442,18 @@ private:
 
 class FloatingNode final : public ViewNode {
 public:
-    FloatingNode(View content, Binding<bool> is_presented, std::function<View()> floating, FloatingOptions options)
+    // `default_motion`: the motion when the options have none, from where it's placed.
+    FloatingNode(View content, Binding<bool> is_presented, std::function<View()> floating, FloatingOptions options,
+                 std::function<PopupMotion(const EnvironmentValues&)> default_motion = {})
         : content_(std::move(content)), is_presented_(std::move(is_presented)), floating_(std::move(floating)),
-          options_(std::move(options)) {}
+          options_(std::move(options)), default_motion_(std::move(default_motion)) {}
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
-        auto element = std::make_unique<FloatingElement>(detail::lower(content_, context), floating_, options_,
+        FloatingOptions options = options_;
+        if (!options.motion && default_motion_) {
+            options.motion = default_motion_(context.environment);
+        }
+        auto element = std::make_unique<FloatingElement>(detail::lower(content_, context), floating_, std::move(options),
                                                          is_presented_, context);
         FloatingElement* const target = element.get();
         detail::bind(Prop<bool>(is_presented_), context, [target](bool presented) { target->set_presented(presented); });
@@ -436,6 +465,7 @@ private:
     Binding<bool> is_presented_;
     std::function<View()> floating_;
     FloatingOptions options_;
+    std::function<PopupMotion(const EnvironmentValues&)> default_motion_;
 };
 
 // A tooltip's view: shows it once the pointer has rested there for the delay, hides it when the
@@ -447,6 +477,9 @@ public:
         : content_(std::move(content)), tooltip_(std::move(tooltip)), options_(std::move(options)),
           context_(context.nested()) {
         adopt(*content_);
+        if (!options_.motion) {
+            options_.motion = untrack([&] { return context_.environment.get<TooltipStyleKey>(); })->motion();
+        }
     }
     ~TooltipElement() override { hide(); }
 
@@ -499,7 +532,8 @@ private:
                                                .placement = options_.placement,
                                                .anchor = drawn_frame(),
                                                .content = styled(),
-                                               .environment = context_.environment});
+                                               .environment = context_.environment,
+                                               .motion = options_.motion});
             }
             return;
         }
@@ -513,6 +547,7 @@ private:
                                           .placement = options_.placement,
                                           .dismiss = {.outside_click = false, .escape = false},
                                           .interactive = false,
+                                          .motion = options_.motion,
                                           .scope = std::make_unique<Scope>()};
         {
             Scope::Use use(*panel.scope);
@@ -570,6 +605,35 @@ private:
 
 } // namespace
 
+namespace {
+
+class PopupMotionNode final : public ViewNode {
+public:
+    PopupMotionNode(View content, PopupMotion motion, std::shared_ptr<TransitionElement*> exit)
+        : content_(std::move(content)), motion_(std::move(motion)), exit_(std::move(exit)) {}
+
+    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+        auto element = std::make_unique<TransitionElement>(*motion_.transition(), detail::lower(content_, context));
+        element->insert(motion_.animation());
+        *exit_ = element.get();
+        return element;
+    }
+
+private:
+    View content_;
+    PopupMotion motion_;
+    std::shared_ptr<TransitionElement*> exit_;
+};
+
+} // namespace
+
+View with_popup_motion(View content, const PopupMotion& motion, std::shared_ptr<TransitionElement*> exit) {
+    if (!motion.animates()) {
+        return content;
+    }
+    return ViewAccess::make(std::make_shared<const PopupMotionNode>(std::move(content), motion, std::move(exit)));
+}
+
 EnvironmentValues styling_environment() {
     const EnvironmentValues* environment = current_environment();
     return environment ? *environment : EnvironmentValues();
@@ -594,8 +658,12 @@ View View::popover(Binding<bool> is_presented, std::function<View()> content, Po
         const auto style = untrack([&] { return environment.get<PopoverStyleKey>(); });
         return style->make_body({.content = content(), .is_padded = [padded, environment] { return padded.get(environment); }});
     };
-    return floating(std::move(is_presented), std::move(panel),
-                    {.placement = options.placement, .boundary = options.boundary});
+    return detail::ViewAccess::make(std::make_shared<const detail::FloatingNode>(
+        *this, std::move(is_presented), std::move(panel),
+        FloatingOptions{.placement = options.placement, .boundary = options.boundary, .motion = options.motion},
+        [](const EnvironmentValues& environment) {
+            return untrack([&] { return environment.get<PopoverStyleKey>(); })->motion();
+        }));
 }
 
 View View::tooltip(std::function<View()> content, TooltipOptions options) const {
