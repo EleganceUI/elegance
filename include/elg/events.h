@@ -165,6 +165,22 @@ struct PointerEvent {
     KeyModifiers modifiers = KeyModifiers::none; // held when the button went down / up
 };
 
+// A click on a view (View::on_click): pressed and released inside it.
+struct ClickEvent {
+    Point location;        // where it was released, in the view's own coordinates (0, 0: its top-leading corner)
+    Point window_location; // the same, in the window's
+    MouseButton button = MouseButton::left;
+    KeyModifiers modifiers = KeyModifiers::none; // held when it was released
+    int click_count = 1;                         // 2 for a double click, ...
+};
+
+// Which clicks View::on_click takes.
+struct ClickOptions {
+    MouseButton button = MouseButton::left;
+    // 2: double clicks (the first click goes on to outer handlers), 3: triple clicks, ...
+    int count = 1;
+};
+
 struct EventResult {
     // Stops the event from reaching outer handlers. Consuming a `down` captures the pointer:
     // this handler then receives the moves and the `up`, wherever the pointer goes.

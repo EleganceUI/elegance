@@ -64,32 +64,44 @@ bool contains(const Rect& rect, Point point) {
     return point.x >= rect.x && point.y >= rect.y && point.x < rect.max_x() && point.y < rect.max_y();
 }
 
-class TapHandler final : public EventHandler {
+class ClickHandler final : public EventHandler {
 public:
-    TapHandler(int count, std::function<void()> action) : count_(count), action_(std::move(action)) {}
+    ClickHandler(std::function<void(const ClickEvent&)> action, ClickOptions options)
+        : action_(std::move(action)), options_(options) {}
 
     EventResult pointer(const PointerEvent& event, Rect frame) override {
-        if (event.button != MouseButton::left) {
+        if (event.kind == PointerEvent::Kind::cancel) {
+            pressed_ = false;
             return {};
         }
+        if (event.button != options_.button) {
+            return {};
+        }
+        const int count = std::max(options_.count, 1);
         switch (event.kind) {
         case PointerEvent::Kind::down:
-            // A double-tap handler leaves first clicks to outer (single-tap) handlers.
-            if (event.click_count < count_) {
+            // A double-click handler leaves first clicks to outer (single-click) handlers.
+            if (event.click_count < count) {
                 return {};
             }
             pressed_ = true;
             return {.consumed = true};
         case PointerEvent::Kind::up: {
-            const bool fire = pressed_ && contains(frame, event.location) && event.click_count >= count_ &&
-                              (event.click_count - count_) % std::max(count_, 1) == 0;
+            const bool fire = pressed_ && contains(frame, event.location) && event.click_count >= count &&
+                              (event.click_count - count) % count == 0;
             pressed_ = false;
             if (fire && action_) {
-                action_();
+                action_(ClickEvent{
+                    .location = {event.location.x - frame.x, event.location.y - frame.y},
+                    .window_location = event.location,
+                    .button = event.button,
+                    .modifiers = event.modifiers,
+                    .click_count = event.click_count,
+                });
             }
             return {.consumed = true};
         }
-        case PointerEvent::Kind::cancel: pressed_ = false; return {};
+        case PointerEvent::Kind::cancel:
         case PointerEvent::Kind::move:
         case PointerEvent::Kind::hover: return {};
         }
@@ -97,8 +109,8 @@ public:
     }
 
 private:
-    int count_;
-    std::function<void()> action_;
+    std::function<void(const ClickEvent&)> action_;
+    ClickOptions options_;
     bool pressed_ = false;
 };
 
@@ -222,8 +234,8 @@ std::unique_ptr<EventHandler> KeyPressModifier::make_handler() const {
     return std::make_unique<KeyPressHandler>(action_);
 }
 
-std::unique_ptr<EventHandler> TapGestureModifier::make_handler() const {
-    return std::make_unique<TapHandler>(count_, action_);
+std::unique_ptr<EventHandler> ClickModifier::make_handler() const {
+    return std::make_unique<ClickHandler>(action_, options_);
 }
 
 std::unique_ptr<EventHandler> HoverModifier::make_handler() const {

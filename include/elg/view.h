@@ -6,6 +6,7 @@
 #define ELG_VIEW_H
 
 #include <elg/color.h>
+#include <elg/events.h>
 #include <elg/export.h>
 #include <elg/geometry.h>
 #include <elg/gradient.h>
@@ -60,12 +61,6 @@ class NumberInputStyle;
 class ProgressStyle;
 class NavigationStackStyle;
 class TextFieldStyle;
-struct HoverDelay;
-struct KeyEvent;
-struct MagnifyEvent;
-struct RotateEvent;
-enum class PointerStyle;
-enum class Key;
 enum class Weight;
 template <class T>
 class Binding;
@@ -465,8 +460,21 @@ public:
 
     // --- Events (elg/modifiers/events.h) ---
 
-    // Runs `action` on a tap (`count` = 2 for a double tap). The innermost tap gesture wins.
-    ELG_API View on_tap_gesture(std::function<void()> action, int count = 1) const;
+    // Pointer clicks: pressed and released inside the view with the options' button (left by
+    // default) and click count. The innermost click handler wins. Clicks only: for something a
+    // keyboard or a screen reader should be able to use too, use on_activate.
+    //   Canvas(draw).on_click([=](const ClickEvent& e) { add_point(e.location); })
+    //   Row().on_click(select).on_double_click(open)
+    ELG_API View on_click(std::function<void(const ClickEvent&)> action, ClickOptions options = {}) const;
+    ELG_API View on_click(std::function<void()> action, ClickOptions options = {}) const;
+    // on_click with .count = 2.
+    ELG_API View on_double_click(std::function<void(const ClickEvent&)> action) const;
+    ELG_API View on_double_click(std::function<void()> action) const;
+    // The view's action, however it's used: a left click, Space or Enter while it has focus, or a
+    // screen reader's default action. Makes it focusable (Tab, with a focus ring); its
+    // accessibility role stays its own. Disabled views (.disabled) don't activate.
+    //   Tile(album).on_activate([=] { open(album); }).accessibility_label(album.title)
+    ELG_API View on_activate(std::function<void()> action) const;
     // Trackpad gestures over the view (began ... ended): pinching, turning two fingers, and a
     // two-finger double tap. The innermost view handling one under the pointer takes it.
     //   .on_magnify([=](const MagnifyEvent& e) { zoom = std::clamp(start_zoom * e.scale, 0.5f, 8.f); })

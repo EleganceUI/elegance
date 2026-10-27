@@ -5,8 +5,8 @@
 #ifndef ELG_MODIFIERS_EVENTS_H
 #define ELG_MODIFIERS_EVENTS_H
 
-// Built-in event modifiers. View::on_tap_gesture(), on_pointer_enter/leave() and on_hover_change()
-// are sugar over these.
+// Built-in event modifiers. View::on_click(), on_pointer_enter/leave() and on_hover_change() are
+// sugar over these.
 
 #include <elg/events.h>
 #include <elg/export.h>
@@ -20,18 +20,20 @@
 
 namespace elg {
 
-// Runs `action` when the view is pressed and released inside it. The innermost tap gesture
-// under the pointer wins; outer ones don't fire.
-class ELG_API TapGestureModifier final : public EventModifier {
+// Calls `action` when the view is pressed and released inside it with the options' button and
+// click count. The innermost click handler under the pointer for that button wins; outer ones
+// don't fire.
+class ELG_API ClickModifier final : public EventModifier {
 public:
-    TapGestureModifier(int count, std::function<void()> action) : count_(count), action_(std::move(action)) {}
+    ClickModifier(std::function<void(const ClickEvent&)> action, ClickOptions options)
+        : action_(std::move(action)), options_(options) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
-    int count_;
     ELG_PRIVATE_MEMBERS_BEGIN
-    std::function<void()> action_;
+    std::function<void(const ClickEvent&)> action_;
     ELG_PRIVATE_MEMBERS_END
+    ClickOptions options_;
 };
 
 // Calls `enter` as soon as the pointer comes over the view (its hit area) and `leave` as soon as it

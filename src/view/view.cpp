@@ -372,8 +372,27 @@ View View::allows_hit_testing(bool enabled) const {
     return modifier(AllowsHitTestingModifier(enabled));
 }
 
-View View::on_tap_gesture(std::function<void()> action, int count) const {
-    return modifier(TapGestureModifier(count, std::move(action)));
+View View::on_click(std::function<void(const ClickEvent&)> action, ClickOptions options) const {
+    return modifier(ClickModifier(std::move(action), options));
+}
+
+View View::on_click(std::function<void()> action, ClickOptions options) const {
+    return on_click([action = std::move(action)](const ClickEvent&) { action(); }, options);
+}
+
+View View::on_double_click(std::function<void(const ClickEvent&)> action) const {
+    return on_click(std::move(action), {.count = 2});
+}
+
+View View::on_double_click(std::function<void()> action) const {
+    return on_click(std::move(action), {.count = 2});
+}
+
+View View::on_activate(std::function<void()> action) const {
+    if (!action) {
+        throw UsageError("on_activate: the action is empty");
+    }
+    return View(std::make_shared<const detail::ActivateNode>(*this, std::move(action)));
 }
 
 View View::on_magnify(std::function<void(const MagnifyEvent&)> action) const {
@@ -756,6 +775,56 @@ std::unique_ptr<EventElement> make_event_element(std::unique_ptr<EventHandler> h
     return element;
 }
 
+// on_activate: a left click inside, or Space/Enter while focused, while enabled.
+class ActivateHandler final : public EventHandler {
+public:
+    ActivateHandler(std::function<void()> action, std::function<bool()> enabled)
+        : action_(std::move(action)), enabled_(std::move(enabled)) {}
+
+    EventResult pointer(const PointerEvent& event, Rect frame) override {
+        if (event.kind == PointerEvent::Kind::cancel) {
+            pressed_ = false;
+            return {};
+        }
+        if (event.button != MouseButton::left) {
+            return {};
+        }
+        switch (event.kind) {
+        case PointerEvent::Kind::down:
+            if (!untrack(enabled_)) {
+                return {};
+            }
+            pressed_ = true;
+            return {.consumed = true};
+        case PointerEvent::Kind::up: {
+            const bool inside = event.location.x >= frame.x && event.location.x < frame.max_x() &&
+                                event.location.y >= frame.y && event.location.y < frame.max_y();
+            if (std::exchange(pressed_, false) && inside && untrack(enabled_)) {
+                action_();
+            }
+            return {.consumed = true};
+        }
+        default: return {};
+        }
+    }
+    EventResult key(const KeyEvent& event) override {
+        if (event.kind != KeyEvent::Kind::down || (event.key != Key::space && event.key != Key::enter) ||
+            event.modifiers != KeyModifiers::none || !untrack(enabled_)) {
+            return {};
+        }
+        if (!event.repeat) {
+            action_();
+        }
+        return {.consumed = true};
+    }
+    bool focusable() const override { return untrack(enabled_); }
+
+private:
+    std::function<void()> action_;
+    std::function<bool()> enabled_;
+    bool pressed_ = false;
+};
+
 // `.focused(binding)` around a view: focusable itself only when nothing inside is (so Tab and
 // clicks reach the field it wraps, not an invisible wrapper first).
 class FocusScopeHandler final : public EventHandler {
@@ -1092,6 +1161,20 @@ std::unique_ptr<Element> ToggleNode::lower(const LowerContext& context) const {
 
 // Like SwiftUI: the binding is true while focus is anywhere inside the view, and setting it
 // focuses the first focusable view inside (or the view itself if nothing inside can be).
+std::unique_ptr<Element> ActivateNode::lower(const LowerContext& context) const {
+    const EnvironmentValues environment = context.environment;
+    const std::function<bool()> enabled = [environment] { return !environment.get<DisabledKey>(); };
+    const std::function<void()> action = action_;
+    AccessibilitySpec semantics;
+    semantics.action = [action, enabled] {
+        if (untrack(enabled)) {
+            action();
+        }
+    };
+    auto element = make_event_element(std::make_unique<ActivateHandler>(action, enabled), content_, context);
+    return with_accessibility(std::move(element), std::move(semantics), environment);
+}
+
 std::unique_ptr<Element> FocusedNode::lower(const LowerContext& context) const {
     auto handler = std::make_unique<FocusScopeHandler>();
     FocusScopeHandler* const scope_handler = handler.get();

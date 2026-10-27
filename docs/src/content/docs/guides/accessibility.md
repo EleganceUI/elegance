@@ -49,19 +49,19 @@ Labels, values and hints can be reactive.
 
 ### Custom controls
 
-A view made clickable with a gesture is just a shape and some text to a screen reader. Give it a
-role, a label and an action:
+A view made into a control is just a shape and some text to a screen reader. `on_activate` makes
+it usable by pointer, keyboard (Tab to it, then Space or Enter) and screen reader alike; give it a
+role and a label too:
 
 ```cpp
 ZStack({.alignment = Alignment::leading}, Capsule().fill(track_color),
        Circle().fill(Color::white).frame(28, 28).padding(2).offset(knob_x, 0.f))
     .frame(52, 32)
-    .on_tap_gesture(toggle)
+    .on_activate(toggle)
     .accessibility_element()
     .accessibility_role(AccessibilityRole::toggle)
     .accessibility_label("Dark mode")
-    .accessibility_value([=] { return dark() ? "On" : "Off"; })
-    .accessibility_action(toggle);
+    .accessibility_value([=] { return dark() ? "On" : "Off"; });
 ```
 
 ### Rows

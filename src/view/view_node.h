@@ -226,6 +226,18 @@ private:
 };
 
 // `.focused(binding)`.
+// `.on_activate(action)`: clicks, Space/Enter while focused, and the accessibility action.
+class ActivateNode final : public ViewNode {
+public:
+    ActivateNode(View content, std::function<void()> action)
+        : content_(std::move(content)), action_(std::move(action)) {}
+    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+
+private:
+    View content_;
+    std::function<void()> action_;
+};
+
 class FocusedNode final : public ViewNode {
 public:
     FocusedNode(View content, Binding<bool> is_focused) : content_(std::move(content)), is_focused_(std::move(is_focused)) {}

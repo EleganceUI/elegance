@@ -621,7 +621,7 @@ View StackCards() {
             .shadow({.color = Color::black.opacity(0.3f), .radius = 6, .y = 2})
             .offset(static_cast<float>(index) * 34, static_cast<float>(index) * 16)
             .z_index([=] { return front() == index ? 1.f : 0.f; })
-            .on_tap_gesture([=] { front = index; });
+            .on_click([=] { front = index; });
     };
     const View layers = ZStack({.alignment = Alignment::top_leading},
                                card(0, palette::peach, "One"),
@@ -760,7 +760,7 @@ View StateCards(std::function<void()> quit) {
                            .animation(Animation::ease_out(0.18), hovered) // implicit: hover changes ease
                            .on_pointer_enter([=] { hovered = true; })
                            .on_pointer_leave([=] { hovered = false; })
-                           .on_tap_gesture([=] { taps += 1; });
+                           .on_click([=] { taps += 1; });
 
     // A reactive opacity, toggled by a button whose label follows the same state.
     const auto dimmed = State(false);
@@ -772,7 +772,7 @@ View StateCards(std::function<void()> quit) {
     return HStack({.spacing = 24},
                   Captioned(buttons, "Button + tint").card(),
                   Captioned(counter, "State + Binding").card(),
-                  Captioned(hover.frame({.max_width = infinity}), "on_hover + on_tap_gesture").card(),
+                  Captioned(hover.frame({.max_width = infinity}), "pointer enter/leave + on_click").card(),
                   Captioned(fade, "Reactive opacity").card());
 }
 

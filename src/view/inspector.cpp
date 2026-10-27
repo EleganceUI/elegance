@@ -185,7 +185,7 @@ View TreeRow(const InspectRow& row, std::shared_ptr<Inspector> inspector) {
                        .foreground_style(ThemeColor::tertiary)
                        .frame(12, 12)
                        .content_shape(Rectangle())
-                       .on_tap_gesture([inspector, path] {
+                       .on_click([inspector, path] {
                            inspector->collapsed.update([&](std::vector<ElementPath>& collapsed) {
                                if (const auto it = std::ranges::find(collapsed, path); it != collapsed.end()) {
                                    collapsed.erase(it);
@@ -209,7 +209,7 @@ View TreeRow(const InspectRow& row, std::shared_ptr<Inspector> inspector) {
             return selected && *selected == path ? 0.25f : 0.f;
         }))
         .content_shape(Rectangle())
-        .on_tap_gesture([inspector, path] { inspector->selected = path; });
+        .on_click([inspector, path] { inspector->selected = path; });
 }
 
 // The selected row, if it's still in the tree.

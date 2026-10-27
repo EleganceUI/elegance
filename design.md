@@ -686,7 +686,7 @@ how to lower a modifier. Users can implement any of them.
 | `DrawModifier`          | `draw(DrawContext&, Rect bounds)` before/after content     | `ShadowModifier`; also used for custom paint effects                |
 | `EffectModifier`        | layer props: opacity, transform, clip, mask, filter, blend | `OpacityModifier`, `ClipShapeModifier`, `MaskModifier`,             |
 |                         |                                                            | `BlurModifier`, `ScaleEffectModifier`, `RotationEffectModifier`     |
-| `EventModifier`         | event handlers, gesture recognizers, focus                 | `TapGestureModifier`, `HoverModifier`, `FocusedModifier`,           |
+| `EventModifier`         | event handlers, gesture recognizers, focus                 | `ClickModifier`, `HoverModifier`, `FocusedModifier`,                |
 |                         |                                                            | `KeyPressModifier`                                                  |
 | `LifecycleModifier`     | mount/unmount hooks                                        | `OnAppearModifier`, `TaskModifier`, `OnChangeModifier`              |
 
@@ -810,7 +810,8 @@ Text("Hi").apply(card)                             // function-style: View card(
 |                  | `sepia`, `color_invert`, `color_multiply`, `luminance_to_alpha`,        |                           |
 |                  | `blend_mode`, `compositing_group`, `rotation_effect`, `scale_effect`,   |                           |
 |                  | `backdrop_blur(radius, shape, {saturation, brightness, noise})`         |                           |
-| Interaction      | `on_tap_gesture`, `on_hover`, `gesture(...)`, `focusable`, `focused`,   | event handlers            |
+| Interaction      | `on_click`, `on_activate`, `on_pointer_enter/leave`, `on_hover_change`, | event handlers            |
+|                  | `focusable`, `focused`,                                                 |                           |
 |                  | `on_key_press`, `keyboard_shortcut`, `context_menu`, `help` (tooltip)   |                           |
 | Lifecycle        | `on_appear`, `on_disappear`, `task(async fn)`, `on_change(value, fn)`   | effects tied to mount     |
 | Presentation     | `sheet`, `popover`, `alert`, `confirmation_dialog`, `overlay` portals   | top-layer elements        |
@@ -1671,7 +1672,9 @@ Separate render thread from day one (decided).
 - [x] Hit testing (SwiftUI semantics: a view is hit where its content draws; stroke-only shapes
   on their line; clips respected; `content_shape`, `allows_hit_testing`)
 - [x] Events: `EventModifier` / `EventHandler` protocol, bubbling innermost-first, pointer capture
-  between down and up, hover enter/leave; `on_tap_gesture` (single/double),
+  between down and up, hover enter/leave; `on_click` / `on_double_click` (a `ClickEvent` with the
+  view-local location, button, modifiers and count; any button), `on_activate` (click, Space/Enter
+  while focused, and the accessibility action; focusable; respects `.disabled`),
   `on_pointer_enter` / `on_pointer_leave` (immediate), `on_hover_change` (hover intent)
 - [x] `Button` (default style: tint, hover, and pressed states) + `tint` environment value
 - [x] Hover delays: `HoverDelay{.enter, .exit}`, for hover intent only (`on_hover_change`,

@@ -282,7 +282,7 @@ private:
                             .background(RoundedRectangle(6).fill(ThemeColor::accent).opacity(
                                 [self, name] { return self->selected_() == name ? 0.25f : 0.f; }))
                             .content_shape(Rectangle())
-                            .on_tap_gesture([self, name] { self->selected_ = name; });
+                            .on_click([self, name] { self->selected_ = name; });
                     })));
         const View sidebar = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
                                     Text("Previews").font(Font::headline), list)

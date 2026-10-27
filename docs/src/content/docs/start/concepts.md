@@ -64,7 +64,7 @@ const State<bool> selected(false);
 Text("Item")
     .foreground_style([=] { return selected() ? Color::white : Color::hex(0x1C1C1E); })
     .background([=] { return selected() ? Color::hex(0x0A84FF) : Color::clear; })
-    .on_tap_gesture([=] { selected = !selected(); });
+    .on_click([=] { selected = !selected(); });
 ```
 
 Each reactive argument becomes one small effect that updates one property of one element. When

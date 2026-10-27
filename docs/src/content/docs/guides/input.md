@@ -1,23 +1,36 @@
 ---
 title: Input, focus, and gestures
-description: "Taps, hover, keyboard shortcuts, focus and Tab order, hit testing, and dropping files."
+description: "Clicks and activation, hover, keyboard shortcuts, focus and Tab order, hit testing, and dropping files."
 ---
 
 Controls handle their own input. For everything else, event modifiers attach handlers to any
 view.
 
-## Taps
+## Clicks and activation
+
+`on_click` runs on a press and release inside the view. It can take the click's details: where it
+was (in the view's own coordinates), the button, the modifiers held and the click count:
 
 ```cpp
-Card().on_tap_gesture([=] { open(card_id); });
-Thumbnail().on_tap_gesture([=] { zoom(); }, 2); // a double tap
+Row().on_click(select).on_double_click(open);
+Canvas(draw).on_click([=](const ClickEvent& click) { add_point(click.location); });
+Item().on_click([=](const ClickEvent& click) { extend_selection(id, click.modifiers); });
+Tab().on_click(close_tab, {.button = MouseButton::middle});
 ```
 
-A tap is a press and release inside the view. When tap gestures are nested, the innermost one
-under the pointer wins.
+When click handlers are nested, the innermost one for that button wins. A double-click handler
+lets first clicks through to an outer single-click one.
 
-Views made clickable with gestures should tell screen readers what they are; see
-[Accessibility](../accessibility/).
+A click is only the pointer. For something that's a control (a tile that opens, a custom
+switch), use `on_activate`. It runs on a click, on Space or Enter while the view has focus, and
+on a screen reader's default action. It makes the view focusable, and `.disabled()` turns it
+off:
+
+```cpp
+AlbumTile(album).on_activate([=] { open(album); }).accessibility_label(album.title);
+```
+
+Give custom controls a role and label too; see [Accessibility](../accessibility/).
 
 ## Trackpad gestures
 
@@ -77,7 +90,7 @@ under the pointer with a style decides; with none, it's the arrow. Text fields s
 and split view dividers the resize arrows on their own.
 
 ```cpp
-Card().on_tap_gesture(open).pointer_style(PointerStyle::pointer); // a hand: this opens something
+Card().on_activate(open).pointer_style(PointerStyle::pointer); // a hand: this opens something
 Canvas(draw).pointer_style(PointerStyle::crosshair);
 Content().pointer_style([=] { return busy() ? PointerStyle::progress : PointerStyle::automatic; });
 ```
@@ -93,7 +106,7 @@ A view is hit where its content draws: shapes by their outline, text by its fram
 change that:
 
 ```cpp
-HStack(Image("star"), Spacer(), Text("Rate")).content_shape(Rectangle()).on_tap_gesture(rate); // the gaps count too
+HStack(Image("star"), Spacer(), Text("Rate")).content_shape(Rectangle()).on_click(rate); // the gaps count too
 Overlay().allows_hit_testing(false); // clicks go through to what's behind
 ```
 
