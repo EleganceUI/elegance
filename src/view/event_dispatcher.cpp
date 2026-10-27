@@ -347,7 +347,9 @@ bool EventDispatcher::pointer_left() {
 
 bool EventDispatcher::key(const KeyEvent& event) {
     bool redraw = false;
-    for (Element* element = focus_->focused(); element; element = element->parent()) {
+    // From the focused element out to the root; with nothing focused, the root alone (a window's
+    // floating layer closes its floating content on Esc).
+    for (Element* element = focus_->focused() ? focus_->focused() : root_; element; element = element->parent()) {
         if (EventHandler* handler = element->event_handler()) {
             const EventResult result = handler->key(event);
             redraw |= result.redraw;

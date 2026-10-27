@@ -61,6 +61,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         view/element.cpp
         view/event_dispatcher.cpp
         view/events.cpp
+        view/floating.cpp
         view/gestures.cpp
         view/fragment.cpp
         view/grid_layout.cpp

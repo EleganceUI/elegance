@@ -20,6 +20,7 @@ add_executable(elegance_tests
         click_tests.cpp
         raw_input_tests.cpp
         gesture_tests.cpp
+        floating_tests.cpp
         http_tests.cpp
         image_tests.cpp
         navigation_tests.cpp

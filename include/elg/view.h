@@ -156,11 +156,48 @@ struct DropOptions {
     std::function<void(bool targeted)> targeted;
 };
 
-// Which side of its view a popover opens on (it flips if there isn't room).
-enum class PopoverEdge { below, above, trailing, leading };
+// Where floating content (View::floating()) goes, by the view it's attached to (its anchor).
+enum class FloatingEdge { bottom, top, trailing, leading };
+// Across that edge: lined up with the anchor's start (leading or top), center, or end.
+enum class FloatingAlignment { start, center, end };
+
+struct FloatingPlacement {
+    // The anchor's side it opens on. It flips to the opposite side when there isn't room.
+    FloatingEdge edge = FloatingEdge::bottom;
+    FloatingAlignment alignment = FloatingAlignment::start;
+    float spacing = 0; // between the anchor and the content (negative: overlapping)
+    Point offset;      // then moved by this
+    // Instead of an edge: the content's top-leading corner here, in the anchor's coordinates.
+    std::optional<Point> position;
+};
+
+// Where floating content may go.
+enum class FloatingBoundary {
+    // In a popup window of its own: it can extend past the app's window, and stays on the
+    // display. Where the platform constrains popup windows (Wayland), the system has the last word.
+    screen,
+    // Drawn inside the app's window, above its content, and kept within it.
+    window,
+};
+
+// What closes floating content (and sets its binding back to false).
+struct FloatingDismiss {
+    // A press anywhere outside it. While open, it then takes the pointer: presses elsewhere only
+    // close it. false: the rest of the window stays usable.
+    bool outside_click = true;
+    bool escape = true; // Esc, unless something focused handles it first
+};
+
+struct FloatingOptions {
+    FloatingPlacement placement;
+    FloatingBoundary boundary = FloatingBoundary::screen;
+    FloatingDismiss dismiss;
+};
 
 struct PopoverOptions {
-    PopoverEdge opens = PopoverEdge::below;
+    // Centered below the view by default.
+    FloatingPlacement placement{.alignment = FloatingAlignment::center, .spacing = 4};
+    FloatingBoundary boundary = FloatingBoundary::screen;
     Prop<bool> padded = true; // false: the content reaches the panel's edges (images, lists)
 };
 
@@ -556,6 +593,14 @@ public:
     ELG_API View context_menu(std::function<View()> menu) const;
     // A tooltip with `text`, shown after the pointer rests on the view for a moment.
     ELG_API View help(Prop<std::string> text) const;
+    // `content` floating above everything by the view, while `is_presented` is true, with no
+    // chrome of its own. The builder runs each time it opens. What closes it (and sets the
+    // binding back to false), where it goes and whether it may leave the window are `options`'.
+    //   Avatar().floating(card_shown.binding(), [=] { return ProfileCard(user); },
+    //                     {.placement = {.edge = FloatingEdge::trailing, .spacing = 8},
+    //                      .boundary = FloatingBoundary::window})
+    ELG_API View floating(Binding<bool> is_presented, std::function<View()> content,
+                          FloatingOptions options = {}) const;
     // A panel of `content` beside the view, shown while `is_presented` is true. Clicking outside
     // it, Esc, or switching apps closes it and sets `is_presented` back to false. The builder runs
     // each time it opens; the content can be anything, e.g. a small form.

@@ -233,7 +233,8 @@ public:
         auto open = [services, level, element_slot, menu = menu_, environment = context.environment] {
             if (services && *element_slot) {
                 services->open_popup({.kind = PopupRequest::Kind::menu,
-                                      .placement = PopupRequest::Placement::beside,
+                                      // Beside the row, overlapping it a little.
+                                      .placement = {.edge = FloatingEdge::trailing, .spacing = -2, .offset = {0, -4}},
                                       .anchor = (*element_slot)->drawn_frame(),
                                       .content = menu,
                                       .environment = environment,
@@ -290,7 +291,7 @@ protected:
     bool hit_impl(Point point, std::vector<Element*>& path) override { return content_->hit_test(point, path); }
 
 private:
-    void open(PopupRequest::Kind kind, PopupRequest::Placement placement, Rect anchor) {
+    void open(PopupRequest::Kind kind, FloatingPlacement placement, Rect anchor) {
         if (services_) {
             services_->open_popup({.kind = kind,
                                    .placement = placement,
@@ -316,7 +317,7 @@ private:
             // The event is in layout coordinates; the menu opens where the pointer is on screen.
             const Rect drawn = drawn_frame();
             const Rect laid_out = frame();
-            open(PopupRequest::Kind::menu, PopupRequest::Placement::at_point,
+            open(PopupRequest::Kind::menu, {},
                  {event.location.x + drawn.x - laid_out.x, event.location.y + drawn.y - laid_out.y, 0, 0});
         }
         return {.consumed = true, .cancellable = true};
@@ -325,7 +326,7 @@ private:
     EventResult hover(bool inside) override {
         if (kind_ == Kind::help) {
             if (inside) {
-                open(PopupRequest::Kind::tooltip, PopupRequest::Placement::below, drawn_frame());
+                open(PopupRequest::Kind::tooltip, {.spacing = 4}, drawn_frame());
             } else if (services_) {
                 services_->close_tooltip();
             }
@@ -340,7 +341,7 @@ private:
         const bool shift_f10 = event.key == Key::f10 && has(event.modifiers, KeyModifiers::shift);
         if (event.key == Key::menu || shift_f10) {
             const Rect bounds = drawn_frame();
-            open(PopupRequest::Kind::menu, PopupRequest::Placement::at_point, {bounds.x, bounds.max_y(), 0, 0});
+            open(PopupRequest::Kind::menu, {}, {bounds.x, bounds.max_y(), 0, 0});
             return {.consumed = true};
         }
         return {};
@@ -370,139 +371,6 @@ private:
     PopupTriggerElement::Kind kind_;
     View content_;
     std::function<View()> popup_;
-};
-
-// --- Popovers ---
-
-// Wraps a view; opens a popover by it while the binding is true, and closes it when the binding
-// goes false. Closed from outside (a click elsewhere, Esc), it sets the binding back to false.
-class PopoverElement final : public Element {
-public:
-    // Shared with the popup's on_close, which may run after this element is gone.
-    struct Presence {
-        bool open = false;   // the popup was requested and hasn't closed since
-        bool wanted = false; // the binding's value, as last seen
-        int generation = 0;  // +1 per open and close(), so a stale on_close does nothing
-    };
-
-    PopoverElement(std::unique_ptr<Element> content, std::function<View()> popover, PopoverOptions options,
-                   Binding<bool> is_presented, EnvironmentValues environment, WindowServices* services)
-        : content_(std::move(content)), popover_(std::move(popover)), options_(options),
-          is_presented_(std::move(is_presented)), environment_(std::move(environment)), services_(services),
-          level_(services ? services->menu_level() + 1 : 0) {
-        adopt(*content_);
-    }
-    ~PopoverElement() override { close(); } // its view went away: so does the popover
-
-    // The binding's value (from an effect). Opening waits for a frame to anchor to.
-    void set_presented(bool presented) {
-        presence_->wanted = presented;
-        if (!presented) {
-            close();
-        } else if (arranged_) {
-            open();
-        }
-    }
-
-    float layout_priority() const noexcept override { return content_->layout_priority(); }
-    bool is_spacer() const noexcept override { return content_->is_spacer(); }
-    void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
-
-protected:
-    Size measure(ProposedSize proposal) override { return content_->size_that_fits(proposal); }
-    void arrange(Rect bounds, ProposedSize proposal) override {
-        content_->place({bounds.x, bounds.y}, proposal);
-        arranged_ = true;
-        if (presence_->wanted) {
-            open(); // presented from the start
-        }
-    }
-    void paint_impl(DisplayList& list) const override { content_->paint(list); }
-    bool hit_impl(Point point, std::vector<Element*>& path) override { return content_->hit_test(point, path); }
-
-private:
-    void open() {
-        if (!services_ || presence_->open) {
-            return;
-        }
-        presence_->open = true;
-        const int generation = ++presence_->generation;
-        PopupRequest::Placement placement = PopupRequest::Placement::below;
-        switch (options_.opens) {
-        case PopoverEdge::below: placement = PopupRequest::Placement::below; break;
-        case PopoverEdge::above: placement = PopupRequest::Placement::above; break;
-        case PopoverEdge::trailing: placement = PopupRequest::Placement::beside; break;
-        case PopoverEdge::leading: placement = PopupRequest::Placement::leading; break;
-        }
-        services_->open_popup({
-            .kind = PopupRequest::Kind::popover,
-            .placement = placement,
-            .centered = true,
-            .anchor = drawn_frame(),
-            .content = [content = popover_, padded = options_.padded] {
-                const bool* fixed = padded.static_value();
-                const View panel =
-                    fixed ? (*fixed ? content().padding(12) : content())
-                          : content().padding(Prop<float>(
-                                [padded](const EnvironmentValues& env) { return padded.get(env) ? 12.f : 0.f; }));
-                return panel.clip_shape(RoundedRectangle(10))
-                    .background(ThemeColor::surface, RoundedRectangle(10))
-                    .overlay(RoundedRectangle(10).stroke_border(ThemeColor::outline, 1));
-            },
-            .environment = environment_,
-            .level = level_,
-            .on_close =
-                [presence = presence_, binding = is_presented_, generation] {
-                    // Closed from outside (close() moved the generation on): the binding goes
-                    // back to false, which then finds nothing left to close.
-                    if (presence->generation != generation) {
-                        return;
-                    }
-                    presence->open = false;
-                    if (presence->wanted) {
-                        presence->wanted = false;
-                        binding.set(false);
-                    }
-                },
-        });
-    }
-
-    void close() {
-        if (services_ && std::exchange(presence_->open, false)) {
-            ++presence_->generation;
-            services_->close_menus(level_);
-        }
-    }
-
-    std::unique_ptr<Element> content_;
-    std::function<View()> popover_;
-    PopoverOptions options_;
-    Binding<bool> is_presented_;
-    EnvironmentValues environment_;
-    WindowServices* services_;
-    int level_;
-    std::shared_ptr<Presence> presence_ = std::make_shared<Presence>();
-    bool arranged_ = false;
-};
-
-class PopoverNode final : public ViewNode {
-public:
-    PopoverNode(View content, Binding<bool> is_presented, std::function<View()> popover, PopoverOptions options)
-        : content_(std::move(content)), is_presented_(std::move(is_presented)), popover_(std::move(popover)),
-          options_(options) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
-        auto element = std::make_unique<PopoverElement>(detail::lower(content_, context), popover_, options_,
-                                                        is_presented_, context.environment, context.services);
-        PopoverElement* const target = element.get();
-        detail::bind(Prop<bool>(is_presented_), context, [target](bool presented) { target->set_presented(presented); });
-        return element;
-    }
-
-private:
-    View content_;
-    Binding<bool> is_presented_;
-    std::function<View()> popover_;
-    PopoverOptions options_;
 };
 
 // A Button (in the environment's ButtonStyle) whose action opens a menu below it.
@@ -536,8 +404,9 @@ public:
             [services, element_slot, menu = menu_, environment, edge = options_.opens] {
                 if (services && *element_slot) {
                     services->open_popup({.kind = PopupRequest::Kind::menu,
-                                          .placement = edge == MenuEdge::above ? PopupRequest::Placement::above
-                                                                               : PopupRequest::Placement::below,
+                                          .placement = {.edge = edge == MenuEdge::above ? FloatingEdge::top
+                                                                                        : FloatingEdge::bottom,
+                                                        .spacing = 4},
                                           .anchor = (*element_slot)->drawn_frame(),
                                           .content = menu,
                                           .environment = environment,
@@ -581,7 +450,8 @@ View detail::make_menu(std::vector<View> items) {
         .padding(5)
         .frame({.min_width = 200})
         .background(ThemeColor::surface, RoundedRectangle(9))
-        .overlay(RoundedRectangle(9).stroke_border(ThemeColor::outline, 1));
+        .overlay(RoundedRectangle(9).stroke_border(ThemeColor::outline, 1))
+        .shadow({.color = Color::black.opacity(0.28f), .radius = 12, .y = 3});
 }
 
 View MenuButton(View label, std::function<View()> menu) {
@@ -608,15 +478,11 @@ View View::help(Prop<std::string> text) const {
             .foreground_style(ThemeColor::primary)
             .padding(EdgeInsets::symmetric(8, 5))
             .background(ThemeColor::surface, RoundedRectangle(5))
-            .overlay(RoundedRectangle(5).stroke_border(ThemeColor::outline, 1));
+            .overlay(RoundedRectangle(5).stroke_border(ThemeColor::outline, 1))
+            .shadow({.color = Color::black.opacity(0.28f), .radius = 6, .y = 3});
     };
     return ViewAccess::make(std::make_shared<const detail::PopupTriggerNode>(detail::PopupTriggerElement::Kind::help,
                                                                             *this, std::move(tooltip)));
-}
-
-View View::popover(Binding<bool> is_presented, std::function<View()> content, PopoverOptions options) const {
-    return ViewAccess::make(std::make_shared<const detail::PopoverNode>(*this, std::move(is_presented),
-                                                                       std::move(content), options));
 }
 
 View detail::make_menu_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,

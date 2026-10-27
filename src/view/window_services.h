@@ -9,6 +9,7 @@
 #include <elg/geometry.h>
 #include <elg/view.h>
 
+#include <cstdint>
 #include <functional>
 #include <string>
 
@@ -16,25 +17,20 @@ namespace elg::detail {
 
 // A popup window to open (design.md §13.1), anchored to a rect in the opener's window.
 struct PopupRequest {
-    // Popovers share the menus' stack (and their closing on outside clicks, Esc, and focus
-    // loss), without menu keyboard navigation.
-    enum class Kind { menu, tooltip, popover };
-    enum class Placement {
-        at_point, // the panel's corner at anchor's origin (context menus)
-        below,    // under the anchor, left edges aligned (dropdowns, tooltips)
-        beside,   // to the right of the anchor, tops aligned (submenus)
-        above,    // over the anchor, left edges aligned (menus of buttons near the bottom)
-        leading,  // to the left of the anchor, tops aligned
-    };
+    // Floating content (View::floating(), popovers) that closes on outside clicks shares the
+    // menus' stack (and their closing on outside clicks, Esc, and focus loss), without menu
+    // keyboard navigation. Other floating content stays open beside the window, which stays usable.
+    enum class Kind { menu, tooltip, floating };
 
     Kind kind = Kind::menu;
-    Placement placement = Placement::below;
-    bool centered = false;           // centered on the anchor across the placement's direction
+    FloatingPlacement placement;     // by the anchor (place_floating())
     Rect anchor;                     // the opener window's logical points
     std::function<View()> content;   // built when the popup mounts, in its own scope
     EnvironmentValues environment;   // the opener's: theme, fonts, tint carry over
-    int level = 0;                   // menus and popovers: 0 for the first, +1 per nested one
-    std::function<void()> on_close;  // menus and popovers: runs after it closes, for any reason
+    int level = 0;                   // modal ones: 0 for the first, +1 per nested one
+    std::function<void()> on_close;  // menus and floating content: runs after it closes, for any reason
+    bool modal = true;               // floating content: in the menus' stack
+    std::uint64_t token = 0;         // floating content: for close_popup() and move_popup()
 };
 
 // What elements need from the window they're in, beyond drawing: text input (IME), the
@@ -73,6 +69,9 @@ public:
     // Closes every menu, then runs `action` (menu item actions).
     virtual void close_menus_then(std::function<void()> action) = 0;
     virtual void close_tooltip() = 0;
+    // Floating content by its request's token: closes it (non-modal), or moves it to a new anchor.
+    virtual void close_popup(std::uint64_t token) = 0;
+    virtual void move_popup(std::uint64_t token, Rect anchor) = 0;
     // For a menu popup window: its level; -1 for other windows.
     virtual int menu_level() const = 0;
 };

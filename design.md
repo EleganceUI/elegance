@@ -1126,6 +1126,22 @@ Text(file.name)
 - **Embedding mode** (§4), which has no platform layer, falls back to an in-window overlay in the
   top layer.
 
+#### Floating content (the shared primitive)
+- `.floating(Binding<bool>, content, FloatingOptions)` is the primitive: content by a view, no
+  chrome. `popover` is `floating` with a panel; menus and tooltips use the same host and
+  placement (`detail::place_floating`: edge, alignment, spacing, offset or explicit position;
+  flips to the other side, then clamps to the area).
+- Boundaries: `screen`, a popup window (the default), and `window`, drawn by the window's
+  `FloatingLayerElement` (every window's root) above its content and kept inside it.
+- Dismissal: `outside_click` (modal: on screen it joins the menus' stack; in the window the
+  layer takes presses outside it) and `escape` (the layer, which also gets keys when nothing is
+  focused). Without `outside_click`, screen-hosted content is a popup the window stays usable
+  beside; it goes with its window.
+- Popup windows are re-fitted every frame: measured at their ideal size (bounded by the
+  display), re-placed when that or the anchor changes (`move_popup`).
+- Still to do: styles for popover, tooltip and menu chrome; custom tooltip content; open/close
+  animation; a parent boundary.
+
 #### Behavior
 - **Opening:**
   - Right-click: opens on release on Windows, on press on macOS.
