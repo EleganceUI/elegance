@@ -70,6 +70,24 @@ std::shared_ptr<const ProgressStyle> ProgressStyleKey::default_value(const Envir
 
 ProgressStyle::~ProgressStyle() = default;
 
+std::shared_ptr<const PickerStyle> PickerStyleKey::default_value(const EnvironmentValues&) {
+    static const auto style = std::make_shared<const SegmentedPickerStyle>();
+    return style;
+}
+
+PickerStyle::~PickerStyle() = default;
+
+std::shared_ptr<const SliderStyle> SliderStyleKey::default_value(const EnvironmentValues&) {
+    static const auto style = std::make_shared<const KnobSliderStyle>();
+    return style;
+}
+
+SliderStyle::~SliderStyle() = default;
+
+View SliderStyle::make_fill(const SliderConfiguration&) const {
+    return View();
+}
+
 std::shared_ptr<const PopoverStyle> PopoverStyleKey::default_value(const EnvironmentValues&) {
     static const auto style = std::make_shared<const DefaultPopoverStyle>();
     return style;

@@ -220,33 +220,24 @@ View NumberInput(const State<T>& value, NumberInputOptions options = {}) {
 // Name it with .accessibility_label, or put a Text beside it.
 ELG_API View Progress(Prop<std::optional<float>> fraction = std::nullopt);
 
-enum class PickerStyle {
-    segmented, // every option visible, as segments
-    menu,      // the chosen option on a button; the others in a menu
-};
-
 namespace detail {
-ELG_API View make_segmented_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,
-                                   std::function<void(std::size_t)> select);
-ELG_API View make_menu_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,
-                              std::function<void(std::size_t)> select);
+ELG_API View make_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,
+                         std::function<void(std::size_t)> select);
 } // namespace detail
 
-// One of several options; `selection` is the chosen option's value. Shown as segments, or with
-// PickerStyle::menu as a button that opens a menu of the options.
+// One of several options; `selection` is the chosen option's value. Its look comes from the
+// PickerStyle: segments by default, or MenuPickerStyle for a button that opens a menu of them.
 //   Picker(size.binding(), {{Size::small, "S"}, {Size::medium, "M"}, {Size::large, "L"}})
 template <class T>
     requires std::equality_comparable<T>
-View Picker(Binding<T> selection, std::vector<std::pair<T, std::string>> options,
-            PickerStyle style = PickerStyle::segmented) {
+View Picker(Binding<T> selection, std::vector<std::pair<T, std::string>> options) {
     const auto shared = std::make_shared<const std::vector<std::pair<T, std::string>>>(std::move(options));
     std::vector<std::string> labels;
     labels.reserve(shared->size());
     for (const auto& option : *shared) {
         labels.push_back(option.second);
     }
-    auto make = style == PickerStyle::menu ? &detail::make_menu_picker : &detail::make_segmented_picker;
-    return make(
+    return detail::make_picker(
         std::move(labels),
         [selection, shared]() -> std::size_t {
             const T current = selection();

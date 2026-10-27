@@ -21,8 +21,11 @@
 #include <elg/export.h>
 #include <elg/view.h>
 
+#include <cstddef>
 #include <functional>
 #include <optional>
+#include <string>
+#include <vector>
 
 namespace elg {
 
@@ -291,6 +294,96 @@ public:
 
 private:
     CircularProgressStyleOptions options_;
+};
+
+// What a PickerStyle gets: the options' labels, which one is chosen, and choosing one.
+struct PickerConfiguration {
+    std::vector<std::string> labels;
+    Signal<std::size_t> selected; // the chosen option's index; labels.size() while none is
+    std::function<void(std::size_t)> select;
+};
+
+class ELG_API PickerStyle {
+public:
+    virtual ~PickerStyle();
+    // Called once per Picker when it's built, while Environment<K>() is available.
+    virtual View make_body(const PickerConfiguration& picker) const = 0;
+
+protected:
+    // Styles are copied as their concrete type, never as a PickerStyle.
+    PickerStyle() = default;
+    PickerStyle(const PickerStyle&) = default;
+    PickerStyle(PickerStyle&&) = default;
+    PickerStyle& operator=(const PickerStyle&) = default;
+    PickerStyle& operator=(PickerStyle&&) = default;
+};
+
+// Every option visible, as segments in a rounded track; the chosen one is raised. The default.
+class ELG_API SegmentedPickerStyle final : public PickerStyle {
+public:
+    View make_body(const PickerConfiguration& picker) const override;
+};
+
+// The chosen option on a button; the others in a menu it opens, the chosen one checked.
+//   Picker(sort.binding(), {{Sort::name, "Name"}, {Sort::date, "Date"}}).picker_style(MenuPickerStyle{})
+class ELG_API MenuPickerStyle final : public PickerStyle {
+public:
+    View make_body(const PickerConfiguration& picker) const override;
+};
+
+// What a SliderStyle gets: where the value is and the slider's state.
+struct SliderConfiguration {
+    Signal<float> fraction;  // where the value is between min and max, 0...1
+    Signal<bool> is_pressed; // being dragged
+    Signal<bool> is_hovered;
+    Signal<bool> is_enabled; // false inside .disabled(true)
+    Signal<bool> is_focused; // has keyboard focus
+};
+
+// How a Slider looks, in three parts that the slider places itself, so a style doesn't need to
+// know its width:
+// - the track, offered the slider's length less the thumb's width (centered, so the thumb stays
+//   inside at either end) and taking its own height;
+// - the fill, over the track from its start to the thumb's center (nothing by default);
+// - the thumb, at its ideal size, centered on the value.
+// The slider is as tall as the taller of the track and the thumb. It handles the pointer, keys
+// and accessibility itself; the parts only draw.
+class ELG_API SliderStyle {
+public:
+    virtual ~SliderStyle();
+    // Each is called once per Slider when it's built, while Environment<K>() is available.
+    virtual View make_track(const SliderConfiguration& slider) const = 0;
+    virtual View make_fill(const SliderConfiguration& slider) const;
+    virtual View make_thumb(const SliderConfiguration& slider) const = 0;
+
+protected:
+    // Styles are copied as their concrete type, never as a SliderStyle.
+    SliderStyle() = default;
+    SliderStyle(const SliderStyle&) = default;
+    SliderStyle(SliderStyle&&) = default;
+    SliderStyle& operator=(const SliderStyle&) = default;
+    SliderStyle& operator=(SliderStyle&&) = default;
+};
+
+struct KnobSliderStyleOptions {
+    Prop<Color> track = ThemeColor::outline;
+    std::optional<Prop<Color>> fill; // nullopt: the tint
+    float track_thickness = 4;
+    float knob_size = 20;
+};
+
+// A thin capsule track, filled in the tint up to a round white knob with a soft shadow. The
+// default.
+//   Slider(volume.binding()).slider_style(KnobSliderStyle{{.track_thickness = 2, .knob_size = 14}})
+class ELG_API KnobSliderStyle final : public SliderStyle {
+public:
+    explicit KnobSliderStyle(KnobSliderStyleOptions options = {}) : options_(std::move(options)) {}
+    View make_track(const SliderConfiguration& slider) const override;
+    View make_fill(const SliderConfiguration& slider) const override;
+    View make_thumb(const SliderConfiguration& slider) const override;
+
+private:
+    KnobSliderStyleOptions options_;
 };
 
 // What a TextFieldStyle gets: the editable text (put it where the text goes) and its state.

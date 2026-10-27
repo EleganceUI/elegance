@@ -55,7 +55,7 @@ MenuButton("Attach", attach_menu, {.placement = {.edge = FloatingEdge::top, .spa
                                    .shows_indicator = false});
 ```
 
-For choosing one value from a list, `Picker` with `PickerStyle::menu` does this for you; see
+For choosing one value from a list, `Picker` with `MenuPickerStyle` does this for you; see
 [Controls](../controls/#picker).
 
 ## Popovers

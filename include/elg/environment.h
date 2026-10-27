@@ -46,6 +46,8 @@ class TextFieldStyle;
 class PopoverStyle;
 class TooltipStyle;
 class MenuStyle;
+class PickerStyle;
+class SliderStyle;
 
 class EnvironmentValues {
 public:
@@ -165,6 +167,18 @@ struct ProgressStyleKey {
     using Value = std::shared_ptr<const ProgressStyle>;
     static constexpr std::string_view name = "elg.progress_style";
     ELG_API static std::shared_ptr<const ProgressStyle> default_value(const EnvironmentValues&);
+};
+
+struct PickerStyleKey {
+    using Value = std::shared_ptr<const PickerStyle>;
+    static constexpr std::string_view name = "elg.picker_style";
+    ELG_API static std::shared_ptr<const PickerStyle> default_value(const EnvironmentValues&);
+};
+
+struct SliderStyleKey {
+    using Value = std::shared_ptr<const SliderStyle>;
+    static constexpr std::string_view name = "elg.slider_style";
+    ELG_API static std::shared_ptr<const SliderStyle> default_value(const EnvironmentValues&);
 };
 
 struct NavigationStackStyleKey {

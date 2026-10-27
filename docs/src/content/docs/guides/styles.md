@@ -14,6 +14,8 @@ one modifier styles every control inside a view.
 | `Button` | `ProminentButtonStyle` (default), `BorderedButtonStyle`, `PlainButtonStyle` |
 | `Toggle` | `SwitchToggleStyle` (default) |
 | `Checkbox` | `BoxCheckboxStyle` (default) |
+| `Picker` | `SegmentedPickerStyle` (default), `MenuPickerStyle` |
+| `Slider` | `KnobSliderStyle` (default) |
 | `NumberInput` | `BoxNumberInputStyle` (default), `PlainNumberInputStyle` |
 | `Progress` | `LinearProgressStyle` (default), `CircularProgressStyle` |
 | `TextField`, `TextArea` | `RoundedBorderTextFieldStyle` (default), `PlainTextFieldStyle` |
@@ -98,6 +100,61 @@ Toggle and Checkbox share one implementation, so a style can't change how they r
 
 A control made without a label (`Toggle(binding)`, `Checkbox(binding)`) gets an empty one;
 check `label.is_empty()` to leave out the space you'd put beside it.
+
+## Picker styles
+
+A `PickerConfiguration` has the options' `labels`, the `selected` index (`labels.size()` while
+none is chosen), and `select(index)`. A row of plain text buttons, the chosen one in the accent
+color:
+
+```cpp
+struct TextRowPickerStyle : PickerStyle {
+    View make_body(const PickerConfiguration& picker) const override {
+        std::vector<View> options;
+        for (std::size_t i = 0; i < picker.labels.size(); ++i) {
+            options.push_back(Button(picker.labels[i], [=] { picker.select(i); })
+                                  .button_style(PlainButtonStyle{})
+                                  .foreground_style([=](const EnvironmentValues& env) {
+                                      return env.color(picker.selected() == i ? ThemeColor::accent
+                                                                              : ThemeColor::secondary);
+                                  }));
+        }
+        return HStackLayout(VerticalAlignment::center, 12)(std::move(options));
+    }
+};
+```
+
+## Slider styles
+
+A slider draws in three parts, and places them itself, so a style doesn't need to know how wide
+the slider is:
+
+- `make_track` is offered the slider's width less the thumb's, and takes its own height;
+- `make_fill` covers the track from its start to the thumb's center (nothing by default);
+- `make_thumb` is shown at its ideal size, centered on the value.
+
+Each gets a `SliderConfiguration`: the value's `fraction` (0...1), `is_pressed` (being dragged),
+`is_hovered`, `is_enabled` and `is_focused`. The slider handles the pointer, keys and screen
+readers; the parts only draw.
+
+```cpp
+struct BarSliderStyle : SliderStyle {
+    View make_track(const SliderConfiguration&) const override {
+        return RoundedRectangle(3).fill(ThemeColor::outline).frame({.height = 6});
+    }
+    View make_fill(const SliderConfiguration&) const override {
+        return RoundedRectangle(3).fill(ThemeColor::accent).frame({.height = 6});
+    }
+    View make_thumb(const SliderConfiguration& slider) const override {
+        return RoundedRectangle(2)
+            .fill(ThemeColor::accent)
+            .frame(4, 16)
+            .scale_effect([=] { return slider.is_pressed() ? 1.25f : 1.f; });
+    }
+};
+```
+
+A new value moves the parts through layout, so a change made with an animation eases them.
 
 ## Text field styles
 

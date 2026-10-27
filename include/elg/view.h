@@ -65,6 +65,8 @@ class TextFieldStyle;
 class PopoverStyle;
 class TooltipStyle;
 class MenuStyle;
+class PickerStyle;
+class SliderStyle;
 enum class Weight;
 template <class T>
 class Binding;
@@ -686,6 +688,18 @@ public:
     View button_style(Style style) const {
         return button_style_impl(std::make_shared<const Style>(std::move(style)));
     }
+    // The style of every Picker inside (elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, PickerStyle>
+    View picker_style(Style style) const {
+        return picker_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    // The style of every Slider inside (elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, SliderStyle>
+    View slider_style(Style style) const {
+        return slider_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
     // The style of every Toggle inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, ToggleStyle>
@@ -783,6 +797,8 @@ private:
     ELG_API View checkbox_style_impl(std::shared_ptr<const CheckboxStyle> style) const;
     ELG_API View number_input_style_impl(std::shared_ptr<const NumberInputStyle> style) const;
     ELG_API View progress_style_impl(std::shared_ptr<const ProgressStyle> style) const;
+    ELG_API View picker_style_impl(std::shared_ptr<const PickerStyle> style) const;
+    ELG_API View slider_style_impl(std::shared_ptr<const SliderStyle> style) const;
     ELG_API View popover_style_impl(std::shared_ptr<const PopoverStyle> style) const;
     ELG_API View tooltip_style_impl(std::shared_ptr<const TooltipStyle> style) const;
     ELG_API View menu_style_impl(std::shared_ptr<const MenuStyle> style) const;

@@ -590,6 +590,14 @@ View View::progress_style_impl(std::shared_ptr<const ProgressStyle> style) const
     return modifier(ProgressStyleModifier(std::move(style)));
 }
 
+View View::picker_style_impl(std::shared_ptr<const PickerStyle> style) const {
+    return modifier(PickerStyleModifier(std::move(style)));
+}
+
+View View::slider_style_impl(std::shared_ptr<const SliderStyle> style) const {
+    return modifier(SliderStyleModifier(std::move(style)));
+}
+
 View View::popover_style_impl(std::shared_ptr<const PopoverStyle> style) const {
     return modifier(PopoverStyleModifier(std::move(style)));
 }

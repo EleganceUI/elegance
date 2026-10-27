@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Slider (an element that draws itself) and the segmented Picker (composed from the public API,
-// like an app's own controls would be).
+// Slider (an element that places its SliderStyle's parts), Picker (a PickerStyle's body), and
+// their default styles, composed from the public API like an app's own styles would be.
 
 #include "view/view_node.h"
 
@@ -25,29 +25,52 @@ bool contains(const Rect& rect, Point point) {
     return point.x >= rect.x && point.y >= rect.y && point.x < rect.max_x() && point.y < rect.max_y();
 }
 
-RectCommand capsule(Rect rect, Color color) {
-    return RectCommand{rect, CornerRadii::all(std::min(rect.width, rect.height) / 2), ShapeStyle(color), Color::clear, 0};
-}
-
 constexpr float kDefaultWidth = 160;
 
 // --- Slider ---
 
+// The SliderStyle's track, fill and thumb, placed by the value. A new value moves them through
+// layout, so an animated change eases them like any other layout change.
+struct SliderParts {
+    std::unique_ptr<Element> track;
+    std::unique_ptr<Element> fill;
+    std::unique_ptr<Element> thumb;
+};
+
+// What the style's configuration reads, written by the slider.
+struct SliderState {
+    State<float> fraction{0.f};
+    State<bool> pressed{false};
+    State<bool> hovered{false};
+    State<bool> focused{false};
+};
+
 class SliderElement final : public Element, private EventHandler {
 public:
-    SliderElement(Binding<float> value, SliderOptions options, EnvironmentValues environment)
-        : value_(std::move(value)), options_(std::move(options)), environment_(std::move(environment)) {}
+    SliderElement(Binding<float> value, SliderOptions options, EnvironmentValues environment, SliderState state,
+                  SliderParts parts)
+        : value_(std::move(value)), options_(std::move(options)), environment_(std::move(environment)),
+          state_(std::move(state)), parts_(std::move(parts)) {
+        adopt(*parts_.track);
+        adopt(*parts_.fill);
+        adopt(*parts_.thumb);
+    }
 
-    void set_value(float value, const Animation* animation) { shown_.set(fraction(value), animation); }
-    // SliderOptions' min, max, and step; the knob moves to where the value is in the new range.
+    void set_value(float value) { show(fraction(value)); }
+    // SliderOptions' min, max, and step; the thumb moves to where the value is in the new range.
     void set_range(float min, float max, float step) {
         min_ = min;
         max_ = max > min ? max : min + 1;
         step_ = step;
-        shown_.set(fraction(untrack([&] { return value_(); })), nullptr);
+        show(fraction(untrack([&] { return value_(); })));
     }
 
     EventHandler* event_handler() noexcept override { return this; }
+    void for_each_child(const std::function<void(Element&)>& visit) override {
+        visit(*parts_.track);
+        visit(*parts_.fill);
+        visit(*parts_.thumb);
+    }
 
     void accessibility(AccessibilityInfo& out) const override {
         out.role = AccessRole::slider;
@@ -73,27 +96,53 @@ public:
 
 protected:
     Size measure(ProposedSize proposal) override {
-        const float width = proposal.width.value_or(kDefaultWidth);
-        return {std::isfinite(width) ? width : kDefaultWidth, kKnob + 2};
+        float width = proposal.width.value_or(kDefaultWidth);
+        if (!std::isfinite(width)) {
+            width = kDefaultWidth;
+        }
+        const Size thumb = parts_.thumb->size_that_fits({});
+        const Size track = parts_.track->size_that_fits({std::max(width - thumb.width, 0.f), std::nullopt});
+        return {width, std::max(thumb.height, track.height)};
     }
-    void arrange(Rect, ProposedSize) override {}
-    void paint_impl(DisplayList& list) const override;
+    void arrange(Rect bounds, ProposedSize) override {
+        const Size thumb = parts_.thumb->size_that_fits({});
+        thumb_width_ = thumb.width;
+        const float center_y = bounds.y + bounds.height / 2;
+        const float start = bounds.x + thumb.width / 2;
+        const ProposedSize along{track_length(), std::nullopt};
+        const Size track = parts_.track->size_that_fits(along);
+        parts_.track->place({start, center_y - track.height / 2}, along);
+        const float thumb_x = start + fraction_ * track_length();
+        const ProposedSize filled{thumb_x - start, track.height};
+        const Size fill = parts_.fill->size_that_fits(filled);
+        parts_.fill->place({start, center_y - fill.height / 2}, filled);
+        parts_.thumb->place({thumb_x - thumb.width / 2, center_y - thumb.height / 2}, {});
+    }
+    void paint_impl(DisplayList& list) const override {
+        parts_.track->paint(list);
+        parts_.fill->paint(list);
+        parts_.thumb->paint(list);
+    }
+    // The whole slider takes the pointer; its parts only draw.
     bool hit_impl(Point point, std::vector<Element*>&) override { return contains(frame(), point); }
 
 private:
-    static constexpr float kKnob = 20;
-    static constexpr float kTrack = 4;
-
     float fraction(float value) const {
         return std::clamp((value - min_) / (max_ - min_), 0.f, 1.f);
+    }
+    void show(float fraction) {
+        fraction_ = fraction;
+        state_.fraction = fraction;
+        invalidate_layout();
     }
     // What a screen reader's increment moves: the step, else a twentieth of the range.
     float adjust_step() const { return step_ > 0 ? step_ : (max_ - min_) / 20; }
     bool enabled() const {
         return !untrack([&] { return environment_.get<DisabledKey>(); });
     }
-    float track_start() const { return frame().x + kKnob / 2; }
-    float track_length() const { return std::max(frame().width - kKnob, 1.f); }
+    // The thumb's center travels the slider's width less the thumb's.
+    float track_start() const { return frame().x + thumb_width_ / 2; }
+    float track_length() const { return std::max(frame().width - thumb_width_, 1.f); }
 
     // Writes `value`, snapped to the step and clamped to the range.
     void write(float value, const Animation* animation) {
@@ -123,6 +172,7 @@ private:
                 return {.consumed = true};
             }
             dragging_ = true;
+            state_.pressed = true;
             if (options_.on_editing_changed) {
                 options_.on_editing_changed(true);
             }
@@ -136,6 +186,7 @@ private:
             return {};
         case PointerEvent::Kind::up:
         case PointerEvent::Kind::cancel:
+            state_.pressed = false;
             if (std::exchange(dragging_, false) && options_.on_editing_changed) {
                 options_.on_editing_changed(false);
             }
@@ -145,7 +196,12 @@ private:
     }
 
     EventResult hover(bool inside) override {
-        hovered_ = inside;
+        state_.hovered = inside;
+        return {.redraw = true};
+    }
+
+    EventResult focus(bool focused) override {
+        state_.focused = focused;
         return {.redraw = true};
     }
 
@@ -182,46 +238,40 @@ private:
     float max_ = 1;
     float step_ = 0;
     EnvironmentValues environment_;
-    Animated<float> shown_{0.f}; // the knob's position, 0...1
+    SliderState state_;
+    SliderParts parts_;
+    float fraction_ = 0;    // where the value is, 0...1
+    float thumb_width_ = 0; // from the last arrange
     bool dragging_ = false;
-    bool hovered_ = false;
 };
-
-void SliderElement::paint_impl(DisplayList& list) const {
-    if (shown_.animating()) {
-        list.animating = true;
-    }
-    const Rect bounds = frame();
-    const bool active = enabled();
-    const Color tint = environment_.get<TintKey>();
-    const ColorTokens colors = environment_.get<ThemeKey>().colors(environment_.get<ColorSchemeKey>());
-    const float center_y = bounds.y + bounds.height / 2;
-    const float knob_x = track_start() + shown_.current() * track_length();
-
-    const Rect track{track_start(), center_y - kTrack / 2, track_length(), kTrack};
-    list.commands.push_back(capsule(track, colors.outline));
-    list.commands.push_back(capsule({track.x, track.y, knob_x - track.x, kTrack}, active ? tint : tint.opacity(0.4f)));
-
-    const Rect knob{knob_x - kKnob / 2, center_y - kKnob / 2, kKnob, kKnob};
-    if (active) {
-        list.commands.push_back(BoxShadowCommand{{knob.x, knob.y + 1, knob.width, knob.height}, CornerRadii::all(kKnob / 2),
-                                                 Color::black.opacity(0.3f), 4});
-    }
-    Color face = Color::white;
-    if (dragging_) {
-        face = face.mix(Color::black, 0.08f);
-    } else if (hovered_ && active) {
-        face = face.mix(tint, 0.08f);
-    }
-    list.commands.push_back(RectCommand{knob, CornerRadii::all(kKnob / 2), ShapeStyle(active ? face : colors.surface_raised),
-                                        colors.outline.opacity(0.6f), 0.5f});
-}
 
 class SliderNode final : public ViewNode {
 public:
     SliderNode(Binding<float> value, SliderOptions options) : value_(std::move(value)), options_(std::move(options)) {}
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
-        auto element = std::make_unique<SliderElement>(value_, options_, context.environment);
+        const EnvironmentValues environment = context.environment;
+        const SliderState state;
+        const SliderConfiguration configuration{
+            .fraction = [fraction = state.fraction] { return fraction(); },
+            .is_pressed = [pressed = state.pressed] { return pressed(); },
+            .is_hovered = [hovered = state.hovered] { return hovered(); },
+            .is_enabled = [environment] { return !environment.get<DisabledKey>(); },
+            .is_focused = [focused = state.focused] { return focused(); },
+        };
+        const std::shared_ptr<const SliderStyle> style = untrack([&] { return environment.get<SliderStyleKey>(); });
+        View track;
+        View fill;
+        View thumb;
+        {
+            const EnvironmentScope scope(environment);
+            track = style->make_track(configuration);
+            fill = style->make_fill(configuration);
+            thumb = style->make_thumb(configuration);
+        }
+        const LowerContext nested = context.nested();
+        auto element = std::make_unique<SliderElement>(
+            value_, options_, environment, state,
+            SliderParts{detail::lower(track, nested), detail::lower(fill, nested), detail::lower(thumb, nested)});
         SliderElement* const target = element.get();
         // The range first, so the value's first fraction is in it.
         const float* min = options_.min.static_value();
@@ -235,8 +285,7 @@ public:
             });
             detail::bind(range, context, [target](std::array<float, 3> r) { target->set_range(r[0], r[1], r[2]); });
         }
-        detail::bind(Prop<float>(value_), context,
-                     [target](float value, const Animation* animation) { target->set_value(value, animation); });
+        detail::bind(Prop<float>(value_), context, [target](float value) { target->set_value(value); });
         if (context.focus) {
             element->set_focus_manager(context.focus,
                                        [environment = context.environment] { return environment.get<TintKey>(); });
@@ -249,9 +298,32 @@ private:
     SliderOptions options_;
 };
 
-// --- Picker: composed from the public API ---
+// --- Picker ---
 
-// A picker segment: the selected one is raised.
+class PickerNode final : public ViewNode {
+public:
+    PickerNode(std::vector<std::string> labels, std::function<std::size_t()> selected,
+               std::function<void(std::size_t)> select)
+        : labels_(std::move(labels)), selected_(std::move(selected)), select_(std::move(select)) {}
+
+    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+        const EnvironmentValues& environment = context.environment;
+        const std::shared_ptr<const PickerStyle> style = untrack([&] { return environment.get<PickerStyleKey>(); });
+        View body;
+        {
+            const EnvironmentScope scope(environment);
+            body = style->make_body({.labels = labels_, .selected = selected_, .select = select_});
+        }
+        return detail::lower(body, context);
+    }
+
+private:
+    std::vector<std::string> labels_;
+    std::function<std::size_t()> selected_;
+    std::function<void(std::size_t)> select_;
+};
+
+// A segment: the selected one is raised.
 class PickerSegmentStyle final : public ButtonStyle {
 public:
     explicit PickerSegmentStyle(std::function<bool()> selected) : selected_(std::move(selected)) {}
@@ -298,21 +370,67 @@ View Slider(Binding<float> value, SliderOptions options) {
     return ViewAccess::make(std::make_shared<const detail::SliderNode>(std::move(value), std::move(options)));
 }
 
-View detail::make_segmented_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,
-                                   std::function<void(std::size_t)> select) {
+View KnobSliderStyle::make_track(const SliderConfiguration&) const {
+    return Capsule()
+        .fill([track = options_.track](const EnvironmentValues& environment) { return track.get(environment); })
+        .frame({.height = options_.track_thickness});
+}
+
+View KnobSliderStyle::make_fill(const SliderConfiguration& slider) const {
+    const auto tint = Environment<TintKey>();
+    const std::optional<Prop<Color>> fill = options_.fill;
+    return Capsule()
+        .fill([=](const EnvironmentValues& environment) {
+            const Color base = fill ? fill->get(environment) : tint();
+            return slider.is_enabled() ? base : base.opacity(0.4f);
+        })
+        .frame({.height = options_.track_thickness});
+}
+
+View KnobSliderStyle::make_thumb(const SliderConfiguration& slider) const {
+    const auto tint = Environment<TintKey>();
+    const auto theme = Environment<ThemeKey>();
+    const auto scheme = Environment<ColorSchemeKey>();
+    const auto colors = [=] { return theme().colors(scheme()); };
+    const float size = options_.knob_size;
+    const View knob = Circle()
+                          .fill([=] {
+                              if (!slider.is_enabled()) {
+                                  return colors().surface_raised;
+                              }
+                              if (slider.is_pressed()) {
+                                  return Color::white.mix(Color::black, 0.08f);
+                              }
+                              return slider.is_hovered() ? Color::white.mix(tint(), 0.08f) : Color::white;
+                          })
+                          .border([=] { return colors().outline.opacity(0.6f); }, 0.5f, Circle())
+                          .frame(size, size);
+    return If(slider.is_enabled, knob.shadow({.color = Color::black.opacity(0.3f), .radius = 4, .y = 1}), knob);
+}
+
+View SegmentedPickerStyle::make_body(const PickerConfiguration& picker) const {
     std::vector<View> segments;
-    segments.reserve(labels.size());
-    for (std::size_t i = 0; i < labels.size(); ++i) {
+    segments.reserve(picker.labels.size());
+    for (std::size_t i = 0; i < picker.labels.size(); ++i) {
         // Labels keep their width: the stack offers equal shares, and a longer label ("Center"
         // among "End" and "Fill") would wrap even when all of them fit.
-        segments.push_back(Button(Text(labels[i]).fixed_size(true, false),
-                                  [select, i] { with_animation(Animation::ease_out(0.15), [&] { select(i); }); })
-                               .button_style(PickerSegmentStyle([selected, i] { return selected() == i; })));
+        segments.push_back(Button(Text(picker.labels[i]).fixed_size(true, false),
+                                  [select = picker.select, i] {
+                                      with_animation(Animation::ease_out(0.15), [&] { select(i); });
+                                  })
+                               .button_style(detail::PickerSegmentStyle(
+                                   [selected = picker.selected, i] { return selected() == i; })));
     }
     return HStackLayout(VerticalAlignment::center, 2)(std::move(segments))
         .padding(2)
         .background(ThemeColor::outline, RoundedRectangle(8))
         .fixed_size(false, true);
+}
+
+View detail::make_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,
+                         std::function<void(std::size_t)> select) {
+    return ViewAccess::make(
+        std::make_shared<const PickerNode>(std::move(labels), std::move(selected), std::move(select)));
 }
 
 } // namespace elg

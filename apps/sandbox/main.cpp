@@ -125,8 +125,8 @@ View MenuCards() {
     }).button_style(BorderedButtonStyle{});
 
     const auto size = State(std::string("Medium"));
-    const View picker = Picker(size.binding(), {{"Small", "Small"}, {"Medium", "Medium"}, {"Large", "Large"}},
-                               PickerStyle::menu);
+    const View picker = Picker(size.binding(), {{"Small", "Small"}, {"Medium", "Medium"}, {"Large", "Large"}})
+                           .picker_style(MenuPickerStyle{});
 
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
                   Captioned(VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},

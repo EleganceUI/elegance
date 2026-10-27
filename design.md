@@ -512,7 +512,7 @@ struct PillButtonStyle : elg::ButtonStyle {
 VStack(Button("Save", save), Button("Cancel", cancel))
     .button_style(PillButtonStyle{});   // applies to every Button in the subtree
 ```
-The same pattern applies to `ToggleStyle`, `TextFieldStyle`, `ProgressStyle`, `ListStyle`,
+The same pattern applies to `ToggleStyle`, `TextFieldStyle`, `ProgressStyle`, `PickerStyle`, `SliderStyle`,
 and others. Each built-in control ships with a default style plus a few alternates.
 
 ### Custom modifiers
@@ -1822,12 +1822,19 @@ Separate render thread from day one (decided).
     fraction animates with the update that changed it. Presentation is the style's:
     `.progress_style(LinearProgressStyle{...})` (default) or `CircularProgressStyle{...}`, with
     track and fill colors and thickness; custom styles get `ProgressConfiguration::fraction`.
-  - `Picker(Binding<T>, {{value, "Label"}, ...})` is segmented, built from Buttons; the selection
-    change animates.
+  - `Picker(Binding<T>, {{value, "Label"}, ...})`: its look is the `PickerStyle`'s
+    (`.picker_style(...)`), which gets `PickerConfiguration{labels, selected, select}`.
+    `SegmentedPickerStyle` (default) is built from Buttons and animates the selection change;
+    `MenuPickerStyle` is a MenuButton with checked items. (The `PickerStyle` enum and its
+    third argument were removed in the API review.)
+  - `Slider`'s look is the `SliderStyle`'s (`.slider_style(...)`): `make_track`, `make_fill`
+    and `make_thumb`, each from a `SliderConfiguration{fraction, is_pressed, is_hovered,
+    is_enabled, is_focused}`. The slider places the parts (the track inset by half the thumb,
+    the fill up to the thumb's center, the thumb on the value) and keeps the pointer, keys and
+    accessibility. A new value moves them through layout, so animated changes ease them.
+    `KnobSliderStyle` (default) has track/fill colors, track thickness and knob size.
   - Follow-ups:
-    - A menu presentation and `.picker_style(...)` (needs §13.1 popups).
     - NumberInput arrow auto-repeat while held.
-    - A style protocol for Slider.
     - A sliding selection indicator for the segmented picker (needs matched geometry).
 - [x] `ScrollView` / `ScrollView({.axes, .shows_indicators}, content)`:
   - Takes all the space it's offered. The content gets its ideal size along the scroll axes and
@@ -1926,7 +1933,7 @@ Separate render thread from day one (decided).
   - `Menu(items...)`, `MenuItem(title, action, {.shortcut, .destructive, .checked})`,
     `Submenu(title, builder)` (opens on hover after the delay, click, or Right), `Separator()`.
   - Choosing an item closes every menu, then runs its action.
-  - `MenuButton(label, builder)`, and `Picker(..., PickerStyle::menu)`.
+  - `MenuButton(label, builder)`, and `Picker(...).picker_style(MenuPickerStyle{})`.
   - `.tooltip("…")` tooltips: after 0.6 s; closed by leaving, pressing, scrolling, or typing.
   - Hovering a menu row focuses it, so the hover and keyboard highlights stay one.
   - Menu popups have zero hover delay: rows highlight on the first move, like native menus.

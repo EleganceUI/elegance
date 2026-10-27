@@ -467,14 +467,13 @@ View View::context_menu(std::function<View()> menu) const {
     return ViewAccess::make(std::make_shared<const detail::ContextMenuNode>(*this, std::move(menu)));
 }
 
-View detail::make_menu_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,
-                              std::function<void(std::size_t)> select) {
-    const auto shared = std::make_shared<const std::vector<std::string>>(std::move(labels));
-    const View current = Text([shared, selected] {
+View MenuPickerStyle::make_body(const PickerConfiguration& picker) const {
+    const auto shared = std::make_shared<const std::vector<std::string>>(picker.labels);
+    const View current = Text([shared, selected = picker.selected] {
         const std::size_t index = selected();
         return index < shared->size() ? (*shared)[index] : std::string();
     });
-    return MenuButton(current, [shared, selected, select] {
+    return MenuButton(current, [shared, selected = picker.selected, select = picker.select] {
         std::vector<View> items;
         for (std::size_t i = 0; i < shared->size(); ++i) {
             items.push_back(MenuItem((*shared)[i], [select, i] { select(i); },

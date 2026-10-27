@@ -135,7 +135,15 @@ Slider(size, {.min = 8, .max = 72, .step = 1});
 Slider(brightness, {.on_editing_changed = [=](bool dragging) { if (!dragging) save(); }});
 ```
 
-A slider takes the width it's offered.
+A slider takes the width it's offered. Its look comes from the `SliderStyle`. The default,
+`KnobSliderStyle`, takes colors and sizes:
+
+```cpp
+Slider(volume).slider_style(KnobSliderStyle{{.track_thickness = 2, .knob_size = 14}});
+```
+
+A style of your own draws the track, the fill and the thumb, and the slider places them by the
+value; see [Styles](../styles/#slider-styles).
 
 ## NumberInput
 
@@ -170,11 +178,13 @@ enum class Size { small, medium, large };
 const State<Size> size(Size::medium);
 
 Picker(size, {{Size::small, "S"}, {Size::medium, "M"}, {Size::large, "L"}});               // segments
-Picker(size, {{Size::small, "Small"}, {Size::medium, "Medium"}, {Size::large, "Large"}}, PickerStyle::menu);
+Picker(size, {{Size::small, "Small"}, {Size::medium, "Medium"}, {Size::large, "Large"}})
+    .picker_style(MenuPickerStyle{});                                                        // a menu
 ```
 
-The value type needs `==`. `PickerStyle::segmented` shows every option; `PickerStyle::menu` shows
-the chosen one on a button that opens a menu.
+The value type needs `==`. The `PickerStyle` decides how it looks: `SegmentedPickerStyle` (the
+default) shows every option; `MenuPickerStyle` shows the chosen one on a button that opens a menu.
+A style of your own gets the labels, the chosen index, and a function to choose one.
 
 ## Progress
 
