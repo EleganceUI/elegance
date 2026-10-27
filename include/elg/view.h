@@ -477,10 +477,17 @@ public:
     // over something to click. Views inside can set their own (a text field's I-beam). Reactive:
     // .pointer_style([=] { return busy() ? PointerStyle::wait : PointerStyle::automatic; })
     ELG_API View pointer_style(Prop<PointerStyle> style) const;
-    // Called with true when the pointer has rested on the view for the hover delay, and false
-    // when it leaves (after the exit delay). The delay comes from the environment
-    // (.hover_delay()) unless given here.
-    ELG_API View on_hover(std::function<void(bool)> action) const;
+    // Called at once when the pointer comes over the view (its hit area) and when it leaves: for
+    // highlights.
+    //   .on_pointer_enter([=] { hovered = true; }).on_pointer_leave([=] { hovered = false; })
+    ELG_API View on_pointer_enter(std::function<void()> action) const;
+    ELG_API View on_pointer_leave(std::function<void()> action) const;
+    // Hover intent: called with true once the pointer has rested on the view for the hover delay
+    // (moving across it doesn't count), and false when it leaves (after the exit delay): for
+    // previews and other things that shouldn't flash as the pointer passes. The delay comes from
+    // the environment (.hover_delay()) unless given.
+    ELG_API View on_hover_change(std::function<void(bool)> action) const;
+    ELG_API View on_hover_change(std::function<void(bool)> action, HoverDelay delay) const;
     // Called after initial layout and when physical dimensions change, including display scale.
     // Dimensions are ceil(logical size * display scale), before visual transforms, and may be zero.
     // Runs on the UI thread before paint: queue renderer input, do not mutate layout here.
@@ -504,8 +511,8 @@ public:
     ELG_API View accessibility_element() const;
     // What a screen reader's default action (click) does, for views made clickable with gestures.
     ELG_API View accessibility_action(std::function<void()> action) const;
-    ELG_API View on_hover(std::function<void(bool)> action, HoverDelay delay) const;
-    // The hover delay for on_hover handlers and controls inside (default: enter 0.1 s, exit 0).
+    // The hover delay for on_hover_change handlers and submenus inside (default: enter 0.1 s,
+    // exit 0). Controls' highlights and on_pointer_enter/leave don't wait.
     ELG_API View hover_delay(HoverDelay delay) const;
 
     // Pressing and dragging here moves the window (for custom title bars, TitleBar::hidden).

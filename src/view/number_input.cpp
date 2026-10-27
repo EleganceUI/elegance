@@ -312,7 +312,7 @@ std::unique_ptr<Element> NumberInputNode::lower(const LowerContext& context) con
     View body;
     {
         const EnvironmentScope scope(env);
-        body = style->make_body(configuration).on_hover([hovered](bool inside) { hovered = inside; }, HoverDelay{0, 0});
+        body = style->make_body(configuration).on_pointer_enter([hovered] { hovered = true; }).on_pointer_leave([hovered] { hovered = false; });
     }
     return std::make_unique<NumberInputElement>(detail::lower(body, context.nested()),
                                                 NumberInputElement::Access{

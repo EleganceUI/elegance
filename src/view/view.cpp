@@ -401,11 +401,19 @@ View View::on_size_change(std::function<void(PixelSize)> action) const {
     return modifier(Observer(std::move(action)));
 }
 
-View View::on_hover(std::function<void(bool)> action) const {
+View View::on_pointer_enter(std::function<void()> action) const {
+    return modifier(PointerBoundaryModifier(std::move(action), nullptr));
+}
+
+View View::on_pointer_leave(std::function<void()> action) const {
+    return modifier(PointerBoundaryModifier(nullptr, std::move(action)));
+}
+
+View View::on_hover_change(std::function<void(bool)> action) const {
     return modifier(HoverModifier(std::move(action)));
 }
 
-View View::on_hover(std::function<void(bool)> action, HoverDelay delay) const {
+View View::on_hover_change(std::function<void(bool)> action, HoverDelay delay) const {
     return modifier(HoverModifier(std::move(action), delay));
 }
 
@@ -788,8 +796,7 @@ std::unique_ptr<ButtonElement> make_button_element(const View& body, std::functi
     const EnvironmentValues environment = context.environment;
     auto element = std::make_unique<ButtonElement>(
         detail::lower(body, context.nested()), std::move(action), std::move(pressed), std::move(hovered),
-        [environment] { return !environment.get<DisabledKey>(); },
-        [environment] { return environment.get<HoverDelayKey>(); });
+        [environment] { return !environment.get<DisabledKey>(); });
     join_focus(*element, context);
     return element;
 }

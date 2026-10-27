@@ -230,6 +230,18 @@ std::unique_ptr<EventHandler> HoverModifier::make_handler() const {
     return std::make_unique<HoverHandler>(action_, delay_);
 }
 
+std::unique_ptr<EventHandler> PointerBoundaryModifier::make_handler() const {
+    return std::make_unique<HoverHandler>(
+        [enter = enter_, leave = leave_](bool inside) {
+            if (inside && enter) {
+                enter();
+            } else if (!inside && leave) {
+                leave();
+            }
+        },
+        HoverDelay{.enter = 0, .exit = 0});
+}
+
 } // namespace elg
 
 namespace elg::detail {

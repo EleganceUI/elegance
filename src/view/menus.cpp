@@ -276,7 +276,8 @@ public:
 
     EventHandler* event_handler() noexcept override { return this; }
     HoverDelay effective_hover_delay() const override {
-        return kind_ == Kind::help ? HoverDelay{.enter = 0.6, .exit = 0} : environment_.get<HoverDelayKey>();
+        // A tooltip waits; a menu button's highlight follows the pointer at once.
+        return kind_ == Kind::help ? HoverDelay{.enter = 0.6, .exit = 0} : HoverDelay{.enter = 0, .exit = 0};
     }
     float layout_priority() const noexcept override { return content_->layout_priority(); }
     bool is_spacer() const noexcept override { return content_->is_spacer(); }

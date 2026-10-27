@@ -531,7 +531,8 @@ Text("Hello").modifier(Card{});
 ```
 
 ### Interaction states (replacing `:hover`, `:active`, `:focus`)
-- `.on_hover(hovered)` writes into a `State<bool>`, and `.focused(is_focused)` binds focus.
+- `.on_pointer_enter` / `.on_pointer_leave` write into a `State<bool>`, and `.focused(is_focused)`
+  binds focus.
 - Reactive arguments (§9.3) then drive appearance:
   `.opacity([=] { return hovered() ? 0.8f : 1.f; })`.
 - Controls expose their states through their style configuration (`cfg.is_pressed`,
@@ -1670,13 +1671,18 @@ Separate render thread from day one (decided).
 - [x] Hit testing (SwiftUI semantics: a view is hit where its content draws; stroke-only shapes
   on their line; clips respected; `content_shape`, `allows_hit_testing`)
 - [x] Events: `EventModifier` / `EventHandler` protocol, bubbling innermost-first, pointer capture
-  between down and up, hover enter/leave; `on_tap_gesture` (single/double), `on_hover`
+  between down and up, hover enter/leave; `on_tap_gesture` (single/double),
+  `on_pointer_enter` / `on_pointer_leave` (immediate), `on_hover_change` (hover intent)
 - [x] `Button` (default style: tint, hover, and pressed states) + `tint` environment value
-- [x] Hover delays: `HoverDelay{.enter, .exit}`. Hover starts only after the pointer rests for
-  `enter` (default 0.1 s), and ends `exit` after it leaves (default 0); passing over, or coming
-  back in time, cancels the pending change.
+- [x] Hover delays: `HoverDelay{.enter, .exit}`, for hover intent only (`on_hover_change`,
+  submenus). Hover starts only after the pointer rests for `enter` (default 0.1 s), and ends
+  `exit` after it leaves (default 0); passing over, or coming back in time, cancels the pending
+  change.
   - Set for a subtree with `.hover_delay({...})` (an environment value), or per handler with
-    `.on_hover(action, {...})`. Buttons follow the environment.
+    `.on_hover_change(action, {...})`.
+  - Pointer enter/leave and controls' highlights (buttons, menu buttons, text fields, dividers)
+    don't wait: a highlight that lags the pointer looks wrong (it was List's hover bug).
+    Tooltips wait 0.6 s.
   - The idle loop wakes for the next pending hover change (an SDL wait with timeout) and
     otherwise stays at 0% CPU.
 - [ ] Input follow-ups: synthetic input for UI tests (§16), drag/scroll gestures, cursors,

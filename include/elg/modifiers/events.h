@@ -5,7 +5,8 @@
 #ifndef ELG_MODIFIERS_EVENTS_H
 #define ELG_MODIFIERS_EVENTS_H
 
-// Built-in event modifiers. View::on_tap_gesture() and on_hover() are sugar over these.
+// Built-in event modifiers. View::on_tap_gesture(), on_pointer_enter/leave() and on_hover_change()
+// are sugar over these.
 
 #include <elg/events.h>
 #include <elg/export.h>
@@ -33,8 +34,23 @@ private:
     ELG_PRIVATE_MEMBERS_END
 };
 
-// Calls `action(true)` when the pointer has rested on the view for the hover delay and
-// `action(false)` when it leaves. `delay` overrides the environment's.
+// Calls `enter` as soon as the pointer comes over the view (its hit area) and `leave` as soon as it
+// goes, with no delay.
+class ELG_API PointerBoundaryModifier final : public EventModifier {
+public:
+    PointerBoundaryModifier(std::function<void()> enter, std::function<void()> leave)
+        : enter_(std::move(enter)), leave_(std::move(leave)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::function<void()> enter_;
+    std::function<void()> leave_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
+// Hover intent: calls `action(true)` when the pointer has rested on the view for the hover delay
+// and `action(false)` when it leaves (after the exit delay). `delay` overrides the environment's.
 class ELG_API HoverModifier final : public EventModifier {
 public:
     explicit HoverModifier(std::function<void(bool)> action, std::optional<HoverDelay> delay = std::nullopt)

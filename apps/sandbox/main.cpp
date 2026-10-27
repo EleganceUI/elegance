@@ -758,7 +758,8 @@ View StateCards(std::function<void()> quit) {
                                return env.color(hovered() ? ThemeColor::background : ThemeColor::primary);
                            }))
                            .animation(Animation::ease_out(0.18), hovered) // implicit: hover changes ease
-                           .on_hover([=](bool inside) { hovered = inside; })
+                           .on_pointer_enter([=] { hovered = true; })
+                           .on_pointer_leave([=] { hovered = false; })
                            .on_tap_gesture([=] { taps += 1; });
 
     // A reactive opacity, toggled by a button whose label follows the same state.

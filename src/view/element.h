@@ -791,13 +791,14 @@ public:
     void accessibility(AccessibilityInfo& out) const override;
     bool accessibility_action(const AccessibilityAction& action) override;
     ButtonElement(std::unique_ptr<Element> content, std::function<void()> action, State<bool> pressed,
-                  State<bool> hovered, std::function<bool()> enabled, std::function<HoverDelay()> hover_delay)
+                  State<bool> hovered, std::function<bool()> enabled)
         : content_(std::move(content)), action_(std::move(action)), pressed_(std::move(pressed)),
-          hovered_(std::move(hovered)), enabled_(std::move(enabled)), hover_delay_(std::move(hover_delay)) {
+          hovered_(std::move(hovered)), enabled_(std::move(enabled)) {
         adopt(*content_);
     }
 
-    HoverDelay effective_hover_delay() const override { return hover_delay_(); }
+    // The highlight follows the pointer at once.
+    HoverDelay effective_hover_delay() const override { return {.enter = 0, .exit = 0}; }
 
     EventHandler* event_handler() noexcept override { return this; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
@@ -828,7 +829,6 @@ private:
     State<bool> pressed_;
     State<bool> hovered_;
     std::function<bool()> enabled_;
-    std::function<HoverDelay()> hover_delay_;
     std::optional<State<bool>> focused_;
     std::function<void(bool)> on_hover_;
     Key extra_key_ = Key::unknown;

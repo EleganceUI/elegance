@@ -44,22 +44,29 @@ other platforms.
 
 ## Hover
 
-`on_hover` reports when the pointer has rested on a view, and when it leaves:
+There are two kinds of hover. `on_pointer_enter` and `on_pointer_leave` fire the moment the
+pointer crosses the view's hit area. Use them for highlights, which should match what's under the
+pointer exactly:
 
 ```cpp
 const State<bool> hovered(false);
 Row()
     .background([=] { return hovered() ? Color::hex(0x7AA2F7).opacity(0.1f) : Color::clear; })
-    .on_hover([=](bool inside) { hovered = inside; });
+    .on_pointer_enter([=] { hovered = true; })
+    .on_pointer_leave([=] { hovered = false; });
 ```
 
-By default the pointer must rest for 0.1 s before a view counts as hovered, so sweeping across a
-list doesn't light up every row. Change the delays for a subtree or for one handler:
+`on_hover_change` is hover *intent*: it reports true only once the pointer has rested on the view
+(0.1 s by default), so sweeping across a grid doesn't start a preview on every tile, and false
+when it leaves. Change the delays for a subtree or for one handler:
 
 ```cpp
-Toolbar().hover_delay({.enter = 0, .exit = 0.2});
-Tile().on_hover(show_preview, HoverDelay{.enter = 0.5});
+Grid().hover_delay({.enter = 0.3, .exit = 0.2});
+Tile().on_hover_change(show_preview, HoverDelay{.enter = 0.5});
 ```
+
+Controls' own highlights (buttons, menu buttons, toggles) follow the pointer at once; the hover
+delay doesn't apply to them.
 
 `.help("...")` shows a tooltip after the pointer rests on a view for a moment.
 
