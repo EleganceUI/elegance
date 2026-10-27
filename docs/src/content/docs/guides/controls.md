@@ -137,15 +137,29 @@ Slider(brightness, {.on_editing_changed = [=](bool dragging) { if (!dragging) sa
 
 A slider takes the width it's offered.
 
-## Stepper
+## NumberInput
 
-A label with − and + buttons that change an integer:
+A number bound to an `int`, `float` or `double`. You can type it, step it with the arrows or
+Up/Down (Shift for 10 steps), or drag sideways across it to scrub it:
 
 ```cpp
 const State<int> guests(2);
-Stepper(Text([=] { return std::format("Guests: {}", guests()); }), guests, {.min = 1, .max = 12});
-Stepper("Copies", copies);
+HStack(Text("Guests"), NumberInput(guests, {.min = 1, .max = 12}));
+NumberInput(opacity, {.min = 0, .max = 1, .step = 0.05, .decimals = 2});
+NumberInput(width, {.format = [](double v) { return std::format("{:g} px", v); },
+                    .parse = parse_pixels});
 ```
+
+What you type applies when you press Enter or leave the field, so a half-typed `1.` isn't
+rewritten under the caret; text that isn't a number goes back to the value. With `.live = true`,
+each valid number applies as you type. Values always stay within `min` and `max`.
+
+A click edits the number; a press that moves sideways scrubs it instead, by one `step` every few
+points. Turn that off with `.scrubs = false`, and the arrows with `.shows_buttons = false`.
+
+`BoxNumberInputStyle` (the default) draws a box with stacked arrows, with options for its colors,
+corners and padding; `PlainNumberInputStyle` is just the number, for a box of your own. Screen
+readers see one spin button with the value and range.
 
 ## Picker
 

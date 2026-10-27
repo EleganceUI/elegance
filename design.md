@@ -1011,8 +1011,9 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
   - Sliders have their value, range, step, increment/decrement and set value.
   - `ProgressView` has its fraction. Text fields have their text (never a secure field's),
     placeholder and set value.
-  - Images, video and scroll views have their roles. Stepper buttons are named "Decrease" and
-    "Increase".
+  - Images, video and scroll views have their roles. `NumberInput` is a spin button with its
+    value, range, step, increment/decrement and set value; its arrow buttons are named "Decrease"
+    and "Increase".
 - **Modifiers:** `.accessibility_label`, `_value`, `_hint` (reactive), `_hidden`, `_role`,
   `_element` (combine children into one element, labeled with their text) and `_action`. They
   apply to the element they wrap, or the nearest one inside with a role; around several children
@@ -1043,7 +1044,7 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
 |            | LazyVGrid/HGrid, ScrollView, ViewThatFits, GeometryReader, HSplitView      |
 | Shapes     | Rectangle, RoundedRectangle, Capsule, Circle, Ellipse, Path                |
 | Basic      | Text, Label (icon + text), Image, AsyncImage, Link, Badge                  |
-| Input      | Button, TextField, SecureField, TextEditor, Toggle, Slider, Stepper,       |
+| Input      | Button, TextField, SecureField, TextEditor, Toggle, Slider, NumberInput,   |
 |            | Picker (menu/segmented/radio), DatePicker, ColorPicker                     |
 | Data       | List (virtualized, sections, selection), Table, OutlineGroup (tree),       |
 |            | DisclosureGroup                                                            |
@@ -1738,15 +1739,19 @@ Separate render thread from day one (decided).
     - Drag anywhere on it, or use arrows, Page Up/Down and Home/End when focused (key changes
       animate).
     - The knob follows the binding, animated during animated updates.
-  - `Stepper(label, Binding<int>, {.min, .max, .step})`: composed from the public API; −/+ are
-    disabled at the bounds.
+  - `NumberInput(Binding<T>, {.min, .max, .step, .decimals, .format, .parse, .live,
+    .shows_buttons, .scrubs})` for `int`, `float` and `double` replaced `Stepper`. Typing applies
+    on Enter and on blur (or as typed with `.live`); invalid text reverts; values clamp, and `int`
+    rounds. Up/Down step (Shift ×10), the style's stacked arrows are disabled at the bounds, and
+    dragging sideways over the unfocused field scrubs. `.number_input_style(...)` takes
+    `BoxNumberInputStyle` (default) or `PlainNumberInputStyle`.
   - `ProgressView(Prop<float>)` is determinate and animates with its value. `ProgressView()` is
     indeterminate: it renders continuously while shown.
   - `Picker(Binding<T>, {{value, "Label"}, ...})` is segmented, built from Buttons; the selection
     change animates.
   - Follow-ups:
     - A menu presentation and `.picker_style(...)` (needs §13.1 popups).
-    - Stepper auto-repeat while held.
+    - NumberInput arrow auto-repeat while held.
     - Style protocols for Slider and ProgressView.
     - A sliding selection indicator for the segmented picker (needs matched geometry).
 - [x] `ScrollView` / `ScrollView({.axes, .shows_indicators}, content)`:

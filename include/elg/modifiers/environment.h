@@ -41,6 +41,7 @@ using ButtonStyleModifier = EnvironmentKeyModifier<ButtonStyleKey>;
 using HoverDelayModifier = EnvironmentKeyModifier<HoverDelayKey>;
 using ToggleStyleModifier = EnvironmentKeyModifier<ToggleStyleKey>;
 using CheckboxStyleModifier = EnvironmentKeyModifier<CheckboxStyleKey>;
+using NumberInputStyleModifier = EnvironmentKeyModifier<NumberInputStyleKey>;
 using TextFieldStyleModifier = EnvironmentKeyModifier<TextFieldStyleKey>;
 
 } // namespace elg

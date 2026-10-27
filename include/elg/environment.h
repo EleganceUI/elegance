@@ -39,6 +39,7 @@ namespace elg {
 class ButtonStyle;
 class ToggleStyle;
 class CheckboxStyle;
+class NumberInputStyle;
 class TextFieldStyle;
 
 class EnvironmentValues {
@@ -147,6 +148,12 @@ struct CheckboxStyleKey {
     using Value = std::shared_ptr<const CheckboxStyle>;
     static constexpr std::string_view name = "elg.checkbox_style";
     ELG_API static std::shared_ptr<const CheckboxStyle> default_value(const EnvironmentValues&);
+};
+
+struct NumberInputStyleKey {
+    using Value = std::shared_ptr<const NumberInputStyle>;
+    static constexpr std::string_view name = "elg.number_input_style";
+    ELG_API static std::shared_ptr<const NumberInputStyle> default_value(const EnvironmentValues&);
 };
 
 // The hover delay for everything inside (on_hover handlers without their own, and controls).

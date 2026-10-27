@@ -179,6 +179,63 @@ private:
     BoxCheckboxStyleOptions options_;
 };
 
+// What a NumberInputStyle gets: the editable number (put it where the text goes), the steps,
+// and the state.
+struct NumberInputConfiguration {
+    View field;
+    std::function<void()> increment; // a step up (or down), within the range
+    std::function<void()> decrement;
+    Signal<bool> can_increment; // below the maximum (above the minimum)
+    Signal<bool> can_decrement;
+    Signal<bool> shows_buttons; // NumberInputOptions::shows_buttons
+    Signal<bool> is_focused;    // being edited
+    Signal<bool> is_hovered;
+    Signal<bool> is_enabled;
+};
+
+class ELG_API NumberInputStyle {
+public:
+    virtual ~NumberInputStyle();
+    // Called once per number input when it's built, while Environment<K>() is available.
+    virtual View make_body(const NumberInputConfiguration& input) const = 0;
+
+protected:
+    // Styles are copied as their concrete type, never as a NumberInputStyle.
+    NumberInputStyle() = default;
+    NumberInputStyle(const NumberInputStyle&) = default;
+    NumberInputStyle(NumberInputStyle&&) = default;
+    NumberInputStyle& operator=(const NumberInputStyle&) = default;
+    NumberInputStyle& operator=(NumberInputStyle&&) = default;
+};
+
+struct BoxNumberInputStyleOptions {
+    Prop<Color> background = ThemeColor::surface_raised;
+    Prop<Color> border = ThemeColor::outline;
+    std::optional<Prop<Color>> focused_border; // nullopt: the tint
+    float border_width = 1;
+    float corner_radius = 6;
+    EdgeInsets padding = EdgeInsets::symmetric(8, 5);
+    float arrow_size = 9; // the stacked arrows' icons
+};
+
+// A raised box with an outline (the tint while editing), and stacked arrows at its trailing
+// edge. The default.
+//   NumberInput(size, {.min = 8}).number_input_style(BoxNumberInputStyle{{.corner_radius = 4}})
+class ELG_API BoxNumberInputStyle final : public NumberInputStyle {
+public:
+    explicit BoxNumberInputStyle(BoxNumberInputStyleOptions options = {}) : options_(std::move(options)) {}
+    View make_body(const NumberInputConfiguration& input) const override;
+
+private:
+    BoxNumberInputStyleOptions options_;
+};
+
+// Just the number, and the arrows if shown: for putting it in a box of your own.
+class ELG_API PlainNumberInputStyle final : public NumberInputStyle {
+public:
+    View make_body(const NumberInputConfiguration& input) const override;
+};
+
 // What a TextFieldStyle gets: the editable text (put it where the text goes) and its state.
 struct TextFieldConfiguration {
     View field;

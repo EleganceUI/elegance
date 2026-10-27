@@ -56,6 +56,13 @@ std::shared_ptr<const CheckboxStyle> CheckboxStyleKey::default_value(const Envir
 
 CheckboxStyle::~CheckboxStyle() = default;
 
+std::shared_ptr<const NumberInputStyle> NumberInputStyleKey::default_value(const EnvironmentValues&) {
+    static const auto style = std::make_shared<const BoxNumberInputStyle>();
+    return style;
+}
+
+NumberInputStyle::~NumberInputStyle() = default;
+
 std::shared_ptr<const TextFieldStyle> TextFieldStyleKey::default_value(const EnvironmentValues&) {
     static const auto style = std::make_shared<const RoundedBorderTextFieldStyle>();
     return style;
@@ -227,6 +234,69 @@ View BoxCheckboxStyle::make_body(const CheckboxConfiguration& checkbox) const {
         return env.color(checkbox.is_enabled() ? ThemeColor::primary : ThemeColor::tertiary);
     });
     return HStack({.spacing = o.spacing}, std::move(box), std::move(label));
+}
+
+namespace {
+
+// A number input's stacked arrow: highlighted while hovered or pressed.
+class ArrowButtonStyle final : public ButtonStyle {
+public:
+    View make_body(const ButtonConfiguration& button) const override {
+        return button.label
+            .foreground_style([=](const EnvironmentValues& env) {
+                return env.color(button.is_enabled() ? ThemeColor::secondary : ThemeColor::tertiary);
+            })
+            .padding(EdgeInsets::symmetric(3, 0))
+            .background(
+                [=](const EnvironmentValues& env) {
+                    const Color outline = env.color(ThemeColor::outline);
+                    if (!button.is_enabled()) {
+                        return Color::clear;
+                    }
+                    return button.is_pressed() ? outline : button.is_hovered() ? outline.opacity(0.5f) : Color::clear;
+                },
+                RoundedRectangle(3));
+    }
+};
+
+// The field, then (if shown) the arrows stacked at its trailing edge.
+View number_row(const NumberInputConfiguration& input, float arrow_size) {
+    const auto arrow = [&](detail::Icon which, std::function<void()> action, Signal<bool> can, const char* name) {
+        return Button(detail::icon(which, arrow_size, Weight::bold), std::move(action))
+            .button_style(ArrowButtonStyle{})
+            .disabled([can] { return !can(); })
+            .accessibility_label(name);
+    };
+    const View arrows = VStack({.spacing = 0},
+                               arrow(detail::Icon::chevron_up, input.increment, input.can_increment, "Increase"),
+                               arrow(detail::Icon::chevron_down, input.decrement, input.can_decrement, "Decrease"));
+    return HStack({.spacing = 4}, input.field, If(input.shows_buttons, arrows));
+}
+
+} // namespace
+
+View BoxNumberInputStyle::make_body(const NumberInputConfiguration& input) const {
+    const BoxNumberInputStyleOptions& o = options_;
+    const Prop<Color> background = o.background;
+    const Prop<Color> border = o.border;
+    const std::optional<Prop<Color>> focused_border = o.focused_border;
+    return number_row(input, o.arrow_size)
+        .padding(o.padding)
+        .background([=](const EnvironmentValues& env) { return background.get(env); }, RoundedRectangle(o.corner_radius))
+        .overlay(RoundedRectangle(o.corner_radius)
+                     .stroke_border(
+                         [=](const EnvironmentValues& env) {
+                             if (!input.is_focused()) {
+                                 return border.get(env);
+                             }
+                             return focused_border ? focused_border->get(env) : env.get<TintKey>();
+                         },
+                         o.border_width))
+        .opacity([=] { return input.is_enabled() ? 1.f : 0.5f; });
+}
+
+View PlainNumberInputStyle::make_body(const NumberInputConfiguration& input) const {
+    return number_row(input, 9);
 }
 
 } // namespace elg

@@ -501,6 +501,10 @@ View View::checkbox_style_impl(std::shared_ptr<const CheckboxStyle> style) const
     return modifier(CheckboxStyleModifier(std::move(style)));
 }
 
+View View::number_input_style_impl(std::shared_ptr<const NumberInputStyle> style) const {
+    return modifier(NumberInputStyleModifier(std::move(style)));
+}
+
 View View::text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const {
     return modifier(TextFieldStyleModifier(std::move(style)));
 }

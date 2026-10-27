@@ -329,26 +329,6 @@ private:
 
 // --- Stepper and Picker: composed from the public API ---
 
-// A segment of the stepper: the symbol, highlighted while hovered or pressed.
-class StepperSegmentStyle final : public ButtonStyle {
-public:
-    View make_body(const ButtonConfiguration& button) const override {
-        const auto theme = Environment<ThemeKey>();
-        const auto scheme = Environment<ColorSchemeKey>();
-        const auto colors = [=] { return theme().colors(scheme()); };
-        return button.label.font(Font::system(16, Weight::semibold))
-            .foreground_style([=] { return button.is_enabled() ? colors().primary : colors().tertiary; })
-            .frame(34, 26)
-            .background([=] {
-                const ColorTokens c = colors();
-                if (button.is_pressed()) {
-                    return c.outline;
-                }
-                return button.is_hovered() && button.is_enabled() ? c.outline.opacity(0.5f) : Color::clear;
-            });
-    }
-};
-
 // A picker segment: the selected one is raised.
 class PickerSegmentStyle final : public ButtonStyle {
 public:
@@ -402,34 +382,6 @@ View ProgressView(Prop<float> fraction) {
 
 View ProgressView() {
     return ViewAccess::make(std::make_shared<const detail::ProgressNode>(std::nullopt));
-}
-
-View Stepper(View label, Binding<int> value, StepperOptions options) {
-    const int step = std::max(options.step, 1);
-    const auto change = [value, options, step](int direction) {
-        return [value, options, step, direction] {
-            const long long next = static_cast<long long>(value()) + static_cast<long long>(direction) * step;
-            value.set(static_cast<int>(std::clamp<long long>(next, options.min, options.max)));
-        };
-    };
-    const View buttons =
-        HStack({.spacing = 0},
-               Button(Text("\xE2\x88\x92"), change(-1))
-                   .disabled([=] { return value() <= options.min; })
-                   .accessibility_label("Decrease"), // U+2212 minus
-               Rectangle().fill(ThemeColor::outline).frame(1, 16),
-               Button(Text("+"), change(+1))
-                   .disabled([=] { return value() >= options.max; })
-                   .accessibility_label("Increase"))
-            .button_style(detail::StepperSegmentStyle{})
-            .background(ThemeColor::surface_raised, RoundedRectangle(7))
-            .clip_shape(RoundedRectangle(7))
-            .overlay(RoundedRectangle(7).stroke_border(ThemeColor::outline, 1));
-    return HStack({.spacing = 12}, std::move(label), Spacer(), buttons);
-}
-
-View Stepper(Prop<std::string> title, Binding<int> value, StepperOptions options) {
-    return Stepper(Text(std::move(title)), std::move(value), options);
 }
 
 View detail::make_segmented_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,

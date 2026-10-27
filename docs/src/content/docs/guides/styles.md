@@ -14,6 +14,7 @@ one modifier styles every control inside a view.
 | `Button` | `ProminentButtonStyle` (default), `BorderedButtonStyle`, `PlainButtonStyle` |
 | `Toggle` | `SwitchToggleStyle` (default) |
 | `Checkbox` | `BoxCheckboxStyle` (default) |
+| `NumberInput` | `BoxNumberInputStyle` (default), `PlainNumberInputStyle` |
 | `TextField`, `TextArea` | `RoundedBorderTextFieldStyle` (default), `PlainTextFieldStyle` |
 
 ```cpp

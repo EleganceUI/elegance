@@ -875,8 +875,8 @@ View MoreControlCards() {
     const auto guests = State(2);
     const auto loading = State(false);
     const View stepper = VStack({.alignment = HorizontalAlignment::leading, .spacing = 12},
-                                Stepper(Text([=] { return std::format("Guests: {}", guests()); }), guests.binding(),
-                                        {.min = 1, .max = 8}),
+                                HStack({.spacing = 8}, Text("Guests"),
+                                       NumberInput(guests.binding(), {.min = 1, .max = 8}).frame({.width = 72})),
                                 Toggle("Loading", loading.binding()),
                                 // Indeterminate progress renders continuously, so it's only shown on request.
                                 If(loading, ProgressView()))

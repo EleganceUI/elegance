@@ -94,6 +94,8 @@ View icon(Icon which, float size, Weight weight) {
         return set_icon("phosphor.caret-right", size, weight, Text("\xE2\x80\xBA").font(Font::system(size * 1.6f)));
     case Icon::chevron_down:
         return set_icon("phosphor.caret-down", size, weight, Text("v").font(Font::system(size * 1.2f)));
+    case Icon::chevron_up:
+        return set_icon("phosphor.caret-up", size, weight, Text("^").font(Font::system(size * 1.2f)));
     }
     return EmptyView();
 }

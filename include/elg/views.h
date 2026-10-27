@@ -18,9 +18,11 @@
 
 #include <concepts>
 #include <climits>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -148,16 +150,53 @@ struct SliderOptions {
 //   Slider(volume.binding(), {.min = 0, .max = 100, .step = 5})
 ELG_API View Slider(Binding<float> value, SliderOptions options = {});
 
-struct StepperOptions {
-    int min = INT_MIN;
-    int max = INT_MAX;
-    int step = 1;
+struct NumberInputOptions {
+    Prop<double> min = -std::numeric_limits<double>::infinity();
+    Prop<double> max = std::numeric_limits<double>::infinity();
+    Prop<double> step = 1.0; // the arrows, Up/Down (Shift: 10 steps), and each few points scrubbed
+    // Digits after the point; -1: as many as the value needs (up to 6). Integers show none.
+    Prop<int> decimals = -1;
+    // Text for a value, and a value for text (nullopt: not a number), e.g. for units:
+    //   .format = [](double v) { return std::format("{:g} px", v); }
+    // By default, plain numbers; parsing ignores spaces around them.
+    std::function<std::string(double)> format;
+    std::function<std::optional<double>(std::string_view)> parse;
+    // Apply each valid number as it's typed. Otherwise typing applies on Enter or when the field
+    // loses focus, so "1." isn't rewritten to "1" under the caret.
+    Prop<bool> live = false;
+    Prop<bool> shows_buttons = true; // the style's increment and decrement buttons
+    // Dragging sideways on the field (while it isn't being edited) changes the value; a click
+    // without dragging edits it.
+    Prop<bool> scrubs = true;
 };
 
-// The label, then - and + buttons that change `value` by `step` within [min, max].
-//   Stepper(Text([=] { return std::format("Guests: {}", guests()); }), guests.binding(), {.min = 1})
-ELG_API View Stepper(View label, Binding<int> value, StepperOptions options = {});
-ELG_API View Stepper(Prop<std::string> title, Binding<int> value, StepperOptions options = {});
+namespace detail {
+ELG_API View make_number_input(Binding<double> value, bool integer, NumberInputOptions options);
+} // namespace detail
+
+// A number you can type, step with the arrows or Up/Down, or scrub by dragging. Text that isn't a
+// number reverts when you leave the field; values stay within [min, max]. Its look comes from the
+// NumberInputStyle (a box with stacked arrows by default). Put a Text beside it for a label.
+//   NumberInput(guests.binding(), {.min = 1, .max = 20})
+//   NumberInput(opacity.binding(), {.min = 0, .max = 1, .step = 0.05, .decimals = 2})
+template <class T>
+    requires std::same_as<T, int> || std::same_as<T, float> || std::same_as<T, double>
+View NumberInput(Binding<T> value, NumberInputOptions options = {}) {
+    Binding<double> as_double([value] { return static_cast<double>(value()); },
+                              [value](double v) {
+                                  if constexpr (std::same_as<T, int>) {
+                                      v = std::round(v);
+                                  }
+                                  value.set(static_cast<T>(v));
+                              });
+    return detail::make_number_input(std::move(as_double), std::same_as<T, int>, std::move(options));
+}
+// A State converts to the Binding it holds.
+template <class T>
+    requires std::same_as<T, int> || std::same_as<T, float> || std::same_as<T, double>
+View NumberInput(const State<T>& value, NumberInputOptions options = {}) {
+    return NumberInput(value.binding(), std::move(options));
+}
 
 // A bar filled to `fraction` (0...1); animates with the value.
 ELG_API View ProgressView(Prop<float> fraction);
