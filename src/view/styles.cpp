@@ -70,6 +70,27 @@ std::shared_ptr<const ProgressStyle> ProgressStyleKey::default_value(const Envir
 
 ProgressStyle::~ProgressStyle() = default;
 
+std::shared_ptr<const PopoverStyle> PopoverStyleKey::default_value(const EnvironmentValues&) {
+    static const auto style = std::make_shared<const DefaultPopoverStyle>();
+    return style;
+}
+
+PopoverStyle::~PopoverStyle() = default;
+
+std::shared_ptr<const TooltipStyle> TooltipStyleKey::default_value(const EnvironmentValues&) {
+    static const auto style = std::make_shared<const DefaultTooltipStyle>();
+    return style;
+}
+
+TooltipStyle::~TooltipStyle() = default;
+
+std::shared_ptr<const MenuStyle> MenuStyleKey::default_value(const EnvironmentValues&) {
+    static const auto style = std::make_shared<const DefaultMenuStyle>();
+    return style;
+}
+
+MenuStyle::~MenuStyle() = default;
+
 std::shared_ptr<const TextFieldStyle> TextFieldStyleKey::default_value(const EnvironmentValues&) {
     static const auto style = std::make_shared<const RoundedBorderTextFieldStyle>();
     return style;

@@ -17,6 +17,9 @@ one modifier styles every control inside a view.
 | `NumberInput` | `BoxNumberInputStyle` (default), `PlainNumberInputStyle` |
 | `Progress` | `LinearProgressStyle` (default), `CircularProgressStyle` |
 | `TextField`, `TextArea` | `RoundedBorderTextFieldStyle` (default), `PlainTextFieldStyle` |
+| `popover` | `DefaultPopoverStyle` (default), `PlainPopoverStyle` |
+| `tooltip`, `help` | `DefaultTooltipStyle` (default), `PlainTooltipStyle` |
+| `Menu` | `DefaultMenuStyle` (default), `PlainMenuStyle` |
 
 ```cpp
 Form().button_style(BorderedButtonStyle{});
@@ -113,4 +116,23 @@ struct UnderlinedFieldStyle : TextFieldStyle {
             Alignment::bottom);
     }
 };
+```
+
+## Popover, tooltip and menu styles
+
+These draw the panel around popup content: a `PopoverConfiguration` has the `content` and
+`is_padded`, a `TooltipConfiguration` the `content`, and a `MenuConfiguration` the stacked
+`items`. The style where the view that opens it is placed applies, so one `.popover_style(...)`
+near the root styles every popover in the window. The plain styles draw nothing around the content.
+
+```cpp
+struct CardPopoverStyle : PopoverStyle {
+    View make_body(const PopoverConfiguration& popover) const override {
+        return popover.content.padding(16)
+            .background(ThemeColor::surface_raised, RoundedRectangle(16))
+            .shadow({.color = Color::black.opacity(0.2f), .radius = 24, .y = 8});
+    }
+};
+
+Root().popover_style(CardPopoverStyle{}).tooltip_style(PlainTooltipStyle{});
 ```

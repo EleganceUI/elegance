@@ -1121,8 +1121,9 @@ Text(file.name)
 - Popups use `SDL_CreatePopupWindow` (`SDL_WINDOW_POPUP_MENU` / `SDL_WINDOW_TOOLTIP`).
 - To the rest of the framework a popup is just another window: its own element tree, event
   dispatcher, and frames through the multi-window renderer (§15).
-- The app keeps one popup window ready and reuses it, so opening a menu doesn't wait for a
-  swapchain to be created.
+- Each popup gets a new popup window when it opens, destroyed when it closes (fast enough in
+  practice; Wayland can't re-show a dismissed `xdg_popup` anyway). A reused tooltip window is the
+  first thing to try if opening ever shows up as slow.
 - **Embedding mode** (§4), which has no platform layer, falls back to an in-window overlay in the
   top layer.
 
@@ -1139,8 +1140,10 @@ Text(file.name)
   beside; it goes with its window.
 - Popup windows are re-fitted every frame: measured at their ideal size (bounded by the
   display), re-placed when that or the anchor changes (`move_popup`).
-- Still to do: styles for popover, tooltip and menu chrome; custom tooltip content; open/close
-  animation; a parent boundary.
+- Chrome is replaceable: `PopoverStyle`, `TooltipStyle`, `MenuStyle` (`make_body(configuration)`,
+  environment keys, like `ButtonStyle`), resolved in the popup's environment (the opener's).
+  `.tooltip(content, TooltipOptions)` takes any view; `.help(text)` is a text tooltip.
+- Still to do: open/close animation; a parent boundary; menu row styling.
 
 #### Behavior
 - **Opening:**

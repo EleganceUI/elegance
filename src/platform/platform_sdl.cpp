@@ -334,8 +334,9 @@ void Window::set_popup_frame(Rect frame) {
         density = 1;
     }
     const float factor = scale() / density;
-    SDL_SetWindowSize(window_, std::max(1, static_cast<int>(std::lround(frame.width * factor))),
-                      std::max(1, static_cast<int>(std::lround(frame.height * factor))));
+    // Rounded up: a window a fraction narrower than its content would cut it off (text ellipsized).
+    SDL_SetWindowSize(window_, std::max(1, static_cast<int>(std::ceil(frame.width * factor - 0.01f))),
+                      std::max(1, static_cast<int>(std::ceil(frame.height * factor - 0.01f))));
     SDL_SetWindowPosition(window_, static_cast<int>(std::lround(frame.x * factor)),
                           static_cast<int>(std::lround(frame.y * factor)));
 }

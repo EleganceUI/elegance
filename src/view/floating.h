@@ -26,6 +26,9 @@ class Scope;
 // of the anchor when it doesn't fit on its own and kept inside `area`. All in one coordinate space.
 Point place_floating(Size size, Rect anchor, const FloatingPlacement& placement, Rect area);
 
+// The environment a popup's content is being built in (for its style), or the default one.
+EnvironmentValues styling_environment();
+
 // A token for one opening of floating content, unique in the process.
 std::uint64_t next_floating_token() noexcept;
 
@@ -40,6 +43,7 @@ public:
         FloatingPlacement placement;
         FloatingDismiss dismiss;
         std::function<void()> dismissed; // closed by the user: Esc or an outside click
+        bool interactive = true;         // false: the pointer passes through it (tooltips)
         std::unique_ptr<Element> element; // null for content hosted elsewhere (a popup window)
         std::unique_ptr<Scope> scope;     // the content's effects; destroyed first
     };

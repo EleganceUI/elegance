@@ -306,7 +306,9 @@ WindowFrame build_frame(LiveWindow& live) {
         live.entry->desc.transparent ? Color::clear : resolve_theme_color(live.environment, ThemeColor::background));
     frame.list.scale = frame.scale;
 
-    const Size size = live.window.logical_size();
+    // Popups get the size their content measured, which their window was made at least as big as
+    // (its size in points comes back from whole pixels).
+    const Size size = live.fit ? live.fit->size : live.window.logical_size();
     const ProposedSize proposal{size.width, size.height};
     // While animations run, things move without invalidating layout: lay out everything.
     const FullLayoutScope full_layout(live.animating);

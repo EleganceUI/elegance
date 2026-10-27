@@ -5,6 +5,7 @@
 // Floating content: where it goes by its anchor, and in-window floating content (drawn by the
 // window's floating layer) opening, closing, and taking presses.
 
+#include "text/text_system.h"
 #include "view/event_dispatcher.h"
 #include "view/floating.h"
 #include "view/focus.h"
@@ -43,7 +44,7 @@ struct Window {
     explicit Window(const View& view) {
         root = std::make_unique<detail::FloatingLayerElement>(
             detail::lower(ZStack({.alignment = Alignment::top_leading}, Rectangle().fill(Color::white), view),
-                          {.tree_changed = &tree_changed, .focus = &focus}));
+                          {.text = &text_system(), .tree_changed = &tree_changed, .focus = &focus}));
         layout();
         events.emplace(*root, focus);
     }
@@ -56,6 +57,11 @@ struct Window {
         if (events && std::exchange(tree_changed, false)) {
             events->revalidate();
         }
+    }
+
+    static detail::TextSystem& text_system() {
+        static detail::TextSystem system;
+        return system;
     }
 
     void click(Point at) {
@@ -167,4 +173,90 @@ TEST_CASE("in-window floating content that ignores outside clicks leaves the win
 
 TEST_CASE("floating needs content", "[floating]") {
     CHECK_THROWS_AS(Rectangle().floating(Binding<bool>::constant(true), {}), UsageError);
+}
+
+namespace {
+
+int children(detail::Element& element) {
+    int count = 0;
+    element.for_each_child([&](detail::Element&) { ++count; });
+    return count;
+}
+
+} // namespace
+
+TEST_CASE("a popover's chrome comes from the environment's PopoverStyle", "[floating]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    struct Recording final : PopoverStyle {
+        int* built;
+        bool* padded;
+        Recording(int* b, bool* p) : built(b), padded(p) {}
+        View make_body(const PopoverConfiguration& popover) const override {
+            ++*built;
+            *padded = popover.is_padded();
+            return popover.content;
+        }
+    };
+    int built = 0;
+    bool padded = true;
+    const State<bool> shown(true);
+    Window window(Rectangle()
+                      .frame(50, 20)
+                      .popover(shown.binding(), [] { return Rectangle().frame(80, 40); },
+                               {.boundary = FloatingBoundary::window, .padded = false})
+                      .popover_style(Recording(&built, &padded)));
+    window.layout();
+    CHECK(built == 1);
+    CHECK_FALSE(padded);
+}
+
+TEST_CASE("an in-window tooltip shows on hover, lets the pointer through, and hides on leaving", "[floating]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    int built = 0;
+    int clicks = 0;
+    Window window(ZStack({.alignment = Alignment::top_leading},
+                         Rectangle().fill(Color::black).frame(400, 300).on_click([&] { ++clicks; }),
+                         Rectangle()
+                             .fill(Color::black)
+                             .frame(50, 20)
+                             .tooltip(
+                                 [&] {
+                                     ++built;
+                                     return Rectangle().fill(Color::black).frame(80, 40);
+                                 },
+                                 {.boundary = FloatingBoundary::window, .delay = 0})
+                             .tooltip_style(PlainTooltipStyle{})));
+    window.events->pointer_moved({10, 10});
+    window.events->tick();
+    window.layout();
+    CHECK(built == 1);
+    CHECK(children(*window.root) == 2); // the content and the tooltip
+
+    window.click({20, 30}); // on the tooltip (0..80 x 24..64): reaches the view under it
+    CHECK(clicks == 1);
+    CHECK(children(*window.root) == 1); // the press hid it
+
+    window.events->pointer_moved({10, 10});
+    window.events->pointer_moved({300, 200});
+    window.events->tick();
+    window.layout();
+    CHECK(children(*window.root) == 1);
+}
+
+TEST_CASE("a menu's panel comes from the environment's MenuStyle", "[floating]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    int built = 0;
+    struct Recording final : MenuStyle {
+        int* built;
+        explicit Recording(int* b) : built(b) {}
+        View make_body(const MenuConfiguration& menu) const override {
+            ++*built;
+            return menu.items;
+        }
+    };
+    Window window(Menu(MenuItem("Open", [] {})).menu_style(Recording(&built)));
+    CHECK(built == 1);
 }

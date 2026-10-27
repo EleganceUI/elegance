@@ -11,6 +11,9 @@
 
 #include <elg/error.h>
 #include <elg/shapes.h>
+#include <elg/styles.h>
+#include <elg/text.h>
+#include <elg/views.h>
 
 #include <algorithm>
 #include <atomic>
@@ -186,7 +189,7 @@ void FloatingLayerElement::paint_impl(DisplayList& list) const {
 
 bool FloatingLayerElement::hit_impl(Point point, std::vector<Element*>& path) {
     for (auto it = panels_.rbegin(); it != panels_.rend(); ++it) {
-        if (it->element && it->element->hit_test(point, path)) {
+        if (it->element && it->interactive && it->element->hit_test(point, path)) {
             return true;
         }
     }
@@ -435,7 +438,142 @@ private:
     FloatingOptions options_;
 };
 
+// A tooltip's view: shows it once the pointer has rested there for the delay, hides it when the
+// pointer leaves or presses.
+class TooltipElement final : public Element, private EventHandler {
+public:
+    TooltipElement(std::unique_ptr<Element> content, std::function<View()> tooltip, TooltipOptions options,
+                   const LowerContext& context)
+        : content_(std::move(content)), tooltip_(std::move(tooltip)), options_(std::move(options)),
+          context_(context.nested()) {
+        adopt(*content_);
+    }
+    ~TooltipElement() override { hide(); }
+
+    EventHandler* event_handler() noexcept override { return this; }
+    HoverDelay effective_hover_delay() const override { return {.enter = options_.delay, .exit = 0}; }
+    float layout_priority() const noexcept override { return content_->layout_priority(); }
+    bool is_spacer() const noexcept override { return content_->is_spacer(); }
+    void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
+    void inspect(Inspection& out) const override { out.name = "Tooltip"; }
+
+protected:
+    Size measure(ProposedSize proposal) override { return content_->size_that_fits(proposal); }
+    void arrange(Rect bounds, ProposedSize proposal) override { content_->place({bounds.x, bounds.y}, proposal); }
+    void paint_impl(DisplayList& list) const override { content_->paint(list); }
+    bool hit_impl(Point point, std::vector<Element*>& path) override { return content_->hit_test(point, path); }
+
+private:
+    EventResult hover(bool inside) override {
+        if (inside) {
+            show();
+        } else {
+            hide();
+        }
+        return {.redraw = true};
+    }
+    EventResult pointer(const PointerEvent& event, Rect) override {
+        if (event.kind == PointerEvent::Kind::down) {
+            hide();
+        }
+        return {};
+    }
+
+    // The content in the environment's TooltipStyle, where the tooltip opens.
+    std::function<View()> styled() const {
+        return [content = tooltip_] {
+            const EnvironmentValues environment = styling_environment();
+            const auto style = untrack([&] { return environment.get<TooltipStyleKey>(); });
+            return style->make_body({.content = content()});
+        };
+    }
+
+    void show() {
+        if (shown_) {
+            return;
+        }
+        shown_ = true;
+        if (options_.boundary == FloatingBoundary::screen) {
+            if (context_.services) {
+                context_.services->open_popup({.kind = PopupRequest::Kind::tooltip,
+                                               .placement = options_.placement,
+                                               .anchor = drawn_frame(),
+                                               .content = styled(),
+                                               .environment = context_.environment});
+            }
+            return;
+        }
+        layer_ = FloatingLayerElement::of(*this);
+        if (!layer_) {
+            return;
+        }
+        token_ = next_floating_token();
+        FloatingLayerElement::Panel panel{.token = token_,
+                                          .anchor = this,
+                                          .placement = options_.placement,
+                                          .dismiss = {.outside_click = false, .escape = false},
+                                          .interactive = false,
+                                          .scope = std::make_unique<Scope>()};
+        {
+            Scope::Use use(*panel.scope);
+            const EnvironmentScope environment(context_.environment);
+            panel.element = detail::lower(styled()(), context_);
+        }
+        layer_->add(std::move(panel));
+        changed();
+    }
+
+    void hide() {
+        if (!std::exchange(shown_, false)) {
+            return;
+        }
+        if (layer_) {
+            layer_->remove(token_);
+            changed();
+        } else if (context_.services) {
+            context_.services->close_tooltip();
+        }
+    }
+
+    void changed() const {
+        if (context_.tree_changed) {
+            *context_.tree_changed = true;
+        }
+        if (context_.needs_frame) {
+            *context_.needs_frame = true;
+        }
+    }
+
+    std::unique_ptr<Element> content_;
+    std::function<View()> tooltip_;
+    TooltipOptions options_;
+    LowerContext context_;
+    FloatingLayerElement* layer_ = nullptr;
+    std::uint64_t token_ = 0;
+    bool shown_ = false;
+};
+
+class TooltipNode final : public ViewNode {
+public:
+    TooltipNode(View content, std::function<View()> tooltip, TooltipOptions options)
+        : content_(std::move(content)), tooltip_(std::move(tooltip)), options_(std::move(options)) {}
+
+    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+        return std::make_unique<TooltipElement>(detail::lower(content_, context), tooltip_, options_, context);
+    }
+
+private:
+    View content_;
+    std::function<View()> tooltip_;
+    TooltipOptions options_;
+};
+
 } // namespace
+
+EnvironmentValues styling_environment() {
+    const EnvironmentValues* environment = current_environment();
+    return environment ? *environment : EnvironmentValues();
+}
 
 } // namespace elg::detail
 
@@ -450,19 +588,53 @@ View View::floating(Binding<bool> is_presented, std::function<View()> content, F
 }
 
 View View::popover(Binding<bool> is_presented, std::function<View()> content, PopoverOptions options) const {
-    // The panel: padded content on the surface, outlined, with a shadow.
+    // The content in the environment's PopoverStyle, where the popover opens.
     auto panel = [content = std::move(content), padded = options.padded] {
-        const bool* fixed = padded.static_value();
-        const View inner = fixed ? (*fixed ? content().padding(12) : content())
-                                 : content().padding(Prop<float>(
-                                       [padded](const EnvironmentValues& env) { return padded.get(env) ? 12.f : 0.f; }));
-        return inner.clip_shape(RoundedRectangle(10))
-            .background(ThemeColor::surface, RoundedRectangle(10))
-            .overlay(RoundedRectangle(10).stroke_border(ThemeColor::outline, 1))
-            .shadow({.color = Color::black.opacity(0.28f), .radius = 12, .y = 3});
+        const EnvironmentValues environment = detail::styling_environment();
+        const auto style = untrack([&] { return environment.get<PopoverStyleKey>(); });
+        return style->make_body({.content = content(), .is_padded = [padded, environment] { return padded.get(environment); }});
     };
     return floating(std::move(is_presented), std::move(panel),
                     {.placement = options.placement, .boundary = options.boundary});
+}
+
+View View::tooltip(std::function<View()> content, TooltipOptions options) const {
+    if (!content) {
+        throw UsageError("tooltip() needs a content function");
+    }
+    return detail::ViewAccess::make(std::make_shared<const detail::TooltipNode>(*this, std::move(content), std::move(options)));
+}
+
+View View::help(Prop<std::string> text) const {
+    return tooltip([text = std::move(text)] { return Text(text); });
+}
+
+// --- Styles ---
+
+View DefaultPopoverStyle::make_body(const PopoverConfiguration& popover) const {
+    const Signal<bool> padded = popover.is_padded;
+    return popover.content.padding(Prop<float>([padded] { return padded() ? 12.f : 0.f; }))
+        .clip_shape(RoundedRectangle(10))
+        .background(ThemeColor::surface, RoundedRectangle(10))
+        .overlay(RoundedRectangle(10).stroke_border(ThemeColor::outline, 1))
+        .shadow({.color = Color::black.opacity(0.28f), .radius = 12, .y = 3});
+}
+
+View PlainPopoverStyle::make_body(const PopoverConfiguration& popover) const {
+    return popover.content;
+}
+
+View DefaultTooltipStyle::make_body(const TooltipConfiguration& tooltip) const {
+    return tooltip.content.font(Font::system(12))
+        .foreground_style(ThemeColor::primary)
+        .padding(EdgeInsets::symmetric(8, 5))
+        .background(ThemeColor::surface, RoundedRectangle(5))
+        .overlay(RoundedRectangle(5).stroke_border(ThemeColor::outline, 1))
+        .shadow({.color = Color::black.opacity(0.28f), .radius = 6, .y = 3});
+}
+
+View PlainTooltipStyle::make_body(const TooltipConfiguration& tooltip) const {
+    return tooltip.content;
 }
 
 } // namespace elg

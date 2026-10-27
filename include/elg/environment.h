@@ -43,6 +43,9 @@ class NumberInputStyle;
 class ProgressStyle;
 class NavigationStackStyle;
 class TextFieldStyle;
+class PopoverStyle;
+class TooltipStyle;
+class MenuStyle;
 
 class EnvironmentValues {
 public:
@@ -175,6 +178,24 @@ struct HoverDelayKey {
     using Value = HoverDelay;
     static constexpr std::string_view name = "elg.hover_delay";
     static HoverDelay default_value(const EnvironmentValues&) { return {}; }
+};
+
+struct PopoverStyleKey {
+    using Value = std::shared_ptr<const PopoverStyle>;
+    static constexpr std::string_view name = "elg.popover_style";
+    ELG_API static std::shared_ptr<const PopoverStyle> default_value(const EnvironmentValues&);
+};
+
+struct TooltipStyleKey {
+    using Value = std::shared_ptr<const TooltipStyle>;
+    static constexpr std::string_view name = "elg.tooltip_style";
+    ELG_API static std::shared_ptr<const TooltipStyle> default_value(const EnvironmentValues&);
+};
+
+struct MenuStyleKey {
+    using Value = std::shared_ptr<const MenuStyle>;
+    static constexpr std::string_view name = "elg.menu_style";
+    ELG_API static std::shared_ptr<const MenuStyle> default_value(const EnvironmentValues&);
 };
 
 struct ButtonStyleKey {

@@ -106,6 +106,14 @@ Its size follows its content as that changes, and it follows the view when the v
 
 ```cpp
 Button(Image("gear"), settings).help("Settings");
+Avatar(user).tooltip([=] { return HStack(Image("user"), Text(user.name)); },
+                     {.placement = {.edge = FloatingEdge::trailing, .spacing = 6}, .delay = 0.3});
 ```
 
-The tooltip appears after the pointer rests on the view for a moment.
+A tooltip appears after the pointer rests on the view for a moment (`delay`, 0.6 seconds by
+default), and goes when it leaves or presses. `help(text)` is a tooltip with that text. Its
+`placement` and `boundary` work as for [floating content](#floating-content); an in-window tooltip
+lets the pointer through to what's under it.
+
+Popovers, tooltips and menus draw their panels with the environment's `PopoverStyle`,
+`TooltipStyle` and `MenuStyle`; see [Styles](../styles/#popover-tooltip-and-menu-styles).

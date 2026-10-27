@@ -62,6 +62,9 @@ class NumberInputStyle;
 class ProgressStyle;
 class NavigationStackStyle;
 class TextFieldStyle;
+class PopoverStyle;
+class TooltipStyle;
+class MenuStyle;
 enum class Weight;
 template <class T>
 class Binding;
@@ -192,6 +195,12 @@ struct FloatingOptions {
     FloatingPlacement placement;
     FloatingBoundary boundary = FloatingBoundary::screen;
     FloatingDismiss dismiss;
+};
+
+struct TooltipOptions {
+    FloatingPlacement placement{.spacing = 4}; // below the view by default
+    FloatingBoundary boundary = FloatingBoundary::screen;
+    double delay = 0.6; // seconds the pointer rests on the view before it shows
 };
 
 struct PopoverOptions {
@@ -591,7 +600,11 @@ public:
     //   Text(file.name).context_menu([=] { return Menu(MenuItem("Rename", rename), Separator(),
     //                                                  MenuItem("Delete", remove, {.destructive = true})); })
     ELG_API View context_menu(std::function<View()> menu) const;
-    // A tooltip with `text`, shown after the pointer rests on the view for a moment.
+    // A tooltip: `content` (in the environment's TooltipStyle) shown after the pointer rests on
+    // the view for a moment, until it leaves or presses. Screen readers don't see it.
+    //   Avatar(user).tooltip([=] { return HStack(Image("user"), Text(user.name)); })
+    ELG_API View tooltip(std::function<View()> content, TooltipOptions options = {}) const;
+    // A text tooltip: tooltip(Text(text)).
     ELG_API View help(Prop<std::string> text) const;
     // `content` floating above everything by the view, while `is_presented` is true, with no
     // chrome of its own. The builder runs each time it opens. What closes it (and sets the
@@ -667,6 +680,22 @@ public:
     View number_input_style(Style style) const {
         return number_input_style_impl(std::make_shared<const Style>(std::move(style)));
     }
+    // The styles of popovers, tooltips and menus opened from inside (elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, PopoverStyle>
+    View popover_style(Style style) const {
+        return popover_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    template <class Style>
+        requires std::derived_from<Style, TooltipStyle>
+    View tooltip_style(Style style) const {
+        return tooltip_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    template <class Style>
+        requires std::derived_from<Style, MenuStyle>
+    View menu_style(Style style) const {
+        return menu_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
     // The style of every Progress inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, ProgressStyle>
@@ -730,6 +759,9 @@ private:
     ELG_API View checkbox_style_impl(std::shared_ptr<const CheckboxStyle> style) const;
     ELG_API View number_input_style_impl(std::shared_ptr<const NumberInputStyle> style) const;
     ELG_API View progress_style_impl(std::shared_ptr<const ProgressStyle> style) const;
+    ELG_API View popover_style_impl(std::shared_ptr<const PopoverStyle> style) const;
+    ELG_API View tooltip_style_impl(std::shared_ptr<const TooltipStyle> style) const;
+    ELG_API View menu_style_impl(std::shared_ptr<const MenuStyle> style) const;
     ELG_API View navigation_stack_style_impl(std::shared_ptr<const NavigationStackStyle> style) const;
     ELG_API View text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const;
     ELG_API View animation_impl(const Animation& animation, std::function<bool()> changed) const;

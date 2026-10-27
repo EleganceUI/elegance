@@ -596,6 +596,18 @@ View View::progress_style_impl(std::shared_ptr<const ProgressStyle> style) const
     return modifier(ProgressStyleModifier(std::move(style)));
 }
 
+View View::popover_style_impl(std::shared_ptr<const PopoverStyle> style) const {
+    return modifier(PopoverStyleModifier(std::move(style)));
+}
+
+View View::tooltip_style_impl(std::shared_ptr<const TooltipStyle> style) const {
+    return modifier(TooltipStyleModifier(std::move(style)));
+}
+
+View View::menu_style_impl(std::shared_ptr<const MenuStyle> style) const {
+    return modifier(MenuStyleModifier(std::move(style)));
+}
+
 View View::navigation_stack_style_impl(std::shared_ptr<const NavigationStackStyle> style) const {
     return modifier(NavigationStackStyleModifier(std::move(style)));
 }

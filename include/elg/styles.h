@@ -327,6 +327,103 @@ public:
     View make_body(const TextFieldConfiguration& field) const override;
 };
 
+// What a PopoverStyle wraps in a panel: the popover's content.
+struct PopoverConfiguration {
+    View content;
+    Signal<bool> is_padded; // PopoverOptions::padded: false lets the content reach the edges
+};
+
+class ELG_API PopoverStyle {
+public:
+    virtual ~PopoverStyle();
+    // Called each time it opens, while Environment<K>() is available.
+    virtual View make_body(const PopoverConfiguration& popover) const = 0;
+
+protected:
+    // Styles are copied as their concrete type, never as a PopoverStyle.
+    PopoverStyle() = default;
+    PopoverStyle(const PopoverStyle&) = default;
+    PopoverStyle(PopoverStyle&&) = default;
+    PopoverStyle& operator=(const PopoverStyle&) = default;
+    PopoverStyle& operator=(PopoverStyle&&) = default;
+};
+
+// A rounded surface with an outline and a shadow; padded content is inset 12 points. The default.
+class ELG_API DefaultPopoverStyle final : public PopoverStyle {
+public:
+    View make_body(const PopoverConfiguration& popover) const override;
+};
+
+// Just the content: no panel, padding or shadow.
+class ELG_API PlainPopoverStyle final : public PopoverStyle {
+public:
+    View make_body(const PopoverConfiguration& popover) const override;
+};
+
+// What a TooltipStyle wraps: the tooltip's content.
+struct TooltipConfiguration {
+    View content; // .help(text): the text
+};
+
+class ELG_API TooltipStyle {
+public:
+    virtual ~TooltipStyle();
+    // Called each time it opens, while Environment<K>() is available.
+    virtual View make_body(const TooltipConfiguration& tooltip) const = 0;
+
+protected:
+    // Styles are copied as their concrete type, never as a TooltipStyle.
+    TooltipStyle() = default;
+    TooltipStyle(const TooltipStyle&) = default;
+    TooltipStyle(TooltipStyle&&) = default;
+    TooltipStyle& operator=(const TooltipStyle&) = default;
+    TooltipStyle& operator=(TooltipStyle&&) = default;
+};
+
+// Small text on a rounded surface with an outline and a shadow. The default.
+class ELG_API DefaultTooltipStyle final : public TooltipStyle {
+public:
+    View make_body(const TooltipConfiguration& tooltip) const override;
+};
+
+// Just the content.
+class ELG_API PlainTooltipStyle final : public TooltipStyle {
+public:
+    View make_body(const TooltipConfiguration& tooltip) const override;
+};
+
+// What a MenuStyle wraps in a panel: a Menu's items.
+struct MenuConfiguration {
+    View items; // the rows, stacked; rows span the panel's width
+};
+
+class ELG_API MenuStyle {
+public:
+    virtual ~MenuStyle();
+    // Called each time it opens, while Environment<K>() is available.
+    virtual View make_body(const MenuConfiguration& menu) const = 0;
+
+protected:
+    // Styles are copied as their concrete type, never as a MenuStyle.
+    MenuStyle() = default;
+    MenuStyle(const MenuStyle&) = default;
+    MenuStyle(MenuStyle&&) = default;
+    MenuStyle& operator=(const MenuStyle&) = default;
+    MenuStyle& operator=(MenuStyle&&) = default;
+};
+
+// A surface with an outline and a shadow, at least 200 points wide. The default.
+class ELG_API DefaultMenuStyle final : public MenuStyle {
+public:
+    View make_body(const MenuConfiguration& menu) const override;
+};
+
+// Just the items.
+class ELG_API PlainMenuStyle final : public MenuStyle {
+public:
+    View make_body(const MenuConfiguration& menu) const override;
+};
+
 } // namespace elg
 
 #endif // ELG_STYLES_H
