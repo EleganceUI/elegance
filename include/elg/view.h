@@ -374,6 +374,13 @@ public:
     ELG_API View grid_column_alignment(HorizontalAlignment alignment) const;
 
     // --- Decoration (elg/modifiers/decoration.h) ---
+    // The shorthands are exactly their compositions, drawn and hit tested the same way:
+    //   .background(style)        == .background(Rectangle().fill(style))
+    //   .background(style, shape) == .background(shape.fill(style))
+    //   .border(color, width)     == .overlay(Rectangle().stroke_border(color, width))
+    //   .corner_radius(r)         == .clip_shape(RoundedRectangle(r))
+    // A shape takes the same points whether it's filled, a clip_shape or a content_shape; a
+    // stroke-only shape takes only its line.
 
     ELG_API View background(View view, Alignment alignment = Alignment::center) const;
     // A color or gradient filling the view's bounds, or the given shape. Reactive arguments work:
@@ -450,7 +457,8 @@ public:
     ELG_API View mask(View mask, Alignment alignment = Alignment::center) const;
     ELG_API View mask(Prop<ShapeStyle> style) const;
     // Hit tests against this shape (filling the bounds) instead of the drawn content, e.g.
-    // content_shape(Rectangle()) makes the gaps in a stack tappable.
+    // content_shape(Rectangle()) makes the gaps in a stack tappable. A Button takes its whole
+    // frame; .content_shape(Capsule()) narrows it to its shape.
     ELG_API View content_shape(const Shape& shape) const;
     // false: the view and everything in it ignore the pointer; events go to what's behind.
     ELG_API View allows_hit_testing(bool enabled) const;

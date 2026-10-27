@@ -816,6 +816,15 @@ Text("Hi").apply(card)                             // function-style: View card(
 | Accessibility    | `accessibility_label`, `accessibility_hint`, `accessibility_hidden`     | semantic tree             |
 | Animation        | `animation(anim, value)`, `transition(...)`                             | see 9.5                   |
 
+**Shorthands and hit testing:** the decoration shorthands are their compositions, with no
+separate paths: `.background(style)` is `.background(Rectangle().fill(style))`,
+`.background(style, shape)` is `.background(shape.fill(style))`, `.border` is an overlay of
+`Rectangle().stroke_border(...)`, and `.corner_radius(r)` is `.clip_shape(RoundedRectangle(r))`.
+A shape takes the same points whether it's filled, a `clip_shape` or a `content_shape`: one
+`ShapeHitArea` answers for all three (analytic for the rounded-rect kinds, the flattened path with
+its fill rule for paths). A stroke-only shape is hit only on its line. Buttons take their whole
+frame (generous desktop targets); `.content_shape(shape)` narrows one.
+
 **Clipping and masking cost model** (the renderer is designed around this):
 - `clipped()`: rect scissor, effectively free.
 - `clip_shape(RoundedRectangle/Capsule/Circle)`: analytic SDF clip in the shader, with no

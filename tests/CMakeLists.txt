@@ -26,6 +26,7 @@ add_executable(elegance_tests
         pointer_style_tests.cpp
         reactive_tests.cpp
         separator_tests.cpp
+        shape_hit_tests.cpp
         render_device_lifetime_tests.cpp
         size_observer_tests.cpp
         text_input_tests.cpp

@@ -240,33 +240,8 @@ bool contains(const Rect& rect, Point point) {
     return point.x >= rect.x && point.y >= rect.y && point.x < rect.max_x() && point.y < rect.max_y();
 }
 
-// Whether `point` is inside a rounded rect.
-bool inside(Point point, const ShapeOutline& outline) {
-    const Rect& r = outline.rect;
-    if (!contains(r, point)) {
-        return false;
-    }
-    const float max_radius = 0.5f * std::min(r.width, r.height);
-    const auto in_corner = [&](float radius, float cx, float cy) {
-        radius = std::clamp(radius, 0.f, max_radius);
-        const float x = cx < r.center().x ? r.x + radius : r.max_x() - radius;
-        const float y = cy < r.center().y ? r.y + radius : r.max_y() - radius;
-        const bool beyond_x = cx < r.center().x ? point.x < x : point.x > x;
-        const bool beyond_y = cy < r.center().y ? point.y < y : point.y > y;
-        if (!beyond_x || !beyond_y) {
-            return true; // not in this corner's square
-        }
-        const float dx = point.x - x;
-        const float dy = point.y - y;
-        return dx * dx + dy * dy <= radius * radius;
-    };
-    return in_corner(outline.radii.top_left, r.x, r.y) && in_corner(outline.radii.top_right, r.max_x(), r.y) &&
-           in_corner(outline.radii.bottom_right, r.max_x(), r.max_y()) &&
-           in_corner(outline.radii.bottom_left, r.x, r.max_y());
-}
-
-ShapeOutline outline_of(const Shape& shape, Rect frame) {
-    return shape_outline(static_cast<const ShapeNode&>(*ViewAccess::node(shape)).spec(), frame);
+const ShapeSpec& spec_of(const Shape& shape) {
+    return static_cast<const ShapeNode&>(*ViewAccess::node(shape)).spec();
 }
 
 } // namespace
@@ -283,15 +258,20 @@ bool Element::hit_test(Point point, std::vector<Element*>& path) {
 }
 
 bool ShapeElement::hit_impl(Point point, std::vector<Element*>&) {
-    if (uses_path()) {
-        return hit_path(point);
+    // Filled (or unstyled, which fills with the foreground): hit inside, like clip_shape and
+    // content_shape of the same shape.
+    if ((spec_.fill || !spec_.stroke) && hit_area_.contains(spec_, point, frame())) {
+        return true;
     }
-    const ShapeOutline outline = shape_outline(spec_, frame());
-    if (!spec_.stroke || spec_.fill) {
-        return inside(point, outline);
+    if (!spec_.stroke) {
+        return false;
+    }
+    if (uses_path()) {
+        return hit_stroke_path(point);
     }
     // A stroke-only shape (e.g. a border overlay) is hit only on its line, as in SwiftUI, so it
     // doesn't block what it outlines.
+    const ShapeOutline outline = shape_outline(spec_, frame());
     const ShapeStroke& stroke = *spec_.stroke;
     const float outer_grow = stroke.centered ? stroke.width / 2 : 0.f;
     const float inner_shrink = stroke.centered ? stroke.width / 2 : stroke.width;
@@ -301,7 +281,7 @@ bool ShapeElement::hit_impl(Point point, std::vector<Element*>&) {
     };
     const ShapeOutline outer{outline.rect.inset(-outer_grow), adjust(outline.radii, outer_grow)};
     const ShapeOutline inner{outline.rect.inset(inner_shrink), adjust(outline.radii, -inner_shrink)};
-    return inside(point, outer) && !inside(point, inner);
+    return outline_contains(outer, point) && !outline_contains(inner, point);
 }
 
 bool CanvasElement::hit_impl(Point point, std::vector<Element*>&) {
@@ -335,17 +315,13 @@ bool EffectElement::hit_impl(Point point, std::vector<Element*>& path) {
     // The content is drawn offset, so it's hit there too.
     point = {point.x - offset_x_.current(), point.y - offset_y_.current()};
     if (effects_.content_shape) {
-        if (!inside(point, outline_of(*effects_.content_shape, frame()))) {
+        if (!content_area_.contains(spec_of(*effects_.content_shape), point, frame())) {
             return false;
         }
         content_->hit_test(point, path); // record what's under the pointer, if anything
         return true;
     }
-    if (const ShapeFill* mask = clip_path(clip_scale_ > 0 ? clip_scale_ : 1.f)) {
-        if (!shape_fill_contains(*mask, {point.x - frame().x, point.y - frame().y})) {
-            return false;
-        }
-    } else if (effects_.clip_shape && !inside(point, outline_of(*effects_.clip_shape, frame()))) {
+    if (effects_.clip_shape && !clip_area_.contains(spec_of(*effects_.clip_shape), point, frame())) {
         return false;
     }
     if (effects_.clip_to_bounds && !contains(frame(), point)) {

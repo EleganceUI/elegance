@@ -372,6 +372,25 @@ struct ShapeFill {
 };
 ShapeFill shape_fill(const ShapeSpec& spec, Size size, float scale);
 bool shape_fill_contains(const ShapeFill& fill, Point local);
+// Whether `point` is inside a rounded rect.
+bool outline_contains(const ShapeOutline& outline, Point point);
+
+// The points a shape covers in a frame, for hit testing: analytic for the rounded-rect kinds,
+// the flattened path with its fill rule for paths (cached per size and scale). A filled shape,
+// clip_shape and content_shape all hit test through one, so the same shape takes the same
+// points wherever it's used.
+class ShapeHitArea {
+public:
+    bool contains(const ShapeSpec& spec, Point point, Rect frame) const;
+    // A path's filled area for a frame of `size`, flattened for `scale` pixels per point.
+    const ShapeFill& fill(const ShapeSpec& spec, Size size, float scale) const;
+
+private:
+    mutable const ShapeSpec* spec_ = nullptr;
+    mutable ShapeFill fill_;
+    mutable Size size_{-1, -1};
+    mutable float scale_ = 0;
+};
 
 class ShapeElement final : public Element {
 public:
@@ -409,7 +428,7 @@ private:
 
     // Whether this shape draws through the path pipeline (paths, and dashed strokes of any shape).
     bool uses_path() const noexcept;
-    bool hit_path(Point point) const;
+    bool hit_stroke_path(Point point) const;
     const Geometry& geometry(Size size, float scale) const;
 
     ShapeSpec spec_;
@@ -417,6 +436,7 @@ private:
     Animated<ShapeStyle> fill_{ShapeStyle(Color::clear)};
     Animated<Color> stroke_color_{Color::clear};
     mutable Geometry geometry_;
+    ShapeHitArea hit_area_;
 };
 
 struct TextStyle {
@@ -675,9 +695,8 @@ private:
 
     Effects effects_;
     std::unique_ptr<Element> content_;
-    mutable ShapeFill clip_fill_;
-    mutable Size clip_size_{-1, -1};
-    mutable float clip_scale_ = 0;
+    ShapeHitArea clip_area_;
+    ShapeHitArea content_area_;
     Animated<float> opacity_{1.f}; // resolved from effects_.opacity
     Animated<float> offset_x_{0.f};
     Animated<float> offset_y_{0.f};
