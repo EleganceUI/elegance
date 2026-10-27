@@ -509,6 +509,10 @@ View View::progress_style_impl(std::shared_ptr<const ProgressStyle> style) const
     return modifier(ProgressStyleModifier(std::move(style)));
 }
 
+View View::navigation_stack_style_impl(std::shared_ptr<const NavigationStackStyle> style) const {
+    return modifier(NavigationStackStyleModifier(std::move(style)));
+}
+
 View View::text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const {
     return modifier(TextFieldStyleModifier(std::move(style)));
 }

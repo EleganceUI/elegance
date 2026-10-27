@@ -41,6 +41,7 @@ class ToggleStyle;
 class CheckboxStyle;
 class NumberInputStyle;
 class ProgressStyle;
+class NavigationStackStyle;
 class TextFieldStyle;
 
 class EnvironmentValues {
@@ -161,6 +162,12 @@ struct ProgressStyleKey {
     using Value = std::shared_ptr<const ProgressStyle>;
     static constexpr std::string_view name = "elg.progress_style";
     ELG_API static std::shared_ptr<const ProgressStyle> default_value(const EnvironmentValues&);
+};
+
+struct NavigationStackStyleKey {
+    using Value = std::shared_ptr<const NavigationStackStyle>;
+    static constexpr std::string_view name = "elg.navigation_stack_style";
+    ELG_API static std::shared_ptr<const NavigationStackStyle> default_value(const EnvironmentValues&);
 };
 
 // The hover delay for everything inside (on_hover handlers without their own, and controls).

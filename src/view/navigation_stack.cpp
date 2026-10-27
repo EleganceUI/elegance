@@ -2,7 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// NavigationStack (design.md §13.5): pages driven by a path, sliding in and out.
+// NavigationStack (design.md §13.5): pages driven by a path, coming and going by their transition,
+// inside a NavigationStackStyle's body.
 
 #include "view/view_node.h"
 #include "view/window_drag.h"
@@ -64,9 +65,10 @@ private:
 
 class NavigationStackElement final : public Element, private EventHandler {
 public:
-    NavigationStackElement(std::unique_ptr<Element> root, LowerContext context, std::function<void()> pop)
+    NavigationStackElement(std::unique_ptr<Element> root, LowerContext context, std::function<void()> pop,
+                           NavigationStackBehavior behavior)
         : root_{nullptr, std::make_unique<PageElement>(std::move(root)), nullptr}, context_(std::move(context)),
-          pop_(std::move(pop)) {
+          pop_(std::move(pop)), behavior_(std::move(behavior)) {
         adopt(*root_.element);
     }
 
@@ -105,7 +107,7 @@ protected:
     void paint_impl(DisplayList& list) const override;
     bool hit_impl(Point point, std::vector<Element*>& path) override {
         // With a page to go back to, the whole stack takes two-finger swipes, not only its content.
-        return top().hit_test(point, path) || (!pages_.empty() && contains(frame(), point));
+        return top().hit_test(point, path) || (behavior_.back_gestures && !pages_.empty() && contains(frame(), point));
     }
     // While a transition runs, and once more after it to let go of a popped page.
     bool always_arranges() const override {
@@ -132,6 +134,8 @@ private:
     bool swiping() const { return swipe_active_ || swipe_.animating(); }
     // Paints `over` slid in by `in` (1: in place) over `under`.
     void paint_slide(DisplayList& list, const PageElement& under, const PageElement& over, float in) const;
+    // Paints `over` faded in by `in` (1: opaque), `under` fading out.
+    void paint_fade(DisplayList& list, const PageElement& under, const PageElement& over, float in) const;
     void tree_changed() const {
         if (context_.needs_frame) {
             *context_.needs_frame = true;
@@ -152,6 +156,7 @@ private:
     Animated<float> progress_{1.f};
     bool initialized_ = false;
     std::function<void()> pop_;
+    NavigationStackBehavior behavior_;
     // Swiping back with two fingers: how far the top page has moved, as a fraction of the width.
     Animated<float> swipe_{0.f};
     bool swipe_active_ = false;   // following the fingers
@@ -181,12 +186,11 @@ NavigationStackElement::Page NavigationStackElement::mount(const ForEachItem& it
 
 void NavigationStackElement::set_pages(const std::vector<ForEachItem>& items) {
     // Restoring a path when the stack first mounts (a deep link) doesn't animate.
-    static const Animation kDefault = Animation::smooth(0.35);
     const Animation* animation = nullptr;
-    if (initialized_) {
+    if (initialized_ && behavior_.transition != PageTransition::none) {
         animation = change_animation();
-        if (!animation) {
-            animation = &kDefault;
+        if (!animation && behavior_.animation) {
+            animation = &*behavior_.animation;
         }
     }
     initialized_ = true;
@@ -247,7 +251,7 @@ void NavigationStackElement::set_pages(const std::vector<ForEachItem>& items) {
 }
 
 EventResult NavigationStackElement::scroll(const ScrollEvent& event) {
-    if (event.phase == GesturePhase::none || pages_.empty() || progress_.animating()) {
+    if (!behavior_.back_gestures || event.phase == GesturePhase::none || pages_.empty() || progress_.animating()) {
         return {};
     }
     if (event.momentum) {
@@ -340,10 +344,15 @@ void NavigationStackElement::paint_impl(DisplayList& list) const {
         return;
     }
     list.animating = true;
-    // The page on top slides over the one underneath.
+    // The page on top comes over the one underneath.
     const PageElement& under = popping_ ? top() : *from_;
     const PageElement& over = popping_ ? *from_ : top();
-    paint_slide(list, under, over, popping_ ? 1 - progress_.current() : progress_.current());
+    const float in = popping_ ? 1 - progress_.current() : progress_.current();
+    if (behavior_.transition == PageTransition::fade) {
+        paint_fade(list, under, over, in);
+    } else {
+        paint_slide(list, under, over, in);
+    }
 }
 
 void NavigationStackElement::paint_slide(DisplayList& list, const PageElement& under, const PageElement& over,
@@ -371,14 +380,31 @@ void NavigationStackElement::paint_slide(DisplayList& list, const PageElement& u
     list.commands.push_back(PopClipCommand{});
 }
 
+void NavigationStackElement::paint_fade(DisplayList& list, const PageElement& under, const PageElement& over,
+                                        float in) const {
+    const auto paint_faded = [&](const PageElement& page, float opacity) {
+        DisplayList content;
+        content.scale = list.scale;
+        page.paint(content);
+        list.animating |= content.animating;
+        append_faded(list, std::move(content), opacity);
+    };
+    list.commands.push_back(PushClipCommand{frame(), {}});
+    paint_faded(under, 1 - in);
+    paint_faded(over, in);
+    list.commands.push_back(PopClipCommand{});
+}
+
 class NavigationStackNode final : public ViewNode {
 public:
-    NavigationStackNode(View root, std::function<std::vector<ForEachItem>()> pages, std::function<void()> pop)
-        : root_(std::move(root)), pages_(std::move(pages)), pop_(std::move(pop)) {}
+    NavigationStackNode(View root, std::function<std::vector<ForEachItem>()> pages, std::function<void()> pop,
+                        NavigationStackBehavior behavior)
+        : root_(std::move(root)), pages_(std::move(pages)), pop_(std::move(pop)), behavior_(std::move(behavior)) {}
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const LowerContext nested = context.nested();
-        auto element = std::make_unique<NavigationStackElement>(detail::lower(root_, nested), nested, pop_);
+        auto element =
+            std::make_unique<NavigationStackElement>(detail::lower(root_, nested), nested, pop_, behavior_);
         NavigationStackElement* const target = element.get();
         // Reading the path subscribes this effect; building the pages doesn't (mount untracks).
         effect([target, pages = pages_] { target->set_pages(pages()); });
@@ -389,29 +415,37 @@ private:
     View root_;
     std::function<std::vector<ForEachItem>()> pages_;
     std::function<void()> pop_;
+    NavigationStackBehavior behavior_;
 };
 
-// The bar over the pages: the top page's title, and once a page is pushed, a back button named
-// after the page underneath.
-View navigation_bar(std::function<std::vector<std::string>()> titles, std::function<void()> pop) {
-    const auto current = [titles] { return titles().back(); };
-    const auto previous = [titles] {
-        const std::vector<std::string> all = titles();
-        const std::string& title = all.size() > 1 ? all[all.size() - 2] : all.back();
-        return title.empty() ? std::string("Back") : title;
-    };
-    const View back = Button(HStack({.spacing = 2}, Image("caret-left").font_weight(Weight::bold),
-                                    Text(previous).line_limit(1)),
-                             pop)
-                          .button_style(PlainButtonStyle{})
-                          .foreground_style(ThemeColor::accent)
-                          .accessibility_label("Back")
-                          .help("Back (Alt+Left)");
-    return ZStack(Text(current).font(Font::headline).line_limit(1).padding(EdgeInsets::symmetric(96, 0)),
-                  HStack(If([titles] { return titles().size() > 1; }, back), Spacer()))
-        .padding(EdgeInsets::symmetric(12, 0))
-        .frame({.max_width = infinity, .min_height = 44, .max_height = 44});
-}
+// The pages inside the style's body.
+class StyledNavigationStackNode final : public ViewNode {
+public:
+    StyledNavigationStackNode(View pages, std::function<std::vector<std::string>()> titles, std::function<void()> pop)
+        : pages_(std::move(pages)), titles_(std::move(titles)), pop_(std::move(pop)) {}
+
+    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+        const EnvironmentValues env = context.environment;
+        const std::shared_ptr<const NavigationStackStyle> style =
+            untrack([&] { return env.get<NavigationStackStyleKey>(); });
+        View body;
+        {
+            const EnvironmentScope scope(env);
+            body = style->make_body({
+                .pages = pages_,
+                .titles = titles_,
+                .can_go_back = [titles = titles_] { return titles().size() > 1; },
+                .back = pop_,
+            });
+        }
+        return detail::lower(body, context);
+    }
+
+private:
+    View pages_;
+    std::function<std::vector<std::string>()> titles_;
+    std::function<void()> pop_;
+};
 
 } // namespace
 
@@ -421,13 +455,57 @@ namespace elg {
 
 using detail::ViewAccess;
 
+NavigationStackStyle::~NavigationStackStyle() = default;
+
+std::shared_ptr<const NavigationStackStyle> NavigationStackStyleKey::default_value(const EnvironmentValues&) {
+    static const auto style = std::make_shared<const PlainNavigationStackStyle>();
+    return style;
+}
+
+View PlainNavigationStackStyle::make_body(const NavigationStackConfiguration& stack) const {
+    return stack.pages;
+}
+
+View BarNavigationStackStyle::make_body(const NavigationStackConfiguration& stack) const {
+    const BarNavigationStackStyleOptions& o = options_;
+    const Signal<std::vector<std::string>> titles = stack.titles;
+    const auto current = [titles] { return titles().back(); };
+    const auto previous = [titles] {
+        const std::vector<std::string> all = titles();
+        const std::string& title = all.size() > 1 ? all[all.size() - 2] : all.back();
+        return title.empty() ? std::string("Back") : title;
+    };
+    const View back = Button(HStack({.spacing = 2}, Image("caret-left").font_weight(Weight::bold),
+                                    Text(previous).line_limit(1)),
+                             stack.back)
+                          .button_style(PlainButtonStyle{})
+                          .foreground_style(o.back_color.value_or(Prop<Color>([](const EnvironmentValues& env) {
+                              return env.get<TintKey>();
+                          })))
+                          .accessibility_label("Back")
+                          .help("Back (Alt+Left)");
+    const View bar = ZStack(Text(current).font(o.title_font).line_limit(1).padding(EdgeInsets::symmetric(96, 0)),
+                            HStack(If(stack.can_go_back, back), Spacer()))
+                         .padding(EdgeInsets::symmetric(12, 0))
+                         .frame({.max_width = infinity, .min_height = o.height, .max_height = o.height})
+                         .background(Prop<ShapeStyle>([background = o.background](const EnvironmentValues& env) {
+                             return ShapeStyle(background.get(env));
+                         }));
+    if (!o.shows_divider) {
+        return VStack({.spacing = 0}, bar, stack.pages);
+    }
+    return VStack({.spacing = 0}, bar, Divider(), stack.pages);
+}
+
 View detail::make_navigation_stack(View root, std::function<std::vector<ForEachItem>()> pages,
                                    std::function<std::vector<std::string>()> titles, std::function<void()> pop,
-                                   bool shows_bar) {
-    View stack =
-        ViewAccess::make(std::make_shared<const NavigationStackNode>(std::move(root), std::move(pages), pop));
-    if (shows_bar) {
-        stack = VStack({.spacing = 0}, navigation_bar(titles, pop), Divider(), std::move(stack));
+                                   NavigationStackBehavior behavior) {
+    const bool back_gestures = behavior.back_gestures;
+    const View pages_view = ViewAccess::make(
+        std::make_shared<const NavigationStackNode>(std::move(root), std::move(pages), pop, std::move(behavior)));
+    View stack = ViewAccess::make(std::make_shared<const StyledNavigationStackNode>(pages_view, titles, pop));
+    if (!back_gestures) {
+        return stack;
     }
     // Alt+Left goes back, as in browsers and file managers.
     return std::move(stack).on_key_press([titles, pop](const KeyEvent& event) {

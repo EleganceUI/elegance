@@ -17,6 +17,7 @@ add_executable(elegance_tests
         grid_tests.cpp
         http_tests.cpp
         image_tests.cpp
+        navigation_tests.cpp
         number_input_tests.cpp
         path_tests.cpp
         progress_tests.cpp

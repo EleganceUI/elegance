@@ -18,8 +18,15 @@ namespace elg::detail {
 
 namespace {
 
-constexpr float kLine = 1; // the divider's line, which takes space between the panes
 constexpr float kGrab = 4; // how far beside the line a divider can still be grabbed
+
+// SplitViewOptions, resolved.
+struct DividerLook {
+    float thickness = 1;
+    float active_thickness = 3;
+    Color color;
+    Color active;
+};
 
 bool contains(const Rect& rect, Point point) {
     return point.x >= rect.x && point.y >= rect.y && point.x < rect.max_x() && point.y < rect.max_y();
@@ -31,8 +38,8 @@ class SplitElement;
 // side when dragged. Its frame is the area it can be grabbed in, around its line.
 class SplitDividerElement final : public Element, private EventHandler {
 public:
-    SplitDividerElement(SplitElement& split, std::size_t index, Axis axis, EnvironmentValues environment)
-        : split_(&split), index_(index), axis_(axis), environment_(std::move(environment)) {}
+    SplitDividerElement(SplitElement& split, std::size_t index, Axis axis)
+        : split_(&split), index_(index), axis_(axis) {}
 
     EventHandler* event_handler() noexcept override { return this; }
     HoverDelay effective_hover_delay() const override { return {0, 0}; } // the cursor changes at once
@@ -57,7 +64,6 @@ private:
     SplitElement* split_;
     std::size_t index_; // between laid-out panes index_ and index_ + 1
     Axis axis_;
-    EnvironmentValues environment_;
     bool hovered_ = false;
     bool dragging_ = false;
     float drag_start_ = 0; // the pointer's position along the axis when the drag began
@@ -65,13 +71,17 @@ private:
 
 class SplitElement final : public Element {
 public:
-    SplitElement(Axis axis, std::vector<std::unique_ptr<Element>> children, LowerContext context)
-        : axis_(axis), context_(std::move(context)), children_(std::move(children)) {
+    SplitElement(Axis axis, std::vector<std::unique_ptr<Element>> children, LowerContext context, DividerLook look)
+        : axis_(axis), look_(look), context_(std::move(context)), children_(std::move(children)) {
         for (const auto& child : children_) {
             adopt(*child);
         }
         rebuild_children();
     }
+
+    const DividerLook& look() const noexcept { return look_; }
+    void set_divider_color(Color color) { look_.color = color; }
+    void set_active_divider_color(Color color) { look_.active = color; }
 
     void inspect(Inspection& out) const override {
         out.name = axis_ == Axis::horizontal ? "HSplitView" : "VSplitView";
@@ -98,7 +108,7 @@ public:
         const Rect before = laid_out_[index]->frame();
         const Rect after = laid_out_[index + 1]->frame();
         const float end = axis_ == Axis::horizontal ? before.max_x() : before.max_y();
-        const float start = (axis_ == Axis::horizontal ? after.x : after.y) - kLine;
+        const float start = (axis_ == Axis::horizontal ? after.x : after.y) - look_.thickness;
         const float laid_out = axis_ == Axis::horizontal ? pane_rects_[index].max_x() : pane_rects_[index].max_y();
         return std::abs(end - laid_out) >= std::abs(start - laid_out) ? end : start;
     }
@@ -132,13 +142,16 @@ private:
         return axis_ == Axis::horizontal ? ProposedSize{along, across} : ProposedSize{across, along};
     }
     Limits limits(Element& pane, std::optional<float> across) const;
-    float lines() const { return laid_out_.empty() ? 0.f : kLine * static_cast<float>(laid_out_.size() - 1); }
+    float lines() const {
+        return laid_out_.empty() ? 0.f : look_.thickness * static_cast<float>(laid_out_.size() - 1);
+    }
     // The panes' sizes filling `available`: their preferred sizes (new panes at their ideal), with
     // the difference given to the panes that can take it, the highest layout priority first.
     std::vector<float> resolve(float available, std::optional<float> across) const;
     void rebuild_children();
 
     Axis axis_;
+    DividerLook look_;
     LowerContext context_;
     std::vector<std::unique_ptr<Element>> children_; // owned, as built
     std::vector<Element*> laid_out_;                 // the panes: If/ForEach flattened
@@ -186,11 +199,15 @@ EventResult SplitDividerElement::hover(bool inside) {
 
 void SplitDividerElement::paint_impl(DisplayList& list) const {
     const Rect bounds = frame();
-    // While hovered or dragged, a wider bar in the tint shows what will move.
-    const float width = hovered_ || dragging_ ? 3.f : kLine;
-    const float middle = split_->line_position(index_) + kLine / 2;
-    const Color color = hovered_ || dragging_ ? environment_.get<TintKey>().opacity(dragging_ ? 0.9f : 0.6f)
-                                              : environment_.color(ThemeColor::outline);
+    // While hovered or dragged, a wider bar in the active color shows what will move.
+    const DividerLook& look = split_->look();
+    const bool active = hovered_ || dragging_;
+    const float width = active ? look.active_thickness : look.thickness;
+    const float middle = split_->line_position(index_) + look.thickness / 2;
+    const Color color = active ? look.active.opacity(dragging_ ? 0.9f : 0.6f) : look.color;
+    if (width <= 0) {
+        return;
+    }
     const Rect line = axis_ == Axis::horizontal
                           ? Rect{middle - width / 2, bounds.y, width, bounds.height}
                           : Rect{bounds.x, middle - width / 2, bounds.width, width};
@@ -214,7 +231,7 @@ void SplitElement::rebuild_children() {
             dividers_.pop_back();
         }
         while (dividers_.size() < count) {
-            auto divider = std::make_unique<SplitDividerElement>(*this, dividers_.size(), axis_, context_.environment);
+            auto divider = std::make_unique<SplitDividerElement>(*this, dividers_.size(), axis_);
             adopt(*divider);
             dividers_.push_back(std::move(divider));
         }
@@ -319,8 +336,8 @@ void SplitElement::arrange(Rect bounds, ProposedSize) {
         if (i < dividers_.size()) {
             const float start = position - kGrab; // the grab area, centered on the line
             const Point origin = axis_ == Axis::horizontal ? Point{start, bounds.y} : Point{bounds.x, start};
-            dividers_[i]->place(origin, proposal(kLine + 2 * kGrab, across_));
-            position += kLine;
+            dividers_[i]->place(origin, proposal(look_.thickness + 2 * kGrab, across_));
+            position += look_.thickness;
         }
     }
 }
@@ -391,7 +408,8 @@ void SplitElement::drag(std::size_t divider, float offset) {
 
 class SplitNode final : public ViewNode {
 public:
-    SplitNode(Axis axis, std::vector<View> panes) : axis_(axis), panes_(std::move(panes)) {}
+    SplitNode(Axis axis, std::vector<View> panes, SplitViewOptions options)
+        : axis_(axis), panes_(std::move(panes)), options_(std::move(options)) {}
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const LowerContext pane_context = context.nested();
         std::vector<std::unique_ptr<Element>> children;
@@ -399,12 +417,21 @@ public:
         for (const View& pane : panes_) {
             children.push_back(detail::lower(pane, pane_context));
         }
-        return std::make_unique<SplitElement>(axis_, std::move(children), pane_context);
+        auto element = std::make_unique<SplitElement>(
+            axis_, std::move(children), pane_context,
+            DividerLook{.thickness = std::max(options_.thickness, 0.f), .active_thickness = options_.active_thickness});
+        SplitElement* const target = element.get();
+        detail::bind(options_.divider, context, [target](Color color) { target->set_divider_color(color); });
+        const Prop<Color> active = options_.active_divider.value_or(
+            Prop<Color>([](const EnvironmentValues& env) { return env.get<TintKey>(); }));
+        detail::bind(active, context, [target](Color color) { target->set_active_divider_color(color); });
+        return element;
     }
 
 private:
     Axis axis_;
     std::vector<View> panes_;
+    SplitViewOptions options_;
 };
 
 // A NavigationSplitView column: its width range, the full height, content at the top.
@@ -417,18 +444,25 @@ View column(View content, ColumnWidth width) {
 }
 
 View sidebar_column(View sidebar, const NavigationSplitViewOptions& options) {
-    View result = column(std::move(sidebar), options.sidebar_width).background(ThemeColor::surface);
+    View result = column(std::move(sidebar), options.sidebar_width).background(
+        Prop<ShapeStyle>([background = options.sidebar_background](const EnvironmentValues& env) {
+            return ShapeStyle(background.get(env));
+        }));
     if (!options.sidebar_visible) {
         return result;
     }
-    // Hidden, it slides out to the leading edge and the other columns take its width.
+    // Hidden, the other columns take its width.
     const Binding<bool> visible = *options.sidebar_visible;
-    return If([visible] { return visible(); }, result.transition(Transition::move(Edges::leading)));
+    return If([visible] { return visible(); }, result.transition(options.sidebar_transition));
 }
 
-View detail_column(View detail) {
-    // The rest of the width: it takes size changes first.
-    return std::move(detail).frame({.min_width = 200, .max_width = infinity, .max_height = infinity}).layout_priority(1);
+View detail_column(View detail, ColumnWidth width) {
+    // The rest of the width (from its ideal, if it has one): it takes size changes first.
+    FlexibleFrameOptions frame{.min_width = width.min, .max_width = width.max, .max_height = infinity};
+    if (width.ideal > 0) {
+        frame.ideal_width = width.ideal;
+    }
+    return std::move(detail).frame(frame).layout_priority(1);
 }
 
 } // namespace
@@ -437,18 +471,19 @@ View detail_column(View detail) {
 
 namespace elg {
 
-View detail::make_split_view(Axis axis, std::vector<View> panes) {
-    return ViewAccess::make(std::make_shared<const SplitNode>(axis, std::move(panes)));
+View detail::make_split_view(Axis axis, std::vector<View> panes, SplitViewOptions options) {
+    return ViewAccess::make(std::make_shared<const SplitNode>(axis, std::move(panes), std::move(options)));
 }
 
 View NavigationSplitView(View sidebar, View detail, NavigationSplitViewOptions options) {
-    return HSplitView(detail::sidebar_column(std::move(sidebar), options), detail::detail_column(std::move(detail)));
+    return HSplitView(options.dividers, detail::sidebar_column(std::move(sidebar), options),
+                      detail::detail_column(std::move(detail), options.detail_width));
 }
 
 View NavigationSplitView(View sidebar, View content, View detail, NavigationSplitViewOptions options) {
-    return HSplitView(detail::sidebar_column(std::move(sidebar), options),
+    return HSplitView(options.dividers, detail::sidebar_column(std::move(sidebar), options),
                       detail::column(std::move(content), options.content_width),
-                      detail::detail_column(std::move(detail)));
+                      detail::detail_column(std::move(detail), options.detail_width));
 }
 
 } // namespace elg

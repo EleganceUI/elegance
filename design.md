@@ -1428,9 +1428,11 @@ The structure of most desktop apps (`<elg/navigation.h>`, example `navigation`).
     its limits.
   - A sidebar squeezed by a small window gets its width back when the window grows. Storing the
     squeezed size lost it, which showed up in the first test.
-- **Dividers:** a 1 pt line taking space between the panes.
-  - It can be grabbed 4 pt either side. Hover shows the resize cursor at once, and a tinted 3 pt
-    bar while hovered or dragged.
+- **Dividers:** a line taking space between the panes, 1 pt in the outline color by default.
+  - It can be grabbed 4 pt either side. Hover shows the resize cursor at once, and a 3 pt bar in
+    the tint while hovered or dragged.
+  - `HSplitView({.divider, .active_divider, .thickness, .active_thickness}, panes...)` changes
+    them; `.thickness = 0` leaves no line or gap.
   - A drag moves only the two panes beside it, each within its limits.
 - **Dynamic panes:** a pane can be an `If` (a collapsible sidebar). Panes are flattened like a
   layout's children; a pane that goes loses its preferred size, and one that animates out is
@@ -1438,16 +1440,21 @@ The structure of most desktop apps (`<elg/navigation.h>`, example `navigation`).
 - **Clipping:** each pane is clipped to its share, so content larger than its pane doesn't run
   into the next.
 
-`NavigationSplitView(sidebar, detail)` and `(sidebar, content, detail)` compose an `HSplitView`:
-- the sidebar column is 180–360 pt (ideal 240) on the surface color;
-- the three-column form adds a content column of 220–480 pt;
-- the detail is at least 200 pt and takes size changes (`layout_priority(1)`).
+`NavigationSplitView(sidebar, detail)` and `(sidebar, content, detail)` compose an `HSplitView`
+of framed columns, with nothing it doesn't let you change. By default:
+- the sidebar column is 180–360 pt (ideal 240) on the surface color (`sidebar_width`,
+  `sidebar_background`);
+- the three-column form adds a content column of 220–480 pt (`content_width`);
+- the detail is at least 200 pt and takes size changes (`detail_width`, `layout_priority(1)`);
+- the dividers are the split view's (`dividers`).
 
-`sidebar_visible` (a `Binding<bool>`) puts the sidebar in an `If` that slides it to the leading
-edge. Toggled inside `with_animation`, the other columns' frames ease to their new widths.
+`sidebar_visible` (a `Binding<bool>`) puts the sidebar in an `If` with `sidebar_transition`
+(sliding to the leading edge by default). Toggled inside `with_animation`, the other columns'
+frames ease to their new widths.
 
 #### NavigationStack
-`NavigationStack(path, root, destination, {.root_title, .title, .shows_bar})`.
+`NavigationStack(path, root, destination, {.root_title, .title, .transition, .animation,
+.back_gestures})`.
 - **Driven by a path** (`State<std::vector<Route>>` or a `Binding`), like SwiftUI's
   `NavigationStack(path:)`. Pushing and popping are edits to the path from anywhere, and a deep
   link or restored session is just a path.
@@ -1462,16 +1469,24 @@ edge. Toggled inside `with_animation`, the other columns' frames ease to their n
     rather than leaving them stuck hovered.
   - If focus was in the page that got covered, it moves to the first control of the new page
     when the ring was showing (keyboard use), else it's dropped.
-- **Transitions:**
-  - A push slides the new page in from the trailing edge, over the old one. The old page moves
-    30% of the way to the leading edge and dims slightly.
-  - A pop reverses it, and the popped page is kept until it has slid away.
-  - The page on top gets the background color and a soft shadow while moving. The whole stack is
+- **Transitions** (`PageTransition`):
+  - `slide` (default): a push slides the new page in from the trailing edge, over the old one.
+    The old page moves 30% of the way to the leading edge and dims slightly. The page on top gets
+    the background color and a soft shadow while moving.
+  - `fade`: the pages cross-fade. `none`: the top page changes at once.
+  - A pop reverses it, and the popped page is kept until it has gone. The whole stack is
     clipped, so pages don't slide over a sidebar.
-  - The animation is the transaction's when there is one (`with_animation`), else
-    `Animation::smooth(0.35)`.
-- **The bar:** the top page's title, and from the second page on, a back button (caret + the
-  title of the page underneath). Alt+Left goes back too, while focus is inside the stack.
+  - The animation is the transaction's when there is one (`with_animation`), else the
+    `animation` option (`Animation::smooth(0.35)`; nullopt: at once).
+- **Back gestures** (`back_gestures`, on by default): Alt+Left while focus is inside the stack,
+  and a two-finger swipe right, which always slides.
+- **Presentation is a style** (`.navigation_stack_style(...)`), so nothing iOS-like is forced.
+  `NavigationStackConfiguration` has the pages, the titles (root first), `can_go_back` and
+  `back`.
+  - `PlainNavigationStackStyle` (default): just the pages.
+  - `BarNavigationStackStyle{{.height, .background, .title_font, .back_color,
+    .shows_divider}}`: the top page's title, and from the second page on, a back button (caret +
+    the title of the page underneath).
   - `root_title` is a `Prop`, so it can follow state (the selected folder).
   - There are no toolbar items or per-page title modifiers yet. Those need a way for a page to
     pass values up to its container (SwiftUI's preferences), which Elegance doesn't have.
