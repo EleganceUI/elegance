@@ -48,7 +48,7 @@ std::vector<detail::Element*> children(detail::Element& element) {
 
 // Shows what it's given, and chooses the last option when activated.
 struct LastOptionPickerStyle final : PickerStyle {
-    explicit LastOptionPickerStyle(std::vector<std::string>* labels) : labels(labels) {}
+    explicit LastOptionPickerStyle(std::vector<std::string>* seen) : labels(seen) {}
     std::vector<std::string>* labels;
     View make_body(const PickerConfiguration& picker) const override {
         *labels = picker.labels;
@@ -135,7 +135,7 @@ TEST_CASE("a slider's style sees its fraction", "[slider][style]") {
     detail::Scope scope;
     detail::Scope::Use use(scope);
     struct Watching final : SliderStyle {
-        explicit Watching(std::vector<float>* seen) : seen(seen) {}
+        explicit Watching(std::vector<float>* fractions) : seen(fractions) {}
         std::vector<float>* seen;
         View make_track(const SliderConfiguration& slider) const override {
             return Rectangle()

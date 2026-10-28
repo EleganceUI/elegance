@@ -23,7 +23,8 @@ bool FocusManager::focus(Element* element, bool visible, bool navigated) {
     }
     Element* const previous = std::exchange(focused_, element);
     visible_ = visible;
-    set_text_input(element && element->event_handler()->accepts_text_input());
+    set_text_input(element && element->event_handler()->accepts_text_input(),
+                   element && element->secure_text_input());
     // focused_ is already updated, so handlers (e.g. a .focused binding) see the new focus.
     if (previous) {
         previous->event_handler()->focus(false);
@@ -88,7 +89,7 @@ void FocusManager::forget(const Element* element) noexcept {
     std::erase_if(watches_, [&](const Watch& watch) { return watch.scope == element; });
     if (focused_ == element) {
         focused_ = nullptr;
-        set_text_input(false);
+        set_text_input(false, false);
         try {
             notify_watches();
         } catch (...) {

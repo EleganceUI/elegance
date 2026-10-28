@@ -24,6 +24,7 @@
 #if defined(_WIN32)
 #include <windows.h>
 #include <dwmapi.h>
+#include <imm.h>
 #elif defined(__linux__)
 #include <csignal>
 #include <fstream>
@@ -244,6 +245,27 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
 
 // --- Window ---
 
+namespace {
+
+// How many windows hold Secure Event Input (macOS): on while any does.
+int secure_input_holders = 0;
+
+void hold_secure_input(bool hold) {
+    const int before = secure_input_holders;
+    secure_input_holders += hold ? 1 : -1;
+#if defined(__APPLE__)
+    if (before == 0 && secure_input_holders == 1) {
+        apple::set_secure_event_input(true);
+    } else if (before == 1 && secure_input_holders == 0) {
+        apple::set_secure_event_input(false);
+    }
+#else
+    (void)before;
+#endif
+}
+
+} // namespace
+
 Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
     if (desc.width <= 0 || desc.height <= 0) {
         throw UsageError(std::format("window \"{}\" has an invalid size {}x{}", desc.title,
@@ -439,6 +461,9 @@ Window::~Window() {
     if (parent_text_input_) {
         SDL_StopTextInput(parent_); // closed with its text field focused
     }
+    if (secure_engaged_) {
+        hold_secure_input(false);
+    }
 #if defined(__APPLE__)
     if (title_bar_) {
         apple::release_title_bar(title_bar_);
@@ -467,20 +492,58 @@ Size Window::logical_size() const {
     return {static_cast<float>(pixels.width) / s, static_cast<float>(pixels.height) / s};
 }
 
-void Window::start_text_input() {
-    SDL_StartTextInput(window_);
+namespace {
+
+void start_text_input_on(SDL_Window* window, bool secure) {
+    if (!secure) {
+        SDL_StartTextInput(window);
+        return;
+    }
+    const SDL_PropertiesID properties = SDL_CreateProperties();
+    SDL_SetNumberProperty(properties, SDL_PROP_TEXTINPUT_TYPE_NUMBER, SDL_TEXTINPUT_TYPE_TEXT_PASSWORD_HIDDEN);
+    SDL_SetBooleanProperty(properties, SDL_PROP_TEXTINPUT_AUTOCORRECT_BOOLEAN, false);
+    SDL_StartTextInputWithProperties(window, properties);
+    SDL_DestroyProperties(properties);
+#if defined(_WIN32)
+    // SDL ignores the type here; a password edit control has no IME. SDL associates its context
+    // again the next time text input starts.
+    if (auto* hwnd = static_cast<HWND>(
+            SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr))) {
+        ImmAssociateContext(hwnd, nullptr);
+    }
+#endif
+}
+
+} // namespace
+
+void Window::start_text_input(bool secure) {
+    start_text_input_on(window_, secure);
     // A popup (a popover's text field): typing reaches the parent's native window, so SDL makes
     // text there. Unless the parent has text input of its own, it's started for the popup.
     if (parent_ && !parent_text_input_ && !SDL_TextInputActive(parent_)) {
-        SDL_StartTextInput(parent_);
+        start_text_input_on(parent_, secure);
         parent_text_input_ = true;
     }
+    secure_text_input_ = secure;
+    update_secure_input();
 }
 
 void Window::stop_text_input() {
     SDL_StopTextInput(window_);
     if (std::exchange(parent_text_input_, false)) {
         SDL_StopTextInput(parent_);
+    }
+    secure_text_input_ = false;
+    update_secure_input();
+}
+
+void Window::update_secure_input() {
+    // A popup never has the keyboard; its parent does.
+    SDL_Window* const keyboard = parent_ ? parent_ : window_;
+    const bool engage = secure_text_input_ && (SDL_GetWindowFlags(keyboard) & SDL_WINDOW_INPUT_FOCUS) != 0;
+    if (engage != secure_engaged_) {
+        secure_engaged_ = engage;
+        hold_secure_input(engage);
     }
 }
 

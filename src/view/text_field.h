@@ -230,6 +230,7 @@ public:
     void accessibility(AccessibilityInfo& out) const override;
     bool accessibility_action(const AccessibilityAction& action) override;
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
+    bool secure_text_input() const override { return editor_->secure(); }
 
 protected:
     Size measure(ProposedSize proposal) override { return content_->size_that_fits(proposal); }

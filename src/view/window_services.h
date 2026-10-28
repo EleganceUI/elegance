@@ -51,8 +51,9 @@ protected:
 public:
 
     // Text input on/off (on while a text field has focus): typed text and IME composition
-    // arrive as TextInputEvents.
-    virtual void start_text_input() = 0;
+    // arrive as TextInputEvents. `secure`: for a password, like the platforms' own password
+    // fields: no IME, and on macOS Secure Event Input (other apps can't read the keys).
+    virtual void start_text_input(bool secure) = 0;
     virtual void stop_text_input() = 0;
     // Where text is being edited (window points), so the IME places its candidate list there.
     virtual void set_text_input_area(Rect area, float cursor) = 0;

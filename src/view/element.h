@@ -214,6 +214,8 @@ public:
     // Lazy stacks: where the item with this key is (or would be), along the stack's axis from its
     // start; estimated for items not built.
     virtual std::optional<float> item_offset(const ItemKey&) const { return std::nullopt; }
+    // Text fields: whether their text input is a password's (no IME, WindowServices).
+    virtual bool secure_text_input() const { return false; }
     // Non-null for TransitionElement (If/ForEach use a child's own transition when it has one).
     virtual class TransitionElement* as_transition() noexcept { return nullptr; }
 

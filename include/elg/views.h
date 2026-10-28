@@ -114,7 +114,8 @@ ELG_API View Button(Prop<std::string> title, std::function<void()> action);
 
 struct TextFieldOptions {
     std::function<void()> on_submit; // Enter
-    // Passwords: a bullet per character, no copying, no input method, and one line. Bind it to
+    // Passwords: a bullet per character, no copying, no input method (IME), and one line; on macOS
+    // Secure Event Input while focused, so other apps can't read the keys. Bind it to
     // let the user see what they typed:
     //   TextField("Password", password.binding(), {.secure = [=] { return !reveal(); }})
     Prop<bool> secure = false;

@@ -194,7 +194,7 @@ endif ()
 if (WIN32)
     target_sources(elegance PRIVATE gpu/composition_win32.cpp)
     # dwmapi: rounded corners for undecorated windows; d3d11/dxgi/dcomp: transparent windows.
-    target_link_libraries(elegance PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid mf mfreadwrite strmiids oleaut32 shell32 crypt32)
+    target_link_libraries(elegance PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid mf mfreadwrite strmiids oleaut32 shell32 crypt32 imm32)
 endif ()
 
 if (APPLE)
@@ -207,7 +207,7 @@ if (APPLE)
     target_link_libraries(elegance PRIVATE
             "-framework AppKit" "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework QuartzCore"
             "-framework Foundation" "-framework ImageIO" "-framework CoreGraphics" "-framework CoreFoundation"
-            "-framework Security")
+            "-framework Security" "-framework Carbon")
 endif ()
 
 target_link_libraries(elegance PRIVATE

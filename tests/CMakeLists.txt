@@ -27,6 +27,7 @@ add_executable(elegance_tests
         picker_slider_style_tests.cpp
         menu_style_tests.cpp
         selection_tests.cpp
+        secure_text_input_tests.cpp
         fetch_tests.cpp
         image_tests.cpp
         navigation_tests.cpp

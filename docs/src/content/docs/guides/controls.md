@@ -92,8 +92,11 @@ Text fields support typing, IME composition (Chinese, Japanese, Korean input), s
 pointer and Shift+arrows, word selection by double-click, select-all by triple-click, word
 movement with Ctrl+arrows, the clipboard, and undo and redo.
 
-`.secure` shows a bullet per character, and the text can't be copied out. It's a `Prop<bool>`, so
-a button can reveal the password:
+`.secure` shows a bullet per character, and the text can't be copied out. Like the platforms' own
+password fields, it turns the input method (IME) off while it has focus, so a Chinese or Japanese
+input method's candidate window never shows the password. On macOS it also turns on Secure Event
+Input, so other apps can't read the keys being typed. It's a `Prop<bool>`, so a button can reveal
+the password, which gives the input method back:
 
 ```cpp
 const State<bool> reveal(false);

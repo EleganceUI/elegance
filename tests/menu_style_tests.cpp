@@ -37,7 +37,7 @@ struct RecordingMenuStyle final : MenuStyle {
         Signal<bool> enabled;
         Signal<bool> destructive;
     };
-    explicit RecordingMenuStyle(std::vector<Row>* rows) : rows(rows) {}
+    explicit RecordingMenuStyle(std::vector<Row>* seen) : rows(seen) {}
     std::vector<Row>* rows;
 
     View make_body(const MenuConfiguration& menu) const override { return menu.items; }

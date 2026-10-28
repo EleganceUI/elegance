@@ -42,6 +42,12 @@ public:
     // touching it.
     void forget(const Element* element) noexcept;
 
+    // The focused element's text input changed (a field became secure or stopped being).
+    void refresh_text_input() noexcept {
+        set_text_input(focused_ && focused_->event_handler()->accepts_text_input(),
+                       focused_ && focused_->secure_text_input());
+    }
+
 private:
     struct Watch {
         Element* scope;
@@ -51,16 +57,25 @@ private:
 
     void notify_watches();
 
-    void set_text_input(bool on) noexcept {
-        if (services_ && on != text_input_) {
-            text_input_ = on;
-            on ? services_->start_text_input() : services_->stop_text_input();
+    void set_text_input(bool on, bool secure) noexcept {
+        secure = on && secure;
+        if (!services_ || (on == text_input_ && secure == secure_text_input_)) {
+            return;
+        }
+        if (text_input_) {
+            services_->stop_text_input(); // restarted for the other kind
+        }
+        text_input_ = on;
+        secure_text_input_ = secure;
+        if (on) {
+            services_->start_text_input(secure);
         }
     }
 
     WindowServices* services_;
     std::vector<Watch> watches_;
     bool text_input_ = false;
+    bool secure_text_input_ = false;
     Element* focused_ = nullptr;
     bool visible_ = false;
     bool navigated_ = false;

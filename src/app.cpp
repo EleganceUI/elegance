@@ -123,7 +123,7 @@ public:
         }
     }
 
-    void start_text_input() override { window_->start_text_input(); }
+    void start_text_input(bool secure) override { window_->start_text_input(secure); }
     void stop_text_input() override { window_->stop_text_input(); }
     void set_text_input_area(Rect area, float cursor) override { window_->set_text_input_area(area, cursor); }
     std::string clipboard_text() override { return platform::clipboard_text(); }
@@ -1227,6 +1227,12 @@ int App::run() {
                 }
             }
             check_popup_focus = check_popup_focus || event.type == platform::EventType::window_focus_lost;
+            if (event.type == platform::EventType::window_focus_gained ||
+                event.type == platform::EventType::window_focus_lost) {
+                for (const auto& live : windows) {
+                    live->window.update_secure_input(); // macOS Secure Event Input follows the keyboard
+                }
+            }
             break;
         case platform::EventType::window_fullscreen_changed:
             // The traffic lights leave with the title bar in fullscreen.

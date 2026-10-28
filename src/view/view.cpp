@@ -1113,7 +1113,13 @@ std::unique_ptr<Element> TextFieldNode::lower(const LowerContext& context) const
     editor->set_styler(options_.styler);
     detail::bind(placeholder_, context, [editor](std::string placeholder) { editor->set_placeholder(std::move(placeholder)); });
     if (!area_) {
-        detail::bind(options_.secure, context, [editor](bool secure) { editor->set_secure(secure); });
+        // A field revealed or hidden while focused switches its text input (IME) with it.
+        detail::bind(options_.secure, context, [editor, focus = context.focus](bool secure) {
+            editor->set_secure(secure);
+            if (focus) {
+                focus->refresh_text_input();
+            }
+        });
         detail::bind(options_.line_limit, context, [editor](int lines) { editor->set_line_limit(lines); });
     }
     // The text follows the binding (when changed elsewhere). The font is bound where the style

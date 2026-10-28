@@ -5,6 +5,7 @@
 #include "platform/input_apple.h"
 
 #import <AppKit/AppKit.h>
+#include <Carbon/Carbon.h>
 
 namespace elg::detail::platform::apple {
 
@@ -90,6 +91,14 @@ void* install_input_monitor(std::function<bool(const NativeInput&)> handle) {
 
 void remove_input_monitor(void* monitor) {
     [NSEvent removeMonitor:(__bridge_transfer id)monitor];
+}
+
+void set_secure_event_input(bool on) {
+    if (on) {
+        EnableSecureEventInput();
+    } else {
+        DisableSecureEventInput();
+    }
 }
 
 } // namespace elg::detail::platform::apple

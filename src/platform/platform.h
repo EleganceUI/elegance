@@ -145,8 +145,14 @@ public:
     // Converts window coordinates (as in pointer events) to logical points.
     Point to_logical(float x, float y) const;
     // Text input (IME) for this window, and where the text being edited is (logical points).
-    void start_text_input();
+    // `secure`: a password's, as the platforms' password fields do it: SDL's password input type
+    // (Wayland turns the IME off), the IME detached (Windows), and Secure Event Input while the
+    // window has the keyboard (macOS: no IME, and other apps can't read the keys).
+    void start_text_input(bool secure);
     void stop_text_input();
+    // Call when any window gained or lost keyboard focus: macOS Secure Event Input is on only
+    // while the window with the password field has it (it's system-wide).
+    void update_secure_input();
     void set_text_input_area(Rect area, float cursor);
 
     void show();
@@ -189,6 +195,8 @@ private:
     // whether text input was started there for the popup.
     SDL_Window* parent_ = nullptr;
     bool parent_text_input_ = false;
+    bool secure_text_input_ = false; // a password field has the text input
+    bool secure_engaged_ = false;    // ...and the keyboard, so this window holds Secure Event Input
     std::uint32_t id_ = 0;
     std::function<HitArea(Point)> hit_test_;
 };

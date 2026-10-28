@@ -1863,6 +1863,17 @@ Separate render thread from day one (decided).
   `TextField(placeholder, binding, {.secure = ...})` (a `Prop<bool>`, so it can be revealed):
   - Bullets, one per character; caret stops map back to the text's bytes.
   - No copy or cut. Word movement and double-click take the whole field. No IME composition.
+  - Text input starts as a password's, like the platforms' own password fields
+    (`WindowServices::start_text_input(bool secure)`, from `Element::secure_text_input()`):
+    - SDL's password input type: Wayland marks it a password, and IMEs turn off.
+    - Windows: the IME is detached from the window (`ImmAssociateContext(hwnd, nullptr)`); SDL
+      associates it again when text input next starts.
+    - macOS: Secure Event Input (no IME, and other apps can't read the keys). It's system-wide, so
+      it's held only while the window with the field (a popup's parent) has the keyboard; windows
+      re-check on every focus change, and a count keeps Enable/Disable balanced.
+    - X11: nothing to turn off; compositions are still ignored by the field.
+    - Revealing or hiding a focused field (`.secure` changing) restarts the text input as the
+      other kind.
   - One line: a static `.secure = true` with `.line_limit` above 1 throws `UsageError`.
 - [x] `TextArea(placeholder, binding, options)`: the TextField editor in multiline mode. Enter
   starts a new line, Ctrl/Cmd+Enter submits; it takes the height it's offered (its text's in a

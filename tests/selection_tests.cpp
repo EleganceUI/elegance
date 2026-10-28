@@ -52,7 +52,7 @@ struct Window {
     std::optional<detail::EventDispatcher> events;
     Size size;
 
-    explicit Window(const View& view, Size size = {200, 200}) : size(size) {
+    explicit Window(const View& view, Size window_size = {200, 200}) : size(window_size) {
         root = detail::lower(ZStack({.alignment = Alignment::top_leading}, Rectangle().fill(Color::white), view),
                              {.text = &text_system(), .focus = &focus});
         layout();

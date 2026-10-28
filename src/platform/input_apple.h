@@ -38,6 +38,11 @@ struct NativeInput {
 void* install_input_monitor(std::function<bool(const NativeInput&)> handle);
 void remove_input_monitor(void* monitor);
 
+// Secure Event Input on or off (EnableSecureEventInput), for password fields: other apps can't
+// read the keys, and input methods other than Roman ones are off. It's system-wide, so it's on
+// only while the app's password field has the keyboard.
+void set_secure_event_input(bool on);
+
 } // namespace elg::detail::platform::apple
 
 #endif // ELG_PLATFORM_INPUT_APPLE_H
