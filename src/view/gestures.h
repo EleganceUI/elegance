@@ -6,6 +6,7 @@
 #define ELG_VIEW_GESTURES_H
 
 #include <elg/events.h>
+#include <elg/gestures.h>
 
 #include <optional>
 
@@ -24,6 +25,9 @@ public:
     virtual bool expire() { return false; }
     // The press ended without this taking it, or something else took it.
     virtual void reset() = 0;
+
+    // How it competes for presses (View::recognize's options).
+    GestureOptions gesture_options;
 };
 
 } // namespace elg::detail

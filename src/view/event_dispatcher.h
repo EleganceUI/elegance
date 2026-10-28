@@ -82,7 +82,8 @@ private:
     };
 
     std::vector<Element*> path_at(Point location);
-    // Shows the watchers a press event; the first to recognize the press takes it.
+    // Shows the watchers a press event; the first to recognize the press takes it. Simultaneous
+    // gestures see it too.
     bool watch(const PointerEvent& event);
     // Lets watchers whose deadline passed take the press.
     bool expire_watchers();
@@ -98,7 +99,15 @@ private:
     std::vector<Hover> hovers_; // outermost first
     Element* captured_ = nullptr;
     bool captured_cancellable_ = false; // gestures around captured_ may take its press
-    std::vector<Watcher> watchers_;     // innermost first
+    std::vector<Watcher> watchers_;     // high priority, then normal; each innermost first
+    // Simultaneous gestures watching the press: they never take it, and once one recognizes it
+    // gets the rest of the press's events beside whatever has it.
+    struct Companion {
+        Element* element;
+        GestureRecognizer* recognizer;
+        bool active = false;
+    };
+    std::vector<Companion> companions_;
     Point last_location_;
     bool pointer_inside_ = false;
     // Wheel latching: a scroll gesture stays with the element that took its first event (a page

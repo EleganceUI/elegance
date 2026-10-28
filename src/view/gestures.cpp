@@ -63,12 +63,24 @@ public:
             modifiers_ = event.modifiers;
             samples_.clear();
             sample(event.window_location);
-            return options_.minimum_distance <= 0 && begin(event, frame);
+            last_ = event;
+            last_frame_ = frame;
+            held_due_ = options_.hold > 0 ? now_seconds() + options_.hold : 0;
+            return options_.hold <= 0 && options_.minimum_distance <= 0 && begin(event, frame);
         case PointerEvent::Kind::move:
             if (!tracking_) {
                 return false;
             }
             sample(event.window_location);
+            last_ = event;
+            last_frame_ = frame;
+            if (options_.hold > 0) {
+                // Moved before it was held: not this drag's press.
+                if (distance(event.window_location, start_window_) > options_.hold_tolerance) {
+                    tracking_ = false;
+                }
+                return false;
+            }
             return distance(event.window_location, start_window_) >= options_.minimum_distance && begin(event, frame);
         case PointerEvent::Kind::up:
         case PointerEvent::Kind::cancel: reset(); return false;
@@ -78,6 +90,20 @@ public:
     }
 
     void reset() override { tracking_ = false; }
+
+    // Hold, then drag: held long enough, it begins where the pointer is.
+    std::optional<double> deadline() const override {
+        return tracking_ && !active_ && options_.hold > 0 ? std::optional(held_due_) : std::nullopt;
+    }
+    bool expire() override {
+        if (!tracking_ || active_ || options_.hold <= 0 || now_seconds() < held_due_) {
+            return false;
+        }
+        // Measured from here, so what it lifts doesn't jump.
+        start_window_ = last_.window_location;
+        start_ = {last_.location.x - last_frame_.x, last_.location.y - last_frame_.y};
+        return begin(last_, last_frame_);
+    }
 
     EventResult pointer(const PointerEvent& event, Rect frame) override {
         if (!active_) {
@@ -162,6 +188,9 @@ private:
     DragOptions options_;
     bool tracking_ = false; // a press with our button is down
     bool active_ = false;   // and it became the drag
+    PointerEvent last_;     // the press's last event, and the frame then (a hold begins there)
+    Rect last_frame_;
+    double held_due_ = 0;   // DragOptions::hold: when it's been held long enough
     Point start_;
     Point start_window_;
     KeyModifiers modifiers_ = KeyModifiers::none;
@@ -333,11 +362,15 @@ std::unique_ptr<EventHandler> GestureAccess::handler(const TwoFingerDoubleTapGes
 } // namespace detail
 
 std::unique_ptr<EventHandler> DragGestureModifier::make_handler() const {
-    return detail::GestureAccess::handler(gesture_);
+    auto handler = detail::GestureAccess::handler(gesture_);
+    static_cast<detail::GestureRecognizer&>(*handler).gesture_options = options_;
+    return handler;
 }
 
 std::unique_ptr<EventHandler> LongPressGestureModifier::make_handler() const {
-    return detail::GestureAccess::handler(gesture_);
+    auto handler = detail::GestureAccess::handler(gesture_);
+    static_cast<detail::GestureRecognizer&>(*handler).gesture_options = options_;
+    return handler;
 }
 
 std::unique_ptr<EventHandler> MagnifyGestureModifier::make_handler() const {

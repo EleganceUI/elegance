@@ -188,6 +188,11 @@ std::optional<double> EventDispatcher::next_deadline() const {
             next = due;
         }
     }
+    for (const Companion& companion : companions_) {
+        if (const auto due = companion.recognizer->deadline(); due && (!next || *due < *next)) {
+            next = due;
+        }
+    }
     for (const Hover& hover : hovers_) {
         if (hover.due >= 0 && (!next || hover.due < *next)) {
             next = hover.due;
@@ -286,33 +291,69 @@ bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, Mo
             watcher.recognizer->reset();
         }
         watchers_.clear();
+        for (const Companion& companion : companions_) {
+            companion.recognizer->reset();
+        }
+        companions_.clear();
+        // High-priority gestures go first, and may take presses from any handler; simultaneous
+        // ones only watch.
+        std::vector<Watcher> high;
         bool inside_captor = true; // innermost first: until passing captured_
         for (auto it = path.rbegin(); it != path.rend(); ++it) {
             if (*it == captured_) {
                 inside_captor = false;
             }
             auto* recognizer = dynamic_cast<GestureRecognizer*>((*it)->event_handler());
-            if (recognizer && (inside_captor || captured_cancellable_)) {
+            if (!recognizer) {
+                continue;
+            }
+            if (recognizer->gesture_options.simultaneous) {
+                companions_.push_back({*it, recognizer});
+            } else if (recognizer->gesture_options.priority == GesturePriority::high) {
+                high.push_back({*it, recognizer});
+            } else if (inside_captor || captured_cancellable_) {
                 watchers_.push_back({*it, recognizer});
             }
         }
+        watchers_.insert(watchers_.begin(), high.begin(), high.end());
         redraw |= watch(event);
     }
     return redraw;
 }
 
 bool EventDispatcher::watch(const PointerEvent& event) {
+    bool redraw = false;
+    for (Companion& companion : companions_) {
+        if (companion.active) {
+            redraw |= deliver(event, *companion.element).redraw;
+        } else if (companion.recognizer->observe(local_event(event, *companion.element),
+                                                 companion.element->frame())) {
+            companion.active = true;
+            redraw = true;
+        }
+    }
+    if (event.kind == PointerEvent::Kind::up || event.kind == PointerEvent::Kind::cancel) {
+        companions_.clear(); // the press is over; those still watching reset on it
+    }
     for (const Watcher& watcher : watchers_) {
         if (watcher.recognizer->observe(local_event(event, *watcher.element), watcher.element->frame())) {
             return take_press(watcher);
         }
     }
-    return false;
+    return redraw;
 }
 
 bool EventDispatcher::expire_watchers() {
+    bool redraw = false;
+    for (Companion& companion : companions_) {
+        if (const auto due = companion.recognizer->deadline();
+            !companion.active && due && *due <= now_seconds() && companion.recognizer->expire()) {
+            companion.active = true;
+            redraw = true;
+        }
+    }
     if (watchers_.empty()) {
-        return false;
+        return redraw;
     }
     const double now = now_seconds();
     for (const Watcher& watcher : watchers_) {
@@ -320,7 +361,7 @@ bool EventDispatcher::expire_watchers() {
             return take_press(watcher);
         }
     }
-    return false;
+    return redraw;
 }
 
 bool EventDispatcher::take_press(const Watcher& winner) {
@@ -592,6 +633,7 @@ bool EventDispatcher::revalidate() {
         captured_ = nullptr;
     }
     std::erase_if(watchers_, [&](const Watcher& watcher) { return !alive.contains(watcher.element); });
+    std::erase_if(companions_, [&](const Companion& companion) { return !alive.contains(companion.element); });
     for (Element** latched : {&wheel_latched_, &magnify_latched_, &rotate_latched_}) {
         if (*latched && !alive.contains(*latched)) {
             *latched = nullptr;

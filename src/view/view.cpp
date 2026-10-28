@@ -391,12 +391,12 @@ View View::on_activate(std::function<void()> action) const {
     return View(std::make_shared<const detail::ActivateNode>(*this, std::move(action)));
 }
 
-View View::recognize(DragGesture gesture) const {
-    return modifier(DragGestureModifier(std::move(gesture)));
+View View::recognize(DragGesture gesture, GestureOptions options) const {
+    return modifier(DragGestureModifier(std::move(gesture), options));
 }
 
-View View::recognize(LongPressGesture gesture) const {
-    return modifier(LongPressGestureModifier(std::move(gesture)));
+View View::recognize(LongPressGesture gesture, GestureOptions options) const {
+    return modifier(LongPressGestureModifier(std::move(gesture), options));
 }
 
 View View::recognize(MagnifyGesture gesture) const {

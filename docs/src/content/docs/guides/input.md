@@ -65,6 +65,38 @@ presses: dragging a slider in a draggable card moves the slider.
 `on_drag(action)` and `on_long_press(action)` are shorthands for a gesture with only
 `on_changed` or the action.
 
+### When gestures meet
+
+When several gestures could take a press, the innermost one that recognizes it wins. A drag or
+long press can be told otherwise with `GestureOptions`, the second argument of `recognize`:
+
+```cpp
+// A row's swipe goes before the drags of what's in it, and over its sliders.
+Row(item).recognize(DragGesture().on_changed(swipe), {.priority = GesturePriority::high});
+
+// Tracks the press beside whatever has it: nothing is cancelled.
+Card().recognize(DragGesture().on_changed(tilt), {.simultaneous = true});
+```
+
+- `.priority = GesturePriority::high` offers the press to the gesture before the gestures inside
+  its view, and lets it take presses from controls that keep theirs, like sliders.
+- `.simultaneous = true` never takes the press. It recognizes alongside the gesture or control
+  that has it, and neither cancels the other.
+
+For hold-then-drag, as when reordering by touch, give the drag a `hold`:
+
+```cpp
+Tile(photo).recognize(DragGesture({.hold = 0.4})
+                          .on_began([=] { lifted = true; })
+                          .on_changed([=](const DragEvent& e) { offset = e.translation; })
+                          .on_ended([=](const DragEvent&) { lifted = false; drop(); }));
+```
+
+The press has to stay put (within `hold_tolerance`, 10 points) for `hold` seconds. Then the drag
+begins at once, with no translation, so a lifted look can show before anything moves, and it
+follows the pointer from there. A press that moves sooner is left to the rest: a scroll view
+scrolls, and a click is still a click.
+
 ### Trackpad gestures
 
 Pinching, turning two fingers, and a two-finger double tap go to the innermost view

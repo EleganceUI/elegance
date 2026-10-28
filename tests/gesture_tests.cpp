@@ -221,3 +221,127 @@ TEST_CASE("trackpad gestures call their phases' callbacks", "[gesture]") {
     window.events->magnify({.location = {50, 50}, .scale = 2, .delta = 1, .phase = GesturePhase::ended});
     CHECK(calls == std::vector<std::string>{"began", std::to_string(2.f), "ended"});
 }
+
+TEST_CASE("a high-priority gesture goes before the gestures inside it", "[gesture][compose]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    int inner = 0;
+    int outer = 0;
+    const auto drag = [&](Window& window) {
+        window.move({30, 30});
+        window.down({30, 30});
+        window.move({60, 30});
+        window.up({60, 30});
+    };
+    SECTION("normal: the inner one wins") {
+        Window window(kSquare.on_drag([&](const DragEvent&) { ++inner; })
+                          .recognize(DragGesture().on_changed([&](const DragEvent&) { ++outer; })));
+        drag(window);
+        CHECK(inner > 0);
+        CHECK(outer == 0);
+    }
+    SECTION("high: the outer one wins") {
+        Window window(kSquare.on_drag([&](const DragEvent&) { ++inner; })
+                          .recognize(DragGesture().on_changed([&](const DragEvent&) { ++outer; }),
+                                     {.priority = GesturePriority::high}));
+        drag(window);
+        CHECK(inner == 0);
+        CHECK(outer > 0);
+    }
+}
+
+TEST_CASE("a high-priority gesture takes presses from handlers that keep them", "[gesture][compose]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    std::vector<PointerEvent::Kind> tracked;
+    int dragged = 0;
+    Window window(kSquare
+                      .on_pointer([&](const PointerEvent& e) {
+                          tracked.push_back(e.kind);
+                          return e.kind != PointerEvent::Kind::hover;
+                      })
+                      .recognize(DragGesture().on_changed([&](const DragEvent&) { ++dragged; }),
+                                 {.priority = GesturePriority::high}));
+    window.move({30, 30});
+    window.down({30, 30});
+    window.move({60, 30});
+    window.up({60, 30});
+    CHECK(dragged > 0);
+    CHECK(tracked.back() == PointerEvent::Kind::cancel);
+}
+
+TEST_CASE("a simultaneous gesture runs alongside whatever has the press", "[gesture][compose]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    std::vector<std::string> inner;
+    std::vector<std::string> outer;
+    std::vector<PointerEvent::Kind> tracked;
+    const auto recorder = [](std::vector<std::string>& calls) {
+        return DragGesture()
+            .on_began([&calls] { calls.emplace_back("began"); })
+            .on_ended([&calls](const DragEvent&) { calls.emplace_back("ended"); });
+    };
+    SECTION("beside a gesture") {
+        Window window(kSquare.recognize(recorder(inner)).recognize(recorder(outer), {.simultaneous = true}));
+        window.move({30, 30});
+        window.down({30, 30});
+        window.move({60, 30});
+        window.up({60, 30});
+        CHECK(inner == std::vector<std::string>{"began", "ended"});
+        CHECK(outer == std::vector<std::string>{"began", "ended"});
+    }
+    SECTION("beside a handler that keeps its press, which isn't cancelled") {
+        Window window(kSquare
+                          .on_pointer([&](const PointerEvent& e) {
+                              tracked.push_back(e.kind);
+                              return e.kind != PointerEvent::Kind::hover;
+                          })
+                          .recognize(recorder(outer), {.simultaneous = true}));
+        window.move({30, 30});
+        window.down({30, 30});
+        window.move({60, 30});
+        window.up({60, 30});
+        CHECK(outer == std::vector<std::string>{"began", "ended"});
+        CHECK(tracked.back() == PointerEvent::Kind::up);
+    }
+}
+
+TEST_CASE("hold, then drag: it begins once held, and lets early moves go", "[gesture][compose]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    std::vector<std::string> calls;
+    std::optional<DragEvent> last;
+    int clicked = 0;
+    Window window(kSquare.on_click([&] { ++clicked; })
+                      .recognize(DragGesture({.hold = 0.02})
+                                     .on_began([&](const DragEvent& e) {
+                                         calls.emplace_back("began");
+                                         last = e;
+                                     })
+                                     .on_changed([&](const DragEvent& e) { last = e; })
+                                     .on_ended([&](const DragEvent&) { calls.emplace_back("ended"); })));
+
+    // Moved before the hold: not a drag, so the press stays a click.
+    window.move({30, 30});
+    window.down({30, 30});
+    window.move({50, 30});
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+    window.events->tick();
+    window.up({50, 30});
+    CHECK(calls.empty());
+    CHECK(clicked == 1);
+
+    // Held: begins where it is, with no translation, then follows the pointer.
+    window.move({30, 30});
+    window.down({30, 30});
+    window.move({33, 30}); // within the tolerance
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+    window.events->tick();
+    REQUIRE(calls == std::vector<std::string>{"began"});
+    CHECK(last->translation.x == 0);
+    window.move({53, 30});
+    CHECK(last->translation.x == 20);
+    window.up({53, 30});
+    CHECK(calls == std::vector<std::string>{"began", "ended"});
+    CHECK(clicked == 1); // the drag took this press
+}

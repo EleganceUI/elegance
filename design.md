@@ -969,7 +969,14 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
     that recognizes it takes it over; whatever had the press gets `cancel`. Handlers that took
     the down keep it from recognizers around them unless they returned `cancellable`
     (buttons, on_click, on_activate, links do; sliders, text fields, custom handlers don't).
-  - Still to do: composing gestures (simultaneous, exclusive) and kinetic scrolling helpers.
+  - Composition: `.recognize(gesture, GestureOptions{priority, simultaneous})` for drags and long
+    presses. High priority: offered the press first (the dispatcher's watchers are the high ones,
+    then the normal ones, each innermost first), even outside a captor that didn't make its press
+    cancellable. Simultaneous: a companion of the press; it observes until it recognizes, then
+    gets the press's events beside whatever has it (delivered like a captor's), and never takes
+    or is cancelled. `DragOptions::hold` (+ `hold_tolerance`): a deadline like a long press's;
+    once held it takes the press and begins with zero translation; moving sooner gives it up.
+  - Still to do: kinetic scrolling helpers.
 - **Shortcuts**: global and scoped keybindings, with a command registry.
 
 ---

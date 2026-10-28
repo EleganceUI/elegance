@@ -69,24 +69,28 @@ private:
 // The gestures View::recognize() attaches (elg/gestures.h).
 class ELG_API DragGestureModifier final : public EventModifier {
 public:
-    explicit DragGestureModifier(DragGesture gesture) : gesture_(std::move(gesture)) {}
+    explicit DragGestureModifier(DragGesture gesture, GestureOptions options = {})
+        : gesture_(std::move(gesture)), options_(options) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
     DragGesture gesture_;
     ELG_PRIVATE_MEMBERS_END
+    GestureOptions options_;
 };
 
 class ELG_API LongPressGestureModifier final : public EventModifier {
 public:
-    explicit LongPressGestureModifier(LongPressGesture gesture) : gesture_(std::move(gesture)) {}
+    explicit LongPressGestureModifier(LongPressGesture gesture, GestureOptions options = {})
+        : gesture_(std::move(gesture)), options_(options) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
     LongPressGesture gesture_;
     ELG_PRIVATE_MEMBERS_END
+    GestureOptions options_;
 };
 
 class ELG_API MagnifyGestureModifier final : public EventModifier {

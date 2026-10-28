@@ -605,8 +605,11 @@ public:
     // taps come from trackpads.
     //   .recognize(DragGesture().on_began([=] { start = offset.peek(); })
     //                           .on_changed([=](const DragEvent& e) { offset = start() + e.translation; }))
-    ELG_API View recognize(DragGesture gesture) const;
-    ELG_API View recognize(LongPressGesture gesture) const;
+    // GestureOptions: {.priority = GesturePriority::high} goes before gestures inside the view;
+    // {.simultaneous = true} runs alongside whatever has the press.
+    //   row.recognize(DragGesture().on_changed(swipe), {.priority = GesturePriority::high})
+    ELG_API View recognize(DragGesture gesture, GestureOptions options = {}) const;
+    ELG_API View recognize(LongPressGesture gesture, GestureOptions options = {}) const;
     ELG_API View recognize(MagnifyGesture gesture) const;
     ELG_API View recognize(RotateGesture gesture) const;
     ELG_API View recognize(TwoFingerDoubleTapGesture gesture) const;

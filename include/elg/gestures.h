@@ -16,7 +16,8 @@
 // recognizes (a drag moves far enough, a long press is held long enough) it takes the press over:
 // whatever had it, such as a button or an on_click, is cancelled and doesn't fire. The innermost
 // gesture that recognizes wins. Controls that track the pointer themselves (sliders, text
-// selection) keep their presses from gestures around them.
+// selection) keep their presses from gestures around them. GestureOptions change that for a
+// gesture: it can go first, or run alongside the others.
 
 #include <elg/events.h>
 #include <elg/geometry.h>
@@ -45,6 +46,12 @@ struct DragOptions {
     // How far the pointer moves (in points) before the drag begins. 0 begins it on the press.
     float minimum_distance = 4;
     MouseButton button = MouseButton::left;
+    // Hold, then drag (reordering by touch): seconds the press must be held, within
+    // hold_tolerance points, before the drag can begin. It then begins at once (on_began with no
+    // translation, for a "lifted" look) and follows the pointer. A press that moves sooner is
+    // left to the rest (scrolling, clicks). 0: no hold.
+    double hold = 0;
+    float hold_tolerance = 10;
 };
 
 class DragGesture {
@@ -107,6 +114,21 @@ private:
     friend struct detail::GestureAccess;
     std::function<void()> action_;
     LongPressOptions options_;
+};
+
+// How a pointer gesture (drag, long press) competes with others for a press.
+enum class GesturePriority {
+    normal, // the innermost gesture that recognizes the press takes it
+    // Offered the press before gestures inside its view, and may take it from controls that keep
+    // their presses (a slider): a row's swipe over the controls in it.
+    high,
+};
+
+struct GestureOptions {
+    GesturePriority priority = GesturePriority::normal;
+    // Recognizes alongside whatever has the press (a gesture, a control), without taking it: the
+    // others aren't cancelled, and it isn't cancelled when they recognize. Priority doesn't apply.
+    bool simultaneous = false;
 };
 
 // Phased trackpad gestures: pinching (MagnifyEvent) and turning two fingers (RotateEvent). The
