@@ -173,6 +173,22 @@ HStack(Image("star"), Spacer(), Text("Rate")).content_shape(Rectangle()).on_clic
 Overlay().allows_hit_testing(false); // clicks go through to what's behind
 ```
 
+## Disabled views
+
+`.disabled()` switches off the handlers inside it, not only controls: clicks, double clicks,
+gestures, keys, text input, focus, context menus and drops. A press on a disabled view goes to
+the views around it, as if it weren't there:
+
+```cpp
+Card(item).on_click(open).disabled([=] { return item.locked; }) // clicks reach what's around it
+```
+
+Hover still reaches it, so a tooltip can say why it's disabled, and scrolling still works, so a
+disabled form can still be read. A window drag area keeps moving the window.
+
+When a view becomes disabled partway through, what it had going stops: a drag or long press gets
+`on_cancelled` (not `on_ended`), and if it had focus, focus leaves it.
+
 ## Keyboard
 
 Key events go to the focused view first, then bubble outward through the views around it until

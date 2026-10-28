@@ -976,6 +976,14 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
     gets the press's events beside whatever has it (delivered like a captor's), and never takes
     or is cancelled. `DragOptions::hold` (+ `hold_tolerance`): a deadline like a long press's;
     once held it takes the press and begins with zero translation; moving sooner gives it up.
+  - `.disabled()`: an EventElement whose environment is disabled hands the dispatcher a
+    `DisabledEventHandler` instead of its handler (hover, `hover` pointer events, scroll, `cancel`
+    and `focus(false)` pass; everything else is ignored, so presses fall through to outer
+    handlers and recognizers aren't found). `EventDispatcher::release_disabled()`, called each
+    frame after effects, cancels a disabled captor, active companions and pinch/rotate latches,
+    resets their watchers, and clears focus from an element that's no longer `focusable()` (also
+    covers controls). Drop targets and context menus check `DisabledKey` themselves. Exempt:
+    window drag areas and scroll views.
   - Still to do: kinetic scrolling helpers.
 - **Shortcuts**: global and scoped keybindings, with a command registry.
 

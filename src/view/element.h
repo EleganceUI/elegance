@@ -200,6 +200,9 @@ public:
     bool hit_test(Point point, std::vector<Element*>& path);
     // The handler for input to this element, if it has one.
     virtual EventHandler* event_handler() noexcept { return nullptr; }
+    // The handler a .disabled() view keeps but doesn't let act (event_handler() stands in for it
+    // meanwhile); nullptr while enabled. The dispatcher cancels its press and drops its focus.
+    virtual EventHandler* disabled_handler() noexcept { return nullptr; }
     // For elements with a handler: how long hover takes to start and end (the handler's own
     // delay, else the environment's).
     virtual HoverDelay effective_hover_delay() const { return {}; }
@@ -747,6 +750,26 @@ private:
     std::unique_ptr<Element> decoration_;
 };
 
+// What a .disabled() view's handler hears: hover, pointer moves over it, and scrolling, but no
+// presses, keys, text, trackpad gestures, focus, or pointer styles.
+class DisabledEventHandler final : public EventHandler {
+public:
+    explicit DisabledEventHandler(EventHandler& handler) noexcept : handler_(&handler) {}
+
+    EventResult pointer(const PointerEvent& event, Rect frame) override {
+        const bool passes = event.kind == PointerEvent::Kind::hover || event.kind == PointerEvent::Kind::cancel;
+        return passes ? handler_->pointer(event, frame) : EventResult{};
+    }
+    EventResult hover(bool inside) override { return handler_->hover(inside); }
+    EventResult scroll(const ScrollEvent& event, Rect frame) override { return handler_->scroll(event, frame); }
+    EventResult focus(bool focused) override { return handler_->focus(focused); }
+    std::optional<HoverDelay> hover_delay() const override { return handler_->hover_delay(); }
+    bool covers_frame() const override { return handler_->covers_frame(); }
+
+private:
+    EventHandler* handler_;
+};
+
 // A view with an EventModifier: owns the handler; layout, paint, and hit testing pass through.
 class EventElement final : public Element {
 public:
@@ -767,7 +790,10 @@ public:
     float layout_priority() const noexcept override { return content_->layout_priority(); }
     float z_index() const noexcept override { return content_->z_index(); }
     bool is_spacer() const noexcept override { return content_->is_spacer(); }
-    EventHandler* event_handler() noexcept override { return handler_.get(); }
+    EventHandler* event_handler() noexcept override { return enabled_ ? handler_.get() : &disabled_; }
+    EventHandler* disabled_handler() noexcept override { return enabled_ ? nullptr : handler_.get(); }
+    // Follows .disabled() in the view's environment.
+    void set_enabled(bool enabled) noexcept { enabled_ = enabled; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
 protected:
@@ -785,8 +811,10 @@ protected:
 
 private:
     std::unique_ptr<EventHandler> handler_;
+    DisabledEventHandler disabled_{*handler_};
     std::unique_ptr<Element> content_;
     std::function<HoverDelay()> environment_delay_;
+    bool enabled_ = true;
 };
 
 // A Button: behavior here, appearance from its ButtonStyle's body (the content). Hover and press

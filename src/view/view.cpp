@@ -825,11 +825,19 @@ std::function<HoverDelay()> environment_hover_delay(const EnvironmentValues& env
     return [environment] { return environment.get<HoverDelayKey>(); };
 }
 
+// A .disabled() view's handlers stop acting (DisabledEventHandler); the dispatcher cancels what
+// they had going (release_disabled). A window drag area still moves the window.
 std::unique_ptr<EventElement> make_event_element(std::unique_ptr<EventHandler> handler, const View& content,
                                                  const LowerContext& context) {
+    const bool drags_window = dynamic_cast<const WindowDragHandler*>(handler.get()) != nullptr;
     auto element = std::make_unique<EventElement>(std::move(handler), detail::lower(content, context),
                                                   environment_hover_delay(context.environment));
     join_focus(*element, context);
+    if (!drags_window) {
+        const EnvironmentValues environment = context.environment;
+        detail::bind(Prop<bool>([environment] { return !environment.get<DisabledKey>(); }), context,
+                     [target = element.get()](bool enabled) { target->set_enabled(enabled); });
+    }
     return element;
 }
 

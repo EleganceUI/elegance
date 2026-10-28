@@ -297,8 +297,12 @@ private:
         }
     }
 
+    bool disabled() const {
+        return untrack([&] { return environment_.get<DisabledKey>(); });
+    }
+
     EventResult pointer(const PointerEvent& event, Rect) override {
-        if (event.button != MouseButton::right) {
+        if (event.button != MouseButton::right || disabled()) {
             return {};
         }
         // Opens on release, like Windows; the press is taken so nothing else reacts to it.
@@ -312,7 +316,7 @@ private:
     }
 
     EventResult key(const KeyEvent& event) override {
-        if (event.kind != KeyEvent::Kind::down) {
+        if (event.kind != KeyEvent::Kind::down || disabled()) {
             return {};
         }
         const bool shift_f10 = event.key == Key::f10 && has(event.modifiers, KeyModifiers::shift);

@@ -22,6 +22,7 @@ add_executable(elegance_tests
         click_tests.cpp
         raw_input_tests.cpp
         gesture_tests.cpp
+        disabled_tests.cpp
         floating_tests.cpp
         modifier_shorthand_tests.cpp
         picker_slider_style_tests.cpp

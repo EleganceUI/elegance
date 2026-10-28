@@ -1350,6 +1350,14 @@ int App::run() {
         // same time; layout changes caused by an animated transaction animate too.
         set_frame_time(seconds_now());
         flush_effects();
+        // Views that just became .disabled() lose their press, gestures, and focus; what the
+        // cancelled handlers write takes effect too.
+        for (const auto& live : windows) {
+            if (live->events.release_disabled()) {
+                live->dirty = true;
+                flush_effects();
+            }
+        }
         const std::shared_ptr<const Animation> transaction = take_flush_animation();
         const LayoutAnimationScope layout_animation(transaction.get());
         finish_closing();

@@ -19,7 +19,9 @@ public:
     DropNode(View content, DropOptions options) : content_(std::move(content)), options_(std::move(options)) {}
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
-        return std::make_unique<DropElement>(options_, detail::lower(content_, context));
+        const EnvironmentValues environment = context.environment;
+        return std::make_unique<DropElement>(options_, detail::lower(content_, context),
+                                             [environment] { return !environment.get<DisabledKey>(); });
     }
 
 private:

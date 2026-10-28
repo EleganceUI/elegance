@@ -642,4 +642,45 @@ bool EventDispatcher::revalidate() {
     return pointer_inside_ ? update_hover(path_at(last_location_)) : false;
 }
 
+bool EventDispatcher::release_disabled() {
+    const auto disabled = [](Element* element) { return element->disabled_handler() != nullptr; };
+    const PointerEvent cancel{.kind = PointerEvent::Kind::cancel, .location = last_location_,
+                              .window_location = last_location_};
+    bool redraw = false;
+    if (captured_ && disabled(captured_)) {
+        redraw |= deliver(cancel, *std::exchange(captured_, nullptr)).redraw; // the stand-in passes cancel on
+    }
+    std::erase_if(watchers_, [&](const Watcher& watcher) {
+        if (disabled(watcher.element)) {
+            watcher.recognizer->reset();
+            return true;
+        }
+        return false;
+    });
+    std::erase_if(companions_, [&](const Companion& companion) {
+        if (!disabled(companion.element)) {
+            return false;
+        }
+        if (companion.active) {
+            redraw |= deliver(cancel, *companion.element).redraw;
+        } else {
+            companion.recognizer->reset();
+        }
+        return true;
+    });
+    if (magnify_latched_ && disabled(magnify_latched_)) {
+        redraw |= magnify_latched_->disabled_handler()->magnify({.phase = GesturePhase::cancelled}).redraw;
+        magnify_latched_ = nullptr;
+    }
+    if (rotate_latched_ && disabled(rotate_latched_)) {
+        redraw |= rotate_latched_->disabled_handler()->rotate({.phase = GesturePhase::cancelled}).redraw;
+        rotate_latched_ = nullptr;
+    }
+    // Focus leaves a view that can't take it any more (disabled, or a control in a disabled view).
+    if (Element* focused = focus_->focused(); focused && !focused->event_handler()->focusable()) {
+        redraw |= focus_->focus(nullptr, false);
+    }
+    return redraw;
+}
+
 } // namespace elg::detail

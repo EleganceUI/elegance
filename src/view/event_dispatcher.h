@@ -61,6 +61,9 @@ public:
     // Call after If/ForEach removed elements: forgets elements that no longer exist (without
     // touching them) and re-evaluates hover at the last pointer position.
     bool revalidate();
+    // Call each frame, after effects: cancels the press and gestures of views that became
+    // .disabled(), and moves focus off a view that can't take it any more.
+    bool release_disabled();
     // Delivers hover changes whose delay has passed, and long presses held long enough.
     bool tick();
     // When the next pending hover change or long press is due (steady clock seconds), if any.

@@ -7,6 +7,7 @@
 
 #include "view/element.h"
 
+#include <elg/reactive.h>
 #include <elg/view.h>
 
 namespace elg::detail {
@@ -14,13 +15,17 @@ namespace elg::detail {
 // A view with .on_drop(...): layout, paint, and hit testing pass through to its content.
 class DropElement final : public Element {
 public:
-    DropElement(DropOptions options, std::unique_ptr<Element> content)
-        : options_(std::move(options)), content_(std::move(content)) {
+    // `enabled` reads .disabled() in the view's environment.
+    DropElement(DropOptions options, std::unique_ptr<Element> content, std::function<bool()> enabled)
+        : options_(std::move(options)), content_(std::move(content)), enabled_(std::move(enabled)) {
         adopt(*content_);
     }
 
     const DropOptions& options() const noexcept { return options_; }
-    bool accepts(bool files) const noexcept { return files ? bool(options_.files) : bool(options_.text); }
+    // A disabled view refuses drops; a target around it may take them.
+    bool accepts(bool files) const {
+        return (files ? bool(options_.files) : bool(options_.text)) && untrack(enabled_);
+    }
 
     float layout_priority() const noexcept override { return content_->layout_priority(); }
     float z_index() const noexcept override { return content_->z_index(); }
@@ -43,6 +48,7 @@ protected:
 private:
     DropOptions options_;
     std::unique_ptr<Element> content_;
+    std::function<bool()> enabled_;
 };
 
 // The innermost drop target at `point` (window points) that takes files (or text).
