@@ -5,9 +5,9 @@
 #ifndef ELG_VIEW_TEXT_FIELD_H
 #define ELG_VIEW_TEXT_FIELD_H
 
-// TextField (design.md §11): a TextEditor holds the editing state; a TextEditorElement draws it
-// where the style puts the field; the TextFieldElement around the style's body is the focusable
-// control that takes the input.
+// TextField and TextArea (design.md §11): a TextEditor holds the editing state; a
+// TextEditorElement draws it where the style puts the field; the TextFieldElement around the
+// style's body is the focusable control that takes the input.
 
 #include "text/styled_layout.h"
 #include "text/text_layout.h"
@@ -40,12 +40,15 @@ class TextEditorElement;
 // between the two; the caret and selection live in the text, drawing works in what's shown.
 class TextEditor {
 public:
-    TextEditor(TextSystem& text, Binding<std::string> binding, std::string placeholder,
-               std::function<void()> on_submit, WindowServices* services, FocusManager* focus,
-               EnvironmentValues environment, bool secure = false);
+    // `area`: a TextArea (Enter starts a new line, and it takes the height it's offered).
+    TextEditor(TextSystem& text, Binding<std::string> binding, std::function<void()> on_submit,
+               WindowServices* services, FocusManager* focus, EnvironmentValues environment, bool area = false);
 
-    // TextFieldOptions::max_lines and ::styler.
-    void configure(int max_lines, std::function<std::vector<TextSpan>(std::string_view)> styler);
+    // TextFieldOptions (and TextAreaOptions) as they change.
+    void set_placeholder(std::string placeholder);
+    void set_secure(bool secure);
+    void set_line_limit(int lines);
+    void set_styler(std::function<std::vector<TextSpan>(std::string_view)> styler);
     void set_font(const Font& font);
     // Where the text is shown (fonts and colors come from there).
     void set_environment(EnvironmentValues environment) { environment_ = std::move(environment); }
@@ -55,6 +58,7 @@ public:
     std::string accessible_text() const { return secure_ ? std::string() : text_; }
     const std::string& placeholder() const noexcept { return placeholder_; }
     bool secure() const noexcept { return secure_; }
+    bool area() const noexcept { return area_; }
     void replace_all(std::string value);
 
     // Input, from the TextFieldElement.
@@ -62,6 +66,8 @@ public:
     EventResult text_input(const TextInputEvent& event);
     EventResult pointer(const PointerEvent& event);
     void focus_changed(bool focused);
+    // Wheel and trackpad scrolling through more lines than show; unconsumed at the ends.
+    EventResult scroll(const ScrollEvent& event);
 
     // Layout and drawing, from the TextEditorElement.
     void attach(TextEditorElement* element) noexcept { element_ = element; }
@@ -86,11 +92,14 @@ private:
     };
 
     bool enabled() const;
-    bool multiline() const noexcept { return max_lines_ > 1; }
+    // Secure fields are one line.
+    bool multiline() const noexcept { return !secure_ && (area_ || max_lines_ > 1); }
     bool composing() const noexcept { return !composition_.empty(); }
     std::size_t selection_start() const noexcept { return std::min(caret_, anchor_); }
     std::size_t selection_end() const noexcept { return std::max(caret_, anchor_); }
     std::string clean(std::string text) const; // what the field takes: one line, unless multiline
+    void lines_changed(); // secure or the line limit changed: the text may have to become one line
+    void shape_placeholder();
 
     // Text <-> shown bytes. Bytes inside an atomic segment go to its nearer end (or `toward_end`).
     std::size_t shown_without_composition(std::size_t text_byte) const;
@@ -122,7 +131,8 @@ private:
     void layout_changed();
 
     TextSystem* text_system_;
-    bool secure_; // shown as bullets; no copying, no IME composition
+    bool area_;
+    bool secure_ = false; // shown as bullets; no copying, no IME composition
     Binding<std::string> binding_;
     std::function<void()> on_submit_;
     WindowServices* services_;
@@ -163,6 +173,10 @@ private:
     Rect frame_;
     float scroll_x_ = 0; // single line: when the text is wider than the field
     float scroll_y_ = 0; // multiline: when it has more lines than shown
+    // Where the caret was and how tall the field was when the caret was last scrolled into sight:
+    // multiline fields follow the caret when either changes, and the wheel otherwise.
+    std::size_t revealed_caret_ = std::string::npos;
+    float revealed_height_ = -1;
     bool focused_ = false;
     bool dragging_ = false;
     double blink_start_ = 0;
@@ -216,6 +230,7 @@ public:
     void accessibility(AccessibilityInfo& out) const override;
     bool accessibility_action(const AccessibilityAction& action) override;
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
+    bool secure_text_input() const override { return editor_->secure(); }
 
 protected:
     Size measure(ProposedSize proposal) override { return content_->size_that_fits(proposal); }
@@ -228,6 +243,7 @@ private:
     EventResult hover(bool inside) override;
     PointerStyle pointer_style(Point) const override;
     EventResult key(const KeyEvent& event) override;
+    EventResult scroll(const ScrollEvent& event, Rect frame) override;
     bool focusable() const override;
     EventResult focus(bool focused) override;
     bool accepts_text_input() const override { return true; }

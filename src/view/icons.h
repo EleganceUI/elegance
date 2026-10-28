@@ -22,6 +22,7 @@ enum class Icon {
     check,
     chevron_right,
     chevron_down,
+    chevron_up,
 };
 
 // The icon at `size` points and `weight`, in the foreground style.

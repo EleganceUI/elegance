@@ -5,10 +5,12 @@
 #ifndef ELG_MODIFIERS_EVENTS_H
 #define ELG_MODIFIERS_EVENTS_H
 
-// Built-in event modifiers. View::on_tap_gesture() and on_hover() are sugar over these.
+// Built-in event modifiers. View::on_click(), on_pointer_enter/leave(), on_hover_change(),
+// on_pointer(), on_scroll(), on_key(), on_text_input() and recognize() are sugar over these.
 
 #include <elg/events.h>
 #include <elg/export.h>
+#include <elg/gestures.h>
 #include <elg/modifier.h>
 #include <elg/prop.h>
 
@@ -19,69 +21,108 @@
 
 namespace elg {
 
-// Runs `action` when the view is pressed and released inside it. The innermost tap gesture
-// under the pointer wins; outer ones don't fire.
-class ELG_API TapGestureModifier final : public EventModifier {
+// Calls `action` when the view is pressed and released inside it with the options' button and
+// click count. The innermost click handler under the pointer for that button wins; outer ones
+// don't fire.
+class ELG_API ClickModifier final : public EventModifier {
 public:
-    TapGestureModifier(int count, std::function<void()> action) : count_(count), action_(std::move(action)) {}
+    ClickModifier(std::function<void(const ClickEvent&)> action, ClickOptions options)
+        : action_(std::move(action)), options_(options) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
-    int count_;
     ELG_PRIVATE_MEMBERS_BEGIN
-    std::function<void()> action_;
+    std::function<void(const ClickEvent&)> action_;
+    ELG_PRIVATE_MEMBERS_END
+    ClickOptions options_;
+};
+
+// Calls `enter` as soon as the pointer comes over the view (its hit area) and `leave` as soon as it
+// goes, with no delay.
+class ELG_API PointerBoundaryModifier final : public EventModifier {
+public:
+    PointerBoundaryModifier(std::function<void()> enter, std::function<void()> leave)
+        : enter_(std::move(enter)), leave_(std::move(leave)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::function<void()> enter_;
+    std::function<void()> leave_;
     ELG_PRIVATE_MEMBERS_END
 };
 
-// Calls `action(true)` when the pointer has rested on the view for the hover delay and
-// `action(false)` when it leaves. `delay` overrides the environment's.
+// Hover intent: calls `action(true)` when the pointer has rested on the view for the hover delay
+// and `action(false)` when it leaves (after the exit delay), both from the environment's
+// HoverDelay (.hover_delay()).
 class ELG_API HoverModifier final : public EventModifier {
 public:
-    explicit HoverModifier(std::function<void(bool)> action, std::optional<HoverDelay> delay = std::nullopt)
-        : action_(std::move(action)), delay_(delay) {}
+    explicit HoverModifier(std::function<void(bool)> action) : action_(std::move(action)) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
     std::function<void(bool)> action_;
-    std::optional<HoverDelay> delay_;
     ELG_PRIVATE_MEMBERS_END
 };
 
-// Calls `action` as the user pinches over the view (began ... ended). The innermost one under the
-// pointer takes the gesture.
+// The gestures View::recognize() attaches (elg/gestures.h).
+class ELG_API DragGestureModifier final : public EventModifier {
+public:
+    explicit DragGestureModifier(DragGesture gesture, GestureOptions options = {})
+        : gesture_(std::move(gesture)), options_(options) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    DragGesture gesture_;
+    ELG_PRIVATE_MEMBERS_END
+    GestureOptions options_;
+};
+
+class ELG_API LongPressGestureModifier final : public EventModifier {
+public:
+    explicit LongPressGestureModifier(LongPressGesture gesture, GestureOptions options = {})
+        : gesture_(std::move(gesture)), options_(options) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    LongPressGesture gesture_;
+    ELG_PRIVATE_MEMBERS_END
+    GestureOptions options_;
+};
+
 class ELG_API MagnifyGestureModifier final : public EventModifier {
 public:
-    explicit MagnifyGestureModifier(std::function<void(const MagnifyEvent&)> action) : action_(std::move(action)) {}
+    explicit MagnifyGestureModifier(MagnifyGesture gesture) : gesture_(std::move(gesture)) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
-    std::function<void(const MagnifyEvent&)> action_;
+    MagnifyGesture gesture_;
     ELG_PRIVATE_MEMBERS_END
 };
 
-// Calls `action` as the user turns two fingers over the view (began ... ended).
 class ELG_API RotateGestureModifier final : public EventModifier {
 public:
-    explicit RotateGestureModifier(std::function<void(const RotateEvent&)> action) : action_(std::move(action)) {}
+    explicit RotateGestureModifier(RotateGesture gesture) : gesture_(std::move(gesture)) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
-    std::function<void(const RotateEvent&)> action_;
+    RotateGesture gesture_;
     ELG_PRIVATE_MEMBERS_END
 };
 
-// Calls `action` with the location on a two-finger double tap over the view (macOS's smart zoom).
-class ELG_API SmartMagnifyModifier final : public EventModifier {
+class ELG_API TwoFingerDoubleTapModifier final : public EventModifier {
 public:
-    explicit SmartMagnifyModifier(std::function<void(Point)> action) : action_(std::move(action)) {}
+    explicit TwoFingerDoubleTapModifier(TwoFingerDoubleTapGesture gesture) : gesture_(std::move(gesture)) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
-    std::function<void(Point)> action_;
+    TwoFingerDoubleTapGesture gesture_;
     ELG_PRIVATE_MEMBERS_END
 };
 
@@ -107,16 +148,55 @@ private:
     bool focusable_;
 };
 
-// Calls `action` for key presses while the view (or something inside it) has focus. `action`
-// returns true if it handled the key; unhandled keys bubble outwards.
-class ELG_API KeyPressModifier final : public EventModifier {
+// Calls `action` for key downs and ups while the view (or something inside it) has focus.
+// `action` returns true if it handled the key; unhandled keys bubble outwards.
+class ELG_API KeyEventModifier final : public EventModifier {
 public:
-    explicit KeyPressModifier(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
+    explicit KeyEventModifier(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
     std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
     std::function<bool(const KeyEvent&)> action_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
+// Calls `action` with the view's pointer events, located in the view's own coordinates.
+// Returning true consumes the event; consuming a `down` captures the pointer until the `up`.
+class ELG_API PointerModifier final : public EventModifier {
+public:
+    explicit PointerModifier(std::function<bool(const PointerEvent&)> action) : action_(std::move(action)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::function<bool(const PointerEvent&)> action_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
+// Calls `action` with wheel and trackpad scrolling over the view, located in its own coordinates.
+// Returning true consumes it.
+class ELG_API ScrollModifier final : public EventModifier {
+public:
+    explicit ScrollModifier(std::function<bool(const ScrollEvent&)> action) : action_(std::move(action)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::function<bool(const ScrollEvent&)> action_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
+// Makes the view focusable and calls `action` with the text typed (and IME compositions) while it
+// has focus. Returning true consumes it.
+class ELG_API TextInputModifier final : public EventModifier {
+public:
+    explicit TextInputModifier(std::function<bool(const TextInputEvent&)> action) : action_(std::move(action)) {}
+    std::unique_ptr<EventHandler> make_handler() const override;
+
+private:
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::function<bool(const TextInputEvent&)> action_;
     ELG_PRIVATE_MEMBERS_END
 };
 

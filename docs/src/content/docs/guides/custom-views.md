@@ -47,7 +47,7 @@ struct ContactRow {
     }
 };
 
-List(ForEach(contacts, &Contact::id, [](const Contact& c) { return ContactRow{c}; }));
+ScrollView(LazyVStack(ForEach(contacts, &Contact::id, [](const Contact& c) { return ContactRow{c}; })));
 ```
 
 A component's body runs when the view is **placed** in the tree, not when it's created. That

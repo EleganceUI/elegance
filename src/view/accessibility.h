@@ -33,7 +33,7 @@ struct AccessibilitySpec {
     bool combine = false;
     std::function<void()> action; // the default action (click), for custom controls
     // Built-in controls: state read when the tree is built.
-    std::function<std::optional<bool>()> toggled;
+    std::function<std::optional<ToggleState>()> toggled;
     std::function<bool()> selected;
 };
 

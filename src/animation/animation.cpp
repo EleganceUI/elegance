@@ -127,6 +127,12 @@ bool Animation::finished(double seconds) const noexcept {
     return t >= settle;
 }
 
+// --- PopupMotion ---
+
+PopupMotion::PopupMotion(const Transition& transition, const Animation& animation)
+    : transition_(std::make_shared<const Transition>(transition)),
+      animation_(std::make_shared<const Animation>(animation)) {}
+
 // --- Transition ---
 
 Transition Transition::opacity() {
@@ -140,10 +146,16 @@ Transition Transition::identity() {
     return Transition();
 }
 
-Transition Transition::scale(float from) {
+Transition Transition::scale(float from, Alignment anchor) {
+    const auto fraction = [](auto alignment, auto start, auto end) {
+        return alignment == start ? 0.f : alignment == end ? 1.f : 0.5f;
+    };
     Transition transition;
     transition.insertion_.scale = from;
-    transition.removal_.scale = from;
+    transition.insertion_.anchor_x =
+        fraction(anchor.horizontal, HorizontalAlignment::leading, HorizontalAlignment::trailing);
+    transition.insertion_.anchor_y = fraction(anchor.vertical, VerticalAlignment::top, VerticalAlignment::bottom);
+    transition.removal_ = transition.insertion_;
     return transition;
 }
 
@@ -186,7 +198,16 @@ Transition Transition::asymmetric(const Transition& insertion, const Transition&
 }
 
 Transition::Effect Transition::merge(const Effect& a, const Effect& b) noexcept {
-    return {a.opacity * b.opacity, a.scale * b.scale, a.x + b.x, a.y + b.y, a.edge_x + b.edge_x, a.edge_y + b.edge_y};
+    // The anchor of whichever one scales around something other than its middle.
+    const bool b_anchored = b.anchor_x != 0.5f || b.anchor_y != 0.5f;
+    return {a.opacity * b.opacity,
+            a.scale * b.scale,
+            a.x + b.x,
+            a.y + b.y,
+            a.edge_x + b.edge_x,
+            a.edge_y + b.edge_y,
+            b_anchored ? b.anchor_x : a.anchor_x,
+            b_anchored ? b.anchor_y : a.anchor_y};
 }
 
 Transition Transition::combined(const Transition& other) const {
@@ -205,6 +226,8 @@ Transition::Pose Transition::pose(float progress, bool removal, Size size) const
         .scale = e.scale + (1 - e.scale) * p,
         .x = away * (e.x + e.edge_x * size.width),
         .y = away * (e.y + e.edge_y * size.height),
+        .anchor_x = e.anchor_x,
+        .anchor_y = e.anchor_y,
     };
 }
 

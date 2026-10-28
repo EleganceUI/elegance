@@ -83,8 +83,9 @@ class ELG_API Transition {
 public:
     static Transition opacity();
     static Transition identity(); // appears and disappears at once
-    // Grows from (and shrinks to) `from` times its size, around its center.
-    static Transition scale(float from = 0.f);
+    // Grows from (and shrinks to) `from` times its size, around its center or the point of its
+    // frame `anchor` names: Transition::scale(0.9f, Alignment::top) grows down from its top edge.
+    static Transition scale(float from = 0.f, Alignment anchor = Alignment::center);
     static Transition offset(float x, float y);
     // Slides in from (and out to) beyond an edge of its frame: Edges::top, leading, ...
     static Transition move(Edges edge);
@@ -102,6 +103,9 @@ public:
         float scale = 1;
         float x = 0; // offset in points
         float y = 0;
+        // What it scales around, as fractions of its frame (0.5, 0.5: the middle).
+        float anchor_x = 0.5f;
+        float anchor_y = 0.5f;
     };
     Pose pose(float progress, bool removal, Size size) const noexcept;
 
@@ -114,6 +118,8 @@ private:
         // Edges to move beyond, by the frame's size.
         float edge_x = 0; // -1: leading, 1: trailing
         float edge_y = 0; // -1: top, 1: bottom
+        float anchor_x = 0.5f;
+        float anchor_y = 0.5f;
     };
     static Effect merge(const Effect& a, const Effect& b) noexcept;
 

@@ -18,9 +18,11 @@
 
 #include <concepts>
 #include <climits>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -86,6 +88,19 @@ View ZStack(Children&&... children) {
 // Flexible space that expands along its stack's axis.
 ELG_API View Spacer(OptionalLength min_length = {});
 
+struct SeparatorOptions {
+    Prop<Color> color = ThemeColor::outline;
+    float thickness = 1;
+    float inset = 0; // left clear at both ends
+};
+
+// A thin line between groups: horizontal (as wide as offered: in a VStack, a menu, a grid row) or
+// vertical (as tall as offered: in an HStack). Assistive technology sees a separator, which isn't
+// focusable; .accessibility_hidden() makes it purely decorative.
+//   VStack(Header(), Separator(), Body())
+//   HStack(Bold(), Italic(), Separator(Axis::vertical, {.inset = 4}), Link())
+ELG_API View Separator(Axis axis = Axis::horizontal, SeparatorOptions options = {});
+
 ELG_API View EmptyView();
 
 // Immediate-mode drawing; `draw` runs every time the view is drawn. Takes the proposed size.
@@ -95,13 +110,18 @@ ELG_API View Canvas(std::function<void(GraphicsContext&)> draw);
 // hovered and darker while pressed. `action` runs when it's clicked (or activated with Space or
 // Enter while focused). Its look comes from the ButtonStyle (.button_style(), elg/styles.h).
 ELG_API View Button(View label, std::function<void()> action);
-ELG_API View Button(std::string title, std::function<void()> action);
+ELG_API View Button(Prop<std::string> title, std::function<void()> action);
 
 struct TextFieldOptions {
     std::function<void()> on_submit; // Enter
+    // Passwords: a bullet per character, no copying, no input method (IME), and one line; on macOS
+    // Secure Event Input while focused, so other apps can't read the keys. Bind it to
+    // let the user see what they typed:
+    //   TextField("Password", password.binding(), {.secure = [=] { return !reveal(); }})
+    Prop<bool> secure = false;
     // More than 1: the field wraps and grows up to this many lines, then scrolls. Enter submits;
-    // Shift+Enter starts a new line.
-    int max_lines = 1;
+    // Shift+Enter starts a new line. For longer text (notes, documents), use TextArea.
+    Prop<int> line_limit = 1;
     // Styles ranges of the text as it's edited (markdown, mentions shown as chips: TextSpan). Spans
     // are sorted and don't overlap. Called after every change.
     std::function<std::vector<TextSpan>(std::string_view text)> styler;
@@ -114,14 +134,26 @@ struct TextFieldOptions {
 // border by default). Typing, IME composition, selection (pointer, Shift+arrows, double-click
 // word, triple-click all), word movement, clipboard, and undo/redo.
 //   TextField("Name", name.binding(), {.on_submit = save})
-ELG_API View TextField(std::string placeholder, Binding<std::string> text, TextFieldOptions options = {});
-// A TextField for passwords: shows a bullet per character, and can't be copied from.
-ELG_API View SecureField(std::string placeholder, Binding<std::string> text, TextFieldOptions options = {});
+//   TextField("Password", password.binding(), {.secure = true})
+ELG_API View TextField(Prop<std::string> placeholder, Binding<std::string> text, TextFieldOptions options = {});
+
+struct TextAreaOptions {
+    std::function<void()> on_submit; // Ctrl+Enter (Cmd+Enter on macOS); Enter starts a new line
+    // As TextFieldOptions::styler and ::on_key.
+    std::function<std::vector<TextSpan>(std::string_view text)> styler;
+    std::function<bool(const KeyEvent&)> on_key;
+};
+
+// A multiline text editor bound to `text`, for notes, messages, and documents. It edits like a
+// TextField, takes the height it's offered, and scrolls through longer text (in a ScrollView, it
+// grows with its text instead). Its look comes from the TextFieldStyle.
+//   TextArea("Notes", note.binding()).frame({.height = 200})
+ELG_API View TextArea(Prop<std::string> placeholder, Binding<std::string> text, TextAreaOptions options = {});
 
 struct SliderOptions {
-    float min = 0;
-    float max = 1;
-    float step = 0; // 0: continuous
+    Prop<float> min = 0.f;
+    Prop<float> max = 1.f;
+    Prop<float> step = 0.f; // 0: continuous
     // Called with true when a drag starts and false when it ends (e.g. to commit an expensive
     // change only once).
     std::function<void(bool)> on_editing_changed;
@@ -132,49 +164,81 @@ struct SliderOptions {
 //   Slider(volume.binding(), {.min = 0, .max = 100, .step = 5})
 ELG_API View Slider(Binding<float> value, SliderOptions options = {});
 
-struct StepperOptions {
-    int min = INT_MIN;
-    int max = INT_MAX;
-    int step = 1;
-};
-
-// The label, then - and + buttons that change `value` by `step` within [min, max].
-//   Stepper(Text([=] { return std::format("Guests: {}", guests()); }), guests.binding(), {.min = 1})
-ELG_API View Stepper(View label, Binding<int> value, StepperOptions options = {});
-ELG_API View Stepper(std::string title, Binding<int> value, StepperOptions options = {});
-
-// A bar filled to `fraction` (0...1); animates with the value.
-ELG_API View ProgressView(Prop<float> fraction);
-// Indeterminate: activity of unknown length. Renders continuously while shown.
-ELG_API View ProgressView();
-
-enum class PickerStyle {
-    segmented, // every option visible, as segments
-    menu,      // the chosen option on a button; the others in a menu
+struct NumberInputOptions {
+    Prop<double> min = -std::numeric_limits<double>::infinity();
+    Prop<double> max = std::numeric_limits<double>::infinity();
+    Prop<double> step = 1.0; // the arrows, Up/Down (Shift: 10 steps), and each few points scrubbed
+    // Digits after the point; -1: as many as the value needs (up to 6). Integers show none.
+    Prop<int> decimals = -1;
+    // Text for a value, and a value for text (nullopt: not a number), e.g. for units:
+    //   .format = [](double v) { return std::format("{:g} px", v); }
+    // By default, plain numbers; parsing ignores spaces around them.
+    std::function<std::string(double)> format;
+    std::function<std::optional<double>(std::string_view)> parse;
+    // Apply each valid number as it's typed. Otherwise typing applies on Enter or when the field
+    // loses focus, so "1." isn't rewritten to "1" under the caret.
+    Prop<bool> live = false;
+    Prop<bool> shows_buttons = true; // the style's increment and decrement buttons
+    // Dragging sideways on the field (while it isn't being edited) changes the value; a click
+    // without dragging edits it.
+    Prop<bool> scrubs = true;
 };
 
 namespace detail {
-ELG_API View make_segmented_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,
-                                   std::function<void(std::size_t)> select);
-ELG_API View make_menu_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,
-                              std::function<void(std::size_t)> select);
+ELG_API View make_number_input(Binding<double> value, bool integer, NumberInputOptions options);
 } // namespace detail
 
-// One of several options; `selection` is the chosen option's value. Shown as segments, or with
-// PickerStyle::menu as a button that opens a menu of the options.
+// A number you can type, step with the arrows or Up/Down, or scrub by dragging. Text that isn't a
+// number reverts when you leave the field; values stay within [min, max]. Its look comes from the
+// NumberInputStyle (a box with stacked arrows by default). Put a Text beside it for a label.
+//   NumberInput(guests.binding(), {.min = 1, .max = 20})
+//   NumberInput(opacity.binding(), {.min = 0, .max = 1, .step = 0.05, .decimals = 2})
+template <class T>
+    requires std::same_as<T, int> || std::same_as<T, float> || std::same_as<T, double>
+View NumberInput(Binding<T> value, NumberInputOptions options = {}) {
+    Binding<double> as_double([value] { return static_cast<double>(value()); },
+                              [value](double v) {
+                                  if constexpr (std::same_as<T, int>) {
+                                      v = std::round(v);
+                                  }
+                                  value.set(static_cast<T>(v));
+                              });
+    return detail::make_number_input(std::move(as_double), std::same_as<T, int>, std::move(options));
+}
+// A State converts to the Binding it holds.
+template <class T>
+    requires std::same_as<T, int> || std::same_as<T, float> || std::same_as<T, double>
+View NumberInput(const State<T>& value, NumberInputOptions options = {}) {
+    return NumberInput(value.binding(), std::move(options));
+}
+
+// How far along something is: a fraction (0...1), or, while it's empty, activity of unknown
+// length. Drawn by a ProgressStyle (a bar by default; CircularProgressStyle for a ring); the
+// fraction animates with the update that changed it.
+//   Progress(0.4f)
+//   Progress([=] { return download.fraction(); }) // a std::optional<float>: empty until it's known
+//   Progress()                                    // indeterminate
+// Name it with .accessibility_label, or put a Text beside it.
+ELG_API View Progress(Prop<std::optional<float>> fraction = std::nullopt);
+
+namespace detail {
+ELG_API View make_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,
+                         std::function<void(std::size_t)> select);
+} // namespace detail
+
+// One of several options; `selection` is the chosen option's value. Its look comes from the
+// PickerStyle: segments by default, or MenuPickerStyle for a button that opens a menu of them.
 //   Picker(size.binding(), {{Size::small, "S"}, {Size::medium, "M"}, {Size::large, "L"}})
 template <class T>
     requires std::equality_comparable<T>
-View Picker(Binding<T> selection, std::vector<std::pair<T, std::string>> options,
-            PickerStyle style = PickerStyle::segmented) {
+View Picker(Binding<T> selection, std::vector<std::pair<T, std::string>> options) {
     const auto shared = std::make_shared<const std::vector<std::pair<T, std::string>>>(std::move(options));
     std::vector<std::string> labels;
     labels.reserve(shared->size());
     for (const auto& option : *shared) {
         labels.push_back(option.second);
     }
-    auto make = style == PickerStyle::menu ? &detail::make_menu_picker : &detail::make_segmented_picker;
-    return make(
+    return detail::make_picker(
         std::move(labels),
         [selection, shared]() -> std::size_t {
             const T current = selection();
@@ -191,7 +255,26 @@ View Picker(Binding<T> selection, std::vector<std::pair<T, std::string>> options
 // An on/off control bound to `is_on`; its look comes from the ToggleStyle (a switch by default).
 // Click, Space, or Enter flips it.
 ELG_API View Toggle(View label, Binding<bool> is_on);
-ELG_API View Toggle(std::string title, Binding<bool> is_on);
+ELG_API View Toggle(Prop<std::string> title, Binding<bool> is_on);
+// Just the switch, for where a label is beside it already (a settings row). Give it an
+// .accessibility_label(...) so screen readers can name it.
+ELG_API View Toggle(Binding<bool> is_on);
+
+struct CheckboxOptions {
+    // Some of what it stands for is checked, e.g. "Select all" over a partly selected list:
+    //   Checkbox("Select all", all, {.mixed = [=] { return some() && !every(); }})
+    // Shown with a dash; checking it then checks it fully. Read by screen readers as mixed.
+    Prop<bool> mixed = false;
+};
+
+// A check box bound to `is_checked`, for choosing something (as part of a form or a list), where
+// a Toggle switches something on. Its look comes from the CheckboxStyle (a box by default).
+// Click, Space, or Enter checks or unchecks it.
+ELG_API View Checkbox(View label, Binding<bool> is_checked, CheckboxOptions options = {});
+ELG_API View Checkbox(Prop<std::string> title, Binding<bool> is_checked, CheckboxOptions options = {});
+// Just the box, for where a label is beside it already (a table row). Give it an
+// .accessibility_label(...) so screen readers can name it.
+ELG_API View Checkbox(Binding<bool> is_checked, CheckboxOptions options = {});
 
 // --- Structure: views that appear, disappear, and repeat with state (design.md §6) ---
 
@@ -201,9 +284,6 @@ ELG_API View Toggle(std::string title, Binding<bool> is_on);
 // and builds the other branch. Inside a stack, the shown branch is a direct child of the stack;
 // an empty branch takes no space.
 ELG_API View If(Prop<bool> condition, View then_view, View else_view = View());
-
-// Identifies a ForEach item across updates.
-using ItemKey = std::variant<std::int64_t, std::string>;
 
 namespace detail {
 
@@ -216,17 +296,6 @@ struct ForEachItem {
 };
 
 ELG_API View make_for_each(std::function<std::vector<ForEachItem>()> items);
-
-template <class K>
-ItemKey to_item_key(const K& key) {
-    if constexpr (std::is_integral_v<K> || std::is_enum_v<K>) {
-        return static_cast<std::int64_t>(key);
-    } else {
-        static_assert(std::is_convertible_v<const K&, std::string_view>,
-                      "ForEach keys must be integers, enums, or strings");
-        return std::string(std::string_view(key));
-    }
-}
 
 template <class Source>
 struct ItemsOf {
@@ -254,7 +323,7 @@ public:
 
     void scroll_to_top(bool animated = true) const;
     void scroll_to_end(bool animated = true) const;
-    // Scrolls the item with this ForEach key (in a lazy stack or List inside) to the top.
+    // Scrolls the item with this ForEach key (in a lazy stack inside) to the top.
     template <class K>
     void scroll_to(const K& id) const {
         scroll_to_key(detail::to_item_key(id));
@@ -271,11 +340,11 @@ private:
 
 struct ScrollViewOptions {
     ScrollAxes axes = ScrollAxes::vertical;
-    bool shows_indicators = true; // scroll bars, shown while scrolling or hovered
+    Prop<bool> shows_indicators = true; // scroll bars, shown while scrolling or hovered
     std::optional<ScrollPosition> position;
     // Chat logs: starts at the end, and while scrolled to the end it stays there as the content
     // grows (new messages, images loading), without animating. Scrolled back, it stays put.
-    bool sticks_to_end = false;
+    Prop<bool> sticks_to_end = false;
 };
 
 // Shows `content` at its ideal size along the scroll axes, clipped to the space the scroll view
@@ -334,54 +403,61 @@ View ForEach(Source items, ContentFunction content) {
 
 // --- Menus and popups (design.md §13.1) ---
 
-// A thin line separating groups: horizontal in a VStack (and menus), full width.
-ELG_API View Divider();
-
 struct MenuItemOptions {
-    std::string shortcut;              // a hint shown on the right, e.g. "Ctrl+R"
-    bool destructive = false;          // shown in the danger color
-    std::optional<Prop<bool>> checked; // a check mark in front, e.g. for options
-    std::optional<ImageSource> image;  // an icon in front: {.image = {{.system_name = "copy"}}}
+    Prop<std::string> shortcut = std::string(); // a hint shown on the right, e.g. "Ctrl+R"
+    Prop<bool> destructive = false;             // shown in the danger color
+    std::optional<Prop<bool>> checked;          // a check mark in front, e.g. for options
+    std::optional<ImageSource> image;           // an icon in front: {.image = {{.system_name = "copy"}}}
 };
 
 // A menu command. Choosing it closes the menu, then runs `action`. Disable it with .disabled().
-ELG_API View MenuItem(std::string title, std::function<void()> action, MenuItemOptions options = {});
+ELG_API View MenuItem(Prop<std::string> title, std::function<void()> action, MenuItemOptions options = {});
 
 // A menu item that opens another menu beside it (on hover, click, or Right).
-ELG_API View Submenu(std::string title, std::function<View()> menu);
+ELG_API View Submenu(Prop<std::string> title, std::function<View()> menu);
 
 namespace detail {
 ELG_API View make_menu(std::vector<View> items);
 } // namespace detail
 
-// The menu panel: items (MenuItem, Submenu, Divider, or any view) stacked in a styled panel.
+// The menu panel: items (MenuItem, Submenu, Separator, or any view) stacked in a styled panel.
 // Up/Down move between items, Enter chooses, Esc closes, Left/Right leave and enter submenus.
 template <std::convertible_to<View>... Items>
 View Menu(Items&&... items) {
     return detail::make_menu({View(std::forward<Items>(items))...});
 }
 
-// Which side of its button a MenuButton's menu opens on (it flips if there isn't room).
-enum class MenuEdge { below, above };
-
 struct MenuButtonOptions {
-    MenuEdge opens = MenuEdge::below; // above: for buttons near the bottom, like a message box's
-    bool shows_indicator = true;      // the chevron after the label
+    // Where the menu opens, as for floating content: below the button by default, flipping when
+    // there isn't room. Above, for buttons near the bottom like a message box's:
+    //   {.placement = {.edge = FloatingEdge::top, .spacing = 4}}
+    FloatingPlacement placement{.spacing = 4};
+    Prop<bool> shows_indicator = true; // the chevron after the label
+    std::optional<PopupMotion> motion; // nullopt: the MenuStyle's
 };
 
-// A button that opens the menu `menu` builds, below it (or as `options` say).
-ELG_API View MenuButton(View label, std::function<View()> menu);
-ELG_API View MenuButton(View label, std::function<View()> menu, MenuButtonOptions options);
-ELG_API View MenuButton(std::string title, std::function<View()> menu);
+// A button that opens the menu `menu` builds, in a popup window.
+ELG_API View MenuButton(View label, std::function<View()> menu, MenuButtonOptions options = {});
+ELG_API View MenuButton(Prop<std::string> title, std::function<View()> menu, MenuButtonOptions options = {});
+
+// Lines between a lazy stack's items, in the middle of the spacing:
+//   LazyVStack({.spacing = 0, .separators = StackSeparators{.inset = 16}}, ForEach(...))
+struct StackSeparators {
+    Prop<Color> color = ThemeColor::outline;
+    float inset = 0; // from the leading edge (the top, in a LazyHStack)
+    float thickness = 1;
+};
 
 struct LazyVStackOptions {
     HorizontalAlignment alignment = HorizontalAlignment::center;
     OptionalLength spacing; // default_stack_spacing
+    std::optional<StackSeparators> separators;
 };
 
 struct LazyHStackOptions {
     VerticalAlignment alignment = VerticalAlignment::center;
     OptionalLength spacing;
+    std::optional<StackSeparators> separators;
 };
 
 // Like VStack / HStack over a ForEach, but only the items in or near the visible part of the
@@ -393,16 +469,6 @@ ELG_API View LazyVStack(LazyVStackOptions options, View for_each);
 ELG_API View LazyVStack(View for_each);
 ELG_API View LazyHStack(LazyHStackOptions options, View for_each);
 ELG_API View LazyHStack(View for_each);
-
-// A scrolling list of rows: lazy, with separators, row padding, and a hover highlight, on a
-// rounded surface. `for_each` must be a ForEach.
-//   List(ForEach(contacts, &Contact::id, [](const Contact& c) { return ContactRow(c); }))
-struct ListOptions {
-    std::optional<ScrollPosition> position; // to scroll it from code
-};
-
-ELG_API View List(View for_each);
-ELG_API View List(ListOptions options, View for_each);
 
 } // namespace elg
 

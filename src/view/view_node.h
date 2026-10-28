@@ -30,6 +30,8 @@
 
 namespace elg::detail {
 
+struct SelectionController; // selection.cpp
+
 struct LowerContext {
     TextSystem* text = nullptr;
     // Set to true to request a new frame for the window being built (reactive updates).
@@ -47,6 +49,9 @@ struct LowerContext {
     FocusManager* focus = nullptr;
     // The window's text input, clipboard, cursor, and timed redraws.
     WindowServices* services = nullptr;
+    // View::selection around the views being built, for the first stack over a ForEach inside
+    // (claim_selection).
+    std::shared_ptr<SelectionController> selection;
 
     // The context for a view that isn't a direct child of the current layout.
     LowerContext nested() const {
@@ -112,6 +117,13 @@ void bind(const Prop<T>& prop, const LowerContext& context, Apply apply) {
         }
     });
 }
+
+// For a ForEach in a stack along `axis`: the selection around it, unless another stack took it
+// first. Takes it.
+std::shared_ptr<SelectionController> claim_selection(const LowerContext& context, Axis axis);
+// The ForEach's items as selectable rows (View::selection).
+std::function<std::vector<ForEachItem>()> selectable_items(std::function<std::vector<ForEachItem>()> items,
+                                                           std::shared_ptr<SelectionController> selection);
 
 // Joins `element` to the window's focus, drawing the ring in the tint.
 void join_focus(Element& element, const LowerContext& context);
@@ -197,28 +209,47 @@ private:
 
 class TextFieldNode final : public ViewNode {
 public:
-    TextFieldNode(std::string placeholder, Binding<std::string> text, TextFieldOptions options, bool secure)
-        : placeholder_(std::move(placeholder)), text_(std::move(text)), options_(std::move(options)), secure_(secure) {}
+    // `area`: a TextArea, whose options are a TextField's that don't apply (secure, line_limit).
+    TextFieldNode(Prop<std::string> placeholder, Binding<std::string> text, TextFieldOptions options, bool area)
+        : placeholder_(std::move(placeholder)), text_(std::move(text)), options_(std::move(options)), area_(area) {}
     std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
-    std::string placeholder_;
+    Prop<std::string> placeholder_;
     Binding<std::string> text_;
     TextFieldOptions options_;
-    bool secure_;
+    bool area_;
 };
 
+// Toggle and Checkbox: one control, a button that flips a binding, with each one's style and
+// accessibility role. A check box can be mixed.
 class ToggleNode final : public ViewNode {
 public:
-    ToggleNode(View label, Binding<bool> is_on) : label_(std::move(label)), is_on_(std::move(is_on)) {}
+    enum class Kind { toggle, checkbox };
+    ToggleNode(Kind kind, View label, Binding<bool> value, Prop<bool> mixed = false)
+        : kind_(kind), label_(std::move(label)), value_(std::move(value)), mixed_(std::move(mixed)) {}
     std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
+    Kind kind_;
     View label_;
-    Binding<bool> is_on_;
+    Binding<bool> value_;
+    Prop<bool> mixed_;
 };
 
 // `.focused(binding)`.
+// `.on_activate(action)`: clicks, Space/Enter while focused, and the accessibility action.
+class ActivateNode final : public ViewNode {
+public:
+    ActivateNode(View content, std::function<void()> action)
+        : content_(std::move(content)), action_(std::move(action)) {}
+    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+
+private:
+    View content_;
+    std::function<void()> action_;
+};
+
 class FocusedNode final : public ViewNode {
 public:
     FocusedNode(View content, Binding<bool> is_focused) : content_(std::move(content)), is_focused_(std::move(is_focused)) {}

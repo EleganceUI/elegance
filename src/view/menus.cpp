@@ -94,6 +94,8 @@ View icon(Icon which, float size, Weight weight) {
         return set_icon("phosphor.caret-right", size, weight, Text("\xE2\x80\xBA").font(Font::system(size * 1.6f)));
     case Icon::chevron_down:
         return set_icon("phosphor.caret-down", size, weight, Text("v").font(Font::system(size * 1.2f)));
+    case Icon::chevron_up:
+        return set_icon("phosphor.caret-up", size, weight, Text("^").font(Font::system(size * 1.2f)));
     }
     return EmptyView();
 }
@@ -102,30 +104,31 @@ namespace {
 
 // --- Menu items ---
 
-constexpr float kItemRadius = 5;
+// How menus opened from where `environment` is come and go: their MenuStyle's motion.
+PopupMotion menu_motion(const EnvironmentValues& environment) {
+    return untrack([&] { return environment.get<MenuStyleKey>(); })->motion();
+}
 
-// A menu row's look: highlighted while hovered or focused (keyboard), dimmed when disabled.
+// A menu row's state: highlighted while hovered or focused (keyboard).
 struct RowState {
     State<bool> hovered{false};
     State<bool> focused{false};
 };
 
-View menu_row(View content, RowState state, bool destructive, EnvironmentValues environment) {
-    const auto enabled = [environment] { return !environment.get<DisabledKey>(); };
-    return content.padding(EdgeInsets::symmetric(10, 6))
-        .frame({.max_width = infinity, .alignment = Alignment::leading})
-        .foreground_style([=](const EnvironmentValues& env) {
-            if (!enabled()) {
-                return env.color(ThemeColor::tertiary);
-            }
-            return destructive ? env.color(ThemeColor::danger) : env.color(ThemeColor::primary);
-        })
-        .background(
-            [=](const EnvironmentValues& env) {
-                const bool lit = enabled() && (state.hovered() || state.focused());
-                return lit ? env.color(ThemeColor::outline).opacity(0.55f) : Color::clear;
-            },
-            RoundedRectangle(kItemRadius));
+// The row's look, from the MenuStyle of where the menu was opened.
+View menu_row(View title, View leading, View trailing, RowState state, Prop<bool> destructive,
+              const EnvironmentValues& environment) {
+    const MenuItemConfiguration configuration{
+        .title = std::move(title),
+        .leading = std::move(leading),
+        .trailing = std::move(trailing),
+        .is_highlighted = [state] { return state.hovered() || state.focused(); },
+        .is_enabled = [environment] { return !environment.get<DisabledKey>(); },
+        .is_destructive = [destructive = destructive.resolved_in(environment)] { return destructive.get(); },
+    };
+    const std::shared_ptr<const MenuStyle> style = untrack([&] { return environment.get<MenuStyleKey>(); });
+    const EnvironmentScope scope(environment);
+    return style->make_item(configuration);
 }
 
 // The row as a button: hovering focuses it (so keys continue from there) and closes submenus
@@ -159,26 +162,32 @@ std::unique_ptr<ButtonElement> make_row_element(const View& row, RowState state,
 
 class MenuItemNode final : public ViewNode {
 public:
-    MenuItemNode(std::string title, std::function<void()> action, MenuItemOptions options)
+    MenuItemNode(Prop<std::string> title, std::function<void()> action, MenuItemOptions options)
         : title_(std::move(title)), action_(std::move(action)), options_(std::move(options)) {}
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const RowState state;
-        std::vector<View> parts;
+        std::vector<View> leading;
         if (options_.checked) {
             const Prop<bool> checked = *options_.checked;
-            parts.push_back(If(checked, icon(Icon::check, 13, Weight::bold), EmptyView()).frame(14, 14));
+            leading.push_back(If(checked, icon(Icon::check, 13, Weight::bold), EmptyView()).frame(14, 14));
         }
         if (options_.image) {
-            parts.push_back(Image(*options_.image).font(Font::system(15)).frame(16, 16));
+            leading.push_back(Image(*options_.image).font(Font::system(15)).frame(16, 16));
         }
-        parts.push_back(Text(title_));
-        parts.push_back(Spacer(24));
-        if (!options_.shortcut.empty()) {
-            parts.push_back(Text(options_.shortcut).font(Font::system(12)).foreground_style(ThemeColor::tertiary));
+        View trailing;
+        const Prop<std::string>& shortcut = options_.shortcut;
+        const View hint = Text(shortcut).font(Font::system(12)).foreground_style(ThemeColor::tertiary);
+        if (const std::string* value = shortcut.static_value()) {
+            if (!value->empty()) {
+                trailing = hint;
+            }
+        } else {
+            trailing = If([shortcut](const EnvironmentValues& env) { return !shortcut.get(env).empty(); }, hint);
         }
-        const View row = menu_row(HStackLayout(VerticalAlignment::center, 8)(std::move(parts)), state,
-                                  options_.destructive, context.environment);
+        const View row = menu_row(Text(title_),
+                                  leading.empty() ? View() : HStackLayout(VerticalAlignment::center, 8)(std::move(leading)),
+                                  trailing, state, options_.destructive, context.environment);
         // Chosen: the menus close first, then the action runs (it may open a dialog or a menu).
         WindowServices* const services = context.services;
         auto action = [services, action = action_] {
@@ -192,7 +201,7 @@ public:
     }
 
 private:
-    std::string title_;
+    Prop<std::string> title_;
     std::function<void()> action_;
     MenuItemOptions options_;
 };
@@ -213,23 +222,24 @@ private:
 
 class SubmenuNode final : public ViewNode {
 public:
-    SubmenuNode(std::string title, std::function<View()> menu) : title_(std::move(title)), menu_(std::move(menu)) {}
+    SubmenuNode(Prop<std::string> title, std::function<View()> menu) : title_(std::move(title)), menu_(std::move(menu)) {}
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const RowState state;
-        const View row = menu_row(HStack({.spacing = 8}, Text(title_), Spacer(24), icon(Icon::chevron_right, 12)), state,
-                                  false, context.environment);
+        const View row = menu_row(Text(title_), View(), icon(Icon::chevron_right, 12), state, false, context.environment);
         WindowServices* const services = context.services;
         const int level = services ? services->menu_level() + 1 : 0;
         auto element_slot = std::make_shared<Element*>(nullptr);
         auto open = [services, level, element_slot, menu = menu_, environment = context.environment] {
             if (services && *element_slot) {
                 services->open_popup({.kind = PopupRequest::Kind::menu,
-                                      .placement = PopupRequest::Placement::beside,
+                                      // Beside the row, overlapping it a little.
+                                      .placement = {.edge = FloatingEdge::trailing, .spacing = -2, .offset = {0, -4}},
                                       .anchor = (*element_slot)->drawn_frame(),
                                       .content = menu,
                                       .environment = environment,
-                                      .level = level});
+                                      .level = level,
+                                      .motion = menu_motion(environment)});
             }
         };
         // Click, Enter, Space, and Right open it at once; resting the pointer on it opens it after
@@ -248,28 +258,23 @@ public:
     }
 
 private:
-    std::string title_;
+    Prop<std::string> title_;
     std::function<View()> menu_;
 };
 
 // --- Openers ---
 
-// Wraps a view; the handler sees its frame. Pointer events pass on unless handled.
-class PopupTriggerElement final : public Element, private EventHandler {
+// Wraps a view with a context menu: right-click, Shift+F10 or the Menu key opens it.
+class ContextMenuElement final : public Element, private EventHandler {
 public:
-    enum class Kind { context_menu, help };
-
-    PopupTriggerElement(Kind kind, std::unique_ptr<Element> content, std::function<View()> popup,
-                        EnvironmentValues environment, WindowServices* services)
-        : kind_(kind), content_(std::move(content)), popup_(std::move(popup)), environment_(std::move(environment)),
+    ContextMenuElement(std::unique_ptr<Element> content, std::function<View()> popup, EnvironmentValues environment,
+                       WindowServices* services)
+        : content_(std::move(content)), popup_(std::move(popup)), environment_(std::move(environment)),
           services_(services) {
         adopt(*content_);
     }
 
     EventHandler* event_handler() noexcept override { return this; }
-    HoverDelay effective_hover_delay() const override {
-        return kind_ == Kind::help ? HoverDelay{.enter = 0.6, .exit = 0} : environment_.get<HoverDelayKey>();
-    }
     float layout_priority() const noexcept override { return content_->layout_priority(); }
     bool is_spacer() const noexcept override { return content_->is_spacer(); }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
@@ -281,25 +286,23 @@ protected:
     bool hit_impl(Point point, std::vector<Element*>& path) override { return content_->hit_test(point, path); }
 
 private:
-    void open(PopupRequest::Kind kind, PopupRequest::Placement placement, Rect anchor) {
+    void open(Rect anchor) {
         if (services_) {
-            services_->open_popup({.kind = kind,
-                                   .placement = placement,
+            services_->open_popup({.kind = PopupRequest::Kind::menu,
                                    .anchor = anchor,
                                    .content = popup_,
                                    .environment = environment_,
-                                   .level = services_->menu_level() + 1});
+                                   .level = services_->menu_level() + 1,
+                                   .motion = menu_motion(environment_)});
         }
     }
 
+    bool disabled() const {
+        return untrack([&] { return environment_.get<DisabledKey>(); });
+    }
+
     EventResult pointer(const PointerEvent& event, Rect) override {
-        if (kind_ == Kind::help) {
-            if (event.kind == PointerEvent::Kind::down && services_) {
-                services_->close_tooltip();
-            }
-            return {};
-        }
-        if (event.button != MouseButton::right) {
+        if (event.button != MouseButton::right || disabled()) {
             return {};
         }
         // Opens on release, like Windows; the press is taken so nothing else reacts to it.
@@ -307,49 +310,36 @@ private:
             // The event is in layout coordinates; the menu opens where the pointer is on screen.
             const Rect drawn = drawn_frame();
             const Rect laid_out = frame();
-            open(PopupRequest::Kind::menu, PopupRequest::Placement::at_point,
-                 {event.location.x + drawn.x - laid_out.x, event.location.y + drawn.y - laid_out.y, 0, 0});
+            open({event.location.x + drawn.x - laid_out.x, event.location.y + drawn.y - laid_out.y, 0, 0});
         }
-        return {.consumed = true};
-    }
-
-    EventResult hover(bool inside) override {
-        if (kind_ == Kind::help) {
-            if (inside) {
-                open(PopupRequest::Kind::tooltip, PopupRequest::Placement::below, drawn_frame());
-            } else if (services_) {
-                services_->close_tooltip();
-            }
-        }
-        return {};
+        return {.consumed = true, .cancellable = true};
     }
 
     EventResult key(const KeyEvent& event) override {
-        if (kind_ != Kind::context_menu || event.kind != KeyEvent::Kind::down) {
+        if (event.kind != KeyEvent::Kind::down || disabled()) {
             return {};
         }
         const bool shift_f10 = event.key == Key::f10 && has(event.modifiers, KeyModifiers::shift);
         if (event.key == Key::menu || shift_f10) {
             const Rect bounds = drawn_frame();
-            open(PopupRequest::Kind::menu, PopupRequest::Placement::at_point, {bounds.x, bounds.max_y(), 0, 0});
+            open({bounds.x, bounds.max_y(), 0, 0});
             return {.consumed = true};
         }
         return {};
     }
 
-    Kind kind_;
     std::unique_ptr<Element> content_;
     std::function<View()> popup_;
     EnvironmentValues environment_;
     WindowServices* services_;
 };
 
-class PopupTriggerNode final : public ViewNode {
+class ContextMenuNode final : public ViewNode {
 public:
-    PopupTriggerNode(PopupTriggerElement::Kind kind, View content, std::function<View()> popup)
-        : kind_(kind), content_(std::move(content)), popup_(std::move(popup)) {}
+    ContextMenuNode(View content, std::function<View()> popup)
+        : content_(std::move(content)), popup_(std::move(popup)) {}
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
-        auto element = std::make_unique<PopupTriggerElement>(kind_, detail::lower(content_, context), popup_,
+        auto element = std::make_unique<ContextMenuElement>(detail::lower(content_, context), popup_,
                                                             context.environment, context.services);
         if (context.focus) {
             element->set_focus_manager(context.focus, {}); // lets go of focus if destroyed
@@ -358,138 +348,8 @@ public:
     }
 
 private:
-    PopupTriggerElement::Kind kind_;
     View content_;
     std::function<View()> popup_;
-};
-
-// --- Popovers ---
-
-// Wraps a view; opens a popover by it while the binding is true, and closes it when the binding
-// goes false. Closed from outside (a click elsewhere, Esc), it sets the binding back to false.
-class PopoverElement final : public Element {
-public:
-    // Shared with the popup's on_close, which may run after this element is gone.
-    struct Presence {
-        bool open = false;   // the popup was requested and hasn't closed since
-        bool wanted = false; // the binding's value, as last seen
-        int generation = 0;  // +1 per open and close(), so a stale on_close does nothing
-    };
-
-    PopoverElement(std::unique_ptr<Element> content, std::function<View()> popover, PopoverOptions options,
-                   Binding<bool> is_presented, EnvironmentValues environment, WindowServices* services)
-        : content_(std::move(content)), popover_(std::move(popover)), options_(options),
-          is_presented_(std::move(is_presented)), environment_(std::move(environment)), services_(services),
-          level_(services ? services->menu_level() + 1 : 0) {
-        adopt(*content_);
-    }
-    ~PopoverElement() override { close(); } // its view went away: so does the popover
-
-    // The binding's value (from an effect). Opening waits for a frame to anchor to.
-    void set_presented(bool presented) {
-        presence_->wanted = presented;
-        if (!presented) {
-            close();
-        } else if (arranged_) {
-            open();
-        }
-    }
-
-    float layout_priority() const noexcept override { return content_->layout_priority(); }
-    bool is_spacer() const noexcept override { return content_->is_spacer(); }
-    void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
-
-protected:
-    Size measure(ProposedSize proposal) override { return content_->size_that_fits(proposal); }
-    void arrange(Rect bounds, ProposedSize proposal) override {
-        content_->place({bounds.x, bounds.y}, proposal);
-        arranged_ = true;
-        if (presence_->wanted) {
-            open(); // presented from the start
-        }
-    }
-    void paint_impl(DisplayList& list) const override { content_->paint(list); }
-    bool hit_impl(Point point, std::vector<Element*>& path) override { return content_->hit_test(point, path); }
-
-private:
-    void open() {
-        if (!services_ || presence_->open) {
-            return;
-        }
-        presence_->open = true;
-        const int generation = ++presence_->generation;
-        PopupRequest::Placement placement = PopupRequest::Placement::below;
-        switch (options_.opens) {
-        case PopoverEdge::below: placement = PopupRequest::Placement::below; break;
-        case PopoverEdge::above: placement = PopupRequest::Placement::above; break;
-        case PopoverEdge::trailing: placement = PopupRequest::Placement::beside; break;
-        case PopoverEdge::leading: placement = PopupRequest::Placement::leading; break;
-        }
-        services_->open_popup({
-            .kind = PopupRequest::Kind::popover,
-            .placement = placement,
-            .centered = true,
-            .anchor = drawn_frame(),
-            .content = [content = popover_, padded = options_.padded] {
-                View panel = padded ? content().padding(12) : content();
-                return panel.clip_shape(RoundedRectangle(10))
-                    .background(ThemeColor::surface, RoundedRectangle(10))
-                    .overlay(RoundedRectangle(10).stroke_border(ThemeColor::outline, 1));
-            },
-            .environment = environment_,
-            .level = level_,
-            .on_close =
-                [presence = presence_, binding = is_presented_, generation] {
-                    // Closed from outside (close() moved the generation on): the binding goes
-                    // back to false, which then finds nothing left to close.
-                    if (presence->generation != generation) {
-                        return;
-                    }
-                    presence->open = false;
-                    if (presence->wanted) {
-                        presence->wanted = false;
-                        binding.set(false);
-                    }
-                },
-        });
-    }
-
-    void close() {
-        if (services_ && std::exchange(presence_->open, false)) {
-            ++presence_->generation;
-            services_->close_menus(level_);
-        }
-    }
-
-    std::unique_ptr<Element> content_;
-    std::function<View()> popover_;
-    PopoverOptions options_;
-    Binding<bool> is_presented_;
-    EnvironmentValues environment_;
-    WindowServices* services_;
-    int level_;
-    std::shared_ptr<Presence> presence_ = std::make_shared<Presence>();
-    bool arranged_ = false;
-};
-
-class PopoverNode final : public ViewNode {
-public:
-    PopoverNode(View content, Binding<bool> is_presented, std::function<View()> popover, PopoverOptions options)
-        : content_(std::move(content)), is_presented_(std::move(is_presented)), popover_(std::move(popover)),
-          options_(options) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
-        auto element = std::make_unique<PopoverElement>(detail::lower(content_, context), popover_, options_,
-                                                        is_presented_, context.environment, context.services);
-        PopoverElement* const target = element.get();
-        detail::bind(Prop<bool>(is_presented_), context, [target](bool presented) { target->set_presented(presented); });
-        return element;
-    }
-
-private:
-    View content_;
-    Binding<bool> is_presented_;
-    std::function<View()> popover_;
-    PopoverOptions options_;
 };
 
 // A Button (in the environment's ButtonStyle) whose action opens a menu below it.
@@ -503,8 +363,8 @@ public:
         const State<bool> focused(false);
         const EnvironmentValues environment = context.environment;
         const ButtonConfiguration configuration{
-            .label = options_.shows_indicator ? HStack({.spacing = 6}, label_, icon(Icon::chevron_down, 12, Weight::bold))
-                                              : label_,
+            .label = If(options_.shows_indicator, HStack({.spacing = 6}, label_, icon(Icon::chevron_down, 12, Weight::bold)),
+                        label_),
             .is_pressed = [pressed] { return pressed(); },
             .is_hovered = [hovered] { return hovered(); },
             .is_enabled = [environment] { return !environment.get<DisabledKey>(); },
@@ -520,15 +380,16 @@ public:
         WindowServices* const services = context.services;
         auto element = make_button_element(
             body,
-            [services, element_slot, menu = menu_, environment, edge = options_.opens] {
+            [services, element_slot, menu = menu_, environment, placement = options_.placement,
+             motion = options_.motion] {
                 if (services && *element_slot) {
                     services->open_popup({.kind = PopupRequest::Kind::menu,
-                                          .placement = edge == MenuEdge::above ? PopupRequest::Placement::above
-                                                                               : PopupRequest::Placement::below,
+                                          .placement = placement,
                                           .anchor = (*element_slot)->drawn_frame(),
                                           .content = menu,
                                           .environment = environment,
-                                          .level = services->menu_level() + 1});
+                                          .level = services->menu_level() + 1,
+                                          .motion = motion ? *motion : menu_motion(environment)});
                 }
             },
             pressed, hovered, context);
@@ -553,71 +414,92 @@ namespace elg {
 
 using detail::ViewAccess;
 
-View Divider() {
-    return Rectangle().fill(ThemeColor::outline).frame({.max_width = infinity, .min_height = 1, .max_height = 1});
-}
-
-View MenuItem(std::string title, std::function<void()> action, MenuItemOptions options) {
+View MenuItem(Prop<std::string> title, std::function<void()> action, MenuItemOptions options) {
     return ViewAccess::make(
         std::make_shared<const detail::MenuItemNode>(std::move(title), std::move(action), std::move(options)));
 }
 
-View Submenu(std::string title, std::function<View()> menu) {
+View Submenu(Prop<std::string> title, std::function<View()> menu) {
     return ViewAccess::make(std::make_shared<const detail::SubmenuNode>(std::move(title), std::move(menu)));
 }
 
+namespace {
+
+// A menu's items in the MenuStyle of where it's placed (the popup, with its opener's environment).
+struct MenuPanel {
+    View items;
+    View body() const {
+        const auto style = untrack([] { return Environment<MenuStyleKey>()(); });
+        return style->make_body({.items = items});
+    }
+};
+
+} // namespace
+
 View detail::make_menu(std::vector<View> items) {
     // Sized by its popup window, which fits the content; dividers and rows span the width.
-    return VStackLayout(HorizontalAlignment::leading, 2)(std::move(items))
-        .padding(5)
-        .frame({.min_width = 200})
-        .background(ThemeColor::surface, RoundedRectangle(9))
-        .overlay(RoundedRectangle(9).stroke_border(ThemeColor::outline, 1));
+    return MenuPanel{VStackLayout(HorizontalAlignment::leading, 2)(std::move(items))};
 }
 
-View MenuButton(View label, std::function<View()> menu) {
-    return MenuButton(std::move(label), std::move(menu), MenuButtonOptions{});
+View DefaultMenuStyle::make_body(const MenuConfiguration& menu) const {
+    return menu.items.padding(5)
+        .frame({.min_width = 200})
+        .background(ThemeColor::surface, RoundedRectangle(9))
+        .overlay(RoundedRectangle(9).stroke_border(ThemeColor::outline, 1))
+        .shadow({.color = Color::black.opacity(0.28f), .radius = 12, .y = 3});
+}
+
+View PlainMenuStyle::make_body(const MenuConfiguration& menu) const {
+    return menu.items;
+}
+
+View MenuStyle::make_item(const MenuItemConfiguration& item) const {
+    std::vector<View> parts;
+    if (!item.leading.is_empty()) {
+        parts.push_back(item.leading);
+    }
+    parts.push_back(item.title);
+    parts.push_back(Spacer(24));
+    if (!item.trailing.is_empty()) {
+        parts.push_back(item.trailing);
+    }
+    return HStackLayout(VerticalAlignment::center, 8)(std::move(parts))
+        .padding(EdgeInsets::symmetric(10, 6))
+        .frame({.max_width = infinity, .alignment = Alignment::leading})
+        .foreground_style([=](const EnvironmentValues& env) {
+            if (!item.is_enabled()) {
+                return env.color(ThemeColor::tertiary);
+            }
+            return env.color(item.is_destructive() ? ThemeColor::danger : ThemeColor::primary);
+        })
+        .background(
+            [=](const EnvironmentValues& env) {
+                return item.is_enabled() && item.is_highlighted() ? env.color(ThemeColor::outline).opacity(0.55f)
+                                                                  : Color::clear;
+            },
+            RoundedRectangle(5));
 }
 
 View MenuButton(View label, std::function<View()> menu, MenuButtonOptions options) {
-    return ViewAccess::make(std::make_shared<const detail::MenuButtonNode>(std::move(label), std::move(menu), options));
+    return ViewAccess::make(
+        std::make_shared<const detail::MenuButtonNode>(std::move(label), std::move(menu), std::move(options)));
 }
 
-View MenuButton(std::string title, std::function<View()> menu) {
-    return MenuButton(Text(std::move(title)), std::move(menu));
+View MenuButton(Prop<std::string> title, std::function<View()> menu, MenuButtonOptions options) {
+    return MenuButton(Text(std::move(title)), std::move(menu), std::move(options));
 }
 
 View View::context_menu(std::function<View()> menu) const {
-    return ViewAccess::make(std::make_shared<const detail::PopupTriggerNode>(
-        detail::PopupTriggerElement::Kind::context_menu, *this, std::move(menu)));
+    return ViewAccess::make(std::make_shared<const detail::ContextMenuNode>(*this, std::move(menu)));
 }
 
-View View::help(std::string text) const {
-    auto tooltip = [text = std::move(text)] {
-        return Text(text)
-            .font(Font::system(12))
-            .foreground_style(ThemeColor::primary)
-            .padding(EdgeInsets::symmetric(8, 5))
-            .background(ThemeColor::surface, RoundedRectangle(5))
-            .overlay(RoundedRectangle(5).stroke_border(ThemeColor::outline, 1));
-    };
-    return ViewAccess::make(std::make_shared<const detail::PopupTriggerNode>(detail::PopupTriggerElement::Kind::help,
-                                                                            *this, std::move(tooltip)));
-}
-
-View View::popover(Binding<bool> is_presented, std::function<View()> content, PopoverOptions options) const {
-    return ViewAccess::make(std::make_shared<const detail::PopoverNode>(*this, std::move(is_presented),
-                                                                       std::move(content), options));
-}
-
-View detail::make_menu_picker(std::vector<std::string> labels, std::function<std::size_t()> selected,
-                              std::function<void(std::size_t)> select) {
-    const auto shared = std::make_shared<const std::vector<std::string>>(std::move(labels));
-    const View current = Text([shared, selected] {
+View MenuPickerStyle::make_body(const PickerConfiguration& picker) const {
+    const auto shared = std::make_shared<const std::vector<std::string>>(picker.labels);
+    const View current = Text([shared, selected = picker.selected] {
         const std::size_t index = selected();
         return index < shared->size() ? (*shared)[index] : std::string();
     });
-    return MenuButton(current, [shared, selected, select] {
+    return MenuButton(current, [shared, selected = picker.selected, select = picker.select] {
         std::vector<View> items;
         for (std::size_t i = 0; i < shared->size(); ++i) {
             items.push_back(MenuItem((*shared)[i], [select, i] { select(i); },

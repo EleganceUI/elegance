@@ -436,7 +436,7 @@ Layout follows SwiftUI's negotiation rather than flexbox:
 Containers and layout tools:
 - `VStack` / `HStack` / `ZStack`, with `spacing` and `alignment`. Stacks give space to the least
   flexible children first, and `.layout_priority(n)` changes that order.
-- `Spacer()` (flexible gap) and `Divider()`.
+- `Spacer()` (flexible gap) and `Separator()` / `Separator(Axis::vertical, {.color, .thickness, .inset})`.
 - `.frame(width, height, alignment)` and
   `.frame({.min_width, .ideal_width, .max_width = infinity, ...})`.
 - `.padding(...)`, `.fixed_size()`, `.aspect_ratio(r, ContentMode::fit/fill)`, `.offset(x, y)`.
@@ -512,7 +512,7 @@ struct PillButtonStyle : elg::ButtonStyle {
 VStack(Button("Save", save), Button("Cancel", cancel))
     .button_style(PillButtonStyle{});   // applies to every Button in the subtree
 ```
-The same pattern applies to `ToggleStyle`, `TextFieldStyle`, `ProgressViewStyle`, `ListStyle`,
+The same pattern applies to `ToggleStyle`, `TextFieldStyle`, `ProgressStyle`, `PickerStyle`, `SliderStyle`,
 and others. Each built-in control ships with a default style plus a few alternates.
 
 ### Custom modifiers
@@ -531,7 +531,8 @@ Text("Hello").modifier(Card{});
 ```
 
 ### Interaction states (replacing `:hover`, `:active`, `:focus`)
-- `.on_hover(hovered)` writes into a `State<bool>`, and `.focused(is_focused)` binds focus.
+- `.on_pointer_enter` / `.on_pointer_leave` write into a `State<bool>`, and `.focused(is_focused)`
+  binds focus.
 - Reactive arguments (§9.3) then drive appearance:
   `.opacity([=] { return hovered() ? 0.8f : 1.f; })`.
 - Controls expose their states through their style configuration (`cfg.is_pressed`,
@@ -681,11 +682,11 @@ how to lower a modifier. Users can implement any of them.
 | `LayoutModifier`        | `size_that_fits(proposal, child)`, `place(bounds, child)`  | `PaddingModifier`, `FrameModifier`, `AspectRatioModifier`,          |
 |                         |                                                            | `FixedSizeModifier`, `OffsetModifier`, `LayoutPriorityModifier`     |
 | `EnvironmentModifier<K>`| value for key `K` in the subtree                           | `font`, `foreground_style`, `tint`, `disabled`, `button_style`, …   |
-| `DecorationModifier`    | secondary view, alignment, z-order (behind/in front)       | `BackgroundModifier`, `OverlayModifier`, `BorderModifier`           |
+| `DecorationModifier`    | secondary view, alignment, z-order (behind/in front)       | `BackgroundModifier`, `OverlayModifier`                             |
 | `DrawModifier`          | `draw(DrawContext&, Rect bounds)` before/after content     | `ShadowModifier`; also used for custom paint effects                |
 | `EffectModifier`        | layer props: opacity, transform, clip, mask, filter, blend | `OpacityModifier`, `ClipShapeModifier`, `MaskModifier`,             |
 |                         |                                                            | `BlurModifier`, `ScaleEffectModifier`, `RotationEffectModifier`     |
-| `EventModifier`         | event handlers, gesture recognizers, focus                 | `TapGestureModifier`, `HoverModifier`, `FocusedModifier`,           |
+| `EventModifier`         | event handlers, gesture recognizers, focus                 | `ClickModifier`, `HoverModifier`, `FocusedModifier`,                |
 |                         |                                                            | `KeyPressModifier`                                                  |
 | `LifecycleModifier`     | mount/unmount hooks                                        | `OnAppearModifier`, `TaskModifier`, `OnChangeModifier`              |
 
@@ -808,13 +809,23 @@ Text("Hi").apply(card)                             // function-style: View card(
 |                  | `brightness`, `contrast`, `saturation`, `grayscale`, `hue_rotation`,    | offscreen only if needed  |
 |                  | `sepia`, `color_invert`, `color_multiply`, `luminance_to_alpha`,        |                           |
 |                  | `blend_mode`, `compositing_group`, `rotation_effect`, `scale_effect`,   |                           |
-|                  | `background(Material::regular)` (blur behind)                           |                           |
-| Interaction      | `on_tap_gesture`, `on_hover`, `gesture(...)`, `focusable`, `focused`,   | event handlers            |
-|                  | `on_key_press`, `keyboard_shortcut`, `context_menu`, `help` (tooltip)   |                           |
+|                  | `backdrop_blur(radius, shape, {saturation, brightness, noise})`         |                           |
+| Interaction      | `on_click`, `on_activate`, `on_pointer_enter/leave`, `on_hover_change`, | event handlers            |
+|                  | `focusable`, `focused`,                                                 |                           |
+|                  | `on_key_press`, `keyboard_shortcut`, `context_menu`, `tooltip`          |                           |
 | Lifecycle        | `on_appear`, `on_disappear`, `task(async fn)`, `on_change(value, fn)`   | effects tied to mount     |
 | Presentation     | `sheet`, `popover`, `alert`, `confirmation_dialog`, `overlay` portals   | top-layer elements        |
 | Accessibility    | `accessibility_label`, `accessibility_hint`, `accessibility_hidden`     | semantic tree             |
 | Animation        | `animation(anim, value)`, `transition(...)`                             | see 9.5                   |
+
+**Shorthands and hit testing:** the decoration shorthands are their compositions, with no
+separate paths: `.background(style)` is `.background(Rectangle().fill(style))`,
+`.background(style, shape)` is `.background(shape.fill(style))`, `.border` is an overlay of
+`Rectangle().stroke_border(...)`, and `.corner_radius(r)` is `.clip_shape(RoundedRectangle(r))`.
+A shape takes the same points whether it's filled, a `clip_shape` or a `content_shape`: one
+`ShapeHitArea` answers for all three (analytic for the rounded-rect kinds, the flattened path with
+its fill rule for paths). A stroke-only shape is hit only on its line. Buttons take their whole
+frame (generous desktop targets); `.content_shape(shape)` narrows one.
 
 **Clipping and masking cost model** (the renderer is designed around this):
 - `clipped()`: rect scissor, effectively free.
@@ -831,10 +842,15 @@ Text("Hi").apply(card)                             // function-style: View card(
   analytic: no offscreen pass.
 - Anything else gets one offscreen layer that carries every effect at once: blur, color matrix,
   blend mode, transform (rotation/scale; a uniform scale alone stays vector), inner shadow.
-- `blur` and materials blur at a reduced resolution once sigma passes 12 px (downsample up to 8x).
-- `blend_mode` and materials read the backdrop. The pass draws offscreen and is split there: what
-  it drew so far is copied (and for materials, blurred) before the view composites over it.
-  Inside a layer, the backdrop is that layer's content only.
+- `blur` and `backdrop_blur` blur at a reduced resolution once sigma passes 12 px (downsample up to 8x).
+- `blend_mode` and `backdrop_blur` read the backdrop. The pass draws offscreen and is split
+  there: what it drew so far is copied (and for a backdrop blur, blurred and color-adjusted)
+  before the view composites over it. Inside a layer, the backdrop is that layer's content only.
+- **Ordering:** effects are separate modifiers, applied in the order written. `backdrop_blur`,
+  like `background`, goes behind everything it wraps, so a tint is a `.background(color)` written
+  before it: `content.background(tint).backdrop_blur(30)` draws the blurred backdrop, then the
+  tint, then the content. A `.blur()` after that blurs all three. There are no material presets:
+  frosted glass is a backdrop blur (with some saturation and noise) under a translucent tint.
 - Rotation and scale don't move hit testing yet.
 
 ### 9.5 Shapes, color, fonts, animation
@@ -842,8 +858,7 @@ Text("Hi").apply(card)                             // function-style: View card(
   `Capsule`, `Circle`, `Ellipse`, `Path`, and `UnevenRoundedRectangle`. Modify them with
   `.fill(style)`, `.stroke(style, width)`, and `.inset(by)`.
 - **ShapeStyles**: `Color` (sRGB/P3, `hex`, `opacity`, semantic tokens), `LinearGradient`,
-  `RadialGradient`, `EllipticalGradient`, `AngularGradient`, `ImagePaint`, and `Material`
-  (frosted blur: `ultra_thin` … `ultra_thick`, with a dark-mode tint).
+  `RadialGradient`, `EllipticalGradient`, `AngularGradient`, and `ImagePaint`.
 - **Fonts**: `Font::system(size, weight, design)`; semantic styles (`Font::large_title`,
   `title`, `headline`, `body`, `caption`) that scale with a global text-size setting; and
   `Font::custom("Inter", size)`. Text concatenation builds rich text:
@@ -939,15 +954,37 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
   - A destroyed element lets go of focus in its destructor, so removing a focused row is safe.
   - Controls are focusable: Enter activates a button on press; Space shows it pressed and
     activates on release.
-  - `.focusable()`, `.focused(Binding<bool>)` (two-way), and `.on_key_press(Key, action)` /
-    `.on_key_press([](const KeyEvent&) -> bool)`.
+  - `.focusable()`, `.focused(Binding<bool>)` (two-way), `.on_key_press(Key, action)` (key
+    downs), `.on_key([](const KeyEvent&) -> bool)` (downs and ups) and
+    `.on_text_input([](const TextInputEvent&) -> bool)` (makes the view focusable).
   - `KeyEvent` carries the layout-mapped `Key`, `KeyModifiers`, and `repeat`.
     `primary_modifier()` is Cmd on macOS and Ctrl elsewhere.
   - Still to do: focus scopes and traps; text input and IME (with TextField); keys while
     nothing is focused (window-level shortcuts).
-- **Gestures**: tap, double-tap, long-press, drag, magnify, rotate, and kinetic scrolling.
-  Attach them with `.gesture(...)`, compose them (`simultaneously`, `sequenced`, `exclusively`),
-  and track in-progress state with `GestureState<T>`.
+- **Gestures** (`elg/gestures.h`): `.recognize(DragGesture(...)/LongPressGesture(...)/
+  MagnifyGesture()/RotateGesture()/TwoFingerDoubleTapGesture(...))`, built up with `on_began`,
+  `on_changed`, `on_ended`, `on_cancelled`; shorthands `on_drag`, `on_long_press`, `on_magnify`,
+  `on_rotate`, `on_two_finger_double_tap`.
+  - Pointer gestures (`detail::GestureRecognizer`) watch a press without taking it. The innermost
+    that recognizes it takes it over; whatever had the press gets `cancel`. Handlers that took
+    the down keep it from recognizers around them unless they returned `cancellable`
+    (buttons, on_click, on_activate, links do; sliders, text fields, custom handlers don't).
+  - Composition: `.recognize(gesture, GestureOptions{priority, simultaneous})` for drags and long
+    presses. High priority: offered the press first (the dispatcher's watchers are the high ones,
+    then the normal ones, each innermost first), even outside a captor that didn't make its press
+    cancellable. Simultaneous: a companion of the press; it observes until it recognizes, then
+    gets the press's events beside whatever has it (delivered like a captor's), and never takes
+    or is cancelled. `DragOptions::hold` (+ `hold_tolerance`): a deadline like a long press's;
+    once held it takes the press and begins with zero translation; moving sooner gives it up.
+  - `.disabled()`: an EventElement whose environment is disabled hands the dispatcher a
+    `DisabledEventHandler` instead of its handler (hover, `hover` pointer events, scroll, `cancel`
+    and `focus(false)` pass; everything else is ignored, so presses fall through to outer
+    handlers and recognizers aren't found). `EventDispatcher::release_disabled()`, called each
+    frame after effects, cancels a disabled captor, active companions and pinch/rotate latches,
+    resets their watchers, and clears focus from an element that's no longer `focusable()` (also
+    covers controls). Drop targets and context menus check `DisabledKey` themselves. Exempt:
+    window drag areas and scroll views.
+  - Still to do: kinetic scrolling helpers.
 - **Shortcuts**: global and scoped keybindings, with a command registry.
 
 ---
@@ -1009,10 +1046,13 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
   - `Toggle` is a switch with its state. `MenuButton` and `Picker(.menu)` are pop-up buttons
     (combo boxes).
   - Sliders have their value, range, step, increment/decrement and set value.
-  - `ProgressView` has its fraction. Text fields have their text (never a secure field's),
+  - `Progress` has its fraction (none while indeterminate). Text fields have their text (never a secure field's),
     placeholder and set value.
-  - Images, video and scroll views have their roles. Stepper buttons are named "Decrease" and
-    "Increase".
+  - Images, video and scroll views have their roles. A `Separator` is a separator (AccessKit's
+    splitter, as browsers map `<hr>`), not focusable; `.accessibility_hidden()` makes it
+    decorative. `NumberInput` is a spin button with its
+    value, range, step, increment/decrement and set value; its arrow buttons are named "Decrease"
+    and "Increase".
 - **Modifiers:** `.accessibility_label`, `_value`, `_hint` (reactive), `_hidden`, `_role`,
   `_element` (combine children into one element, labeled with their text) and `_action`. They
   apply to the element they wrap, or the nearest one inside with a role; around several children
@@ -1039,17 +1079,17 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
 
 | Category   | Components                                                                 |
 |------------|----------------------------------------------------------------------------|
-| Layout     | VStack, HStack, ZStack, Spacer, Divider, Grid, LazyVStack/HStack,          |
+| Layout     | VStack, HStack, ZStack, Spacer, Separator, Grid, LazyVStack/HStack,        |
 |            | LazyVGrid/HGrid, ScrollView, ViewThatFits, GeometryReader, HSplitView      |
 | Shapes     | Rectangle, RoundedRectangle, Capsule, Circle, Ellipse, Path                |
 | Basic      | Text, Label (icon + text), Image, AsyncImage, Link, Badge                  |
-| Input      | Button, TextField, SecureField, TextEditor, Toggle, Slider, Stepper,       |
+| Input      | Button, TextField, SecureField, TextEditor, Toggle, Slider, NumberInput,   |
 |            | Picker (menu/segmented/radio), DatePicker, ColorPicker                     |
 | Data       | List (virtualized, sections, selection), Table, OutlineGroup (tree),       |
 |            | DisclosureGroup                                                            |
-| Overlay    | sheet, popover, alert, confirmation_dialog, Menu, context_menu, help       |
+| Overlay    | sheet, popover, alert, confirmation_dialog, Menu, context_menu, tooltip    |
 |            | (tooltip), Toast                                                           |
-| Feedback   | ProgressView (linear/circular), Gauge, redacted (skeleton)                 |
+| Feedback   | Progress (linear/circular), Gauge, redacted (skeleton)                     |
 | Navigation | NavigationStack (push/pop with transitions), NavigationSplitView, TabView  |
 
 - Presentations (sheets, popovers, menus) render into a top layer so they escape clips.
@@ -1060,7 +1100,7 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
 ### 13.1 Popups and context menus
 
 Context menus share one **popup presentation layer** with everything else anchored to a view:
-`Menu` buttons, `Picker` / `ComboBox` dropdowns, `popover`, and tooltips (`.help()`).
+`Menu` buttons, `Picker` / `ComboBox` dropdowns, `popover`, and tooltips (`.tooltip()`).
 
 #### API
 SwiftUI-shaped. Menu contents are ordinary views, so `If`, `ForEach`, and reactive arguments
@@ -1073,7 +1113,7 @@ Text(file.name)
             MenuItem("Rename", rename).shortcut("F2"),
             MenuItem("Duplicate", duplicate),
             If([=] { return can_share(); }, MenuItem("Share", share)),
-            Divider(),
+            Separator(),
             Submenu("Move to", ForEach(folders, key, [=](const Folder& f) { return MenuItem(f.name, move_to(f)); })),
             MenuItem("Delete", remove).role(ButtonRole::destructive).disabled([=] { return locked(); }));
     })
@@ -1083,7 +1123,7 @@ Text(file.name)
   current state, and nothing stays subscribed while the menu is closed.
 - Item actions run after the menu has closed, so an action can open a dialog or another menu.
 - Items: `MenuItem` (title, optional icon, shortcut hint, `disabled`, `checked`, `role`),
-  `Divider`, `Submenu`, and `Section` (a titled group).
+  `Separator`, `Submenu`, and `Section` (a titled group).
 
 #### Rendering: drawn by Elegance, in a popup window (decided)
 
@@ -1096,10 +1136,46 @@ Text(file.name)
 - Popups use `SDL_CreatePopupWindow` (`SDL_WINDOW_POPUP_MENU` / `SDL_WINDOW_TOOLTIP`).
 - To the rest of the framework a popup is just another window: its own element tree, event
   dispatcher, and frames through the multi-window renderer (§15).
-- The app keeps one popup window ready and reuses it, so opening a menu doesn't wait for a
-  swapchain to be created.
+- Each popup gets a new popup window when it opens, destroyed when it closes (fast enough in
+  practice; Wayland can't re-show a dismissed `xdg_popup` anyway). A reused tooltip window is the
+  first thing to try if opening ever shows up as slow.
 - **Embedding mode** (§4), which has no platform layer, falls back to an in-window overlay in the
   top layer.
+
+#### Floating content (the shared primitive)
+- `.floating(Binding<bool>, content, FloatingOptions)` is the primitive: content by a view, no
+  chrome. `popover` is `floating` with a panel; menus and tooltips use the same host and
+  placement (`detail::place_floating`: edge, alignment, spacing, offset or explicit position;
+  flips to the other side, then clamps to the area).
+- Boundaries: `screen`, a popup window (the default), and `window`, drawn by the window's
+  `FloatingLayerElement` (every window's root) above its content and kept inside it.
+- Dismissal: `outside_click` (modal: on screen it joins the menus' stack; in the window the
+  layer takes presses outside it) and `escape` (the layer, which also gets keys when nothing is
+  focused). Without `outside_click`, screen-hosted content is a popup the window stays usable
+  beside; it goes with its window.
+- Popup windows are re-fitted every frame: measured at their ideal size (bounded by the
+  display), re-placed when that or the anchor changes (`move_popup`).
+- Chrome is replaceable: `PopoverStyle`, `TooltipStyle`, `MenuStyle` (`make_body(configuration)`,
+  environment keys, like `ButtonStyle`), resolved in the popup's environment (the opener's).
+  `.tooltip(content, TooltipOptions)` takes any view; `.tooltip(text)` is a text tooltip.
+- Open/close: `PopupMotion{transition, animation}` from the options, else the style's
+  `motion()` (none by default). In the window, the layer wraps the panel in a
+  `TransitionElement` and keeps it drawn (not hit, not a child for events) until it has
+  animated out. A popup window wraps its content the same way; closing marks it `closing` (no
+  input) and the app destroys it once the exit finishes. `Transition::scale(from, anchor)`
+  grows from a point of the frame.
+- Menu rows are the MenuStyle's too: `make_item(MenuItemConfiguration{title, leading, trailing,
+  is_highlighted, is_enabled, is_destructive})`, by default the parts in a line on a rounded
+  highlight. The row keeps clicks, keys and submenus.
+- `container`: kept inside the nearest `.floating_container()` around the view (else the
+  window). That modifier is another `FloatingLayerElement` (container mode), so the content is
+  drawn above the container's content and under its siblings, placed within its bounds, clipped
+  to it (`PushClipCommand`), and moved with it (anchors are drawn frames; panels are placed back
+  by what moves the layer). The window's layer still closes it: a container's panels that close
+  on Esc or outside clicks are registered there too (`Panel::hosted`), and presses on hosted
+  content at least as new as the topmost modal panel go through to it.
+- A press on a panel that nothing in it takes is no longer "outside" it: it used to close the
+  panel during the dispatch, destroying elements the press was still being delivered to.
 
 #### Behavior
 - **Opening:**
@@ -1306,8 +1382,11 @@ AsyncImage("https://example.com/avatar.png", [](AsyncImagePhase phase) { ... }) 
   downscaling. Decoded sizes follow the drawn size (no 4000 px decode for a 64 pt thumbnail).
 - `ImageCommand` in the display list draws a textured quad with corner radii, opacity, and the
   clip stack, through the same ubershader as layers.
-- `AsyncImage` loads over HTTP(S) through the platform: WinHTTP, NSURLSession, or libcurl. It
-  has a memory cache plus an optional disk cache.
+- `AsyncImage` downloads over HTTP(S) with Boost.Beast, Asio and OpenSSL, internally, through the
+  system's proxies. It has a memory cache and a disk cache (`set_image_cache`,
+  `clear_image_cache`). Elegance has no public networking API: apps use an established library of
+  their own (libcurl, Boost.Beast, cpp-httplib) and hand results to the UI with
+  `post_to_ui_thread`.
 
 **2. Audio**
 ```cpp
@@ -1362,8 +1441,7 @@ when an app needs the same formats everywhere, or containers and codecs the OS l
   (this design doesn't give legal advice).
 - **Architecture:** a second `VideoSource` implementation behind the same `VideoPlayer`,
   `VideoView` and `VideoControls`. The renderer and views don't change.
-  - **Demux** (libavformat): files, and HTTP(S)/HLS through FFmpeg's protocols (or our HTTP
-    layer).
+  - **Demux** (libavformat): files, and HTTP(S)/HLS through FFmpeg's protocols.
   - **Decode** on a decoder thread: hardware first, software as the fallback. FFmpeg's Vulkan
     hwaccel decodes into `VkImage`s on our device, so frames are sampled with no copy; the
     multi-planar NV12/P010 formats use a YCbCr sampler conversion. D3D11VA → the existing shared
@@ -1427,9 +1505,11 @@ The structure of most desktop apps (`<elg/navigation.h>`, example `navigation`).
     its limits.
   - A sidebar squeezed by a small window gets its width back when the window grows. Storing the
     squeezed size lost it, which showed up in the first test.
-- **Dividers:** a 1 pt line taking space between the panes.
-  - It can be grabbed 4 pt either side. Hover shows the resize cursor at once, and a tinted 3 pt
-    bar while hovered or dragged.
+- **Dividers:** a line taking space between the panes, 1 pt in the outline color by default.
+  - It can be grabbed 4 pt either side. Hover shows the resize cursor at once, and a 3 pt bar in
+    the tint while hovered or dragged.
+  - `HSplitView({.divider, .active_divider, .thickness, .active_thickness}, panes...)` changes
+    them; `.thickness = 0` leaves no line or gap.
   - A drag moves only the two panes beside it, each within its limits.
 - **Dynamic panes:** a pane can be an `If` (a collapsible sidebar). Panes are flattened like a
   layout's children; a pane that goes loses its preferred size, and one that animates out is
@@ -1437,16 +1517,21 @@ The structure of most desktop apps (`<elg/navigation.h>`, example `navigation`).
 - **Clipping:** each pane is clipped to its share, so content larger than its pane doesn't run
   into the next.
 
-`NavigationSplitView(sidebar, detail)` and `(sidebar, content, detail)` compose an `HSplitView`:
-- the sidebar column is 180–360 pt (ideal 240) on the surface color;
-- the three-column form adds a content column of 220–480 pt;
-- the detail is at least 200 pt and takes size changes (`layout_priority(1)`).
+`NavigationSplitView(sidebar, detail)` and `(sidebar, content, detail)` compose an `HSplitView`
+of framed columns, with nothing it doesn't let you change. By default:
+- the sidebar column is 180–360 pt (ideal 240) on the surface color (`sidebar_width`,
+  `sidebar_background`);
+- the three-column form adds a content column of 220–480 pt (`content_width`);
+- the detail is at least 200 pt and takes size changes (`detail_width`, `layout_priority(1)`);
+- the dividers are the split view's (`dividers`).
 
-`sidebar_visible` (a `Binding<bool>`) puts the sidebar in an `If` that slides it to the leading
-edge. Toggled inside `with_animation`, the other columns' frames ease to their new widths.
+`sidebar_visible` (a `Binding<bool>`) puts the sidebar in an `If` with `sidebar_transition`
+(sliding to the leading edge by default). Toggled inside `with_animation`, the other columns'
+frames ease to their new widths.
 
 #### NavigationStack
-`NavigationStack(path, root, destination, {.root_title, .title, .shows_bar})`.
+`NavigationStack(path, root, destination, {.root_title, .title, .transition, .animation,
+.back_gestures})`.
 - **Driven by a path** (`State<std::vector<Route>>` or a `Binding`), like SwiftUI's
   `NavigationStack(path:)`. Pushing and popping are edits to the path from anywhere, and a deep
   link or restored session is just a path.
@@ -1461,16 +1546,24 @@ edge. Toggled inside `with_animation`, the other columns' frames ease to their n
     rather than leaving them stuck hovered.
   - If focus was in the page that got covered, it moves to the first control of the new page
     when the ring was showing (keyboard use), else it's dropped.
-- **Transitions:**
-  - A push slides the new page in from the trailing edge, over the old one. The old page moves
-    30% of the way to the leading edge and dims slightly.
-  - A pop reverses it, and the popped page is kept until it has slid away.
-  - The page on top gets the background color and a soft shadow while moving. The whole stack is
+- **Transitions** (`PageTransition`):
+  - `slide` (default): a push slides the new page in from the trailing edge, over the old one.
+    The old page moves 30% of the way to the leading edge and dims slightly. The page on top gets
+    the background color and a soft shadow while moving.
+  - `fade`: the pages cross-fade. `none`: the top page changes at once.
+  - A pop reverses it, and the popped page is kept until it has gone. The whole stack is
     clipped, so pages don't slide over a sidebar.
-  - The animation is the transaction's when there is one (`with_animation`), else
-    `Animation::smooth(0.35)`.
-- **The bar:** the top page's title, and from the second page on, a back button (caret + the
-  title of the page underneath). Alt+Left goes back too, while focus is inside the stack.
+  - The animation is the transaction's when there is one (`with_animation`), else the
+    `animation` option (`Animation::smooth(0.35)`; nullopt: at once).
+- **Back gestures** (`back_gestures`, on by default): Alt+Left while focus is inside the stack,
+  and a two-finger swipe right, which always slides.
+- **Presentation is a style** (`.navigation_stack_style(...)`), so nothing iOS-like is forced.
+  `NavigationStackConfiguration` has the pages, the titles (root first), `can_go_back` and
+  `back`.
+  - `PlainNavigationStackStyle` (default): just the pages.
+  - `BarNavigationStackStyle{{.height, .background, .title_font, .back_color,
+    .shows_divider}}`: the top page's title, and from the second page on, a back button (caret +
+    the title of the page underneath).
   - `root_title` is a `Prop`, so it can follow state (the selected folder).
   - There are no toolbar items or per-page title modifiers yet. Those need a way for a page to
     pass values up to its container (SwiftUI's preferences), which Elegance doesn't have.
@@ -1639,16 +1732,23 @@ Separate render thread from day one (decided).
 - [x] Hit testing (SwiftUI semantics: a view is hit where its content draws; stroke-only shapes
   on their line; clips respected; `content_shape`, `allows_hit_testing`)
 - [x] Events: `EventModifier` / `EventHandler` protocol, bubbling innermost-first, pointer capture
-  between down and up, hover enter/leave; `on_tap_gesture` (single/double), `on_hover`
+  between down and up, hover enter/leave; `on_click` / `on_double_click` (a `ClickEvent` with the
+  view-local location, button, modifiers and count; any button), `on_activate` (click, Space/Enter
+  while focused, and the accessibility action; focusable; respects `.disabled`),
+  `on_pointer_enter` / `on_pointer_leave` (immediate), `on_hover_change` (hover intent)
 - [x] `Button` (default style: tint, hover, and pressed states) + `tint` environment value
-- [x] Hover delays: `HoverDelay{.enter, .exit}`. Hover starts only after the pointer rests for
-  `enter` (default 0.1 s), and ends `exit` after it leaves (default 0); passing over, or coming
-  back in time, cancels the pending change.
-  - Set for a subtree with `.hover_delay({...})` (an environment value), or per handler with
-    `.on_hover(action, {...})`. Buttons follow the environment.
+- [x] Hover delays: `HoverDelay{.enter, .exit}`, for hover intent only (`on_hover_change`,
+  submenus). Hover starts only after the pointer rests for `enter` (default 0.1 s), and ends
+  `exit` after it leaves (default 0); passing over, or coming back in time, cancels the pending
+  change.
+  - Set with `.hover_delay({...})` (an environment value) for everything inside; for one handler,
+    `.on_hover_change(action).hover_delay({...})`.
+  - Pointer enter/leave and controls' highlights (buttons, menu buttons, text fields, dividers)
+    don't wait: a highlight that lags the pointer looks wrong (it was List's hover bug).
+    Tooltips wait 0.6 s.
   - The idle loop wakes for the next pending hover change (an SDL wait with timeout) and
     otherwise stays at 0% CPU.
-- [ ] Input follow-ups: synthetic input for UI tests (§16), drag/scroll gestures, cursors,
+- [ ] Input follow-ups: synthetic input for UI tests (§16), gesture composition, cursors,
   keyboard and focus (M4)
 
 **M2: Reactive**
@@ -1719,7 +1819,8 @@ Separate render thread from day one (decided).
   - Buttons respond to Space and Enter.
   - `.focusable()`, `.focused(binding)`, and `.on_key_press(...)`.
 - [x] `Toggle(label, Binding<bool>)` with a `ToggleStyle` protocol:
-  - `SwitchToggleStyle` is the default; `CheckboxToggleStyle` is the alternative.
+  - `SwitchToggleStyle` is the default; `CheckboxToggleStyle` was the alternative, until
+    `Checkbox` became its own control (below).
   - `.toggle_style(...)` applies a style.
   - A toggle reuses the button's behavior (click, Space, Enter), and the flip is animated.
   - The checkbox shows a filled mark rather than a check mark until vector paths land (and
@@ -1737,16 +1838,30 @@ Separate render thread from day one (decided).
     - Drag anywhere on it, or use arrows, Page Up/Down and Home/End when focused (key changes
       animate).
     - The knob follows the binding, animated during animated updates.
-  - `Stepper(label, Binding<int>, {.min, .max, .step})`: composed from the public API; −/+ are
-    disabled at the bounds.
-  - `ProgressView(Prop<float>)` is determinate and animates with its value. `ProgressView()` is
-    indeterminate: it renders continuously while shown.
-  - `Picker(Binding<T>, {{value, "Label"}, ...})` is segmented, built from Buttons; the selection
-    change animates.
+  - `NumberInput(Binding<T>, {.min, .max, .step, .decimals, .format, .parse, .live,
+    .shows_buttons, .scrubs})` for `int`, `float` and `double` replaced `Stepper`. Typing applies
+    on Enter and on blur (or as typed with `.live`); invalid text reverts; values clamp, and `int`
+    rounds. Up/Down step (Shift ×10), the style's stacked arrows are disabled at the bounds, and
+    dragging sideways over the unfocused field scrubs. `.number_input_style(...)` takes
+    `BoxNumberInputStyle` (default) or `PlainNumberInputStyle`.
+  - `Progress(Prop<std::optional<float>>)` replaced `ProgressView`: a fraction, or, while it's
+    empty (`Progress()`), activity of unknown length that renders continuously while shown. The
+    fraction animates with the update that changed it. Presentation is the style's:
+    `.progress_style(LinearProgressStyle{...})` (default) or `CircularProgressStyle{...}`, with
+    track and fill colors and thickness; custom styles get `ProgressConfiguration::fraction`.
+  - `Picker(Binding<T>, {{value, "Label"}, ...})`: its look is the `PickerStyle`'s
+    (`.picker_style(...)`), which gets `PickerConfiguration{labels, selected, select}`.
+    `SegmentedPickerStyle` (default) is built from Buttons and animates the selection change;
+    `MenuPickerStyle` is a MenuButton with checked items. (The `PickerStyle` enum and its
+    third argument were removed in the API review.)
+  - `Slider`'s look is the `SliderStyle`'s (`.slider_style(...)`): `make_track`, `make_fill`
+    and `make_thumb`, each from a `SliderConfiguration{fraction, is_pressed, is_hovered,
+    is_enabled, is_focused}`. The slider places the parts (the track inset by half the thumb,
+    the fill up to the thumb's center, the thumb on the value) and keeps the pointer, keys and
+    accessibility. A new value moves them through layout, so animated changes ease them.
+    `KnobSliderStyle` (default) has track/fill colors, track thickness and knob size.
   - Follow-ups:
-    - A menu presentation and `.picker_style(...)` (needs §13.1 popups).
-    - Stepper auto-repeat while held.
-    - Style protocols for Slider and ProgressView.
+    - NumberInput arrow auto-repeat while held.
     - A sliding selection indicator for the segmented picker (needs matched geometry).
 - [x] `ScrollView` / `ScrollView({.axes, .shows_indicators}, content)`:
   - Takes all the space it's offered. The content gets its ideal size along the scroll axes and
@@ -1768,9 +1883,26 @@ Separate render thread from day one (decided).
   - `.z_index(Prop<float>)` (reactive) sets stacking order among siblings in any stack. Higher
     values draw in front and are hit first; ties keep declaration order. Children animating out
     keep their z.
-- [x] `SecureField(placeholder, binding, options)`:
+- [x] Secure entry, first `SecureField(placeholder, binding, options)`, now
+  `TextField(placeholder, binding, {.secure = ...})` (a `Prop<bool>`, so it can be revealed):
   - Bullets, one per character; caret stops map back to the text's bytes.
   - No copy or cut. Word movement and double-click take the whole field. No IME composition.
+  - Text input starts as a password's, like the platforms' own password fields
+    (`WindowServices::start_text_input(bool secure)`, from `Element::secure_text_input()`):
+    - SDL's password input type: Wayland marks it a password, and IMEs turn off.
+    - Windows: the IME is detached from the window (`ImmAssociateContext(hwnd, nullptr)`); SDL
+      associates it again when text input next starts.
+    - macOS: Secure Event Input (no IME, and other apps can't read the keys). It's system-wide, so
+      it's held only while the window with the field (a popup's parent) has the keyboard; windows
+      re-check on every focus change, and a count keeps Enable/Disable balanced.
+    - X11: nothing to turn off; compositions are still ignored by the field.
+    - Revealing or hiding a focused field (`.secure` changing) restarts the text input as the
+      other kind.
+  - One line: a static `.secure = true` with `.line_limit` above 1 throws `UsageError`.
+- [x] `TextArea(placeholder, binding, options)`: the TextField editor in multiline mode. Enter
+  starts a new line, Ctrl/Cmd+Enter submits; it takes the height it's offered (its text's in a
+  ScrollView) and scrolls with the wheel, following the caret when it moves. Replaces
+  `TextField` with a huge `max_lines`, which is now `line_limit` (a `Prop<int>`).
 - [x] Fix: a TextField's text takes its font and colors from where the style places `field`, so
   a style's `.font()` and `.foreground_style()` apply.
 - [x] Fix: `.focused(binding)` follows SwiftUI semantics.
@@ -1798,9 +1930,13 @@ Separate render thread from day one (decided).
     dropped (rebuilt if still in view).
   - Elements built or destroyed during layout are revalidated in the dispatcher right after
     layout.
-- [x] `List(ForEach(...))` / `List({.position}, ...)`:
+- [x] `List(ForEach(...))` / `List({.position}, ...)`, since removed:
   - A lazy vertical stack in a ScrollView on a rounded surface.
   - Row padding, inset separators drawn by the stack, and a hover highlight.
+  - Removed because none of that could be changed, and its highlight lagged behind the pointer
+    (`.on_hover`'s enter delay, restarted for each row scrolling past). Lists are now
+    `ScrollView(LazyVStack({.separators = StackSeparators{...}}, ...))` with rows styled like any
+    view. Row selection came later, as `.selection` on stacks (below).
 - [x] `ScrollPosition`: `scroll_to_top()`, `scroll_to_end()` and `scroll_to(id)` (a lazy item's
   key), passed as `ScrollViewOptions::position`.
   - Requests are applied in the scroll view's next layout.
@@ -1816,7 +1952,24 @@ Separate render thread from day one (decided).
   - Insertion and removal transitions for lazy items.
   - Keep the scroll anchor stable when estimates above the viewport are corrected.
   - Keep a focused item built while it's scrolled away.
-  - List selection (`selection: Binding`), sections and headers, swipe actions.
+  - Sections and headers, swipe actions.
+- [x] Row selection: `.selection(Binding<std::optional<K>> | Binding<std::set<K>>, {.on_activate})` on a
+  stack over a ForEach (VStack, HStack, LazyVStack, LazyHStack; or anything with one inside).
+  - The ForEach items are wrapped in rows (`selectable_items`) when the stack lowers them; the
+    first stack over a ForEach inside takes the selection (`claim_selection`), so nested stacks and
+    a stack's other children (a header) aren't rows.
+  - Rows select on press: Shift for ranges from the anchor, Ctrl/Cmd to toggle, a double click
+    activates. Controls in a row take their own clicks first. Rows hit anywhere in their frame.
+  - The element around the stack is one focus stop with no ring: arrows along the stack's axis,
+    Home/End, Shift to extend, Ctrl/Cmd+A, Enter to activate. It scrolls the row into view; a lazy
+    stack's unbuilt row is aimed at by its estimated offset, then at the row once built.
+  - `RowStyle::make_body(RowConfiguration{content, axis, is_selected, is_hovered, is_focused,
+    is_enabled})`; `HighlightRowStyle` (default) and `PlainRowStyle`. `RowSelectedKey` in the
+    environment inside a row.
+  - Accessibility: a list box (multiselectable for a set) of options with their selected state;
+    an option's click selects it.
+  - Follow-ups: keep a lazy stack's focused row built while scrolled away; type-to-select; Page
+    Up/Down; a drag to select a range; Ctrl+arrows moving the focus without selecting.
   - `LazyVGrid` / `LazyHGrid`.
 - [ ] Grid, presentations (sheet/popover)
 - [x] Popup presentation layer (§13.1):
@@ -1833,10 +1986,10 @@ Separate render thread from day one (decided).
     - Moving or resizing the window, or focus leaving the app, closes them.
   - `.context_menu(builder)`: right-click (on release), the Menu key, or Shift+F10.
   - `Menu(items...)`, `MenuItem(title, action, {.shortcut, .destructive, .checked})`,
-    `Submenu(title, builder)` (opens on hover after the delay, click, or Right), `Divider()`.
+    `Submenu(title, builder)` (opens on hover after the delay, click, or Right), `Separator()`.
   - Choosing an item closes every menu, then runs its action.
-  - `MenuButton(label, builder)`, and `Picker(..., PickerStyle::menu)`.
-  - `.help("…")` tooltips: after 0.6 s; closed by leaving, pressing, scrolling, or typing.
+  - `MenuButton(label, builder)`, and `Picker(...).picker_style(MenuPickerStyle{})`.
+  - `.tooltip("…")` tooltips: after 0.6 s; closed by leaving, pressing, scrolling, or typing.
   - Hovering a menu row focuses it, so the hover and keyboard highlights stay one.
   - Menu popups have zero hover delay: rows highlight on the first move, like native menus.
     Submenus open after resting 0.25 s (their own hover handler).
@@ -2158,33 +2311,69 @@ Separate render thread from day one (decided).
   - HDR/10-bit, subtitles and audio track selection.
   - Fullscreen.
   - Frame pacing from the display's vsync rather than 4 ms polling.
-- [x] Media part 4, HTTP and `AsyncImage`:
-  - **`elg/http.h`:** on the system's networking, with no bundled HTTP library.
-    - WinHTTP on Windows: system certificates and proxy settings (automatic proxy where
-      supported), HTTP/2, gzip/deflate, redirects. libcurl on Linux when present; NSURLSession
-      on macOS is a follow-up.
-    - Readable errors: timeout, name not resolved, TLS failure, cancelled...
-  - **`http::fetch(Request, done)`:** a worker thread per request (up to 6). `done` runs on the
-    UI thread. It returns a `Task`, and `cancel()` closes the WinHTTP handle so a blocking call
-    stops at once.
-  - **`http::Fetch`:** a request as reactive state (`is_loading`, `has_response`, `ok`,
-    `response`, `error`, `reload`), cancelled with its last copy.
+- [x] Media part 4, `AsyncImage`:
+  - **Downloads (`src/net/fetch.h`, internal):** Boost.Beast (HTTP/1.1) and Asio on one network
+    thread, each request a coroutine, with TLS through OpenSSL (TLS 1.2 or later). There's no
+    public HTTP or WebSocket API (the direction review: no custom networking code paths, and no
+    promise of a network API). `elg/http.h` and `elg/websocket.h`, on WinHTTP and libcurl, were
+    removed.
+    - Certificates are checked against the system's roots (the Windows ROOT store, the macOS
+      keychain's anchors, the distribution's bundle on Linux; vcpkg's OpenSSL doesn't know
+      them) and the host name. SNI.
+    - Redirects (up to 5), never from https to http. Parsed and resolved with Boost.URL.
+    - A 30 s timeout for the whole request, a 64 MB body limit, and readable errors (`HTTP 404`,
+      timed out, name not resolved, the secure connection failed: why).
+    - `cancel()` emits a terminal cancellation on the network thread; the callback doesn't run.
   - **`AsyncImage(url, {.scale, .content_mode})`** and `AsyncImage(url, content(phase))`:
     - Fetched when lowered (so List rows not built don't download) and cancelled when the view
       goes. Responses are checked to be images (`probe_image`).
     - Downloads are cached in memory by URL (64 MB LRU), so scrolling back doesn't fetch again.
     - The phase is the key of a one-item ForEach, so the spinner fades into the image. Failure
       shows `image-broken` with the error as a tooltip.
-  - **Sandbox:** a Wikimedia photo (fill + rounded clip), a GitHub avatar in a circle, a failing
-    `.invalid` URL, and an `http::Fetch` status line with Reload. Idle CPU stays 0.
-  - **Tests:** header lookup, cancellation, AsyncImage construction and errors.
-- [ ] Networking follow-ups:
-  - NSURLSession (macOS).
-  - A disk cache honoring `Cache-Control`/`ETag`.
-  - Upload/download progress and streaming bodies.
-  - WebSockets: `http::WebSocket` (elg/websocket.h) on WinHTTP; libcurl's WebSocket API elsewhere.
-  - Optional JSON adapter (`elg/json.h` + `Response::json()`) behind a vcpkg feature, so apps
-    that already use a JSON library don't get a second one.
+  - **Sandbox:** a Wikimedia photo (fill + rounded clip), a GitHub avatar in a circle, and a
+    failing `.invalid` URL.
+  - **Tests (`fetch_tests.cpp`):** a local Beast server for redirects, loops, 404s, the body
+    limit, timeouts and cancellation; over TLS with a test CA for untrusted certificates, the
+    wrong host name and https-to-http redirects. `[.network]` (hidden) checks the system roots
+    against example.com.
+  - **Example:** network-cpp uses cpp-httplib (its own vcpkg dependency) on a background thread
+    with `post_to_ui_thread`.
+- [x] Image downloads, part 2:
+  - **Connection reuse:** a pool on the network thread (`ConnectionPool`), keyed by scheme, host,
+    port, proxy and TLS context; 30 s idle, 6 per host, 32 in all. A kept connection the server
+    closed meanwhile (EOF, reset, broken pipe, truncated TLS) is retried once on a new one. A body
+    read to EOF isn't reusable. No HTTP/2: Beast has none, and nghttp2 glue would be our own
+    network code; reused HTTP/1.1 connections give most of the gain for images.
+  - **Proxies (`src/net/proxy.h`):** `https_proxy`/`HTTPS_PROXY`, `http_proxy` (never
+    `HTTP_PROXY`: CGI's httpoxy), `no_proxy`/`NO_PROXY` first; else macOS
+    `CFNetworkCopyProxiesForURL` (PAC by URL or script run by CFNetwork on a private run loop
+    mode, 10 s), Windows `WinHttpGetIEProxyConfigForCurrentUser` + `WinHttpGetProxyForUrl`
+    (PAC, WPAD) falling back to the manual list and bypass patterns; nothing else on Linux.
+    Answers remembered 5 minutes per scheme/host/port. Loopback hosts are always direct. HTTP
+    proxies only: absolute-form for http, CONNECT for https (TLS and the certificate check are
+    still end to end). Basic credentials from the proxy URL; SOCKS and https:// proxies are
+    refused with a readable error. Lookups run on `Network::blocking()` (2 threads).
+  - **Disk cache (`src/net/http_cache.h`):** a private cache after RFC 9111. Stored: 200s without
+    `no-store` or `Vary: *`, fresh (max-age, else Expires − Date, else a tenth of the time since
+    Last-Modified, at most a day) or revalidatable (ETag/Last-Modified, first URL only, not after
+    redirects). `no-cache`: stored, revalidated each use. A 304 renews the entry. Network errors
+    serve a stale copy unless `no-cache`/`must-revalidate`. One file per URL (`<2 hex>/<sha256>`,
+    a text header then the body), written to `.tmp` and renamed; LRU by mtime, trimmed to 90% of
+    the limit. `clear()` deletes only files named like entries and bumps a generation so stores
+    begun earlier are dropped; `retire()` for a replaced cache. Stores are posted to the blocking
+    threads so images show without waiting on the disk.
+  - **API:** `set_image_cache(ImageCacheOptions{disk, disk_limit = 256 MB, directory})`,
+    `clear_image_cache()` (memory and disk), `AsyncImageOptions::disk_cache`; the content
+    overload takes `AsyncImageOptions` instead of `float scale`. Default folder:
+    `<user cache>/Elegance/<executable>/Images`. `ELG_IMAGE_CACHE=off`.
+  - **Tests:** reuse (plain and TLS), a server that drops kept connections, a local proxy
+    (absolute-form, CONNECT, 407 with and without a password), proxy settings parsing (env,
+    NO_PROXY, Windows lists and bypass), HTTP dates and freshness, fresh/304/no-store against the
+    test server, a stale copy once the server is gone, the size limit, and clearing.
+- [ ] Image download follow-ups:
+  - Revocation checks (OCSP/CRL) aren't done.
+  - Proxy credentials stored by the system (macOS keychain, Windows) aren't used.
+  - GNOME/KDE proxy settings on Linux.
 - [x] Desktop integration (§13.4): file dialogs, drag and drop in, notifications and the tray
   icon, with a sandbox Desktop row and tests for the rules around them. The interactive parts
   (dialogs, toasts, tray menu, drops) still need a person to try them.

@@ -5,7 +5,7 @@
 #ifndef ELG_MODIFIERS_EFFECTS_H
 #define ELG_MODIFIERS_EFFECTS_H
 
-// Built-in effect modifiers. View::clipped(), clip_shape(), opacity(), shadow(), blur(), the
+// Built-in effect modifiers. View::clip_shape(), opacity(), shadow(), blur(), the
 // color adjustments, blend_mode(), rotation_effect() and scale_effect() are sugar over these.
 
 #include <elg/export.h>
@@ -16,11 +16,6 @@
 #include <utility>
 
 namespace elg {
-
-class ELG_API ClippedModifier final : public EffectModifier {
-public:
-    void apply(Effects& effects) const override { effects.clip_to_bounds = true; }
-};
 
 class ELG_API ClipShapeModifier final : public EffectModifier {
 public:

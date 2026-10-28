@@ -23,7 +23,8 @@ bool FocusManager::focus(Element* element, bool visible, bool navigated) {
     }
     Element* const previous = std::exchange(focused_, element);
     visible_ = visible;
-    set_text_input(element && element->event_handler()->accepts_text_input());
+    set_text_input(element && element->event_handler()->accepts_text_input(),
+                   element && element->secure_text_input());
     // focused_ is already updated, so handlers (e.g. a .focused binding) see the new focus.
     if (previous) {
         previous->event_handler()->focus(false);
@@ -88,7 +89,7 @@ void FocusManager::forget(const Element* element) noexcept {
     std::erase_if(watches_, [&](const Watch& watch) { return watch.scope == element; });
     if (focused_ == element) {
         focused_ = nullptr;
-        set_text_input(false);
+        set_text_input(false, false);
         try {
             notify_watches();
         } catch (...) {
@@ -159,7 +160,7 @@ bool EventDispatcher::update_hover(const std::vector<Element*>& path) {
 
 bool EventDispatcher::tick() {
     const double now = now_seconds();
-    bool redraw = false;
+    bool redraw = expire_watchers();
     // Leaves innermost first, then enters outermost first, like the DOM's mouseleave/enter.
     for (auto it = hovers_.rbegin(); it != hovers_.rend(); ++it) {
         if (it->due >= 0 && it->due <= now && !it->over) {
@@ -182,6 +183,16 @@ bool EventDispatcher::tick() {
 
 std::optional<double> EventDispatcher::next_deadline() const {
     std::optional<double> next;
+    for (const Watcher& watcher : watchers_) {
+        if (const auto due = watcher.recognizer->deadline(); due && (!next || *due < *next)) {
+            next = due;
+        }
+    }
+    for (const Companion& companion : companions_) {
+        if (const auto due = companion.recognizer->deadline(); due && (!next || *due < *next)) {
+            next = due;
+        }
+    }
     for (const Hover& hover : hovers_) {
         if (hover.due >= 0 && (!next || hover.due < *next)) {
             next = hover.due;
@@ -202,6 +213,7 @@ bool EventDispatcher::bubble(const std::vector<Element*>& path, const PointerEve
         if (result.consumed) {
             if (event.kind == PointerEvent::Kind::down) {
                 captured_ = *it;
+                captured_cancellable_ = result.cancellable;
             }
             break;
         }
@@ -222,20 +234,26 @@ bool EventDispatcher::pointer_moved(Point location) {
     pointer_inside_ = true;
     const std::vector<Element*> path = path_at(location);
     bool redraw = update_hover(path);
+    redraw |= expire_watchers();
+    const PointerEvent move{.kind = PointerEvent::Kind::move, .location = location, .window_location = location};
     if (captured_) {
-        const PointerEvent event{PointerEvent::Kind::move, location};
-        redraw |= deliver(event, *captured_).redraw;
+        redraw |= deliver(move, *captured_).redraw;
     } else {
-        redraw |= bubble(path, PointerEvent{PointerEvent::Kind::hover, location});
+        redraw |= bubble(path, PointerEvent{.kind = PointerEvent::Kind::hover, .location = location, .window_location = location});
     }
-    return redraw;
+    return redraw | watch(move);
 }
 
 bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, MouseButton button,
                                      int click_count, KeyModifiers modifiers) {
     last_location_ = location;
     pointer_inside_ = true;
-    const PointerEvent event{kind, location, button, click_count, modifiers};
+    const PointerEvent event{.kind = kind,
+                             .location = location,
+                             .button = button,
+                             .click_count = click_count,
+                             .modifiers = modifiers,
+                             .window_location = location};
     const std::vector<Element*> path = path_at(location);
     bool redraw = update_hover(path);
 
@@ -253,11 +271,113 @@ bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, Mo
             redraw |= focus_->focus(target, false);
         }
     }
-    if (kind == PointerEvent::Kind::up && captured_) {
-        Element* target = std::exchange(captured_, nullptr);
-        return redraw | deliver(event, *target).redraw;
+    if (kind == PointerEvent::Kind::up) {
+        // A long press that came due before the release takes it.
+        redraw |= expire_watchers();
+        if (Element* target = std::exchange(captured_, nullptr)) {
+            redraw |= deliver(event, *target).redraw;
+        } else {
+            redraw |= bubble(path, event);
+        }
+        redraw |= watch(event);
+        watchers_.clear();
+        return redraw;
     }
-    return redraw | bubble(path, event);
+    redraw |= bubble(path, event);
+    if (kind == PointerEvent::Kind::down) {
+        // Recognizers under the press watch it: those inside the handler that took it, and those
+        // around it if it lets them.
+        for (const Watcher& watcher : watchers_) {
+            watcher.recognizer->reset();
+        }
+        watchers_.clear();
+        for (const Companion& companion : companions_) {
+            companion.recognizer->reset();
+        }
+        companions_.clear();
+        // High-priority gestures go first, and may take presses from any handler; simultaneous
+        // ones only watch.
+        std::vector<Watcher> high;
+        bool inside_captor = true; // innermost first: until passing captured_
+        for (auto it = path.rbegin(); it != path.rend(); ++it) {
+            if (*it == captured_) {
+                inside_captor = false;
+            }
+            auto* recognizer = dynamic_cast<GestureRecognizer*>((*it)->event_handler());
+            if (!recognizer) {
+                continue;
+            }
+            if (recognizer->gesture_options.simultaneous) {
+                companions_.push_back({*it, recognizer});
+            } else if (recognizer->gesture_options.priority == GesturePriority::high) {
+                high.push_back({*it, recognizer});
+            } else if (inside_captor || captured_cancellable_) {
+                watchers_.push_back({*it, recognizer});
+            }
+        }
+        watchers_.insert(watchers_.begin(), high.begin(), high.end());
+        redraw |= watch(event);
+    }
+    return redraw;
+}
+
+bool EventDispatcher::watch(const PointerEvent& event) {
+    bool redraw = false;
+    for (Companion& companion : companions_) {
+        if (companion.active) {
+            redraw |= deliver(event, *companion.element).redraw;
+        } else if (companion.recognizer->observe(local_event(event, *companion.element),
+                                                 companion.element->frame())) {
+            companion.active = true;
+            redraw = true;
+        }
+    }
+    if (event.kind == PointerEvent::Kind::up || event.kind == PointerEvent::Kind::cancel) {
+        companions_.clear(); // the press is over; those still watching reset on it
+    }
+    for (const Watcher& watcher : watchers_) {
+        if (watcher.recognizer->observe(local_event(event, *watcher.element), watcher.element->frame())) {
+            return take_press(watcher);
+        }
+    }
+    return redraw;
+}
+
+bool EventDispatcher::expire_watchers() {
+    bool redraw = false;
+    for (Companion& companion : companions_) {
+        if (const auto due = companion.recognizer->deadline();
+            !companion.active && due && *due <= now_seconds() && companion.recognizer->expire()) {
+            companion.active = true;
+            redraw = true;
+        }
+    }
+    if (watchers_.empty()) {
+        return redraw;
+    }
+    const double now = now_seconds();
+    for (const Watcher& watcher : watchers_) {
+        if (const auto due = watcher.recognizer->deadline(); due && *due <= now && watcher.recognizer->expire()) {
+            return take_press(watcher);
+        }
+    }
+    return redraw;
+}
+
+bool EventDispatcher::take_press(const Watcher& winner) {
+    const Watcher taken = winner; // watchers_ is cleared below
+    if (Element* previous = std::exchange(captured_, taken.element); previous && previous != taken.element) {
+        deliver(PointerEvent{.kind = PointerEvent::Kind::cancel, .location = last_location_, .window_location = last_location_},
+                *previous);
+    }
+    for (const Watcher& watcher : watchers_) {
+        if (watcher.element != taken.element) {
+            watcher.recognizer->reset();
+        }
+    }
+    watchers_.clear();
+    captured_cancellable_ = false;
+    return true;
 }
 
 bool EventDispatcher::pointer_left() {
@@ -269,7 +389,9 @@ bool EventDispatcher::pointer_left() {
 
 bool EventDispatcher::key(const KeyEvent& event) {
     bool redraw = false;
-    for (Element* element = focus_->focused(); element; element = element->parent()) {
+    // From the focused element out to the root; with nothing focused, the root alone (a window's
+    // floating layer closes its floating content on Esc).
+    for (Element* element = focus_->focused() ? focus_->focused() : root_; element; element = element->parent()) {
         if (EventHandler* handler = element->event_handler()) {
             const EventResult result = handler->key(event);
             redraw |= result.redraw;
@@ -343,10 +465,11 @@ bool EventDispatcher::move_focus(bool forward) {
     return redraw;
 }
 
-bool EventDispatcher::scroll(const ScrollEvent& event) {
+bool EventDispatcher::scroll(ScrollEvent event) {
     // A wheel gesture ends after this long without wheel events.
     constexpr double kWheelGesturePause = 0.5;
     const Point location = event.location;
+    event.window_location = location;
     last_location_ = location;
     pointer_inside_ = true;
     const double now = now_seconds();
@@ -374,7 +497,7 @@ bool EventDispatcher::scroll(const ScrollEvent& event) {
     bool redraw = false;
     for (auto it = path.rbegin(); it != path.rend(); ++it) {
         if (EventHandler* handler = (*it)->event_handler()) {
-            const EventResult result = handler->scroll(event);
+            const EventResult result = handler->scroll(event, (*it)->frame());
             redraw |= result.redraw;
             if (result.consumed) {
                 if (!wheel_latched_) {
@@ -433,12 +556,12 @@ bool EventDispatcher::rotate(RotateEvent event) {
                    [](EventHandler& handler, const RotateEvent& e) { return handler.rotate(e); });
 }
 
-bool EventDispatcher::smart_magnify(Point location) {
+bool EventDispatcher::two_finger_double_tap(Point location) {
     bool redraw = false;
     const std::vector<Element*> path = path_at(location);
     for (auto it = path.rbegin(); it != path.rend(); ++it) {
         if (EventHandler* handler = (*it)->event_handler()) {
-            const EventResult result = handler->smart_magnify(location);
+            const EventResult result = handler->two_finger_double_tap(location);
             redraw |= result.redraw;
             if (result.consumed) {
                 break;
@@ -509,12 +632,55 @@ bool EventDispatcher::revalidate() {
     if (captured_ && !alive.contains(captured_)) {
         captured_ = nullptr;
     }
+    std::erase_if(watchers_, [&](const Watcher& watcher) { return !alive.contains(watcher.element); });
+    std::erase_if(companions_, [&](const Companion& companion) { return !alive.contains(companion.element); });
     for (Element** latched : {&wheel_latched_, &magnify_latched_, &rotate_latched_}) {
         if (*latched && !alive.contains(*latched)) {
             *latched = nullptr;
         }
     }
     return pointer_inside_ ? update_hover(path_at(last_location_)) : false;
+}
+
+bool EventDispatcher::release_disabled() {
+    const auto disabled = [](Element* element) { return element->disabled_handler() != nullptr; };
+    const PointerEvent cancel{.kind = PointerEvent::Kind::cancel, .location = last_location_,
+                              .window_location = last_location_};
+    bool redraw = false;
+    if (captured_ && disabled(captured_)) {
+        redraw |= deliver(cancel, *std::exchange(captured_, nullptr)).redraw; // the stand-in passes cancel on
+    }
+    std::erase_if(watchers_, [&](const Watcher& watcher) {
+        if (disabled(watcher.element)) {
+            watcher.recognizer->reset();
+            return true;
+        }
+        return false;
+    });
+    std::erase_if(companions_, [&](const Companion& companion) {
+        if (!disabled(companion.element)) {
+            return false;
+        }
+        if (companion.active) {
+            redraw |= deliver(cancel, *companion.element).redraw;
+        } else {
+            companion.recognizer->reset();
+        }
+        return true;
+    });
+    if (magnify_latched_ && disabled(magnify_latched_)) {
+        redraw |= magnify_latched_->disabled_handler()->magnify({.phase = GesturePhase::cancelled}).redraw;
+        magnify_latched_ = nullptr;
+    }
+    if (rotate_latched_ && disabled(rotate_latched_)) {
+        redraw |= rotate_latched_->disabled_handler()->rotate({.phase = GesturePhase::cancelled}).redraw;
+        rotate_latched_ = nullptr;
+    }
+    // Focus leaves a view that can't take it any more (disabled, or a control in a disabled view).
+    if (Element* focused = focus_->focused(); focused && !focused->event_handler()->focusable()) {
+        redraw |= focus_->focus(nullptr, false);
+    }
+    return redraw;
 }
 
 } // namespace elg::detail

@@ -7,6 +7,7 @@
 
 #include "view/element.h"
 #include "view/focus.h"
+#include "view/gestures.h"
 
 #include <elg/events.h>
 
@@ -18,6 +19,9 @@ namespace elg::detail {
 // Routes one window's pointer input into its element tree (design.md §10):
 // - down/up go to the handlers under the pointer, innermost first, until one consumes it;
 //   consuming a down captures the pointer until the up;
+// - gesture recognizers under a down watch the press; the innermost one that recognizes it takes
+//   it over (the handler that had it gets cancel), unless that handler kept it (not cancellable)
+//   and the recognizer is outside it;
 // - hover enter/leave go to every handler under the pointer, after each one's hover delay
 //   (tick() delivers them when due).
 // - keys go to the focused element's handler, then bubble out through its ancestors until
@@ -42,12 +46,12 @@ public:
     // Focuses an element (no ring), e.g. a menu item under the pointer.
     bool focus(Element* element) { return focus_->focus(element, false); }
     bool text_input(const TextInputEvent& event);
-    bool scroll(const ScrollEvent& event);
+    bool scroll(ScrollEvent event);
     // Trackpad gestures. MagnifyEvent::scale and RotateEvent::degrees are filled in here, from the
     // deltas since `began`.
     bool magnify(MagnifyEvent event);
     bool rotate(RotateEvent event);
-    bool smart_magnify(Point location);
+    bool two_finger_double_tap(Point location);
     // Whether pressing at `location` should move the window: the innermost handler there is a
     // .window_drag_area() (controls inside one take their clicks).
     bool drags_window_at(Point location);
@@ -57,9 +61,12 @@ public:
     // Call after If/ForEach removed elements: forgets elements that no longer exist (without
     // touching them) and re-evaluates hover at the last pointer position.
     bool revalidate();
-    // Delivers hover changes whose delay has passed.
+    // Call each frame, after effects: cancels the press and gestures of views that became
+    // .disabled(), and moves focus off a view that can't take it any more.
+    bool release_disabled();
+    // Delivers hover changes whose delay has passed, and long presses held long enough.
     bool tick();
-    // When the next pending hover change is due (steady clock seconds), if any.
+    // When the next pending hover change or long press is due (steady clock seconds), if any.
     std::optional<double> next_deadline() const;
 
 private:
@@ -71,7 +78,19 @@ private:
         double due;     // when to tell it `over`; < 0 when nothing is pending
     };
 
+    // A gesture recognizer watching the press that's down.
+    struct Watcher {
+        Element* element;
+        GestureRecognizer* recognizer;
+    };
+
     std::vector<Element*> path_at(Point location);
+    // Shows the watchers a press event; the first to recognize the press takes it. Simultaneous
+    // gestures see it too.
+    bool watch(const PointerEvent& event);
+    // Lets watchers whose deadline passed take the press.
+    bool expire_watchers();
+    bool take_press(const Watcher& winner);
     bool update_hover(const std::vector<Element*>& path);
     bool bubble(const std::vector<Element*>& path, const PointerEvent& event);
     bool move_focus(bool forward);
@@ -82,6 +101,16 @@ private:
     bool menu_navigation_ = false;
     std::vector<Hover> hovers_; // outermost first
     Element* captured_ = nullptr;
+    bool captured_cancellable_ = false; // gestures around captured_ may take its press
+    std::vector<Watcher> watchers_;     // high priority, then normal; each innermost first
+    // Simultaneous gestures watching the press: they never take it, and once one recognizes it
+    // gets the rest of the press's events beside whatever has it.
+    struct Companion {
+        Element* element;
+        GestureRecognizer* recognizer;
+        bool active = false;
+    };
+    std::vector<Companion> companions_;
     Point last_location_;
     bool pointer_inside_ = false;
     // Wheel latching: a scroll gesture stays with the element that took its first event (a page

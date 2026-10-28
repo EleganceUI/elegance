@@ -33,7 +33,7 @@ window opens.
 | `min_size` | none | The smallest size the user can resize to |
 | `background` | the theme's `background` | Shown where no view draws |
 | `title_bar` | `TitleBar::system` | `TitleBar::integrated` for content under the system's controls, `TitleBar::hidden` to draw your own |
-| `traffic_lights_position` | macOS's | macOS, integrated title bars: where the traffic lights go |
+| `system_controls_position` | macOS's | Integrated title bars: where the system's window controls go (macOS) |
 | `transparent` | `false` | The desktop shows through where nothing opaque is drawn |
 | `opacity` | 1 | The whole window's opacity |
 
@@ -70,7 +70,7 @@ WindowControls({.style = WindowControlsStyle::traffic_lights, .maximize = false}
 
 `TitleBar::integrated` keeps the system's own window controls and lets the content fill the window
 under them. On macOS that's the native traffic lights over a transparent title bar, and
-`traffic_lights_position` moves them (the close button's top-left corner, in points). Platforms
+`system_controls_position` moves them (the close button's top-left corner, in points). Platforms
 without controls that sit over the content keep their system title bar, so an app never shows
 imitation buttons where real ones exist.
 
@@ -78,7 +78,7 @@ imitation buttons where real ones exist.
 there are none (in fullscreen, too). Keep content clear of it, reactively:
 
 ```cpp
-app.window({.title = "Music", .title_bar = TitleBar::integrated, .traffic_lights_position = Point{20, 27}},
+app.window({.title = "Music", .title_bar = TitleBar::integrated, .system_controls_position = Point{20, 27}},
            [] {
                const auto window = Environment<WindowKey>();
                return VStack(EmptyView().frame([=] { return Size{0, window().system_controls_frame().max_y()}; }),

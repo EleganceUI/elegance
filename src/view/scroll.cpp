@@ -182,7 +182,7 @@ void ScrollElement::arrange(Rect bounds, ProposedSize) {
     }
 
     // Following the end (pinned_): it moved, so go with it. Scrolling up unpins (scroll_to).
-    if (options_.sticks_to_end && pinned_ && !stretching() && scrolls(Axis::vertical) && target_.y != max.y) {
+    if (sticks_to_end_ && pinned_ && !stretching() && scrolls(Axis::vertical) && target_.y != max.y) {
         target_.y = max.y;
         offset_y_.set(target_.y, nullptr);
     }
@@ -202,7 +202,7 @@ std::optional<ScrollElement::Thumb> ScrollElement::thumb(Axis axis) const {
     const bool vertical = axis == Axis::vertical;
     const float view = vertical ? viewport_.height : viewport_.width;
     const float content = vertical ? content_size_.height : content_size_.width;
-    if (!options_.shows_indicators || !scrolls(axis) || content <= view + 0.5f) {
+    if (!shows_indicators_ || !scrolls(axis) || content <= view + 0.5f) {
         return std::nullopt;
     }
     // Leave the corner free when both bars show.
@@ -304,7 +304,7 @@ bool ScrollElement::anchor_shift(Axis axis, float delta) {
         return false;
     }
     if (axis == Axis::vertical) {
-        if (options_.sticks_to_end && pinned_) {
+        if (sticks_to_end_ && pinned_) {
             return false; // following the end instead
         }
         target_.y += delta;
@@ -329,7 +329,7 @@ void ScrollElement::fade_indicators() {
     indicators_.set(0.f, &fade);
 }
 
-EventResult ScrollElement::scroll(const ScrollEvent& event) {
+EventResult ScrollElement::scroll(const ScrollEvent& event, Rect) {
     return event.phase == GesturePhase::none ? wheel(event) : gesture(event);
 }
 

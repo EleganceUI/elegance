@@ -24,6 +24,7 @@
 #include <elg/font.h>
 #include <elg/view.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -67,23 +68,45 @@ struct AsyncImagePhase {
 
 struct AsyncImageOptions {
     float scale = 1; // pixels per point
-    // Resizable, keeping its aspect ratio this way (unset: at its own size, like Image).
+    // Resizable, keeping its aspect ratio this way (unset: at its own size, like Image). Not used
+    // with a content function, whose views size the image.
     std::optional<ContentMode> content_mode;
+    // false: kept in memory only, never in the disk cache (for private images whose server
+    // doesn't send Cache-Control: no-store).
+    bool disk_cache = true;
 };
 
 // Loads an image over HTTP(S) when first shown (design.md §13.3): a spinner while loading, the
 // image once it's here, a placeholder icon if it fails. Downloads are cached in memory, so lists
-// scrolling back don't fetch again.
+// scrolling back don't fetch again, and on disk for as long as the server allows
+// (set_image_cache).
 //   AsyncImage(url, {.content_mode = ContentMode::fill}).frame(48, 48).clip_shape(Circle())
 ELG_API View AsyncImage(std::string url, AsyncImageOptions options = {});
 // The same, with your own view for each phase:
 //   AsyncImage(url, [](const AsyncImagePhase& phase) {
 //       return phase.kind == AsyncImagePhase::Kind::success ? phase.image.resizable() : View(Color::gray);
 //   })
-ELG_API View AsyncImage(std::string url, std::function<View(const AsyncImagePhase&)> content, float scale = 1);
+ELG_API View AsyncImage(std::string url, std::function<View(const AsyncImagePhase&)> content,
+                        AsyncImageOptions options = {});
+
+// AsyncImage's disk cache: downloads kept between runs while Cache-Control (or Expires) says
+// they're fresh, then revalidated with the server; a stale copy is shown when the server can't
+// be reached. The least recently used go first past the limit. ELG_IMAGE_CACHE=off in the
+// environment turns it off.
+struct ImageCacheOptions {
+    bool disk = true;
+    std::uint64_t disk_limit = 256ull << 20; // bytes
+    // Empty: <the user's cache folder>/Elegance/<this executable's name>/Images.
+    std::filesystem::path directory;
+};
+// Downloads already under way use the cache they started with. UI thread.
+ELG_API void set_image_cache(ImageCacheOptions options);
+// Forgets every downloaded image, in memory and on disk (when signing out, say). Downloads under
+// way finish without being cached. UI thread.
+ELG_API void clear_image_cache();
 
 // An icon followed by a title, spaced for buttons, menus, and lists.
-ELG_API View Label(std::string title, ImageSource icon);
+ELG_API View Label(Prop<std::string> title, ImageSource icon);
 
 // --- Icon sets ---
 

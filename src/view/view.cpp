@@ -33,6 +33,10 @@ View::View() noexcept = default;
 
 View::View(std::shared_ptr<const detail::ViewNode> node) noexcept : node_(std::move(node)) {}
 
+bool View::is_empty() const noexcept {
+    return !node_;
+}
+
 View View::with_modifier(std::shared_ptr<const Modifier> modifier) const {
     return View(std::make_shared<const detail::ModifiedNode>(*this, std::move(modifier)));
 }
@@ -41,13 +45,21 @@ View View::deferred(std::function<View()> body) {
     return View(std::make_shared<const detail::DeferredNode>(std::move(body)));
 }
 
-View View::padding(float length) const {
-    return padding(EdgeInsets::all(length));
+View View::padding(Prop<float> length) const {
+    return padding(Edges::all, std::move(length));
 }
 
-View View::padding(Edges edges, float length) const {
-    const auto on = [&](Edges edge) { return contains(edges, edge) ? length : 0.f; };
-    return padding(EdgeInsets{on(Edges::top), on(Edges::leading), on(Edges::bottom), on(Edges::trailing)});
+View View::padding(Edges edges, Prop<float> length) const {
+    const auto insets = [edges](float length) {
+        const auto on = [&](Edges edge) { return contains(edges, edge) ? length : 0.f; };
+        return EdgeInsets{on(Edges::top), on(Edges::leading), on(Edges::bottom), on(Edges::trailing)};
+    };
+    if (const float* value = length.static_value()) {
+        return padding(insets(*value));
+    }
+    return padding(Prop<EdgeInsets>([length = std::move(length), insets](const EnvironmentValues& environment) {
+        return insets(length.get(environment));
+    }));
 }
 
 View View::padding(EdgeInsets insets) const {
@@ -125,6 +137,66 @@ View View::frame(Prop<Size> size, Alignment alignment) const {
     return ViewAccess::make(std::make_shared<const BoundFrameNode>(*this, std::move(size), alignment));
 }
 
+namespace {
+
+// .padding(Prop<EdgeInsets>): padding bound to state; lays out like PaddingModifier.
+class BoundPaddingElement final : public detail::Element {
+public:
+    explicit BoundPaddingElement(std::unique_ptr<Element> content) : content_(std::move(content)) {
+        adopt(*content_);
+    }
+
+    void set_insets(EdgeInsets insets) {
+        if (insets.top != insets_.top || insets.leading != insets_.leading || insets.bottom != insets_.bottom ||
+            insets.trailing != insets_.trailing) {
+            insets_ = insets;
+            invalidate_layout();
+        }
+    }
+    void inspect(detail::Inspection& out) const override { out.name = "Padding"; }
+    float layout_priority() const noexcept override { return content_->layout_priority(); }
+    float z_index() const noexcept override { return content_->z_index(); }
+    void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
+
+protected:
+    Size measure(ProposedSize proposal) override {
+        return PaddingModifier(insets_).size_that_fits(proposal, LayoutChild(*content_));
+    }
+    void arrange(Rect bounds, ProposedSize proposal) override {
+        PaddingModifier(insets_).place(bounds, proposal, LayoutChild(*content_));
+    }
+    void paint_impl(detail::DisplayList& list) const override { content_->paint(list); }
+    bool hit_impl(Point point, std::vector<Element*>& path) override { return content_->hit_test(point, path); }
+
+private:
+    EdgeInsets insets_;
+    std::unique_ptr<Element> content_;
+};
+
+class BoundPaddingNode final : public detail::ViewNode {
+public:
+    BoundPaddingNode(View content, Prop<EdgeInsets> insets) : content_(std::move(content)), insets_(std::move(insets)) {}
+    std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
+        auto element = std::make_unique<BoundPaddingElement>(detail::lower(content_, context));
+        BoundPaddingElement* const target = element.get();
+        detail::bind(insets_, context, [target](EdgeInsets insets) { target->set_insets(insets); });
+        return element;
+    }
+
+private:
+    View content_;
+    Prop<EdgeInsets> insets_;
+};
+
+} // namespace
+
+View View::padding(Prop<EdgeInsets> insets) const {
+    if (const EdgeInsets* value = insets.static_value()) {
+        return padding(*value);
+    }
+    return ViewAccess::make(std::make_shared<const BoundPaddingNode>(*this, std::move(insets)));
+}
+
 View View::fixed_size(bool horizontal, bool vertical) const {
     return modifier(FixedSizeModifier(horizontal, vertical));
 }
@@ -165,7 +237,7 @@ View View::background(Prop<ShapeStyle> style, const Shape& shape) const {
 }
 
 View View::clipped() const {
-    return modifier(ClippedModifier());
+    return clip_shape(Rectangle());
 }
 
 View View::clip_shape(const Shape& shape) const {
@@ -190,6 +262,26 @@ View View::inner_shadow(Shadow shadow) const {
 
 View View::blur(Prop<float> radius, bool opaque) const {
     return modifier(BlurModifier(std::move(radius), opaque));
+}
+
+View View::backdrop_blur(Prop<float> radius, BackdropOptions options) const {
+    return backdrop_blur(std::move(radius), Rectangle(), std::move(options));
+}
+
+View View::backdrop_blur(Prop<float> radius, const Shape& shape, BackdropOptions options) const {
+    const float* blur = radius.static_value();
+    const float* saturation = options.saturation.static_value();
+    const float* brightness = options.brightness.static_value();
+    const float* noise = options.noise.static_value();
+    if (blur && saturation && brightness && noise) {
+        return background(detail::BackdropFill{*blur, *saturation, *brightness, *noise}, shape);
+    }
+    return background(Prop<ShapeStyle>([radius, options](const EnvironmentValues& environment) {
+                          return ShapeStyle(detail::BackdropFill{
+                              radius.get(environment), options.saturation.get(environment),
+                              options.brightness.get(environment), options.noise.get(environment)});
+                      }),
+                      shape);
 }
 
 namespace {
@@ -223,10 +315,6 @@ View View::hue_rotation(Prop<float> degrees) const {
 
 View View::sepia(Prop<float> amount) const {
     return modifier(ColorFilterModifier(color_filter(ColorFilter::Kind::sepia, std::move(amount))));
-}
-
-View View::color_invert() const {
-    return color_invert(1.f);
 }
 
 View View::color_invert(Prop<float> amount) const {
@@ -280,20 +368,67 @@ View View::allows_hit_testing(bool enabled) const {
     return modifier(AllowsHitTestingModifier(enabled));
 }
 
-View View::on_tap_gesture(std::function<void()> action, int count) const {
-    return modifier(TapGestureModifier(count, std::move(action)));
+View View::on_click(std::function<void(const ClickEvent&)> action, ClickOptions options) const {
+    return modifier(ClickModifier(std::move(action), options));
+}
+
+View View::on_click(std::function<void()> action, ClickOptions options) const {
+    return on_click([action = std::move(action)](const ClickEvent&) { action(); }, options);
+}
+
+View View::on_double_click(std::function<void(const ClickEvent&)> action) const {
+    return on_click(std::move(action), {.count = 2});
+}
+
+View View::on_double_click(std::function<void()> action) const {
+    return on_click(std::move(action), {.count = 2});
+}
+
+View View::on_activate(std::function<void()> action) const {
+    if (!action) {
+        throw UsageError("on_activate: the action is empty");
+    }
+    return View(std::make_shared<const detail::ActivateNode>(*this, std::move(action)));
+}
+
+View View::recognize(DragGesture gesture, GestureOptions options) const {
+    return modifier(DragGestureModifier(std::move(gesture), options));
+}
+
+View View::recognize(LongPressGesture gesture, GestureOptions options) const {
+    return modifier(LongPressGestureModifier(std::move(gesture), options));
+}
+
+View View::recognize(MagnifyGesture gesture) const {
+    return modifier(MagnifyGestureModifier(std::move(gesture)));
+}
+
+View View::recognize(RotateGesture gesture) const {
+    return modifier(RotateGestureModifier(std::move(gesture)));
+}
+
+View View::recognize(TwoFingerDoubleTapGesture gesture) const {
+    return modifier(TwoFingerDoubleTapModifier(std::move(gesture)));
+}
+
+View View::on_drag(std::function<void(const DragEvent&)> action) const {
+    return recognize(DragGesture().on_changed(std::move(action)));
+}
+
+View View::on_long_press(std::function<void()> action) const {
+    return recognize(LongPressGesture(std::move(action)));
 }
 
 View View::on_magnify(std::function<void(const MagnifyEvent&)> action) const {
-    return modifier(MagnifyGestureModifier(std::move(action)));
+    return recognize(MagnifyGesture().on_changed(std::move(action)));
 }
 
 View View::on_rotate(std::function<void(const RotateEvent&)> action) const {
-    return modifier(RotateGestureModifier(std::move(action)));
+    return recognize(RotateGesture().on_changed(std::move(action)));
 }
 
-View View::on_smart_magnify(std::function<void(Point)> action) const {
-    return modifier(SmartMagnifyModifier(std::move(action)));
+View View::on_two_finger_double_tap(std::function<void(Point)> action) const {
+    return recognize(TwoFingerDoubleTapGesture(std::move(action)));
 }
 
 View View::pointer_style(Prop<PointerStyle> style) const {
@@ -309,12 +444,16 @@ View View::on_size_change(std::function<void(PixelSize)> action) const {
     return modifier(Observer(std::move(action)));
 }
 
-View View::on_hover(std::function<void(bool)> action) const {
-    return modifier(HoverModifier(std::move(action)));
+View View::on_pointer_enter(std::function<void()> action) const {
+    return modifier(PointerBoundaryModifier(std::move(action), nullptr));
 }
 
-View View::on_hover(std::function<void(bool)> action, HoverDelay delay) const {
-    return modifier(HoverModifier(std::move(action), delay));
+View View::on_pointer_leave(std::function<void()> action) const {
+    return modifier(PointerBoundaryModifier(nullptr, std::move(action)));
+}
+
+View View::on_hover_change(std::function<void(bool)> action) const {
+    return modifier(HoverModifier(std::move(action)));
 }
 
 View View::hover_delay(HoverDelay delay) const {
@@ -349,8 +488,8 @@ View View::focused(Binding<bool> is_focused) const {
 }
 
 View View::on_key_press(Key key, std::function<void()> action) const {
-    return on_key_press([key, action = std::move(action)](const KeyEvent& event) {
-        if (event.key != key) {
+    return on_key([key, action = std::move(action)](const KeyEvent& event) {
+        if (event.kind != KeyEvent::Kind::down || event.key != key) {
             return false;
         }
         if (action) {
@@ -360,8 +499,20 @@ View View::on_key_press(Key key, std::function<void()> action) const {
     });
 }
 
-View View::on_key_press(std::function<bool(const KeyEvent&)> action) const {
-    return modifier(KeyPressModifier(std::move(action)));
+View View::on_key(std::function<bool(const KeyEvent&)> action) const {
+    return modifier(KeyEventModifier(std::move(action)));
+}
+
+View View::on_text_input(std::function<bool(const TextInputEvent&)> action) const {
+    return modifier(TextInputModifier(std::move(action)));
+}
+
+View View::on_pointer(std::function<bool(const PointerEvent&)> action) const {
+    return modifier(PointerModifier(std::move(action)));
+}
+
+View View::on_scroll(std::function<bool(const ScrollEvent&)> action) const {
+    return modifier(ScrollModifier(std::move(action)));
 }
 
 View View::tint(Prop<Color> color) const {
@@ -372,17 +523,23 @@ View View::overlay(View view, Alignment alignment) const {
     return modifier(OverlayModifier(std::move(view), alignment));
 }
 
-View View::border(Color color, float width) const {
-    return modifier(BorderModifier(color, width));
+View View::border(Prop<Color> color, float width) const {
+    return border(std::move(color), width, Rectangle());
+}
+
+View View::border(Prop<Color> color, float width, const Shape& shape) const {
+    return overlay(shape.stroke_border(std::move(color), width));
 }
 
 View View::font(Prop<Font> font) const {
     return modifier(FontModifier(std::move(font)));
 }
 
-View View::font_weight(Weight weight) const {
+View View::font_weight(Prop<Weight> weight) const {
     // Resolved against the surrounding environment, so this reads the font from outside.
-    return font([weight](const EnvironmentValues& environment) { return environment.get<FontKey>().weight(weight); });
+    return font([weight = std::move(weight)](const EnvironmentValues& environment) {
+        return environment.get<FontKey>().weight(weight.get(environment));
+    });
 }
 
 View View::foreground_style(Prop<Color> color) const {
@@ -399,10 +556,6 @@ View View::theme(Theme theme) const {
 
 View View::disabled(Prop<bool> disabled) const {
     return modifier(DisabledModifier(std::move(disabled)));
-}
-
-View View::disabled() const {
-    return disabled(true);
 }
 
 View View::animation_impl(const Animation& animation, std::function<bool()> changed) const {
@@ -423,6 +576,46 @@ View View::button_style_impl(std::shared_ptr<const ButtonStyle> style) const {
 
 View View::toggle_style_impl(std::shared_ptr<const ToggleStyle> style) const {
     return modifier(ToggleStyleModifier(std::move(style)));
+}
+
+View View::checkbox_style_impl(std::shared_ptr<const CheckboxStyle> style) const {
+    return modifier(CheckboxStyleModifier(std::move(style)));
+}
+
+View View::number_input_style_impl(std::shared_ptr<const NumberInputStyle> style) const {
+    return modifier(NumberInputStyleModifier(std::move(style)));
+}
+
+View View::progress_style_impl(std::shared_ptr<const ProgressStyle> style) const {
+    return modifier(ProgressStyleModifier(std::move(style)));
+}
+
+View View::picker_style_impl(std::shared_ptr<const PickerStyle> style) const {
+    return modifier(PickerStyleModifier(std::move(style)));
+}
+
+View View::slider_style_impl(std::shared_ptr<const SliderStyle> style) const {
+    return modifier(SliderStyleModifier(std::move(style)));
+}
+
+View View::popover_style_impl(std::shared_ptr<const PopoverStyle> style) const {
+    return modifier(PopoverStyleModifier(std::move(style)));
+}
+
+View View::tooltip_style_impl(std::shared_ptr<const TooltipStyle> style) const {
+    return modifier(TooltipStyleModifier(std::move(style)));
+}
+
+View View::menu_style_impl(std::shared_ptr<const MenuStyle> style) const {
+    return modifier(MenuStyleModifier(std::move(style)));
+}
+
+View View::row_style_impl(std::shared_ptr<const RowStyle> style) const {
+    return modifier(RowStyleModifier(std::move(style)));
+}
+
+View View::navigation_stack_style_impl(std::shared_ptr<const NavigationStackStyle> style) const {
+    return modifier(NavigationStackStyleModifier(std::move(style)));
 }
 
 View View::text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const {
@@ -479,18 +672,26 @@ View Button(View label, std::function<void()> action) {
     return ViewAccess::make(std::make_shared<const detail::ButtonNode>(std::move(label), std::move(action)));
 }
 
-View Button(std::string title, std::function<void()> action) {
+View Button(Prop<std::string> title, std::function<void()> action) {
     return Button(Text(std::move(title)), std::move(action));
 }
 
-View TextField(std::string placeholder, Binding<std::string> text, TextFieldOptions options) {
+View TextField(Prop<std::string> placeholder, Binding<std::string> text, TextFieldOptions options) {
+    const bool* secure = options.secure.static_value();
+    const int* lines = options.line_limit.static_value();
+    if (secure && *secure && lines && *lines > 1) {
+        throw UsageError("TextField: a secure field is one line (line_limit must be 1)");
+    }
     return ViewAccess::make(std::make_shared<const detail::TextFieldNode>(std::move(placeholder), std::move(text),
                                                                          std::move(options), false));
 }
 
-View SecureField(std::string placeholder, Binding<std::string> text, TextFieldOptions options) {
+View TextArea(Prop<std::string> placeholder, Binding<std::string> text, TextAreaOptions options) {
+    TextFieldOptions field{.on_submit = std::move(options.on_submit),
+                           .styler = std::move(options.styler),
+                           .on_key = std::move(options.on_key)};
     return ViewAccess::make(std::make_shared<const detail::TextFieldNode>(std::move(placeholder), std::move(text),
-                                                                         std::move(options), true));
+                                                                         std::move(field), true));
 }
 
 ScrollPosition::ScrollPosition() : target_(std::make_shared<detail::ScrollTarget>()) {}
@@ -527,11 +728,29 @@ View ScrollView(ScrollViewOptions options, View content) {
 }
 
 View Toggle(View label, Binding<bool> is_on) {
-    return ViewAccess::make(std::make_shared<const detail::ToggleNode>(std::move(label), std::move(is_on)));
+    return ViewAccess::make(
+        std::make_shared<const detail::ToggleNode>(detail::ToggleNode::Kind::toggle, std::move(label), std::move(is_on)));
 }
 
-View Toggle(std::string title, Binding<bool> is_on) {
+View Toggle(Prop<std::string> title, Binding<bool> is_on) {
     return Toggle(Text(std::move(title)), std::move(is_on));
+}
+
+View Toggle(Binding<bool> is_on) {
+    return Toggle(EmptyView(), std::move(is_on));
+}
+
+View Checkbox(Binding<bool> is_checked, CheckboxOptions options) {
+    return Checkbox(EmptyView(), std::move(is_checked), std::move(options));
+}
+
+View Checkbox(View label, Binding<bool> is_checked, CheckboxOptions options) {
+    return ViewAccess::make(std::make_shared<const detail::ToggleNode>(
+        detail::ToggleNode::Kind::checkbox, std::move(label), std::move(is_checked), std::move(options.mixed)));
+}
+
+View Checkbox(Prop<std::string> title, Binding<bool> is_checked, CheckboxOptions options) {
+    return Checkbox(Text(std::move(title)), std::move(is_checked), std::move(options));
 }
 
 View If(Prop<bool> condition, View then_view, View else_view) {
@@ -606,13 +825,71 @@ std::function<HoverDelay()> environment_hover_delay(const EnvironmentValues& env
     return [environment] { return environment.get<HoverDelayKey>(); };
 }
 
+// A .disabled() view's handlers stop acting (DisabledEventHandler); the dispatcher cancels what
+// they had going (release_disabled). A window drag area still moves the window.
 std::unique_ptr<EventElement> make_event_element(std::unique_ptr<EventHandler> handler, const View& content,
                                                  const LowerContext& context) {
+    const bool drags_window = dynamic_cast<const WindowDragHandler*>(handler.get()) != nullptr;
     auto element = std::make_unique<EventElement>(std::move(handler), detail::lower(content, context),
                                                   environment_hover_delay(context.environment));
     join_focus(*element, context);
+    if (!drags_window) {
+        const EnvironmentValues environment = context.environment;
+        detail::bind(Prop<bool>([environment] { return !environment.get<DisabledKey>(); }), context,
+                     [target = element.get()](bool enabled) { target->set_enabled(enabled); });
+    }
     return element;
 }
+
+// on_activate: a left click inside, or Space/Enter while focused, while enabled.
+class ActivateHandler final : public EventHandler {
+public:
+    ActivateHandler(std::function<void()> action, std::function<bool()> enabled)
+        : action_(std::move(action)), enabled_(std::move(enabled)) {}
+
+    EventResult pointer(const PointerEvent& event, Rect frame) override {
+        if (event.kind == PointerEvent::Kind::cancel) {
+            pressed_ = false;
+            return {};
+        }
+        if (event.button != MouseButton::left) {
+            return {};
+        }
+        switch (event.kind) {
+        case PointerEvent::Kind::down:
+            if (!untrack(enabled_)) {
+                return {};
+            }
+            pressed_ = true;
+            return {.consumed = true, .cancellable = true};
+        case PointerEvent::Kind::up: {
+            const bool inside = event.location.x >= frame.x && event.location.x < frame.max_x() &&
+                                event.location.y >= frame.y && event.location.y < frame.max_y();
+            if (std::exchange(pressed_, false) && inside && untrack(enabled_)) {
+                action_();
+            }
+            return {.consumed = true};
+        }
+        default: return {};
+        }
+    }
+    EventResult key(const KeyEvent& event) override {
+        if (event.kind != KeyEvent::Kind::down || (event.key != Key::space && event.key != Key::enter) ||
+            event.modifiers != KeyModifiers::none || !untrack(enabled_)) {
+            return {};
+        }
+        if (!event.repeat) {
+            action_();
+        }
+        return {.consumed = true};
+    }
+    bool focusable() const override { return untrack(enabled_); }
+
+private:
+    std::function<void()> action_;
+    std::function<bool()> enabled_;
+    bool pressed_ = false;
+};
 
 // `.focused(binding)` around a view: focusable itself only when nothing inside is (so Tab and
 // clicks reach the field it wraps, not an invisible wrapper first).
@@ -654,8 +931,7 @@ std::unique_ptr<ButtonElement> make_button_element(const View& body, std::functi
     const EnvironmentValues environment = context.environment;
     auto element = std::make_unique<ButtonElement>(
         detail::lower(body, context.nested()), std::move(action), std::move(pressed), std::move(hovered),
-        [environment] { return !environment.get<DisabledKey>(); },
-        [environment] { return environment.get<HoverDelayKey>(); });
+        [environment] { return !environment.get<DisabledKey>(); });
     join_focus(*element, context);
     return element;
 }
@@ -730,42 +1006,28 @@ std::unique_ptr<Element> ModifiedNode::lower(const LowerContext& context) const 
 std::unique_ptr<Element> LayoutNode::lower(const LowerContext& context) const {
     LowerContext child_context = context;
     child_context.spacer_axis = layout_->spacer_axis();
+    // A selection around a stack over a ForEach is the ForEach's; its other children (a header)
+    // aren't rows, and nothing inside them can take it.
+    const auto is_for_each = [](const View& child) {
+        return dynamic_cast<const ForEachNode*>(ViewAccess::node(child).get()) != nullptr;
+    };
+    LowerContext other_context = child_context;
+    if (context.selection && std::ranges::any_of(children_, is_for_each)) {
+        other_context.selection.reset();
+    }
     std::vector<std::unique_ptr<Element>> children;
     children.reserve(children_.size());
     for (const View& child : children_) {
-        children.push_back(detail::lower(child, child_context));
+        children.push_back(detail::lower(child, is_for_each(child) ? child_context : other_context));
     }
     return std::make_unique<LayoutElement>(layout_, std::move(children));
 }
-
-namespace {
-
-// Materials take their dark tint in dark mode; other styles pass through.
-Prop<ShapeStyle> adapt_materials(const Prop<ShapeStyle>& fill) {
-    if (const ShapeStyle* style = fill.static_value(); style && !std::holds_alternative<Material>(style->value())) {
-        return fill;
-    }
-    return Prop<ShapeStyle>([fill](const EnvironmentValues& environment) {
-        ShapeStyle style = fill.get(environment);
-        if (const auto* material = std::get_if<Material>(&style.value())) {
-            Material adapted = *material;
-            if (adapted.dark_tint && environment.get<ColorSchemeKey>() == ColorScheme::dark) {
-                adapted.tint = *adapted.dark_tint;
-            }
-            adapted.dark_tint.reset();
-            return ShapeStyle(adapted);
-        }
-        return style;
-    });
-}
-
-} // namespace
 
 std::unique_ptr<Element> ShapeNode::lower(const LowerContext& context) const {
     auto element = std::make_unique<ShapeElement>(spec_);
     ShapeElement* const target = element.get();
     if (spec_.fill) {
-        detail::bind(adapt_materials(*spec_.fill), context,
+        detail::bind(*spec_.fill, context,
              [target](ShapeStyle fill, const Animation* animation) { target->set_fill(std::move(fill), animation); });
     }
     if (spec_.stroke) {
@@ -787,10 +1049,12 @@ std::unique_ptr<Element> TextNode::lower(const LowerContext& context) const {
     TextElement* const target = element.get();
 
     // The font: the Text's own, else the environment's; then any weight override.
-    Prop<Font> font = style_.font ? Prop<Font>(*style_.font)
+    Prop<Font> font = style_.font ? style_.font->resolved_in(environment)
                                   : Prop<Font>([environment] { return environment.get<FontKey>(); });
     if (style_.weight) {
-        font = Prop<Font>([font, weight = *style_.weight] { return font.get().weight(weight); });
+        font = Prop<Font>([font, weight = style_.weight->resolved_in(environment)] {
+            return font.get().weight(weight.get());
+        });
     }
     detail::bind(font, context, [target](const Font& value) { target->set_font(value); });
     detail::bind(content_, context, [target](const std::string& content) { target->set_content(content); });
@@ -852,9 +1116,20 @@ private:
 std::unique_ptr<Element> TextFieldNode::lower(const LowerContext& context) const {
     ELG_ASSERT(context.text, "lowering a TextField without a text system");
     const EnvironmentValues environment = context.environment;
-    const auto editor = std::make_shared<TextEditor>(*context.text, text_, placeholder_, options_.on_submit,
-                                                     context.services, context.focus, environment, secure_);
-    editor->configure(options_.max_lines, options_.styler);
+    const auto editor = std::make_shared<TextEditor>(*context.text, text_, options_.on_submit, context.services,
+                                                     context.focus, environment, area_);
+    editor->set_styler(options_.styler);
+    detail::bind(placeholder_, context, [editor](std::string placeholder) { editor->set_placeholder(std::move(placeholder)); });
+    if (!area_) {
+        // A field revealed or hidden while focused switches its text input (IME) with it.
+        detail::bind(options_.secure, context, [editor, focus = context.focus](bool secure) {
+            editor->set_secure(secure);
+            if (focus) {
+                focus->refresh_text_input();
+            }
+        });
+        detail::bind(options_.line_limit, context, [editor](int lines) { editor->set_line_limit(lines); });
+    }
     // The text follows the binding (when changed elsewhere). The font is bound where the style
     // places the field (TextEditorNode).
     detail::bind(Prop<std::string>(text_), context,
@@ -888,43 +1163,101 @@ std::unique_ptr<Element> TextFieldNode::lower(const LowerContext& context) const
 
 std::unique_ptr<Element> ScrollNode::lower(const LowerContext& context) const {
     const EnvironmentValues environment = context.environment;
-    return std::make_unique<ScrollElement>(options_, detail::lower(content_, context.nested()),
-                                           [environment] { return environment.color(ThemeColor::secondary); },
-                                           context.needs_frame);
+    auto element = std::make_unique<ScrollElement>(options_, detail::lower(content_, context.nested()),
+                                                   [environment] { return environment.color(ThemeColor::secondary); },
+                                                   context.needs_frame);
+    ScrollElement* const target = element.get();
+    detail::bind(options_.shows_indicators, context, [target](bool shows) { target->set_shows_indicators(shows); });
+    detail::bind(options_.sticks_to_end, context, [target](bool sticks) { target->set_sticks_to_end(sticks); });
+    return element;
 }
 
 std::unique_ptr<Element> ToggleNode::lower(const LowerContext& context) const {
-    // A button whose action flips the binding; the ToggleStyle draws it.
+    // A button whose action flips the binding (and checks a mixed check box); the style draws it.
     const State<bool> pressed(false);
     const State<bool> hovered(false);
+    const State<bool> focused(false);
     const EnvironmentValues environment = context.environment;
-    const Binding<bool> is_on = is_on_;
-    const auto toggle = [is_on] {
-        with_animation(Animation::smooth(0.3), [&] { is_on.set(!untrack([&] { return is_on(); })); });
-    };
-    const ToggleConfiguration configuration{
-        .label = label_,
-        .is_on = [is_on] { return is_on(); },
-        .toggle = toggle,
-        .is_pressed = [pressed] { return pressed(); },
-        .is_hovered = [hovered] { return hovered(); },
-        .is_enabled = [environment] { return !environment.get<DisabledKey>(); },
+    const Binding<bool> value = value_;
+    const Prop<bool> mixed = mixed_;
+    const bool checkbox = kind_ == Kind::checkbox;
+
+    // The style is chosen when the control is built, and with it how a flip animates.
+    std::shared_ptr<const ToggleStyle> toggle_style;
+    std::shared_ptr<const CheckboxStyle> checkbox_style;
+    std::optional<Animation> animation;
+    if (checkbox) {
+        checkbox_style = untrack([&] { return environment.get<CheckboxStyleKey>(); });
+        animation = checkbox_style->animation();
+    } else {
+        toggle_style = untrack([&] { return environment.get<ToggleStyleKey>(); });
+        animation = toggle_style->animation();
+    }
+    const auto toggle = [value, mixed, environment, animation] {
+        const bool next = untrack([&] { return mixed.get(environment) || !value(); });
+        if (animation) {
+            with_animation(*animation, [&] { value.set(next); });
+        } else {
+            value.set(next);
+        }
     };
 
-    const std::shared_ptr<const ToggleStyle> style = untrack([&] { return environment.get<ToggleStyleKey>(); });
     View body;
     {
         const EnvironmentScope scope(environment);
-        body = style->make_body(configuration);
+        const Signal<bool> is_enabled = [environment] { return !environment.get<DisabledKey>(); };
+        if (checkbox) {
+            body = checkbox_style->make_body({
+                .label = label_,
+                .is_checked = value,
+                .is_mixed = [mixed, environment] { return mixed.get(environment); },
+                .toggle = toggle,
+                .is_pressed = pressed,
+                .is_hovered = hovered,
+                .is_enabled = is_enabled,
+                .is_focused = focused,
+            });
+        } else {
+            body = toggle_style->make_body({
+                .label = label_,
+                .is_on = value,
+                .toggle = toggle,
+                .is_pressed = pressed,
+                .is_hovered = hovered,
+                .is_enabled = is_enabled,
+                .is_focused = focused,
+            });
+        }
     }
     AccessibilitySpec semantics;
-    semantics.role = AccessRole::toggle;
-    semantics.toggled = [is_on]() -> std::optional<bool> { return is_on(); };
-    return with_accessibility(make_button_element(body, toggle, pressed, hovered, context), std::move(semantics));
+    semantics.role = checkbox ? AccessRole::checkbox : AccessRole::toggle;
+    semantics.toggled = [value, mixed, environment]() -> std::optional<ToggleState> {
+        if (mixed.get(environment)) {
+            return ToggleState::mixed;
+        }
+        return value() ? ToggleState::on : ToggleState::off;
+    };
+    auto element = make_button_element(body, toggle, pressed, hovered, context);
+    element->set_focus_state(focused);
+    return with_accessibility(std::move(element), std::move(semantics));
 }
 
 // Like SwiftUI: the binding is true while focus is anywhere inside the view, and setting it
 // focuses the first focusable view inside (or the view itself if nothing inside can be).
+std::unique_ptr<Element> ActivateNode::lower(const LowerContext& context) const {
+    const EnvironmentValues environment = context.environment;
+    const std::function<bool()> enabled = [environment] { return !environment.get<DisabledKey>(); };
+    const std::function<void()> action = action_;
+    AccessibilitySpec semantics;
+    semantics.action = [action, enabled] {
+        if (untrack(enabled)) {
+            action();
+        }
+    };
+    auto element = make_event_element(std::make_unique<ActivateHandler>(action, enabled), content_, context);
+    return with_accessibility(std::move(element), std::move(semantics), environment);
+}
+
 std::unique_ptr<Element> FocusedNode::lower(const LowerContext& context) const {
     auto handler = std::make_unique<FocusScopeHandler>();
     FocusScopeHandler* const scope_handler = handler.get();

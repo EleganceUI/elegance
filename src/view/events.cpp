@@ -26,7 +26,7 @@ EventResult EventHandler::hover(bool) {
     return {};
 }
 
-EventResult EventHandler::scroll(const ScrollEvent&) {
+EventResult EventHandler::scroll(const ScrollEvent&, Rect) {
     return {};
 }
 
@@ -42,7 +42,7 @@ EventResult EventHandler::rotate(const RotateEvent&) {
     return {};
 }
 
-EventResult EventHandler::smart_magnify(Point) {
+EventResult EventHandler::two_finger_double_tap(Point) {
     return {};
 }
 
@@ -64,32 +64,44 @@ bool contains(const Rect& rect, Point point) {
     return point.x >= rect.x && point.y >= rect.y && point.x < rect.max_x() && point.y < rect.max_y();
 }
 
-class TapHandler final : public EventHandler {
+class ClickHandler final : public EventHandler {
 public:
-    TapHandler(int count, std::function<void()> action) : count_(count), action_(std::move(action)) {}
+    ClickHandler(std::function<void(const ClickEvent&)> action, ClickOptions options)
+        : action_(std::move(action)), options_(options) {}
 
     EventResult pointer(const PointerEvent& event, Rect frame) override {
-        if (event.button != MouseButton::left) {
+        if (event.kind == PointerEvent::Kind::cancel) {
+            pressed_ = false;
             return {};
         }
+        if (event.button != options_.button) {
+            return {};
+        }
+        const int count = std::max(options_.count, 1);
         switch (event.kind) {
         case PointerEvent::Kind::down:
-            // A double-tap handler leaves first clicks to outer (single-tap) handlers.
-            if (event.click_count < count_) {
+            // A double-click handler leaves first clicks to outer (single-click) handlers.
+            if (event.click_count < count) {
                 return {};
             }
             pressed_ = true;
-            return {.consumed = true};
+            return {.consumed = true, .cancellable = true};
         case PointerEvent::Kind::up: {
-            const bool fire = pressed_ && contains(frame, event.location) && event.click_count >= count_ &&
-                              (event.click_count - count_) % std::max(count_, 1) == 0;
+            const bool fire = pressed_ && contains(frame, event.location) && event.click_count >= count &&
+                              (event.click_count - count) % count == 0;
             pressed_ = false;
             if (fire && action_) {
-                action_();
+                action_(ClickEvent{
+                    .location = {event.location.x - frame.x, event.location.y - frame.y},
+                    .window_location = event.location,
+                    .button = event.button,
+                    .modifiers = event.modifiers,
+                    .click_count = event.click_count,
+                });
             }
             return {.consumed = true};
         }
-        case PointerEvent::Kind::cancel: pressed_ = false; return {};
+        case PointerEvent::Kind::cancel:
         case PointerEvent::Kind::move:
         case PointerEvent::Kind::hover: return {};
         }
@@ -97,14 +109,15 @@ public:
     }
 
 private:
-    int count_;
-    std::function<void()> action_;
+    std::function<void(const ClickEvent&)> action_;
+    ClickOptions options_;
     bool pressed_ = false;
 };
 
 class HoverHandler final : public EventHandler {
 public:
-    HoverHandler(std::function<void(bool)> action, std::optional<HoverDelay> delay)
+    // `delay` nullopt: the environment's.
+    explicit HoverHandler(std::function<void(bool)> action, std::optional<HoverDelay> delay = std::nullopt)
         : action_(std::move(action)), delay_(delay) {}
 
     EventResult hover(bool inside) override {
@@ -121,67 +134,60 @@ private:
     std::optional<HoverDelay> delay_;
 };
 
-class KeyPressHandler final : public EventHandler {
+class KeyEventHandler final : public EventHandler {
 public:
-    explicit KeyPressHandler(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
+    explicit KeyEventHandler(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
 
-    EventResult key(const KeyEvent& event) override {
-        if (event.kind == KeyEvent::Kind::down && action_ && action_(event)) {
-            return {.consumed = true};
-        }
-        return {};
-    }
+    EventResult key(const KeyEvent& event) override { return {.consumed = action_ && action_(event)}; }
 
 private:
     std::function<bool(const KeyEvent&)> action_;
 };
 
-class MagnifyHandler final : public EventHandler {
+class PointerHandler final : public EventHandler {
 public:
-    explicit MagnifyHandler(std::function<void(const MagnifyEvent&)> action) : action_(std::move(action)) {}
+    explicit PointerHandler(std::function<bool(const PointerEvent&)> action) : action_(std::move(action)) {}
 
-    EventResult magnify(const MagnifyEvent& event) override {
+    EventResult pointer(const PointerEvent& event, Rect frame) override {
         if (!action_) {
             return {};
         }
-        action_(event);
-        return {.consumed = true};
+        PointerEvent local = event;
+        local.location = {event.location.x - frame.x, event.location.y - frame.y};
+        return {.consumed = action_(local)};
     }
 
 private:
-    std::function<void(const MagnifyEvent&)> action_;
+    std::function<bool(const PointerEvent&)> action_;
 };
 
-class RotateHandler final : public EventHandler {
+class ScrollHandler final : public EventHandler {
 public:
-    explicit RotateHandler(std::function<void(const RotateEvent&)> action) : action_(std::move(action)) {}
+    explicit ScrollHandler(std::function<bool(const ScrollEvent&)> action) : action_(std::move(action)) {}
 
-    EventResult rotate(const RotateEvent& event) override {
+    EventResult scroll(const ScrollEvent& event, Rect frame) override {
         if (!action_) {
             return {};
         }
-        action_(event);
-        return {.consumed = true};
+        ScrollEvent local = event;
+        local.location = {event.location.x - frame.x, event.location.y - frame.y};
+        return {.consumed = action_(local)};
     }
 
 private:
-    std::function<void(const RotateEvent&)> action_;
+    std::function<bool(const ScrollEvent&)> action_;
 };
 
-class SmartMagnifyHandler final : public EventHandler {
+class TextInputHandler final : public EventHandler {
 public:
-    explicit SmartMagnifyHandler(std::function<void(Point)> action) : action_(std::move(action)) {}
+    explicit TextInputHandler(std::function<bool(const TextInputEvent&)> action) : action_(std::move(action)) {}
 
-    EventResult smart_magnify(Point location) override {
-        if (!action_) {
-            return {};
-        }
-        action_(location);
-        return {.consumed = true};
-    }
+    bool focusable() const override { return true; }
+    bool accepts_text_input() const override { return true; }
+    EventResult text_input(const TextInputEvent& event) override { return {.consumed = action_ && action_(event)}; }
 
 private:
-    std::function<void(Point)> action_;
+    std::function<bool(const TextInputEvent&)> action_;
 };
 
 class PointerStyleHandler final : public EventHandler {
@@ -202,32 +208,44 @@ std::unique_ptr<EventHandler> PointerStyleModifier::make_handler() const {
     return std::make_unique<PointerStyleHandler>(style_);
 }
 
-std::unique_ptr<EventHandler> MagnifyGestureModifier::make_handler() const {
-    return std::make_unique<MagnifyHandler>(action_);
-}
-
-std::unique_ptr<EventHandler> RotateGestureModifier::make_handler() const {
-    return std::make_unique<RotateHandler>(action_);
-}
-
-std::unique_ptr<EventHandler> SmartMagnifyModifier::make_handler() const {
-    return std::make_unique<SmartMagnifyHandler>(action_);
-}
-
 std::unique_ptr<EventHandler> FocusableModifier::make_handler() const {
     return std::make_unique<detail::FocusableHandler>(focusable_);
 }
 
-std::unique_ptr<EventHandler> KeyPressModifier::make_handler() const {
-    return std::make_unique<KeyPressHandler>(action_);
+std::unique_ptr<EventHandler> KeyEventModifier::make_handler() const {
+    return std::make_unique<KeyEventHandler>(action_);
 }
 
-std::unique_ptr<EventHandler> TapGestureModifier::make_handler() const {
-    return std::make_unique<TapHandler>(count_, action_);
+std::unique_ptr<EventHandler> PointerModifier::make_handler() const {
+    return std::make_unique<PointerHandler>(action_);
+}
+
+std::unique_ptr<EventHandler> ScrollModifier::make_handler() const {
+    return std::make_unique<ScrollHandler>(action_);
+}
+
+std::unique_ptr<EventHandler> TextInputModifier::make_handler() const {
+    return std::make_unique<TextInputHandler>(action_);
+}
+
+std::unique_ptr<EventHandler> ClickModifier::make_handler() const {
+    return std::make_unique<ClickHandler>(action_, options_);
 }
 
 std::unique_ptr<EventHandler> HoverModifier::make_handler() const {
-    return std::make_unique<HoverHandler>(action_, delay_);
+    return std::make_unique<HoverHandler>(action_);
+}
+
+std::unique_ptr<EventHandler> PointerBoundaryModifier::make_handler() const {
+    return std::make_unique<HoverHandler>(
+        [enter = enter_, leave = leave_](bool inside) {
+            if (inside && enter) {
+                enter();
+            } else if (!inside && leave) {
+                leave();
+            }
+        },
+        HoverDelay{.enter = 0, .exit = 0});
 }
 
 } // namespace elg
@@ -240,33 +258,8 @@ bool contains(const Rect& rect, Point point) {
     return point.x >= rect.x && point.y >= rect.y && point.x < rect.max_x() && point.y < rect.max_y();
 }
 
-// Whether `point` is inside a rounded rect.
-bool inside(Point point, const ShapeOutline& outline) {
-    const Rect& r = outline.rect;
-    if (!contains(r, point)) {
-        return false;
-    }
-    const float max_radius = 0.5f * std::min(r.width, r.height);
-    const auto in_corner = [&](float radius, float cx, float cy) {
-        radius = std::clamp(radius, 0.f, max_radius);
-        const float x = cx < r.center().x ? r.x + radius : r.max_x() - radius;
-        const float y = cy < r.center().y ? r.y + radius : r.max_y() - radius;
-        const bool beyond_x = cx < r.center().x ? point.x < x : point.x > x;
-        const bool beyond_y = cy < r.center().y ? point.y < y : point.y > y;
-        if (!beyond_x || !beyond_y) {
-            return true; // not in this corner's square
-        }
-        const float dx = point.x - x;
-        const float dy = point.y - y;
-        return dx * dx + dy * dy <= radius * radius;
-    };
-    return in_corner(outline.radii.top_left, r.x, r.y) && in_corner(outline.radii.top_right, r.max_x(), r.y) &&
-           in_corner(outline.radii.bottom_right, r.max_x(), r.max_y()) &&
-           in_corner(outline.radii.bottom_left, r.x, r.max_y());
-}
-
-ShapeOutline outline_of(const Shape& shape, Rect frame) {
-    return shape_outline(static_cast<const ShapeNode&>(*ViewAccess::node(shape)).spec(), frame);
+const ShapeSpec& spec_of(const Shape& shape) {
+    return static_cast<const ShapeNode&>(*ViewAccess::node(shape)).spec();
 }
 
 } // namespace
@@ -283,15 +276,20 @@ bool Element::hit_test(Point point, std::vector<Element*>& path) {
 }
 
 bool ShapeElement::hit_impl(Point point, std::vector<Element*>&) {
-    if (uses_path()) {
-        return hit_path(point);
+    // Filled (or unstyled, which fills with the foreground): hit inside, like clip_shape and
+    // content_shape of the same shape.
+    if ((spec_.fill || !spec_.stroke) && hit_area_.contains(spec_, point, frame())) {
+        return true;
     }
-    const ShapeOutline outline = shape_outline(spec_, frame());
-    if (!spec_.stroke || spec_.fill) {
-        return inside(point, outline);
+    if (!spec_.stroke) {
+        return false;
+    }
+    if (uses_path()) {
+        return hit_stroke_path(point);
     }
     // A stroke-only shape (e.g. a border overlay) is hit only on its line, as in SwiftUI, so it
     // doesn't block what it outlines.
+    const ShapeOutline outline = shape_outline(spec_, frame());
     const ShapeStroke& stroke = *spec_.stroke;
     const float outer_grow = stroke.centered ? stroke.width / 2 : 0.f;
     const float inner_shrink = stroke.centered ? stroke.width / 2 : stroke.width;
@@ -301,7 +299,7 @@ bool ShapeElement::hit_impl(Point point, std::vector<Element*>&) {
     };
     const ShapeOutline outer{outline.rect.inset(-outer_grow), adjust(outline.radii, outer_grow)};
     const ShapeOutline inner{outline.rect.inset(inner_shrink), adjust(outline.radii, -inner_shrink)};
-    return inside(point, outer) && !inside(point, inner);
+    return outline_contains(outer, point) && !outline_contains(inner, point);
 }
 
 bool CanvasElement::hit_impl(Point point, std::vector<Element*>&) {
@@ -335,20 +333,13 @@ bool EffectElement::hit_impl(Point point, std::vector<Element*>& path) {
     // The content is drawn offset, so it's hit there too.
     point = {point.x - offset_x_.current(), point.y - offset_y_.current()};
     if (effects_.content_shape) {
-        if (!inside(point, outline_of(*effects_.content_shape, frame()))) {
+        if (!content_area_.contains(spec_of(*effects_.content_shape), point, frame())) {
             return false;
         }
         content_->hit_test(point, path); // record what's under the pointer, if anything
         return true;
     }
-    if (const ShapeFill* mask = clip_path(clip_scale_ > 0 ? clip_scale_ : 1.f)) {
-        if (!shape_fill_contains(*mask, {point.x - frame().x, point.y - frame().y})) {
-            return false;
-        }
-    } else if (effects_.clip_shape && !inside(point, outline_of(*effects_.clip_shape, frame()))) {
-        return false;
-    }
-    if (effects_.clip_to_bounds && !contains(frame(), point)) {
+    if (effects_.clip_shape && !clip_area_.contains(spec_of(*effects_.clip_shape), point, frame())) {
         return false;
     }
     return content_->hit_test(point, path);
@@ -383,7 +374,7 @@ EventResult ButtonElement::pointer(const PointerEvent& event, Rect frame) {
         }
         down_ = true;
         pressed_ = true;
-        return {.consumed = true};
+        return {.consumed = true, .cancellable = true};
     case PointerEvent::Kind::move:
         // Looks pressed only while the pointer is over it, like native buttons.
         if (down_) {

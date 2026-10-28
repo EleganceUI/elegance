@@ -42,16 +42,20 @@ accesskit_role role_of(AccessRole role) {
     case AccessRole::stepper: return ACCESSKIT_ROLE_SPIN_BUTTON;
     case AccessRole::progress: return ACCESSKIT_ROLE_PROGRESS_INDICATOR;
     case AccessRole::text_field: return ACCESSKIT_ROLE_TEXT_INPUT;
+    case AccessRole::text_area: return ACCESSKIT_ROLE_MULTILINE_TEXT_INPUT;
     case AccessRole::password_field: return ACCESSKIT_ROLE_PASSWORD_INPUT;
     case AccessRole::image: return ACCESSKIT_ROLE_IMAGE;
     case AccessRole::video: return ACCESSKIT_ROLE_VIDEO;
     case AccessRole::list: return ACCESSKIT_ROLE_LIST;
     case AccessRole::list_item: return ACCESSKIT_ROLE_LIST_ITEM;
+    case AccessRole::list_box: return ACCESSKIT_ROLE_LIST_BOX;
+    case AccessRole::list_box_option: return ACCESSKIT_ROLE_LIST_BOX_OPTION;
     case AccessRole::scroll_view: return ACCESSKIT_ROLE_SCROLL_VIEW;
     case AccessRole::tab: return ACCESSKIT_ROLE_TAB;
     case AccessRole::menu: return ACCESSKIT_ROLE_MENU;
     case AccessRole::menu_item: return ACCESSKIT_ROLE_MENU_ITEM;
     case AccessRole::popup_button: return ACCESSKIT_ROLE_COMBO_BOX;
+    case AccessRole::separator: return ACCESSKIT_ROLE_SPLITTER; // ARIA's separator (Chromium does the same)
     }
     return ACCESSKIT_ROLE_GROUP;
 }
@@ -120,7 +124,8 @@ struct AccessibilityAdapter::Impl {
             } else if (!info.label.empty()) {
                 accesskit_node_set_label(node, info.label.c_str());
             }
-            const bool text_field = info.role == AccessRole::text_field || info.role == AccessRole::password_field;
+            const bool text_field = info.role == AccessRole::text_field || info.role == AccessRole::text_area ||
+                                    info.role == AccessRole::password_field;
             if (!info.value.empty() || text_field) { // fields always have a value, even an empty one
                 accesskit_node_set_value(node, info.value.c_str());
             }
@@ -134,13 +139,20 @@ struct AccessibilityAdapter::Impl {
                 accesskit_node_set_disabled(node);
             }
             if (info.toggled) {
-                accesskit_node_set_toggled(node, *info.toggled ? ACCESSKIT_TOGGLED_TRUE : ACCESSKIT_TOGGLED_FALSE);
+                accesskit_node_set_toggled(node, *info.toggled == ToggleState::mixed ? ACCESSKIT_TOGGLED_MIXED
+                                                 : *info.toggled == ToggleState::on  ? ACCESSKIT_TOGGLED_TRUE
+                                                                                     : ACCESSKIT_TOGGLED_FALSE);
             }
             if (info.expanded) {
                 accesskit_node_set_expanded(node, *info.expanded);
             }
             if (info.selected) {
                 accesskit_node_set_selected(node, true);
+            } else if (info.role == AccessRole::list_box_option) {
+                accesskit_node_set_selected(node, false); // selectable, but not selected
+            }
+            if (info.multiselectable) {
+                accesskit_node_set_multiselectable(node);
             }
             if (info.numeric) {
                 accesskit_node_set_numeric_value(node, *info.numeric);

@@ -122,7 +122,7 @@ private:
         }
         if (event.kind == PointerEvent::Kind::down) {
             pressed_ = run_at(event.location);
-            return {.consumed = pressed_.has_value()};
+            return {.consumed = pressed_.has_value(), .cancellable = true};
         }
         if (event.kind == PointerEvent::Kind::up && pressed_) {
             const std::optional<std::size_t> released = run_at(event.location);

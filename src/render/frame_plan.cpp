@@ -204,8 +204,8 @@ private:
         return index + 1;
     }
 
-    // The fill: a color, or a gradient whose unit points span `r` (pixels). Materials are drawn
-    // by add_material(); here they're just their tint.
+    // The fill: a color, or a gradient whose unit points span `r` (pixels). Backdrops are drawn by
+    // add_backdrop().
     void set_paint(QuadInstance& instance, const ShapeStyle& fill, const Rect& r) {
         const auto gradient = [&](const std::vector<GradientStop>& stops, PaintKind kind) {
             if (stops.empty()) {
@@ -245,16 +245,16 @@ private:
                                                     g.start_angle * kDegrees, g.end_angle * kDegrees};
                            }
                        },
-                       [&](const Material& m) { instance.color = to_linear_premultiplied(m.tint); },
+                       [&](const BackdropFill&) { instance.color = {}; },
                    },
                    fill.value());
     }
 
-    // A material fill: the pass so far, snapshotted under the shape and blurred, with its colors
-    // boosted, then the tint over it. `instance` has the shape (and border, drawn with the tint).
-    void add_material(const Material& material, QuadInstance instance, const Rect& extent, PlanPass& pass,
+    // A backdrop fill: the pass so far, snapshotted under the shape, blurred and color-adjusted.
+    // `instance` has the shape; a border is drawn over it in its own color.
+    void add_backdrop(const BackdropFill& backdrop_fill, QuadInstance instance, const Rect& extent, PlanPass& pass,
                       std::vector<QuadInstance>& out, const Clip& clip, int path) {
-        const float sigma = std::max(0.5f, material.blur * scale_ / 2);
+        const float sigma = std::max(0.5f, backdrop_fill.blur * scale_ / 2);
         const float reach = std::ceil(3 * sigma) + 2;
         const Rect bounds{0, 0, static_cast<float>(pass.width), static_cast<float>(pass.height)};
         const Rect wanted = intersect(extent.inset(-reach), bounds);
@@ -272,16 +272,29 @@ private:
             backdrop.downsample = downsample_for(sigma);
 
             QuadInstance blurred = instance;
-            blurred.params[0] = 0; // the border comes with the tint
+            blurred.params[0] = 0; // the border is drawn over it
             blurred.params[2] = static_cast<float>(PaintKind::backdrop);
-            blurred.params[3] = material.saturation != 1
-                                    ? add_matrix(color_matrix(ColorFilter::Kind::saturation, material.saturation, {}))
+            blurred.params[3] = backdrop_fill.saturation != 1 || backdrop_fill.brightness != 0
+                                    ? add_matrix(backdrop_matrix(backdrop_fill))
                                     : 0.f;
-            blurred.gradient = {x0, y0, static_cast<float>(backdrop.downsample), std::clamp(material.noise, 0.f, 1.f)};
+            blurred.gradient = {x0, y0, static_cast<float>(backdrop.downsample),
+                                std::clamp(backdrop_fill.noise, 0.f, 1.f)};
             emit(pass, out, blurred, extent, clip, {.path = path, .backdrop = backdrop});
         }
-        instance.color = to_linear_premultiplied(material.tint);
-        emit(pass, out, instance, extent, clip, {.path = path});
+        if (instance.params[0] > 0) {
+            instance.color = {};
+            emit(pass, out, instance, extent, clip, {.path = path});
+        }
+    }
+
+    // Saturation, then brightness.
+    static ColorMatrix backdrop_matrix(const BackdropFill& fill) {
+        const ColorMatrix s = color_matrix(ColorFilter::Kind::saturation, fill.saturation, {});
+        ColorMatrix m = s;
+        for (std::size_t row = 0; row < 3; ++row) {
+            m[row * 5 + 4] += fill.brightness;
+        }
+        return m;
     }
 
     void add_rect(const RectCommand& command, Point origin, PlanPass& pass, std::vector<QuadInstance>& out,
@@ -293,8 +306,8 @@ private:
         instance.border_color = to_linear_premultiplied(command.border);
         instance.params = {command.border_width * scale_, static_cast<float>(QuadKind::rect),
                            static_cast<float>(PaintKind::solid), 0};
-        if (const auto* material = std::get_if<Material>(&command.fill.value())) {
-            add_material(*material, instance, r.inset(-1), pass, out, clip, -1);
+        if (const auto* backdrop = std::get_if<BackdropFill>(&command.fill.value())) {
+            add_backdrop(*backdrop, instance, r.inset(-1), pass, out, clip, -1);
             return;
         }
         set_paint(instance, command.fill, r);
@@ -397,8 +410,8 @@ private:
         instance.rect = {area.x, area.y, area.width, area.height};
         instance.shape = {0, 0, area.width, area.height};
         instance.params = {0, static_cast<float>(QuadKind::path), static_cast<float>(PaintKind::solid), 0};
-        if (const auto* material = std::get_if<Material>(&command.fill.value())) {
-            add_material(*material, instance, area, pass, out, clip, index);
+        if (const auto* backdrop = std::get_if<BackdropFill>(&command.fill.value())) {
+            add_backdrop(*backdrop, instance, area, pass, out, clip, index);
             return;
         }
         set_paint(instance, command.fill, to_pixels(command.paint_frame, origin));

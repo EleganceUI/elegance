@@ -300,6 +300,31 @@ Binding<T> State<T>::binding() const {
     return Binding<T>(*this);
 }
 
+// A binding to a fixed value, for a control that should show `value` and ignore edits:
+//   Toggle("Always on", constant(true))
+template <class T>
+Binding<std::decay_t<T>> constant(T&& value) {
+    return Binding<std::decay_t<T>>::constant(std::forward<T>(value));
+}
+
+// Read-only access to a value that can change: a State, Binding, Computed, or closure. Reading it
+// is a tracked read. What a style gets for a control's state (is_hovered, is_on, ...); pass it
+// anywhere a Prop goes.
+template <class T>
+class Signal {
+public:
+    template <class F>
+        requires(!std::same_as<std::remove_cvref_t<F>, Signal> && std::invocable<const std::remove_cvref_t<F>&> &&
+                 std::convertible_to<std::invoke_result_t<const std::remove_cvref_t<F>&>, T>)
+    Signal(F&& function) : get_([f = std::remove_cvref_t<F>(std::forward<F>(function))] { return T(f()); }) {}
+
+    T operator()() const { return get_(); }
+    T get() const { return get_(); }
+
+private:
+    std::function<T()> get_;
+};
+
 // A value derived from state: recomputed lazily, at most once per change, and only when read.
 template <class T>
 class Computed {

@@ -18,13 +18,12 @@
 #include <elg/events.h>
 #include <elg/font.h>
 #include <elg/geometry.h>
+#include <elg/gestures.h>
 #include <elg/gradient.h>
 #include <elg/image.h>
 #include <elg/graphics_context.h>
 #include <elg/grid.h>
 #include <elg/hot_reload.h>
-#include <elg/http.h>
-#include <elg/websocket.h>
 #include <elg/layout.h>
 #include <elg/modifier.h>
 #include <elg/navigation.h>

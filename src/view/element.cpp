@@ -323,6 +323,49 @@ bool shape_fill_contains(const ShapeFill& fill, Point local) {
     return fill.polygons && polygons_contain(*fill.polygons, local, fill.rule);
 }
 
+bool outline_contains(const ShapeOutline& outline, Point point) {
+    const Rect& r = outline.rect;
+    if (point.x < r.x || point.y < r.y || point.x >= r.max_x() || point.y >= r.max_y()) {
+        return false;
+    }
+    const float max_radius = 0.5f * std::min(r.width, r.height);
+    const auto in_corner = [&](float radius, float cx, float cy) {
+        radius = std::clamp(radius, 0.f, max_radius);
+        const float x = cx < r.center().x ? r.x + radius : r.max_x() - radius;
+        const float y = cy < r.center().y ? r.y + radius : r.max_y() - radius;
+        const bool beyond_x = cx < r.center().x ? point.x < x : point.x > x;
+        const bool beyond_y = cy < r.center().y ? point.y < y : point.y > y;
+        if (!beyond_x || !beyond_y) {
+            return true; // not in this corner's square
+        }
+        const float dx = point.x - x;
+        const float dy = point.y - y;
+        return dx * dx + dy * dy <= radius * radius;
+    };
+    return in_corner(outline.radii.top_left, r.x, r.y) && in_corner(outline.radii.top_right, r.max_x(), r.y) &&
+           in_corner(outline.radii.bottom_right, r.max_x(), r.max_y()) &&
+           in_corner(outline.radii.bottom_left, r.x, r.max_y());
+}
+
+const ShapeFill& ShapeHitArea::fill(const ShapeSpec& spec, Size size, float scale) const {
+    if (&spec != spec_ || size.width != size_.width || size.height != size_.height || scale != scale_) {
+        fill_ = shape_fill(spec, size, scale);
+        spec_ = &spec;
+        size_ = size;
+        scale_ = scale;
+    }
+    return fill_;
+}
+
+bool ShapeHitArea::contains(const ShapeSpec& spec, Point point, Rect frame) const {
+    if (spec.kind != ShapeKind::path) {
+        return outline_contains(shape_outline(spec, frame), point);
+    }
+    // Flattened as finely as it was last drawn (or for 1x).
+    return shape_fill_contains(fill(spec, frame.size(), scale_ > 0 ? scale_ : 1.f),
+                               {point.x - frame.x, point.y - frame.y});
+}
+
 bool ShapeElement::uses_path() const noexcept {
     return spec_.kind == ShapeKind::path || (spec_.stroke && !spec_.stroke->style.dash.empty());
 }
@@ -415,20 +458,10 @@ void ShapeElement::paint_impl(DisplayList& list) const {
                                         Color::clear, stroke_color, stroke.width});
 }
 
-bool ShapeElement::hit_path(Point point) const {
+bool ShapeElement::hit_stroke_path(Point point) const {
     const Rect bounds = frame();
-    const Point local{point.x - bounds.x, point.y - bounds.y};
     const Geometry& g = geometry(bounds.size(), geometry_.scale > 0 ? geometry_.scale : 1.f);
-    if (spec_.kind == ShapeKind::path && spec_.fill && g.fill &&
-        polygons_contain(*g.fill, local, spec_.path ? spec_.path->rule : FillRule::non_zero)) {
-        return true;
-    }
-    if (g.stroke && polygons_contain(*g.stroke, local, FillRule::non_zero)) {
-        return true;
-    }
-    // An unstyled path (environment foreground) is filled.
-    return spec_.kind == ShapeKind::path && !spec_.stroke && g.fill &&
-           polygons_contain(*g.fill, local, spec_.path ? spec_.path->rule : FillRule::non_zero);
+    return g.stroke && polygons_contain(*g.stroke, {point.x - bounds.x, point.y - bounds.y}, FillRule::non_zero);
 }
 
 // --- SpacerElement ---
@@ -573,10 +606,12 @@ void TransitionElement::paint_impl(DisplayList& list) const {
     content.scale = list.scale;
     content_->paint(content);
     list.animating |= content.animating;
-    // Scaled about the middle of what's drawn: content inside .offset is drawn away from this
-    // frame (a window placed by its offset grows from its own middle, not the desktop's corner).
+    // Scaled about its anchor (the middle, unless the transition names another point) in what's
+    // drawn: content inside .offset is drawn away from this frame (a window placed by its offset
+    // grows from its own middle, not the desktop's corner).
     const Point offset = content_->content_offset();
-    const Point center{bounds.center().x + offset.x, bounds.center().y + offset.y};
+    const Point center{bounds.x + bounds.width * pose.anchor_x + offset.x,
+                       bounds.y + bounds.height * pose.anchor_y + offset.y};
     transform(content.commands, pose.x, pose.y, pose.scale, center);
     append_faded(list, std::move(content), pose.opacity);
 }
@@ -629,13 +664,7 @@ const ShapeFill* EffectElement::clip_path(float scale) const {
     if (node.spec().kind != ShapeKind::path) {
         return nullptr;
     }
-    const Size size = frame().size();
-    if (size.width != clip_size_.width || size.height != clip_size_.height || scale != clip_scale_) {
-        clip_fill_ = shape_fill(node.spec(), size, scale);
-        clip_size_ = size;
-        clip_scale_ = scale;
-    }
-    return &clip_fill_;
+    return &clip_area_.fill(node.spec(), frame().size(), scale);
 }
 
 // The content moves by the offset and turns or scales with the transform; a shadow spreads
@@ -703,7 +732,7 @@ std::optional<ShapeStyle> filtered(const ShapeStyle& style, const ColorMatrix& m
                           [&](const AngularGradient& g) -> std::optional<ShapeStyle> {
                               return AngularGradient(stops(g.stops), g.center, g.start_angle, g.end_angle);
                           },
-                          [](const Material&) -> std::optional<ShapeStyle> { return std::nullopt; },
+                          [](const BackdropFill&) -> std::optional<ShapeStyle> { return std::nullopt; },
                       },
                       style.value());
 }
@@ -750,7 +779,7 @@ void EffectElement::paint_impl(DisplayList& list) const {
         content.commands.push_back(PopLayerCommand{});
         list.animating |= content.animating;
     }
-    const bool clips = !mask && (effects_.clip_to_bounds || effects_.clip_shape);
+    const bool clips = !mask && effects_.clip_shape.has_value();
     if (clips) {
         ShapeOutline clip{frame(), {}};
         if (effects_.clip_shape) {

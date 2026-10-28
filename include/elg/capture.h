@@ -9,7 +9,7 @@
 //
 //   const AudioRecorder recorder;                          // the default microphone
 //   Button(Text([=] { return recorder.is_recording() ? "Stop" : "Record"; }), [=] { recorder.toggle(); })
-//   ProgressView([=] { return recorder.level(); })         // a live input meter
+//   Progress([=] { return recorder.level(); })         // a live input meter
 //   recorder.save_wav("memo.wav");
 //
 //   const Camera camera;                                   // the first camera

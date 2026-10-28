@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// LazyVStack / LazyHStack and List (design.md §7): a stack over a ForEach that builds only the
-// items near the visible part of its ScrollView.
+// LazyVStack / LazyHStack (design.md §7): a stack over a ForEach that builds only the items near
+// the visible part of its ScrollView.
 
 #include "view/view_node.h"
 
@@ -22,18 +22,20 @@ namespace {
 
 constexpr float kDefaultEstimate = 44; // main-axis size assumed for items never built
 
-// List's look, applied by the lazy stack.
-struct RowStyle {
-    bool separators = false;
-    float separator_inset = 0;
-    // Wraps each item's view; called while the item mounts, in its scope (so it can make State).
-    std::function<View(View)> wrap;
+// StackSeparators, with the color resolved.
+struct Separators {
+    float inset = 0;
+    float thickness = 1;
 };
 
 class LazyStackElement final : public Element {
 public:
-    LazyStackElement(Axis axis, float alignment, float spacing, LowerContext context, RowStyle style)
-        : axis_(axis), alignment_(alignment), spacing_(spacing), context_(std::move(context)), style_(std::move(style)) {}
+    LazyStackElement(Axis axis, float alignment, float spacing, LowerContext context,
+                     std::optional<Separators> separators)
+        : axis_(axis), alignment_(alignment), spacing_(spacing), context_(std::move(context)),
+          separators_(separators) {}
+
+    void set_separator_color(Color color) { separator_color_ = color; }
     bool always_arranges() const override { return true; } // builds what scrolled into view
 
     // Takes the ForEach's items. Built items whose key is gone or whose value changed are
@@ -124,18 +126,24 @@ protected:
         for (const Shown& shown : shown_) {
             shown.element->paint(list);
         }
-        if (!style_.separators || axis_ != Axis::vertical) {
+        if (!separators_) {
             return;
         }
-        const Color color = context_.environment.color(ThemeColor::outline);
+        // In the middle of the spacing after each item but the last, across the stack.
         const Rect bounds = frame();
+        const float inset = separators_->inset;
+        const float thickness = separators_->thickness;
         for (const Shown& shown : shown_) {
-            if (shown.index + 1 < items_.size()) {
-                const float y = shown.element->frame().max_y() + spacing_ / 2;
-                list.commands.push_back(RectCommand{{bounds.x + style_.separator_inset, y - 0.5f,
-                                                     bounds.width - style_.separator_inset, 1},
-                                                    {}, ShapeStyle(color), Color::clear, 0});
+            if (shown.index + 1 >= items_.size()) {
+                continue;
             }
+            const Rect item = shown.element->frame();
+            const Rect line = axis_ == Axis::vertical
+                                  ? Rect{bounds.x + inset, item.max_y() + spacing_ / 2 - thickness / 2,
+                                         bounds.width - inset, thickness}
+                                  : Rect{item.max_x() + spacing_ / 2 - thickness / 2, bounds.y + inset, thickness,
+                                         bounds.height - inset};
+            list.commands.push_back(RectCommand{line, {}, ShapeStyle(separator_color_), Color::clear, 0});
         }
     }
 
@@ -194,11 +202,7 @@ private:
         Scope::Use use(*row.scope);
         begin_untracked(); // building an item must not subscribe whatever is running
         try {
-            View view = item.view();
-            if (style_.wrap) {
-                view = style_.wrap(std::move(view));
-            }
-            row.element = lower(view, context_.nested());
+            row.element = lower(item.view(), context_.nested());
         } catch (...) {
             end_untracked();
             throw;
@@ -212,7 +216,8 @@ private:
     float alignment_; // 0: leading/top, 0.5: center, 1: trailing/bottom
     float spacing_;
     LowerContext context_;
-    RowStyle style_;
+    std::optional<Separators> separators_;
+    Color separator_color_;
     std::vector<ForEachItem> items_;
     std::map<ItemKey, Row> rows_;    // built items
     std::map<ItemKey, float> sizes_; // measured main-axis sizes, by key (kept across item changes)
@@ -346,14 +351,28 @@ void LazyStackElement::arrange(Rect bounds, ProposedSize) {
 class LazyStackNode final : public ViewNode {
 public:
     LazyStackNode(Axis axis, float alignment, float spacing, std::function<std::vector<ForEachItem>()> items,
-                  RowStyle style)
-        : axis_(axis), alignment_(alignment), spacing_(spacing), items_(std::move(items)), style_(std::move(style)) {}
+                  std::optional<StackSeparators> separators)
+        : axis_(axis), alignment_(alignment), spacing_(spacing), items_(std::move(items)),
+          separators_(std::move(separators)) {}
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
-        auto element = std::make_unique<LazyStackElement>(axis_, alignment_, spacing_, context, style_);
+        std::optional<Separators> separators;
+        if (separators_) {
+            separators = Separators{separators_->inset, separators_->thickness};
+        }
+        std::function<std::vector<ForEachItem>()> items = items_;
+        if (auto selection = claim_selection(context, axis_)) {
+            items = selectable_items(std::move(items), std::move(selection));
+        }
+        LowerContext inner = context;
+        inner.selection.reset();
+        auto element = std::make_unique<LazyStackElement>(axis_, alignment_, spacing_, std::move(inner), separators);
         LazyStackElement* const target = element.get();
+        if (separators_) {
+            detail::bind(separators_->color, context, [target](Color color) { target->set_separator_color(color); });
+        }
         // Reading the items subscribes this effect; building items happens in layout.
-        effect([target, items = items_] { target->set_items(items()); });
+        effect([target, items = std::move(items)] { target->set_items(items()); });
         return element;
     }
 
@@ -362,7 +381,7 @@ private:
     float alignment_;
     float spacing_;
     std::function<std::vector<ForEachItem>()> items_;
-    RowStyle style_;
+    std::optional<StackSeparators> separators_;
 };
 
 const std::function<std::vector<ForEachItem>()>& items_of(const View& for_each, std::string_view who) {
@@ -392,7 +411,7 @@ using detail::ViewAccess;
 View LazyVStack(LazyVStackOptions options, View for_each) {
     return ViewAccess::make(std::make_shared<const detail::LazyStackNode>(
         Axis::vertical, detail::fraction(options.alignment), options.spacing.value_or(default_stack_spacing),
-        detail::items_of(for_each, "LazyVStack"), detail::RowStyle{}));
+        detail::items_of(for_each, "LazyVStack"), std::move(options.separators)));
 }
 
 View LazyVStack(View for_each) {
@@ -402,39 +421,11 @@ View LazyVStack(View for_each) {
 View LazyHStack(LazyHStackOptions options, View for_each) {
     return ViewAccess::make(std::make_shared<const detail::LazyStackNode>(
         Axis::horizontal, detail::fraction(options.alignment), options.spacing.value_or(default_stack_spacing),
-        detail::items_of(for_each, "LazyHStack"), detail::RowStyle{}));
+        detail::items_of(for_each, "LazyHStack"), std::move(options.separators)));
 }
 
 View LazyHStack(View for_each) {
     return LazyHStack(LazyHStackOptions{}, std::move(for_each));
-}
-
-View List(View for_each) {
-    return List({}, std::move(for_each));
-}
-
-View List(ListOptions options, View for_each) {
-    constexpr float kRadius = 10;
-    constexpr EdgeInsets kRowPadding = EdgeInsets::symmetric(16, 10);
-    detail::RowStyle style{
-        .separators = true,
-        .separator_inset = kRowPadding.leading,
-        .wrap =
-            [=](View row) {
-                const State<bool> hovered(false);
-                return row.padding(kRowPadding)
-                    .frame({.max_width = infinity, .alignment = Alignment::leading})
-                    .background([=](const EnvironmentValues& environment) {
-                        return hovered() ? environment.color(ThemeColor::outline).opacity(0.35f) : Color::clear;
-                    })
-                    .content_shape(Rectangle())
-                    .on_hover([=](bool inside) { hovered = inside; });
-            },
-    };
-    const View rows = ViewAccess::make(std::make_shared<const detail::LazyStackNode>(
-        Axis::vertical, 0.f, 0.f, detail::items_of(for_each, "List"), std::move(style)));
-    return ScrollView({.position = std::move(options.position)}, rows.background(ThemeColor::surface, RoundedRectangle(kRadius))
-                          .clip_shape(RoundedRectangle(kRadius)));
 }
 
 } // namespace elg

@@ -49,17 +49,24 @@ enum class AccessRole {
     stepper,
     progress,
     text_field,
+    text_area, // multiline
     password_field,
     image,
     video,
     list,
     list_item,
+    list_box,        // a stack with selectable rows (View::selection)
+    list_box_option, // one of its rows
     scroll_view,
     tab,
     menu,
     menu_item,
     popup_button, // a button that opens a menu (MenuButton, Picker)
+    separator,    // a line between groups; not focusable
 };
+
+// A switch's or check box's state.
+enum class ToggleState { off, on, mixed };
 
 struct AccessibilityInfo {
     AccessRole role = AccessRole::none;
@@ -70,9 +77,10 @@ struct AccessibilityInfo {
     bool hidden = false;          // it and everything inside are left out (decorative)
     bool combine = false;         // children's text becomes its label; they aren't exposed themselves
     bool disabled = false;
-    std::optional<bool> toggled;  // switches and check boxes
+    std::optional<ToggleState> toggled; // switches and check boxes
     std::optional<bool> expanded;
     bool selected = false;
+    bool multiselectable = false; // list boxes
     std::optional<double> numeric; // sliders, steppers, progress
     std::optional<double> minimum;
     std::optional<double> maximum;
@@ -192,6 +200,9 @@ public:
     bool hit_test(Point point, std::vector<Element*>& path);
     // The handler for input to this element, if it has one.
     virtual EventHandler* event_handler() noexcept { return nullptr; }
+    // The handler a .disabled() view keeps but doesn't let act (event_handler() stands in for it
+    // meanwhile); nullptr while enabled. The dispatcher cancels its press and drops its focus.
+    virtual EventHandler* disabled_handler() noexcept { return nullptr; }
     // For elements with a handler: how long hover takes to start and end (the handler's own
     // delay, else the environment's).
     virtual HoverDelay effective_hover_delay() const { return {}; }
@@ -206,6 +217,8 @@ public:
     // Lazy stacks: where the item with this key is (or would be), along the stack's axis from its
     // start; estimated for items not built.
     virtual std::optional<float> item_offset(const ItemKey&) const { return std::nullopt; }
+    // Text fields: whether their text input is a password's (no IME, WindowServices).
+    virtual bool secure_text_input() const { return false; }
     // Non-null for TransitionElement (If/ForEach use a child's own transition when it has one).
     virtual class TransitionElement* as_transition() noexcept { return nullptr; }
 
@@ -367,6 +380,25 @@ struct ShapeFill {
 };
 ShapeFill shape_fill(const ShapeSpec& spec, Size size, float scale);
 bool shape_fill_contains(const ShapeFill& fill, Point local);
+// Whether `point` is inside a rounded rect.
+bool outline_contains(const ShapeOutline& outline, Point point);
+
+// The points a shape covers in a frame, for hit testing: analytic for the rounded-rect kinds,
+// the flattened path with its fill rule for paths (cached per size and scale). A filled shape,
+// clip_shape and content_shape all hit test through one, so the same shape takes the same
+// points wherever it's used.
+class ShapeHitArea {
+public:
+    bool contains(const ShapeSpec& spec, Point point, Rect frame) const;
+    // A path's filled area for a frame of `size`, flattened for `scale` pixels per point.
+    const ShapeFill& fill(const ShapeSpec& spec, Size size, float scale) const;
+
+private:
+    mutable const ShapeSpec* spec_ = nullptr;
+    mutable ShapeFill fill_;
+    mutable Size size_{-1, -1};
+    mutable float scale_ = 0;
+};
 
 class ShapeElement final : public Element {
 public:
@@ -404,7 +436,7 @@ private:
 
     // Whether this shape draws through the path pipeline (paths, and dashed strokes of any shape).
     bool uses_path() const noexcept;
-    bool hit_path(Point point) const;
+    bool hit_stroke_path(Point point) const;
     const Geometry& geometry(Size size, float scale) const;
 
     ShapeSpec spec_;
@@ -412,11 +444,12 @@ private:
     Animated<ShapeStyle> fill_{ShapeStyle(Color::clear)};
     Animated<Color> stroke_color_{Color::clear};
     mutable Geometry geometry_;
+    ShapeHitArea hit_area_;
 };
 
 struct TextStyle {
-    std::optional<Font> font;
-    std::optional<Weight> weight;
+    std::optional<Prop<Font>> font;
+    std::optional<Prop<Weight>> weight;
     std::optional<Prop<Color>> color;
     int line_limit = 0; // 0: unlimited
     TextAlignment alignment = TextAlignment::leading;
@@ -670,9 +703,8 @@ private:
 
     Effects effects_;
     std::unique_ptr<Element> content_;
-    mutable ShapeFill clip_fill_;
-    mutable Size clip_size_{-1, -1};
-    mutable float clip_scale_ = 0;
+    ShapeHitArea clip_area_;
+    ShapeHitArea content_area_;
     Animated<float> opacity_{1.f}; // resolved from effects_.opacity
     Animated<float> offset_x_{0.f};
     Animated<float> offset_y_{0.f};
@@ -718,6 +750,26 @@ private:
     std::unique_ptr<Element> decoration_;
 };
 
+// What a .disabled() view's handler hears: hover, pointer moves over it, and scrolling, but no
+// presses, keys, text, trackpad gestures, focus, or pointer styles.
+class DisabledEventHandler final : public EventHandler {
+public:
+    explicit DisabledEventHandler(EventHandler& handler) noexcept : handler_(&handler) {}
+
+    EventResult pointer(const PointerEvent& event, Rect frame) override {
+        const bool passes = event.kind == PointerEvent::Kind::hover || event.kind == PointerEvent::Kind::cancel;
+        return passes ? handler_->pointer(event, frame) : EventResult{};
+    }
+    EventResult hover(bool inside) override { return handler_->hover(inside); }
+    EventResult scroll(const ScrollEvent& event, Rect frame) override { return handler_->scroll(event, frame); }
+    EventResult focus(bool focused) override { return handler_->focus(focused); }
+    std::optional<HoverDelay> hover_delay() const override { return handler_->hover_delay(); }
+    bool covers_frame() const override { return handler_->covers_frame(); }
+
+private:
+    EventHandler* handler_;
+};
+
 // A view with an EventModifier: owns the handler; layout, paint, and hit testing pass through.
 class EventElement final : public Element {
 public:
@@ -738,7 +790,10 @@ public:
     float layout_priority() const noexcept override { return content_->layout_priority(); }
     float z_index() const noexcept override { return content_->z_index(); }
     bool is_spacer() const noexcept override { return content_->is_spacer(); }
-    EventHandler* event_handler() noexcept override { return handler_.get(); }
+    EventHandler* event_handler() noexcept override { return enabled_ ? handler_.get() : &disabled_; }
+    EventHandler* disabled_handler() noexcept override { return enabled_ ? nullptr : handler_.get(); }
+    // Follows .disabled() in the view's environment.
+    void set_enabled(bool enabled) noexcept { enabled_ = enabled; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
 protected:
@@ -756,8 +811,10 @@ protected:
 
 private:
     std::unique_ptr<EventHandler> handler_;
+    DisabledEventHandler disabled_{*handler_};
     std::unique_ptr<Element> content_;
     std::function<HoverDelay()> environment_delay_;
+    bool enabled_ = true;
 };
 
 // A Button: behavior here, appearance from its ButtonStyle's body (the content). Hover and press
@@ -767,13 +824,14 @@ public:
     void accessibility(AccessibilityInfo& out) const override;
     bool accessibility_action(const AccessibilityAction& action) override;
     ButtonElement(std::unique_ptr<Element> content, std::function<void()> action, State<bool> pressed,
-                  State<bool> hovered, std::function<bool()> enabled, std::function<HoverDelay()> hover_delay)
+                  State<bool> hovered, std::function<bool()> enabled)
         : content_(std::move(content)), action_(std::move(action)), pressed_(std::move(pressed)),
-          hovered_(std::move(hovered)), enabled_(std::move(enabled)), hover_delay_(std::move(hover_delay)) {
+          hovered_(std::move(hovered)), enabled_(std::move(enabled)) {
         adopt(*content_);
     }
 
-    HoverDelay effective_hover_delay() const override { return hover_delay_(); }
+    // The highlight follows the pointer at once.
+    HoverDelay effective_hover_delay() const override { return {.enter = 0, .exit = 0}; }
 
     EventHandler* event_handler() noexcept override { return this; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
@@ -804,7 +862,6 @@ private:
     State<bool> pressed_;
     State<bool> hovered_;
     std::function<bool()> enabled_;
-    std::function<HoverDelay()> hover_delay_;
     std::optional<State<bool>> focused_;
     std::function<void(bool)> on_hover_;
     Key extra_key_ = Key::unknown;
@@ -854,6 +911,14 @@ public:
         }
     }
 
+    // ScrollViewOptions::shows_indicators and ::sticks_to_end.
+    void set_shows_indicators(bool shows) { shows_indicators_ = shows; }
+    void set_sticks_to_end(bool sticks) {
+        if (std::exchange(sticks_to_end_, sticks) != sticks) {
+            invalidate_layout();
+        }
+    }
+
     EventHandler* event_handler() noexcept override { return this; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
     void reveal(Rect rect) override;
@@ -875,7 +940,7 @@ private:
 
     EventResult pointer(const PointerEvent& event, Rect frame) override;
     EventResult hover(bool inside) override;
-    EventResult scroll(const ScrollEvent& event) override;
+    EventResult scroll(const ScrollEvent& event, Rect frame) override;
     EventResult key(const KeyEvent& event) override;
     // Mouse wheels, and trackpads whose gestures the platform doesn't follow.
     EventResult wheel(const ScrollEvent& event);
@@ -925,6 +990,8 @@ private:
     void apply_request();
 
     ScrollViewOptions options_;
+    bool shows_indicators_ = true;
+    bool sticks_to_end_ = false;
     std::unique_ptr<Element> content_;
     std::function<Color()> indicator_color_;
     Rect viewport_;     // from the last arrange

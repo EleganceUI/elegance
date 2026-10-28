@@ -6,22 +6,32 @@
 #define ELG_VIEW_H
 
 #include <elg/color.h>
+#include <elg/events.h>
 #include <elg/export.h>
 #include <elg/geometry.h>
+#include <elg/gestures.h>
 #include <elg/gradient.h>
+#include <elg/prop.h>
 
 #include <concepts>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace elg {
+
+// Identifies a ForEach item across updates.
+using ItemKey = std::variant<std::int64_t, std::string>;
 
 namespace detail {
 class ViewNode;
@@ -49,18 +59,54 @@ std::function<bool()> change_watcher(Source source) {
         return changed;
     };
 }
+
+template <class K>
+ItemKey to_item_key(const K& key) {
+    if constexpr (std::is_integral_v<K> || std::is_enum_v<K>) {
+        return static_cast<std::int64_t>(key);
+    } else {
+        static_assert(std::is_convertible_v<const K&, std::string_view>,
+                      "ForEach keys must be integers, enums, or strings");
+        return std::string(std::string_view(key));
+    }
+}
+
+// The key a ForEach made with to_item_key, back as the app's type.
+template <class K>
+K from_item_key(const ItemKey& key) {
+    if constexpr (std::is_integral_v<K> || std::is_enum_v<K>) {
+        return static_cast<K>(std::get<std::int64_t>(key));
+    } else {
+        static_assert(std::is_constructible_v<K, const std::string&>,
+                      "selection keys must be integers, enums, or strings (std::string, not std::string_view)");
+        return K(std::get<std::string>(key));
+    }
+}
+
+// View::selection, type-erased for the library.
+struct SelectionModel {
+    bool multiple = false;
+    std::function<std::vector<ItemKey>()> get;     // the selected keys; a tracked read
+    std::function<bool(const ItemKey&)> contains;  // a tracked read
+    std::function<void(std::vector<ItemKey>)> set; // a single selection takes the first, or none
+    std::function<void(const ItemKey&)> activate;  // SelectionOptions::on_activate; may be empty
+};
 } // namespace detail
 
 class Animation;
 class ButtonStyle;
 class ToggleStyle;
+class CheckboxStyle;
+class NumberInputStyle;
+class ProgressStyle;
+class NavigationStackStyle;
 class TextFieldStyle;
-struct HoverDelay;
-struct KeyEvent;
-struct MagnifyEvent;
-struct RotateEvent;
-enum class PointerStyle;
-enum class Key;
+class PopoverStyle;
+class TooltipStyle;
+class MenuStyle;
+class PickerStyle;
+class SliderStyle;
+class RowStyle;
 enum class Weight;
 template <class T>
 class Binding;
@@ -71,8 +117,6 @@ class Shape;
 class ShapeStyle;
 struct Theme;
 enum class ColorScheme;
-template <class T>
-class Prop;
 template <class Key>
 class EnvironmentKeyModifier;
 template <class Key>
@@ -129,6 +173,13 @@ struct ProposedSize {
     friend constexpr bool operator==(const ProposedSize&, const ProposedSize&) = default;
 };
 
+// What View::selection does besides selecting.
+template <class K>
+struct SelectionOptions {
+    // Enter, or a double click on a row: opens what the row stands for.
+    std::function<void(const K&)> on_activate;
+};
+
 // What a view is to screen readers, when the automatic choice isn't right (accessibility_role()).
 enum class AccessibilityRole {
     group,
@@ -157,12 +208,83 @@ struct DropOptions {
     std::function<void(bool targeted)> targeted;
 };
 
-// Which side of its view a popover opens on (it flips if there isn't room).
-enum class PopoverEdge { below, above, trailing, leading };
+// Where floating content (View::floating()) goes, by the view it's attached to (its anchor).
+enum class FloatingEdge { bottom, top, trailing, leading };
+// Across that edge: lined up with the anchor's start (leading or top), center, or end.
+enum class FloatingAlignment { start, center, end };
+
+struct FloatingPlacement {
+    // The anchor's side it opens on. It flips to the opposite side when there isn't room.
+    FloatingEdge edge = FloatingEdge::bottom;
+    FloatingAlignment alignment = FloatingAlignment::start;
+    float spacing = 0; // between the anchor and the content (negative: overlapping)
+    Point offset;      // then moved by this
+    // Instead of an edge: the content's top-leading corner here, in the anchor's coordinates.
+    std::optional<Point> position;
+};
+
+// Where floating content may go.
+enum class FloatingBoundary {
+    // In a popup window of its own: it can extend past the app's window, and stays on the
+    // display. Where the platform constrains popup windows (Wayland), the system has the last word.
+    screen,
+    // Drawn inside the app's window, above its content, and kept within it.
+    window,
+    // Drawn inside the nearest view around it marked .floating_container() (else the window):
+    // above that view's content, under views outside it, kept within it and clipped to it, and
+    // moving with it as it scrolls. Esc and outside clicks anywhere in the window still close it.
+    container,
+};
+
+// What closes floating content (and sets its binding back to false).
+struct FloatingDismiss {
+    // A press anywhere outside it. While open, it then takes the pointer: presses elsewhere only
+    // close it. false: the rest of the window stays usable.
+    bool outside_click = true;
+    bool escape = true; // Esc, unless something focused handles it first
+};
+
+// How popup content opens and closes: `transition` run with `animation` (elg/animation.h).
+//   PopupMotion(Transition::opacity().combined(Transition::scale(0.96f, Alignment::top)),
+//               Animation::ease_out(0.15))
+class ELG_API PopupMotion {
+public:
+    PopupMotion(const Transition& transition, const Animation& animation);
+    // At once, with no animation (the built-in styles' default).
+    static PopupMotion none() { return PopupMotion(); }
+
+    const Transition* transition() const noexcept { return transition_.get(); }
+    const Animation* animation() const noexcept { return animation_.get(); }
+    bool animates() const noexcept { return transition_ && animation_; }
+
+private:
+    PopupMotion() = default;
+    ELG_PRIVATE_MEMBERS_BEGIN
+    std::shared_ptr<const Transition> transition_;
+    std::shared_ptr<const Animation> animation_;
+    ELG_PRIVATE_MEMBERS_END
+};
+
+struct FloatingOptions {
+    FloatingPlacement placement;
+    FloatingBoundary boundary = FloatingBoundary::screen;
+    FloatingDismiss dismiss;
+    std::optional<PopupMotion> motion; // nullopt: none
+};
+
+struct TooltipOptions {
+    FloatingPlacement placement{.spacing = 4}; // below the view by default
+    FloatingBoundary boundary = FloatingBoundary::screen;
+    double delay = 0.6; // seconds the pointer rests on the view before it shows
+    std::optional<PopupMotion> motion; // nullopt: the TooltipStyle's
+};
 
 struct PopoverOptions {
-    PopoverEdge opens = PopoverEdge::below;
-    bool padded = true; // false: the content reaches the panel's edges (images, lists)
+    // Centered below the view by default.
+    FloatingPlacement placement{.alignment = FloatingAlignment::center, .spacing = 4};
+    FloatingBoundary boundary = FloatingBoundary::screen;
+    Prop<bool> padded = true; // false: the content reaches the panel's edges (images, lists)
+    std::optional<PopupMotion> motion; // nullopt: the PopoverStyle's
 };
 
 // How content with an aspect ratio fills space (aspect_ratio()).
@@ -200,6 +322,14 @@ constexpr Edges operator|(Edges a, Edges b) noexcept {
 constexpr bool contains(Edges set, Edges edge) noexcept {
     return (static_cast<unsigned>(set) & static_cast<unsigned>(edge)) != 0;
 }
+
+// Adjustments to what .backdrop_blur() shows through, after the blur. Each is reactive and
+// animatable.
+struct BackdropOptions {
+    Prop<float> saturation = 1.f; // 0 gray, 1 unchanged, above 1 more vivid
+    Prop<float> brightness = 0.f; // added to each channel: -1 black ... 0 unchanged ... 1 white
+    Prop<float> noise = 0.f;      // grain, 0...1, so smooth gradients don't band
+};
 
 // A drop shadow (design.md §9.4): `radius` is the blur radius in points, (x, y) the offset.
 // `spread` grows (or, negative, shrinks) the shape before blurring; it applies to single shapes
@@ -293,6 +423,9 @@ class View {
 public:
     // An empty view: takes no space and draws nothing.
     ELG_API View() noexcept;
+    // Whether this is an empty view (View(), EmptyView()), e.g. a style's label for a control
+    // made without one.
+    ELG_API bool is_empty() const noexcept;
 
     // Components: any type with `View body() const` can be used as a view.
     template <class Component>
@@ -318,9 +451,10 @@ public:
 
     // --- Layout (elg/modifiers/layout.h) ---
 
-    ELG_API View padding(float length = 16) const;
-    ELG_API View padding(Edges edges, float length = 16) const;
-    ELG_API View padding(EdgeInsets insets) const;
+    ELG_API View padding(Prop<float> length = 16.f) const;
+    ELG_API View padding(Edges edges, Prop<float> length = 16.f) const;
+    ELG_API View padding(EdgeInsets insets) const; // also takes {.top = 4, ...}
+    ELG_API View padding(Prop<EdgeInsets> insets) const;
 
     ELG_API View frame(FrameOptions options) const;
     ELG_API View frame(float width, float height, Alignment alignment = Alignment::center) const;
@@ -359,6 +493,14 @@ public:
     ELG_API View grid_column_alignment(HorizontalAlignment alignment) const;
 
     // --- Decoration (elg/modifiers/decoration.h) ---
+    // The shorthands are exactly their compositions, drawn and hit tested the same way:
+    //   .background(style)        == .background(Rectangle().fill(style))
+    //   .background(style, shape) == .background(shape.fill(style))
+    //   .border(color, width)     == .overlay(Rectangle().stroke_border(color, width))
+    //   .border(color, width, shape) == .overlay(shape.stroke_border(color, width))
+    //   .corner_radius(r)         == .clip_shape(RoundedRectangle(r))
+    // A shape takes the same points whether it's filled, a clip_shape or a content_shape; a
+    // stroke-only shape takes only its line.
 
     ELG_API View background(View view, Alignment alignment = Alignment::center) const;
     // A color or gradient filling the view's bounds, or the given shape. Reactive arguments work:
@@ -366,12 +508,13 @@ public:
     ELG_API View background(Prop<ShapeStyle> style) const;
     ELG_API View background(Prop<ShapeStyle> style, const Shape& shape) const;
     ELG_API View overlay(View view, Alignment alignment = Alignment::center) const;
-    // A border drawn inside the view's bounds.
-    ELG_API View border(Color color, float width = 1) const;
+    // A border drawn inside the view's bounds, or along the given shape.
+    ELG_API View border(Prop<Color> color, float width = 1) const;
+    ELG_API View border(Prop<Color> color, float width, const Shape& shape) const;
 
     // --- Effects (elg/modifiers/effects.h) ---
 
-    // Clips the content to the view's bounds.
+    // Clips the content to the view's bounds: clip_shape(Rectangle()).
     ELG_API View clipped() const;
     // Clips the content to a shape filling the view's bounds (cheap for rounded rects/circles).
     ELG_API View clip_shape(const Shape& shape) const;
@@ -386,6 +529,17 @@ public:
     // Gaussian blur of the content; `radius` in points. Reactive and animatable.
     // `opaque`: the content fills its bounds; edges stay sharp instead of fading out.
     ELG_API View blur(Prop<float> radius, bool opaque = false) const;
+    // Blurs what's drawn behind the view in the window (frosted glass), inside `shape` (the
+    // view's bounds by default); `radius` in points. Reactive and animatable. Like .background,
+    // it goes behind everything it wraps, so a tint goes on before it:
+    //   Text("Now playing").padding(12)
+    //       .background(Color::white.opacity(0.5f), RoundedRectangle(12))
+    //       .backdrop_blur(30, RoundedRectangle(12), {.saturation = 1.8f, .noise = 0.02f})
+    // .blur() after it blurs the view, backdrop included. Inside an offscreen group (opacity below
+    // 1, a shadow, a blur, ...) it sees only what the group drew behind it, as CSS's
+    // backdrop-filter does.
+    ELG_API View backdrop_blur(Prop<float> radius, BackdropOptions options = {}) const;
+    ELG_API View backdrop_blur(Prop<float> radius, const Shape& shape, BackdropOptions options = {}) const;
     // Color adjustments (SwiftUI's, and CSS's filter functions). Each is reactive and animatable.
     // Adds to each channel: -1 black ... 0 unchanged ... 1 white.
     ELG_API View brightness(Prop<float> amount) const;
@@ -400,8 +554,7 @@ public:
     // 0 unchanged ... 1 fully sepia-toned.
     ELG_API View sepia(Prop<float> amount) const;
     // Inverts the colors, or partly (0...1).
-    ELG_API View color_invert() const;
-    ELG_API View color_invert(Prop<float> amount) const;
+    ELG_API View color_invert(Prop<float> amount = 1.f) const;
     // Multiplies every pixel by `color` (alpha too): tints white content, darkens the rest.
     ELG_API View color_multiply(Prop<Color> color) const;
     // Brightness becomes opacity: white stays, black disappears (for masks).
@@ -424,29 +577,71 @@ public:
     ELG_API View mask(View mask, Alignment alignment = Alignment::center) const;
     ELG_API View mask(Prop<ShapeStyle> style) const;
     // Hit tests against this shape (filling the bounds) instead of the drawn content, e.g.
-    // content_shape(Rectangle()) makes the gaps in a stack tappable.
+    // content_shape(Rectangle()) makes the gaps in a stack tappable. A Button takes its whole
+    // frame; .content_shape(Capsule()) narrows it to its shape.
     ELG_API View content_shape(const Shape& shape) const;
     // false: the view and everything in it ignore the pointer; events go to what's behind.
     ELG_API View allows_hit_testing(bool enabled) const;
 
     // --- Events (elg/modifiers/events.h) ---
 
-    // Runs `action` on a tap (`count` = 2 for a double tap). The innermost tap gesture wins.
-    ELG_API View on_tap_gesture(std::function<void()> action, int count = 1) const;
-    // Trackpad gestures over the view (began ... ended): pinching, turning two fingers, and a
-    // two-finger double tap. The innermost view handling one under the pointer takes it.
-    //   .on_magnify([=](const MagnifyEvent& e) { zoom = std::clamp(start_zoom * e.scale, 0.5f, 8.f); })
+    // Pointer clicks: pressed and released inside the view with the options' button (left by
+    // default) and click count. The innermost click handler wins. Clicks only: for something a
+    // keyboard or a screen reader should be able to use too, use on_activate.
+    //   Canvas(draw).on_click([=](const ClickEvent& e) { add_point(e.location); })
+    //   Row().on_click(select).on_double_click(open)
+    ELG_API View on_click(std::function<void(const ClickEvent&)> action, ClickOptions options = {}) const;
+    ELG_API View on_click(std::function<void()> action, ClickOptions options = {}) const;
+    // on_click with .count = 2.
+    ELG_API View on_double_click(std::function<void(const ClickEvent&)> action) const;
+    ELG_API View on_double_click(std::function<void()> action) const;
+    // The view's action, however it's used: a left click, Space or Enter while it has focus, or a
+    // screen reader's default action. Makes it focusable (Tab, with a focus ring); its
+    // accessibility role stays its own. Disabled views (.disabled) don't activate.
+    //   Tile(album).on_activate([=] { open(album); }).accessibility_label(album.title)
+    ELG_API View on_activate(std::function<void()> action) const;
+    // Gestures (elg/gestures.h): drags and long presses take a press over once they recognize it
+    // (a button or on_click under them then doesn't fire); pinches, rotations and two-finger double
+    // taps come from trackpads.
+    //   .recognize(DragGesture().on_began([=] { start = offset.peek(); })
+    //                           .on_changed([=](const DragEvent& e) { offset = start() + e.translation; }))
+    // GestureOptions: {.priority = GesturePriority::high} goes before gestures inside the view;
+    // {.simultaneous = true} runs alongside whatever has the press.
+    //   row.recognize(DragGesture().on_changed(swipe), {.priority = GesturePriority::high})
+    ELG_API View recognize(DragGesture gesture, GestureOptions options = {}) const;
+    ELG_API View recognize(LongPressGesture gesture, GestureOptions options = {}) const;
+    ELG_API View recognize(MagnifyGesture gesture) const;
+    ELG_API View recognize(RotateGesture gesture) const;
+    ELG_API View recognize(TwoFingerDoubleTapGesture gesture) const;
+    // Shorthands: recognize(DragGesture().on_changed(action)), recognize(LongPressGesture(action)),
+    // recognize(MagnifyGesture().on_changed(action)), ...
+    ELG_API View on_drag(std::function<void(const DragEvent&)> action) const;
+    ELG_API View on_long_press(std::function<void()> action) const;
     ELG_API View on_magnify(std::function<void(const MagnifyEvent&)> action) const;
     ELG_API View on_rotate(std::function<void(const RotateEvent&)> action) const;
-    ELG_API View on_smart_magnify(std::function<void(Point)> action) const;
+    ELG_API View on_two_finger_double_tap(std::function<void(Point)> action) const;
     // The pointer's shape over the view, like CSS's `cursor`: .pointer_style(PointerStyle::pointer)
     // over something to click. Views inside can set their own (a text field's I-beam). Reactive:
     // .pointer_style([=] { return busy() ? PointerStyle::wait : PointerStyle::automatic; })
     ELG_API View pointer_style(Prop<PointerStyle> style) const;
-    // Called with true when the pointer has rested on the view for the hover delay, and false
-    // when it leaves (after the exit delay). The delay comes from the environment
-    // (.hover_delay()) unless given here.
-    ELG_API View on_hover(std::function<void(bool)> action) const;
+    // Called at once when the pointer comes over the view (its hit area) and when it leaves: for
+    // highlights.
+    //   .on_pointer_enter([=] { hovered = true; }).on_pointer_leave([=] { hovered = false; })
+    ELG_API View on_pointer_enter(std::function<void()> action) const;
+    ELG_API View on_pointer_leave(std::function<void()> action) const;
+    // Raw pointer events over the view (down, up, moves while captured, hover moves, cancel),
+    // located in its own coordinates. Return true to consume one; consuming a down captures the
+    // pointer, so the moves and the up come here wherever it goes. For drawing and custom
+    // controls; prefer on_click and gestures otherwise.
+    ELG_API View on_pointer(std::function<bool(const PointerEvent&)> action) const;
+    // Wheel and trackpad scrolling over the view, located in its own coordinates. Return true to
+    // consume it (scroll views around it then don't scroll).
+    ELG_API View on_scroll(std::function<bool(const ScrollEvent&)> action) const;
+    // Hover intent: called with true once the pointer has rested on the view for the hover delay
+    // (moving across it doesn't count), and false when it leaves (after the exit delay): for
+    // previews and other things that shouldn't flash as the pointer passes. The delay comes from
+    // the environment: .on_hover_change(action).hover_delay({.enter = 0.5})
+    ELG_API View on_hover_change(std::function<void(bool)> action) const;
     // Called after initial layout and when physical dimensions change, including display scale.
     // Dimensions are ceil(logical size * display scale), before visual transforms, and may be zero.
     // Runs on the UI thread before paint: queue renderer input, do not mutate layout here.
@@ -470,8 +665,8 @@ public:
     ELG_API View accessibility_element() const;
     // What a screen reader's default action (click) does, for views made clickable with gestures.
     ELG_API View accessibility_action(std::function<void()> action) const;
-    ELG_API View on_hover(std::function<void(bool)> action, HoverDelay delay) const;
-    // The hover delay for on_hover handlers and controls inside (default: enter 0.1 s, exit 0).
+    // The hover delay for on_hover_change handlers and submenus inside (default: enter 0.1 s,
+    // exit 0). Controls' highlights and on_pointer_enter/leave don't wait.
     ELG_API View hover_delay(HoverDelay delay) const;
 
     // Pressing and dragging here moves the window (for custom title bars, TitleBar::hidden).
@@ -482,11 +677,28 @@ public:
 
     // Right-click (or Shift+F10 / the Menu key while focused) opens the menu `menu` builds,
     // usually a Menu(...). The builder runs each time it opens; item actions run after it closes.
-    //   Text(file.name).context_menu([=] { return Menu(MenuItem("Rename", rename), Divider(),
+    //   Text(file.name).context_menu([=] { return Menu(MenuItem("Rename", rename), Separator(),
     //                                                  MenuItem("Delete", remove, {.destructive = true})); })
     ELG_API View context_menu(std::function<View()> menu) const;
-    // A tooltip with `text`, shown after the pointer rests on the view for a moment.
-    ELG_API View help(std::string text) const;
+    // A tooltip: `content` (in the environment's TooltipStyle) shown after the pointer rests on
+    // the view for a moment, until it leaves or presses. Screen readers don't see it.
+    //   Avatar(user).tooltip([=] { return HStack(Image("user"), Text(user.name)); })
+    ELG_API View tooltip(std::function<View()> content, TooltipOptions options = {}) const;
+    // A text tooltip: tooltip([=] { return Text(text); }, options).
+    //   Button(Image("gear"), settings).tooltip("Settings")
+    ELG_API View tooltip(Prop<std::string> text, TooltipOptions options = {}) const;
+    // `content` floating above everything by the view, while `is_presented` is true, with no
+    // chrome of its own. The builder runs each time it opens. What closes it (and sets the
+    // binding back to false), where it goes and whether it may leave the window are `options`'.
+    //   Avatar().floating(card_shown.binding(), [=] { return ProfileCard(user); },
+    //                     {.placement = {.edge = FloatingEdge::trailing, .spacing = 8},
+    //                      .boundary = FloatingBoundary::window})
+    ELG_API View floating(Binding<bool> is_presented, std::function<View()> content,
+                          FloatingOptions options = {}) const;
+    // Marks the view as where FloatingBoundary::container content inside it stays: a map whose
+    // callouts mustn't cover the toolbar beside it, a card in a scroll view.
+    //   MapView(pins).floating_container()
+    ELG_API View floating_container() const;
     // A panel of `content` beside the view, shown while `is_presented` is true. Clicking outside
     // it, Esc, or switching apps closes it and sets `is_presented` back to false. The builder runs
     // each time it opens; the content can be anything, e.g. a small form.
@@ -506,14 +718,84 @@ public:
     ELG_API View focused(Binding<bool> is_focused) const;
     // Runs `action` when `key` is pressed while the view (or something inside) has focus.
     ELG_API View on_key_press(Key key, std::function<void()> action) const;
-    // Sees every key press while focused; return true if handled (unhandled keys bubble out).
-    ELG_API View on_key_press(std::function<bool(const KeyEvent&)> action) const;
+    // Sees every key down and up while the view (or something inside) has focus; return true if
+    // handled (unhandled keys bubble out).
+    ELG_API View on_key(std::function<bool(const KeyEvent&)> action) const;
+    // Makes the view focusable and sees the text typed while it has focus: commits, and an IME's
+    // compositions in progress. Keys still go to on_key. Return true if handled.
+    ELG_API View on_text_input(std::function<bool(const TextInputEvent&)> action) const;
+
+    // --- Selection ---
+
+    // Makes the rows of a stack over a ForEach selectable, by their ForEach keys (the key type
+    // here is the ForEach's). Put it on the VStack, HStack, LazyVStack or LazyHStack itself; its
+    // other children (a header) aren't rows. Each row is drawn by the environment's RowStyle
+    // (row_style()).
+    //   const State<std::optional<int>> open;
+    //   ScrollView(LazyVStack(ForEach(mails, &Mail::id, MailRow))
+    //                  .selection(open.binding(), {.on_activate = [=](int id) { show(id); }}))
+    // - A click selects a row. Clicks a control in the row takes (a Button) don't.
+    // - The stack is one Tab stop. Up/Down (Left/Right in an HStack) move the selection, Home/End
+    //   go to the ends, and Enter calls on_activate, as does a double click. The selected row
+    //   scrolls into view, in a lazy stack too.
+    // - Screen readers see a list box whose rows are its options.
+    // With a std::set, more than one: Ctrl+click (Cmd on macOS) adds or removes a row, Shift+click
+    // and Shift+arrows select the range from where it started, and Ctrl+A (Cmd+A) selects all.
+    template <class K>
+    View selection(Binding<std::optional<K>> selection, SelectionOptions<K> options = {}) const {
+        detail::SelectionModel model;
+        model.get = [selection] {
+            const std::optional<K> key = selection.get();
+            return key ? std::vector<ItemKey>{detail::to_item_key(*key)} : std::vector<ItemKey>{};
+        };
+        model.contains = [selection](const ItemKey& key) {
+            const std::optional<K> selected = selection.get();
+            return selected && detail::to_item_key(*selected) == key;
+        };
+        model.set = [selection](std::vector<ItemKey> keys) {
+            selection.set(keys.empty() ? std::nullopt : std::optional<K>(detail::from_item_key<K>(keys.front())));
+        };
+        if (options.on_activate) {
+            model.activate = [activate = std::move(options.on_activate)](const ItemKey& key) {
+                activate(detail::from_item_key<K>(key));
+            };
+        }
+        return selection_impl(std::move(model));
+    }
+    template <class K>
+    View selection(Binding<std::set<K>> selection, SelectionOptions<K> options = {}) const {
+        detail::SelectionModel model;
+        model.multiple = true;
+        model.get = [selection] {
+            std::vector<ItemKey> keys;
+            for (const K& key : selection.get()) {
+                keys.push_back(detail::to_item_key(key));
+            }
+            return keys;
+        };
+        model.contains = [selection](const ItemKey& key) {
+            return selection.get().contains(detail::from_item_key<K>(key));
+        };
+        model.set = [selection](std::vector<ItemKey> keys) {
+            std::set<K> selected;
+            for (const ItemKey& key : keys) {
+                selected.insert(detail::from_item_key<K>(key));
+            }
+            selection.set(std::move(selected));
+        };
+        if (options.on_activate) {
+            model.activate = [activate = std::move(options.on_activate)](const ItemKey& key) {
+                activate(detail::from_item_key<K>(key));
+            };
+        }
+        return selection_impl(std::move(model));
+    }
 
     // --- Environment (elg/modifiers/environment.h): inherited by everything inside. ---
 
     // The weight of the font inside, keeping its size and family (text, and icons of sets with
     // weights): Image("gear").font_weight(Weight::bold).
-    ELG_API View font_weight(Weight weight) const;
+    ELG_API View font_weight(Prop<Weight> weight) const;
     ELG_API View font(Prop<Font> font) const;
     // The color of text and unfilled shapes. Also takes a ThemeColor.
     ELG_API View foreground_style(Prop<Color> color) const;
@@ -523,19 +805,76 @@ public:
     ELG_API View color_scheme(Prop<ColorScheme> scheme) const;
     ELG_API View theme(Theme theme) const;
     // Controls inside stop responding and look disabled.
-    ELG_API View disabled(Prop<bool> disabled) const;
-    ELG_API View disabled() const;
+    ELG_API View disabled(Prop<bool> disabled = true) const;
     // The style of every Button inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, ButtonStyle>
     View button_style(Style style) const {
         return button_style_impl(std::make_shared<const Style>(std::move(style)));
     }
+    // The style of the selectable rows inside (selection(), elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, RowStyle>
+    View row_style(Style style) const {
+        return row_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    // The style of every Picker inside (elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, PickerStyle>
+    View picker_style(Style style) const {
+        return picker_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    // The style of every Slider inside (elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, SliderStyle>
+    View slider_style(Style style) const {
+        return slider_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
     // The style of every Toggle inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, ToggleStyle>
     View toggle_style(Style style) const {
         return toggle_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    // The style of every Checkbox inside (elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, CheckboxStyle>
+    View checkbox_style(Style style) const {
+        return checkbox_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    // The style of every NumberInput inside (elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, NumberInputStyle>
+    View number_input_style(Style style) const {
+        return number_input_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    // The styles of popovers, tooltips and menus opened from inside (elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, PopoverStyle>
+    View popover_style(Style style) const {
+        return popover_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    template <class Style>
+        requires std::derived_from<Style, TooltipStyle>
+    View tooltip_style(Style style) const {
+        return tooltip_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    template <class Style>
+        requires std::derived_from<Style, MenuStyle>
+    View menu_style(Style style) const {
+        return menu_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    // The style of every Progress inside (elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, ProgressStyle>
+    View progress_style(Style style) const {
+        return progress_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    // The style of every NavigationStack inside (elg/navigation.h).
+    template <class Style>
+        requires std::derived_from<Style, NavigationStackStyle>
+    View navigation_stack_style(Style style) const {
+        return navigation_stack_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     // The style of every TextField inside (elg/styles.h).
     template <class Style>
@@ -585,7 +924,18 @@ private:
     ELG_API View with_modifier(std::shared_ptr<const Modifier> modifier) const;
     ELG_API View button_style_impl(std::shared_ptr<const ButtonStyle> style) const;
     ELG_API View toggle_style_impl(std::shared_ptr<const ToggleStyle> style) const;
+    ELG_API View checkbox_style_impl(std::shared_ptr<const CheckboxStyle> style) const;
+    ELG_API View number_input_style_impl(std::shared_ptr<const NumberInputStyle> style) const;
+    ELG_API View progress_style_impl(std::shared_ptr<const ProgressStyle> style) const;
+    ELG_API View picker_style_impl(std::shared_ptr<const PickerStyle> style) const;
+    ELG_API View slider_style_impl(std::shared_ptr<const SliderStyle> style) const;
+    ELG_API View popover_style_impl(std::shared_ptr<const PopoverStyle> style) const;
+    ELG_API View tooltip_style_impl(std::shared_ptr<const TooltipStyle> style) const;
+    ELG_API View menu_style_impl(std::shared_ptr<const MenuStyle> style) const;
+    ELG_API View navigation_stack_style_impl(std::shared_ptr<const NavigationStackStyle> style) const;
     ELG_API View text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const;
+    ELG_API View row_style_impl(std::shared_ptr<const RowStyle> style) const;
+    ELG_API View selection_impl(detail::SelectionModel model) const;
     ELG_API View animation_impl(const Animation& animation, std::function<bool()> changed) const;
     ELG_API static View deferred(std::function<View()> body);
 

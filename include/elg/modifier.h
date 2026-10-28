@@ -162,7 +162,6 @@ struct ColorFilter {
 struct Effects {
     // Post-layout physical size observation; state is kept per mounted EffectElement.
     std::function<void(PixelSize)> on_size_change;
-    bool clip_to_bounds = false;
     std::optional<Shape> clip_shape; // fills the view's bounds
     Prop<float> opacity = 1.f;
     std::optional<Shadow> shadow;

@@ -16,10 +16,11 @@
 
 namespace elg {
 
-// How long the pointer must rest on a view before it counts as hovered (`enter`), and how long
-// after it leaves before it stops counting (`exit`), in seconds. Moving across a view faster than
-// `enter` doesn't hover it; coming back within `exit` cancels the leave.
-// Set for a subtree with .hover_delay({...}), or per handler with .on_hover(action, {...}).
+// Hover intent (on_hover_change, submenus): how long the pointer must rest on a view before it
+// counts as hovered (`enter`), and how long after it leaves before it stops counting (`exit`), in
+// seconds. Moving across a view faster than `enter` doesn't hover it; coming back within `exit`
+// cancels the leave. Set with .hover_delay({...}) for everything inside, one handler included:
+// .on_hover_change(action).hover_delay({...}). Pointer enter/leave (and controls' highlights) don't wait.
 struct HoverDelay {
     double enter = 0.1;
     double exit = 0.0;
@@ -94,7 +95,10 @@ enum class GesturePhase {
 // A mouse wheel or trackpad scroll. Deltas are in points, positive toward the end of the content
 // (wheel down: positive dy).
 struct ScrollEvent {
+    // Where the pointer is: in window coordinates for an EventHandler, in the view's own for
+    // View::on_scroll.
     Point location;
+    Point window_location; // always in the window's coordinates
     float dx = 0;
     float dy = 0;
     bool precise = false; // trackpad-style fine deltas (apply directly) rather than wheel notches
@@ -158,10 +162,28 @@ struct PointerEvent {
     };
 
     Kind kind = Kind::move;
-    Point location; // window coordinates, in points
+    // In points: window coordinates for an EventHandler, the view's own for View::on_pointer.
+    Point location;
     MouseButton button = MouseButton::left;
     int click_count = 1; // 2 for the second click of a double click, ...
     KeyModifiers modifiers = KeyModifiers::none; // held when the button went down / up
+    Point window_location;                       // always in the window's coordinates
+};
+
+// A click on a view (View::on_click): pressed and released inside it.
+struct ClickEvent {
+    Point location;        // where it was released, in the view's own coordinates (0, 0: its top-leading corner)
+    Point window_location; // the same, in the window's
+    MouseButton button = MouseButton::left;
+    KeyModifiers modifiers = KeyModifiers::none; // held when it was released
+    int click_count = 1;                         // 2 for a double click, ...
+};
+
+// Which clicks View::on_click takes.
+struct ClickOptions {
+    MouseButton button = MouseButton::left;
+    // 2: double clicks (the first click goes on to outer handlers), 3: triple clicks, ...
+    int count = 1;
 };
 
 struct EventResult {
@@ -170,6 +192,10 @@ struct EventResult {
     bool consumed = false;
     // The handler changed how something looks; the window needs a new frame.
     bool redraw = false;
+    // With `consumed` on a down: gesture recognizers around the view (View::recognize) may take
+    // the press over, and the handler then gets `cancel`. For presses that are clicks (buttons);
+    // handlers that track the pointer themselves (sliders) leave it false.
+    bool cancellable = false;
 };
 
 // Receives events for one mounted view. Created by an EventModifier when the view mounts.
@@ -189,13 +215,13 @@ public:
     virtual PointerStyle pointer_style(Point location) const;
 
     // Wheel and trackpad scrolling: goes to the handlers under the pointer, innermost first,
-    // until one consumes it.
-    virtual EventResult scroll(const ScrollEvent& event);
+    // until one consumes it. `frame` as for pointer().
+    virtual EventResult scroll(const ScrollEvent& event, Rect frame);
     // Trackpad gestures: the handler under the pointer that consumes `began` gets the rest of the
-    // gesture, innermost first. smart_magnify is a two-finger double tap (zoom to fit, in Safari).
+    // gesture, innermost first. A two-finger double tap usually zooms to fit.
     virtual EventResult magnify(const MagnifyEvent& event);
     virtual EventResult rotate(const RotateEvent& event);
-    virtual EventResult smart_magnify(Point location);
+    virtual EventResult two_finger_double_tap(Point location);
 
     // Keyboard (design.md §10): key events go to the focused view's handler first, then bubble
     // to the handlers around it until consumed.

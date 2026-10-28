@@ -40,7 +40,17 @@ using DisabledModifier = EnvironmentKeyModifier<DisabledKey>;
 using ButtonStyleModifier = EnvironmentKeyModifier<ButtonStyleKey>;
 using HoverDelayModifier = EnvironmentKeyModifier<HoverDelayKey>;
 using ToggleStyleModifier = EnvironmentKeyModifier<ToggleStyleKey>;
+using CheckboxStyleModifier = EnvironmentKeyModifier<CheckboxStyleKey>;
+using NumberInputStyleModifier = EnvironmentKeyModifier<NumberInputStyleKey>;
+using ProgressStyleModifier = EnvironmentKeyModifier<ProgressStyleKey>;
+using PickerStyleModifier = EnvironmentKeyModifier<PickerStyleKey>;
+using SliderStyleModifier = EnvironmentKeyModifier<SliderStyleKey>;
+using PopoverStyleModifier = EnvironmentKeyModifier<PopoverStyleKey>;
+using TooltipStyleModifier = EnvironmentKeyModifier<TooltipStyleKey>;
+using MenuStyleModifier = EnvironmentKeyModifier<MenuStyleKey>;
+using NavigationStackStyleModifier = EnvironmentKeyModifier<NavigationStackStyleKey>;
 using TextFieldStyleModifier = EnvironmentKeyModifier<TextFieldStyleKey>;
+using RowStyleModifier = EnvironmentKeyModifier<RowStyleKey>;
 
 } // namespace elg
 

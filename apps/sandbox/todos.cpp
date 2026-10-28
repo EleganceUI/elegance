@@ -33,7 +33,7 @@ View TodoRow(const Todo& todo, std::function<void()> toggle, std::function<void(
                            .stroke_border(todo.done ? Prop<Color>(palette::green) : Prop<Color>(ThemeColor::outline), 2)
                            .frame(20, 20)
                            .content_shape(Rectangle())
-                           .on_tap_gesture(std::move(toggle));
+                           .on_click(std::move(toggle));
 
     return HStack({.spacing = 12},
                   check,

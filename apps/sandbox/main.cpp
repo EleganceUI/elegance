@@ -105,13 +105,13 @@ View MenuCards() {
                 return Menu(MenuItem("Rename", say("Rename"), {.shortcut = "F2", .image = {{.system_name = "pencil-simple"}}}),
                             MenuItem("Duplicate", say("Duplicate"),
                                      {.shortcut = "Ctrl+D", .image = {{.system_name = "copy-simple"}}}),
-                            Divider(),
+                            Separator(),
                             Submenu("Move to", [=] {
                                 return Menu(MenuItem("Documents", say("Moved to Documents")),
                                             MenuItem("Pictures", say("Moved to Pictures")),
                                             MenuItem("Archive", say("Moved to Archive")).disabled());
                             }),
-                            Divider(),
+                            Separator(),
                             MenuItem("Delete", say("Delete"), {.destructive = true, .image = {{.system_name = "trash"}}}));
             });
 
@@ -120,13 +120,13 @@ View MenuCards() {
     const View view_menu = MenuButton("View", [=] {
         return Menu(MenuItem("Show grid", [=] { grid = !grid(); }, {.checked = grid}),
                     MenuItem("Show rulers", [=] { rulers = !rulers(); }, {.checked = rulers}),
-                    Divider(),
+                    Separator(),
                     MenuItem("Zoom to fit", say("Zoom to fit"), {.shortcut = "Ctrl+0"}));
     }).button_style(BorderedButtonStyle{});
 
     const auto size = State(std::string("Medium"));
-    const View picker = Picker(size.binding(), {{"Small", "Small"}, {"Medium", "Medium"}, {"Large", "Large"}},
-                               PickerStyle::menu);
+    const View picker = Picker(size.binding(), {{"Small", "Small"}, {"Medium", "Medium"}, {"Large", "Large"}})
+                           .picker_style(MenuPickerStyle{});
 
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
                   Captioned(VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
@@ -144,8 +144,8 @@ View MenuCards() {
                             "MenuButton, Picker(.menu)")
                       .card(),
                   Captioned(Button("Hover for help", say("Help button")).button_style(BorderedButtonStyle{})
-                                .help("Tooltips open after a short rest"),
-                            ".help()")
+                                .tooltip("Tooltips open after a short rest"),
+                            ".tooltip()")
                       .card());
 }
 
@@ -411,25 +411,11 @@ View VideoCards() {
                   Captioned(filled, "The same video, fill + Circle").card());
 }
 
-// Networking (design.md §13.3): AsyncImage loads over HTTPS when shown (spinner, then the image,
-// or a placeholder on failure); http::Fetch is a request as reactive state.
+// Remote images (design.md §13.3): AsyncImage downloads when shown (spinner, then the image, or a
+// placeholder on failure).
 View NetworkCards() {
     const std::string landscape = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3f/Fronalpstock_big.jpg/500px-Fronalpstock_big.jpg";
     const std::string avatar = "https://avatars.githubusercontent.com/u/9919?s=96";
-    const http::Fetch page("https://example.com/");
-    const View status = VStack({.alignment = HorizontalAlignment::leading, .spacing = 6},
-                               Text([=] {
-                                   if (page.is_loading()) {
-                                       return std::string("Loading example.com…");
-                                   }
-                                   if (!page.has_response()) {
-                                       return "Failed: " + page.error();
-                                   }
-                                   const http::Response response = page.response();
-                                   return std::format("HTTP {} · {} bytes · {}", response.status, response.body.size(),
-                                                      response.header("content-type"));
-                               }),
-                               Button("Reload", [=] { page.reload(); }).button_style(BorderedButtonStyle{}));
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
                   Captioned(AsyncImage(landscape, {.content_mode = ContentMode::fill})
                                 .frame(200, 120)
@@ -440,8 +426,7 @@ View NetworkCards() {
                                    AsyncImage(avatar, {.content_mode = ContentMode::fill}).frame(56, 56).clip_shape(Circle()),
                                    AsyncImage("https://example.invalid/missing.png").frame(56, 56)),
                             "Avatar; a failing URL")
-                      .card(),
-                  Captioned(status, "http::Fetch").card());
+                      .card());
 }
 
 // Desktop integration (design.md §13.4): dropping files, the system's file dialogs,
@@ -548,7 +533,7 @@ View CaptureCards() {
                Button("Play", [=] { recorder.sound().play(); }).disabled([=] { return recorder.duration() <= 0; }),
                Button("Clear", [=] { recorder.clear(); }))
             .button_style(BorderedButtonStyle{}),
-        ProgressView([=] { return recorder.level(); }).frame({.width = 220}).accessibility_label("Input level"),
+        Progress([=] { return recorder.level(); }).frame({.width = 220}).accessibility_label("Input level"),
         Text([=] {
             const std::string error = recorder.error();
             return error.empty() ? clock(recorder.duration()) + std::format(" · {} inputs", inputs) : error;
@@ -621,7 +606,7 @@ View StackCards() {
             .shadow({.color = Color::black.opacity(0.3f), .radius = 6, .y = 2})
             .offset(static_cast<float>(index) * 34, static_cast<float>(index) * 16)
             .z_index([=] { return front() == index ? 1.f : 0.f; })
-            .on_tap_gesture([=] { front = index; });
+            .on_click([=] { front = index; });
     };
     const View layers = ZStack({.alignment = Alignment::top_leading},
                                card(0, palette::peach, "One"),
@@ -758,8 +743,9 @@ View StateCards(std::function<void()> quit) {
                                return env.color(hovered() ? ThemeColor::background : ThemeColor::primary);
                            }))
                            .animation(Animation::ease_out(0.18), hovered) // implicit: hover changes ease
-                           .on_hover([=](bool inside) { hovered = inside; })
-                           .on_tap_gesture([=] { taps += 1; });
+                           .on_pointer_enter([=] { hovered = true; })
+                           .on_pointer_leave([=] { hovered = false; })
+                           .on_click([=] { taps += 1; });
 
     // A reactive opacity, toggled by a button whose label follows the same state.
     const auto dimmed = State(false);
@@ -771,27 +757,33 @@ View StateCards(std::function<void()> quit) {
     return HStack({.spacing = 24},
                   Captioned(buttons, "Button + tint").card(),
                   Captioned(counter, "State + Binding").card(),
-                  Captioned(hover.frame({.max_width = infinity}), "on_hover + on_tap_gesture").card(),
+                  Captioned(hover.frame({.max_width = infinity}), "pointer enter/leave + on_click").card(),
                   Captioned(fade, "Reactive opacity").card());
 }
 
-// Toggles in both styles, and keyboard focus: Tab / Shift+Tab move between controls, Space and
-// Enter press them.
+// Switches, check boxes (one mixed), and keyboard focus: Tab / Shift+Tab move between controls,
+// Space and Enter press them.
 View ControlCards() {
     const auto wifi = State(true);
     const auto sounds = State(false);
     const View switches = VStack({.spacing = 10},
                                  Toggle("Wi-Fi", wifi.binding()),
                                  Toggle("Sounds", sounds.binding()).tint(palette::green),
-                                 Toggle("Airplane mode", Binding<bool>::constant(false)).disabled())
+                                 Toggle("Airplane mode", constant(false)).disabled())
+                              .toggle_style(SwitchToggleStyle{{.fills_width = true}})
                               .frame({.width = 220});
 
     const auto remember = State(true);
     const auto reports = State(false);
+    const Binding<bool> both([=] { return remember() && reports(); },
+                             [=](bool on) {
+                                 remember = on;
+                                 reports = on;
+                             });
     const View checks = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
-                               Toggle("Remember me", remember.binding()),
-                               Toggle("Send crash reports", reports.binding()))
-                            .toggle_style(CheckboxToggleStyle{});
+                               Checkbox("All", both, {.mixed = [=] { return remember() != reports(); }}),
+                               Checkbox("Remember me", remember.binding()).padding(Edges::leading, 26),
+                               Checkbox("Send crash reports", reports.binding()).padding(Edges::leading, 26));
 
     // A focusable view with its own keys; the button focuses it through the binding.
     const auto is_focused = State(false);
@@ -804,7 +796,10 @@ View ControlCards() {
                    .padding(EdgeInsets::symmetric(12, 8))
                    .background(ThemeColor::surface_raised, RoundedRectangle(8))
                    .focused(is_focused.binding())
-                   .on_key_press([=](const KeyEvent& event) {
+                   .on_key([=](const KeyEvent& event) {
+                       if (event.kind != KeyEvent::Kind::down) {
+                           return false;
+                       }
                        switch (event.key) {
                        case Key::left: value -= 1; return true;
                        case Key::right: value += 1; return true;
@@ -817,7 +812,7 @@ View ControlCards() {
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
                   Captioned(switches, "Toggle (switch)").card(),
                   Captioned(checks, "Toggle (checkbox)").card(),
-                  Captioned(keys, "focused + on_key_press").card());
+                  Captioned(keys, "focused + on_key").card());
 }
 
 // Text fields: the default rounded style, the plain style, and a disabled one.
@@ -857,23 +852,25 @@ View TextFieldCards() {
 
 enum class Accent { blue, green, peach };
 
-// Slider, ProgressView, Stepper, and Picker.
+// Slider, Progress, NumberInput, and Picker.
 View MoreControlCards() {
     const auto volume = State(40.f);
     const View slider = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
                                Text([=] { return std::format("Volume: {:.0f}", volume()); }),
                                Slider(volume.binding(), {.min = 0, .max = 100, .step = 1}),
-                               ProgressView([=] { return volume() / 100; }))
+                               HStack({.spacing = 12}, Progress([=] { return volume() / 100; }),
+                                      Progress([=] { return volume() / 100; }).progress_style(CircularProgressStyle{})))
                             .frame({.width = 220});
 
     const auto guests = State(2);
     const auto loading = State(false);
     const View stepper = VStack({.alignment = HorizontalAlignment::leading, .spacing = 12},
-                                Stepper(Text([=] { return std::format("Guests: {}", guests()); }), guests.binding(),
-                                        {.min = 1, .max = 8}),
+                                HStack({.spacing = 8}, Text("Guests"),
+                                       NumberInput(guests.binding(), {.min = 1, .max = 8}).frame({.width = 72})),
                                 Toggle("Loading", loading.binding()),
                                 // Indeterminate progress renders continuously, so it's only shown on request.
-                                If(loading, ProgressView()))
+                                If(loading, HStack({.spacing = 12}, Progress(),
+                                                   Progress().progress_style(CircularProgressStyle{}))))
                              .frame({.width = 220});
 
     const auto accent = State(Accent::blue);
@@ -891,8 +888,8 @@ View MoreControlCards() {
                             .frame({.width = 240});
 
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(slider, "Slider + ProgressView").card(),
-                  Captioned(stepper, "Stepper, indeterminate progress").card(),
+                  Captioned(slider, "Slider + Progress").card(),
+                  Captioned(stepper, "NumberInput, indeterminate progress").card(),
                   Captioned(picker, "Picker (segmented)").card());
 }
 

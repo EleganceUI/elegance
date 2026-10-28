@@ -1,91 +1,75 @@
 ---
 title: Networking
-description: "HTTP requests with callbacks or as reactive state, and images from the web."
+description: "Using an HTTP or WebSocket library with Elegance, and images from the web."
 ---
 
 import Example from '../../../components/Example.astro';
 
-Elegance makes HTTP(S) requests with the system's own networking: WinHTTP on Windows, which uses
-the system's certificates and proxy settings and supports HTTP/2 and compression. Requests run on
-background threads; results arrive on the UI thread, where you can write state.
+Elegance doesn't have its own HTTP or WebSocket API. Use an established library that you trust
+and keep up to date, such as [libcurl](https://curl.se/libcurl/),
+[Boost.Beast](https://www.boost.org/libs/beast) or [cpp-httplib](https://github.com/yhirose/cpp-httplib).
+Elegance gives you two things to connect it to your views:
 
-## A request with a callback
+- `post_to_ui_thread(task)` runs `task` on the UI thread, where it can write state.
+- `AsyncImage(url)` downloads and shows images. See
+  [Images](../images/#images-from-the-web).
+
+## Requests on a background thread
+
+Run requests off the UI thread, so the window keeps responding. When a result arrives, hand it
+back with `post_to_ui_thread`. This example uses cpp-httplib:
 
 ```cpp
-http::fetch({.url = "https://api.example.com/items"}, [=](const http::Result& result) {
-    if (!result) {
-        error = result.error();          // no response: network, TLS, timeout
-    } else if (!result->ok()) {
-        error = std::format("HTTP {}", result->status);
-    } else {
-        items = parse_items(result->text());
-    }
+#include <httplib.h>
+
+using Body = std::expected<std::string, std::string>; // the body, or why there isn't one
+
+// `done` runs on the UI thread.
+void get(std::string server, std::string path, std::function<void(const Body&)> done) {
+    std::thread([=] {
+        httplib::Client client(server);
+        client.set_follow_location(true);
+        const auto response = client.Get(path);
+        Body body;
+        if (!response) {
+            body = std::unexpected(httplib::to_string(response.error())); // network, TLS, timeout
+        } else if (response->status != 200) {
+            body = std::unexpected(std::format("HTTP {}", response->status));
+        } else {
+            body = response->body;
+        }
+        post_to_ui_thread([done, body = std::move(body)] { done(body); });
+    }).detach();
+}
+```
+
+Inside `done`, write state as usual. Views that read it update:
+
+```cpp
+const State<bool> loading(true);
+const State<std::string> quote;
+
+get("https://api.github.com", "/zen", [=](const Body& body) {
+    quote = body ? *body : body.error();
+    loading = false;
 });
+
+If([=] { return loading(); }, Progress(), Text([=] { return quote(); }));
 ```
 
-A `Request` has a `url`, a `method` (GET by default), `headers`, a `body` and a `timeout`
-(30 seconds):
-
-```cpp
-http::fetch({.url = "https://api.example.com/items",
-             .method = "POST",
-             .headers = {{"Content-Type", "application/json"}, {"Authorization", "Bearer " + token}},
-             .body = R"({"title": "New item"})"},
-            on_done);
-```
-
-The `Result` is a `std::expected<Response, std::string>`: a response, or why there isn't one. An
-HTTP error status is still a response, so check `ok()` (a 2xx status). A `Response` has the
-`status`, `headers` (`header("content-type")` finds one by name), and the `body` as bytes, with
-`text()` for a string.
-
-`fetch` returns an `http::Task`; `cancel()` stops the request, and its callback won't run.
-`fetch` can be called from any thread.
-
-## A request as state
-
-`http::Fetch` starts a request when it's made, and views reading it update when it finishes:
-
-```cpp
-const http::Fetch profile("https://api.example.com/me");
-
-If([=] { return profile.is_loading(); },
-   ProgressView(),
-   Text([=] { return profile.ok() ? profile.response().text() : profile.error(); }));
-
-Button("Refresh", [=] { profile.reload(); });
-```
-
-`is_loading()`, `has_response()`, `ok()`, `response()` and `error()` are reactive. `reload()` starts
-it again, keeping the old result until the new one arrives. Copies share the request, and it's
-cancelled when the last copy goes.
-
-Elegance doesn't include a JSON library; use the one you like (nlohmann/json, Glaze, simdjson) on
-`response().text()`.
+`State` is a handle. A callback that holds a copy can still write to it after the view that
+showed it has gone, and nothing shows the change. If the work is costly, or must not run once a
+view has gone, give the callback a flag to check, or use your library's cancellation.
 
 ## WebSockets
 
-`http::WebSocket::connect` opens a WebSocket on a background thread (WinHTTP on Windows). Its events
-run on the UI thread:
+The same rules apply to WebSockets: run the connection on its own thread, or the library's event
+loop, and post each message to the UI thread. Boost.Beast and libcurl both support WebSockets.
 
-```cpp
-const auto socket = http::WebSocket::connect(
-    {.url = "wss://echo.example.com", .headers = {{"Origin", "https://example.com"}}},
-    {.on_open = [=] { status = "Connected"; },
-     .on_message = [=](const std::string& text) { log.update([&](auto& l) { l.push_back(text); }); },
-     .on_close = [=](int code, const std::string& reason) { status = reason; }});
+## JSON
 
-socket.send(R"({"type": "hello"})");
-```
-
-`on_message` gets whole messages, however many frames they came in. `on_close` runs once, last:
-with the server's close code and reason, or with 1006 and why in words when the connection failed
-or dropped. `send()` queues while connecting and works from any thread, so a heartbeat can run on
-its own thread. `close()` ends it without running `on_close`; so does dropping the last copy.
-
-## Images
-
-`AsyncImage(url)` loads and caches images; see [Images](../images/#images-from-the-web).
+Elegance doesn't include a JSON library either. Use the one you like (nlohmann/json, Glaze,
+simdjson) on the body before you post it to the UI thread, so parsing doesn't stall the window.
 
 ## Example
 

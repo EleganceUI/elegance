@@ -38,7 +38,17 @@ namespace elg {
 
 class ButtonStyle;
 class ToggleStyle;
+class CheckboxStyle;
+class NumberInputStyle;
+class ProgressStyle;
+class NavigationStackStyle;
 class TextFieldStyle;
+class PopoverStyle;
+class TooltipStyle;
+class MenuStyle;
+class PickerStyle;
+class SliderStyle;
+class RowStyle;
 
 class EnvironmentValues {
 public:
@@ -142,11 +152,80 @@ struct ToggleStyleKey {
     ELG_API static std::shared_ptr<const ToggleStyle> default_value(const EnvironmentValues&);
 };
 
+struct CheckboxStyleKey {
+    using Value = std::shared_ptr<const CheckboxStyle>;
+    static constexpr std::string_view name = "elg.checkbox_style";
+    ELG_API static std::shared_ptr<const CheckboxStyle> default_value(const EnvironmentValues&);
+};
+
+struct NumberInputStyleKey {
+    using Value = std::shared_ptr<const NumberInputStyle>;
+    static constexpr std::string_view name = "elg.number_input_style";
+    ELG_API static std::shared_ptr<const NumberInputStyle> default_value(const EnvironmentValues&);
+};
+
+struct ProgressStyleKey {
+    using Value = std::shared_ptr<const ProgressStyle>;
+    static constexpr std::string_view name = "elg.progress_style";
+    ELG_API static std::shared_ptr<const ProgressStyle> default_value(const EnvironmentValues&);
+};
+
+struct PickerStyleKey {
+    using Value = std::shared_ptr<const PickerStyle>;
+    static constexpr std::string_view name = "elg.picker_style";
+    ELG_API static std::shared_ptr<const PickerStyle> default_value(const EnvironmentValues&);
+};
+
+struct SliderStyleKey {
+    using Value = std::shared_ptr<const SliderStyle>;
+    static constexpr std::string_view name = "elg.slider_style";
+    ELG_API static std::shared_ptr<const SliderStyle> default_value(const EnvironmentValues&);
+};
+
+struct NavigationStackStyleKey {
+    using Value = std::shared_ptr<const NavigationStackStyle>;
+    static constexpr std::string_view name = "elg.navigation_stack_style";
+    ELG_API static std::shared_ptr<const NavigationStackStyle> default_value(const EnvironmentValues&);
+};
+
 // The hover delay for everything inside (on_hover handlers without their own, and controls).
 struct HoverDelayKey {
     using Value = HoverDelay;
     static constexpr std::string_view name = "elg.hover_delay";
     static HoverDelay default_value(const EnvironmentValues&) { return {}; }
+};
+
+struct PopoverStyleKey {
+    using Value = std::shared_ptr<const PopoverStyle>;
+    static constexpr std::string_view name = "elg.popover_style";
+    ELG_API static std::shared_ptr<const PopoverStyle> default_value(const EnvironmentValues&);
+};
+
+struct TooltipStyleKey {
+    using Value = std::shared_ptr<const TooltipStyle>;
+    static constexpr std::string_view name = "elg.tooltip_style";
+    ELG_API static std::shared_ptr<const TooltipStyle> default_value(const EnvironmentValues&);
+};
+
+struct MenuStyleKey {
+    using Value = std::shared_ptr<const MenuStyle>;
+    static constexpr std::string_view name = "elg.menu_style";
+    ELG_API static std::shared_ptr<const MenuStyle> default_value(const EnvironmentValues&);
+};
+
+struct RowStyleKey {
+    using Value = std::shared_ptr<const RowStyle>;
+    static constexpr std::string_view name = "elg.row_style";
+    ELG_API static std::shared_ptr<const RowStyle> default_value(const EnvironmentValues&);
+};
+
+// Inside a selectable row (View::selection): whether it's selected; false elsewhere.
+//   const auto selected = Environment<RowSelectedKey>();
+//   Text(mail.sender).foreground_style([=] { return selected() ? ThemeColor::on_accent : ThemeColor::secondary; })
+struct RowSelectedKey {
+    using Value = bool;
+    static constexpr std::string_view name = "elg.row_selected";
+    static bool default_value(const EnvironmentValues&) { return false; }
 };
 
 struct ButtonStyleKey {

@@ -88,8 +88,8 @@ TextField("What needs doing?", draft, {.on_submit = add})
 ## 5. A list
 
 The todos are a `State<std::vector<Todo>>`. `ForEach` makes one view per item, identified by a key
-so that items keep their views when the list changes. `List` puts the rows on a scrolling,
-separated surface, and builds only the rows that are visible:
+so that items keep their views when the list changes. A `LazyVStack` in a `ScrollView` stacks
+them, builds only the rows that are visible, and draws a line between them:
 
 ```cpp
 struct Todo {
@@ -102,7 +102,11 @@ struct Todo {
 
 const State<std::vector<Todo>> todos(std::vector<Todo>{{1, "Read the docs"}});
 
-List(ForEach(todos, &Todo::id, [=](const Todo& todo) { return TodoRow(todo.id, todo.title, todos); }))
+ScrollView(LazyVStack({.spacing = 0, .separators = StackSeparators{.inset = 16}},
+                      ForEach(todos, &Todo::id, [=](const Todo& todo) {
+                          return TodoRow(todo.id, todo.title, todos).padding(EdgeInsets::symmetric(16, 10));
+                      }))
+               .background(ThemeColor::surface, RoundedRectangle(10)))
 ```
 
 `If` shows one view or another depending on a condition:
@@ -110,7 +114,7 @@ List(ForEach(todos, &Todo::id, [=](const Todo& todo) { return TodoRow(todo.id, t
 ```cpp
 If([=] { return todos().empty(); },
    Text("Nothing left to do."),
-   List(ForEach(todos, &Todo::id, ...)))
+   ScrollView(LazyVStack(ForEach(todos, &Todo::id, ...))))
 ```
 
 ## 6. Changing the list, with animation

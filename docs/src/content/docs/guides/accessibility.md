@@ -14,9 +14,14 @@ Built-in views describe themselves:
 - `Text` is a label with its text.
 - `Button` is a button named by its label's text, and screen readers can press it.
 - `Toggle` is a check box or switch with its state, and can be toggled.
-- `Slider` and `Stepper` expose their value and range, and can be set.
-- `TextField` exposes and accepts its value; `SecureField` is marked as a password.
-- `ProgressView` and images have their roles.
+- `Slider` and `NumberInput` expose their value and range, and can be set, incremented and
+  decremented.
+- `TextField` and `TextArea` expose and accept their value; a secure `TextField` is marked as a password.
+- `Progress` (with its fraction, when it has one) and images have their roles. A `Separator`
+  reads as a separator, which isn't focusable; add `.accessibility_hidden()` to one that's only
+  decoration.
+- A stack with [`.selection`](../lists/#selection) is a list box, and its rows are options with
+  their selected state; screen readers can select them.
 - Keyboard focus is reported, so screen readers follow Tab.
 
 Accessibility is on by default (the `ELG_ACCESSIBILITY` CMake option). The tree is only built
@@ -46,19 +51,19 @@ Labels, values and hints can be reactive.
 
 ### Custom controls
 
-A view made clickable with a gesture is just a shape and some text to a screen reader. Give it a
-role, a label and an action:
+A view made into a control is just a shape and some text to a screen reader. `on_activate` makes
+it usable by pointer, keyboard (Tab to it, then Space or Enter) and screen reader alike; give it a
+role and a label too:
 
 ```cpp
 ZStack({.alignment = Alignment::leading}, Capsule().fill(track_color),
        Circle().fill(Color::white).frame(28, 28).padding(2).offset(knob_x, 0.f))
     .frame(52, 32)
-    .on_tap_gesture(toggle)
+    .on_activate(toggle)
     .accessibility_element()
     .accessibility_role(AccessibilityRole::toggle)
     .accessibility_label("Dark mode")
-    .accessibility_value([=] { return dark() ? "On" : "Off"; })
-    .accessibility_action(toggle);
+    .accessibility_value([=] { return dark() ? "On" : "Off"; });
 ```
 
 ### Rows

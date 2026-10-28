@@ -18,7 +18,7 @@ TEST_CASE("accessibility modifiers compose", "[accessibility]") {
     CHECK_NOTHROW(Image("sparkle").accessibility_hidden());
     CHECK_NOTHROW(Text("Settings").accessibility_role(AccessibilityRole::heading));
     CHECK_NOTHROW(HStack(Image("user"), Text("Ada"), Text("Online")).accessibility_element());
-    CHECK_NOTHROW(Circle().on_tap_gesture([] {}).accessibility_action([] {}).accessibility_label("Record"));
+    CHECK_NOTHROW(Circle().on_click([] {}).accessibility_action([] {}).accessibility_label("Record"));
 }
 
 TEST_CASE("accessibility actions need a function", "[accessibility]") {

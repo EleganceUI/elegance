@@ -95,7 +95,7 @@ ForEach(items, &Item::id, [](const Item& item) {
 | Transition | Effect |
 | --- | --- |
 | `Transition::opacity()` | Fades (the default) |
-| `Transition::scale(from)` | Grows from, and shrinks to, a fraction of its size |
+| `Transition::scale(from, anchor)` | Grows from, and shrinks to, a fraction of its size, around its middle or `anchor` (`Alignment::top`, ...) |
 | `Transition::offset(x, y)` | Moves in from an offset |
 | `Transition::move(edge)` | Slides in from beyond an edge of its frame |
 | `Transition::slide()` | In from the leading edge, out to the trailing edge |

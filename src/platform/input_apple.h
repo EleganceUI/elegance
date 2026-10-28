@@ -15,7 +15,7 @@
 namespace elg::detail::platform::apple {
 
 struct NativeInput {
-    enum class Kind { scroll, magnify, rotate, smart_magnify };
+    enum class Kind { scroll, magnify, rotate, two_finger_double_tap };
 
     Kind kind = Kind::scroll;
     void* ns_window = nullptr; // the NSWindow it happened in
@@ -37,6 +37,11 @@ struct NativeInput {
 // event (SDL then never sees it). Returns the monitor, for remove_input_monitor().
 void* install_input_monitor(std::function<bool(const NativeInput&)> handle);
 void remove_input_monitor(void* monitor);
+
+// Secure Event Input on or off (EnableSecureEventInput), for password fields: other apps can't
+// read the keys, and input methods other than Roman ones are off. It's system-wide, so it's on
+// only while the app's password field has the keyboard.
+void set_secure_event_input(bool on);
 
 } // namespace elg::detail::platform::apple
 

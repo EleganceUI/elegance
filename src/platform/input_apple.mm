@@ -5,6 +5,7 @@
 #include "platform/input_apple.h"
 
 #import <AppKit/AppKit.h>
+#include <Carbon/Carbon.h>
 
 namespace elg::detail::platform::apple {
 
@@ -80,7 +81,7 @@ void* install_input_monitor(std::function<bool(const NativeInput&)> handle) {
             input.amount = -event.rotation; // AppKit's is counterclockwise
             input.phase = phase(event.phase);
             break;
-        case NSEventTypeSmartMagnify: input.kind = NativeInput::Kind::smart_magnify; break;
+        case NSEventTypeSmartMagnify: input.kind = NativeInput::Kind::two_finger_double_tap; break;
         default: return event;
         }
         return handle(input) ? nil : event;
@@ -90,6 +91,14 @@ void* install_input_monitor(std::function<bool(const NativeInput&)> handle) {
 
 void remove_input_monitor(void* monitor) {
     [NSEvent removeMonitor:(__bridge_transfer id)monitor];
+}
+
+void set_secure_event_input(bool on) {
+    if (on) {
+        EnableSecureEventInput();
+    } else {
+        DisableSecureEventInput();
+    }
 }
 
 } // namespace elg::detail::platform::apple
