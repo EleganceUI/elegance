@@ -50,7 +50,6 @@ const headers = [
 	['audio.h', 'Sound effects and audio playback.'],
 	['video.h', 'Video playback.'],
 	['capture.h', 'Recording from the microphone and the camera.'],
-	['http.h', 'HTTP requests.'],
 	['desktop.h', 'File dialogs, notifications, and the tray icon.'],
 	['hot_reload.h', 'Hot reload and previews.'],
 	['error.h', 'The exceptions Elegance throws.'],
