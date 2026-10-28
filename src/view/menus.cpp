@@ -109,30 +109,26 @@ PopupMotion menu_motion(const EnvironmentValues& environment) {
     return untrack([&] { return environment.get<MenuStyleKey>(); })->motion();
 }
 
-constexpr float kItemRadius = 5;
-
-// A menu row's look: highlighted while hovered or focused (keyboard), dimmed when disabled.
+// A menu row's state: highlighted while hovered or focused (keyboard).
 struct RowState {
     State<bool> hovered{false};
     State<bool> focused{false};
 };
 
-View menu_row(View content, RowState state, Prop<bool> destructive, EnvironmentValues environment) {
-    const auto enabled = [environment] { return !environment.get<DisabledKey>(); };
-    return content.padding(EdgeInsets::symmetric(10, 6))
-        .frame({.max_width = infinity, .alignment = Alignment::leading})
-        .foreground_style([=](const EnvironmentValues& env) {
-            if (!enabled()) {
-                return env.color(ThemeColor::tertiary);
-            }
-            return destructive.get(env) ? env.color(ThemeColor::danger) : env.color(ThemeColor::primary);
-        })
-        .background(
-            [=](const EnvironmentValues& env) {
-                const bool lit = enabled() && (state.hovered() || state.focused());
-                return lit ? env.color(ThemeColor::outline).opacity(0.55f) : Color::clear;
-            },
-            RoundedRectangle(kItemRadius));
+// The row's look, from the MenuStyle of where the menu was opened.
+View menu_row(View title, View leading, View trailing, RowState state, Prop<bool> destructive,
+              const EnvironmentValues& environment) {
+    const MenuItemConfiguration configuration{
+        .title = std::move(title),
+        .leading = std::move(leading),
+        .trailing = std::move(trailing),
+        .is_highlighted = [state] { return state.hovered() || state.focused(); },
+        .is_enabled = [environment] { return !environment.get<DisabledKey>(); },
+        .is_destructive = [destructive = destructive.resolved_in(environment)] { return destructive.get(); },
+    };
+    const std::shared_ptr<const MenuStyle> style = untrack([&] { return environment.get<MenuStyleKey>(); });
+    const EnvironmentScope scope(environment);
+    return style->make_item(configuration);
 }
 
 // The row as a button: hovering focuses it (so keys continue from there) and closes submenus
@@ -171,27 +167,27 @@ public:
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const RowState state;
-        std::vector<View> parts;
+        std::vector<View> leading;
         if (options_.checked) {
             const Prop<bool> checked = *options_.checked;
-            parts.push_back(If(checked, icon(Icon::check, 13, Weight::bold), EmptyView()).frame(14, 14));
+            leading.push_back(If(checked, icon(Icon::check, 13, Weight::bold), EmptyView()).frame(14, 14));
         }
         if (options_.image) {
-            parts.push_back(Image(*options_.image).font(Font::system(15)).frame(16, 16));
+            leading.push_back(Image(*options_.image).font(Font::system(15)).frame(16, 16));
         }
-        parts.push_back(Text(title_));
-        parts.push_back(Spacer(24));
+        View trailing;
         const Prop<std::string>& shortcut = options_.shortcut;
         const View hint = Text(shortcut).font(Font::system(12)).foreground_style(ThemeColor::tertiary);
         if (const std::string* value = shortcut.static_value()) {
             if (!value->empty()) {
-                parts.push_back(hint);
+                trailing = hint;
             }
         } else {
-            parts.push_back(If([shortcut](const EnvironmentValues& env) { return !shortcut.get(env).empty(); }, hint));
+            trailing = If([shortcut](const EnvironmentValues& env) { return !shortcut.get(env).empty(); }, hint);
         }
-        const View row = menu_row(HStackLayout(VerticalAlignment::center, 8)(std::move(parts)), state,
-                                  options_.destructive, context.environment);
+        const View row = menu_row(Text(title_),
+                                  leading.empty() ? View() : HStackLayout(VerticalAlignment::center, 8)(std::move(leading)),
+                                  trailing, state, options_.destructive, context.environment);
         // Chosen: the menus close first, then the action runs (it may open a dialog or a menu).
         WindowServices* const services = context.services;
         auto action = [services, action = action_] {
@@ -230,8 +226,7 @@ public:
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const RowState state;
-        const View row = menu_row(HStack({.spacing = 8}, Text(title_), Spacer(24), icon(Icon::chevron_right, 12)), state,
-                                  false, context.environment);
+        const View row = menu_row(Text(title_), View(), icon(Icon::chevron_right, 12), state, false, context.environment);
         WindowServices* const services = context.services;
         const int level = services ? services->menu_level() + 1 : 0;
         auto element_slot = std::make_shared<Element*>(nullptr);
@@ -452,6 +447,33 @@ View DefaultMenuStyle::make_body(const MenuConfiguration& menu) const {
 
 View PlainMenuStyle::make_body(const MenuConfiguration& menu) const {
     return menu.items;
+}
+
+View MenuStyle::make_item(const MenuItemConfiguration& item) const {
+    std::vector<View> parts;
+    if (!item.leading.is_empty()) {
+        parts.push_back(item.leading);
+    }
+    parts.push_back(item.title);
+    parts.push_back(Spacer(24));
+    if (!item.trailing.is_empty()) {
+        parts.push_back(item.trailing);
+    }
+    return HStackLayout(VerticalAlignment::center, 8)(std::move(parts))
+        .padding(EdgeInsets::symmetric(10, 6))
+        .frame({.max_width = infinity, .alignment = Alignment::leading})
+        .foreground_style([=](const EnvironmentValues& env) {
+            if (!item.is_enabled()) {
+                return env.color(ThemeColor::tertiary);
+            }
+            return env.color(item.is_destructive() ? ThemeColor::danger : ThemeColor::primary);
+        })
+        .background(
+            [=](const EnvironmentValues& env) {
+                return item.is_enabled() && item.is_highlighted() ? env.color(ThemeColor::outline).opacity(0.55f)
+                                                                  : Color::clear;
+            },
+            RoundedRectangle(5));
 }
 
 View MenuButton(View label, std::function<View()> menu, MenuButtonOptions options) {

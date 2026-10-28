@@ -195,3 +195,29 @@ struct CardPopoverStyle : PopoverStyle {
 
 Root().popover_style(CardPopoverStyle{}).tooltip_style(PlainTooltipStyle{});
 ```
+
+A `MenuStyle` also draws each row, with `make_item`. It gets a `MenuItemConfiguration`: the
+row's `title`, `leading` (the check mark and icon) and `trailing` (the shortcut, or a submenu's
+chevron) as views, empty when the row has none, plus `is_highlighted` (hovered or focused with the
+keyboard), `is_enabled` and `is_destructive`. The row still handles clicks, keys and submenus. By
+default it's the parts in a line on a rounded highlight; override it for taller rows or another
+highlight:
+
+```cpp
+struct RoomyMenuStyle : MenuStyle {
+    View make_body(const MenuConfiguration& menu) const override {
+        return DefaultMenuStyle().make_body(menu);
+    }
+    View make_item(const MenuItemConfiguration& item) const override {
+        return HStack({.spacing = 10}, item.leading, item.title, Spacer(32), item.trailing)
+            .padding(EdgeInsets::symmetric(12, 9))
+            .frame({.max_width = infinity, .alignment = Alignment::leading})
+            .foreground_style([=](const EnvironmentValues& env) {
+                return env.color(item.is_highlighted() ? ThemeColor::on_accent : ThemeColor::primary);
+            })
+            .background([=](const EnvironmentValues& env) {
+                return item.is_highlighted() ? env.color(ThemeColor::accent) : Color::clear;
+            }, RoundedRectangle(6));
+    }
+};
+```

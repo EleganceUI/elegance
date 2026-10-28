@@ -494,11 +494,26 @@ struct MenuConfiguration {
     View items; // the rows, stacked; rows span the panel's width
 };
 
+// What a MenuStyle gets for one row (a MenuItem or a Submenu): its parts, laid out by the style,
+// and its state. The row itself handles clicks, keys and opening submenus.
+struct MenuItemConfiguration {
+    View title;
+    View leading;  // the check mark and icon; empty (View::is_empty()) when the item has neither
+    View trailing; // the shortcut hint, or a submenu's chevron; empty when there's neither
+    Signal<bool> is_highlighted; // hovered, or focused with the keyboard
+    Signal<bool> is_enabled;     // false inside .disabled(true)
+    Signal<bool> is_destructive; // MenuItemOptions::destructive
+};
+
 class ELG_API MenuStyle {
 public:
     virtual ~MenuStyle();
     // Called each time it opens, while Environment<K>() is available.
     virtual View make_body(const MenuConfiguration& menu) const = 0;
+    // A row: by default the parts in a line, padded, in the danger color if destructive, dimmed
+    // when disabled, on a rounded highlight. Called once per row, while Environment<K>() is
+    // available.
+    virtual View make_item(const MenuItemConfiguration& item) const;
     // How it opens and closes; at once by default.
     virtual PopupMotion motion() const { return PopupMotion::none(); }
 

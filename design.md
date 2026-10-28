@@ -1149,7 +1149,10 @@ Text(file.name)
   animated out. A popup window wraps its content the same way; closing marks it `closing` (no
   input) and the app destroys it once the exit finishes. `Transition::scale(from, anchor)`
   grows from a point of the frame.
-- Still to do: a parent boundary; menu row styling.
+- Menu rows are the MenuStyle's too: `make_item(MenuItemConfiguration{title, leading, trailing,
+  is_highlighted, is_enabled, is_destructive})`, by default the parts in a line on a rounded
+  highlight. The row keeps clicks, keys and submenus.
+- Still to do: a parent boundary.
 
 #### Behavior
 - **Opening:**
