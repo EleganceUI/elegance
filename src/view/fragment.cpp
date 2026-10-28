@@ -44,10 +44,16 @@ std::unique_ptr<Element> IfNode::lower(const LowerContext& context) const {
 }
 
 std::unique_ptr<Element> ForEachNode::lower(const LowerContext& context) const {
-    auto fragment = std::make_unique<FragmentElement>(context);
+    std::function<std::vector<ForEachItem>()> items = items_;
+    if (auto selection = claim_selection(context, context.spacer_axis.value_or(Axis::vertical))) {
+        items = selectable_items(std::move(items), std::move(selection));
+    }
+    LowerContext inner = context;
+    inner.selection.reset();
+    auto fragment = std::make_unique<FragmentElement>(std::move(inner));
     FragmentElement* const target = fragment.get();
     // Reading the items subscribes this effect; mounting the items doesn't (set_items untracks).
-    effect([target, items = items_] { target->set_items(items()); });
+    effect([target, items = std::move(items)] { target->set_items(items()); });
     return fragment;
 }
 

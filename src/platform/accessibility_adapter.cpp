@@ -48,6 +48,8 @@ accesskit_role role_of(AccessRole role) {
     case AccessRole::video: return ACCESSKIT_ROLE_VIDEO;
     case AccessRole::list: return ACCESSKIT_ROLE_LIST;
     case AccessRole::list_item: return ACCESSKIT_ROLE_LIST_ITEM;
+    case AccessRole::list_box: return ACCESSKIT_ROLE_LIST_BOX;
+    case AccessRole::list_box_option: return ACCESSKIT_ROLE_LIST_BOX_OPTION;
     case AccessRole::scroll_view: return ACCESSKIT_ROLE_SCROLL_VIEW;
     case AccessRole::tab: return ACCESSKIT_ROLE_TAB;
     case AccessRole::menu: return ACCESSKIT_ROLE_MENU;
@@ -146,6 +148,11 @@ struct AccessibilityAdapter::Impl {
             }
             if (info.selected) {
                 accesskit_node_set_selected(node, true);
+            } else if (info.role == AccessRole::list_box_option) {
+                accesskit_node_set_selected(node, false); // selectable, but not selected
+            }
+            if (info.multiselectable) {
+                accesskit_node_set_multiselectable(node);
             }
             if (info.numeric) {
                 accesskit_node_set_numeric_value(node, *info.numeric);

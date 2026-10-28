@@ -1901,7 +1901,7 @@ Separate render thread from day one (decided).
   - Removed because none of that could be changed, and its highlight lagged behind the pointer
     (`.on_hover`'s enter delay, restarted for each row scrolling past). Lists are now
     `ScrollView(LazyVStack({.separators = StackSeparators{...}}, ...))` with rows styled like any
-    view. Row selection is a later topic.
+    view. Row selection came later, as `.selection` on stacks (below).
 - [x] `ScrollPosition`: `scroll_to_top()`, `scroll_to_end()` and `scroll_to(id)` (a lazy item's
   key), passed as `ScrollViewOptions::position`.
   - Requests are applied in the scroll view's next layout.
@@ -1917,7 +1917,24 @@ Separate render thread from day one (decided).
   - Insertion and removal transitions for lazy items.
   - Keep the scroll anchor stable when estimates above the viewport are corrected.
   - Keep a focused item built while it's scrolled away.
-  - List selection (`selection: Binding`), sections and headers, swipe actions.
+  - Sections and headers, swipe actions.
+- [x] Row selection: `.selection(Binding<std::optional<K>> | Binding<std::set<K>>, {.on_activate})` on a
+  stack over a ForEach (VStack, HStack, LazyVStack, LazyHStack; or anything with one inside).
+  - The ForEach items are wrapped in rows (`selectable_items`) when the stack lowers them; the
+    first stack over a ForEach inside takes the selection (`claim_selection`), so nested stacks and
+    a stack's other children (a header) aren't rows.
+  - Rows select on press: Shift for ranges from the anchor, Ctrl/Cmd to toggle, a double click
+    activates. Controls in a row take their own clicks first. Rows hit anywhere in their frame.
+  - The element around the stack is one focus stop with no ring: arrows along the stack's axis,
+    Home/End, Shift to extend, Ctrl/Cmd+A, Enter to activate. It scrolls the row into view; a lazy
+    stack's unbuilt row is aimed at by its estimated offset, then at the row once built.
+  - `RowStyle::make_body(RowConfiguration{content, axis, is_selected, is_hovered, is_focused,
+    is_enabled})`; `HighlightRowStyle` (default) and `PlainRowStyle`. `RowSelectedKey` in the
+    environment inside a row.
+  - Accessibility: a list box (multiselectable for a set) of options with their selected state;
+    an option's click selects it.
+  - Follow-ups: keep a lazy stack's focused row built while scrolled away; type-to-select; Page
+    Up/Down; a drag to select a range; Ctrl+arrows moving the focus without selecting.
   - `LazyVGrid` / `LazyHGrid`.
 - [ ] Grid, presentations (sheet/popover)
 - [x] Popup presentation layer (§13.1):

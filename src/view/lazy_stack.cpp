@@ -360,13 +360,19 @@ public:
         if (separators_) {
             separators = Separators{separators_->inset, separators_->thickness};
         }
-        auto element = std::make_unique<LazyStackElement>(axis_, alignment_, spacing_, context, separators);
+        std::function<std::vector<ForEachItem>()> items = items_;
+        if (auto selection = claim_selection(context, axis_)) {
+            items = selectable_items(std::move(items), std::move(selection));
+        }
+        LowerContext inner = context;
+        inner.selection.reset();
+        auto element = std::make_unique<LazyStackElement>(axis_, alignment_, spacing_, std::move(inner), separators);
         LazyStackElement* const target = element.get();
         if (separators_) {
             detail::bind(separators_->color, context, [target](Color color) { target->set_separator_color(color); });
         }
         // Reading the items subscribes this effect; building items happens in layout.
-        effect([target, items = items_] { target->set_items(items()); });
+        effect([target, items = std::move(items)] { target->set_items(items()); });
         return element;
     }
 

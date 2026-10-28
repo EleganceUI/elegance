@@ -20,6 +20,8 @@ Built-in views describe themselves:
 - `Progress` (with its fraction, when it has one) and images have their roles. A `Separator`
   reads as a separator, which isn't focusable; add `.accessibility_hidden()` to one that's only
   decoration.
+- A stack with [`.selection`](../lists/#selection) is a list box, and its rows are options with
+  their selected state; screen readers can select them.
 - Keyboard focus is reported, so screen readers follow Tab.
 
 Accessibility is on by default (the `ELG_ACCESSIBILITY` CMake option). The tree is only built

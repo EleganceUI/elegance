@@ -80,6 +80,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         view/progress.cpp
         view/separator.cpp
         view/scroll.cpp
+        view/selection.cpp
         view/shapes.cpp
         view/split_view.cpp
         view/stack_layout.cpp

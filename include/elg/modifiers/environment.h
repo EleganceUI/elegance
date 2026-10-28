@@ -50,6 +50,7 @@ using TooltipStyleModifier = EnvironmentKeyModifier<TooltipStyleKey>;
 using MenuStyleModifier = EnvironmentKeyModifier<MenuStyleKey>;
 using NavigationStackStyleModifier = EnvironmentKeyModifier<NavigationStackStyleKey>;
 using TextFieldStyleModifier = EnvironmentKeyModifier<TextFieldStyleKey>;
+using RowStyleModifier = EnvironmentKeyModifier<RowStyleKey>;
 
 } // namespace elg
 

@@ -610,6 +610,10 @@ View View::menu_style_impl(std::shared_ptr<const MenuStyle> style) const {
     return modifier(MenuStyleModifier(std::move(style)));
 }
 
+View View::row_style_impl(std::shared_ptr<const RowStyle> style) const {
+    return modifier(RowStyleModifier(std::move(style)));
+}
+
 View View::navigation_stack_style_impl(std::shared_ptr<const NavigationStackStyle> style) const {
     return modifier(NavigationStackStyleModifier(std::move(style)));
 }
@@ -994,10 +998,19 @@ std::unique_ptr<Element> ModifiedNode::lower(const LowerContext& context) const 
 std::unique_ptr<Element> LayoutNode::lower(const LowerContext& context) const {
     LowerContext child_context = context;
     child_context.spacer_axis = layout_->spacer_axis();
+    // A selection around a stack over a ForEach is the ForEach's; its other children (a header)
+    // aren't rows, and nothing inside them can take it.
+    const auto is_for_each = [](const View& child) {
+        return dynamic_cast<const ForEachNode*>(ViewAccess::node(child).get()) != nullptr;
+    };
+    LowerContext other_context = child_context;
+    if (context.selection && std::ranges::any_of(children_, is_for_each)) {
+        other_context.selection.reset();
+    }
     std::vector<std::unique_ptr<Element>> children;
     children.reserve(children_.size());
     for (const View& child : children_) {
-        children.push_back(detail::lower(child, child_context));
+        children.push_back(detail::lower(child, is_for_each(child) ? child_context : other_context));
     }
     return std::make_unique<LayoutElement>(layout_, std::move(children));
 }

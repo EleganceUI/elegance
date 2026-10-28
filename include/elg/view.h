@@ -14,17 +14,24 @@
 #include <elg/prop.h>
 
 #include <concepts>
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace elg {
+
+// Identifies a ForEach item across updates.
+using ItemKey = std::variant<std::int64_t, std::string>;
 
 namespace detail {
 class ViewNode;
@@ -52,6 +59,38 @@ std::function<bool()> change_watcher(Source source) {
         return changed;
     };
 }
+
+template <class K>
+ItemKey to_item_key(const K& key) {
+    if constexpr (std::is_integral_v<K> || std::is_enum_v<K>) {
+        return static_cast<std::int64_t>(key);
+    } else {
+        static_assert(std::is_convertible_v<const K&, std::string_view>,
+                      "ForEach keys must be integers, enums, or strings");
+        return std::string(std::string_view(key));
+    }
+}
+
+// The key a ForEach made with to_item_key, back as the app's type.
+template <class K>
+K from_item_key(const ItemKey& key) {
+    if constexpr (std::is_integral_v<K> || std::is_enum_v<K>) {
+        return static_cast<K>(std::get<std::int64_t>(key));
+    } else {
+        static_assert(std::is_constructible_v<K, const std::string&>,
+                      "selection keys must be integers, enums, or strings (std::string, not std::string_view)");
+        return K(std::get<std::string>(key));
+    }
+}
+
+// View::selection, type-erased for the library.
+struct SelectionModel {
+    bool multiple = false;
+    std::function<std::vector<ItemKey>()> get;     // the selected keys; a tracked read
+    std::function<bool(const ItemKey&)> contains;  // a tracked read
+    std::function<void(std::vector<ItemKey>)> set; // a single selection takes the first, or none
+    std::function<void(const ItemKey&)> activate;  // SelectionOptions::on_activate; may be empty
+};
 } // namespace detail
 
 class Animation;
@@ -67,6 +106,7 @@ class TooltipStyle;
 class MenuStyle;
 class PickerStyle;
 class SliderStyle;
+class RowStyle;
 enum class Weight;
 template <class T>
 class Binding;
@@ -131,6 +171,13 @@ struct ProposedSize {
     }
 
     friend constexpr bool operator==(const ProposedSize&, const ProposedSize&) = default;
+};
+
+// What View::selection does besides selecting.
+template <class K>
+struct SelectionOptions {
+    // Enter, or a double click on a row: opens what the row stands for.
+    std::function<void(const K&)> on_activate;
 };
 
 // What a view is to screen readers, when the automatic choice isn't right (accessibility_role()).
@@ -667,6 +714,72 @@ public:
     // compositions in progress. Keys still go to on_key. Return true if handled.
     ELG_API View on_text_input(std::function<bool(const TextInputEvent&)> action) const;
 
+    // --- Selection ---
+
+    // Makes the rows of a stack over a ForEach selectable, by their ForEach keys (the key type
+    // here is the ForEach's). Put it on the VStack, HStack, LazyVStack or LazyHStack itself; its
+    // other children (a header) aren't rows. Each row is drawn by the environment's RowStyle
+    // (row_style()).
+    //   const State<std::optional<int>> open;
+    //   ScrollView(LazyVStack(ForEach(mails, &Mail::id, MailRow))
+    //                  .selection(open.binding(), {.on_activate = [=](int id) { show(id); }}))
+    // - A click selects a row. Clicks a control in the row takes (a Button) don't.
+    // - The stack is one Tab stop. Up/Down (Left/Right in an HStack) move the selection, Home/End
+    //   go to the ends, and Enter calls on_activate, as does a double click. The selected row
+    //   scrolls into view, in a lazy stack too.
+    // - Screen readers see a list box whose rows are its options.
+    // With a std::set, more than one: Ctrl+click (Cmd on macOS) adds or removes a row, Shift+click
+    // and Shift+arrows select the range from where it started, and Ctrl+A (Cmd+A) selects all.
+    template <class K>
+    View selection(Binding<std::optional<K>> selection, SelectionOptions<K> options = {}) const {
+        detail::SelectionModel model;
+        model.get = [selection] {
+            const std::optional<K> key = selection.get();
+            return key ? std::vector<ItemKey>{detail::to_item_key(*key)} : std::vector<ItemKey>{};
+        };
+        model.contains = [selection](const ItemKey& key) {
+            const std::optional<K> selected = selection.get();
+            return selected && detail::to_item_key(*selected) == key;
+        };
+        model.set = [selection](std::vector<ItemKey> keys) {
+            selection.set(keys.empty() ? std::nullopt : std::optional<K>(detail::from_item_key<K>(keys.front())));
+        };
+        if (options.on_activate) {
+            model.activate = [activate = std::move(options.on_activate)](const ItemKey& key) {
+                activate(detail::from_item_key<K>(key));
+            };
+        }
+        return selection_impl(std::move(model));
+    }
+    template <class K>
+    View selection(Binding<std::set<K>> selection, SelectionOptions<K> options = {}) const {
+        detail::SelectionModel model;
+        model.multiple = true;
+        model.get = [selection] {
+            std::vector<ItemKey> keys;
+            for (const K& key : selection.get()) {
+                keys.push_back(detail::to_item_key(key));
+            }
+            return keys;
+        };
+        model.contains = [selection](const ItemKey& key) {
+            return selection.get().contains(detail::from_item_key<K>(key));
+        };
+        model.set = [selection](std::vector<ItemKey> keys) {
+            std::set<K> selected;
+            for (const ItemKey& key : keys) {
+                selected.insert(detail::from_item_key<K>(key));
+            }
+            selection.set(std::move(selected));
+        };
+        if (options.on_activate) {
+            model.activate = [activate = std::move(options.on_activate)](const ItemKey& key) {
+                activate(detail::from_item_key<K>(key));
+            };
+        }
+        return selection_impl(std::move(model));
+    }
+
     // --- Environment (elg/modifiers/environment.h): inherited by everything inside. ---
 
     // The weight of the font inside, keeping its size and family (text, and icons of sets with
@@ -687,6 +800,12 @@ public:
         requires std::derived_from<Style, ButtonStyle>
     View button_style(Style style) const {
         return button_style_impl(std::make_shared<const Style>(std::move(style)));
+    }
+    // The style of the selectable rows inside (selection(), elg/styles.h).
+    template <class Style>
+        requires std::derived_from<Style, RowStyle>
+    View row_style(Style style) const {
+        return row_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     // The style of every Picker inside (elg/styles.h).
     template <class Style>
@@ -804,6 +923,8 @@ private:
     ELG_API View menu_style_impl(std::shared_ptr<const MenuStyle> style) const;
     ELG_API View navigation_stack_style_impl(std::shared_ptr<const NavigationStackStyle> style) const;
     ELG_API View text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const;
+    ELG_API View row_style_impl(std::shared_ptr<const RowStyle> style) const;
+    ELG_API View selection_impl(detail::SelectionModel model) const;
     ELG_API View animation_impl(const Animation& animation, std::function<bool()> changed) const;
     ELG_API static View deferred(std::function<View()> body);
 

@@ -30,6 +30,8 @@
 
 namespace elg::detail {
 
+struct SelectionController; // selection.cpp
+
 struct LowerContext {
     TextSystem* text = nullptr;
     // Set to true to request a new frame for the window being built (reactive updates).
@@ -47,6 +49,9 @@ struct LowerContext {
     FocusManager* focus = nullptr;
     // The window's text input, clipboard, cursor, and timed redraws.
     WindowServices* services = nullptr;
+    // View::selection around the views being built, for the first stack over a ForEach inside
+    // (claim_selection).
+    std::shared_ptr<SelectionController> selection;
 
     // The context for a view that isn't a direct child of the current layout.
     LowerContext nested() const {
@@ -112,6 +117,13 @@ void bind(const Prop<T>& prop, const LowerContext& context, Apply apply) {
         }
     });
 }
+
+// For a ForEach in a stack along `axis`: the selection around it, unless another stack took it
+// first. Takes it.
+std::shared_ptr<SelectionController> claim_selection(const LowerContext& context, Axis axis);
+// The ForEach's items as selectable rows (View::selection).
+std::function<std::vector<ForEachItem>()> selectable_items(std::function<std::vector<ForEachItem>()> items,
+                                                           std::shared_ptr<SelectionController> selection);
 
 // Joins `element` to the window's focus, drawing the ring in the tint.
 void join_focus(Element& element, const LowerContext& context);

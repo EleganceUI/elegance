@@ -22,6 +22,7 @@ one modifier styles every control inside a view.
 | `popover` | `DefaultPopoverStyle` (default), `PlainPopoverStyle` |
 | `tooltip` | `DefaultTooltipStyle` (default), `PlainTooltipStyle` |
 | `Menu` | `DefaultMenuStyle` (default), `PlainMenuStyle` |
+| Selectable rows (`.selection`) | `HighlightRowStyle` (default), `PlainRowStyle` |
 
 ```cpp
 Form().button_style(BorderedButtonStyle{});
@@ -155,6 +156,35 @@ struct BarSliderStyle : SliderStyle {
 ```
 
 A new value moves the parts through layout, so a change made with an animation eases them.
+
+## Row styles
+
+A `RowStyle` draws each row of a stack with [`.selection`](../lists/#selection). It gets a
+`RowConfiguration`: the row's `content` (the `ForEach` item's view), the stack's `axis` (rows
+usually span across it), and `is_selected`, `is_hovered`, `is_focused` (the row the keys act on,
+while the stack has keyboard focus) and `is_enabled`. The row handles clicks, keys and screen
+readers itself. A bar at the leading edge instead of a highlight:
+
+```cpp
+struct BarRowStyle : RowStyle {
+    View make_body(const RowConfiguration& row) const override {
+        return HStack({.spacing = 8},
+                      Rectangle()
+                          .fill(ThemeColor::accent)
+                          .frame({.width = 3})
+                          .opacity([=] { return row.is_selected() ? 1.f : 0.f; }),
+                      row.content, Spacer())
+            .padding(EdgeInsets::symmetric(0, 6))
+            .background([=](const EnvironmentValues& env) {
+                return row.is_hovered() ? env.color(ThemeColor::outline).opacity(0.4f) : Color::clear;
+            });
+    }
+};
+
+ScrollView(LazyVStack({.spacing = 0}, ForEach(notes, &Note::id, NoteRow))
+               .selection(current.binding())
+               .row_style(BarRowStyle{}));
+```
 
 ## Text field styles
 

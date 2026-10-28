@@ -55,6 +55,8 @@ enum class AccessRole {
     video,
     list,
     list_item,
+    list_box,        // a stack with selectable rows (View::selection)
+    list_box_option, // one of its rows
     scroll_view,
     tab,
     menu,
@@ -78,6 +80,7 @@ struct AccessibilityInfo {
     std::optional<ToggleState> toggled; // switches and check boxes
     std::optional<bool> expanded;
     bool selected = false;
+    bool multiselectable = false; // list boxes
     std::optional<double> numeric; // sliders, steppers, progress
     std::optional<double> minimum;
     std::optional<double> maximum;

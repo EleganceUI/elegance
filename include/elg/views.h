@@ -284,9 +284,6 @@ ELG_API View Checkbox(Binding<bool> is_checked, CheckboxOptions options = {});
 // an empty branch takes no space.
 ELG_API View If(Prop<bool> condition, View then_view, View else_view = View());
 
-// Identifies a ForEach item across updates.
-using ItemKey = std::variant<std::int64_t, std::string>;
-
 namespace detail {
 
 // One ForEach item, type-erased for the library.
@@ -298,17 +295,6 @@ struct ForEachItem {
 };
 
 ELG_API View make_for_each(std::function<std::vector<ForEachItem>()> items);
-
-template <class K>
-ItemKey to_item_key(const K& key) {
-    if constexpr (std::is_integral_v<K> || std::is_enum_v<K>) {
-        return static_cast<std::int64_t>(key);
-    } else {
-        static_assert(std::is_convertible_v<const K&, std::string_view>,
-                      "ForEach keys must be integers, enums, or strings");
-        return std::string(std::string_view(key));
-    }
-}
 
 template <class Source>
 struct ItemsOf {

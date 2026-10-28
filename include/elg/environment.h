@@ -48,6 +48,7 @@ class TooltipStyle;
 class MenuStyle;
 class PickerStyle;
 class SliderStyle;
+class RowStyle;
 
 class EnvironmentValues {
 public:
@@ -210,6 +211,21 @@ struct MenuStyleKey {
     using Value = std::shared_ptr<const MenuStyle>;
     static constexpr std::string_view name = "elg.menu_style";
     ELG_API static std::shared_ptr<const MenuStyle> default_value(const EnvironmentValues&);
+};
+
+struct RowStyleKey {
+    using Value = std::shared_ptr<const RowStyle>;
+    static constexpr std::string_view name = "elg.row_style";
+    ELG_API static std::shared_ptr<const RowStyle> default_value(const EnvironmentValues&);
+};
+
+// Inside a selectable row (View::selection): whether it's selected; false elsewhere.
+//   const auto selected = Environment<RowSelectedKey>();
+//   Text(mail.sender).foreground_style([=] { return selected() ? ThemeColor::on_accent : ThemeColor::secondary; })
+struct RowSelectedKey {
+    using Value = bool;
+    static constexpr std::string_view name = "elg.row_selected";
+    static bool default_value(const EnvironmentValues&) { return false; }
 };
 
 struct ButtonStyleKey {

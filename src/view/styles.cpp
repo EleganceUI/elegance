@@ -109,6 +109,42 @@ std::shared_ptr<const MenuStyle> MenuStyleKey::default_value(const EnvironmentVa
 
 MenuStyle::~MenuStyle() = default;
 
+std::shared_ptr<const RowStyle> RowStyleKey::default_value(const EnvironmentValues&) {
+    static const auto style = std::make_shared<const HighlightRowStyle>();
+    return style;
+}
+
+RowStyle::~RowStyle() = default;
+
+View HighlightRowStyle::make_body(const RowConfiguration& row) const {
+    const HighlightRowStyleOptions options = options_;
+    const FlexibleFrameOptions span = row.axis == Axis::vertical
+                                          ? FlexibleFrameOptions{.max_width = infinity, .alignment = Alignment::leading}
+                                          : FlexibleFrameOptions{.max_height = infinity, .alignment = Alignment::top};
+    const auto highlight = [=](const EnvironmentValues& env) {
+        if (row.is_selected()) {
+            const Color color = options.selected ? options.selected->get(env) : env.get<TintKey>();
+            return row.is_enabled() ? color : color.opacity(0.5f);
+        }
+        return row.is_hovered() && row.is_enabled() ? options.hovered.get(env).opacity(0.5f) : Color::clear;
+    };
+    const auto ring = [=](const EnvironmentValues& env) {
+        return row.is_focused() && !row.is_selected() ? env.get<TintKey>() : Color::clear;
+    };
+    // Unselected rows keep the foreground around them.
+    return row.content.padding(options.padding)
+        .frame(span)
+        .foreground_style([=](const EnvironmentValues& env) {
+            return row.is_selected() ? options.on_selected.get(env) : env.get<ForegroundKey>();
+        })
+        .background(highlight, RoundedRectangle(options.corner_radius))
+        .overlay(RoundedRectangle(options.corner_radius).stroke_border(ring, 2));
+}
+
+View PlainRowStyle::make_body(const RowConfiguration& row) const {
+    return row.content;
+}
+
 std::shared_ptr<const TextFieldStyle> TextFieldStyleKey::default_value(const EnvironmentValues&) {
     static const auto style = std::make_shared<const RoundedBorderTextFieldStyle>();
     return style;

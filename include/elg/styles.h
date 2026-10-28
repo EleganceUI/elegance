@@ -386,6 +386,58 @@ private:
     KnobSliderStyleOptions options_;
 };
 
+// What a RowStyle gets for one selectable row (View::selection): the ForEach item's view, and its
+// state. The row itself handles clicks, keys and accessibility.
+struct RowConfiguration {
+    View content;
+    Axis axis; // the stack's: rows usually span across it
+    Signal<bool> is_selected;
+    Signal<bool> is_hovered;
+    Signal<bool> is_focused; // the row keys act on, while the stack has keyboard focus (Tab)
+    Signal<bool> is_enabled; // false inside .disabled(true)
+};
+
+class ELG_API RowStyle {
+public:
+    virtual ~RowStyle();
+    // Called once per row when it's built, while Environment<K>() is available.
+    virtual View make_body(const RowConfiguration& row) const = 0;
+
+protected:
+    // Styles are copied as their concrete type, never as a RowStyle.
+    RowStyle() = default;
+    RowStyle(const RowStyle&) = default;
+    RowStyle(RowStyle&&) = default;
+    RowStyle& operator=(const RowStyle&) = default;
+    RowStyle& operator=(RowStyle&&) = default;
+};
+
+struct HighlightRowStyleOptions {
+    std::optional<Prop<Color>> selected;       // the selected rows' highlight; nullopt: the tint
+    Prop<Color> on_selected = ThemeColor::on_accent; // their text and icons
+    Prop<Color> hovered = ThemeColor::outline;       // the hovered row's highlight, at half opacity
+    float corner_radius = 6;
+    EdgeInsets padding = EdgeInsets::symmetric(8, 4); // around the content, inside the highlight
+};
+
+// The content, padded, on a rounded highlight: the tint while selected (with the text and icons
+// in on_accent), faint while hovered, outlined in the tint while focused. The default.
+//   list.row_style(HighlightRowStyle{{.corner_radius = 0, .padding = EdgeInsets::symmetric(16, 10)}})
+class ELG_API HighlightRowStyle final : public RowStyle {
+public:
+    explicit HighlightRowStyle(HighlightRowStyleOptions options = {}) : options_(std::move(options)) {}
+    View make_body(const RowConfiguration& row) const override;
+
+private:
+    HighlightRowStyleOptions options_;
+};
+
+// Just the content, for rows that show their state themselves (Environment<RowSelectedKey>()).
+class ELG_API PlainRowStyle final : public RowStyle {
+public:
+    View make_body(const RowConfiguration& row) const override;
+};
+
 // What a TextFieldStyle gets: the editable text (put it where the text goes) and its state.
 struct TextFieldConfiguration {
     View field;
