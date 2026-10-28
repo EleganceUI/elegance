@@ -230,6 +230,10 @@ enum class FloatingBoundary {
     screen,
     // Drawn inside the app's window, above its content, and kept within it.
     window,
+    // Drawn inside the nearest view around it marked .floating_container() (else the window):
+    // above that view's content, under views outside it, kept within it and clipped to it, and
+    // moving with it as it scrolls. Esc and outside clicks anywhere in the window still close it.
+    container,
 };
 
 // What closes floating content (and sets its binding back to false).
@@ -688,6 +692,10 @@ public:
     //                      .boundary = FloatingBoundary::window})
     ELG_API View floating(Binding<bool> is_presented, std::function<View()> content,
                           FloatingOptions options = {}) const;
+    // Marks the view as where FloatingBoundary::container content inside it stays: a map whose
+    // callouts mustn't cover the toolbar beside it, a card in a scroll view.
+    //   MapView(pins).floating_container()
+    ELG_API View floating_container() const;
     // A panel of `content` beside the view, shown while `is_presented` is true. Clicking outside
     // it, Esc, or switching apps closes it and sets `is_presented` back to false. The builder runs
     // each time it opens; the content can be anything, e.g. a small form.

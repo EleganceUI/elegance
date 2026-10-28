@@ -41,6 +41,8 @@ std::uint64_t next_floating_token() noexcept;
 // Every window's root: its content, and above it the floating content that stays in the window
 // (FloatingBoundary::window). It also closes the window's floating content on Esc (any boundary),
 // and while content that closes on outside clicks is open, takes presses outside it.
+// `.floating_container()` makes one too (`container`): it draws FloatingBoundary::container
+// content inside it, clipped to it, and leaves Esc and outside clicks to the window's layer.
 class FloatingLayerElement final : public Element, private EventHandler {
 public:
     struct Panel {
@@ -53,13 +55,16 @@ public:
         std::optional<PopupMotion> motion; // how it comes and goes (element is then a transition)
         std::unique_ptr<Element> element; // null for content hosted elsewhere (a popup window)
         std::unique_ptr<Scope> scope;     // the content's effects; destroyed first
+        // In the window's layer, for content a container's layer draws: what it closes is there.
+        Element* hosted = nullptr;
     };
 
-    explicit FloatingLayerElement(std::unique_ptr<Element> content);
+    explicit FloatingLayerElement(std::unique_ptr<Element> content, bool container = false);
     ~FloatingLayerElement() override;
 
-    // The layer `element` is in, if any.
-    static FloatingLayerElement* of(Element& element);
+    // The layer floating content with `boundary` goes in, for a view at `element`: the nearest
+    // container's for FloatingBoundary::container (else the window's), the window's otherwise.
+    static FloatingLayerElement* of(Element& element, FloatingBoundary boundary);
 
     // Shows `panel`, animating it in by its motion.
     void add(Panel panel);
@@ -87,9 +92,13 @@ private:
     Panel* top(bool escape);
     void dismiss(Panel& panel);
 
+    // Container layers: the window's layer above it, if it's in the tree.
+    FloatingLayerElement* window_layer() const;
+
     std::unique_ptr<Element> content_;
     std::vector<Panel> panels_;  // oldest first
     std::vector<Panel> exiting_; // animating out
+    bool container_ = false;
     bool closing_ = false;
 };
 

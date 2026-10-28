@@ -351,3 +351,128 @@ TEST_CASE("a popover takes its motion from its style unless its options give one
     window.root->for_each_child([&](detail::Element& child) { transitions += child.as_transition() ? 1 : 0; });
     CHECK(transitions == 1);
 }
+
+TEST_CASE("a press on in-window floating content that nothing in it takes keeps it open", "[floating]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    const State<bool> shown(true);
+    Window window(Rectangle()
+                      .fill(Color::black)
+                      .frame(50, 20)
+                      .floating(shown.binding(), [] { return Rectangle().fill(Color::black).frame(80, 40); },
+                                {.boundary = FloatingBoundary::window})
+                      .offset(100, 100));
+    window.layout();
+    window.click({110, 130}); // the content: 100..180 x 120..160
+    CHECK(shown.peek());
+    window.click({300, 250});
+    CHECK_FALSE(shown.peek());
+}
+
+namespace {
+
+// A 200 x 300 container on the left with a 50 x 20 anchor at (140, 100) inside it, and a
+// 200 x 300 sibling on the right. The content is 80 x 40, to the anchor's trailing side.
+struct ContainerScene {
+    State<bool> shown{true};
+    int content_clicks = 0;
+    int sibling_clicks = 0;
+    int container_clicks = 0;
+
+    View view(bool marked) {
+        View left = ZStack({.alignment = Alignment::top_leading},
+                           Rectangle().fill(Color::white).frame(200, 300).on_click([this] { ++container_clicks; }),
+                           Rectangle()
+                               .fill(Color::black)
+                               .frame(50, 20)
+                               .floating(shown.binding(),
+                                         [this] {
+                                             return Rectangle().fill(Color::black).frame(80, 40).on_click(
+                                                 [this] { ++content_clicks; });
+                                         },
+                                         {.placement = {.edge = FloatingEdge::trailing},
+                                          .boundary = FloatingBoundary::container})
+                               .offset(140, 100));
+        if (marked) {
+            left = left.floating_container();
+        }
+        return HStack({.spacing = 0}, left,
+                      Rectangle().fill(Color::white).frame(200, 300).on_click([this] { ++sibling_clicks; }));
+    }
+};
+
+} // namespace
+
+TEST_CASE("container-bound floating content stays inside its container", "[floating][container]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    ContainerScene scene;
+    Window window(scene.view(true));
+    window.layout();
+    // No room beside the anchor in the container (190..270): kept inside it, at 120..200.
+    window.click({125, 110});
+    CHECK(scene.content_clicks == 1);
+    CHECK(scene.shown.peek());
+    window.click({230, 110}); // where it would have gone: the sibling's, and outside it
+    CHECK_FALSE(scene.shown.peek());
+    CHECK(scene.sibling_clicks == 0); // the press only closed it
+    window.click({230, 110});
+    CHECK(scene.sibling_clicks == 1);
+}
+
+TEST_CASE("without a container, container-bound content uses the window", "[floating][container]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    ContainerScene scene;
+    Window window(scene.view(false));
+    window.layout();
+    window.click({230, 110}); // beside the anchor, over the sibling
+    CHECK(scene.content_clicks == 1);
+    CHECK(scene.sibling_clicks == 0);
+}
+
+TEST_CASE("presses and Esc close container-bound content from anywhere in the window", "[floating][container]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    ContainerScene scene;
+    Window window(scene.view(true));
+    window.layout();
+    window.click({20, 250}); // in the container, outside the content
+    CHECK_FALSE(scene.shown.peek());
+    CHECK(scene.container_clicks == 0);
+
+    scene.shown = true;
+    window.layout();
+    window.events->key({.kind = KeyEvent::Kind::down, .key = Key::escape});
+    window.layout();
+    CHECK_FALSE(scene.shown.peek());
+}
+
+TEST_CASE("container-bound content is drawn clipped to its container", "[floating][container]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    ContainerScene scene;
+    Window window(scene.view(true));
+    window.layout();
+    detail::DisplayList list;
+    window.root->paint(list);
+    bool clipped = false;
+    for (const auto& command : list.commands) {
+        if (const auto* clip = std::get_if<detail::PushClipCommand>(&command)) {
+            clipped |= clip->rect.x == 0 && clip->rect.width == 200 && clip->rect.height == 300;
+        }
+    }
+    CHECK(clipped);
+}
+
+TEST_CASE("container-bound content moves with its container", "[floating][container]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    ContainerScene scene;
+    Window window(scene.view(true).offset(0, 50));
+    window.layout();
+    window.click({125, 160}); // 50 lower: 120..200 x 150..190
+    CHECK(scene.content_clicks == 1);
+    window.click({125, 110}); // where it was: in the container, outside it
+    CHECK_FALSE(scene.shown.peek());
+}

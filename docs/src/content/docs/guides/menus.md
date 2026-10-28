@@ -103,12 +103,29 @@ Avatar(user).floating(card_shown.binding(), [=] { return ProfileCard(user); },
 - `boundary`: `screen` (the default) puts it in a popup window of its own, so it can extend past
   the app's window, kept on the display. `window` draws it inside the app's window, above the
   content, and keeps it there. On Wayland the compositor can move or limit popup windows, so use
-  `window` where exact placement matters.
+  `window` where exact placement matters. `container` keeps it to part of the window (below).
 - `dismiss`: by default a press outside it or Esc closes it (and sets the binding back to false).
   While it's open, presses elsewhere only close it. With `.outside_click = false` the rest of the
   window stays usable, and it closes when the binding goes false, or on Esc.
 
 Its size follows its content as that changes, and it follows the view when the view moves.
+
+### Keeping it to part of the window
+
+`FloatingBoundary::container` keeps floating content inside the nearest view around it marked
+`.floating_container()`: a map whose callouts mustn't cover the toolbar beside it, or a card in a
+scroll view whose hint should scroll and clip with it.
+
+```cpp
+HStack(MapView(pins)                    // pins show callouts with .boundary = FloatingBoundary::container
+           .floating_container(),
+       Inspector());
+```
+
+The content is drawn above the container's content but under views outside it, placed (and
+flipped) within the container's bounds, clipped to it, and moved with it when it scrolls. Esc and
+presses outside it still close it from anywhere in the window. Without a marked container around
+it, it behaves like `window`. `popover` and `tooltip` take the same boundary.
 
 ### Opening and closing
 

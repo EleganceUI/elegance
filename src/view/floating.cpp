@@ -107,7 +107,8 @@ std::uint64_t next_floating_token() noexcept {
 
 // --- The layer ---
 
-FloatingLayerElement::FloatingLayerElement(std::unique_ptr<Element> content) : content_(std::move(content)) {
+FloatingLayerElement::FloatingLayerElement(std::unique_ptr<Element> content, bool container)
+    : content_(std::move(content)), container_(container) {
     adopt(*content_);
 }
 
@@ -123,13 +124,18 @@ FloatingLayerElement::~FloatingLayerElement() {
     content_.reset();
 }
 
-FloatingLayerElement* FloatingLayerElement::of(Element& element) {
+FloatingLayerElement* FloatingLayerElement::of(Element& element, FloatingBoundary boundary) {
     for (Element* e = &element; e; e = e->parent()) {
-        if (auto* layer = dynamic_cast<FloatingLayerElement*>(e)) {
+        if (auto* layer = dynamic_cast<FloatingLayerElement*>(e);
+            layer && (!layer->container_ || boundary == FloatingBoundary::container)) {
             return layer;
         }
     }
     return nullptr;
+}
+
+FloatingLayerElement* FloatingLayerElement::window_layer() const {
+    return parent() ? of(*parent(), FloatingBoundary::window) : nullptr;
 }
 
 void FloatingLayerElement::add(Panel panel) {
@@ -140,6 +146,16 @@ void FloatingLayerElement::add(Panel panel) {
     }
     if (panel.element) {
         adopt(*panel.element);
+        // Esc and outside clicks are the window's: it closes this panel like its own.
+        if (container_ && (panel.dismiss.escape || panel.dismiss.outside_click)) {
+            if (FloatingLayerElement* window = window_layer()) {
+                window->add({.token = panel.token,
+                             .dismiss = panel.dismiss,
+                             .dismissed = panel.dismissed,
+                             .interactive = panel.interactive,
+                             .hosted = panel.element.get()});
+            }
+        }
     }
     panels_.push_back(std::move(panel));
     invalidate_layout();
@@ -148,6 +164,11 @@ void FloatingLayerElement::add(Panel panel) {
 void FloatingLayerElement::remove(std::uint64_t token) {
     if (closing_) {
         return;
+    }
+    if (container_) {
+        if (FloatingLayerElement* window = window_layer()) {
+            window->remove(token);
+        }
     }
     const auto it = std::ranges::find(panels_, token, &Panel::token);
     if (it == panels_.end()) {
@@ -179,7 +200,11 @@ void FloatingLayerElement::arrange(Rect bounds, ProposedSize proposal) {
         return !transition || transition->exit_finished();
     });
     content_->place({bounds.x, bounds.y}, proposal);
-    // Then the panels, by their anchors as laid out now: at their own size, up to the window's.
+    // Then the panels, by their anchors as laid out now: at their own size, up to the layer's.
+    // Anchors are where they're drawn; panels are drawn moved by what moves this layer (.offset
+    // around a container), so they're placed that much back.
+    const Rect drawn = drawn_frame();
+    const Point moved{drawn.x - frame().x, drawn.y - frame().y};
     for (const Panel& panel : panels_) {
         if (!panel.element) {
             continue;
@@ -188,13 +213,19 @@ void FloatingLayerElement::arrange(Rect bounds, ProposedSize proposal) {
         if (size.width > bounds.width || size.height > bounds.height) {
             size = panel.element->size_that_fits({std::min(size.width, bounds.width), std::min(size.height, bounds.height)});
         }
-        const Point origin = place_floating(size, panel.anchor->drawn_frame(), panel.placement, bounds);
+        Rect anchor = panel.anchor->drawn_frame();
+        anchor.x -= moved.x;
+        anchor.y -= moved.y;
+        const Point origin = place_floating(size, anchor, panel.placement, bounds);
         panel.element->place(origin, ProposedSize{size.width, size.height});
     }
 }
 
 void FloatingLayerElement::paint_impl(DisplayList& list) const {
     content_->paint(list);
+    if (container_ && (!exiting_.empty() || !panels_.empty())) {
+        list.commands.push_back(PushClipCommand{frame(), {}});
+    }
     for (const Panel& panel : exiting_) {
         panel.element->paint(list);
     }
@@ -202,6 +233,9 @@ void FloatingLayerElement::paint_impl(DisplayList& list) const {
         if (panel.element) {
             panel.element->paint(list);
         }
+    }
+    if (container_ && (!exiting_.empty() || !panels_.empty())) {
+        list.commands.push_back(PopClipCommand{});
     }
 }
 
@@ -211,8 +245,18 @@ bool FloatingLayerElement::hit_impl(Point point, std::vector<Element*>& path) {
             return true;
         }
     }
-    // Outside the panels while one closes on outside clicks: the press is the layer's.
-    if (top(false)) {
+    // Outside the panels while one closes on outside clicks: the press is the layer's, unless
+    // it's on content a container draws for a panel at least as new.
+    if (Panel* modal = container_ ? nullptr : top(false)) {
+        const std::size_t depth = path.size();
+        if (content_->hit_test(point, path)) {
+            for (auto it = panels_.begin() + (modal - panels_.data()); it != panels_.end(); ++it) {
+                if (it->hosted && it->interactive && std::ranges::find(path, it->hosted) != path.end()) {
+                    return true;
+                }
+            }
+        }
+        path.resize(depth);
         return true;
     }
     return content_->hit_test(point, path);
@@ -220,7 +264,7 @@ bool FloatingLayerElement::hit_impl(Point point, std::vector<Element*>& path) {
 
 FloatingLayerElement::Panel* FloatingLayerElement::top(bool escape) {
     for (auto it = panels_.rbegin(); it != panels_.rend(); ++it) {
-        if (escape ? it->dismiss.escape : it->dismiss.outside_click && it->element) {
+        if (escape ? it->dismiss.escape : it->dismiss.outside_click && (it->element || it->hosted)) {
             return &*it;
         }
     }
@@ -238,10 +282,24 @@ void FloatingLayerElement::dismiss(Panel& panel) {
 }
 
 EventResult FloatingLayerElement::pointer(const PointerEvent& event, Rect) {
-    if (event.kind != PointerEvent::Kind::down) {
-        return {};
+    if (container_ || event.kind != PointerEvent::Kind::down) {
+        return {}; // a container's panels close through the window's layer
     }
     if (Panel* panel = top(false)) {
+        // A press on a panel (or one newer) that nothing in it took isn't outside it. Closing it
+        // here would also destroy elements the press is still being delivered to.
+        const auto inside = [&](const Panel& candidate) {
+            const Element* element = candidate.element ? candidate.element.get() : candidate.hosted;
+            if (!element || !candidate.interactive) {
+                return false;
+            }
+            const Rect bounds = element->drawn_frame();
+            return event.location.x >= bounds.x && event.location.x < bounds.max_x() &&
+                   event.location.y >= bounds.y && event.location.y < bounds.max_y();
+        };
+        if (std::any_of(panels_.begin() + (panel - panels_.data()), panels_.end(), inside)) {
+            return {.consumed = true};
+        }
         dismiss(*panel);
         return {.consumed = true, .redraw = true};
     }
@@ -249,7 +307,7 @@ EventResult FloatingLayerElement::pointer(const PointerEvent& event, Rect) {
 }
 
 EventResult FloatingLayerElement::key(const KeyEvent& event) {
-    if (event.kind != KeyEvent::Kind::down || event.key != Key::escape) {
+    if (container_ || event.kind != KeyEvent::Kind::down || event.key != Key::escape) {
         return {};
     }
     if (Panel* panel = top(true)) {
@@ -351,7 +409,7 @@ private:
         ++presence_->generation;
         token_ = next_floating_token();
         anchor_ = drawn_frame();
-        layer_ = FloatingLayerElement::of(*this);
+        layer_ = FloatingLayerElement::of(*this, options_.boundary);
         if (hosted_on_screen()) {
             if (!context_.services) {
                 return;
@@ -537,7 +595,7 @@ private:
             }
             return;
         }
-        layer_ = FloatingLayerElement::of(*this);
+        layer_ = FloatingLayerElement::of(*this, options_.boundary);
         if (!layer_) {
             return;
         }
@@ -625,6 +683,18 @@ private:
     std::shared_ptr<TransitionElement*> exit_;
 };
 
+// `.floating_container()`.
+class FloatingContainerNode final : public ViewNode {
+public:
+    explicit FloatingContainerNode(View content) : content_(std::move(content)) {}
+    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+        return std::make_unique<FloatingLayerElement>(detail::lower(content_, context), true);
+    }
+
+private:
+    View content_;
+};
+
 } // namespace
 
 View with_popup_motion(View content, const PopupMotion& motion, std::shared_ptr<TransitionElement*> exit) {
@@ -649,6 +719,10 @@ View View::floating(Binding<bool> is_presented, std::function<View()> content, F
     }
     return detail::ViewAccess::make(std::make_shared<const detail::FloatingNode>(*this, std::move(is_presented),
                                                                                 std::move(content), std::move(options)));
+}
+
+View View::floating_container() const {
+    return detail::ViewAccess::make(std::make_shared<const detail::FloatingContainerNode>(*this));
 }
 
 View View::popover(Binding<bool> is_presented, std::function<View()> content, PopoverOptions options) const {

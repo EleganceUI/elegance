@@ -1152,7 +1152,15 @@ Text(file.name)
 - Menu rows are the MenuStyle's too: `make_item(MenuItemConfiguration{title, leading, trailing,
   is_highlighted, is_enabled, is_destructive})`, by default the parts in a line on a rounded
   highlight. The row keeps clicks, keys and submenus.
-- Still to do: a parent boundary.
+- `container`: kept inside the nearest `.floating_container()` around the view (else the
+  window). That modifier is another `FloatingLayerElement` (container mode), so the content is
+  drawn above the container's content and under its siblings, placed within its bounds, clipped
+  to it (`PushClipCommand`), and moved with it (anchors are drawn frames; panels are placed back
+  by what moves the layer). The window's layer still closes it: a container's panels that close
+  on Esc or outside clicks are registered there too (`Panel::hosted`), and presses on hosted
+  content at least as new as the topmost modal panel go through to it.
+- A press on a panel that nothing in it takes is no longer "outside" it: it used to close the
+  panel during the dispatch, destroying elements the press was still being delivered to.
 
 #### Behavior
 - **Opening:**
