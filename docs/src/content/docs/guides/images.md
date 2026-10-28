@@ -58,9 +58,41 @@ the same images again.
 
 Downloads use Boost.Beast and OpenSSL. They follow redirects, but never from https to http.
 Certificates are checked against the system's root certificates and the host name. A download
-times out after 30 seconds, and images over 64 MB are refused. Proxies aren't supported. To load
-images some other way (a proxy, authentication, a disk cache), download the bytes with your own
-library and show them with `Image({.data = bytes})`.
+times out after 30 seconds, and images over 64 MB are refused. Connections are kept open, so
+several images from one server share one connection (and one TLS handshake).
+
+Downloads go through the system's proxy settings, PAC scripts included, on macOS and Windows.
+`HTTPS_PROXY`, `http_proxy` and `NO_PROXY` in the environment take precedence, and are the only
+settings read on Linux. Only HTTP proxies work, with a user name and password given in the
+proxy's URL. To load images some other way (authentication, a SOCKS proxy), download the bytes
+with your own library and show them with `Image({.data = bytes})`.
+
+### The disk cache
+
+Downloaded images are also kept on disk, for as long as their server's `Cache-Control` or
+`Expires` header allows. After that, they're checked with the server (`ETag`,
+`Last-Modified`), which usually answers that nothing changed. When the server can't be reached,
+the copy on disk is shown, unless the server said it must always be checked. Responses with
+`Cache-Control: no-store` aren't kept.
+
+The cache is 256 MB, in a folder for your app inside the user's cache folder. When it's full,
+the images used longest ago go first. Change it with `set_image_cache`, from the UI thread:
+
+```cpp
+set_image_cache({.disk_limit = 64ull << 20});              // smaller
+set_image_cache({.directory = app_data / "image-cache"});  // somewhere else
+set_image_cache({.disk = false});                          // memory only
+```
+
+When a user signs out, forget their images with `clear_image_cache()`, in memory and on disk.
+To keep one image off the disk (a private image whose server doesn't send `no-store`), pass
+`.disk_cache = false`:
+
+```cpp
+AsyncImage(attachment_url, {.content_mode = ContentMode::fit, .disk_cache = false});
+```
+
+`ELG_IMAGE_CACHE=off` in the environment turns the disk cache off, whatever the app sets.
 
 To draw each phase yourself, pass a function:
 
@@ -72,7 +104,7 @@ AsyncImage(url, [](const AsyncImagePhase& phase) -> View {
     case AsyncImagePhase::Kind::failure: return Text(phase.error).foreground_style(ThemeColor::danger);
     }
     return View();
-});
+}, {.disk_cache = false}); // the same options; content_mode isn't used
 ```
 
 See the [network example](../../examples/#network) for a long list of web images.

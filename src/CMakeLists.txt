@@ -39,6 +39,8 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         media/video_feed.cpp
         media/video_source.cpp
         net/fetch.cpp
+        net/http_cache.cpp
+        net/proxy.cpp
         platform/accessibility_adapter.cpp
         platform/desktop_sdl.cpp
         platform/dynamic_library.cpp
@@ -134,7 +136,7 @@ find_package(Dawn CONFIG REQUIRED) # WebGPU (design.md §5)
 find_package(Freetype REQUIRED)
 find_package(harfbuzz CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
-# AsyncImage downloads (net/fetch.cpp)
+# AsyncImage downloads (net/)
 find_package(boost_beast CONFIG REQUIRED)
 find_package(boost_url CONFIG REQUIRED)
 find_package(OpenSSL REQUIRED)
@@ -194,7 +196,7 @@ endif ()
 if (WIN32)
     target_sources(elegance PRIVATE gpu/composition_win32.cpp)
     # dwmapi: rounded corners for undecorated windows; d3d11/dxgi/dcomp: transparent windows.
-    target_link_libraries(elegance PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid mf mfreadwrite strmiids oleaut32 shell32 crypt32 imm32)
+    target_link_libraries(elegance PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid mf mfreadwrite strmiids oleaut32 shell32 crypt32 imm32 winhttp)
 endif ()
 
 if (APPLE)
@@ -207,7 +209,7 @@ if (APPLE)
     target_link_libraries(elegance PRIVATE
             "-framework AppKit" "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework QuartzCore"
             "-framework Foundation" "-framework ImageIO" "-framework CoreGraphics" "-framework CoreFoundation"
-            "-framework Security" "-framework Carbon")
+            "-framework Security" "-framework Carbon" "-framework CFNetwork")
 endif ()
 
 target_link_libraries(elegance PRIVATE

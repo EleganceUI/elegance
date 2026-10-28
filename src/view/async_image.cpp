@@ -4,13 +4,16 @@
 
 // AsyncImage (design.md §13.3): fetched when first shown (lowered), cancelled when it goes. The
 // phase's view is the single item of a ForEach keyed by the phase, so the placeholder fades into
-// the image like any other change.
+// the image like any other change. Downloads are kept in memory for the session and on disk
+// (net/http_cache.h) for as long as their server allows.
 
 #include <elg/image.h>
 
 #include "core/ui_tasks.h"
 #include "media/image_decode.h"
 #include "net/fetch.h"
+#include "net/http_cache.h"
+#include "platform/platform.h"
 #include "view/raster_image.h"
 #include "view/view_node.h"
 
@@ -35,6 +38,15 @@ public:
     static DownloadCache& instance() {
         static DownloadCache cache;
         return cache;
+    }
+
+    // Bumped by clear(): downloads started before store nothing.
+    std::uint64_t generation() const noexcept { return generation_; }
+    void clear() {
+        entries_.clear();
+        order_.clear();
+        bytes_ = 0;
+        ++generation_;
     }
 
     std::shared_ptr<const Bytes> find(const std::string& url) {
@@ -70,10 +82,64 @@ private:
     std::map<std::string, Entry> entries_;
     std::list<std::string> order_; // most recent first
     std::size_t bytes_ = 0;
+    std::uint64_t generation_ = 0;
+};
+
+// The disk cache set_image_cache() describes, made when first needed. UI thread.
+class DiskCache {
+public:
+    static DiskCache& instance() {
+        static DiskCache cache;
+        return cache;
+    }
+
+    std::shared_ptr<net::HttpCache> get() {
+        if (!made_) {
+            made_ = true;
+            make();
+        }
+        return cache_;
+    }
+
+    void configure(ImageCacheOptions options) {
+        options_ = std::move(options);
+        if (made_) {
+            make();
+        }
+    }
+
+    void clear() {
+        if (const std::shared_ptr<net::HttpCache> cache = get()) {
+            cache->clear();
+        }
+    }
+
+private:
+    void make() {
+        if (cache_) {
+            cache_->retire();
+        }
+        cache_.reset();
+        const std::optional<std::string> setting = platform::environment_variable("ELG_IMAGE_CACHE");
+        if (!options_.disk || (setting && *setting == "off")) {
+            return;
+        }
+        std::optional<std::filesystem::path> directory =
+            options_.directory.empty() ? net::HttpCache::default_directory() : std::optional(options_.directory);
+        if (directory) {
+            cache_ = std::make_shared<net::HttpCache>(std::move(*directory), options_.disk_limit);
+        }
+    }
+
+    ImageCacheOptions options_;
+    bool made_ = false;
+    std::shared_ptr<net::HttpCache> cache_;
 };
 
 struct Loader {
     std::string url;
+    bool disk_cache = true;
+    std::uint64_t generation = 0; // the memory cache's, when it started
     net::FetchTask task;
     State<int> phase{0}; // AsyncImagePhase::Kind
     std::shared_ptr<const Bytes> bytes;
@@ -86,9 +152,13 @@ struct Loader {
             phase = static_cast<int>(AsyncImagePhase::Kind::success);
             return;
         }
-        task = net::fetch(url, [weak = std::weak_ptr(self)](net::FetchResult result) {
-            post_ui_task([weak, result = std::move(result)] { finish(weak, result); });
-        });
+        generation = DownloadCache::instance().generation();
+        task = net::fetch(
+            url,
+            [weak = std::weak_ptr(self)](net::FetchResult result) {
+                post_ui_task([weak, result = std::move(result)] { finish(weak, result); });
+            },
+            {.cache = disk_cache ? DiskCache::instance().get() : nullptr});
     }
 
     static void finish(const std::weak_ptr<Loader>& weak, const net::FetchResult& result) {
@@ -107,7 +177,9 @@ struct Loader {
             loader->fail(failure.what());
             return;
         }
-        DownloadCache::instance().store(loader->url, data);
+        if (loader->generation == DownloadCache::instance().generation()) {
+            DownloadCache::instance().store(loader->url, data);
+        }
         loader->bytes = std::move(data);
         loader->phase = static_cast<int>(AsyncImagePhase::Kind::success);
     }
@@ -120,12 +192,13 @@ struct Loader {
 
 class AsyncImageNode final : public ViewNode {
 public:
-    AsyncImageNode(std::string url, std::function<View(const AsyncImagePhase&)> content, float scale)
-        : url_(std::move(url)), content_(std::move(content)), scale_(scale) {}
+    AsyncImageNode(std::string url, std::function<View(const AsyncImagePhase&)> content, float scale, bool disk_cache)
+        : url_(std::move(url)), content_(std::move(content)), scale_(scale), disk_cache_(disk_cache) {}
 
     std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto loader = std::make_shared<Loader>();
         loader->url = url_;
+        loader->disk_cache = disk_cache_;
         loader->start(loader);
         const View view = ForEach([loader] { return std::vector<int>{loader->phase()}; },
                                   [loader, content = content_, scale = scale_](int kind) {
@@ -144,6 +217,7 @@ private:
     std::string url_;
     std::function<View(const AsyncImagePhase&)> content_;
     float scale_;
+    bool disk_cache_;
 };
 
 } // namespace
@@ -152,11 +226,21 @@ private:
 
 namespace elg {
 
-View AsyncImage(std::string url, std::function<View(const AsyncImagePhase&)> content, float scale) {
+View AsyncImage(std::string url, std::function<View(const AsyncImagePhase&)> content, AsyncImageOptions options) {
     if (!content) {
         throw UsageError("AsyncImage: the content function is empty");
     }
-    return detail::ViewAccess::make(std::make_shared<const detail::AsyncImageNode>(std::move(url), std::move(content), scale));
+    return detail::ViewAccess::make(std::make_shared<const detail::AsyncImageNode>(std::move(url), std::move(content),
+                                                                                   options.scale, options.disk_cache));
+}
+
+void set_image_cache(ImageCacheOptions options) {
+    detail::DiskCache::instance().configure(std::move(options));
+}
+
+void clear_image_cache() {
+    detail::DownloadCache::instance().clear();
+    detail::DiskCache::instance().clear();
 }
 
 View AsyncImage(std::string url, AsyncImageOptions options) {
@@ -172,7 +256,7 @@ View AsyncImage(std::string url, AsyncImageOptions options) {
             }
             return View();
         },
-        options.scale);
+        options);
 }
 
 } // namespace elg

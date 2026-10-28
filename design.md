@@ -1382,8 +1382,9 @@ AsyncImage("https://example.com/avatar.png", [](AsyncImagePhase phase) { ... }) 
   downscaling. Decoded sizes follow the drawn size (no 4000 px decode for a 64 pt thumbnail).
 - `ImageCommand` in the display list draws a textured quad with corner radii, opacity, and the
   clip stack, through the same ubershader as layers.
-- `AsyncImage` downloads over HTTP(S) with Boost.Beast, Asio and OpenSSL, internally. It has a
-  memory cache. Elegance has no public networking API: apps use an established library of
+- `AsyncImage` downloads over HTTP(S) with Boost.Beast, Asio and OpenSSL, internally, through the
+  system's proxies. It has a memory cache and a disk cache (`set_image_cache`,
+  `clear_image_cache`). Elegance has no public networking API: apps use an established library of
   their own (libcurl, Boost.Beast, cpp-httplib) and hand results to the UI with
   `post_to_ui_thread`.
 
@@ -2337,10 +2338,42 @@ Separate render thread from day one (decided).
     against example.com.
   - **Example:** network-cpp uses cpp-httplib (its own vcpkg dependency) on a background thread
     with `post_to_ui_thread`.
+- [x] Image downloads, part 2:
+  - **Connection reuse:** a pool on the network thread (`ConnectionPool`), keyed by scheme, host,
+    port, proxy and TLS context; 30 s idle, 6 per host, 32 in all. A kept connection the server
+    closed meanwhile (EOF, reset, broken pipe, truncated TLS) is retried once on a new one. A body
+    read to EOF isn't reusable. No HTTP/2: Beast has none, and nghttp2 glue would be our own
+    network code; reused HTTP/1.1 connections give most of the gain for images.
+  - **Proxies (`src/net/proxy.h`):** `https_proxy`/`HTTPS_PROXY`, `http_proxy` (never
+    `HTTP_PROXY`: CGI's httpoxy), `no_proxy`/`NO_PROXY` first; else macOS
+    `CFNetworkCopyProxiesForURL` (PAC by URL or script run by CFNetwork on a private run loop
+    mode, 10 s), Windows `WinHttpGetIEProxyConfigForCurrentUser` + `WinHttpGetProxyForUrl`
+    (PAC, WPAD) falling back to the manual list and bypass patterns; nothing else on Linux.
+    Answers remembered 5 minutes per scheme/host/port. Loopback hosts are always direct. HTTP
+    proxies only: absolute-form for http, CONNECT for https (TLS and the certificate check are
+    still end to end). Basic credentials from the proxy URL; SOCKS and https:// proxies are
+    refused with a readable error. Lookups run on `Network::blocking()` (2 threads).
+  - **Disk cache (`src/net/http_cache.h`):** a private cache after RFC 9111. Stored: 200s without
+    `no-store` or `Vary: *`, fresh (max-age, else Expires − Date, else a tenth of the time since
+    Last-Modified, at most a day) or revalidatable (ETag/Last-Modified, first URL only, not after
+    redirects). `no-cache`: stored, revalidated each use. A 304 renews the entry. Network errors
+    serve a stale copy unless `no-cache`/`must-revalidate`. One file per URL (`<2 hex>/<sha256>`,
+    a text header then the body), written to `.tmp` and renamed; LRU by mtime, trimmed to 90% of
+    the limit. `clear()` deletes only files named like entries and bumps a generation so stores
+    begun earlier are dropped; `retire()` for a replaced cache. Stores are posted to the blocking
+    threads so images show without waiting on the disk.
+  - **API:** `set_image_cache(ImageCacheOptions{disk, disk_limit = 256 MB, directory})`,
+    `clear_image_cache()` (memory and disk), `AsyncImageOptions::disk_cache`; the content
+    overload takes `AsyncImageOptions` instead of `float scale`. Default folder:
+    `<user cache>/Elegance/<executable>/Images`. `ELG_IMAGE_CACHE=off`.
+  - **Tests:** reuse (plain and TLS), a server that drops kept connections, a local proxy
+    (absolute-form, CONNECT, 407 with and without a password), proxy settings parsing (env,
+    NO_PROXY, Windows lists and bypass), HTTP dates and freshness, fresh/304/no-store against the
+    test server, a stale copy once the server is gone, the size limit, and clearing.
 - [ ] Image download follow-ups:
-  - Proxies (system settings), HTTP/2, connection reuse.
-  - A disk cache honoring `Cache-Control`/`ETag`.
   - Revocation checks (OCSP/CRL) aren't done.
+  - Proxy credentials stored by the system (macOS keychain, Windows) aren't used.
+  - GNOME/KDE proxy settings on Linux.
 - [x] Desktop integration (§13.4): file dialogs, drag and drop in, notifications and the tray
   icon, with a sandbox Desktop row and tests for the rules around them. The interactive parts
   (dialogs, toasts, tray menu, drops) still need a person to try them.
