@@ -169,6 +169,12 @@ protected:
             list.commands.push_back(PopClipCommand{});
         }
     }
+    // Opaque over its whole frame (black behind the video), so hit there like a raster image:
+    // drags and scrolls on the view reach its handlers.
+    bool hit_impl(Point point, std::vector<Element*>&) override {
+        const Rect r = frame();
+        return point.x >= r.x && point.x < r.max_x() && point.y >= r.y && point.y < r.max_y();
+    }
 
 private:
     std::shared_ptr<VideoSource> source_;
