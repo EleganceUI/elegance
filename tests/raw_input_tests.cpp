@@ -12,6 +12,7 @@
 #include <elg/events.h>
 #include <elg/shapes.h>
 #include <elg/styles.h>
+#include <elg/video.h>
 #include <elg/views.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -96,6 +97,28 @@ TEST_CASE("on_scroll gets view-local scrolls; unconsumed ones go on outwards", "
         CHECK(inner->dy == 3);
         CHECK(outer == (take ? 0 : 1));
     }
+}
+
+TEST_CASE("a video view is hit over its frame, so its handlers get events", "[input]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    int pointers = 0;
+    int scrolls = 0;
+    Window window(VideoFeedView(VideoFeed(), ContentMode::fill)
+                      .on_pointer([&](const PointerEvent&) {
+                          ++pointers;
+                          return true;
+                      })
+                      .on_scroll([&](const ScrollEvent&) {
+                          ++scrolls;
+                          return true;
+                      }));
+
+    window.button(PointerEvent::Kind::down, {30, 40});
+    window.button(PointerEvent::Kind::up, {30, 40});
+    window.events->scroll({.location = {30, 40}, .dy = 3});
+    CHECK(pointers == 2);
+    CHECK(scrolls == 1);
 }
 
 TEST_CASE("on_key sees downs and ups; on_key_press only downs", "[input]") {

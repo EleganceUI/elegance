@@ -85,6 +85,19 @@ TEST_CASE("a backdrop blur follows its state", "[backdrop]") {
     CHECK(now.saturation == 0);
 }
 
+TEST_CASE("a backdrop blur takes its radius from the theme", "[backdrop]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    const auto standard = detail::lower(Rectangle().fill(Color::clear).backdrop_blur(ThemeBlur::xxl), {});
+    CHECK(backdrops(paint(*standard)).front().blur == 40);
+
+    Theme theme = Theme::standard();
+    theme.blur.xxl = 50;
+    const auto restyled =
+        detail::lower(Rectangle().fill(Color::clear).backdrop_blur(ThemeBlur::xxl).theme(theme), {});
+    CHECK(backdrops(paint(*restyled)).front().blur == 50);
+}
+
 TEST_CASE("the renderer blurs the backdrop and adjusts its colors", "[backdrop]") {
     detail::Scope scope;
     detail::Scope::Use use(scope);

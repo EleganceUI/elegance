@@ -850,7 +850,10 @@ frame (generous desktop targets); `.content_shape(shape)` narrows one.
   like `background`, goes behind everything it wraps, so a tint is a `.background(color)` written
   before it: `content.background(tint).backdrop_blur(30)` draws the blurred backdrop, then the
   tint, then the content. A `.blur()` after that blurs all three. There are no material presets:
-  frosted glass is a backdrop blur (with some saturation and noise) under a translucent tint.
+  frosted glass is a backdrop blur (with some saturation and noise) under a translucent tint. The
+  theme has the pieces, so an app restyles them in one place: tints from `ThemeColor::glass_ultra_thin`
+  to `glass_ultra_thick` (light in light mode, dark in dark mode), and blur radii from
+  `ThemeBlur::xs` to `xxxl` (4 to 64 points), which `.blur()` and `.backdrop_blur()` take.
 - Rotation and scale don't move hit testing yet.
 
 ### 9.5 Shapes, color, fonts, animation

@@ -23,6 +23,10 @@ Color resolve_theme_color(const EnvironmentValues& environment, ThemeColor token
     return environment.get<ThemeKey>().colors(environment.get<ColorSchemeKey>())[token];
 }
 
+float resolve_theme_blur(const EnvironmentValues& environment, ThemeBlur token) {
+    return environment.get<ThemeKey>().blur[token];
+}
+
 void throw_needs_environment() {
     throw UsageError("this value depends on the environment (e.g. a ThemeColor); it can only be read "
                      "where it's used in a view");

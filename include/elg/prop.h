@@ -22,6 +22,8 @@ class EnvironmentValues;
 namespace detail {
 // The token's color in `environment`'s theme and color scheme (a tracked read).
 ELG_API Color resolve_theme_color(const EnvironmentValues& environment, ThemeColor token);
+// The radius in `environment`'s theme (a tracked read).
+ELG_API float resolve_theme_blur(const EnvironmentValues& environment, ThemeBlur token);
 } // namespace detail
 
 // A reactive argument (design.md §9.3): a plain value, or anything that produces one:
@@ -30,6 +32,7 @@ ELG_API Color resolve_theme_color(const EnvironmentValues& environment, ThemeCol
 //   .opacity(fade)                                   // State<float>
 //   .opacity([=] { return hovered() ? 1.f : 0.6f; }) // derived
 //   .fill(ThemeColor::accent)                        // resolved against the environment
+//   .blur(ThemeBlur::md)                             // likewise
 //
 // A reactive argument becomes one effect that updates one property of one element, so only that
 // property changes when the state it reads does.
@@ -69,6 +72,13 @@ public:
         requires std::convertible_to<Color, T>
         : value_(FromEnvironment([token](const EnvironmentValues& environment) {
               return T(detail::resolve_theme_color(environment, token));
+          })) {}
+
+    // Blur radii from the theme, for float props (.blur(), .backdrop_blur()).
+    Prop(ThemeBlur token)
+        requires std::same_as<T, float>
+        : value_(FromEnvironment([token](const EnvironmentValues& environment) {
+              return detail::resolve_theme_blur(environment, token);
           })) {}
 
     bool is_reactive() const noexcept { return value_.index() != 0; }
