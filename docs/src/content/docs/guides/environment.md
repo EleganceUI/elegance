@@ -17,7 +17,7 @@ and everything inside it; views read the nearest value above them.
 | `.theme(...)` | `ThemeKey` | `Theme::standard()` |
 | `.disabled(...)` | `DisabledKey` | `false` |
 | `.button_style(...)`, `.toggle_style(...)`, `.text_field_style(...)` | `ButtonStyleKey`, ... | the default styles |
-| `.hover_delay(...)` | `HoverDelayKey` | enter 0.1 s, exit 0 |
+| `.hover_delay(...)` | `HoverDelayKey` | enter 0, exit 0 |
 | (set by the window) | `WindowKey` | the window the view is in |
 
 Values can be reactive: set one from a state, and only the views reading that key update when it

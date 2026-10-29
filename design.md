@@ -1741,7 +1741,7 @@ Separate render thread from day one (decided).
   `on_pointer_enter` / `on_pointer_leave` (immediate), `on_hover_change` (hover intent)
 - [x] `Button` (default style: tint, hover, and pressed states) + `tint` environment value
 - [x] Hover delays: `HoverDelay{.enter, .exit}`, for hover intent only (`on_hover_change`,
-  submenus). Hover starts only after the pointer rests for `enter` (default 0.1 s), and ends
+  submenus). Hover starts only after the pointer rests for `enter` (default 0 s), and ends
   `exit` after it leaves (default 0); passing over, or coming back in time, cancels the pending
   change.
   - Set with `.hover_delay({...})` (an environment value) for everything inside; for one handler,

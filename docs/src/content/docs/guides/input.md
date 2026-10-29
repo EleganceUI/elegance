@@ -132,9 +132,9 @@ Row()
     .on_pointer_leave([=] { hovered = false; });
 ```
 
-`on_hover_change` is hover *intent*: it reports true only once the pointer has rested on the view
-(0.1 s by default), so sweeping across a grid doesn't start a preview on every tile, and false
-when it leaves. Change the delays with `.hover_delay`, for everything inside it:
+`on_hover_change` reports true when the pointer enters the view and false when it leaves, with
+no delay by default. Set hover *intent* delays with `.hover_delay` to avoid starting a preview
+on every tile when sweeping across a grid, for everything inside it:
 
 ```cpp
 Grid().hover_delay({.enter = 0.3, .exit = 0.2});
