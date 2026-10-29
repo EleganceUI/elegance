@@ -23,8 +23,14 @@ int main() {
 
 | Repository | What's in it |
 | --- | --- |
-| [elegance](https://github.com/EleganceUI/elegance) | The library (this one): `include/elg/`, `src/`, tests, the sandbox and the preview host, the docs |
+| [elegance](https://github.com/EleganceUI/elegance) | The library (this one): `include/elg/`, `src/`, the C API (`c/`), tests, the sandbox and the preview host, the docs |
 | [elegance-rs](https://github.com/EleganceUI/elegance-rs) | Rust bindings, with `elg!`, a SwiftUI-style DSL |
+
+The C API (`c/`) is what language bindings call. Every build compiles it, so a change to the C++
+API updates it in the same pull request. CI builds it with Elegance into one prebuilt shared
+library per target for every commit on `main`, published as a `c-<commit>` prerelease
+(`.github/workflows/c-api.yml`); elegance-rs pins a commit and downloads its library, and moves the
+pin through ordinary pull requests.
 | [elegance-examples](https://github.com/EleganceUI/elegance-examples) | Examples and apps in C++ and Rust, one self-contained project per folder |
 
 ## Building

@@ -1,0 +1,5 @@
+/* Linux: export the C API (c/*.cpp and ELG_API's C functions) and nothing else. */
+{
+    global: elg_*;
+    local: *;
+};
