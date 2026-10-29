@@ -76,6 +76,7 @@ option(ELG_ACCESSIBILITY "Screen reader support through AccessKit (downloads its
 option(ELG_ACCESSKIT_SHARED "Link AccessKit's shared library instead of its static one (needed by Rust apps)" OFF)
 option(ELG_STATIC_EXPORTS "Static build only: keep ELG_API exported, for linking into a shared library that re-exports it"
        OFF)
+option(ELG_C_API "Compile the C API (c/), so a change that breaks it fails the build" ${PROJECT_IS_TOP_LEVEL})
 
 # Put the library and every executable in one folder so the apps find the DLLs on Windows.
 if (PROJECT_IS_TOP_LEVEL)
@@ -85,6 +86,17 @@ if (PROJECT_IS_TOP_LEVEL)
 endif ()
 
 add_subdirectory(src)
+
+# The C API as Elegance's own builds see it: compiled, not linked into anything (c/CMakeLists.txt
+# builds the shared library bindings use).
+if (ELG_C_API)
+    add_library(elegance_c_api OBJECT c/core.cpp c/views.cpp c/ext.cpp c/platform.cpp c/styles.cpp)
+    target_link_libraries(elegance_c_api PRIVATE elegance)
+    if (MSVC)
+        target_compile_definitions(elegance_c_api PRIVATE NOMINMAX)
+        target_compile_options(elegance_c_api PRIVATE /EHsc /permissive- /utf-8 /Zc:__cplusplus /bigobj)
+    endif ()
+endif ()
 
 if (ELG_BUILD_SANDBOX)
     add_subdirectory(apps/sandbox)
