@@ -300,5 +300,6 @@ set_target_properties(elegance PROPERTIES
 
 elegance_warnings(elegance)
 if (MSVC)
-    target_compile_options(elegance PRIVATE /utf-8)
+    # Boost.Asio coroutines (net/fetch.cpp) exceed the default 2^16 sections on arm64.
+    target_compile_options(elegance PRIVATE /utf-8 /bigobj)
 endif ()
