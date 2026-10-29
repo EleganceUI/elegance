@@ -69,6 +69,26 @@ TEST_CASE("a ThemeColor prop resolves against the environment it's used in") {
     CHECK(fill.needs_environment());
 }
 
+TEST_CASE("glass tints follow the color scheme, as the old material presets did") {
+    EnvironmentValues environment;
+    CHECK(same(environment.color(ThemeColor::glass_regular), Color{0.97f, 0.97f, 0.98f, 0.55f}));
+    environment.set<ColorSchemeKey>(ColorScheme::dark);
+    CHECK(same(environment.color(ThemeColor::glass_regular), Color{0.11f, 0.11f, 0.12f, 0.6f}));
+    CHECK(same(environment.color(ThemeColor::glass_ultra_thick), Color{0.11f, 0.11f, 0.12f, 0.86f}));
+}
+
+TEST_CASE("a ThemeBlur prop resolves against the environment's theme") {
+    const Prop<float> radius = ThemeBlur::xl;
+    CHECK(radius.needs_environment());
+
+    EnvironmentValues environment;
+    CHECK(radius.get(environment) == 24);
+    Theme theme = Theme::standard();
+    theme.blur.xl = 30;
+    environment.set<ThemeKey>(theme);
+    CHECK(radius.get(environment) == 30);
+}
+
 TEST_CASE("an environment value set from State is reactive") {
     Owner owner;
     State<ColorScheme> scheme(ColorScheme::light);

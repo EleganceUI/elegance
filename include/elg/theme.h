@@ -5,7 +5,8 @@
 #ifndef ELG_THEME_H
 #define ELG_THEME_H
 
-// Themes (design.md §8): semantic color tokens with light and dark variants.
+// Themes (design.md §8): semantic color tokens with light and dark variants, and a scale of blur
+// radii.
 
 #include <elg/color.h>
 
@@ -29,6 +30,16 @@ enum class ThemeColor {
     danger,
     success,
     warning,
+    // Frosted glass: translucent tints for under a .backdrop_blur(), thinnest to thickest. Light
+    // in light mode and dark in dark mode by default:
+    //   Text("Now playing").padding(12)
+    //       .background(ThemeColor::glass_regular, RoundedRectangle(12))
+    //       .backdrop_blur(ThemeBlur::xl, RoundedRectangle(12), {.saturation = 1.8f, .noise = 0.02f})
+    glass_ultra_thin,
+    glass_thin,
+    glass_regular,
+    glass_thick,
+    glass_ultra_thick,
 };
 
 struct ColorTokens {
@@ -44,6 +55,11 @@ struct ColorTokens {
     Color danger;
     Color success;
     Color warning;
+    Color glass_ultra_thin;
+    Color glass_thin;
+    Color glass_regular;
+    Color glass_thick;
+    Color glass_ultra_thick;
 
     constexpr Color operator[](ThemeColor token) const noexcept {
         switch (token) {
@@ -59,14 +75,49 @@ struct ColorTokens {
         case ThemeColor::danger: return danger;
         case ThemeColor::success: return success;
         case ThemeColor::warning: return warning;
+        case ThemeColor::glass_ultra_thin: return glass_ultra_thin;
+        case ThemeColor::glass_thin: return glass_thin;
+        case ThemeColor::glass_regular: return glass_regular;
+        case ThemeColor::glass_thick: return glass_thick;
+        case ThemeColor::glass_ultra_thick: return glass_ultra_thick;
         }
         return primary;
+    }
+};
+
+// Blur radii, smallest to largest, resolved against the environment's theme where they're used
+// (.blur(), .backdrop_blur()). xxl and xxxl are 2xl and 3xl.
+//   Image({.file = "cover.jpg"}).blur(ThemeBlur::sm)
+enum class ThemeBlur { xs, sm, md, lg, xl, xxl, xxxl };
+
+// In points.
+struct BlurTokens {
+    float xs = 4;
+    float sm = 8;
+    float md = 12;
+    float lg = 16;
+    float xl = 24;
+    float xxl = 40;
+    float xxxl = 64;
+
+    constexpr float operator[](ThemeBlur token) const noexcept {
+        switch (token) {
+        case ThemeBlur::xs: return xs;
+        case ThemeBlur::sm: return sm;
+        case ThemeBlur::md: return md;
+        case ThemeBlur::lg: return lg;
+        case ThemeBlur::xl: return xl;
+        case ThemeBlur::xxl: return xxl;
+        case ThemeBlur::xxxl: return xxxl;
+        }
+        return md;
     }
 };
 
 struct Theme {
     ColorTokens light;
     ColorTokens dark;
+    BlurTokens blur;
 
     constexpr const ColorTokens& colors(ColorScheme scheme) const noexcept {
         return scheme == ColorScheme::dark ? dark : light;
@@ -88,6 +139,11 @@ struct Theme {
                 .danger = Color::hex(0xFF3B30),
                 .success = Color::hex(0x34C759),
                 .warning = Color::hex(0xFF9F0A),
+                .glass_ultra_thin = Color{0.97f, 0.97f, 0.98f, 0.2f},
+                .glass_thin = Color{0.97f, 0.97f, 0.98f, 0.38f},
+                .glass_regular = Color{0.97f, 0.97f, 0.98f, 0.55f},
+                .glass_thick = Color{0.97f, 0.97f, 0.98f, 0.72f},
+                .glass_ultra_thick = Color{0.97f, 0.97f, 0.98f, 0.86f},
             },
             .dark = {
                 .background = Color::hex(0x1C1C1E),
@@ -102,6 +158,11 @@ struct Theme {
                 .danger = Color::hex(0xFF453A),
                 .success = Color::hex(0x30D158),
                 .warning = Color::hex(0xFFD60A),
+                .glass_ultra_thin = Color{0.11f, 0.11f, 0.12f, 0.3f},
+                .glass_thin = Color{0.11f, 0.11f, 0.12f, 0.45f},
+                .glass_regular = Color{0.11f, 0.11f, 0.12f, 0.6f},
+                .glass_thick = Color{0.11f, 0.11f, 0.12f, 0.74f},
+                .glass_ultra_thick = Color{0.11f, 0.11f, 0.12f, 0.86f},
             },
         };
     }
