@@ -25,6 +25,7 @@
     BOOL _pending;    // a placement waits for AppKit's layout pass to finish
     NSRect _windowed;     // the last frame before fullscreen, put back after it
     BOOL _fullscreen;     // from entering fullscreen until the title bar is integrated again
+    id _doubleClicks;     // the event monitor for double clicks on drag areas
 }
 
 - (instancetype)initWithWindow:(NSWindow*)window position:(std::optional<elg::Point>)position {
@@ -53,8 +54,39 @@
         if (NSView* container = buttons.firstObject.superview.superview) {
             [self observe:NSViewFrameDidChangeNotification of:container];
         }
+        _doubleClicks = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown
+                                                              handler:^NSEvent*(NSEvent* event) {
+                                                                  [weak doubleClicked:event];
+                                                                  return event;
+                                                              }];
     }
     return self;
+}
+
+// The content covers the title bar, so double clicks there never reach it: do what it would on a
+// drag area (.window_drag_area()), which SDL makes movable by its background while the pointer is
+// over one, and swallows the clicks of.
+- (void)doubleClicked:(NSEvent*)event {
+    NSWindow* window = _window;
+    if (!window || event.window != window || event.clickCount != 2 || !window.movableByWindowBackground ||
+        (window.styleMask & NSWindowStyleMaskFullScreen)) {
+        return;
+    }
+    // The traffic lights are above the content.
+    NSView* frame = window.contentView.superview;
+    if ([[frame hitTest:[frame convertPoint:event.locationInWindow fromView:nil]] isKindOfClass:NSControl.class]) {
+        return;
+    }
+    // System Settings > Desktop & Dock > "Double-click a window's title bar to".
+    NSString* action = [NSUserDefaults.standardUserDefaults stringForKey:@"AppleActionOnDoubleClick"];
+    if ([action isEqualToString:@"None"]) {
+        return;
+    }
+    if ([action isEqualToString:@"Minimize"]) {
+        [window performMiniaturize:nil];
+    } else {
+        [window performZoom:nil];
+    }
 }
 
 - (void)observe:(NSNotificationName)name of:(id)object {
@@ -182,6 +214,10 @@
 }
 
 - (void)stop {
+    if (_doubleClicks) {
+        [NSEvent removeMonitor:_doubleClicks];
+        _doubleClicks = nil;
+    }
     for (id observer in _observers) {
         [NSNotificationCenter.defaultCenter removeObserver:observer];
     }
