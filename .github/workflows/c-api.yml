@@ -1,11 +1,12 @@
-# Builds the prebuilt C library (c/CMakeLists.txt: the C API and Elegance in one shared library)
+# Builds the prebuilt static C library (c/CMakeLists.txt: C API, Elegance and dependency archives)
 # for each target, and publishes the archives language bindings download:
 #
 #   push to main   a prerelease tagged c-<commit, 12 hex digits>
 #   tag v*         the release for that tag
 #
-# Each archive is elegance-c-<target>.tar.gz: lib/ (the library), include/elg-c/shim.h, the
-# license, and BUILDINFO (the target and the full commit), which elegance-rs's build script checks
+# Each archive is elegance-c-static-<target>.tar.gz: lib/, elegance-link.txt (relocatable link
+# order and runtime files), include/elg-c/shim.h, the license, and BUILDINFO (static linkage,
+# target and full commit), which elegance-rs's build script checks
 # against the commit it pins. Once they're published, elegance-rs is told, and opens a pull request
 # that moves its pin here.
 name: C API
@@ -35,19 +36,33 @@ jobs:
                 include:
                     # Ubuntu 22.04 (glibc 2.35) so the library loads on older distributions too.
                     - { target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04, triplet: x64-linux }
-                    - { target: aarch64-unknown-linux-gnu, runner: ubuntu-22.04-arm, triplet: arm64-linux }
-                    - { target: aarch64-apple-darwin, runner: macos-15, triplet: arm64-osx, osx_arch: arm64 }
-                    - { target: x86_64-apple-darwin, runner: macos-15, triplet: x64-osx, osx_arch: x86_64 }
+                    - {
+                          target: aarch64-unknown-linux-gnu,
+                          runner: ubuntu-22.04-arm,
+                          triplet: arm64-linux,
+                      }
+                    - {
+                          target: aarch64-apple-darwin,
+                          runner: macos-15,
+                          triplet: arm64-osx,
+                          osx_arch: arm64,
+                      }
+                    - {
+                          target: x86_64-apple-darwin,
+                          runner: macos-15,
+                          triplet: x64-osx,
+                          osx_arch: x86_64,
+                      }
                     - {
                           target: x86_64-pc-windows-msvc,
                           runner: windows-2025,
-                          triplet: x64-windows-static,
+                          triplet: x64-windows-static-md,
                           msvc_arch: amd64,
                       }
                     - {
                           target: aarch64-pc-windows-msvc,
                           runner: windows-11-arm,
-                          triplet: arm64-windows-static,
+                          triplet: arm64-windows-static-md,
                           msvc_arch: arm64,
                       }
         runs-on: ${{ matrix.runner }}
@@ -107,8 +122,8 @@ jobs:
                   mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
 
             # The library is a Release build, so build the dependencies in Release only: half of
-            # Dawn's build time and cache size. The triplets keep their names (the Windows ones must
-            # end in -static), starting from Elegance's overlay or vcpkg's own.
+            # Dawn's build time and cache size. Keep the triplet names, starting from Elegance's
+            # overlay or vcpkg's own. Windows uses static dependencies with the shared CRT (/MD).
             - name: Release-only triplets
               run: |
                   mkdir -p "$RUNNER_TEMP/triplets"
@@ -127,10 +142,10 @@ jobs:
               uses: actions/cache/restore@v6
               with:
                   path: ${{ github.workspace }}/.vcpkg-cache
-                  key: vcpkg-c-v1-${{ matrix.target }}-${{ matrix.runner }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  key: vcpkg-c-static-v2-${{ matrix.target }}-${{ matrix.runner }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
                   restore-keys: |
-                      vcpkg-c-v1-${{ matrix.target }}-${{ matrix.runner }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-
-                      vcpkg-c-v1-${{ matrix.target }}-${{ matrix.runner }}-
+                      vcpkg-c-static-v2-${{ matrix.target }}-${{ matrix.runner }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-
+                      vcpkg-c-static-v2-${{ matrix.target }}-${{ matrix.runner }}-
 
             - name: Configure (build or restore dependencies)
               id: configure
@@ -174,7 +189,7 @@ jobs:
                   GH_TOKEN: ${{ github.token }}
                   CURRENT: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
               run: |
-                  gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "vcpkg-c-" --limit 100 --json id,key \
+                  gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "vcpkg-c-static-v2-" --limit 100 --json id,key \
                     --jq ".[] | select(.key != \"$CURRENT\" and (.key | contains(\"-${{ matrix.target }}-\"))) | .id" |
                     while read -r id; do gh cache delete "$id" --repo "$GITHUB_REPOSITORY"; done
 
@@ -183,14 +198,38 @@ jobs:
                   cmake --build build/c
                   cmake --install build/c --prefix dist
 
+            - name: Test package tooling
+              run: python3 c/test_packaging.py
+
+            - name: Smoke-test relocated installed package
+              run: |
+                  mv dist relocated-dist
+                  args=()
+                  [ -n "${{ matrix.osx_arch }}" ] && args+=(-DCMAKE_OSX_ARCHITECTURES=${{ matrix.osx_arch }} -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3)
+                  cmake -S c/smoke -B build/c-smoke -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                    -DELG_PACKAGE_ROOT="$PWD/relocated-dist" "${args[@]}"
+                  cmake --build build/c-smoke
+                  ctest --test-dir build/c-smoke --output-on-failure
+                  mv relocated-dist dist
+
+            - name: Verify Linux smoke does not require shared libstdc++
+              if: runner.os == 'Linux'
+              run: |
+                  readelf --dynamic build/c-smoke/smoke > build/c-smoke/dynamic.txt
+                  if grep -q 'NEEDED.*libstdc++' build/c-smoke/dynamic.txt; then
+                    cat build/c-smoke/dynamic.txt
+                    echo 'The installed package must supply static libstdc++.' >&2
+                    exit 1
+                  fi
+
             - name: Package
               run: |
-                  printf 'target %s\nelegance %s\n' "${{ matrix.target }}" "$GITHUB_SHA" > dist/BUILDINFO
-                  tar -czf elegance-c-${{ matrix.target }}.tar.gz -C dist .
+                  printf 'target %s\nelegance %s\nlinkage static\n' "${{ matrix.target }}" "$GITHUB_SHA" > dist/BUILDINFO
+                  tar -czf elegance-c-static-${{ matrix.target }}.tar.gz -C dist .
             - uses: actions/upload-artifact@v7
               with:
-                  name: elegance-c-${{ matrix.target }}
-                  path: elegance-c-${{ matrix.target }}.tar.gz
+                  name: elegance-c-static-${{ matrix.target }}
+                  path: elegance-c-static-${{ matrix.target }}.tar.gz
 
     # Only once every target built: a pin should never point at a commit some targets lack.
     publish:

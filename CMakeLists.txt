@@ -88,7 +88,7 @@ endif ()
 add_subdirectory(src)
 
 # The C API as Elegance's own builds see it: compiled, not linked into anything (c/CMakeLists.txt
-# builds the shared library bindings use).
+# builds the static archive package bindings use).
 if (ELG_C_API)
     add_library(elegance_c_api OBJECT c/core.cpp c/views.cpp c/ext.cpp c/platform.cpp c/styles.cpp)
     target_link_libraries(elegance_c_api PRIVATE elegance)

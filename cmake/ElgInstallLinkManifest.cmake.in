@@ -1,0 +1,107 @@
+# Install-time counterpart of ElgLinkManifest.cmake. Never publish build-machine paths.
+set(_manifest "@ELG_PACKAGE_MANIFEST@")
+set(_root "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+file(MAKE_DIRECTORY "${_root}/lib")
+set(_output "")
+set(_sources "")
+set(_names "")
+set(_runtimes "")
+
+function(_elg_package_file source out)
+    if (NOT IS_ABSOLUTE "${source}" OR NOT EXISTS "${source}" OR IS_DIRECTORY "${source}")
+        message(FATAL_ERROR "Missing or non-absolute package dependency: ${source}")
+    endif ()
+    get_filename_component(name "${source}" NAME)
+    # A flat lib directory is convenient for native loaders, but silently overwriting an archive
+    # with another dependency of the same name would produce a broken package.
+    if (name IN_LIST _names AND NOT source IN_LIST _sources)
+        message(FATAL_ERROR "Package dependencies have colliding names: ${source}")
+    endif ()
+    if (NOT source IN_LIST _sources)
+        file(INSTALL "${source}" DESTINATION "${_root}/lib" TYPE FILE FOLLOW_SYMLINK_CHAIN)
+        list(APPEND _names "${name}")
+        list(APPEND _sources "${source}")
+        set(_names "${_names}" PARENT_SCOPE)
+        set(_sources "${_sources}" PARENT_SCOPE)
+    endif ()
+    set(${out} "lib/${name}" PARENT_SCOPE)
+endfunction()
+
+file(STRINGS "${_manifest}" _lines)
+foreach (line IN LISTS _lines)
+    if (NOT line MATCHES "^([^ ]+) +(.+)$")
+        # Empty generator expressions can leave bare 'lib' or 'define' entries.
+        if (line MATCHES "^(lib|define)? *$")
+            continue()
+        endif ()
+        message(FATAL_ERROR "Malformed link manifest entry: ${line}")
+    endif ()
+    set(kind "${CMAKE_MATCH_1}")
+    set(value "${CMAKE_MATCH_2}")
+    if (kind STREQUAL "runtime-dir")
+        # Includes DLLs loaded dynamically (Dawn's dxcompiler/dxil), not just linker inputs.
+        if (WIN32)
+            file(GLOB dlls "${value}/*.dll")
+            foreach (dll IN LISTS dlls)
+                _elg_package_file("${dll}" relative)
+                list(APPEND _output "runtime ${relative}")
+                list(APPEND _runtimes "${dll}")
+            endforeach ()
+        endif ()
+    elseif (kind STREQUAL "define")
+        list(APPEND _output "${line}")
+    elseif (kind MATCHES "^(static|lib|runtime)$")
+        if (value MATCHES "^(.*/)?([^/]+)\\.framework/?$")
+            # SDK frameworks must remain system names, not copied SDK paths.
+            list(APPEND _output "lib -framework ${CMAKE_MATCH_2}")
+        elseif (value MATCHES "^/(usr/)?lib(32|64)?/" AND value MATCHES "/lib([^/]+)\\.so(\\.[0-9]+)*$")
+            # find modules can return absolute system DSOs (including linker scripts such as
+            # libm.so). Do not copy glibc/loader files into the package or pin their ABI filenames.
+            # Static .a inputs and libraries outside the system directories are still bundled.
+            if (kind STREQUAL "lib")
+                list(APPEND _output "lib ${CMAKE_MATCH_1}")
+            elseif (NOT kind STREQUAL "runtime")
+                message(FATAL_ERROR "System shared library marked static: ${line}")
+            endif ()
+        elseif (IS_ABSOLUTE "${value}")
+            _elg_package_file("${value}" relative)
+            if (value MATCHES "\\.a$")
+                set(kind static)
+            endif ()
+            list(APPEND _output "${kind} ${relative}")
+            if (kind STREQUAL "runtime")
+                list(APPEND _runtimes "${value}")
+            endif ()
+        elseif (kind STREQUAL "lib" AND NOT value MATCHES "[/\\\\]|::|\\$<")
+            list(APPEND _output "lib ${value}")
+        else ()
+            message(FATAL_ERROR "Unresolved package dependency: ${line}")
+        endif ()
+    else ()
+        message(FATAL_ERROR "Unknown link manifest entry: ${line}")
+    endif ()
+endforeach ()
+
+# Shared AccessKit can itself depend on non-system shared libraries. Bundle their closure too.
+if (_runtimes)
+    file(GET_RUNTIME_DEPENDENCIES LIBRARIES ${_runtimes}
+            RESOLVED_DEPENDENCIES_VAR resolved UNRESOLVED_DEPENDENCIES_VAR unresolved
+            PRE_EXCLUDE_REGEXES "^[Aa][Pp][Ii]-" "^[Ee][Xx][Tt]-"
+            POST_EXCLUDE_REGEXES "^/(usr/)?lib(32|64)?/" "^/System/Library/"
+                ".*[Ww][Ii][Nn][Dd][Oo][Ww][Ss]/[Ss][Yy][Ss][Tt][Ee][Mm]32/.*")
+    if (unresolved)
+        message(FATAL_ERROR "Unresolved runtime dependencies: ${unresolved}")
+    endif ()
+    foreach (dependency IN LISTS resolved)
+        _elg_package_file("${dependency}" relative)
+        list(APPEND _output "runtime ${relative}")
+    endforeach ()
+endif ()
+
+# Don't deduplicate link inputs: repeated archives can be necessary for one-pass linkers.
+string(JOIN "\n" _content ${_output})
+if (NOT _content MATCHES "(^|\n)static lib/(lib)?elegance_c\\.(a|lib)(\n|$)"
+        OR NOT _content MATCHES "(^|\n)static lib/(lib)?elegance\\.(a|lib)(\n|$)")
+    message(FATAL_ERROR "Static package must contain elegance_c and Elegance archives")
+endif ()
+file(WRITE "${_root}/elegance-link.txt" "${_content}\n")

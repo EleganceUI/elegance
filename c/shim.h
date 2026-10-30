@@ -4,8 +4,8 @@
 
 // Elegance's C API: what the Rust bindings (elegance-rs's elegance-sys) and other languages call.
 // It lives here so a change to the C++ API updates it in the same pull request: every build
-// compiles it (ELG_C_API), and c/CMakeLists.txt builds it with Elegance into the prebuilt shared
-// library that CI publishes (.github/workflows/c-api.yml). elegance-sys declares the same functions
+// compiles it (ELG_C_API), and c/CMakeLists.txt packages it with static Elegance and dependency
+// archives that CI publishes (.github/workflows/c-api.yml). elegance-sys declares the same functions
 // and structs in Rust, and its tests check the struct layouts (elg_layouts_*).
 //
 // Every function is `extern "C"` and noexcept in practice: C++ exceptions are caught and recorded
@@ -31,8 +31,8 @@
 #include <utility>
 #include <vector>
 
-// ELG_SHIM_SHARED: the shim and Elegance built into one shared library (c/CMakeLists.txt, the
-// prebuilt library), which exports just these functions and ELG_API.
+// ELG_SHIM_SHARED: optional shared-library hosts can export the shim entry points.
+// The static prebuilt package does not define it.
 #if defined(ELG_SHIM_SHARED) && defined(_WIN32)
 #define ELG_EXPORT extern "C" __declspec(dllexport)
 #elif defined(ELG_SHIM_SHARED)
