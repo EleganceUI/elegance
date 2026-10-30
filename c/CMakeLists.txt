@@ -26,20 +26,19 @@ set(ELG_STATIC_EXPORTS OFF CACHE BOOL "" FORCE)
 set(ELG_C_API OFF CACHE BOOL "" FORCE)
 # AccessKit's Rust staticlib includes its own standard library and clashes with Rust consumers.
 set(ELG_ACCESSKIT_SHARED ON CACHE BOOL "" FORCE)
-add_subdirectory("${ELEGANCE_ROOT}" elegance)
 
+# Declare the shim before configuring Elegance so src/ can traverse it while its
+# directory-scoped imported dependencies (SDL, Dawn, ...) are still visible.
 add_library(elegance_c STATIC core.cpp views.cpp ext.cpp platform.cpp styles.cpp)
 target_link_libraries(elegance_c PRIVATE elegance)
+set(ELG_C_PACKAGE_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/elegance-link-$<CONFIG>.txt")
+add_subdirectory("${ELEGANCE_ROOT}" elegance)
 if (MSVC)
     target_compile_definitions(elegance_c PRIVATE NOMINMAX)
     target_compile_options(elegance_c PRIVATE /EHsc /permissive- /utf-8 /Zc:__cplusplus /bigobj)
 endif ()
 
-include("${ELEGANCE_ROOT}/cmake/ElgLinkManifest.cmake")
-# Linux consumers need neither GCC 14's shared libstdc++ nor its development linker input.
-# This affects only the prebuilt package; normal source-build manifests use the system runtime.
-elg_write_link_manifest(elegance_c "${CMAKE_CURRENT_BINARY_DIR}/elegance-link-$<CONFIG>.txt"
-        STATIC_CXX_RUNTIME)
+
 set(ELG_PACKAGE_MANIFEST "${CMAKE_CURRENT_BINARY_DIR}/elegance-link-\${CMAKE_INSTALL_CONFIG_NAME}.txt")
 configure_file("${ELEGANCE_ROOT}/cmake/ElgInstallLinkManifest.cmake.in"
         "${CMAKE_CURRENT_BINARY_DIR}/ElgInstallLinkManifest.cmake" @ONLY)

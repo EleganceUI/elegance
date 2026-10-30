@@ -131,6 +131,12 @@ elseif (NOT ELG_BUILD_SHARED)
     # What linking it takes, for builds outside CMake (the Rust bindings), written at the end.
     cmake_language(DEFER CALL elg_write_link_manifest elegance "${PROJECT_BINARY_DIR}/elegance-link.txt")
     include(ElgLinkManifest)
+    if (DEFINED ELG_C_PACKAGE_MANIFEST)
+        # find_package() imports below are directory-scoped. Generate the C package's
+        # transitive manifest here, not from its parent where those targets are invisible.
+        cmake_language(DEFER CALL elg_write_link_manifest elegance_c "${ELG_C_PACKAGE_MANIFEST}"
+                STATIC_CXX_RUNTIME)
+    endif ()
 endif ()
 
 find_package(SDL3 CONFIG REQUIRED)

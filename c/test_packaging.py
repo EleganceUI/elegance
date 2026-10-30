@@ -259,23 +259,39 @@ elg_write_link_manifest(dependency "${{CMAKE_CURRENT_BINARY_DIR}}/manifest.txt")
         (self.source / "elegance.cpp").write_text(
             "#include <string>\n"
             "extern const char* dependency();\n"
+            "extern int sdl_value();\n"
             # Force C++ runtime references in a static archive, not only the shared library.
-            "const char* version() { static std::string value(dependency()); return value.c_str(); }\n"
+            "const char* version() { static std::string value(dependency()); return sdl_value() == 42 ? value.c_str() : nullptr; }\n"
         )
         (self.source / "shim.cpp").write_text(
             "extern const char* version();\n"
             'extern "C" const char* elg_version() { return version(); }\n'
         )
+        (self.source / "sdl.cpp").write_text("int sdl_value() { return 42; }\n")
+        dependencies = self.source / "src"
+        dependencies.mkdir()
+        (dependencies / "CMakeLists.txt").write_text(f'''
+add_library(accesskit_mock SHARED ../runtime.cpp)
+add_library(sdl_mock STATIC ../sdl.cpp)
+# Match find_package(SDL3): both the import and its alias are private to src/.
+add_library(SDL3_import INTERFACE IMPORTED)
+set_property(TARGET SDL3_import PROPERTY INTERFACE_LINK_LIBRARIES sdl_mock)
+add_library(SDL3::SDL3 ALIAS SDL3_import)
+add_library(elegance STATIC ../elegance.cpp)
+target_link_libraries(elegance PRIVATE SDL3::SDL3 accesskit_mock)
+include("{ROOT.as_posix()}/cmake/ElgLinkManifest.cmake")
+cmake_language(DEFER CALL elg_write_link_manifest elegance_c "${{ELG_C_PACKAGE_MANIFEST}}" STATIC_CXX_RUNTIME)
+''')
         (self.source / "CMakeLists.txt").write_text(f'''
 cmake_minimum_required(VERSION 4.3)
 project(package_fixture LANGUAGES CXX)
-add_library(accesskit_mock SHARED runtime.cpp)
-add_library(elegance STATIC elegance.cpp)
-target_link_libraries(elegance PRIVATE accesskit_mock)
 add_library(elegance_c STATIC shim.cpp)
 target_link_libraries(elegance_c PRIVATE elegance)
-include("{ROOT.as_posix()}/cmake/ElgLinkManifest.cmake")
-elg_write_link_manifest(elegance_c "${{CMAKE_CURRENT_BINARY_DIR}}/native-$<CONFIG>.txt" STATIC_CXX_RUNTIME)
+set(ELG_C_PACKAGE_MANIFEST "${{CMAKE_CURRENT_BINARY_DIR}}/native-$<CONFIG>.txt")
+add_subdirectory(src)
+if (TARGET SDL3::SDL3)
+    message(FATAL_ERROR "Fixture must exercise a directory-scoped import")
+endif ()
 set(ELG_PACKAGE_MANIFEST "${{CMAKE_CURRENT_BINARY_DIR}}/native-Release.txt")
 configure_file("{ROOT.as_posix()}/cmake/ElgInstallLinkManifest.cmake.in" install.cmake @ONLY)
 install(SCRIPT "${{CMAKE_CURRENT_BINARY_DIR}}/install.cmake")
@@ -288,6 +304,10 @@ install(SCRIPT "${{CMAKE_CURRENT_BINARY_DIR}}/install.cmake")
         )
         relocated = self.base / "relocated package"
         self.install.rename(relocated)
+        manifest_text = (relocated / "elegance-link.txt").read_text()
+        self.assertNotIn("SDL3::SDL3", manifest_text)
+        self.assertNotIn("SDL3_import", manifest_text)
+        self.assertRegex(manifest_text, r"static lib/(lib)?sdl_mock\.(a|lib)")
         # Remove source libraries to prove the consumer does not link or load them in place.
         shutil.rmtree(build)
         consumer = self.base / "consumer"
