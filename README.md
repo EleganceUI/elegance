@@ -23,15 +23,16 @@ int main() {
 
 | Repository | What's in it |
 | --- | --- |
-| [elegance](https://github.com/EleganceUI/elegance) | The library (this one): `include/elg/`, `src/`, the C API (`c/`), tests, the sandbox and the preview host, the docs |
+| [elegance](https://github.com/EleganceUI/elegance) | The library (this one): `include/elg/`, `src/`, the C API (`c/`), tests, the sandbox and the preview host |
 | [elegance-rs](https://github.com/EleganceUI/elegance-rs) | Rust bindings, with `elg!`, a SwiftUI-style DSL |
+| [elegance-examples](https://github.com/EleganceUI/elegance-examples) | Examples and apps in C++ and Rust, one self-contained project per folder |
+| [elegance-docs](https://github.com/EleganceUI/elegance-docs) | The [documentation site](https://eleganceui.github.io/elegance-docs/): guides in both languages, and the C++ and Rust reference |
 
 The C API (`c/`) is what language bindings call. Every build compiles it, so a change to the C++
 API updates it in the same pull request. CI builds it with Elegance into one prebuilt shared
 library per target for every commit on `main`, published as a `c-<commit>` prerelease
 (`.github/workflows/c-api.yml`); elegance-rs pins a commit and downloads its library, and moves the
 pin through ordinary pull requests.
-| [elegance-examples](https://github.com/EleganceUI/elegance-examples) | Examples and apps in C++ and Rust, one self-contained project per folder |
 
 ## Building
 
@@ -51,7 +52,7 @@ build\windows-debug\bin\sandbox.exe
 ```
 
 The first configure builds the dependencies, Dawn included (about half an hour). See
-[Installation](docs/src/content/docs/start/installation.mdx) for the presets, the build options,
+[Installation](https://eleganceui.github.io/elegance-docs/start/installation/) for the presets, the build options,
 static linking, and using Elegance in your own project. To start an app, copy a folder from
 elegance-examples, such as `hello-cpp`.
 
@@ -81,7 +82,6 @@ cmake/          build helpers: hot reload, view extensions, the link manifest
 apps/sandbox/   most features in one window
 apps/preview/   the preview host for hot reload
 tests/          unit tests (Catch2)
-docs/           the documentation site (Astro Starlight)
 third_party/    vendored data (Phosphor icons)
 ```
 
