@@ -16,7 +16,7 @@ namespace elg::detail {
 namespace {
 
 // Bump when generated pixels change for the same font and glyph (generator settings, fixes).
-constexpr std::uint32_t kVersion = 4; // 4: overlapping contours resolved; 3: color glyphs single-channel
+constexpr std::uint32_t kVersion = 5; // 5: thin overlaps found; 4: overlapping contours resolved; 3: color glyphs single-channel
 constexpr char kFileMagic[4] = {'E', 'L', 'G', 'G'};
 constexpr std::uint32_t kRecordMagic = 0x504C5947; // "GYLP"
 constexpr std::uint64_t kMaxFileBytes = 64ull << 20;

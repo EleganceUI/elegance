@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
+#include <vector>
 
 namespace elg::detail {
 
@@ -84,14 +85,31 @@ float median(float a, float b, float c) {
     return std::max(std::min(a, b), std::min(std::max(a, b), c));
 }
 
-// Whether the shape's contours overlap: somewhere (at a field pixel's center) the winding number
-// passes 1. Variable fonts build glyphs that way (a stroke drawn across a bowl).
-bool overlaps(const msdfgen::Shape& shape, const msdfgen::Projection& projection, int columns, int rows) {
-    msdfgen::Scanline scanline;
-    for (int row = 0; row < rows; ++row) {
-        shape.scanline(scanline, projection.unprojectY(row + 0.5));
-        for (int column = 0; column < columns; ++column) {
-            if (std::abs(scanline.sumIntersections(projection.unprojectX(column + 0.5))) > 1) {
+// Whether the shape's contours overlap: somewhere the winding number passes 1. Variable fonts
+// build glyphs that way (a stroke drawn across a bowl, the arms of a y). Along each row the winding
+// is exact between crossings, so an overlap narrower than a field pixel isn't missed; rows are
+// kRowsPerPixel to a field pixel, so neither is one barely taller than that.
+bool overlaps(const msdfgen::Shape& shape, const msdfgen::Projection& projection, int rows) {
+    constexpr int kRowsPerPixel = 8;
+    std::vector<std::pair<double, int>> crossings; // x, direction
+    for (int row = 0; row < rows * kRowsPerPixel; ++row) {
+        const double y = projection.unprojectY((row + 0.5) / kRowsPerPixel);
+        crossings.clear();
+        for (const msdfgen::Contour& contour : shape.contours) {
+            for (const msdfgen::EdgeHolder& edge : contour.edges) {
+                double x[3];
+                int direction[3];
+                const int count = edge->scanlineIntersections(x, direction, y);
+                for (int i = 0; i < count; ++i) {
+                    crossings.emplace_back(x[i], direction[i]);
+                }
+            }
+        }
+        std::ranges::sort(crossings);
+        int winding = 0;
+        for (const auto& [x, direction] : crossings) {
+            winding += direction;
+            if (std::abs(winding) > 1) {
                 return true;
             }
         }
@@ -304,7 +322,7 @@ GlyphUpload generate(const GlyphJob& job) {
         }
     } else {
         msdfgen::generateMTSDF(bitmap, job.shape, transformation);
-        if (overlaps(job.shape, projection, static_cast<int>(job.width), static_cast<int>(job.height))) {
+        if (overlaps(job.shape, projection, static_cast<int>(job.height))) {
             resolve_overlaps(bitmap, job.shape, projection, job.scale, job.translate);
         }
     }
