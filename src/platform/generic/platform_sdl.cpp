@@ -140,6 +140,21 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
     }
     case SDL_EVENT_WINDOW_MOUSE_LEAVE:
         return {EventType::pointer_leave, event.window.windowID};
+    case SDL_EVENT_WINDOW_HIT_TEST: {
+        // Over a drag area (and the traffic lights above one) SDL sends this instead of the
+        // pointer's motion, so what was hovered would stay hovered: move it here.
+        SDL_Window* window = SDL_GetWindowFromID(event.window.windowID);
+        int x = 0;
+        int y = 0;
+        if (!window || !SDL_GetWindowPosition(window, &x, &y)) {
+            return {};
+        }
+        Event result{EventType::pointer_move, event.window.windowID};
+        SDL_GetGlobalMouseState(&result.x, &result.y);
+        result.x -= static_cast<float>(x);
+        result.y -= static_cast<float>(y);
+        return result;
+    }
     case SDL_EVENT_MOUSE_MOTION: {
         Event result{EventType::pointer_move, event.motion.windowID};
         result.x = event.motion.x;
