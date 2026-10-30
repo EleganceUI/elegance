@@ -7,6 +7,7 @@
 
 #include "platform/generic/native.h"
 
+#include "platform/macos/appearance.h"
 #include "platform/macos/input.h"
 #include "platform/macos/title_bar.h"
 
@@ -38,10 +39,12 @@ WindowParts window_created(SDL_Window* window, const WindowDesc& desc, bool popu
         SDL_DestroyWindow(window);
         throw PlatformError(std::format("failed to create a Metal view: {}", error));
     }
+    void* ns_window = SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
     if (desc.title_bar == TitleBar::integrated && !popup) {
-        parts.title_bar = macos::integrate_title_bar(
-            SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr),
-            desc.system_controls_position);
+        parts.title_bar = macos::integrate_title_bar(ns_window, desc.system_controls_position);
+    }
+    if (!popup && ns_window) {
+        macos::apply_material(ns_window, desc.material);
     }
     return parts;
 }

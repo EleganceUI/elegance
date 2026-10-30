@@ -8,6 +8,8 @@
 #include "core/crash.h"
 #include "core/log.h"
 #include "core/scope_exit.h"
+#include "platform/generic/menu_bar.h"
+#include "platform/generic/native.h"
 #include "platform/generic/platform.h"
 #include "reactive/runtime.h"
 #include "render/frame_mailbox.h"
@@ -32,6 +34,7 @@
 #include <algorithm>
 #include <chrono>
 #include <exception>
+#include <map>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -68,7 +71,12 @@ double seconds_now() {
 struct WindowEntry {
     WindowDesc desc;
     ContentFunction content;
+    // Wraps the content (Linux: the menu bar above it). Set by App::run.
+    std::function<View(View)> wrap;
 };
+
+// The system's accent color while an App runs (system_accent_color()).
+State<std::optional<Color>>* g_accent_color = nullptr;
 
 // Where popup requests go: the app's popup host (in App::run).
 struct PopupSink {
@@ -237,6 +245,9 @@ struct LiveWindow {
         Scope::Use use(scope);
         const EnvironmentScope environment_scope(environment); // Environment<K>() in the content function
         View content = entry->content();
+        if (entry->wrap) {
+            content = entry->wrap(std::move(content));
+        }
         return std::make_unique<FloatingLayerElement>(lower(content, LowerContext{.text = &text,
                                                     .needs_frame = &dirty,
                                                     .tree_changed = &tree_changed,
@@ -304,7 +315,7 @@ WindowFrame build_frame(LiveWindow& live) {
     frame.scale = live.window.scale();
     // Transparent windows start clear, so only what's drawn covers the desktop.
     frame.list.clear_color = live.entry->desc.background.value_or(
-        live.entry->desc.transparent ? Color::clear : resolve_theme_color(live.environment, ThemeColor::background));
+        platform::see_through(live.entry->desc) ? Color::clear : resolve_theme_color(live.environment, ThemeColor::background));
     frame.list.scale = frame.scale;
 
     // Popups get the size their content measured, which their window was made at least as big as
@@ -327,6 +338,11 @@ struct App::Impl {
     bool running = false;
     bool quit_requested = false;
     platform::Platform* platform = nullptr; // valid while running
+    // The menu bar as given (menu commands find their items here), its check boxes' states by
+    // item id, and, while running, how to show it again after a change.
+    std::vector<MenuBarItem> menus;
+    std::map<std::uint32_t, bool> menu_checks;
+    std::function<void()> show_menus;
 };
 
 App::App() : impl_(std::make_unique<Impl>()) {}
@@ -374,7 +390,16 @@ App& App::window(WindowDesc desc, ContentFunction content) {
     if (!content) {
         throw UsageError("App::window(): the content function is empty");
     }
-    impl_->windows.push_back({std::move(desc), std::move(content)});
+    impl_->windows.push_back({std::move(desc), std::move(content), {}});
+    return *this;
+}
+
+App& App::menu_bar(std::vector<MenuBarItem> menus) {
+    impl_->menus = std::move(menus);
+    impl_->menu_checks.clear();
+    if (impl_->show_menus) {
+        impl_->show_menus();
+    }
     return *this;
 }
 
@@ -501,18 +526,121 @@ int App::run() {
         .move_popup = [&](std::uint64_t token, Rect anchor, std::uint32_t) { pending.moves.emplace_back(token, anchor); },
     };
 
+    // The system's accent color, for system_accent_color(); refreshed when the theme changes.
+    State<std::optional<Color>> accent_color(platform::native::system_accent_color());
+    g_accent_color = &accent_color;
+    ScopeExit forget_accent([] { g_accent_color = nullptr; });
+
     std::vector<std::unique_ptr<LiveWindow>> windows;
-    for (WindowEntry& entry : self.windows) {
-        windows.push_back(std::make_unique<LiveWindow>(entry, text, base, &popup_sink));
-    }
     const auto find_window = [&](std::uint32_t id) {
         return std::ranges::find_if(windows, [&](const auto& live) { return live->window.id() == id; });
     };
 
+    // The menu bar (design.md §13.4): the system's (macOS, Windows), or drawn at the top of each
+    // window (Linux). Chosen items come here, from the menus or their shortcuts.
+    const bool macos_menus = current_platform() == Platform::macos;
+    State<std::vector<menus::Item>> shown_menus(menus::resolve(self.menus, macos_menus));
+    State<std::map<std::uint32_t, bool>> shown_checks;
+    const auto run_menu_command = [&](std::uint32_t id) {
+        const MenuBarItem* item = menus::find(self.menus, id);
+        if (!item || !item->enabled) {
+            return;
+        }
+        if (item->checked) {
+            const auto known = self.menu_checks.find(id);
+            const bool now = !(known != self.menu_checks.end() ? known->second : *item->checked);
+            self.menu_checks[id] = now;
+            shown_checks = self.menu_checks;
+            platform::native::set_menu_checked(id, now);
+            if (item->toggled) {
+                item->toggled(now);
+            }
+        }
+        if (item->action) {
+            item->action();
+            return;
+        }
+        const std::uint32_t focused = platform::focused_window_id();
+        const auto target = find_window(focused);
+        switch (item->role) {
+        case MenuRole::quit: self.quit_requested = true; break;
+        case MenuRole::minimize:
+            if (target != windows.end()) {
+                (*target)->window.minimize();
+            }
+            break;
+        case MenuRole::zoom:
+            if (target != windows.end()) {
+                (*target)->window.toggle_maximized();
+            }
+            break;
+        default:
+            // Editing: the shortcut, to the focused view (a text field takes it).
+            if (const auto key = menus::edit_key(item->role); key && focused != 0) {
+                platform.post_key(focused, key->key, key->modifiers);
+            }
+            break;
+        }
+    };
+    self.show_menus = [&] {
+        shown_menus = menus::resolve(self.menus, macos_menus);
+        shown_checks = self.menu_checks;
+        if (!platform::native::draws_menu_bar_in_content()) {
+            // Commands from the system's menus run between events, like other UI tasks.
+            platform::native::set_menu_bar(shown_menus.peek(), [&run_menu_command](std::uint32_t id) {
+                post_ui_task([&run_menu_command, id] { run_menu_command(id); });
+            });
+        }
+    };
+    ScopeExit forget_menus([&self] { self.show_menus = {}; });
+    if (!self.menus.empty()) {
+        self.show_menus();
+    }
+    if (platform::native::draws_menu_bar_in_content()) {
+        for (WindowEntry& entry : self.windows) {
+            entry.wrap = [&shown_menus, &shown_checks, &run_menu_command](View content) {
+                const float infinity = std::numeric_limits<float>::infinity();
+                View bar = menus::menu_bar_view([&shown_menus] { return shown_menus(); },
+                                                [&run_menu_command](std::uint32_t id) { run_menu_command(id); },
+                                                [&shown_checks, &shown_menus](std::uint32_t id) {
+                                                    const auto& checks = shown_checks();
+                                                    if (const auto found = checks.find(id); found != checks.end()) {
+                                                        return found->second;
+                                                    }
+                                                    // Not chosen yet: as given.
+                                                    std::function<std::optional<bool>(const std::vector<menus::Item>&)> initial =
+                                                        [&](const std::vector<menus::Item>& items) -> std::optional<bool> {
+                                                        for (const menus::Item& item : items) {
+                                                            if (item.id == id) {
+                                                                return item.checked;
+                                                            }
+                                                            if (const auto inner = initial(item.submenu)) {
+                                                                return inner;
+                                                            }
+                                                        }
+                                                        return std::nullopt;
+                                                    };
+                                                    return initial(shown_menus.peek()).value_or(false);
+                                                });
+                return VStack({.spacing = 0}, If([&shown_menus] { return !shown_menus().empty(); }, std::move(bar)),
+                              std::move(content).frame({.max_width = infinity, .max_height = infinity}));
+            };
+        }
+    }
+    ScopeExit unwrap([&self] {
+        for (WindowEntry& entry : self.windows) {
+            entry.wrap = {};
+        }
+    });
+
+    for (WindowEntry& entry : self.windows) {
+        windows.push_back(std::make_unique<LiveWindow>(entry, text, base, &popup_sink));
+    }
+
     FrameMailbox mailbox;
     RenderThread renderer(mailbox, [&platform] { platform.wake(); });
     for (const auto& live : windows) {
-        mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), live->entry->desc.transparent,
+        mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), platform::see_through(live->entry->desc),
                                       live->window.native_handle()});
     }
 
@@ -1209,6 +1337,13 @@ int App::run() {
             } else if (auto it = find_window(event.window_id); it != windows.end()) {
                 if ((*it)->events.key(key)) {
                     (*it)->dirty = true;
+                } else if (key.kind == KeyEvent::Kind::down && !key.repeat && !event.synthetic && !(*it)->is_popup &&
+                           !platform::native::menu_bar_handles_shortcuts()) {
+                    // A menu item's shortcut, once no view wanted the key.
+                    if (const std::uint32_t id =
+                            menus::match_shortcut(shown_menus.peek(), KeyboardShortcut{key.key, key.modifiers})) {
+                        run_menu_command(id);
+                    }
                 }
             }
             break;
@@ -1248,7 +1383,9 @@ int App::run() {
             break;
         case platform::EventType::system_theme_changed:
             scheme = system_scheme();
+            accent_color = platform::native::system_accent_color();
             for (const auto& live : windows) {
+                live->window.refresh_appearance();
                 live->dirty = true; // the default window background follows the scheme
             }
             break;
@@ -1412,6 +1549,13 @@ const char* version() {
 
 void post_to_ui_thread(std::function<void()> task) {
     detail::post_ui_task(std::move(task));
+}
+
+std::optional<Color> system_accent_color() {
+    if (g_accent_color) {
+        return (*g_accent_color)();
+    }
+    return detail::platform::native::system_accent_color();
 }
 
 } // namespace elg

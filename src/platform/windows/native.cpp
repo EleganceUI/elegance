@@ -3,13 +3,17 @@
 // https://mozilla.org/MPL/2.0/.
 
 // Windows under SDL (platform/generic/native.h): WebGPU draws into the HWND, DWM rounds
-// undecorated windows' corners, and password fields detach the IME.
+// undecorated windows' corners, and password fields detach the IME. Top-level windows are
+// subclassed for what SDL doesn't pass on: menu commands, the taskbar button's creation, and
+// accent color changes.
 
 #include "platform/generic/native.h"
+#include "platform/windows/shell.h"
 
 #include <SDL3/SDL.h>
 
 #include <windows.h>
+#include <commctrl.h>
 #include <dwmapi.h>
 #include <imm.h>
 
@@ -24,13 +28,38 @@ HWND hwnd_of(SDL_Window* window) {
         SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
 }
 
+constexpr UINT_PTR kSubclassId = 0x454C47; // "ELG"
+
+LRESULT CALLBACK subclass_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR, DWORD_PTR) {
+    static const UINT taskbar_button_created = RegisterWindowMessageW(L"TaskbarButtonCreated");
+    if (message == WM_COMMAND && HIWORD(wparam) == 0 && lparam == 0 && windows::menu_command(LOWORD(wparam))) {
+        return 0;
+    }
+    if (message == taskbar_button_created) {
+        windows::taskbar_button_created(window);
+    } else if (message == WM_DWMCOLORIZATIONCOLORCHANGED ||
+               (message == WM_SETTINGCHANGE && lparam &&
+                lstrcmpW(reinterpret_cast<const wchar_t*>(lparam), L"ImmersiveColorSet") == 0)) {
+        windows::accent_changed();
+    }
+    return DefSubclassProc(window, message, wparam, lparam);
+}
+
 } // namespace
 
 std::uint64_t gpu_window_flags() {
     return 0;
 }
 
-WindowParts window_created(SDL_Window* window, const WindowDesc& desc, bool) {
+WindowParts window_created(SDL_Window* window, const WindowDesc& desc, bool popup) {
+    HWND hwnd = hwnd_of(window);
+    if (hwnd && !popup) {
+        SetWindowSubclass(hwnd, &subclass_procedure, kSubclassId, 0);
+        windows::apply_material(hwnd, desc.material);
+        if (desc.title_bar != TitleBar::hidden) {
+            windows::attach_menu_bar(hwnd);
+        }
+    }
     // Windows 11 rounds the corners of decorated windows; ask the same for undecorated opaque
     // ones (transparent windows draw their own shape). Ignored on Windows 10.
     if (desc.title_bar == TitleBar::hidden && !desc.transparent) {
@@ -42,7 +71,19 @@ WindowParts window_created(SDL_Window* window, const WindowDesc& desc, bool) {
     return {};
 }
 
-void window_destroying(SDL_Window*, WindowParts&) {}
+void window_destroying(SDL_Window* window, WindowParts&) {
+    if (HWND hwnd = hwnd_of(window)) {
+        windows::detach_menu_bar(hwnd);
+        windows::forget_material(hwnd);
+        RemoveWindowSubclass(hwnd, &subclass_procedure, kSubclassId);
+    }
+}
+
+void appearance_changed(SDL_Window* window, WindowParts&) {
+    if (HWND hwnd = hwnd_of(window)) {
+        windows::refresh_material(hwnd);
+    }
+}
 
 SurfaceSource surface_source(SDL_Window* window, const WindowParts&) {
     const SDL_PropertiesID properties = SDL_GetWindowProperties(window);

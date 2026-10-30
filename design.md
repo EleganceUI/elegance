@@ -1204,10 +1204,11 @@ Text(file.name)
 - **Styling:** a `MenuStyle` alongside `ButtonStyle` (§8, M3), built on theme tokens, with a
   default that looks at home on each platform.
 
-#### macOS menu bar
-The app menu bar on macOS is native (`NSMenu`), exposed separately as `App::menu_bar(...)`.
-People expect the real system menu bar, and it isn't app-drawn there anyway. Windows and Linux
-have no system menu bar, so an app menu bar there is an ordinary view.
+#### The app's menu bar
+`App::menu_bar({MenuBarItem...})` (§13.4) is native where the system has one: the macOS main
+menu (`NSMenu`), and a Win32 menu in each Windows window with a system title bar. Linux has no
+menu bar to rely on, so there it's an ordinary view at the top of each window, built from the
+same popups.
 
 #### Dependencies
 Keyboard and focus (M4) for navigation, and M3's styles for `MenuStyle`. Scheduled for **M4**,
@@ -1494,6 +1495,40 @@ it covers them).
     Clicks come back through `NIN_BALLOONUSERCLICK`.
   - Proper WinRT toasts (actions, images) need an AppUserModelID and a Start-menu shortcut, so
     they're a follow-up for packaged apps.
+  - macOS: `UNUserNotificationCenter` (it asks for permission the first time).
+  - Linux: `org.freedesktop.Notifications` over D-Bus (GIO), with `desktop-entry` set to the app's
+    id. Clicks come back as `ActionInvoked`. Without GIO in the build, they're logged.
+- **Dock and taskbar:** `set_badge(text)`, `set_progress(fraction, ProgressState)` and
+  `request_attention(critical)`; `nullopt` removes a badge or the progress.
+  - macOS: the dock tile's badge label, and a progress bar drawn into the tile.
+  - Windows: `ITaskbarList3` progress (paused and error turn it yellow and red) and the badge as an
+    overlay icon (a red disc with the text). Buttons made later get the current state.
+  - Linux: the Unity launcher API (`com.canonical.Unity.LauncherEntry`), shown by KDE, Ubuntu's
+    dock and Dash to Dock. A badge only shows when it's a number; progress has no states.
+  - Attention: `SDL_FlashWindow` (macOS bounces the dock icon, once or until the app is active).
+- **Window materials:** `WindowDesc::material` (`sidebar`, `under_window`, `mica`, `acrylic`).
+  The window is see-through and the system draws the material behind the content.
+  - macOS: an `NSVisualEffectView` behind the content view (mica and acrylic map to the closest
+    materials).
+  - Windows 11 22H2 and later: a DWM system backdrop (Mica, Mica Alt for `sidebar`, acrylic),
+    with the frame extended over the client area and the title bar following light/dark.
+  - Linux and older Windows: none; the window stays opaque.
+- **Accent color:** `system_accent_color()`, or `nullopt` when the system has none, kept current
+  (a change re-renders like a theme change). macOS: `controlAccentColor`; Windows: the DWM
+  `AccentColor`; Linux: the settings portal's `accent-color`.
+- **Menu bar:** `App::menu_bar({MenuBarItem...})`, callable while the app runs. Items have a
+  title, an action, an optional check mark (`checked` + `toggled`), `enabled`, a
+  `KeyboardShortcut` and a `MenuRole`.
+  - Roles give standard titles, shortcuts and behavior: `app`, `window` and `help` menus; `quit`,
+    `minimize`, `zoom` and the edit commands (undo through select all) work without an action.
+    On macOS, so do `about`, `hide`, `hide_others`, `show_all` and `toggle_fullscreen`. Elsewhere
+    the macOS-only roles are left out, as are `about` and `settings` without an action.
+  - macOS: the app menu comes first (a standard one when the app gives none); shortcuts are key
+    equivalents.
+  - Windows: a Win32 menu per window with a system title bar; shortcuts are shown after a tab and
+    matched by the app when no view takes the key.
+  - Linux: drawn at the top of each window's content, shortcuts matched like on Windows.
+  - Edit roles without an action send their key (Ctrl/Cmd+C and so on) to the focused window.
 - **Tray icon:** `TrayIcon({.icon, .tooltip, .menu})` (SDL3 tray): buttons, check boxes, separators
   and submenus. Shown while any copy lives; `set_tooltip` and `set_menu`. The icon comes from an
   `ImageSource`, else a plain dot.
@@ -2393,7 +2428,8 @@ Separate render thread from day one (decided).
 - [ ] Desktop follow-ups:
   - Dragging out (files and text to other apps).
   - WinRT toasts with actions.
-  - Badge counts.
+  - Jump lists and dock menus.
+  - Linux: the global menu (`com.canonical.dbusmenu`) where the desktop shows one.
   - The app's own window icon and jump lists.
   - "Open with" / file associations (handling files passed at launch).
   - Single-instance apps.

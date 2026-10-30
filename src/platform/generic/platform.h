@@ -104,6 +104,8 @@ struct Event {
     Key key = Key::unknown;
     KeyModifiers modifiers = KeyModifiers::none;
     bool repeat = false;
+    // Made by the app (Platform::post_key), not typed.
+    bool synthetic = false;
 };
 
 // What part of a window a point is, for windows without system decorations.
@@ -192,6 +194,10 @@ public:
     Rect usable_area() const;
     HitArea hit_test_at(Point point) const { return hit_test_ ? hit_test_(point) : HitArea::normal; }
 
+    // The system's light/dark setting changed: what the OS draws itself follows it (Windows'
+    // title bar and Mica).
+    void refresh_appearance();
+
     // The handles the render thread creates this window's surface from. The surface must be
     // gone before this window.
     SurfaceSource surface_source() const;
@@ -209,9 +215,17 @@ private:
     std::function<HitArea(Point)> hit_test_;
 };
 
+// Whether the system draws the window's material (WindowDesc::material) behind it here.
+bool draws_material(const WindowDesc& desc);
+// Whether the desktop can show through the window: transparent, or with a material drawn. Its
+// default background is then clear and its surface composited with alpha.
+bool see_through(const WindowDesc& desc);
+
 // Owns SDL's lifetime. Construct on the main thread, which becomes the UI thread.
 // Whether one of the app's windows has keyboard focus.
 bool any_window_focused();
+// The window with keyboard focus (0: none).
+std::uint32_t focused_window_id();
 // Blocks until the system compositor has composed its next frame (DwmFlush on Windows; nothing
 // elsewhere). During a live resize this lets a just-presented frame reach the screen before the
 // window is resized again, so the compositor doesn't stretch an old frame.
@@ -239,6 +253,10 @@ public:
 
     // Wakes wait_event() with EventType::wake. Thread-safe.
     void wake();
+
+    // Queues a press and release of `key` for `window_id`, as if typed (Event::synthetic). UI
+    // thread.
+    void post_key(std::uint32_t window_id, Key key, KeyModifiers modifiers);
 
     // Called on the main thread from inside OS modal loops while the user resizes a window,
     // when the normal event loop is blocked. Must not throw.

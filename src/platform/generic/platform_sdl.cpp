@@ -260,7 +260,7 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
     if (desc.title_bar == TitleBar::hidden) {
         flags |= SDL_WINDOW_BORDERLESS;
     }
-    if (desc.transparent) {
+    if (see_through(desc)) {
         flags |= SDL_WINDOW_TRANSPARENT;
     }
     if (desc.fullscreen) {
@@ -321,8 +321,25 @@ Rect Window::usable_area() const {
     return {origin.x, origin.y, size.x, size.y};
 }
 
+bool draws_material(const WindowDesc& desc) {
+    return desc.material != WindowMaterial::none && native::supports_material(desc.material);
+}
+
+bool see_through(const WindowDesc& desc) {
+    return desc.transparent || draws_material(desc);
+}
+
 bool any_window_focused() {
     return SDL_GetKeyboardFocus() != nullptr;
+}
+
+std::uint32_t focused_window_id() {
+    SDL_Window* window = SDL_GetKeyboardFocus();
+    return window ? SDL_GetWindowID(window) : 0;
+}
+
+void Window::refresh_appearance() {
+    native::appearance_changed(window_, native_);
 }
 
 void* Window::native_handle() const {
@@ -568,9 +585,11 @@ Platform::Platform() {
         SDL_PushEvent(&marker);
         return true;
     });
+    native::watch_appearance();
 }
 
 Platform::~Platform() {
+    native::unwatch_appearance();
     native::remove_input_monitor(input_monitor_);
     SDL_RemoveEventWatch(&on_event_watch, this);
     SDL_Quit();
@@ -612,6 +631,19 @@ Event Platform::translate(const SDL_Event& event) {
         return result;
     }
     return platform::translate(event, wake_event_);
+}
+
+void Platform::post_key(std::uint32_t window_id, Key key, KeyModifiers modifiers) {
+    for (const EventType type : {EventType::key_down, EventType::key_up}) {
+        Event event{type, window_id};
+        event.key = key;
+        event.modifiers = modifiers;
+        event.synthetic = true;
+        native_events_.push_back(std::move(event));
+        SDL_Event marker{};
+        marker.type = native_event_;
+        SDL_PushEvent(&marker);
+    }
 }
 
 void Platform::wake() {

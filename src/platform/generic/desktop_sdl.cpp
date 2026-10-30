@@ -16,6 +16,7 @@
 
 #include <SDL3/SDL.h>
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 #include <fstream>
@@ -137,6 +138,35 @@ void choose_folders(ChooseFolderOptions options, std::function<void(std::vector<
 void notify(Notification notification) {
     require_app("notify");
     detail::platform::native::show_notification(notification);
+}
+
+// --- Dock and taskbar ---
+
+void set_badge(std::optional<std::string> text) {
+    require_app("set_badge");
+    detail::platform::native::set_badge(text);
+}
+
+void set_progress(std::optional<double> fraction, ProgressState state) {
+    require_app("set_progress");
+    if (fraction) {
+        fraction = std::isfinite(*fraction) ? std::clamp(*fraction, 0.0, 1.0) : 0.0;
+    }
+    detail::platform::native::set_progress(fraction, state);
+}
+
+void request_attention(bool critical) {
+    require_app("request_attention");
+    // SDL asks the system: the Dock icon bounces (macOS), the taskbar button flashes elsewhere.
+    int count = 0;
+    SDL_Window** windows = SDL_GetWindows(&count);
+    for (int i = 0; windows && i < count; ++i) {
+        if ((SDL_GetWindowFlags(windows[i]) & (SDL_WINDOW_POPUP_MENU | SDL_WINDOW_TOOLTIP)) == 0) {
+            SDL_FlashWindow(windows[i], critical ? SDL_FLASH_UNTIL_FOCUSED : SDL_FLASH_BRIEFLY);
+            break;
+        }
+    }
+    SDL_free(windows);
 }
 
 // --- Tray icon ---

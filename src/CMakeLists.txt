@@ -44,6 +44,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         platform/generic/accessibility_adapter.cpp
         platform/generic/desktop_sdl.cpp
         platform/generic/dynamic_library.cpp
+        platform/generic/menu_bar.cpp
         platform/generic/platform_sdl.cpp
         reactive/runtime.cpp
         render/display_list.cpp
@@ -196,16 +197,19 @@ endif ()
 # Each OS's own code: platform/windows, platform/macos, platform/linux (also other Unix desktops).
 if (WIN32)
     target_sources(elegance PRIVATE
+            platform/windows/appearance.cpp
             platform/windows/camera.cpp
             platform/windows/composition.cpp
+            platform/windows/dock.cpp
             platform/windows/fonts.cpp
             platform/windows/image_codec.cpp
+            platform/windows/menu_bar.cpp
             platform/windows/native.cpp
             platform/windows/notifications.cpp
             platform/windows/proxy.cpp
             platform/windows/video_source.cpp)
-    # dwmapi: rounded corners for undecorated windows; d3d11/dxgi/dcomp: transparent windows.
-    target_link_libraries(elegance PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid mf mfreadwrite strmiids oleaut32 shell32 crypt32 imm32 winhttp)
+    # dwmapi: rounded corners and backdrops; comctl32: window subclassing; d3d11/dxgi/dcomp: transparent windows.
+    target_link_libraries(elegance PRIVATE dwmapi comctl32 d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid mf mfreadwrite strmiids oleaut32 shell32 crypt32 imm32 winhttp)
 endif ()
 
 if (APPLE)
@@ -213,8 +217,11 @@ if (APPLE)
     enable_language(OBJCXX)
     # Integrated title bars and trackpad gestures through AppKit.
     set(elg_apple_sources
+            platform/macos/appearance.mm
             platform/macos/camera.mm
+            platform/macos/dock.mm
             platform/macos/input.mm
+            platform/macos/menu_bar.mm
             platform/macos/notifications.mm
             platform/macos/surface_publisher.mm
             platform/macos/title_bar.mm
@@ -253,9 +260,13 @@ if (UNIX AND NOT APPLE)
         message(STATUS "Elegance: GIO not found (gio-2.0): notifications are only logged")
     endif ()
     target_sources(elegance PRIVATE
+            platform/linux/appearance.cpp
             platform/linux/camera.cpp
+            platform/linux/dock.cpp
             platform/linux/fonts.cpp
+            platform/linux/glib_thread.cpp
             platform/linux/image_codec.cpp
+            platform/linux/menu_bar.cpp
             platform/linux/native.cpp
             platform/linux/notifications.cpp
             platform/linux/proxy.cpp
