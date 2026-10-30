@@ -107,6 +107,107 @@ class PackagingTests(unittest.TestCase):
         self.assertIn("lib lib/libprivate.so\n", text)
         self.assertTrue((self.install / "lib/libprivate.so").exists())
 
+    def windows_runtime_fixture(self, system_directory, missing=False, policy=""):
+        # Drive CMake's real PE resolver without a Windows toolchain or valid PE bytes.
+        # On POSIX, backslashes are literal filename characters, allowing the resolver
+        # to produce the mixed separators seen in Windows install scripts.
+        runtime = self.source / "accesskit.dll"
+        runtime.write_bytes(b"fixture")
+        system = self.source / system_directory
+        system.mkdir(parents=True, exist_ok=True)
+        (system / "user32.dll").write_bytes(b"fixture")
+        private = self.source / "private.dll"
+        private.write_bytes(b"fixture")
+        scanner = self.source / "objdump.py"
+        log = self.base / "scanned.txt"
+        log.unlink(missing_ok=True)
+        scanner.write_text(f"""
+import pathlib, sys
+path = pathlib.Path(sys.argv[-1])
+with pathlib.Path({str(log)!r}).open("a") as stream:
+    stream.write(path.name + "\\n")
+if path.name == "accesskit.dll":
+    print("    DLL Name: " + {system_directory!r} + "/user32.dll")
+    print("    DLL Name: private.dll")
+elif path.name == "user32.dll":
+    print("    DLL Name: wtdccm.dll")
+elif path.name == "private.dll" and {missing!r}:
+    print("    DLL Name: missing-vendor.dll")
+""")
+        manifest = self.base / "native-link.txt"
+        manifest.write_text(
+            "\n".join(self.archives() + [f"runtime {runtime.as_posix()}"]) + "\n"
+        )
+        installer = self.base / "install.cmake"
+        installer.write_text(
+            (ROOT / "cmake/ElgInstallLinkManifest.cmake.in")
+            .read_text()
+            .replace("@ELG_PACKAGE_MANIFEST@", manifest.as_posix())
+        )
+        driver = self.base / "driver.cmake"
+        driver.write_text(f'''
+cmake_minimum_required(VERSION 3.31)
+{"cmake_policy(SET CMP0207 NEW)" if policy == "NEW" else ""}
+set(CMAKE_GET_RUNTIME_DEPENDENCIES_PLATFORM "windows+pe")
+set(CMAKE_GET_RUNTIME_DEPENDENCIES_TOOL "objdump")
+set(CMAKE_GET_RUNTIME_DEPENDENCIES_COMMAND "{Path(sys.executable).as_posix()}" "{scanner.as_posix()}")
+cmake_policy(GET CMP0207 before)
+include("{installer.as_posix()}" NO_POLICY_SCOPE)
+cmake_policy(GET CMP0207 after)
+if (NOT "${{before}}" STREQUAL "${{after}}")
+    message(FATAL_ERROR "Installer leaked CMP0207 into its caller")
+endif ()
+''')
+        return driver, log
+
+    @unittest.skipIf(
+        sys.platform == "win32", "Fixture uses literal backslashes in POSIX filenames"
+    )
+    def test_windows_system_runtime_filtering(self):
+        for directory in (
+            "C:/WiNdOwS/sYsTeM32",
+            "C:\\WiNdOwS/sYsTeM32",
+            "C:\\WiNdOwS\\sYsTeM32",
+            "C:/wInDoWs/SySwOw64",
+            "C:\\wInDoWs/SySwOw64",
+            "C:\\wInDoWs\\SySwOw64",
+        ):
+            for policy in ("", "NEW"):
+                with self.subTest(directory=directory, policy=policy or "unset"):
+                    driver, log = self.windows_runtime_fixture(directory, policy=policy)
+                    output = self.run_cmake(
+                        f"-DCMAKE_INSTALL_PREFIX={self.install.as_posix()}",
+                        "-P",
+                        driver,
+                    )
+                    self.assertNotIn("CMP0207", output)
+                    self.assertEqual(
+                        log.read_text().splitlines(), ["accesskit.dll", "private.dll"]
+                    )
+                    text = (self.install / "elegance-link.txt").read_text()
+                    self.assertIn("runtime lib/private.dll\n", text)
+                    self.assertTrue((self.install / "lib/private.dll").is_file())
+                    self.assertNotIn("user32.dll", text)
+                    self.assertFalse((self.install / "lib/user32.dll").exists())
+
+    @unittest.skipIf(
+        sys.platform == "win32", "Fixture uses literal backslashes in POSIX filenames"
+    )
+    def test_windows_missing_non_system_runtime_fails(self):
+        driver, log = self.windows_runtime_fixture(
+            "C:\\WiNdOwS\\sYsTeM32", missing=True, policy="NEW"
+        )
+        output = self.run_cmake(
+            f"-DCMAKE_INSTALL_PREFIX={self.install.as_posix()}",
+            "-P",
+            driver,
+            success=False,
+        )
+        self.assertIn("Unresolved runtime dependencies: missing-vendor.dll", output)
+        self.assertNotIn("wtdccm.dll", output)
+        self.assertNotIn("user32.dll", log.read_text().splitlines())
+        self.assertFalse((self.install / "elegance-link.txt").exists())
+
     def test_missing_dependency_fails(self):
         output = self.install_manifest(
             self.archives() + ["static /missing/library.a"], success=False

@@ -1,4 +1,8 @@
 # Install-time counterpart of ElgLinkManifest.cmake. Never publish build-machine paths.
+# cmake_install.cmake does not inherit the project's policy version. Normalize resolved
+# Windows paths before excluding system DLLs, without changing the including script's policies.
+cmake_policy(PUSH)
+cmake_policy(SET CMP0207 NEW)
 set(_manifest "@ELG_PACKAGE_MANIFEST@")
 set(_root "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
 file(MAKE_DIRECTORY "${_root}/lib")
@@ -88,7 +92,7 @@ if (_runtimes)
             RESOLVED_DEPENDENCIES_VAR resolved UNRESOLVED_DEPENDENCIES_VAR unresolved
             PRE_EXCLUDE_REGEXES "^[Aa][Pp][Ii]-" "^[Ee][Xx][Tt]-"
             POST_EXCLUDE_REGEXES "^/(usr/)?lib(32|64)?/" "^/System/Library/"
-                ".*[Ww][Ii][Nn][Dd][Oo][Ww][Ss]/[Ss][Yy][Ss][Tt][Ee][Mm]32/.*")
+                [=[.*[/\\][Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\][Ss][Yy][Ss]([Tt][Ee][Mm]32|[Ww][Oo][Ww]64)[/\\].*]=])
     if (unresolved)
         message(FATAL_ERROR "Unresolved runtime dependencies: ${unresolved}")
     endif ()
@@ -105,3 +109,4 @@ if (NOT _content MATCHES "(^|\n)static lib/(lib)?elegance_c\\.(a|lib)(\n|$)"
     message(FATAL_ERROR "Static package must contain elegance_c and Elegance archives")
 endif ()
 file(WRITE "${_root}/elegance-link.txt" "${_content}\n")
+cmake_policy(POP)
