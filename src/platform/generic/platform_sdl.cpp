@@ -2,35 +2,22 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#include "platform/platform.h"
+// The platform layer on SDL, the same on every OS. What differs is in platform/<os>/native.*
+// (platform/generic/native.h).
+
+#include "platform/generic/platform.h"
 
 #include "core/crash.h"
+#include "platform/generic/native.h"
 
 #include <elg/error.h>
 
 #include <SDL3/SDL.h>
-#include <SDL3/SDL_metal.h>
-
-#if defined(__APPLE__)
-#include "platform/input_apple.h"
-#include "platform/title_bar_apple.h"
-#endif
 
 #include <algorithm>
 #include <cmath>
 #include <format>
 #include <utility>
-
-#if defined(_WIN32)
-#include <windows.h>
-#include <dwmapi.h>
-#include <imm.h>
-#elif defined(__linux__)
-#include <csignal>
-#include <fstream>
-#else
-#include <csignal>
-#endif
 
 namespace elg::detail::platform {
 
@@ -40,17 +27,6 @@ bool g_platform_alive = false;
 
 [[noreturn]] void throw_sdl_error(std::string_view what) {
     throw PlatformError(std::format("{}: {}", what, SDL_GetError()));
-}
-
-// Whether the OS is running its modal move/size loop on this thread (the user is dragging a
-// window edge), during which our event loop doesn't run.
-bool in_move_size_loop() {
-#if defined(_WIN32)
-    GUITHREADINFO info{sizeof(GUITHREADINFO)};
-    return GetGUIThreadInfo(GetCurrentThreadId(), &info) && (info.flags & GUI_INMOVESIZE) != 0;
-#else
-    return false;
-#endif
 }
 
 bool SDLCALL on_event_watch(void* userdata, SDL_Event* event) {
@@ -63,7 +39,7 @@ bool SDLCALL on_event_watch(void* userdata, SDL_Event* event) {
     // reaches the compositor with the size), and on SDL's live-resize timer for animations in
     // between. The timer alone is too irregular: WM_TIMER only comes when no other message waits.
     const bool live_expose = event->type == SDL_EVENT_WINDOW_EXPOSED && event->window.data1 == 1;
-    const bool resized = event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED && in_move_size_loop();
+    const bool resized = event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED && native::in_move_size_loop();
     if (live_expose || resized) {
         static_cast<Platform*>(userdata)->dispatch_live_resize(event->window.windowID);
     }
@@ -253,15 +229,11 @@ int secure_input_holders = 0;
 void hold_secure_input(bool hold) {
     const int before = secure_input_holders;
     secure_input_holders += hold ? 1 : -1;
-#if defined(__APPLE__)
     if (before == 0 && secure_input_holders == 1) {
-        apple::set_secure_event_input(true);
+        native::set_secure_event_input(true);
     } else if (before == 1 && secure_input_holders == 0) {
-        apple::set_secure_event_input(false);
+        native::set_secure_event_input(false);
     }
-#else
-    (void)before;
-#endif
 }
 
 } // namespace
@@ -280,11 +252,7 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
     }
 
     // macOS presents through a CAMetalLayer; elsewhere WebGPU takes the native window as is.
-#if defined(__APPLE__)
-    constexpr SDL_WindowFlags kGpuFlags = SDL_WINDOW_METAL;
-#else
-    constexpr SDL_WindowFlags kGpuFlags = 0;
-#endif
+    const auto kGpuFlags = static_cast<SDL_WindowFlags>(native::gpu_window_flags());
     SDL_WindowFlags flags = kGpuFlags | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN;
     if (desc.resizable) {
         flags |= SDL_WINDOW_RESIZABLE;
@@ -292,7 +260,7 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
     if (desc.title_bar == TitleBar::hidden) {
         flags |= SDL_WINDOW_BORDERLESS;
     }
-    if (desc.transparent) {
+    if (see_through(desc)) {
         flags |= SDL_WINDOW_TRANSPARENT;
     }
     if (desc.fullscreen) {
@@ -314,19 +282,7 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
         throw_sdl_error("failed to create a window");
     }
     id_ = SDL_GetWindowID(window_);
-#if defined(__APPLE__)
-    // Views belong to the main thread, so the layer is made here rather than by the renderer.
-    metal_view_ = SDL_Metal_CreateView(window_);
-    if (!metal_view_) {
-        SDL_DestroyWindow(window_);
-        throw_sdl_error("failed to create a Metal view");
-    }
-    if (desc.title_bar == TitleBar::integrated && !popup) {
-        title_bar_ = apple::integrate_title_bar(
-            SDL_GetPointerProperty(SDL_GetWindowProperties(window_), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr),
-            desc.system_controls_position);
-    }
-#endif
+    native_ = native::window_created(window_, desc, popup != nullptr);
 
     if (desc.min_size) {
         SDL_SetWindowMinimumSize(window_, static_cast<int>(std::lround(desc.min_size->width * content_scale)),
@@ -335,17 +291,6 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
     if (desc.opacity < 1) {
         SDL_SetWindowOpacity(window_, std::clamp(desc.opacity, 0.f, 1.f));
     }
-#if defined(_WIN32)
-    // Windows 11 rounds the corners of decorated windows; ask the same for undecorated opaque
-    // ones (transparent windows draw their own shape). Ignored on Windows 10.
-    if (desc.title_bar == TitleBar::hidden && !desc.transparent) {
-        if (auto* hwnd = static_cast<HWND>(SDL_GetPointerProperty(SDL_GetWindowProperties(window_),
-                                                                   SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr))) {
-            const DWORD round = 2; // DWMWCP_ROUND
-            DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &round, sizeof(round));
-        }
-    }
-#endif
 }
 
 void Window::set_popup_frame(Rect frame) {
@@ -376,22 +321,29 @@ Rect Window::usable_area() const {
     return {origin.x, origin.y, size.x, size.y};
 }
 
+bool draws_material(const WindowDesc& desc) {
+    return desc.material != WindowMaterial::none && native::supports_material(desc.material);
+}
+
+bool see_through(const WindowDesc& desc) {
+    return desc.transparent || draws_material(desc);
+}
+
 bool any_window_focused() {
     return SDL_GetKeyboardFocus() != nullptr;
 }
 
-void wait_for_compositor() {
-#if defined(_WIN32)
-    DwmFlush();
-#endif
+std::uint32_t focused_window_id() {
+    SDL_Window* window = SDL_GetKeyboardFocus();
+    return window ? SDL_GetWindowID(window) : 0;
+}
+
+void Window::refresh_appearance() {
+    native::appearance_changed(window_, native_);
 }
 
 void* Window::native_handle() const {
-#if defined(_WIN32)
-    return SDL_GetPointerProperty(SDL_GetWindowProperties(window_), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
-#else
-    return nullptr;
-#endif
+    return native::native_handle(window_);
 }
 
 void Window::minimize() {
@@ -411,13 +363,7 @@ bool Window::maximized() const {
 }
 
 Rect Window::system_controls_frame() {
-#if defined(__APPLE__)
-    if (title_bar_) {
-        apple::refresh_title_bar(title_bar_);
-        return apple::system_controls_frame(title_bar_); // points are logical points on macOS
-    }
-#endif
-    return {};
+    return native::system_controls_frame(native_);
 }
 
 void Window::request_close() {
@@ -464,14 +410,7 @@ Window::~Window() {
     if (secure_engaged_) {
         hold_secure_input(false);
     }
-#if defined(__APPLE__)
-    if (title_bar_) {
-        apple::release_title_bar(title_bar_);
-    }
-#endif
-    if (metal_view_) {
-        SDL_Metal_DestroyView(static_cast<SDL_MetalView>(metal_view_));
-    }
+    native::window_destroying(window_, native_);
     SDL_DestroyWindow(window_);
 }
 
@@ -504,14 +443,7 @@ void start_text_input_on(SDL_Window* window, bool secure) {
     SDL_SetBooleanProperty(properties, SDL_PROP_TEXTINPUT_AUTOCORRECT_BOOLEAN, false);
     SDL_StartTextInputWithProperties(window, properties);
     SDL_DestroyProperties(properties);
-#if defined(_WIN32)
-    // SDL ignores the type here; a password edit control has no IME. SDL associates its context
-    // again the next time text input starts.
-    if (auto* hwnd = static_cast<HWND>(
-            SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr))) {
-        ImmAssociateContext(hwnd, nullptr);
-    }
-#endif
+    native::detach_ime(window);
 }
 
 } // namespace
@@ -618,28 +550,7 @@ bool Window::shows_before_first_frame() const {
 }
 
 SurfaceSource Window::surface_source() const {
-    const SDL_PropertiesID properties = SDL_GetWindowProperties(window_);
-    SurfaceSource source;
-#if defined(_WIN32)
-    source.kind = SurfaceSource::Kind::win32;
-    source.display = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WIN32_INSTANCE_POINTER, nullptr);
-    source.handle = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
-#elif defined(__APPLE__)
-    (void)properties;
-    source.kind = SurfaceSource::Kind::metal;
-    source.handle = SDL_Metal_GetLayer(static_cast<SDL_MetalView>(metal_view_));
-#else
-    if (std::string_view(SDL_GetCurrentVideoDriver()) == "wayland") {
-        source.kind = SurfaceSource::Kind::wayland;
-        source.display = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, nullptr);
-        source.handle = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, nullptr);
-    } else {
-        source.kind = SurfaceSource::Kind::xlib;
-        source.display = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
-        source.xlib_window =
-            static_cast<std::uint64_t>(SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
-    }
-#endif
+    const SurfaceSource source = native::surface_source(window_, native_);
     if (!source.handle && source.xlib_window == 0) {
         throw GpuError(std::format("the window system gave no handle to draw into: {}", SDL_GetError()));
     }
@@ -662,41 +573,11 @@ Platform::Platform() {
     wake_event_ = SDL_RegisterEvents(2);
     native_event_ = wake_event_ + 1;
     SDL_AddEventWatch(&on_event_watch, this);
-#if defined(__APPLE__)
-    input_monitor_ = apple::install_input_monitor([this](const apple::NativeInput& input) {
-        SDL_Window* window = nullptr;
-        int count = 0;
-        if (SDL_Window** windows = SDL_GetWindows(&count)) {
-            for (int i = 0; i < count && !window; ++i) {
-                if (SDL_GetPointerProperty(SDL_GetWindowProperties(windows[i]), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER,
-                                           nullptr) == input.ns_window) {
-                    window = windows[i];
-                }
-            }
-            SDL_free(windows);
-        }
-        if (!window) {
-            return false;
-        }
-        Event event;
-        event.window_id = SDL_GetWindowID(window);
-        event.x = input.x; // SDL's window coordinates are points on macOS
-        event.y = input.y;
-        event.phase = input.phase;
-        event.amount = input.amount;
-        event.time = input.time;
+    input_monitor_ = native::install_input_monitor([this](Event event) {
         event.modifiers = translate_modifiers(SDL_GetModState());
-        switch (input.kind) {
-        case apple::NativeInput::Kind::scroll:
-            event.type = EventType::wheel;
-            event.precise = input.precise;
-            event.momentum = input.momentum;
-            event.scroll_dx = input.precise ? input.dx : input.dx * kPointsPerNotch;
-            event.scroll_dy = input.precise ? input.dy : input.dy * kPointsPerNotch;
-            break;
-        case apple::NativeInput::Kind::magnify: event.type = EventType::magnify; break;
-        case apple::NativeInput::Kind::rotate: event.type = EventType::rotate; break;
-        case apple::NativeInput::Kind::two_finger_double_tap: event.type = EventType::two_finger_double_tap; break;
+        if (event.type == EventType::wheel && !event.precise) {
+            event.scroll_dx *= kPointsPerNotch;
+            event.scroll_dy *= kPointsPerNotch;
         }
         native_events_.push_back(std::move(event));
         SDL_Event marker{};
@@ -704,13 +585,12 @@ Platform::Platform() {
         SDL_PushEvent(&marker);
         return true;
     });
-#endif
+    native::watch_appearance();
 }
 
 Platform::~Platform() {
-#if defined(__APPLE__)
-    apple::remove_input_monitor(input_monitor_);
-#endif
+    native::unwatch_appearance();
+    native::remove_input_monitor(input_monitor_);
     SDL_RemoveEventWatch(&on_event_watch, this);
     SDL_Quit();
     g_platform_alive = false;
@@ -751,6 +631,19 @@ Event Platform::translate(const SDL_Event& event) {
         return result;
     }
     return platform::translate(event, wake_event_);
+}
+
+void Platform::post_key(std::uint32_t window_id, Key key, KeyModifiers modifiers) {
+    for (const EventType type : {EventType::key_down, EventType::key_up}) {
+        Event event{type, window_id};
+        event.key = key;
+        event.modifiers = modifiers;
+        event.synthetic = true;
+        native_events_.push_back(std::move(event));
+        SDL_Event marker{};
+        marker.type = native_event_;
+        SDL_PushEvent(&marker);
+    }
 }
 
 void Platform::wake() {
@@ -798,31 +691,6 @@ std::optional<std::string> environment_variable(const char* name) {
 
 bool system_prefers_dark() {
     return SDL_GetSystemTheme() == SDL_SYSTEM_THEME_DARK;
-}
-
-bool debugger_present() noexcept {
-#if defined(_WIN32)
-    return IsDebuggerPresent() != 0;
-#elif defined(__linux__)
-    std::ifstream status("/proc/self/status");
-    std::string line;
-    while (std::getline(status, line)) {
-        if (line.starts_with("TracerPid:")) {
-            return line.find_first_not_of(" \t0", 10) != std::string::npos;
-        }
-    }
-    return false;
-#else
-    return false; // TODO: macOS (sysctl P_TRACED)
-#endif
-}
-
-void debug_break() noexcept {
-#if defined(_WIN32)
-    __debugbreak();
-#else
-    std::raise(SIGTRAP);
-#endif
 }
 
 void show_error_box(const char* title, const char* message) noexcept {

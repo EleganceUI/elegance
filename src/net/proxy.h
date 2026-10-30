@@ -52,6 +52,10 @@ ProxyChoice proxy_from_windows_settings(std::string_view proxies, std::string_vi
 // Whether `host` is localhost or a loopback address.
 bool is_loopback(std::string_view host);
 
+// The system's settings for a URL (platform/<os>/proxy.cpp): a proxy, nullopt to connect
+// directly, or an error.
+ProxyChoice system_proxy(std::string_view scheme, std::string_view host, std::string_view port);
+
 } // namespace elg::detail::net
 
 #endif // ELG_NET_PROXY_H

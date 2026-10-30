@@ -2,7 +2,7 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#include "platform/title_bar_apple.h"
+#include "platform/macos/title_bar.h"
 
 #import <AppKit/AppKit.h>
 
@@ -190,7 +190,7 @@
 
 @end
 
-namespace elg::detail::platform::apple {
+namespace elg::detail::platform::macos {
 
 void* integrate_title_bar(void* ns_window, std::optional<Point> traffic_lights) {
     NSWindow* window = (__bridge NSWindow*)ns_window;
@@ -227,4 +227,4 @@ void release_title_bar(void* title_bar) {
     [self stop];
 }
 
-} // namespace elg::detail::platform::apple
+} // namespace elg::detail::platform::macos

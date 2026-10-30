@@ -2,11 +2,12 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_PLATFORM_PLATFORM_H
-#define ELG_PLATFORM_PLATFORM_H
+#ifndef ELG_PLATFORM_GENERIC_PLATFORM_H
+#define ELG_PLATFORM_GENERIC_PLATFORM_H
 
 // Internal platform layer (design.md §4). SDL3 is the only backend, but no SDL types leak out
-// of platform/*.cpp, so it could be replaced without touching the rest of the framework.
+// of platform/, so it could be replaced without touching the rest of the framework. generic/
+// holds what's the same on every OS; windows/, macos/ and linux/ hold the rest.
 
 #include <elg/app.h>
 #include <elg/events.h>
@@ -103,6 +104,8 @@ struct Event {
     Key key = Key::unknown;
     KeyModifiers modifiers = KeyModifiers::none;
     bool repeat = false;
+    // Made by the app (Platform::post_key), not typed.
+    bool synthetic = false;
 };
 
 // What part of a window a point is, for windows without system decorations.
@@ -120,6 +123,14 @@ enum class HitArea {
 };
 
 class Window;
+
+namespace native {
+// The OS's parts of a window (platform/generic/native.h).
+struct WindowParts {
+    void* metal_view = nullptr; // SDL_MetalView on macOS: the window's CAMetalLayer
+    void* title_bar = nullptr;  // TitleBar::integrated on macOS (platform/macos/title_bar.h)
+};
+} // namespace native
 
 // A popup (menu or tooltip) window attached to `parent` (design.md §13.1).
 struct PopupSpec {
@@ -183,14 +194,17 @@ public:
     Rect usable_area() const;
     HitArea hit_test_at(Point point) const { return hit_test_ ? hit_test_(point) : HitArea::normal; }
 
+    // The system's light/dark setting changed: what the OS draws itself follows it (Windows'
+    // title bar and Mica).
+    void refresh_appearance();
+
     // The handles the render thread creates this window's surface from. The surface must be
     // gone before this window.
     SurfaceSource surface_source() const;
 
 private:
     SDL_Window* window_ = nullptr;
-    void* metal_view_ = nullptr; // SDL_MetalView on macOS: the window's CAMetalLayer
-    void* title_bar_ = nullptr;  // TitleBar::integrated on macOS (platform/title_bar_apple.h)
+    native::WindowParts native_;
     // Popups: the window they belong to, which has the keyboard (they're never activated), and
     // whether text input was started there for the popup.
     SDL_Window* parent_ = nullptr;
@@ -201,9 +215,17 @@ private:
     std::function<HitArea(Point)> hit_test_;
 };
 
+// Whether the system draws the window's material (WindowDesc::material) behind it here.
+bool draws_material(const WindowDesc& desc);
+// Whether the desktop can show through the window: transparent, or with a material drawn. Its
+// default background is then clear and its surface composited with alpha.
+bool see_through(const WindowDesc& desc);
+
 // Owns SDL's lifetime. Construct on the main thread, which becomes the UI thread.
 // Whether one of the app's windows has keyboard focus.
 bool any_window_focused();
+// The window with keyboard focus (0: none).
+std::uint32_t focused_window_id();
 // Blocks until the system compositor has composed its next frame (DwmFlush on Windows; nothing
 // elsewhere). During a live resize this lets a just-presented frame reach the screen before the
 // window is resized again, so the compositor doesn't stretch an old frame.
@@ -231,6 +253,10 @@ public:
 
     // Wakes wait_event() with EventType::wake. Thread-safe.
     void wake();
+
+    // Queues a press and release of `key` for `window_id`, as if typed (Event::synthetic). UI
+    // thread.
+    void post_key(std::uint32_t window_id, Key key, KeyModifiers modifiers);
 
     // Called on the main thread from inside OS modal loops while the user resizes a window,
     // when the normal event loop is blocked. Must not throw.
@@ -260,4 +286,4 @@ void show_error_box(const char* title, const char* message) noexcept;
 
 } // namespace elg::detail::platform
 
-#endif // ELG_PLATFORM_PLATFORM_H
+#endif // ELG_PLATFORM_GENERIC_PLATFORM_H

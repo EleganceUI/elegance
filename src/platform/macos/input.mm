@@ -2,12 +2,12 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#include "platform/input_apple.h"
+#include "platform/macos/input.h"
 
 #import <AppKit/AppKit.h>
 #include <Carbon/Carbon.h>
 
-namespace elg::detail::platform::apple {
+namespace elg::detail::platform::macos {
 
 namespace {
 
@@ -101,4 +101,4 @@ void set_secure_event_input(bool on) {
     }
 }
 
-} // namespace elg::detail::platform::apple
+} // namespace elg::detail::platform::macos

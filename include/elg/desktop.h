@@ -74,6 +74,29 @@ struct Notification {
 // Shows a system notification (Windows: a toast, also kept in the notification center).
 ELG_API void notify(Notification notification);
 
+// --- Dock and taskbar ---
+
+// What a progress bar on the app's icon says besides how far along it is.
+enum class ProgressState {
+    normal,
+    paused,       // Windows: yellow; elsewhere drawn as normal
+    error,        // Windows: red; macOS: a red bar
+    indeterminate // busy, with no fraction: Windows animates it; macOS and Linux show it full
+};
+
+// A short label on the app's icon, like an unread count; nullopt removes it. macOS: the Dock
+// shows the text. Windows: a small badge over the taskbar button (fits about two characters).
+// Linux: launchers that support it (the Unity LauncherEntry API: GNOME's Dash to Dock, KDE)
+// show only a number, so other text is ignored.
+ELG_API void set_badge(std::optional<std::string> text);
+// A progress bar on the app's icon, 0...1; nullopt removes it. Windows shows it on every window's
+// taskbar button; macOS on the Dock icon; Linux where the launcher supports it.
+ELG_API void set_progress(std::optional<double> fraction, ProgressState state = ProgressState::normal);
+// Asks for the person's attention while the app is in the background: the Dock icon bounces
+// (once, or until the app is active when `critical`), or the taskbar button flashes. Nothing
+// happens while the app is in front.
+ELG_API void request_attention(bool critical = false);
+
 // --- Tray icon ---
 
 struct TrayMenuItem {

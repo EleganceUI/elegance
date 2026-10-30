@@ -9,6 +9,9 @@
 // radii.
 
 #include <elg/color.h>
+#include <elg/export.h>
+
+#include <optional>
 
 namespace elg {
 
@@ -167,6 +170,11 @@ struct Theme {
         };
     }
 };
+
+// The accent color the person chose in the system's settings, or nullopt where there's none
+// (or the platform doesn't say: Linux desktops through the settings portal, if at all).
+// Reactive: reads update when it changes. UI thread, while an App runs.
+ELG_API std::optional<Color> system_accent_color();
 
 } // namespace elg
 

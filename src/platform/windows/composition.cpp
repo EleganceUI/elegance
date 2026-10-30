@@ -4,10 +4,10 @@
 
 #if defined(_WIN32)
 
-#include "gpu/composition_win32.h"
+#include "platform/windows/composition.h"
 
 #include "core/log.h"
-#include "platform/platform.h"
+#include "platform/generic/platform.h"
 
 #include <elg/error.h>
 

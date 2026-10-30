@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_PLATFORM_INPUT_APPLE_H
-#define ELG_PLATFORM_INPUT_APPLE_H
+#ifndef ELG_PLATFORM_MACOS_INPUT_H
+#define ELG_PLATFORM_MACOS_INPUT_H
 
 // Trackpad input on macOS, taken from AppKit before SDL sees it: SDL drops the gesture phases
 // (scrolls, momentum) and doesn't report rotation or smart magnify.
@@ -12,7 +12,7 @@
 
 #include <functional>
 
-namespace elg::detail::platform::apple {
+namespace elg::detail::platform::macos {
 
 struct NativeInput {
     enum class Kind { scroll, magnify, rotate, two_finger_double_tap };
@@ -43,6 +43,6 @@ void remove_input_monitor(void* monitor);
 // only while the app's password field has the keyboard.
 void set_secure_event_input(bool on);
 
-} // namespace elg::detail::platform::apple
+} // namespace elg::detail::platform::macos
 
-#endif // ELG_PLATFORM_INPUT_APPLE_H
+#endif // ELG_PLATFORM_MACOS_INPUT_H

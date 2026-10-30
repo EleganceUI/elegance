@@ -10,7 +10,7 @@
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
-#include "platform/dynamic_library.h"
+#include "platform/generic/dynamic_library.h"
 
 #include <elg/error.h>
 #include <elg/reactive.h>

@@ -8,7 +8,7 @@
 #include "core/crash.h"
 #endif
 #include "core/log.h"
-#include "platform/platform.h"
+#include "platform/generic/platform.h"
 
 #include <elg/error.h>
 

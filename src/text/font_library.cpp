@@ -5,7 +5,7 @@
 #include "text/font_library.h"
 
 #include "core/log.h"
-#include "platform/platform.h"
+#include "platform/generic/platform.h"
 
 #include <elg/error.h>
 
@@ -106,58 +106,6 @@ RegisteredFont registered_font(const Font& font) {
     return result;
 }
 
-// Font files to try for the system UI font, best match first. (macOS's SF is a variable font:
-// one file draws every weight.)
-// TODO: real system font discovery (DirectWrite / CoreText / fontconfig).
-std::vector<std::filesystem::path> system_font_candidates(Weight weight, [[maybe_unused]] bool italic) {
-    const int w = static_cast<int>(weight);
-    std::vector<std::filesystem::path> files;
-#if defined(_WIN32)
-    const std::filesystem::path dir =
-        std::filesystem::path(platform::environment_variable("WINDIR").value_or("C:\\Windows")) / "Fonts";
-    if (italic) {
-        // Segoe UI's italics; upright ones follow if they're missing.
-        if (w <= 300) {
-            files.push_back(dir / "seguili.ttf");
-        } else if (w >= 800) {
-            files.push_back(dir / "seguibli.ttf");
-        } else if (w >= 700) {
-            files.push_back(dir / "segoeuiz.ttf");
-        } else if (w >= 600) {
-            files.push_back(dir / "seguisbi.ttf");
-        }
-        files.push_back(dir / "segoeuii.ttf");
-    }
-    if (w <= 300) {
-        files.push_back(dir / "segoeuil.ttf");
-    } else if (w >= 800) {
-        files.push_back(dir / "seguibl.ttf");
-    } else if (w >= 700) {
-        files.push_back(dir / "segoeuib.ttf");
-    } else if (w >= 600) {
-        files.push_back(dir / "seguisb.ttf");
-    }
-    files.push_back(dir / "segoeui.ttf");
-    files.push_back(dir / "arial.ttf");
-#elif defined(__APPLE__)
-    (void)w;
-    (void)italic;
-    files.push_back("/System/Library/Fonts/SFNS.ttf");
-    files.push_back("/System/Library/Fonts/Helvetica.ttc");
-#else
-    if (w >= 600) {
-        files.push_back("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf");
-        files.push_back("/usr/share/fonts/TTF/DejaVuSans-Bold.ttf");
-        files.push_back("/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf");
-    }
-    files.push_back("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
-    files.push_back("/usr/share/fonts/TTF/DejaVuSans.ttf");
-    files.push_back("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf");
-    files.push_back("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf");
-#endif
-    return files;
-}
-
 RegisteredFont find_font(const Font& font) {
     if (!font.family().empty()) {
         return registered_font(font);
@@ -184,35 +132,6 @@ std::vector<unsigned char> read_file(const std::filesystem::path& path) {
         throw ResourceError(std::format("can't read font file \"{}\"", path.string()));
     }
     return data;
-}
-
-// Fonts to fall back to for characters the requested font lacks, in order: symbols, emoji
-// (monochrome until color glyphs, design.md §11), CJK, then other scripts.
-std::vector<std::filesystem::path> fallback_font_candidates() {
-    std::vector<std::filesystem::path> files;
-#if defined(_WIN32)
-    const std::filesystem::path dir =
-        std::filesystem::path(platform::environment_variable("WINDIR").value_or("C:\\Windows")) / "Fonts";
-    for (const char* name : {"seguisym.ttf", "seguiemj.ttf", "msyh.ttc", "YuGothR.ttc", "malgun.ttf", "Nirmala.ttf",
-                             "ebrima.ttf", "gadugi.ttf", "seguihis.ttf", "simsun.ttc", "arial.ttf"}) {
-        files.push_back(dir / name);
-    }
-#elif defined(__APPLE__)
-    for (const char* file : {"/System/Library/Fonts/Apple Symbols.ttf", "/System/Library/Fonts/PingFang.ttc",
-                             "/System/Library/Fonts/Hiragino Sans GB.ttc", "/System/Library/Fonts/AppleSDGothicNeo.ttc",
-                             "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"}) {
-        files.push_back(file);
-    }
-#else
-    for (const char* file : {"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
-                             "/usr/share/fonts/truetype/noto/NotoSansSymbols2-Regular.ttf",
-                             "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-                             "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
-                             "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"}) {
-        files.push_back(file);
-    }
-#endif
-    return files;
 }
 
 } // namespace

@@ -4,12 +4,15 @@
 
 // Video sources on macOS (design.md §13.3): AVFoundation. AVPlayer decodes, plays the sound and
 // keeps it in sync; an AVPlayerItemVideoOutput hands the render thread the frame that's due as
-// NV12, which it packs into a `cpu` VideoFrame. Compiled with ARC.
+// an IOSurface the renderer imports as is (surface_publisher.h), or, when it can't, as NV12 it
+// copies into a `cpu` VideoFrame (pixel_buffer.h). Compiled with ARC.
 
 #include "media/video_source.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
+#include "platform/macos/pixel_buffer.h"
+#include "platform/macos/surface_publisher.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <CoreVideo/CoreVideo.h>
@@ -44,8 +47,6 @@
 namespace elg::detail {
 
 namespace {
-
-std::atomic<std::uint64_t> g_next_frame{1};
 
 // Objective-C's `id`: inside VideoSource subclasses that name is the source's own id member.
 using ObjcObject = id;
@@ -96,9 +97,15 @@ public:
             return;
         }
         queue_ = dispatch_queue_create("elegance.video", DISPATCH_QUEUE_SERIAL);
+        // Zero-copy when the renderer can import IOSurfaces (it's running, on Metal); else NV12,
+        // copied each frame.
         NSDictionary* attributes = @{
-            (__bridge NSString*)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange),
+            (__bridge NSString*)kCVPixelBufferPixelFormatTypeKey : @(macos::kPreferredPixelFormat),
         };
+        if (macos::SurfacePublisher::available()) {
+            publisher_ = std::make_unique<macos::SurfacePublisher>();
+            attributes = (__bridge NSDictionary*)macos::SurfacePublisher::buffer_attributes();
+        }
         output_ = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:attributes];
         item_ = [AVPlayerItem playerItemWithURL:url];
         [item_ addOutput:output_];
@@ -212,7 +219,17 @@ public:
         if (!buffer) {
             return false;
         }
-        std::optional<VideoFrame> frame = pack(buffer);
+        if (publisher_ && !copies_) {
+            const bool published = publisher_->publish(buffer);
+            if (published) {
+                CVPixelBufferRelease(buffer);
+                return publisher_->update();
+            }
+            // The device went away or refused it: copy from now on.
+            log_warning("video: can't share frames with the renderer; copying them instead");
+            copies_ = true;
+        }
+        std::optional<VideoFrame> frame = macos::pack_pixel_buffer(buffer, VideoSource::id);
         CVPixelBufferRelease(buffer);
         if (!frame) {
             return false;
@@ -223,6 +240,9 @@ public:
     }
 
     std::optional<VideoFrame> current() const override {
+        if (publisher_ && !copies_) {
+            return publisher_->current();
+        }
         std::lock_guard lock(mutex_);
         return current_;
     }
@@ -289,58 +309,6 @@ private:
         time = duration.peek();
     }
 
-    // Copies an NV12 pixel buffer into a packed frame (no row padding).
-    std::optional<VideoFrame> pack(CVPixelBufferRef buffer) const {
-        const OSType format = CVPixelBufferGetPixelFormatType(buffer);
-        const bool full_range = format == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange;
-        if (!full_range && format != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange) {
-            return std::nullopt;
-        }
-        if (CVPixelBufferGetPlaneCount(buffer) != 2 ||
-            CVPixelBufferLockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess) {
-            return std::nullopt;
-        }
-        const auto width = static_cast<std::uint32_t>(CVPixelBufferGetWidth(buffer));
-        const auto height = static_cast<std::uint32_t>(CVPixelBufferGetHeight(buffer));
-        auto pixels = std::make_shared<std::vector<std::uint8_t>>(packed_size(VideoFrame::Format::nv12, width, height));
-        std::uint8_t* out = pixels->data();
-        const std::size_t chroma_rows = (height + 1) / 2;
-        const std::size_t chroma_row_bytes = 2 * static_cast<std::size_t>((width + 1) / 2);
-        const struct {
-            std::size_t rows;
-            std::size_t row_bytes;
-        } planes[2] = {{height, width}, {chroma_rows, chroma_row_bytes}};
-        for (std::size_t plane = 0; plane < 2; ++plane) {
-            const auto* in = static_cast<const std::uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(buffer, plane));
-            const std::size_t stride = CVPixelBufferGetBytesPerRowOfPlane(buffer, plane);
-            const std::size_t rows = std::min(planes[plane].rows, CVPixelBufferGetHeightOfPlane(buffer, plane));
-            const std::size_t row_bytes = std::min(planes[plane].row_bytes, stride);
-            for (std::size_t row = 0; row < rows; ++row) {
-                std::memcpy(out + row * planes[plane].row_bytes, in + row * stride, row_bytes);
-            }
-            out += planes[plane].rows * planes[plane].row_bytes;
-        }
-        CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
-
-        VideoFrame frame;
-        frame.kind = VideoFrame::Kind::cpu;
-        frame.width = width;
-        frame.height = height;
-        frame.format = VideoFrame::Format::nv12;
-        frame.full_range = full_range;
-        frame.matrix = VideoFrame::Matrix::bt709;
-        if (CFTypeRef matrix = CVBufferCopyAttachment(buffer, kCVImageBufferYCbCrMatrixKey, nullptr)) {
-            if (CFEqual(matrix, kCVImageBufferYCbCrMatrix_ITU_R_601_4)) {
-                frame.matrix = VideoFrame::Matrix::bt601;
-            }
-            CFRelease(matrix);
-        }
-        frame.pixels = std::move(pixels);
-        frame.source_id = VideoSource::id;
-        frame.frame_id = g_next_frame.fetch_add(1);
-        return frame;
-    }
-
     const std::string url_;
     dispatch_queue_t queue_ = nil;
     AVPlayer* player_ = nil;
@@ -349,11 +317,14 @@ private:
     ElgVideoObserver* observer_ = nil;
     ObjcObject time_token_ = nil;
     std::vector<ObjcObject> notification_tokens_;
+    // Zero-copy frames; null when copying. copies_: the publisher failed (render thread).
+    std::unique_ptr<macos::SurfacePublisher> publisher_;
+    bool copies_ = false;
     mutable std::mutex mutex_;
     std::optional<VideoFrame> current_;
 };
 
-std::shared_ptr<VideoSource> create_avfoundation_source(std::string url) {
+std::shared_ptr<VideoSource> create_platform_video_source(std::string url) {
     auto source = std::make_shared<AVFoundationSource>(std::move(url));
     source->open();
     return source;

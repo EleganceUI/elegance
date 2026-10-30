@@ -5,7 +5,7 @@
 #include "net/http_cache.h"
 
 #include "core/log.h"
-#include "platform/platform.h"
+#include "platform/generic/platform.h"
 
 #include <openssl/evp.h>
 

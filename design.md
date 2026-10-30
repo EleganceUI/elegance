@@ -233,6 +233,13 @@ drag & drop, IME composition, cursors, native file dialogs, multi-window, and th
   targets.
 - SDL stays behind an internal `platform/` interface. No SDL types appear in public headers, so
   a native backend could replace it later if needed (e.g. custom title bars, finer frame pacing).
+- `src/platform/` is sorted by OS. `generic/` holds what's the same everywhere (the SDL layer,
+  accessibility, dynamic libraries) and `native.h`, the hooks each OS implements. `windows/`,
+  `macos/` and `linux/` (also other Unix desktops) hold each OS's own code, including the media,
+  image, font, proxy and notification backends that other folders declare: `VideoSource`'s and
+  `CameraSource`'s `create_platform_*`, `platform_decode_image`/`encode_png`,
+  `system_font_candidates`, `system_proxy`, and `native::show_notification`. Only short `#if`s
+  of a few lines stay inline elsewhere.
 
 ### 4.1 Window customization (implemented in M4)
 
@@ -261,7 +268,7 @@ drag & drop, IME composition, cursors, native file dialogs, multi-window, and th
   - Both dim while the window is inactive, and both are `.focusable(false)`.
 - `.focusable(false)` takes a whole subtree out of keyboard focus (Tab skips it, clicks leave
   focus alone).
-- **Transparency on Windows goes through DirectComposition** (`gpu/composition_win32`).
+- **Transparency on Windows goes through DirectComposition** (`platform/windows/composition`).
   - Windows Vulkan drivers expose only `VK_COMPOSITE_ALPHA_OPAQUE`; on this AMD machine
     `SDL_WINDOW_TRANSPARENT` alone gave black corners.
   - Each transparent window gets a D3D11 device on the same adapter (matched by LUID).
@@ -1200,10 +1207,11 @@ Text(file.name)
 - **Styling:** a `MenuStyle` alongside `ButtonStyle` (§8, M3), built on theme tokens, with a
   default that looks at home on each platform.
 
-#### macOS menu bar
-The app menu bar on macOS is native (`NSMenu`), exposed separately as `App::menu_bar(...)`.
-People expect the real system menu bar, and it isn't app-drawn there anyway. Windows and Linux
-have no system menu bar, so an app menu bar there is an ordinary view.
+#### The app's menu bar
+`App::menu_bar({MenuBarItem...})` (§13.4) is native where the system has one: the macOS main
+menu (`NSMenu`), and a Win32 menu in each Windows window with a system title bar. Linux has no
+menu bar to rely on, so there it's an ordinary view at the top of each window, built from the
+same popups.
 
 #### Dependencies
 Keyboard and focus (M4) for navigation, and M3's styles for `MenuStyle`. Scheduled for **M4**,
@@ -1418,13 +1426,19 @@ player.play();  player.is_playing();  player.time();    // signals
 - Windows: `IMFMediaEngine` handles demuxing, hardware decoding, audio output, and A/V sync.
   Each display frame, `TransferVideoFrame` writes into a shared D3D11 texture that Vulkan
   samples.
-- macOS: `AVPlayer` + `AVPlayerItemVideoOutput` → `CVPixelBuffer` (IOSurface).
+- macOS: `AVPlayer` + `AVPlayerItemVideoOutput` → `CVPixelBuffer`. When the renderer runs on
+  Metal with IOSurface sharing, the output delivers IOSurface-backed BGRA, imported into Dawn as
+  is (`platform/macos/surface_publisher`, over the `ElgGpuImage` IOSurface transport); each
+  buffer stays retained until the renderer's reads signal their MTLSharedEvent fences. Otherwise
+  it delivers NV12, copied into `cpu` frames.
 - Linux: a GStreamer `playbin` with an `appsink` (DMA-BUF when available).
 - Frame pacing: the render thread asks the player for the frame due at the next vsync, so video
   never runs the UI tree's layout. Only the video quad's texture changes, and windows playing
   video redraw at the video's rate.
-- Later: Vulkan Video decode as a backend independent of the OS, and camera capture
-  (`CameraView`).
+- Cameras (`Camera`, `CameraView`): Media Foundation (DirectShow for cameras only it sees) on
+  Windows, `AVCaptureSession` on macOS, Video4Linux2 on Linux (NV12/YUYV/YUV420 kept as is,
+  MJPEG decoded to BGRA on the capture thread). Frames go to the renderer as `cpu` frames.
+- Later: Vulkan Video decode as a backend independent of the OS.
 
 **3a. The FFmpeg backend (optional).** The OS media stack stays the default: it costs nothing to
 ship, decodes in hardware, and the codec licenses are the OS vendor's. Only HEVC needs a paid
@@ -1484,6 +1498,40 @@ it covers them).
     Clicks come back through `NIN_BALLOONUSERCLICK`.
   - Proper WinRT toasts (actions, images) need an AppUserModelID and a Start-menu shortcut, so
     they're a follow-up for packaged apps.
+  - macOS: `UNUserNotificationCenter` (it asks for permission the first time).
+  - Linux: `org.freedesktop.Notifications` over D-Bus (GIO), with `desktop-entry` set to the app's
+    id. Clicks come back as `ActionInvoked`. Without GIO in the build, they're logged.
+- **Dock and taskbar:** `set_badge(text)`, `set_progress(fraction, ProgressState)` and
+  `request_attention(critical)`; `nullopt` removes a badge or the progress.
+  - macOS: the dock tile's badge label, and a progress bar drawn into the tile.
+  - Windows: `ITaskbarList3` progress (paused and error turn it yellow and red) and the badge as an
+    overlay icon (a red disc with the text). Buttons made later get the current state.
+  - Linux: the Unity launcher API (`com.canonical.Unity.LauncherEntry`), shown by KDE, Ubuntu's
+    dock and Dash to Dock. A badge only shows when it's a number; progress has no states.
+  - Attention: `SDL_FlashWindow` (macOS bounces the dock icon, once or until the app is active).
+- **Window materials:** `WindowDesc::material` (`sidebar`, `under_window`, `mica`, `acrylic`).
+  The window is see-through and the system draws the material behind the content.
+  - macOS: an `NSVisualEffectView` behind the content view (mica and acrylic map to the closest
+    materials).
+  - Windows 11 22H2 and later: a DWM system backdrop (Mica, Mica Alt for `sidebar`, acrylic),
+    with the frame extended over the client area and the title bar following light/dark.
+  - Linux and older Windows: none; the window stays opaque.
+- **Accent color:** `system_accent_color()`, or `nullopt` when the system has none, kept current
+  (a change re-renders like a theme change). macOS: `controlAccentColor`; Windows: the DWM
+  `AccentColor`; Linux: the settings portal's `accent-color`.
+- **Menu bar:** `App::menu_bar({MenuBarItem...})`, callable while the app runs. Items have a
+  title, an action, an optional check mark (`checked` + `toggled`), `enabled`, a
+  `KeyboardShortcut` and a `MenuRole`.
+  - Roles give standard titles, shortcuts and behavior: `app`, `window` and `help` menus; `quit`,
+    `minimize`, `zoom` and the edit commands (undo through select all) work without an action.
+    On macOS, so do `about`, `hide`, `hide_others`, `show_all` and `toggle_fullscreen`. Elsewhere
+    the macOS-only roles are left out, as are `about` and `settings` without an action.
+  - macOS: the app menu comes first (a standard one when the app gives none); shortcuts are key
+    equivalents.
+  - Windows: a Win32 menu per window with a system title bar; shortcuts are shown after a tab and
+    matched by the app when no view takes the key.
+  - Linux: drawn at the top of each window's content, shortcuts matched like on Windows.
+  - Edit roles without an action send their key (Ctrl/Cmd+C and so on) to the focused window.
 - **Tray icon:** `TrayIcon({.icon, .tooltip, .menu})` (SDL3 tray): buttons, check boxes, separators
   and submenus. Shown while any copy lives; `set_tooltip` and `set_menu`. The icon comes from an
   `ImageSource`, else a plain dot.
@@ -1626,7 +1674,7 @@ Separate render thread from day one (decided).
     - Swapchains have two images, so at most one frame is queued.
     - After each live-resize frame the UI thread waits for the compositor (`DwmFlush`), so the
       new frame is on screen before the next resize step.
-  - On Windows, every window now presents through DirectComposition (`gpu/composition_win32`),
+  - On Windows, every window now presents through DirectComposition (`platform/windows/composition`),
     so that path is no longer just for transparent windows:
     - A composition swapchain is shown at its own pixel size, never stretched.
     - A late frame stays anchored top-left over a background layer in the window's clear color:
@@ -2383,7 +2431,8 @@ Separate render thread from day one (decided).
 - [ ] Desktop follow-ups:
   - Dragging out (files and text to other apps).
   - WinRT toasts with actions.
-  - Badge counts.
+  - Jump lists and dock menus.
+  - Linux: the global menu (`com.canonical.dbusmenu`) where the desktop shows one.
   - The app's own window icon and jump lists.
   - "Open with" / file associations (handling files passed at launch).
   - Single-instance apps.

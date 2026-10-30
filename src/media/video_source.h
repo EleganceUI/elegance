@@ -85,6 +85,9 @@ struct VideoFrame {
     std::uint64_t frame_id = 0;  // changes with every new frame
 };
 
+// A new id, unique among sources and the textures decoders share (VideoFrame::texture_id).
+std::uint64_t next_media_id();
+
 // Bytes in a packed frame of `format`.
 std::size_t packed_size(VideoFrame::Format format, std::uint32_t width, std::uint32_t height);
 
@@ -132,10 +135,8 @@ protected:
     std::atomic<bool> playing_now_{false};
 };
 
-#if defined(__APPLE__)
-// VideoSource::create's macOS backend (video_source_apple.mm).
-std::shared_ptr<VideoSource> create_avfoundation_source(std::string url);
-#endif
+// VideoSource::create's backend: each OS's media engine (platform/<os>/video_source.*). UI thread.
+std::shared_ptr<VideoSource> create_platform_video_source(std::string url);
 
 } // namespace elg::detail
 

@@ -5,7 +5,7 @@
 #include "core/crash.h"
 
 #include "core/log.h"
-#include "platform/platform.h"
+#include "platform/generic/platform.h"
 
 #include <elg/app.h>
 
