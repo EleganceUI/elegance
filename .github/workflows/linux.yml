@@ -4,9 +4,9 @@ name: Linux
 on:
     push:
         branches: [main]
-        paths-ignore: [docs/**, design/**, "**.md"]
+        paths-ignore: [design/**, "**.md"]
     pull_request:
-        paths-ignore: [docs/**, design/**, "**.md"]
+        paths-ignore: [design/**, "**.md"]
     workflow_dispatch:
 
 permissions:
