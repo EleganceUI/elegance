@@ -123,6 +123,53 @@ class PackagingTests(unittest.TestCase):
         )
         self.assertIn("Unresolved package dependency", output)
 
+    def test_optional_target_wrappers_resolve_transitive_archives(self):
+        self.archives()
+        for name in ("boost_date_time", "boost_transitive"):
+            (self.source / f"lib{name}.a").write_bytes(b"fixture")
+        (self.source / "CMakeLists.txt").write_text(f'''
+cmake_minimum_required(VERSION 4.3)
+project(optional_target_fixture LANGUAGES NONE)
+foreach (name IN ITEMS elegance_c elegance boost_date_time boost_transitive)
+    add_library(${{name}} STATIC IMPORTED)
+    set_property(TARGET ${{name}} PROPERTY IMPORTED_LOCATION "${{CMAKE_CURRENT_SOURCE_DIR}}/lib${{name}}.a")
+endforeach ()
+add_library(Boost::date_time ALIAS boost_date_time)
+add_library(Boost::transitive ALIAS boost_transitive)
+set_property(TARGET elegance_c PROPERTY INTERFACE_LINK_LIBRARIES elegance)
+set_property(TARGET elegance PROPERTY INTERFACE_LINK_LIBRARIES
+    "$<TARGET_NAME_IF_EXISTS:Boost::date_time>"
+    "$<LINK_ONLY:$<TARGET_NAME_IF_EXISTS:Missing::direct>>"
+    "$<BUILD_INTERFACE:$<LINK_ONLY:$<TARGET_NAME_IF_EXISTS:Boost::date_time>>>"
+    "$<BUILD_LOCAL_INTERFACE:$<TARGET_NAME_IF_EXISTS:Boost::date_time>>"
+    "$<INSTALL_INTERFACE:Missing::installed>")
+set_property(TARGET boost_date_time PROPERTY INTERFACE_LINK_LIBRARIES
+    "$<LINK_ONLY:$<TARGET_NAME_IF_EXISTS:Boost::transitive>>"
+    "$<TARGET_NAME_IF_EXISTS:Missing::transitive>")
+include("{ROOT.as_posix()}/cmake/ElgLinkManifest.cmake")
+elg_write_link_manifest(elegance_c "${{CMAKE_CURRENT_BINARY_DIR}}/native.txt")
+set(ELG_PACKAGE_MANIFEST "${{CMAKE_CURRENT_BINARY_DIR}}/native.txt")
+configure_file("{ROOT.as_posix()}/cmake/ElgInstallLinkManifest.cmake.in" install.cmake @ONLY)
+install(SCRIPT "${{CMAKE_CURRENT_BINARY_DIR}}/install.cmake")
+''')
+        build = self.base / "build"
+        self.run_cmake("-S", self.source, "-B", build)
+        self.run_cmake("--install", build, "--prefix", self.install)
+        lines = (self.install / "elegance-link.txt").read_text().splitlines()
+        archives = [line for line in lines if line.startswith("static ")]
+        self.assertEqual(
+            archives,
+            [
+                "static lib/libelegance_c.a",
+                "static lib/libelegance.a",
+                "static lib/libboost_date_time.a",
+                "static lib/libboost_transitive.a",
+            ],
+        )
+        self.assertFalse(any("::" in line or "$<" in line for line in lines))
+        for line in archives:
+            self.assertTrue((self.install / line.split(" ", 1)[1]).is_file())
+
     def test_colliding_names_fail(self):
         other = self.source / "other"
         other.mkdir()
@@ -278,7 +325,10 @@ add_library(SDL3_import INTERFACE IMPORTED)
 set_property(TARGET SDL3_import PROPERTY INTERFACE_LINK_LIBRARIES sdl_mock)
 add_library(SDL3::SDL3 ALIAS SDL3_import)
 add_library(elegance STATIC ../elegance.cpp)
-target_link_libraries(elegance PRIVATE SDL3::SDL3 accesskit_mock)
+target_link_libraries(elegance PRIVATE
+    "$<LINK_ONLY:$<TARGET_NAME_IF_EXISTS:SDL3::SDL3>>"
+    "$<TARGET_NAME_IF_EXISTS:Missing::optional>"
+    accesskit_mock)
 include("{ROOT.as_posix()}/cmake/ElgLinkManifest.cmake")
 cmake_language(DEFER CALL elg_write_link_manifest elegance_c "${{ELG_C_PACKAGE_MANIFEST}}" STATIC_CXX_RUNTIME)
 ''')

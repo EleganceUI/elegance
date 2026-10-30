@@ -108,10 +108,23 @@ endfunction()
 # up before all of them (reverse post-order). `deps` overrides the item's own (the root's private
 # LINK_LIBRARIES).
 function(_elg_manifest_visit item deps)
-    # A static library's private dependencies come as $<LINK_ONLY:...>.
-    if (item MATCHES "^\\$<LINK_ONLY:(.+)>$")
-        set(item "${CMAKE_MATCH_1}")
-    endif ()
+    # Resolve target-valued wrappers before visiting dependencies. Leaving them for
+    # file(GENERATE) turns an optional Boost import into a literal "lib Boost::..."
+    # line, too late to discover its archive and transitive dependencies.
+    while (TRUE)
+        if (item MATCHES "^\\$<(LINK_ONLY|BUILD_INTERFACE|BUILD_LOCAL_INTERFACE):(.+)>$")
+            set(item "${CMAKE_MATCH_2}")
+        elseif (item MATCHES "^\\$<TARGET_NAME_IF_EXISTS:([^<>]+)>$")
+            set(item "${CMAKE_MATCH_1}")
+            if (NOT TARGET "${item}")
+                return()
+            endif ()
+        elseif (item MATCHES "^\\$<INSTALL_INTERFACE:.*>$")
+            return()
+        else ()
+            break()
+        endif ()
+    endwhile ()
     # CMake turns "-framework X" into $<LINK_LIBRARY:FRAMEWORK,X>, which only means something
     # where targets link (file(GENERATE) rejects it): write the flag back. Other link features
     # (WHOLE_ARCHIVE, ...) wrap ordinary libraries: take those as they are.
