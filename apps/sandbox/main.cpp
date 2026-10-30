@@ -16,13 +16,16 @@
 
 #include <elg/elegance.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <numbers>
+#include <optional>
 #include <format>
 #include <functional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -429,9 +432,15 @@ View NetworkCards() {
                       .card());
 }
 
+// Shows `count` on the app's icon in the Dock or taskbar (none at zero).
+void set_badge_count(State<int> badge, int count) {
+    badge = std::max(count, 0);
+    set_badge(badge() > 0 ? std::optional(std::to_string(badge())) : std::nullopt);
+}
+
 // Desktop integration (design.md §13.4): dropping files, the system's file dialogs,
-// notifications, and a tray icon.
-View DesktopCards() {
+// notifications, a tray icon, and the app icon's badge.
+View DesktopCards(State<int> badge) {
     const State<bool> targeted(false);
     const State<std::string> dropped(std::string("Nothing dropped yet"));
     const auto names = [](const std::vector<std::filesystem::path>& files) {
@@ -513,10 +522,24 @@ View DesktopCards() {
             .fixed_size(),
         Text([=] { return status(); }).font(Font::caption).foreground_style(ThemeColor::secondary));
 
+    // Also changed from the menu bar's Badge menu.
+    const View dock = VStack(
+        {.alignment = HorizontalAlignment::leading, .spacing = 8},
+        HStack({.spacing = 8},
+               Button("-", [=] { set_badge_count(badge, badge() - 1); }).disabled([=] { return badge() <= 0; }),
+               Text([=] { return std::to_string(badge()); })
+                   .font(Font::title3)
+                   .multiline_text_alignment(TextAlignment::center)
+                   .frame({.min_width = 32}),
+               Button("+", [=] { set_badge_count(badge, badge() + 1); }))
+            .button_style(PillButtonStyle{}),
+        Button("Clear", [=] { set_badge_count(badge, 0); }).button_style(BorderedButtonStyle{}));
+
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
                   Captioned(zone, "on_drop: files or text from other apps").card(),
                   Captioned(dialogs, "choose_files, choose_save_file").card(),
-                  Captioned(system, "notify, TrayIcon").card());
+                  Captioned(system, "notify, TrayIcon").card(),
+                  Captioned(dock, "set_badge").card());
 }
 
 // Capture (design.md §13.3): the microphone into memory (with a live level), and a camera's
@@ -919,7 +942,7 @@ View WidgetWindow(State<ColorScheme> scheme) {
         .color_scheme(scheme);
 }
 
-View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
+View ContentView(State<ColorScheme> scheme, State<int> badge, std::function<void()> quit) {
     return VStack({.spacing = 0},
                   TitleBar(scheme),
                   // The title bar stays put; the cards scroll under it.
@@ -928,7 +951,7 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
                          AudioCards(),
                          VideoCards(),
                          NetworkCards(),
-                         DesktopCards(),
+                         DesktopCards(badge),
                          CaptureCards(),
                          PathCards(),
                          MenuCards(),
@@ -949,6 +972,48 @@ View ContentView(State<ColorScheme> scheme, std::function<void()> quit) {
         .background(ThemeColor::background)
         .theme(palette::theme)
         .color_scheme(scheme);
+}
+
+// The menu bar (design.md §13.4): the system's on macOS and Windows, drawn above each window's
+// content on Linux. Items with a role and no action do the standard thing.
+std::vector<MenuBarItem> SandboxMenus(State<ColorScheme> scheme, State<int> badge) {
+    const bool macos = current_platform() == Platform::macos;
+    return {
+        // macOS shows the app's name for this one; elsewhere it's File, with Exit or Quit.
+        {.title = macos ? "" : "File",
+         .role = MenuRole::app,
+         .submenu = {{.role = MenuRole::about},
+                     {},
+                     {.role = MenuRole::hide},
+                     {.role = MenuRole::hide_others},
+                     {.role = MenuRole::show_all},
+                     {},
+                     {.role = MenuRole::quit}}},
+        {.title = "Edit",
+         .submenu = {{.role = MenuRole::undo},
+                     {.role = MenuRole::redo},
+                     {},
+                     {.role = MenuRole::cut},
+                     {.role = MenuRole::copy},
+                     {.role = MenuRole::paste},
+                     {.role = MenuRole::select_all}}},
+        {.title = "View",
+         .submenu = {{.title = "Toggle Dark Mode",
+                      .action = [=] { scheme = scheme() == ColorScheme::dark ? ColorScheme::light : ColorScheme::dark; },
+                      .shortcut = KeyboardShortcut{Key::d, primary_modifier() | KeyModifiers::shift}},
+                     {.role = MenuRole::toggle_fullscreen}}},
+        {.title = "Badge",
+         .submenu = {{.title = "Increase Badge",
+                      .action = [=] { set_badge_count(badge, badge() + 1); },
+                      .shortcut = KeyboardShortcut{Key::b}},
+                     {.title = "Clear Badge",
+                      .action = [=] { set_badge_count(badge, 0); },
+                      .shortcut = KeyboardShortcut{Key::b, primary_modifier() | KeyModifiers::shift}}}},
+        {.role = MenuRole::window, .submenu = {{.role = MenuRole::minimize}, {.role = MenuRole::zoom}}},
+        {.role = MenuRole::help,
+         .submenu = {{.title = "Show a Notification",
+                      .action = [] { notify({.title = "Elegance", .body = "From the Help menu"}); }}}},
+    };
 }
 
 } // namespace
@@ -972,12 +1037,14 @@ int main(int argc, char** argv) {
         App app;
         // Shared by both windows: the title bar's toggle switches them together.
         const State<ColorScheme> scheme(light ? ColorScheme::light : ColorScheme::dark);
+        const State<int> badge(0);
+        app.menu_bar(SandboxMenus(scheme, badge));
         app.window({.title = "Elegance Sandbox", .width = 1100, .height = 860},
                    [&] {
                        if (smoke_test) {
                            app.quit(); // still renders the first frame
                        }
-                       return ContentView(scheme, [&app] { app.quit(); });
+                       return ContentView(scheme, badge, [&app] { app.quit(); });
                    });
         if (only_main) {
             return app.run();
