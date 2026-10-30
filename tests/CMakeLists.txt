@@ -19,6 +19,7 @@ add_executable(elegance_tests
         gpu_image_tests.cpp
         grid_tests.cpp
         hover_tests.cpp
+        lifecycle_tests.cpp
         click_tests.cpp
         raw_input_tests.cpp
         gesture_tests.cpp

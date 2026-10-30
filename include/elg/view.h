@@ -650,6 +650,17 @@ public:
     // innermost view under the pointer that takes that kind of thing gets it.
     ELG_API View on_drop(DropOptions options) const;
 
+    // --- Lifecycle ---
+    // Runs `action` once the view is added: its window opened, an If/ForEach showed it, or a lazy
+    // stack built it as it scrolled near. It runs after the update that added it, before that
+    // update is drawn, as the view's own: timers (elg/timer.h) and effects started in it end
+    // with the view.
+    //   Spinner().on_appear([=] { spinning = true; })
+    ELG_API View on_appear(std::function<void()> action) const;
+    // Runs `action` once the view is gone: after its exit transition, or when its window closed.
+    // Only for views that appeared.
+    ELG_API View on_disappear(std::function<void()> action) const;
+
     // --- Accessibility (design.md §12) ---
     // Built-in views describe themselves to screen readers; these adjust that.
     // What it's called (an icon-only button needs one: Image("trash") says nothing).

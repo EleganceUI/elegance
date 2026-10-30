@@ -7,6 +7,7 @@
 #include "view/view_node.h"
 
 #include "core/crash.h"
+#include "core/timers.h"
 #include "view/accessibility.h"
 #include "view/text_field.h"
 #include "view/window_drag.h"
@@ -458,6 +459,63 @@ View View::on_hover_change(std::function<void(bool)> action) const {
 
 View View::hover_delay(HoverDelay delay) const {
     return modifier(HoverDelayModifier(delay));
+}
+
+namespace {
+
+// on_appear and on_disappear: tied to the scope the view is built in (its If/ForEach item, its
+// lazy stack row, its window), which ends when the view is gone.
+class LifecycleNode final : public detail::ViewNode {
+public:
+    LifecycleNode(View content, std::function<void()> appear, std::function<void()> disappear)
+        : content_(std::move(content)), appear_(std::move(appear)), disappear_(std::move(disappear)) {}
+
+    std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
+        auto element = detail::lower(content_, context);
+        struct Life {
+            bool appeared = false;
+            bool gone = false;
+        };
+        auto life = std::make_shared<Life>();
+        detail::Scope* scope = detail::current_scope();
+        detail::queue_lifecycle_action([life, scope, appear = appear_] {
+            if (life->gone) {
+                return; // removed before it got to appear
+            }
+            life->appeared = true;
+            if (appear) {
+                std::optional<detail::Scope::Use> use;
+                if (scope) {
+                    use.emplace(*scope);
+                }
+                appear();
+            }
+        });
+        if (scope) {
+            scope->on_end([life, disappear = disappear_] {
+                life->gone = true;
+                if (life->appeared && disappear) {
+                    detail::queue_lifecycle_action(disappear);
+                }
+            });
+        }
+        return element;
+    }
+
+private:
+    View content_;
+    std::function<void()> appear_;
+    std::function<void()> disappear_;
+};
+
+} // namespace
+
+View View::on_appear(std::function<void()> action) const {
+    return View(std::make_shared<const LifecycleNode>(*this, std::move(action), nullptr));
+}
+
+View View::on_disappear(std::function<void()> action) const {
+    return View(std::make_shared<const LifecycleNode>(*this, nullptr, std::move(action)));
 }
 
 namespace {

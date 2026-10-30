@@ -16,6 +16,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         geometry/path.cpp
         core/crash.cpp
         core/log.cpp
+        core/timers.cpp
         core/ui_tasks.cpp
         gpu/atlas_texture.cpp
         gpu/blur_renderer.cpp

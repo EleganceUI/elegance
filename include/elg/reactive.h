@@ -136,6 +136,9 @@ public:
     Scope& operator=(const Scope&) = delete;
 
     void adopt(std::shared_ptr<ReactiveNode> node);
+    // Runs `cleanup` when the scope ends, after its effects are disposed (timers stop, views
+    // disappear). It must not run user code: queue that instead.
+    void on_end(std::function<void()> cleanup);
 
     // Makes `scope` the current one while alive.
     class ELG_API Use {
@@ -152,6 +155,7 @@ public:
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
     std::vector<std::shared_ptr<ReactiveNode>> nodes_;
+    std::vector<std::function<void()>> cleanups_;
     ELG_PRIVATE_MEMBERS_END
 };
 

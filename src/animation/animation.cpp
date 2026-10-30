@@ -67,9 +67,30 @@ Animation Animation::custom(std::function<double(double)> curve, double duration
     return animation;
 }
 
+Animation Animation::timing_curve(double x1, double y1, double x2, double y2, double duration) {
+    // x outside 0...1 would make the curve go back in time.
+    x1 = std::clamp(x1, 0.0, 1.0);
+    x2 = std::clamp(x2, 0.0, 1.0);
+    return custom([=](double x) { return cubic_bezier(x1, y1, x2, y2, x); }, duration);
+}
+
 Animation Animation::delay(double seconds) const {
     Animation copy = *this;
-    copy.delay_ += std::max(seconds, 0.0);
+    copy.delay_ += std::isfinite(seconds) ? seconds : 0.0;
+    return copy;
+}
+
+Animation Animation::repeat_count(int count, bool autoreverses) const {
+    Animation copy = *this;
+    copy.plays_ = std::max(count, 1);
+    copy.autoreverses_ = autoreverses;
+    return copy;
+}
+
+Animation Animation::repeat_forever(bool autoreverses) const {
+    Animation copy = *this;
+    copy.plays_ = -1;
+    copy.autoreverses_ = autoreverses;
     return copy;
 }
 
@@ -78,6 +99,26 @@ double Animation::progress(double seconds) const noexcept {
     if (t <= 0) {
         return 0;
     }
+    if (plays_ == 1) {
+        return play_progress(t);
+    }
+    const double length = play_length();
+    if (length <= 0 || (plays_ > 0 && t >= length * plays_)) {
+        return 1;
+    }
+    const double play = std::floor(t / length);
+    const double p = play_progress(t - play * length);
+    return autoreverses_ && std::fmod(play, 2.0) == 1.0 ? 1 - p : p;
+}
+
+bool Animation::finished(double seconds) const noexcept {
+    if (plays_ < 0) {
+        return false;
+    }
+    return seconds - delay_ >= play_length() * plays_;
+}
+
+double Animation::play_progress(double t) const noexcept {
     if (curve_ != Curve::spring) {
         if (duration_ <= 0 || t >= duration_) {
             return 1;
@@ -114,17 +155,15 @@ double Animation::progress(double seconds) const noexcept {
     return 1 - (r2 * std::exp(r1 * t) - r1 * std::exp(r2 * t)) / (r2 - r1);
 }
 
-bool Animation::finished(double seconds) const noexcept {
-    const double t = seconds - delay_;
+double Animation::play_length() const noexcept {
     if (curve_ != Curve::spring) {
-        return t >= duration_;
+        return duration_;
     }
     // Settled once the slowest-decaying term falls below the tolerance.
     const double omega = 2 * std::numbers::pi / duration_;
     const double zeta = damping_;
     const double decay = zeta <= 1 ? zeta * omega : omega * (zeta - std::sqrt(zeta * zeta - 1));
-    const double settle = std::log(1 / kSpringTolerance) / decay + (zeta >= 1 - 1e-6 ? 1 / omega : 0);
-    return t >= settle;
+    return std::log(1 / kSpringTolerance) / decay + (zeta >= 1 - 1e-6 ? 1 / omega : 0);
 }
 
 // --- PopupMotion ---
