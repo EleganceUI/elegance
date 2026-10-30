@@ -41,10 +41,10 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         net/fetch.cpp
         net/http_cache.cpp
         net/proxy.cpp
-        platform/accessibility_adapter.cpp
-        platform/desktop_sdl.cpp
-        platform/dynamic_library.cpp
-        platform/platform_sdl.cpp
+        platform/generic/accessibility_adapter.cpp
+        platform/generic/desktop_sdl.cpp
+        platform/generic/dynamic_library.cpp
+        platform/generic/platform_sdl.cpp
         reactive/runtime.cpp
         render/display_list.cpp
         render/frame_mailbox.cpp
@@ -193,8 +193,17 @@ if (ELG_ICONS)
     endif ()
 endif ()
 
+# Each OS's own code: platform/windows, platform/macos, platform/linux (also other Unix desktops).
 if (WIN32)
-    target_sources(elegance PRIVATE gpu/composition_win32.cpp)
+    target_sources(elegance PRIVATE
+            platform/windows/camera.cpp
+            platform/windows/composition.cpp
+            platform/windows/fonts.cpp
+            platform/windows/image_codec.cpp
+            platform/windows/native.cpp
+            platform/windows/notifications.cpp
+            platform/windows/proxy.cpp
+            platform/windows/video_source.cpp)
     # dwmapi: rounded corners for undecorated windows; d3d11/dxgi/dcomp: transparent windows.
     target_link_libraries(elegance PRIVATE dwmapi d3d11 dxgi dcomp windowscodecs ole32 propsys mfplat mfuuid mf mfreadwrite strmiids oleaut32 shell32 crypt32 imm32 winhttp)
 endif ()
@@ -203,13 +212,54 @@ if (APPLE)
     # Video playback through AVFoundation (Objective-C++, ARC); images through ImageIO.
     enable_language(OBJCXX)
     # Integrated title bars and trackpad gestures through AppKit.
-    set(elg_apple_sources media/video_source_apple.mm platform/input_apple.mm platform/title_bar_apple.mm)
-    target_sources(elegance PRIVATE ${elg_apple_sources})
+    set(elg_apple_sources
+            platform/macos/camera.mm
+            platform/macos/input.mm
+            platform/macos/notifications.mm
+            platform/macos/surface_publisher.mm
+            platform/macos/title_bar.mm
+            platform/macos/video_source.mm)
+    target_sources(elegance PRIVATE ${elg_apple_sources}
+            platform/macos/fonts.cpp
+            platform/macos/image_codec.cpp
+            platform/macos/native.cpp
+            platform/macos/pixel_buffer.cpp
+            platform/macos/proxy.cpp)
     set_source_files_properties(${elg_apple_sources} PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
     target_link_libraries(elegance PRIVATE
             "-framework AppKit" "-framework AVFoundation" "-framework CoreMedia" "-framework CoreVideo" "-framework QuartzCore"
             "-framework Foundation" "-framework ImageIO" "-framework CoreGraphics" "-framework CoreFoundation"
-            "-framework Security" "-framework Carbon" "-framework CFNetwork")
+            "-framework Security" "-framework Carbon" "-framework CFNetwork" "-framework UserNotifications" "-framework Metal" "-framework IOSurface")
+endif ()
+
+if (UNIX AND NOT APPLE)
+    # The system's GStreamer plays video, and GIO talks to the notification server; each is
+    # optional (pkg-config), and without it that feature reports it isn't available.
+    find_package(PkgConfig)
+    if (PkgConfig_FOUND)
+        pkg_check_modules(ELG_GSTREAMER IMPORTED_TARGET gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0)
+        pkg_check_modules(ELG_GIO IMPORTED_TARGET gio-2.0)
+    endif ()
+    if (ELG_GSTREAMER_FOUND)
+        target_link_libraries(elegance PRIVATE PkgConfig::ELG_GSTREAMER)
+        target_compile_definitions(elegance PRIVATE ELG_HAVE_GSTREAMER)
+    else ()
+        message(STATUS "Elegance: GStreamer not found (gstreamer-1.0, -app, -video): video playback is off")
+    endif ()
+    if (ELG_GIO_FOUND)
+        target_link_libraries(elegance PRIVATE PkgConfig::ELG_GIO)
+        target_compile_definitions(elegance PRIVATE ELG_HAVE_GIO)
+    else ()
+        message(STATUS "Elegance: GIO not found (gio-2.0): notifications are only logged")
+    endif ()
+    target_sources(elegance PRIVATE
+            platform/linux/camera.cpp
+            platform/linux/fonts.cpp
+            platform/linux/image_codec.cpp
+            platform/linux/native.cpp
+            platform/linux/notifications.cpp
+            platform/linux/proxy.cpp
+            platform/linux/video_source.cpp)
 endif ()
 
 target_link_libraries(elegance PRIVATE

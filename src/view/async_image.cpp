@@ -13,7 +13,7 @@
 #include "media/image_decode.h"
 #include "net/fetch.h"
 #include "net/http_cache.h"
-#include "platform/platform.h"
+#include "platform/generic/platform.h"
 #include "view/raster_image.h"
 #include "view/view_node.h"
 

@@ -2,11 +2,12 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_PLATFORM_PLATFORM_H
-#define ELG_PLATFORM_PLATFORM_H
+#ifndef ELG_PLATFORM_GENERIC_PLATFORM_H
+#define ELG_PLATFORM_GENERIC_PLATFORM_H
 
 // Internal platform layer (design.md §4). SDL3 is the only backend, but no SDL types leak out
-// of platform/*.cpp, so it could be replaced without touching the rest of the framework.
+// of platform/, so it could be replaced without touching the rest of the framework. generic/
+// holds what's the same on every OS; windows/, macos/ and linux/ hold the rest.
 
 #include <elg/app.h>
 #include <elg/events.h>
@@ -121,6 +122,14 @@ enum class HitArea {
 
 class Window;
 
+namespace native {
+// The OS's parts of a window (platform/generic/native.h).
+struct WindowParts {
+    void* metal_view = nullptr; // SDL_MetalView on macOS: the window's CAMetalLayer
+    void* title_bar = nullptr;  // TitleBar::integrated on macOS (platform/macos/title_bar.h)
+};
+} // namespace native
+
 // A popup (menu or tooltip) window attached to `parent` (design.md §13.1).
 struct PopupSpec {
     const Window* parent = nullptr;
@@ -189,8 +198,7 @@ public:
 
 private:
     SDL_Window* window_ = nullptr;
-    void* metal_view_ = nullptr; // SDL_MetalView on macOS: the window's CAMetalLayer
-    void* title_bar_ = nullptr;  // TitleBar::integrated on macOS (platform/title_bar_apple.h)
+    native::WindowParts native_;
     // Popups: the window they belong to, which has the keyboard (they're never activated), and
     // whether text input was started there for the popup.
     SDL_Window* parent_ = nullptr;
@@ -260,4 +268,4 @@ void show_error_box(const char* title, const char* message) noexcept;
 
 } // namespace elg::detail::platform
 
-#endif // ELG_PLATFORM_PLATFORM_H
+#endif // ELG_PLATFORM_GENERIC_PLATFORM_H

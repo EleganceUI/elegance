@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_PLATFORM_DYNAMIC_LIBRARY_H
-#define ELG_PLATFORM_DYNAMIC_LIBRARY_H
+#ifndef ELG_PLATFORM_GENERIC_DYNAMIC_LIBRARY_H
+#define ELG_PLATFORM_GENERIC_DYNAMIC_LIBRARY_H
 
 #include <filesystem>
 #include <string>
@@ -29,4 +29,4 @@ private:
 
 } // namespace elg::detail::platform
 
-#endif // ELG_PLATFORM_DYNAMIC_LIBRARY_H
+#endif // ELG_PLATFORM_GENERIC_DYNAMIC_LIBRARY_H

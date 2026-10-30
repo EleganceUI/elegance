@@ -6,7 +6,7 @@
 #define ELG_GPU_INSTANCE_H
 
 #include "gpu/webgpu.h"
-#include "platform/platform.h"
+#include "platform/generic/platform.h"
 
 namespace elg::detail::gpu {
 

@@ -5,7 +5,7 @@
 // AccessKit (design.md §12): our tree, as AccessKit nodes, to UI Automation (and later AT-SPI and
 // NSAccessibility). On Windows the subclassing adapter hooks the window's WM_GETOBJECT.
 
-#include "platform/accessibility_adapter.h"
+#include "platform/generic/accessibility_adapter.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"

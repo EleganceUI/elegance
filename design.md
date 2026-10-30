@@ -233,6 +233,13 @@ drag & drop, IME composition, cursors, native file dialogs, multi-window, and th
   targets.
 - SDL stays behind an internal `platform/` interface. No SDL types appear in public headers, so
   a native backend could replace it later if needed (e.g. custom title bars, finer frame pacing).
+- `src/platform/` is sorted by OS. `generic/` holds what's the same everywhere (the SDL layer,
+  accessibility, dynamic libraries) and `native.h`, the hooks each OS implements. `windows/`,
+  `macos/` and `linux/` (also other Unix desktops) hold each OS's own code, including the media,
+  image, font, proxy and notification backends that other folders declare: `VideoSource`'s and
+  `CameraSource`'s `create_platform_*`, `platform_decode_image`/`encode_png`,
+  `system_font_candidates`, `system_proxy`, and `native::show_notification`. Only short `#if`s
+  of a few lines stay inline elsewhere.
 
 ### 4.1 Window customization (implemented in M4)
 
@@ -261,7 +268,7 @@ drag & drop, IME composition, cursors, native file dialogs, multi-window, and th
   - Both dim while the window is inactive, and both are `.focusable(false)`.
 - `.focusable(false)` takes a whole subtree out of keyboard focus (Tab skips it, clicks leave
   focus alone).
-- **Transparency on Windows goes through DirectComposition** (`gpu/composition_win32`).
+- **Transparency on Windows goes through DirectComposition** (`platform/windows/composition`).
   - Windows Vulkan drivers expose only `VK_COMPOSITE_ALPHA_OPAQUE`; on this AMD machine
     `SDL_WINDOW_TRANSPARENT` alone gave black corners.
   - Each transparent window gets a D3D11 device on the same adapter (matched by LUID).
@@ -1415,13 +1422,19 @@ player.play();  player.is_playing();  player.time();    // signals
 - Windows: `IMFMediaEngine` handles demuxing, hardware decoding, audio output, and A/V sync.
   Each display frame, `TransferVideoFrame` writes into a shared D3D11 texture that Vulkan
   samples.
-- macOS: `AVPlayer` + `AVPlayerItemVideoOutput` → `CVPixelBuffer` (IOSurface).
+- macOS: `AVPlayer` + `AVPlayerItemVideoOutput` → `CVPixelBuffer`. When the renderer runs on
+  Metal with IOSurface sharing, the output delivers IOSurface-backed BGRA, imported into Dawn as
+  is (`platform/macos/surface_publisher`, over the `ElgGpuImage` IOSurface transport); each
+  buffer stays retained until the renderer's reads signal their MTLSharedEvent fences. Otherwise
+  it delivers NV12, copied into `cpu` frames.
 - Linux: a GStreamer `playbin` with an `appsink` (DMA-BUF when available).
 - Frame pacing: the render thread asks the player for the frame due at the next vsync, so video
   never runs the UI tree's layout. Only the video quad's texture changes, and windows playing
   video redraw at the video's rate.
-- Later: Vulkan Video decode as a backend independent of the OS, and camera capture
-  (`CameraView`).
+- Cameras (`Camera`, `CameraView`): Media Foundation (DirectShow for cameras only it sees) on
+  Windows, `AVCaptureSession` on macOS, Video4Linux2 on Linux (NV12/YUYV/YUV420 kept as is,
+  MJPEG decoded to BGRA on the capture thread). Frames go to the renderer as `cpu` frames.
+- Later: Vulkan Video decode as a backend independent of the OS.
 
 **3a. The FFmpeg backend (optional).** The OS media stack stays the default: it costs nothing to
 ship, decodes in hardware, and the codec licenses are the OS vendor's. Only HEVC needs a paid
@@ -1623,7 +1636,7 @@ Separate render thread from day one (decided).
     - Swapchains have two images, so at most one frame is queued.
     - After each live-resize frame the UI thread waits for the compositor (`DwmFlush`), so the
       new frame is on screen before the next resize step.
-  - On Windows, every window now presents through DirectComposition (`gpu/composition_win32`),
+  - On Windows, every window now presents through DirectComposition (`platform/windows/composition`),
     so that path is no longer just for transparent windows:
     - A composition swapchain is shown at its own pixel size, never stretched.
     - A late frame stays anchored top-left over a background layer in the window's clear color:

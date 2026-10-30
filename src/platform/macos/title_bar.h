@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_PLATFORM_TITLE_BAR_APPLE_H
-#define ELG_PLATFORM_TITLE_BAR_APPLE_H
+#ifndef ELG_PLATFORM_MACOS_TITLE_BAR_H
+#define ELG_PLATFORM_MACOS_TITLE_BAR_H
 
 // TitleBar::integrated on macOS: the content view fills the window under a transparent title
 // bar, and the native traffic lights stay, optionally moved.
@@ -12,7 +12,7 @@
 
 #include <optional>
 
-namespace elg::detail::platform::apple {
+namespace elg::detail::platform::macos {
 
 // Integrates `ns_window`'s title bar (an NSWindow*), keeping its content size. Returns what keeps
 // the traffic lights in place as the window changes; pass it to the functions below.
@@ -23,6 +23,6 @@ void refresh_title_bar(void* title_bar);
 Rect system_controls_frame(void* title_bar);
 void release_title_bar(void* title_bar);
 
-} // namespace elg::detail::platform::apple
+} // namespace elg::detail::platform::macos
 
-#endif // ELG_PLATFORM_TITLE_BAR_APPLE_H
+#endif // ELG_PLATFORM_MACOS_TITLE_BAR_H

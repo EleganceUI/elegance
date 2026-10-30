@@ -328,6 +328,7 @@ TEST_CASE("in-window floating content with a motion animates in, then out before
     window.layout();
     window.layout(); // pruned once finished
     CHECK(paint(*window.root).commands == closed.commands);
+    detail::set_frame_time(0); // later tests start from 0
 }
 
 TEST_CASE("a popover takes its motion from its style unless its options give one", "[floating]") {
@@ -350,6 +351,7 @@ TEST_CASE("a popover takes its motion from its style unless its options give one
     int transitions = 0;
     window.root->for_each_child([&](detail::Element& child) { transitions += child.as_transition() ? 1 : 0; });
     CHECK(transitions == 1);
+    detail::set_frame_time(0); // later tests start from 0
 }
 
 TEST_CASE("a press on in-window floating content that nothing in it takes keeps it open", "[floating]") {

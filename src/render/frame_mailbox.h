@@ -5,7 +5,7 @@
 #ifndef ELG_RENDER_FRAME_MAILBOX_H
 #define ELG_RENDER_FRAME_MAILBOX_H
 
-#include "platform/platform.h"
+#include "platform/generic/platform.h"
 #include "render/display_list.h"
 #include "text/atlas.h"
 

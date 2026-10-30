@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -34,6 +35,22 @@ ImageInfo probe_image(std::span<const std::uint8_t> data);
 // Decodes, applying the EXIF orientation. Images larger than `max_size` on a side are scaled
 // down to fit (GPU texture limits). Thread-safe.
 std::shared_ptr<const DecodedImage> decode_image(std::span<const std::uint8_t> data, std::uint32_t max_size = 8192);
+
+// --- Each OS's codecs (platform/<os>/image_codec.*) ---
+
+// The size as stored and the EXIF orientation (1-8; 1 when absent).
+struct StoredImageInfo {
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    int orientation = 1;
+};
+// Throw elg::ResourceError as probe_image and decode_image do. Decoding fills `image`'s size and
+// pixels as stored (not yet oriented) and returns the orientation.
+StoredImageInfo platform_probe_image(std::span<const std::uint8_t> data);
+int platform_decode_image(std::span<const std::uint8_t> data, std::uint32_t max_size, DecodedImage& image);
+// Opaque BGRA pixels (width * 4 bytes a row, top to bottom) as a PNG file, or nullopt on failure.
+std::optional<std::vector<unsigned char>> encode_png(std::span<const std::uint8_t> bgra, std::uint32_t width,
+                                                     std::uint32_t height);
 
 } // namespace elg::detail
 

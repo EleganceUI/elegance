@@ -150,6 +150,15 @@ private:
     std::unordered_map<char32_t, const FontFace*> emoji_fallback_cache_;
 };
 
+// --- Each OS's font files (platform/<os>/fonts.cpp) ---
+
+// Font files to try for the system UI font, best match first. (macOS's SF is a variable font:
+// one file draws every weight.)
+std::vector<std::filesystem::path> system_font_candidates(Weight weight, bool italic);
+// Fonts to fall back to for characters the requested font lacks, in order: symbols, emoji
+// (monochrome until color glyphs, design.md §11), CJK, then other scripts.
+std::vector<std::filesystem::path> fallback_font_candidates();
+
 } // namespace elg::detail
 
 #endif // ELG_TEXT_FONT_LIBRARY_H
