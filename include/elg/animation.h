@@ -10,6 +10,7 @@
 //   with_animation(Animation::spring(), [&] { expanded = !expanded(); });  // explicit
 //   content.animation(Animation::ease_out(0.2), selected)                  // implicit
 //   If(shown, Panel().transition(Transition::move(Edges::bottom)))          // insertion/removal
+//   spinner.animation(Animation::linear(1).repeat_forever(false), spinning) // repeating
 //
 // Animated: colors, fills, strokes, text color, opacity, and layout (frames ease to their new
 // position and size). If/ForEach children animate in and out with their transition.
@@ -41,12 +42,25 @@ public:
     // animation lands on the target once `duration` is up regardless.
     //   Animation::custom([](double t) { return t * t * t; }, 0.3)
     static Animation custom(std::function<double(double)> curve, double duration = 0.25);
+    // A cubic Bézier through (0, 0), (x1, y1), (x2, y2) and (1, 1), like CSS's cubic-bezier():
+    //   Animation::timing_curve(0.55, 0.1, 0.45, 0.9, 1.4)
+    static Animation timing_curve(double x1, double y1, double x2, double y2, double duration = 0.25);
 
-    // Waits before starting.
+    // Waits before starting. A negative delay starts partway in, like CSS: delay(-0.1) begins
+    // where it would be 0.1 s in (staggering things that repeat).
     Animation delay(double seconds) const;
 
+    // Plays `count` times in all. `autoreverses`: every other time runs backward, from the target
+    // to where it started. When done, it lands on the target.
+    Animation repeat_count(int count, bool autoreverses = true) const;
+    // Plays again and again until the value changes or the view goes away. A spinner turning
+    // forever: rotation 0 to 360, linear, without reversing.
+    Animation repeat_forever(bool autoreverses = true) const;
+
     // Progress at `seconds` since the start: 0 at the start, 1 at the end (springs overshoot).
+    // Repeating ones go round again each time (back down while autoreversing).
     double progress(double seconds) const noexcept;
+    // Never for repeat_forever.
     bool finished(double seconds) const noexcept;
 
 private:
@@ -54,10 +68,16 @@ private:
     Animation(Curve curve, double duration, double damping) noexcept
         : curve_(curve), duration_(duration), damping_(damping) {}
 
+    // One play: progress, its length, and whether it's done (`t`: seconds since it started).
+    double play_progress(double t) const noexcept;
+    double play_length() const noexcept;
+
     Curve curve_;
     double duration_; // seconds; a spring's response
     double damping_;  // springs only
     double delay_ = 0;
+    int plays_ = 1;   // -1: forever
+    bool autoreverses_ = false;
     ELG_PRIVATE_MEMBERS_BEGIN
     std::shared_ptr<const std::function<double(double)>> custom_; // Curve::custom only
     ELG_PRIVATE_MEMBERS_END

@@ -876,9 +876,28 @@ frame (generous desktop targets); `.content_shape(shape)` narrows one.
   - **Explicit**: `with_animation(Animation::ease_out(0.2), [&] { expanded = !expanded; })`
     animates everything that changes as a result of the state writes inside the closure.
   - **Insertion/removal**: `.transition(Transition::opacity.combined(Transition::slide))`.
-  - **Later**: `matched_geometry_effect`, keyframe animations, `PhaseAnimator`.
+  - **Repeating**: `.repeat_count(n, autoreverses)` and `.repeat_forever(autoreverses)` on any
+    animation. A forever one runs until the value changes again or the view goes away, and its
+    window draws frames only while one runs. `Animation::timing_curve(x1, y1, x2, y2, duration)`
+    is CSS's `cubic-bezier()`, and a negative `.delay()` starts partway in (staggering).
+    Repeats ending on an even play still land on the target, as in SwiftUI.
+  - **Starting on appear**: the usual pattern is a state flipped in `.on_appear`, with an implicit
+    repeating animation on it (the sandbox's orbiting dots loader).
+  - **Later**: `matched_geometry_effect`, keyframe animations, `PhaseAnimator`, a
+    `reduce_motion` environment value from the system setting.
   - Animatable properties are interpolated on the UI thread per frame. Only the affected paint
     or layout props are dirtied.
+- **Lifecycle and timers**:
+  - `.on_appear(fn)` runs once the view is added (window opened, If/ForEach showed it, a lazy
+    stack built it), after that update and before it's drawn. It runs in the view's scope, so
+    timers and effects it starts end with the view.
+  - `.on_disappear(fn)` runs once the view is gone, after its exit transition, and only if it
+    appeared. Both are queued, never run while views are being built or torn down.
+  - `after(seconds, fn)` and `every(seconds, fn)` (elg/timer.h) run on the UI thread and return
+    a `Timer` to `cancel()`. One started while building a view or in `on_appear` belongs to that
+    view's scope; one started elsewhere (a click) runs until it fires or is cancelled. `every`
+    skips runs the app was too busy for. The event loop sleeps until the next timer is due.
+  - `task(async fn)` comes with the async story.
 
 ### 9.6 Hot reload (DLL-based)
 Code is the only source of truth, since there's no markup (§1). Iteration speed comes from

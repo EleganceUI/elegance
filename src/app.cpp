@@ -8,6 +8,7 @@
 #include "core/crash.h"
 #include "core/log.h"
 #include "core/scope_exit.h"
+#include "core/timers.h"
 #include "platform/generic/menu_bar.h"
 #include "platform/generic/native.h"
 #include "platform/generic/platform.h"
@@ -428,6 +429,11 @@ int App::run() {
     // Reactive state belongs to this thread while the app runs (design.md §6).
     set_ui_thread(std::this_thread::get_id());
     ScopeExit release_ui_thread([] { set_ui_thread(std::nullopt); });
+    // After the windows are gone: their views' timers and on_disappear actions end with the app.
+    ScopeExit stop_timers([] {
+        cancel_all_timers();
+        clear_lifecycle_actions();
+    });
 
     // Declaration order is teardown order in reverse: the render thread stops first (with the
     // GPU and the windows' surfaces), then windows go, then SDL.
@@ -1407,9 +1413,10 @@ int App::run() {
         // Idle: block until something happens. Animating: keep drawing, picking up events as
         // they come.
         const bool animating = std::ranges::any_of(windows, [](const auto& live) { return live->animating; });
-        if (!animating && !pending.any()) {
-            // Wake for the next pending hover change (hover delays), else sleep until an event.
-            std::optional<double> deadline;
+        if (!animating && !pending.any() && !has_lifecycle_actions()) {
+            // Wake for the next timer or pending hover change (hover delays), else sleep until an
+            // event.
+            std::optional<double> deadline = next_timer_due();
             if (inspector && inspector_rows_stale) {
                 deadline = inspector_rows_at + kInspectorRefresh;
             }
@@ -1448,6 +1455,7 @@ int App::run() {
             }
         }
         run_ui_tasks(); // e.g. a hot reload: state written here takes effect below
+        run_due_timers(seconds_now());
         flush_effects(); // hover and other effects may ask for popups
         process_popups();
         if (inspector) {
@@ -1487,6 +1495,11 @@ int App::run() {
         // same time; layout changes caused by an animated transaction animate too.
         set_frame_time(seconds_now());
         flush_effects();
+        // Views just added appear, and views gone disappear. What they write takes effect in
+        // this frame too, so a view starting an animation in on_appear is never drawn still.
+        while (run_lifecycle_actions()) {
+            flush_effects();
+        }
         // Views that just became .disabled() lose their press, gestures, and focus; what the
         // cancelled handlers write takes effect too.
         for (const auto& live : windows) {

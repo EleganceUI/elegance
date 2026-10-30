@@ -42,6 +42,7 @@
 #include <elg/video.h>
 #include <elg/gpu_image.h>
 #include <elg/theme.h>
+#include <elg/timer.h>
 #include <elg/view.h>
 #include <elg/views.h>
 #include <elg/window.h>

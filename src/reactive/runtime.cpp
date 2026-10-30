@@ -182,10 +182,17 @@ Scope::~Scope() {
     for (auto& node : nodes_) {
         node->dispose();
     }
+    for (auto it = cleanups_.rbegin(); it != cleanups_.rend(); ++it) {
+        (*it)();
+    }
 }
 
 void Scope::adopt(std::shared_ptr<ReactiveNode> node) {
     nodes_.push_back(std::move(node));
+}
+
+void Scope::on_end(std::function<void()> cleanup) {
+    cleanups_.push_back(std::move(cleanup));
 }
 
 Scope::Use::Use(Scope& scope) noexcept : previous_(g_scope) {

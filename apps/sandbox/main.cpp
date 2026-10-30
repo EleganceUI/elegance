@@ -432,6 +432,67 @@ View NetworkCards() {
                       .card());
 }
 
+// The dark tile the loader sits on, as on the page it comes from.
+constexpr Color kLoaderTile = Color::hex(0x16161D);
+
+// The orbiting dots loader from wpdean.com/css-animation: three dots chasing each other around a
+// faint ring, 1.4 s a turn. They follow the same eased path, each 0.12 s ahead of the one
+// before, so they bunch up where it's slow and spread out where it's fast. on_appear starts the
+// turn, and the repeating animation keeps it going for as long as the loader is shown.
+View OrbitingDots() {
+    const State<bool> spinning(false);
+    const auto dot = [=](Color color, double ahead) {
+        return Circle()
+            .fill(color)
+            .frame(12, 12)
+            .offset(0, -6) // its middle on the ring
+            .frame(72, 72, Alignment::top)
+            .rotation_effect([=] { return spinning() ? 360.f : 0.f; })
+            .animation(Animation::timing_curve(0.55, 0.1, 0.45, 0.9, 1.4).delay(-ahead).repeat_forever(false), spinning);
+    };
+    return ZStack(Circle().stroke(Color::white.opacity(0.12f), 2),
+                  dot(Color::hex(0xFF6B3D), 0),
+                  dot(Color::hex(0xFFD84D), 0.12),
+                  dot(Color::hex(0x7EA0FF), 0.24))
+        .frame(72, 72)
+        .accessibility_label("Loading")
+        .on_appear([=] { spinning = true; });
+}
+
+// Lifecycle, timers, and repeating animations (design.md §9.5): Load shows the loader for three
+// seconds (after). While it's there, a timer started in its on_appear counts the seconds; the
+// timer ends with it, and on_disappear reports.
+View AnimationCards() {
+    const State<bool> loading(false);
+    const State<int> seconds(0);
+    const State<std::string> status(std::string("Not loaded yet"));
+    const View loader = VStack(
+        {.alignment = HorizontalAlignment::leading, .spacing = 12},
+        If([=] { return loading(); },
+           OrbitingDots()
+               .on_appear([=] {
+                   seconds = 0;
+                   every(1, [=] { seconds += 1; });
+               })
+               .on_disappear([=] { status = std::format("Loaded, after {} s", seconds()); }),
+           Circle().stroke(Color::white.opacity(0.12f), 2).frame(72, 72))
+            .padding(24)
+            .background(kLoaderTile, RoundedRectangle(16)),
+        Text([=] { return loading() ? std::format("Loading… {} s", seconds()) : status(); })
+            .font(Font::caption)
+            .foreground_style(ThemeColor::secondary),
+        Button("Load", [=] {
+            loading = true;
+            after(3, [=] { loading = false; });
+        })
+            .button_style(BorderedButtonStyle{})
+            .disabled([=] { return loading(); }))
+        .frame({.width = 200, .alignment = Alignment::leading});
+
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(loader, "on_appear, on_disappear, after, every, repeat_forever").card());
+}
+
 // Shows `count` on the app's icon in the Dock or taskbar (none at zero).
 void set_badge_count(State<int> badge, int count) {
     badge = std::max(count, 0);
@@ -916,6 +977,13 @@ View MoreControlCards() {
                   Captioned(picker, "Picker (segmented)").card());
 }
 
+// The orbiting dots loader on its own, spinning from the moment the window opens.
+View LoaderWindow() {
+    return OrbitingDots()
+        .frame({.max_width = infinity, .max_height = infinity})
+        .background(kLoaderTile);
+}
+
 // A transparent, undecorated window: only the rounded glass panel is drawn, the desktop shows
 // around and (faintly) through it. Drag it anywhere on the panel.
 View WidgetWindow(State<ColorScheme> scheme) {
@@ -951,6 +1019,7 @@ View ContentView(State<ColorScheme> scheme, State<int> badge, std::function<void
                          AudioCards(),
                          VideoCards(),
                          NetworkCards(),
+                         AnimationCards(),
                          DesktopCards(badge),
                          CaptureCards(),
                          PathCards(),
@@ -1059,6 +1128,8 @@ int main(int argc, char** argv) {
                     .title_bar = TitleBar::hidden,
                     .transparent = true},
                    [scheme] { return WidgetWindow(scheme); });
+        // The orbiting dots loader (on_appear and a repeating animation).
+        app.window({.title = "Elegance Loader", .width = 240, .height = 240}, [] { return LoaderWindow(); });
         // A third: a 10,000-row List (lazy stacks).
         app.window({.title = "Elegance Contacts", .width = 520, .height = 640},
                    [scheme] { return ContactsWindow(scheme); });
