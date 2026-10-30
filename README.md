@@ -1,90 +1,193 @@
-# Elegance
+<h1 align="center">Elegance</h1>
 
-A C++23 framework for desktop app interfaces. You describe the UI as a tree of views, style them
-with chained modifiers, and connect them to reactive state; a WebGPU renderer (Dawn) draws the
-result.
+<p align="center">
+  <strong>Declarative, reactive desktop UI for C++23 and Rust, rendered on the GPU.</strong>
+</p>
+
+<p align="center">
+  <a href="https://github.com/EleganceUI/elegance/actions/workflows/macos.yml"><img alt="macOS" src="https://github.com/EleganceUI/elegance/actions/workflows/macos.yml/badge.svg"></a>
+  <a href="https://github.com/EleganceUI/elegance/actions/workflows/linux.yml"><img alt="Linux" src="https://github.com/EleganceUI/elegance/actions/workflows/linux.yml/badge.svg"></a>
+  <a href="https://github.com/EleganceUI/elegance/actions/workflows/c-api.yml"><img alt="C API" src="https://github.com/EleganceUI/elegance/actions/workflows/c-api.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="License: MPL-2.0" src="https://img.shields.io/badge/license-MPL--2.0-blue.svg"></a>
+</p>
+
+<p align="center">
+  <a href="https://eleganceui.github.io/elegance-docs/">Documentation</a> ·
+  <a href="https://github.com/EleganceUI/elegance-examples">Examples</a> ·
+  <a href="https://github.com/EleganceUI/elegance-rs">Rust bindings</a> ·
+  <a href="#contributing">Contributing</a>
+</p>
+
+---
+
+Elegance is a cross-platform framework for building desktop applications. You describe the
+interface as a tree of views, style it with chained modifiers, and bind it to reactive state:
+when state changes, only the views that read it update. Rendering goes through WebGPU
+([Dawn](https://dawn.googlesource.com/dawn)), on Metal, Direct3D 12, or Vulkan.
 
 ```cpp
 #include <elg/elegance.h>
 
+#include <format>
+
 using namespace elg;
+
+View Counter() {
+    const State<int> count(0);
+
+    return VStack({.spacing = 16},
+                  Text([=] { return std::format("{}", count()); }).font(Font::system(56, Weight::bold)),
+                  HStack(Button("−", [=] { count -= 1; }),
+                         Button("+", [=] { count += 1; })));
+}
 
 int main() {
     App app;
-    app.window({.title = "Hello"}, [] {
-        return VStack(Image("hand-waving").font(Font::system(48)),
-                      Text("Hello, Elegance!").font(Font::title));
-    });
+    app.window({.title = "Counter", .width = 360, .height = 280}, Counter);
     return app.run();
 }
 ```
 
-## Repositories
+> [!NOTE]
+> Elegance is in early development (0.x). The API can change between releases.
 
-| Repository | What's in it |
-| --- | --- |
-| [elegance](https://github.com/EleganceUI/elegance) | The library (this one): `include/elg/`, `src/`, the C API (`c/`), tests, the sandbox and the preview host |
-| [elegance-rs](https://github.com/EleganceUI/elegance-rs) | Rust bindings, with `elg!`, a SwiftUI-style DSL |
-| [elegance-examples](https://github.com/EleganceUI/elegance-examples) | Examples and apps in C++ and Rust, one self-contained project per folder |
-| [elegance-docs](https://github.com/EleganceUI/elegance-docs) | The [documentation site](https://eleganceui.github.io/elegance-docs/): guides in both languages, and the C++ and Rust reference |
+## Features
 
-The C API (`c/`) is what language bindings call. Every build compiles it, so a change to the C++
-API updates it in the same pull request. CI builds it with Elegance into one prebuilt shared
-library per target for every commit on `main`, published as a `c-<commit>` prerelease
-(`.github/workflows/c-api.yml`); elegance-rs pins a commit and downloads its library, and moves the
-pin through ordinary pull requests.
+- **Declarative views.** Stacks, grids, lists, navigation and split views, popovers, text
+  fields, pickers, sliders, and more, composed as plain functions.
+- **Fine-grained reactivity.** `State`, bindings, and computed values; updates touch only the
+  views that depend on what changed.
+- **Styling and theming.** Light and dark themes, button and view styles, custom modifiers.
+- **Rendering.** Gradients, paths and shapes, a `Canvas`, backdrop blur, shadows, masks, blend
+  modes, and animated transitions, all on the GPU.
+- **Text.** HarfBuzz shaping, variable fonts, and the
+  [Phosphor](https://phosphoricons.com) icon set built in.
+- **Media and desktop integration.** Images (local and remote), video, audio, camera capture,
+  file dialogs, notifications, tray icons, and drag and drop.
+- **Accessibility.** Screen reader support through [AccessKit](https://accesskit.dev).
+- **Hot reload.** Previews that rebuild and reload views as you edit.
+- **Language bindings.** A stable C API (`c/`) that the
+  [Rust bindings](https://github.com/EleganceUI/elegance-rs) are built on.
 
-## Building
+## Platform support
 
-Elegance builds with CMake 4.3+, Ninja, and [vcpkg](https://vcpkg.io) (manifest mode), with MSVC
-on Windows or Apple Clang from **Xcode 26+** on macOS (`std::jthread` and `std::stop_token`
-are required; Xcode 16's libc++ does not expose them), or GCC 14+ on Linux. The macOS presets
-target Apple Silicon and macOS 13.3, including vcpkg dependencies. On Linux (`linux-debug`,
-`linux-release`), SDL3 and Dawn need the X11 and Wayland development headers and HTTP needs
-libcurl's (see `.github/workflows/linux.yml` for the Ubuntu packages); video playback isn't
-implemented there yet; macOS and Linux also need `pkg-config`. The configure uses the vcpkg at
-`VCPKG_ROOT`, or clones its own, and fetches Ninja when it isn't installed. From a developer prompt:
+| Platform | Compiler | Notes |
+| --- | --- | --- |
+| Windows | MSVC (Visual Studio's C++ workload) | Direct3D 12 |
+| macOS 13.3+ | Apple Clang from Xcode 26+ | Metal. Xcode 16's libc++ lacks `std::jthread` and `std::stop_token`. |
+| Linux (X11, Wayland) | GCC 14+ or Clang 18+ | Vulkan. Video playback is not implemented yet. |
+
+## Getting started
+
+The quickest start is to copy a project from
+[elegance-examples](https://github.com/EleganceUI/elegance-examples), such as `hello-cpp`.
+Each example is a standalone CMake project that fetches Elegance and builds it alongside the app.
+
+Rust developers should use [elegance-rs](https://github.com/EleganceUI/elegance-rs), which links
+a prebuilt Elegance and needs no C++ toolchain.
+
+The [documentation site](https://eleganceui.github.io/elegance-docs/) has guides for both
+languages and the API reference.
+
+## Building from source
+
+### Prerequisites
+
+- [CMake](https://cmake.org) 4.3 or newer, and [Ninja](https://ninja-build.org) (fetched
+  automatically if missing)
+- [vcpkg](https://vcpkg.io), used in manifest mode. The configure step uses `VCPKG_ROOT` if
+  it is set, and otherwise clones its own copy.
+- A compiler from the [platform support](#platform-support) table
+- **macOS and Linux:** `pkg-config`
+- **Linux:** the X11, Wayland, and libcurl development packages. The Ubuntu package list is in
+  [`.github/workflows/linux.yml`](.github/workflows/linux.yml).
+
+### Build
+
+From a developer prompt (Windows) or a shell:
 
 ```sh
-cmake --preset windows-debug
+cmake --preset windows-debug        # see the table below
 cmake --build build/windows-debug
-build\windows-debug\bin\sandbox.exe
+build/windows-debug/bin/sandbox     # most features in one window
 ```
 
-The first configure builds the dependencies, Dawn included (about half an hour). See
-[Installation](https://eleganceui.github.io/elegance-docs/start/installation/) for the presets, the build options,
-static linking, and using Elegance in your own project. To start an app, copy a folder from
-elegance-examples, such as `hello-cpp`.
+The first configure builds every dependency, Dawn included, which takes about half an hour.
+Later builds reuse vcpkg's binary cache.
 
-### Native tests and editor diagnostics
+| Preset | Elegance library |
+| --- | --- |
+| `windows-debug`, `macos-debug`, `linux-debug` | Shared, which hot reload needs |
+| `windows-release`, `macos-release`, `linux-release` | Static, linked into each app |
+| `windows-release-fully-static` | Static, with the C runtime too: each app is one executable |
 
-The tests use Catch2 3. Install it through vcpkg's `tests` feature (or provide an
-existing installation using `Catch2_DIR`), then configure the build used by clangd
-with `-DELG_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON`. Run the tests with:
+The macOS presets target Apple Silicon.
+
+The [installation guide](https://eleganceui.github.io/elegance-docs/start/installation/) covers
+every build option and how to use Elegance from your own CMake project.
+
+### Tests
+
+The unit tests use [Catch2](https://github.com/catchorg/Catch2) 3 and need a static build.
+Enable vcpkg's `tests` feature, or point `Catch2_DIR` at an existing installation, then:
 
 ```sh
 cmake --build build/local-offline-static
 ctest --test-dir build/local-offline-static --output-on-failure
 ```
 
-The checked-in `.clangd` selects `build/local-offline-static`. If you use another
-build directory, update `CompilationDatabase` accordingly. Test files must appear
-in that build's `compile_commands.json`: otherwise clangd guesses compile flags,
-and a missing Catch2 header produces misleading `TEST_CASE` syntax errors.
+The checked-in [`.clangd`](.clangd) reads `build/local-offline-static/compile_commands.json`.
+If you use another build directory, configure it with
+`-DELG_BUILD_TESTS=ON -DCMAKE_EXPORT_COMPILE_COMMANDS=ON` and update `CompilationDatabase`.
 
-## Layout
+## The C API and prebuilt libraries
 
-```
-include/elg/    the public API
-src/            the library, by subsystem
+The C API in [`c/`](c) is the interface language bindings call. Every build compiles it, so a
+change to the C++ API that breaks it fails in the same pull request.
+
+For each commit on `main`, [CI](.github/workflows/c-api.yml) publishes a `c-<commit>` prerelease
+with two archives per target:
+
+| Archive | Contents |
+| --- | --- |
+| `elegance-c-<target>.tar.gz` | One shared library that exports only the C API |
+| `elegance-c-static-<target>.tar.gz` | One static archive holding the C API, Elegance, and every static dependency, along with the shared libraries that stay separate (AccessKit) and an `elegance-link.txt` manifest |
+
+elegance-rs links the static archive into Rust executables. It pins a commit and moves the pin
+through ordinary pull requests.
+
+## Repository layout
+
+```text
+include/elg/    public C++ API
+src/            implementation, by subsystem
+c/              C API for language bindings, and its packaging
 shaders/        WGSL shaders
-cmake/          build helpers: hot reload, view extensions, the link manifest
-apps/sandbox/   most features in one window
-apps/preview/   the preview host for hot reload
+cmake/          build helpers: hot reload, view extensions, link manifest
+apps/sandbox/   feature showcase
+apps/preview/   preview host for hot reload
 tests/          unit tests (Catch2)
 third_party/    vendored data (Phosphor icons)
 ```
 
+## Related repositories
+
+| Repository | Description |
+| --- | --- |
+| [elegance-rs](https://github.com/EleganceUI/elegance-rs) | Rust bindings with `elg!`, a SwiftUI-style DSL |
+| [elegance-examples](https://github.com/EleganceUI/elegance-examples) | Example apps in C++ and Rust, one self-contained project per folder |
+| [elegance-docs](https://github.com/EleganceUI/elegance-docs) | Source for the [documentation site](https://eleganceui.github.io/elegance-docs/) |
+
+## Contributing
+
+Bug reports, feature requests, and pull requests are welcome.
+
+- **Bugs:** [open an issue](https://github.com/EleganceUI/elegance/issues) with a minimal
+  reproduction, your platform and compiler version, and the relevant build output.
+- **Pull requests:** keep each to one focused change, and run the tests before submitting. If
+  you change the public API, update the C API in [`c/`](c) in the same pull request.
+
 ## License
 
-[MPL-2.0](LICENSE).
+Elegance is licensed under the [Mozilla Public License 2.0](LICENSE). Dependencies are
+distributed under their own licenses; the Phosphor icons are MIT-licensed.

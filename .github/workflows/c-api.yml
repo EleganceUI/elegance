@@ -4,10 +4,16 @@
 #   push to main   a prerelease tagged c-<commit, 12 hex digits>
 #   tag v*         the release for that tag
 #
-# Each archive is elegance-c-<target>.tar.gz: lib/ (the library), include/elg-c/shim.h, the
-# license, and BUILDINFO (the target and the full commit), which elegance-rs's build script checks
-# against the commit it pins. Once they're published, elegance-rs is told, and opens a pull request
-# that moves its pin here.
+# Two archives per target, each with include/elg-c/shim.h, the license, and BUILDINFO (the target
+# and the full commit, which elegance-rs's build script checks against the commit it pins):
+#
+#   elegance-c-<target>.tar.gz          lib/: the shared library
+#   elegance-c-static-<target>.tar.gz   lib/: one static archive with Elegance and its dependencies,
+#                                       the shared libraries that stay separate, and
+#                                       elegance-link.txt (c/package-static.cmake); what
+#                                       elegance-rs links into Rust executables
+#
+# Once they're published, elegance-rs is told, and opens a pull request that moves its pin here.
 name: C API
 
 on:
@@ -34,20 +40,46 @@ jobs:
             matrix:
                 include:
                     # Ubuntu 22.04 (glibc 2.35) so the library loads on older distributions too.
-                    - { target: x86_64-unknown-linux-gnu, runner: ubuntu-22.04, triplet: x64-linux }
-                    - { target: aarch64-unknown-linux-gnu, runner: ubuntu-22.04-arm, triplet: arm64-linux }
-                    - { target: aarch64-apple-darwin, runner: macos-15, triplet: arm64-osx, osx_arch: arm64 }
-                    - { target: x86_64-apple-darwin, runner: macos-15, triplet: x64-osx, osx_arch: x86_64 }
+                    # static_triplet builds the static package: the same as triplet, except on
+                    # Windows, where it keeps the shared C runtime that Rust links.
+                    - {
+                          target: x86_64-unknown-linux-gnu,
+                          runner: ubuntu-22.04,
+                          triplet: x64-linux,
+                          static_triplet: x64-linux,
+                      }
+                    - {
+                          target: aarch64-unknown-linux-gnu,
+                          runner: ubuntu-22.04-arm,
+                          triplet: arm64-linux,
+                          static_triplet: arm64-linux,
+                      }
+                    - {
+                          target: aarch64-apple-darwin,
+                          runner: macos-15,
+                          triplet: arm64-osx,
+                          static_triplet: arm64-osx,
+                          osx_arch: arm64,
+                      }
+                    - {
+                          target: x86_64-apple-darwin,
+                          runner: macos-15,
+                          triplet: x64-osx,
+                          static_triplet: x64-osx,
+                          osx_arch: x86_64,
+                      }
                     - {
                           target: x86_64-pc-windows-msvc,
                           runner: windows-2025,
                           triplet: x64-windows-static,
+                          static_triplet: x64-windows-static-md,
                           msvc_arch: amd64,
                       }
                     - {
                           target: aarch64-pc-windows-msvc,
                           runner: windows-11-arm,
                           triplet: arm64-windows-static,
+                          static_triplet: arm64-windows-static-md,
                           msvc_arch: arm64,
                       }
         runs-on: ${{ matrix.runner }}
@@ -112,12 +144,13 @@ jobs:
             - name: Release-only triplets
               run: |
                   mkdir -p "$RUNNER_TEMP/triplets"
-                  t=${{ matrix.triplet }}
-                  for base in "cmake/triplets/$t.cmake" "$VCPKG_ROOT/triplets/$t.cmake" "$VCPKG_ROOT/triplets/community/$t.cmake"; do
-                    if [ -f "$base" ]; then cp "$base" "$RUNNER_TEMP/triplets/$t.cmake"; break; fi
+                  for t in $(printf '%s\n' ${{ matrix.triplet }} ${{ matrix.static_triplet }} | sort -u); do
+                    for base in "cmake/triplets/$t.cmake" "$VCPKG_ROOT/triplets/$t.cmake" "$VCPKG_ROOT/triplets/community/$t.cmake"; do
+                      if [ -f "$base" ]; then cp "$base" "$RUNNER_TEMP/triplets/$t.cmake"; break; fi
+                    done
+                    echo 'set(VCPKG_BUILD_TYPE release)' >> "$RUNNER_TEMP/triplets/$t.cmake"
+                    cat "$RUNNER_TEMP/triplets/$t.cmake"
                   done
-                  echo 'set(VCPKG_BUILD_TYPE release)' >> "$RUNNER_TEMP/triplets/$t.cmake"
-                  cat "$RUNNER_TEMP/triplets/$t.cmake"
                   echo "TRIPLETS=$RUNNER_TEMP/triplets" >> "$GITHUB_ENV"
 
             # Unique save keys let ABI changes refresh the binary cache instead of leaving an
@@ -137,9 +170,12 @@ jobs:
               run: |
                   args=()
                   [ -n "${{ matrix.osx_arch }}" ] && args+=(-DCMAKE_OSX_ARCHITECTURES=${{ matrix.osx_arch }} -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3)
-                  cmake -S c -B build/c -G Ninja -DCMAKE_BUILD_TYPE=Release -DVCPKG_MANIFEST_DIR="$PWD" \
-                    -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
-                    -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }} -DVCPKG_OVERLAY_TRIPLETS="$TRIPLETS" "${args[@]}"
+                  common=(-G Ninja -DCMAKE_BUILD_TYPE=Release -DVCPKG_MANIFEST_DIR="$PWD"
+                    -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+                    -DVCPKG_OVERLAY_TRIPLETS="$TRIPLETS" "${args[@]}")
+                  cmake -S c -B build/c "${common[@]}" -DVCPKG_TARGET_TRIPLET=${{ matrix.triplet }}
+                  cmake -S c -B build/c-static "${common[@]}" -DVCPKG_TARGET_TRIPLET=${{ matrix.static_triplet }} \
+                    -DELG_C_STATIC=ON
 
             # Keep only the archives this build installed (each is named after the SHA-256 of its
             # package's vcpkg_abi_info.txt). Otherwise every superseded build stays in the cache, which
@@ -150,7 +186,7 @@ jobs:
                   sum() { if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -c1-64; }
                   cache=$VCPKG_DEFAULT_BINARY_CACHE
                   command -v cygpath >/dev/null && cache=$(cygpath -u "$cache")
-                  keep=$(for f in build/c/vcpkg_installed/*/share/*/vcpkg_abi_info.txt; do sum "$f"; done)
+                  keep=$(for f in build/c*/vcpkg_installed/*/share/*/vcpkg_abi_info.txt; do sum "$f"; done)
                   [ -n "$keep" ] || { echo "No installed packages found: not pruning"; exit 0; }
                   find "$cache" -name '*.zip' | while read -r zip; do
                     grep -qx "$(basename "$zip" .zip)" <<< "$keep" || rm -f "$zip"
@@ -182,15 +218,22 @@ jobs:
               run: |
                   cmake --build build/c
                   cmake --install build/c --prefix dist
+                  cmake --build build/c-static
+                  cmake --install build/c-static --prefix dist-static
 
             - name: Package
               run: |
                   printf 'target %s\nelegance %s\n' "${{ matrix.target }}" "$GITHUB_SHA" > dist/BUILDINFO
+                  printf 'target %s\nelegance %s\nlinkage static\n' "${{ matrix.target }}" "$GITHUB_SHA" > dist-static/BUILDINFO
+                  cat dist-static/elegance-link.txt
                   tar -czf elegance-c-${{ matrix.target }}.tar.gz -C dist .
+                  tar -czf elegance-c-static-${{ matrix.target }}.tar.gz -C dist-static .
             - uses: actions/upload-artifact@v7
               with:
                   name: elegance-c-${{ matrix.target }}
-                  path: elegance-c-${{ matrix.target }}.tar.gz
+                  path: |
+                      elegance-c-${{ matrix.target }}.tar.gz
+                      elegance-c-static-${{ matrix.target }}.tar.gz
 
     # Only once every target built: a pin should never point at a commit some targets lack.
     publish:
@@ -214,7 +257,7 @@ jobs:
                     tag="c-${GITHUB_SHA:0:12}"
                     gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --prerelease --target "$GITHUB_SHA" \
                       --title "C library ${GITHUB_SHA:0:12}" \
-                      --notes "The prebuilt C library (c/) for $GITHUB_SHA, one archive per target. Published automatically."
+                      --notes "The prebuilt C library (c/) for $GITHUB_SHA: a shared and a static package per target. Published automatically."
                   fi
                   gh release upload "$tag" archives/*.tar.gz --clobber
 
