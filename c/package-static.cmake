@@ -31,6 +31,18 @@ endforeach ()
 file(REMOVE_RECURSE "${OUT}")
 file(MAKE_DIRECTORY "${OUT}/lib")
 
+# A library file no runtime line claimed: a system shared library (/usr/lib/.../libgio-2.0.so,
+# an SDK's libz.tbd), linked by name so the app finds its own copy, or else a static library to
+# merge.
+function (elg_unclaimed_lib path)
+    get_filename_component(name "${path}" NAME)
+    if (name MATCHES "^lib(.+)\\.(so(\\.[0-9.]+)?|dylib|tbd)$")
+        set(lines ${lines} "lib ${CMAKE_MATCH_1}" PARENT_SCOPE)
+    else ()
+        set(archives ${archives} "${path}" PARENT_SCOPE)
+    endif ()
+endfunction ()
+
 file(STRINGS "${MANIFEST}" entries)
 set(archives "${C_API}")
 set(lines "")
@@ -63,8 +75,7 @@ foreach (entry IN LISTS entries)
         continue()
     endif ()
     if (previous_lib)
-        # A library file no runtime line claimed: a static library given as a plain file.
-        list(APPEND archives "${previous_lib}")
+        elg_unclaimed_lib("${previous_lib}")
         set(previous_lib "")
     endif ()
 
@@ -105,7 +116,7 @@ foreach (entry IN LISTS entries)
     endif ()
 endforeach ()
 if (previous_lib)
-    list(APPEND archives "${previous_lib}")
+    elg_unclaimed_lib("${previous_lib}")
 endif ()
 list(REMOVE_DUPLICATES archives)
 list(REMOVE_DUPLICATES lines)
