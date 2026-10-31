@@ -137,17 +137,25 @@ else ()
     set(output "${OUT}/lib/libelegance_c.a")
     if (CXX_STDLIB)
         list(APPEND archives "${CXX_STDLIB}")
+        list(REMOVE_DUPLICATES archives)
     endif ()
     list(APPEND lines "lib m" "lib dl" "lib pthread")
-    # ar's MRI scripts merge archives member by member, keeping members that share a name.
+    # ar's MRI scripts merge archives member by member, keeping members that share a name. The
+    # MRI parser splits paths at characters such as `+` (libstdc++.a), so it reads each archive
+    # through a link with a plain name.
+    set(links "${OUT}/merge")
+    file(MAKE_DIRECTORY "${links}")
     set(script "CREATE ${output}\n")
+    set(index 0)
     foreach (archive IN LISTS archives)
-        string(APPEND script "ADDLIB ${archive}\n")
+        file(CREATE_LINK "${archive}" "${links}/${index}.a" SYMBOLIC COPY_ON_ERROR)
+        string(APPEND script "ADDLIB ${links}/${index}.a\n")
+        math(EXPR index "${index} + 1")
     endforeach ()
     string(APPEND script "SAVE\nEND\n")
     file(WRITE "${OUT}/merge.mri" "${script}")
     execute_process(COMMAND "${AR}" -M INPUT_FILE "${OUT}/merge.mri" COMMAND_ERROR_IS_FATAL ANY)
-    file(REMOVE "${OUT}/merge.mri")
+    file(REMOVE_RECURSE "${OUT}/merge.mri" "${links}")
 endif ()
 
 get_filename_component(output_name "${output}" NAME)

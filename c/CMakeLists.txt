@@ -77,13 +77,7 @@ if (ELG_C_STATIC)
     set(cxx_stdlib "")
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
         execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libstdc++.a
-                        OUTPUT_VARIABLE cxx_stdlib_path OUTPUT_STRIP_TRAILING_WHITESPACE)
-        # GNU ar's MRI parser treats the `++` in libstdc++.a as a token boundary on the
-        # runner's toolchain. Merge through a plus-free symlink instead.
-        set(cxx_stdlib "${CMAKE_CURRENT_BINARY_DIR}/libstdcxx.a")
-        if (NOT EXISTS "${cxx_stdlib}" AND NOT IS_SYMLINK "${cxx_stdlib}")
-            file(CREATE_LINK "${cxx_stdlib_path}" "${cxx_stdlib}" SYMBOLIC)
-        endif ()
+                        OUTPUT_VARIABLE cxx_stdlib OUTPUT_STRIP_TRAILING_WHITESPACE)
     endif ()
     find_program(ELG_LIBTOOL libtool)
     add_custom_command(
@@ -98,7 +92,7 @@ if (ELG_C_STATIC)
                     "-DCXX_STDLIB=${cxx_stdlib}"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/package-static.cmake"
             DEPENDS elegance_c_api elegance "${CMAKE_CURRENT_SOURCE_DIR}/package-static.cmake"
-                    "${CMAKE_CURRENT_BINARY_DIR}/elegance/elegance-link.txt" ${cxx_stdlib}
+                    "${CMAKE_CURRENT_BINARY_DIR}/elegance/elegance-link.txt"
             COMMENT "Merging the static package"
             VERBATIM)
     add_custom_target(elegance_c ALL DEPENDS "${package}/elegance-link.txt")
