@@ -183,7 +183,7 @@ std::string executable_name() {
     std::error_code error;
     path = fs::read_symlink("/proc/self/exe", error);
 #endif
-    std::string name = path.stem().string();
+    const std::string name = path.stem().string();
     return name.empty() ? "app" : name;
 }
 

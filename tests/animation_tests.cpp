@@ -105,7 +105,7 @@ TEST_CASE("transitions describe the out pose and the in-place identity") {
 }
 
 TEST_CASE("effects scheduled inside with_animation run with its animation") {
-    Owner owner;
+    const Owner owner;
     State<int> animated(0);
     State<int> plain(0);
     std::vector<std::string> seen;
@@ -130,7 +130,7 @@ TEST_CASE("effects scheduled inside with_animation run with its animation") {
 }
 
 TEST_CASE("priority effects run first in a flush") {
-    Owner owner;
+    const Owner owner;
     State<int> source(0);
     std::vector<std::string> order;
     effect([&] {

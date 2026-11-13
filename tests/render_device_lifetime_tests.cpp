@@ -11,8 +11,8 @@ TEST_CASE("accepted frames can retain a usable device after renderer shutdown",
   using namespace elg::detail::gpu;
   std::shared_ptr<RenderDevice> retained;
   {
-    Instance instance;
-    Device device(instance);
+    const Instance instance;
+    const Device device(instance);
     retained = render_device();
     REQUIRE(retained);
     REQUIRE(retained->active);

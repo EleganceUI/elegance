@@ -195,7 +195,7 @@ View TreeRow(const InspectRow& row, std::shared_ptr<Inspector> inspector) {
                            });
                        }));
     const std::string size = std::format("{} × {}", format_length(row.frame.width), format_length(row.frame.height));
-    View label = HStack({.spacing = 6},
+    const View label = HStack({.spacing = 6},
                         disclosure,
                         Text(row.info.name).font_weight(Weight::semibold),
                         Text(row.info.detail).foreground_style(ThemeColor::secondary).line_limit(1),

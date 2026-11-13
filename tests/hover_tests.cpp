@@ -41,7 +41,7 @@ struct Window {
 
 TEST_CASE("pointer enter and leave fire at once; hover intent waits", "[hover]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int entered = 0;
     int left = 0;
     std::optional<bool> intent;
@@ -65,7 +65,7 @@ TEST_CASE("pointer enter and leave fire at once; hover intent waits", "[hover]")
 
 TEST_CASE("a button's highlight ignores the hover delay", "[hover]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::optional<bool> hovered;
     struct Recording final : ButtonStyle {
         std::optional<bool>* seen;

@@ -155,7 +155,7 @@ TEST_CASE(
 TEST_CASE("video view defers picture geometry even before metadata arrives",
                     "[video][render]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const VideoFeed feed;
     auto root = detail::lower(VideoFeedView(feed, ContentMode::fill, true), {});
     root->place({10, 20}, {200, 100});

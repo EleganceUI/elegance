@@ -47,7 +47,7 @@ void register_emoji_font(std::filesystem::path file) {
     if (!std::filesystem::is_regular_file(file)) {
         throw ResourceError(std::format("register_emoji_font(): \"{}\" is not a file", file.string()));
     }
-    std::lock_guard lock(g_registry_mutex);
+    const std::lock_guard lock(g_registry_mutex);
     g_emoji_fonts.push_back(std::move(file));
 }
 
@@ -58,7 +58,7 @@ void register_font(std::string family, std::filesystem::path file, Weight weight
     if (!std::filesystem::is_regular_file(file)) {
         throw ResourceError(std::format("register_font(): \"{}\" is not a file", file.string()));
     }
-    std::lock_guard lock(g_registry_mutex);
+    const std::lock_guard lock(g_registry_mutex);
     std::string key = file.string();
     g_registry[std::move(family)].push_back({static_cast<int>(weight), std::move(file), nullptr, std::move(key)});
 }
@@ -70,7 +70,7 @@ void register_font(std::string family, std::span<const unsigned char> data, Weig
     if (data.empty()) {
         throw ResourceError(std::format("register_font(): no font data for \"{}\"", family));
     }
-    std::lock_guard lock(g_registry_mutex);
+    const std::lock_guard lock(g_registry_mutex);
     auto bytes = std::make_shared<const std::vector<unsigned char>>(data.begin(), data.end());
     std::string key = std::format("memory:{}:{}", family, static_cast<int>(weight));
     g_registry[std::move(family)].push_back({static_cast<int>(weight), {}, std::move(bytes), std::move(key)});
@@ -81,14 +81,14 @@ void register_font(std::string family, std::span<const unsigned char> data, Weig
 namespace elg::detail {
 
 void mark_icon_font_family(std::string family) {
-    std::lock_guard lock(g_registry_mutex);
+    const std::lock_guard lock(g_registry_mutex);
     g_icon_families.insert(std::move(family));
 }
 
 namespace {
 
 RegisteredFont registered_font(const Font& font) {
-    std::lock_guard lock(g_registry_mutex);
+    const std::lock_guard lock(g_registry_mutex);
     const auto it = g_registry.find(font.family());
     if (it == g_registry.end() || it->second.empty()) {
         throw ResourceError(std::format("font family \"{}\" isn't registered; call elg::register_font() first",
@@ -275,7 +275,7 @@ const FontFace* FontLibrary::fallback_for(char32_t codepoint, bool emoji) {
     if (emoji) {
         std::vector<std::filesystem::path> registered;
         {
-            std::lock_guard lock(g_registry_mutex);
+            const std::lock_guard lock(g_registry_mutex);
             registered.assign(g_emoji_fonts.begin() + static_cast<std::ptrdiff_t>(emoji_faces_.size() + emoji_fonts_failed_),
                               g_emoji_fonts.end());
         }

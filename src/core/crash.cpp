@@ -95,7 +95,7 @@ std::filesystem::path write_report(const std::string& report) {
 
 [[noreturn]] void on_terminate() noexcept {
     std::string message = "std::terminate called";
-    if (std::exception_ptr current = std::current_exception()) {
+    if (const std::exception_ptr current = std::current_exception()) {
         try {
             std::rethrow_exception(current);
         } catch (const std::exception& e) {

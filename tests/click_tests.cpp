@@ -69,7 +69,7 @@ const View kSquare = Rectangle().fill(Color::black);
 
 TEST_CASE("a click reports its location in the view, its button, modifiers and count", "[click]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::optional<ClickEvent> seen;
     Window window(kSquare.on_click([&](const ClickEvent& click) { seen = click; }));
 
@@ -89,7 +89,7 @@ TEST_CASE("a click reports its location in the view, its button, modifiers and c
 
 TEST_CASE("a click handler only takes its button", "[click]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int left = 0;
     int right = 0;
     Window window(kSquare.on_click([&] { ++left; }).on_click([&] { ++right; }, {.button = MouseButton::right}));
@@ -104,7 +104,7 @@ TEST_CASE("a click handler only takes its button", "[click]") {
 
 TEST_CASE("a double-click handler lets the first click through to a single-click one", "[click]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int singles = 0;
     int doubles = 0;
     Window window(kSquare.on_double_click([&] { ++doubles; }).padding(0).on_click([&] { ++singles; }));
@@ -117,7 +117,7 @@ TEST_CASE("a double-click handler lets the first click through to a single-click
 
 TEST_CASE("on_activate runs on a click, on Space or Enter with focus, and for screen readers", "[click]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int activated = 0;
     Window window(kSquare.on_activate([&] { ++activated; }));
 
@@ -138,7 +138,7 @@ TEST_CASE("on_activate runs on a click, on Space or Enter with focus, and for sc
 
 TEST_CASE("a disabled view doesn't activate", "[click]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int activated = 0;
     Window window(kSquare.on_activate([&] { ++activated; }).disabled(true));
 

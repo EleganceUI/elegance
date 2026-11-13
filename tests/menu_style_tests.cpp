@@ -66,7 +66,7 @@ struct Window {
 
 TEST_CASE("menu rows take their look from the menu style", "[menu][style]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<RecordingMenuStyle::Row> rows;
     int opened = 0;
     Window window(VStack({.spacing = 0},
@@ -101,7 +101,7 @@ TEST_CASE("menu rows take their look from the menu style", "[menu][style]") {
 
 TEST_CASE("the default menu row builds", "[menu][style]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     CHECK_NOTHROW(Window(Menu(MenuItem("Copy", [] {}, {.shortcut = "Ctrl+C", .image = ImageSource{.system_name = "copy"}}),
                               Separator(), Submenu("Share", [] { return Menu(MenuItem("Mail", [] {})); }))));
 }

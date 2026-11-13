@@ -38,7 +38,7 @@ void log_message(LogLevel level, std::string message) {
 #endif
     std::string line = std::format("[elg:{}] {}", level_name(level), message);
 
-    std::lock_guard lock(g_mutex);
+    const std::lock_guard lock(g_mutex);
     std::println(stderr, "{}", line);
     g_history.push_back(std::move(line));
     if (g_history.size() > kHistorySize) {
@@ -47,7 +47,7 @@ void log_message(LogLevel level, std::string message) {
 }
 
 std::vector<std::string> recent_log_lines() {
-    std::lock_guard lock(g_mutex);
+    const std::lock_guard lock(g_mutex);
     return {g_history.begin(), g_history.end()};
 }
 

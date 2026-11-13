@@ -95,7 +95,7 @@ struct AudioStreamState {
                 }
             }
         } else {
-            std::lock_guard lock(self->mutex);
+            const std::lock_guard lock(self->mutex);
             const std::size_t take = std::min(count, self->queue.size());
             std::copy_n(self->queue.begin(), take, out);
             self->queue.erase(self->queue.begin(), self->queue.begin() + static_cast<std::ptrdiff_t>(take));
@@ -170,7 +170,7 @@ AudioStream::AudioStream(AudioStreamOptions options) : state_(std::make_shared<d
 }
 
 void AudioStream::write(std::span<const float> samples) const {
-    std::lock_guard lock(state_->mutex);
+    const std::lock_guard lock(state_->mutex);
     state_->queue.insert(state_->queue.end(), samples.begin(), samples.end());
     const std::size_t limit = state_->max_queued();
     if (state_->queue.size() > limit) {
@@ -182,12 +182,12 @@ void AudioStream::write(std::span<const float> samples) const {
 }
 
 void AudioStream::clear() const {
-    std::lock_guard lock(state_->mutex);
+    const std::lock_guard lock(state_->mutex);
     state_->queue.clear();
 }
 
 std::size_t AudioStream::queued_frames() const {
-    std::lock_guard lock(state_->mutex);
+    const std::lock_guard lock(state_->mutex);
     return state_->queue.size() / state_->options.channels;
 }
 

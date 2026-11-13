@@ -49,7 +49,7 @@ const View kSquare = Rectangle().fill(Color::black);
 
 TEST_CASE("on_pointer gets view-local events, and a consumed down captures the pointer", "[input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<PointerEvent> seen;
     Window window(kSquare.on_pointer([&](const PointerEvent& event) {
         seen.push_back(event);
@@ -74,7 +74,7 @@ TEST_CASE("on_pointer gets view-local events, and a consumed down captures the p
 
 TEST_CASE("on_scroll gets view-local scrolls; unconsumed ones go on outwards", "[input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     for (const bool take : {false, true}) {
         std::optional<ScrollEvent> inner;
         int outer = 0;
@@ -101,7 +101,7 @@ TEST_CASE("on_scroll gets view-local scrolls; unconsumed ones go on outwards", "
 
 TEST_CASE("a video view is hit over its frame, so its handlers get events", "[input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int pointers = 0;
     int scrolls = 0;
     Window window(VideoFeedView(VideoFeed(), ContentMode::fill)
@@ -123,7 +123,7 @@ TEST_CASE("a video view is hit over its frame, so its handlers get events", "[in
 
 TEST_CASE("on_key sees downs and ups; on_key_press only downs", "[input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<KeyEvent::Kind> keys;
     int presses = 0;
     Window window(kSquare.focusable().on_key_press(Key::a, [&] { ++presses; }).on_key([&](const KeyEvent& event) {
@@ -144,7 +144,7 @@ TEST_CASE("on_key sees downs and ups; on_key_press only downs", "[input]") {
 
 TEST_CASE("on_text_input makes the view focusable and gets what's typed", "[input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::string typed;
     Window window(kSquare.on_text_input([&](const TextInputEvent& event) {
         if (event.kind == TextInputEvent::Kind::commit) {

@@ -243,7 +243,7 @@ struct LiveWindow {
     // Builds the element tree. The body runs once (design.md §6); effects it creates belong to
     // this window's scope.
     std::unique_ptr<Element> mount(TextSystem& text) {
-        Scope::Use use(scope);
+        const Scope::Use use(scope);
         const EnvironmentScope environment_scope(environment); // Environment<K>() in the content function
         View content = entry->content();
         if (entry->wrap) {
@@ -421,23 +421,23 @@ int App::run() {
     }
     self.running = true;
     self.quit_requested = false;
-    ScopeExit reset([&] {
+    const ScopeExit reset([&] {
         self.running = false;
         self.platform = nullptr;
     });
 
     // Reactive state belongs to this thread while the app runs (design.md §6).
     set_ui_thread(std::this_thread::get_id());
-    ScopeExit release_ui_thread([] { set_ui_thread(std::nullopt); });
+    const ScopeExit release_ui_thread([] { set_ui_thread(std::nullopt); });
     // After the windows are gone: their views' timers and on_disappear actions end with the app.
-    ScopeExit stop_timers([] {
+    const ScopeExit stop_timers([] {
         cancel_all_timers();
         clear_lifecycle_actions();
     });
 
     // Declaration order is teardown order in reverse: the render thread stops first (with the
     // GPU and the windows' surfaces), then windows go, then SDL.
-    CrashHandlerScope crash_handlers;
+    const CrashHandlerScope crash_handlers;
     platform::Platform platform;
     self.platform = &platform;
 
@@ -447,9 +447,9 @@ int App::run() {
     text.atlas.set_on_ready([&platform] { platform.wake(); });
     // Work other threads hand to this one (hot-reload builds) wakes the loop.
     set_ui_task_waker([&platform] { platform.wake(); });
-    ScopeExit stop_task_wakes([] { set_ui_task_waker({}); });
+    const ScopeExit stop_task_wakes([] { set_ui_task_waker({}); });
     text.atlas.set_disk_cache(GlyphDiskCache::default_directory());
-    ScopeExit stop_glyph_wakes([&text] { text.atlas.set_on_ready({}); });
+    const ScopeExit stop_glyph_wakes([&text] { text.atlas.set_on_ready({}); });
 
     // Every window's environment starts from the system's light/dark setting, as reactive state:
     // when it changes, only the colors that depend on it update.
@@ -535,7 +535,7 @@ int App::run() {
     // The system's accent color, for system_accent_color(); refreshed when the theme changes.
     State<std::optional<Color>> accent_color(platform::native::system_accent_color());
     g_accent_color = &accent_color;
-    ScopeExit forget_accent([] { g_accent_color = nullptr; });
+    const ScopeExit forget_accent([] { g_accent_color = nullptr; });
 
     std::vector<std::unique_ptr<LiveWindow>> windows;
     const auto find_window = [&](std::uint32_t id) {
@@ -601,7 +601,7 @@ int App::run() {
             });
         }
     };
-    ScopeExit forget_menus([&self] { self.show_menus = {}; });
+    const ScopeExit forget_menus([&self] { self.show_menus = {}; });
     if (!self.menus.empty()) {
         self.show_menus();
     }
@@ -636,7 +636,7 @@ int App::run() {
             };
         }
     }
-    ScopeExit unwrap([&self] {
+    const ScopeExit unwrap([&self] {
         for (WindowEntry& entry : self.windows) {
             entry.wrap = {};
         }
@@ -647,7 +647,7 @@ int App::run() {
     }
 
     FrameMailbox mailbox;
-    RenderThread renderer(mailbox, [&platform] { platform.wake(); });
+    const RenderThread renderer(mailbox, [&platform] { platform.wake(); });
     for (const auto& live : windows) {
         mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), platform::see_through(live->entry->desc),
                                       live->window.native_handle()});
@@ -851,7 +851,7 @@ int App::run() {
             platform.wake();
         }
     });
-    ScopeExit clear_callback([&] { platform.set_live_resize_callback({}); });
+    const ScopeExit clear_callback([&] { platform.set_live_resize_callback({}); });
 
     // --- Popups ---
 
@@ -866,7 +866,7 @@ int App::run() {
         }
         for (auto it = std::ranges::find(floats, id, &OpenPopup::opener); it != floats.end();
              it = std::ranges::find(floats, id, &OpenPopup::opener)) {
-            OpenPopup popup = std::move(*it);
+            const OpenPopup popup = std::move(*it);
             floats.erase(it);
             destroy_window(popup.id);
             if (popup.on_close) {
@@ -990,7 +990,7 @@ int App::run() {
         if (opener_it == windows.end()) {
             return; // closed meanwhile
         }
-        LiveWindow& opener = **opener_it;
+        const LiveWindow& opener = **opener_it;
         const bool is_menu = request.kind == PopupRequest::Kind::menu;
         const bool is_tooltip = request.kind == PopupRequest::Kind::tooltip;
         auto entry = std::make_unique<WindowEntry>();
@@ -1376,7 +1376,7 @@ int App::run() {
         case platform::EventType::window_focus_gained:
         case platform::EventType::window_focus_lost:
             if (auto it = find_window(event.window_id); it != windows.end()) {
-                WindowState& state = *(*it)->state;
+                const WindowState& state = *(*it)->state;
                 switch (event.type) {
                 case platform::EventType::window_maximized: state.maximized = true; break;
                 case platform::EventType::window_restored: state.maximized = false; break;
@@ -1502,7 +1502,7 @@ int App::run() {
         if (callback_error) {
             std::rethrow_exception(callback_error);
         }
-        if (std::exception_ptr error = renderer.error()) {
+        if (const std::exception_ptr error = renderer.error()) {
             std::rethrow_exception(error);
         }
         if (self.quit_requested) {

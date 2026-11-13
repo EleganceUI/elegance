@@ -53,7 +53,7 @@ RenderThread::~RenderThread() {
 }
 
 std::exception_ptr RenderThread::error() const {
-    std::lock_guard lock(error_mutex_);
+    const std::lock_guard lock(error_mutex_);
     return error_;
 }
 
@@ -65,7 +65,7 @@ void RenderThread::run(std::promise<void> ready) noexcept {
             return;
         }
         {
-            std::lock_guard lock(error_mutex_);
+            const std::lock_guard lock(error_mutex_);
             error_ = error;
         }
         on_error_();

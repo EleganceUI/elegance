@@ -170,7 +170,7 @@ IconGlyphs parse_json(std::string_view json) {
             break;
         }
         const std::string name(json.substr(at + 1, end - at - 1));
-        std::size_t value = json.find_first_not_of(" \t\r\n:", end + 1);
+        const std::size_t value = json.find_first_not_of(" \t\r\n:", end + 1);
         if (value == std::string_view::npos || json[end + 1 + json.substr(end + 1).find_first_not_of(" \t\r\n")] != ':') {
             at = end + 1;
             continue;
@@ -317,7 +317,7 @@ std::string to_utf8(char32_t code) {
 // "<set>.<icon>[.<variant>]" or "<icon>[.<variant>]" in the default set.
 ResolvedIcon resolve(std::string_view system_name) {
     ensure_builtin_sets();
-    std::lock_guard lock(g_mutex);
+    const std::lock_guard lock(g_mutex);
     std::vector<std::string_view> parts;
     for (std::size_t start = 0;;) {
         const std::size_t dot = system_name.find('.', start);
@@ -398,7 +398,7 @@ void register_icon_set(std::string name, IconSetOptions options) {
         throw ResourceError(std::format("register_icon_set(\"{}\"): no icons found in the name map", name));
     }
     {
-        std::lock_guard lock(g_mutex);
+        const std::lock_guard lock(g_mutex);
         if (g_sets.contains(name) && !options.replace) {
             throw UsageError(std::format("register_icon_set(): \"{}\" is already registered", name));
         }
@@ -426,12 +426,12 @@ void register_icon_set(std::string name, IconSetOptions options) {
         set.variants.emplace(variant.name, std::move(variant_set));
     }
 
-    std::lock_guard lock(g_mutex);
+    const std::lock_guard lock(g_mutex);
     g_sets.insert_or_assign(std::move(name), std::move(set));
 }
 
 void set_default_icon_set(std::string name) {
-    std::lock_guard lock(g_mutex);
+    const std::lock_guard lock(g_mutex);
     g_default = std::move(name);
 }
 
@@ -483,7 +483,7 @@ View Image(ImageSource source) {
     }
     ResolvedIcon icon = resolve(source.system_name);
     const auto layer = [&](std::size_t index) {
-        View view = detail::ViewAccess::make(
+        const View view = detail::ViewAccess::make(
             std::make_shared<const detail::IconNode>(icon.family, std::move(icon.layers[index].first)));
         const float opacity = icon.layers[index].second;
         return opacity < 1 ? view.opacity(opacity) : view;

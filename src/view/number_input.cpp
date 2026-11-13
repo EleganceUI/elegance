@@ -31,7 +31,7 @@ constexpr float kPointsPerStep = 4;    // scrubbed distance per step
 
 std::string default_format(double value, int decimals) {
     if (decimals >= 0) {
-        std::string text = std::format("{:.{}f}", value, decimals);
+        const std::string text = std::format("{:.{}f}", value, decimals);
         return text.find_first_not_of("-0.") == std::string::npos ? std::format("{:.{}f}", 0.0, decimals) : text;
     }
     // As many digits as it needs, up to 6.

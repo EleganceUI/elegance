@@ -492,9 +492,9 @@ View detail::make_grid_row(GridRowOptions options, std::vector<View> cells) {
     items->reserve(cells.size());
     const auto value = std::make_shared<const int>(0);
     for (std::size_t i = 0; i < cells.size(); ++i) {
-        View cell = cells[i].layout_value<GridRowKey>(GridRowCell{row, static_cast<std::uint32_t>(i), options.alignment});
-        items->push_back({ItemKey(static_cast<std::int64_t>(i)), value,
-                          [](const void*, const void*) { return true; }, [cell] { return cell; }});
+        items->push_back({ItemKey(static_cast<std::int64_t>(i)), value, [](const void*, const void*) { return true; },
+                          [cell = cells[i].layout_value<GridRowKey>(
+                               GridRowCell{row, static_cast<std::uint32_t>(i), options.alignment})] { return cell; }});
     }
     // A fragment: inside a Grid, the cells are the grid's children.
     return make_for_each([items] { return *items; });

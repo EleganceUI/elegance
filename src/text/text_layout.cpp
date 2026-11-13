@@ -21,7 +21,7 @@ constexpr float kFitTolerance = 0.01f;
 char32_t decode(std::string_view text, std::size_t& at) {
     const auto byte = [&](std::size_t i) { return static_cast<unsigned char>(text[i]); };
     const unsigned char lead = byte(at);
-    int extra = lead < 0x80 ? 0 : lead >= 0xF0 ? 3 : lead >= 0xE0 ? 2 : lead >= 0xC0 ? 1 : -1;
+    const int extra = lead < 0x80 ? 0 : lead >= 0xF0 ? 3 : lead >= 0xE0 ? 2 : lead >= 0xC0 ? 1 : -1;
     if (extra < 0 || at + static_cast<std::size_t>(extra) >= text.size() + (extra == 0 ? 1 : 0)) {
         ++at;
         return 0xFFFD;

@@ -41,7 +41,7 @@ public:
 
     void post(std::function<void()> task) {
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             tasks_.push_back(std::move(task));
             if (workers_.empty()) {
                 const unsigned count = std::clamp(std::thread::hardware_concurrency() / 4, 1u, 3u);
@@ -55,7 +55,7 @@ public:
 
     ~DecodeQueue() {
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             tasks_.clear();
         }
         for (std::jthread& worker : workers_) {
@@ -225,7 +225,7 @@ public:
         : file_(std::move(file)), data_(std::move(data)), scale_(scale), resizable_(resizable) {}
 
     [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
-        std::shared_ptr<ImageAsset> asset = load_asset(file_, data_);
+        const std::shared_ptr<ImageAsset> asset = load_asset(file_, data_);
         auto element = std::make_unique<RasterImageElement>(asset, scale_, resizable_);
         RasterImageElement* const target = element.get();
         // Pixels arrive (or change) later: draw them then.

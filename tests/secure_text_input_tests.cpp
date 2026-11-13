@@ -72,7 +72,7 @@ struct Window {
 
 TEST_CASE("a secure field's text input is a password's", "[text-input][secure]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::string> name;
     const State<std::string> password;
     Window window(VStack({.spacing = 0}, TextField("Name", name.binding()).frame(200, 30),
@@ -87,7 +87,7 @@ TEST_CASE("a secure field's text input is a password's", "[text-input][secure]")
 
 TEST_CASE("revealing a focused password switches its text input", "[text-input][secure]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::string> password;
     const State<bool> reveal(false);
     Window window(TextField("Password", password.binding(), {.secure = [=] { return !reveal(); }}).frame(200, 30));

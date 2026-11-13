@@ -176,7 +176,7 @@ std::optional<std::vector<std::uint8_t>> GlyphDiskCache::find(const FontFace& fa
     if (!directory_) {
         return std::nullopt;
     }
-    std::lock_guard lock(mutex_);
+    const std::lock_guard lock(mutex_);
     FontCache& cache = font(face);
     if (const auto it = cache.records.find(glyph); it != cache.records.end()) {
         if (it->second.width == width && it->second.height == height) {
@@ -192,7 +192,7 @@ void GlyphDiskCache::store(const FontFace& face, std::uint32_t glyph, std::uint3
     if (!directory_) {
         return;
     }
-    std::lock_guard lock(mutex_);
+    const std::lock_guard lock(mutex_);
     FontCache& cache = font(face);
     if (!cache.out || cache.bytes + sizeof(RecordHeader) + rgba.size() > kMaxFileBytes || cache.records.contains(glyph)) {
         return;

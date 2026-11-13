@@ -125,7 +125,7 @@ bool is_loopback(std::string_view host) {
 
 bool bypasses_proxy(std::string_view no_proxy, std::string_view host, std::string_view port) {
     const std::string name = strip_brackets(host);
-    for (std::string_view entry : split(no_proxy, ", ")) {
+    for (const std::string_view entry : split(no_proxy, ", ")) {
         if (entry == "*") {
             return true;
         }
@@ -192,7 +192,7 @@ std::optional<ProxyChoice> proxy_from_environment(std::string_view scheme, std::
 ProxyChoice proxy_from_windows_settings(std::string_view proxies, std::string_view bypass, std::string_view scheme,
                                         std::string_view host) {
     const std::string name = strip_brackets(host);
-    for (std::string_view entry : split(bypass, "; ")) {
+    for (const std::string_view entry : split(bypass, "; ")) {
         std::string pattern = lower(entry);
         if (pattern == "<local>") {
             if (name.find('.') == std::string::npos && name.find(':') == std::string::npos) {
@@ -212,7 +212,7 @@ ProxyChoice proxy_from_windows_settings(std::string_view proxies, std::string_vi
         }
     }
     std::optional<std::string_view> any;
-    for (std::string_view entry : split(proxies, "; ")) {
+    for (const std::string_view entry : split(proxies, "; ")) {
         if (const std::size_t equals = entry.find('='); equals != std::string_view::npos) {
             if (lower(trim(entry.substr(0, equals))) == scheme) {
                 return parse_proxy_url(entry.substr(equals + 1));

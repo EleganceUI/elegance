@@ -37,7 +37,7 @@ public:
 
     // The file of the system's sans-serif face closest to `weight` (100-900) and `italic`.
     std::optional<std::filesystem::path> match(int weight, bool italic) {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         const auto key = std::pair(weight, italic);
         if (const auto known = matches_.find(key); known != matches_.end()) {
             return known->second;

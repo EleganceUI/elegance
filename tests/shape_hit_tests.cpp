@@ -40,7 +40,7 @@ const View kSquare = Rectangle().fill(Color::white).frame(100, 100);
 
 TEST_CASE("a path shape takes the same points as a fill, a clip and a content shape", "[hit-test]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const Point inside{50, 70};
     const Point corner{5, 5}; // in the box, outside the triangle
     for (const View& view : {View(Triangle().fill(Color::white).frame(100, 100)), kSquare.clip_shape(Triangle()),
@@ -52,7 +52,7 @@ TEST_CASE("a path shape takes the same points as a fill, a clip and a content sh
 
 TEST_CASE("rounded shapes leave their corners out everywhere", "[hit-test]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     for (const View& view : {View(Circle().fill(Color::white).frame(100, 100)), kSquare.clip_shape(Circle()),
                              kSquare.content_shape(Circle())}) {
         CHECK(hits(view, {50, 50}));
@@ -62,14 +62,14 @@ TEST_CASE("rounded shapes leave their corners out everywhere", "[hit-test]") {
 
 TEST_CASE("a filled shape with a dashed stroke is hit inside, not only on the dashes", "[hit-test]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const View dashed = Rectangle().fill(Color::white).stroke(Color::black, StrokeStyle{.width = 2, .dash = {4, 4}}).frame(100, 100);
     CHECK(hits(dashed, {50, 50}));
 }
 
 TEST_CASE("a button takes its whole frame unless a content shape narrows it", "[hit-test]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const View label = Rectangle().fill(Color::white).frame(100, 100);
     CHECK(hits(Button(label, [] {}).button_style(PlainButtonStyle{}), {2, 2}));
     CHECK_FALSE(hits(Button(label, [] {}).button_style(PlainButtonStyle{}).content_shape(Capsule()), {2, 2}));

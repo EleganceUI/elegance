@@ -217,7 +217,7 @@ private:
 
     Row mount(const ForEachItem& item) {
         Row row{item.value, nullptr, std::make_unique<Scope>()};
-        Scope::Use use(*row.scope);
+        const Scope::Use use(*row.scope);
         begin_untracked(); // building an item must not subscribe whatever is running
         try {
             row.element = lower(item.view(), context_.nested());

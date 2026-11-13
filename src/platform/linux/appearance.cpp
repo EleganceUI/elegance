@@ -52,7 +52,7 @@ void store(GVariant* value) {
     }
     g_variant_unref(inner);
     {
-        std::lock_guard lock(g_mutex);
+        const std::lock_guard lock(g_mutex);
         if (g_accent == accent) {
             return;
         }
@@ -97,7 +97,7 @@ bool supports_material(WindowMaterial) {
 void appearance_changed(SDL_Window*, WindowParts&) {}
 
 std::optional<Color> system_accent_color() {
-    std::lock_guard lock(g_mutex);
+    const std::lock_guard lock(g_mutex);
     return g_accent;
 }
 

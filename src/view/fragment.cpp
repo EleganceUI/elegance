@@ -61,7 +61,7 @@ std::unique_ptr<Element> ForEachNode::lower(const LowerContext& context) const {
 
 FragmentElement::Child FragmentElement::mount(const ForEachItem& item, const Animation* animation) {
     Child child{item.key, item.value, nullptr, nullptr, std::make_unique<Scope>()};
-    Scope::Use use(*child.scope);
+    const Scope::Use use(*child.scope);
     // Building views may read state directly (e.g. in a component body); that must not subscribe
     // the If/ForEach effect running this.
     begin_untracked();

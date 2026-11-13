@@ -147,7 +147,7 @@ void Sound::play(PlayOptions options) const {
     if (!engine || !data_ || data_->frame_count == 0) {
         return;
     }
-    std::lock_guard lock(data_->mutex);
+    const std::lock_guard lock(data_->mutex);
     // Finished voices are swept here, on a calling thread (never the audio thread).
     auto& voices = data_->voices;
     for (auto it = voices.begin(); it != voices.end();) {
@@ -227,7 +227,7 @@ public:
 
     void watch(const std::shared_ptr<AudioPlayerState>& player) {
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             std::erase_if(players_, [](const auto& weak) { return weak.expired(); });
             players_.push_back(player);
             if (!thread_.joinable()) {
@@ -271,7 +271,7 @@ private:
             // One more update after playback ends, so the states settle (stopped, at the end).
             std::vector<std::weak_ptr<AudioPlayerState>> all;
             {
-                std::lock_guard lock(mutex_);
+                const std::lock_guard lock(mutex_);
                 all = players_;
             }
             post_ui_task([all] {

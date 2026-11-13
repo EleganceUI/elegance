@@ -22,12 +22,12 @@ std::optional<RenderAdapter> g_adapter;
 } // namespace
 
 void set_render_adapter(RenderAdapter adapter) {
-    std::lock_guard lock(g_adapter_mutex);
+    const std::lock_guard lock(g_adapter_mutex);
     g_adapter = adapter;
 }
 
 std::optional<RenderAdapter> render_adapter() {
-    std::lock_guard lock(g_adapter_mutex);
+    const std::lock_guard lock(g_adapter_mutex);
     return g_adapter;
 }
 

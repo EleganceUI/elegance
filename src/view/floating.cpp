@@ -476,7 +476,7 @@ private:
                                           .motion = options_.motion,
                                           .scope = std::make_unique<Scope>()};
         {
-            Scope::Use use(*panel.scope);
+            const Scope::Use use(*panel.scope);
             const EnvironmentScope environment(context_.environment);
             panel.element = detail::lower(floating_(), context_);
         }
@@ -635,7 +635,7 @@ private:
                                           .motion = options_.motion,
                                           .scope = std::make_unique<Scope>()};
         {
-            Scope::Use use(*panel.scope);
+            const Scope::Use use(*panel.scope);
             const EnvironmentScope environment(context_.environment);
             panel.element = detail::lower(styled()(), context_);
         }

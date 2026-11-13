@@ -98,7 +98,7 @@ struct ElgTextFieldOptions {
 };
 
 static std::function<std::vector<TextSpan>(std::string_view)> text_styler(ElgClosure styler) {
-    SharedFn f = share(styler);
+    const SharedFn f = share(styler);
     if (!f) {
         return {};
     }
@@ -111,7 +111,7 @@ static std::function<std::vector<TextSpan>(std::string_view)> text_styler(ElgClo
 }
 
 static std::function<bool(const KeyEvent&)> key_handler(ElgClosure on_key) {
-    SharedFn f = share(on_key);
+    const SharedFn f = share(on_key);
     if (!f) {
         return {};
     }
@@ -139,7 +139,7 @@ ELG_EXPORT void elg_text_spans_push(std::vector<TextSpan>* spans, size_t begin, 
 
 ELG_EXPORT View* elg_text_field(ElgProp placeholder, Binding<std::string>* take_text, const ElgTextFieldOptions* o) {
     ELG_TRY
-    std::unique_ptr<Binding<std::string>> text(take_text);
+    const std::unique_ptr<Binding<std::string>> text(take_text);
     TextFieldOptions options;
     options.on_submit = action(o->on_submit);
     options.secure = prop<bool>(o->secure);
@@ -152,7 +152,7 @@ ELG_EXPORT View* elg_text_field(ElgProp placeholder, Binding<std::string>* take_
 
 ELG_EXPORT View* elg_text_area(ElgProp placeholder, Binding<std::string>* take_text, const ElgTextFieldOptions* o) {
     ELG_TRY
-    std::unique_ptr<Binding<std::string>> text(take_text);
+    const std::unique_ptr<Binding<std::string>> text(take_text);
     TextAreaOptions options;
     options.on_submit = action(o->on_submit);
     options.styler = text_styler(o->styler);
@@ -163,7 +163,7 @@ ELG_EXPORT View* elg_text_area(ElgProp placeholder, Binding<std::string>* take_t
 
 ELG_EXPORT View* elg_slider(Binding<float>* take_value, ElgProp min, ElgProp max, ElgProp step, ElgClosure on_editing_changed) {
     ELG_TRY
-    std::unique_ptr<Binding<float>> value(take_value);
+    const std::unique_ptr<Binding<float>> value(take_value);
     SliderOptions options;
     options.min = prop<float>(min);
     options.max = prop<float>(max);
@@ -190,20 +190,20 @@ struct ElgOptNumber {
 
 ELG_EXPORT View* elg_number_input(Binding<double>* take_value, bool integer, const ElgNumberInputOptions* o) {
     ELG_TRY
-    std::unique_ptr<Binding<double>> value(take_value);
+    const std::unique_ptr<Binding<double>> value(take_value);
     NumberInputOptions options;
     options.min = prop<double>(o->min);
     options.max = prop<double>(o->max);
     options.step = prop<double>(o->step);
     options.decimals = prop<int>(o->decimals);
-    if (SharedFn f = share(o->format)) {
+    if (const SharedFn f = share(o->format)) {
         options.format = [f](double v) {
             std::string result;
             f->call(&v, &result);
             return result;
         };
     }
-    if (SharedFn f = share(o->parse)) {
+    if (const SharedFn f = share(o->parse)) {
         options.parse = [f](std::string_view text) {
             ElgStr arg{text.data(), text.size()};
             ElgOptNumber result{};
@@ -237,7 +237,7 @@ ELG_EXPORT View* elg_picker(const ElgStr* labels, size_t count, ElgClosure selec
 // take_label null: no label.
 ELG_EXPORT View* elg_toggle(View* take_label, Binding<bool>* take_is_on) {
     ELG_TRY
-    std::unique_ptr<Binding<bool>> is_on(take_is_on);
+    const std::unique_ptr<Binding<bool>> is_on(take_is_on);
     if (!take_label) {
         return out(Toggle(*is_on));
     }
@@ -247,7 +247,7 @@ ELG_EXPORT View* elg_toggle(View* take_label, Binding<bool>* take_is_on) {
 
 ELG_EXPORT View* elg_toggle_title(ElgProp title, Binding<bool>* take_is_on) {
     ELG_TRY
-    std::unique_ptr<Binding<bool>> is_on(take_is_on);
+    const std::unique_ptr<Binding<bool>> is_on(take_is_on);
     return out(Toggle(prop<std::string>(title), *is_on));
     ELG_CATCH(nullptr)
 }
@@ -255,7 +255,7 @@ ELG_EXPORT View* elg_toggle_title(ElgProp title, Binding<bool>* take_is_on) {
 // take_label null: no label.
 ELG_EXPORT View* elg_checkbox(View* take_label, Binding<bool>* take_is_checked, ElgProp mixed) {
     ELG_TRY
-    std::unique_ptr<Binding<bool>> is_checked(take_is_checked);
+    const std::unique_ptr<Binding<bool>> is_checked(take_is_checked);
     CheckboxOptions options{prop<bool>(mixed)};
     if (!take_label) {
         return out(Checkbox(*is_checked, std::move(options)));
@@ -266,7 +266,7 @@ ELG_EXPORT View* elg_checkbox(View* take_label, Binding<bool>* take_is_checked, 
 
 ELG_EXPORT View* elg_checkbox_title(ElgProp title, Binding<bool>* take_is_checked, ElgProp mixed) {
     ELG_TRY
-    std::unique_ptr<Binding<bool>> is_checked(take_is_checked);
+    const std::unique_ptr<Binding<bool>> is_checked(take_is_checked);
     return out(Checkbox(prop<std::string>(title), *is_checked, CheckboxOptions{prop<bool>(mixed)}));
     ELG_CATCH(nullptr)
 }
@@ -321,7 +321,7 @@ std::vector<detail::ForEachItem> items_from(const ElgForEachItem* items, size_t 
 // `items` (ret: std::vector<ForEachItem>*, filled with elg_for_each_items_push) is a tracked read.
 ELG_EXPORT View* elg_for_each(ElgClosure items) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(items);
+    const SharedFn f = std::make_shared<const RustFn>(items);
     return out(detail::make_for_each([f] {
         std::vector<detail::ForEachItem> result;
         f->call(nullptr, &result);
@@ -496,7 +496,7 @@ ELG_EXPORT View* elg_navigation_split_view(View* take_sidebar, View* take_conten
     ELG_TRY
     NavigationSplitViewOptions options;
     if (o->take_sidebar_visible) {
-        std::unique_ptr<Binding<bool>> visible(o->take_sidebar_visible);
+        const std::unique_ptr<Binding<bool>> visible(o->take_sidebar_visible);
         options.sidebar_visible = *visible;
     }
     options.sidebar_transition = *o->sidebar_transition;
@@ -519,8 +519,8 @@ ELG_EXPORT View* elg_navigation_split_view(View* take_sidebar, View* take_conten
 ELG_EXPORT View* elg_navigation_stack(View* take_root, ElgClosure pages, ElgClosure titles, ElgClosure pop,
                                       int32_t transition, const Animation* animation, bool back_gestures) {
     ELG_TRY
-    SharedFn p = std::make_shared<const RustFn>(pages);
-    SharedFn t = std::make_shared<const RustFn>(titles);
+    const SharedFn p = std::make_shared<const RustFn>(pages);
+    const SharedFn t = std::make_shared<const RustFn>(titles);
     return out(detail::make_navigation_stack(
         take(take_root),
         [p] {
@@ -653,7 +653,7 @@ ELG_EXPORT Shape* elg_path_shape(const Path* path, const ElgRect* view_box, int3
 // `path` (args: ElgRect*, ret: Path*) draws the outline for the given bounds.
 ELG_EXPORT Shape* elg_custom_shape(ElgClosure path, int32_t fill_rule) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(path);
+    const SharedFn f = std::make_shared<const RustFn>(path);
     return new Shape(CustomShape(
         [f](Rect bounds) {
             ElgRect arg = c_rect(bounds);
@@ -773,7 +773,7 @@ ELG_EXPORT Path* elg_path_stroked(const Path* path, const ElgStrokeStyle* style,
 // `draw` (args: GraphicsContext*) runs every time the view is drawn.
 ELG_EXPORT View* elg_canvas(ElgClosure draw) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(draw);
+    const SharedFn f = std::make_shared<const RustFn>(draw);
     return out(Canvas([f](GraphicsContext& context) { f->call(&context, nullptr); }));
     ELG_CATCH(nullptr)
 }
@@ -874,7 +874,7 @@ struct ElgAsyncImagePhase {
 // `content` (args: ElgAsyncImagePhase*, ret: View*) builds the view for each phase.
 ELG_EXPORT View* elg_async_image_content(ElgStr url, ElgClosure content, float scale, bool disk_cache) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(content);
+    const SharedFn f = std::make_shared<const RustFn>(content);
     return out(AsyncImage(
         str(url),
         [f](const AsyncImagePhase& phase) {
@@ -1136,7 +1136,7 @@ ELG_EXPORT View* elg_mod_allows_hit_testing(const View* v, bool enabled) {
 // `on_click` args: ElgClickEvent*.
 ELG_EXPORT View* elg_mod_on_click(const View* v, ElgClosure on_click, int32_t button, int32_t count) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(on_click);
+    const SharedFn f = std::make_shared<const RustFn>(on_click);
     return out(v->on_click(
         [f](const ClickEvent& event) {
             ElgClickEvent arg = c_click_event(event);
@@ -1150,7 +1150,7 @@ ELG_EXPORT View* elg_mod_on_activate(const View* v, ElgClosure on_activate) {
 }
 ELG_EXPORT View* elg_mod_on_size_change(const View* v, ElgClosure on_size_change) {
     ELG_TRY
-    SharedFn f = share(on_size_change);
+    const SharedFn f = share(on_size_change);
     return out(v->on_size_change([f](PixelSize size) {
         ElgPixelSize arg{size.width, size.height};
         f->call(&arg, nullptr);
@@ -1163,7 +1163,7 @@ ELG_EXPORT View* elg_mod_on_size_change(const View* v, ElgClosure on_size_change
 // A callback taking a C event `C` made from the C++ event `E` by `convert`; empty if none.
 template <class E, class C>
 static std::function<void(const E&)> event_callback(ElgClosure closure, C (*convert)(const E&)) {
-    SharedFn f = share(closure);
+    const SharedFn f = share(closure);
     if (!f) {
         return {};
     }
@@ -1257,7 +1257,7 @@ ELG_EXPORT View* elg_mod_rotate_gesture(const View* v, ElgClosure began, ElgClos
 // `action` args: ElgPoint* (window coordinates).
 ELG_EXPORT View* elg_mod_on_two_finger_double_tap(const View* v, ElgClosure on_tap) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(on_tap);
+    const SharedFn f = std::make_shared<const RustFn>(on_tap);
     return out(v->on_two_finger_double_tap([f](Point location) {
         ElgPoint arg = c_point(location);
         f->call(&arg, nullptr);
@@ -1286,7 +1286,7 @@ ELG_EXPORT View* elg_mod_on_hover_change(const View* v, ElgClosure on_hover) {
 // `on_pointer` args: ElgPointerEvent* (view-local), ret: bool* (consumed).
 ELG_EXPORT View* elg_mod_on_pointer(const View* v, ElgClosure on_pointer) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(on_pointer);
+    const SharedFn f = std::make_shared<const RustFn>(on_pointer);
     return out(v->on_pointer([f](const PointerEvent& event) {
         ElgPointerEvent arg = c_pointer_event(event);
         bool consumed = false;
@@ -1298,7 +1298,7 @@ ELG_EXPORT View* elg_mod_on_pointer(const View* v, ElgClosure on_pointer) {
 // `on_scroll` args: ElgScrollEvent* (view-local), ret: bool* (consumed).
 ELG_EXPORT View* elg_mod_on_scroll(const View* v, ElgClosure on_scroll) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(on_scroll);
+    const SharedFn f = std::make_shared<const RustFn>(on_scroll);
     return out(v->on_scroll([f](const ScrollEvent& event) {
         ElgScrollEvent arg = c_scroll_event(event);
         bool consumed = false;
@@ -1310,7 +1310,7 @@ ELG_EXPORT View* elg_mod_on_scroll(const View* v, ElgClosure on_scroll) {
 // `on_text_input` args: ElgTextInputEvent*, ret: bool* (consumed).
 ELG_EXPORT View* elg_mod_on_text_input(const View* v, ElgClosure on_text_input) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(on_text_input);
+    const SharedFn f = std::make_shared<const RustFn>(on_text_input);
     return out(v->on_text_input([f](const TextInputEvent& event) {
         ElgTextInputEvent arg{static_cast<int32_t>(event.kind), c_str(event.text), event.cursor};
         bool consumed = false;
@@ -1335,7 +1335,7 @@ struct ElgDropText {
 ELG_EXPORT View* elg_mod_on_drop(const View* v, ElgClosure files, ElgClosure text, ElgClosure targeted) {
     ELG_TRY
     DropOptions options;
-    if (SharedFn f = share(files)) {
+    if (const SharedFn f = share(files)) {
         options.files = [f](const std::vector<std::filesystem::path>& paths, Point location) {
             std::vector<std::string> names;
             names.reserve(paths.size());
@@ -1353,7 +1353,7 @@ ELG_EXPORT View* elg_mod_on_drop(const View* v, ElgClosure files, ElgClosure tex
             return wanted;
         };
     }
-    if (SharedFn f = share(text)) {
+    if (const SharedFn f = share(text)) {
         options.text = [f](const std::string& dropped, Point location) {
             ElgDropText arg{c_str(dropped), {location.x, location.y}};
             bool wanted = false;
@@ -1407,7 +1407,7 @@ struct ElgFloatingOptions {
 ELG_EXPORT View* elg_mod_floating(const View* v, Binding<bool>* take_is_presented, ElgClosure content,
                                   const ElgFloatingOptions* o) {
     ELG_TRY
-    std::unique_ptr<Binding<bool>> is_presented(take_is_presented);
+    const std::unique_ptr<Binding<bool>> is_presented(take_is_presented);
     FloatingOptions options;
     options.placement = placement(o->placement);
     options.boundary = static_cast<FloatingBoundary>(o->boundary);
@@ -1445,7 +1445,7 @@ ELG_EXPORT View* elg_mod_popover(const View* v, Binding<bool>* take_is_presented
                                  const ElgFloatingPlacement* popover_placement, int32_t boundary, ElgProp padded,
                                  ElgPopupMotion popup_motion) {
     ELG_TRY
-    std::unique_ptr<Binding<bool>> is_presented(take_is_presented);
+    const std::unique_ptr<Binding<bool>> is_presented(take_is_presented);
     PopoverOptions options;
     options.placement = placement(*popover_placement);
     options.boundary = static_cast<FloatingBoundary>(boundary);
@@ -1459,7 +1459,7 @@ ELG_EXPORT View* elg_mod_focusable(const View* v, bool focusable) {
 }
 ELG_EXPORT View* elg_mod_focused(const View* v, Binding<bool>* take_is_focused) {
     ELG_TRY
-    std::unique_ptr<Binding<bool>> is_focused(take_is_focused);
+    const std::unique_ptr<Binding<bool>> is_focused(take_is_focused);
     return out(v->focused(*is_focused));
     ELG_CATCH(nullptr)
 }
@@ -1559,9 +1559,9 @@ View with_selection(const View& v, bool multiple, SharedFn get, SharedFn set, Sh
 ELG_EXPORT View* elg_mod_selection(const View* v, bool multiple, bool string_keys, ElgClosure get, ElgClosure set,
                                    ElgClosure activate) {
     ELG_TRY
-    SharedFn g = std::make_shared<const RustFn>(get);
-    SharedFn s = std::make_shared<const RustFn>(set);
-    SharedFn a = share(activate);
+    const SharedFn g = std::make_shared<const RustFn>(get);
+    const SharedFn s = std::make_shared<const RustFn>(set);
+    const SharedFn a = share(activate);
     if (string_keys) {
         return out(with_selection<std::string>(*v, multiple, g, s, a));
     }

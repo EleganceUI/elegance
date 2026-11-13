@@ -10,7 +10,7 @@
 namespace elg::detail {
 
 std::uint64_t FrameMailbox::post(RenderCommand command) {
-    std::lock_guard lock(mutex_);
+    const std::lock_guard lock(mutex_);
     if (closed_) {
         return done_;
     }
@@ -20,7 +20,7 @@ std::uint64_t FrameMailbox::post(RenderCommand command) {
 }
 
 std::uint64_t FrameMailbox::post(WindowFrame frame) {
-    std::lock_guard lock(mutex_);
+    const std::lock_guard lock(mutex_);
     if (closed_) {
         return done_;
     }
@@ -45,7 +45,7 @@ void FrameMailbox::wait_until_done(std::uint64_t sequence) {
 }
 
 void FrameMailbox::request_stop() {
-    std::lock_guard lock(mutex_);
+    const std::lock_guard lock(mutex_);
     stop_ = true;
     work_ready_.notify_one();
 }
@@ -75,13 +75,13 @@ bool FrameMailbox::take_for(RenderBatch& batch, std::chrono::milliseconds timeou
 }
 
 void FrameMailbox::mark_done(std::uint64_t sequence) {
-    std::lock_guard lock(mutex_);
+    const std::lock_guard lock(mutex_);
     done_ = std::max(done_, sequence);
     work_done_.notify_all();
 }
 
 void FrameMailbox::close() {
-    std::lock_guard lock(mutex_);
+    const std::lock_guard lock(mutex_);
     closed_ = true;
     done_ = posted_;
     commands_.clear();

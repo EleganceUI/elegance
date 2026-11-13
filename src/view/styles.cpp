@@ -258,7 +258,7 @@ View SwitchToggleStyle::make_body(const ToggleConfiguration& toggle) const {
 
     View track = Capsule()
                      .fill([=](const EnvironmentValues& env) {
-                         Color base = !toggle.is_on() ? off.get(env)
+                         const Color base = !toggle.is_on() ? off.get(env)
                                       : on            ? on->get(env)
                                                       : env.get<TintKey>();
                          if (!toggle.is_enabled()) {
@@ -296,8 +296,8 @@ View BoxCheckboxStyle::make_body(const CheckboxConfiguration& checkbox) const {
     const auto dim = [=](Color color) { return checkbox.is_enabled() ? color : color.opacity(0.4f); };
     const auto filled = [=](const EnvironmentValues& env) { return fill ? fill->get(env) : env.get<TintKey>(); };
 
-    View check = o.check.value_or(detail::icon(detail::Icon::check, o.size * 0.72f, Weight::bold));
-    View dash = o.dash.value_or(
+    const View check = o.check.value_or(detail::icon(detail::Icon::check, o.size * 0.72f, Weight::bold));
+    const View dash = o.dash.value_or(
         Capsule().fill([mark = o.mark](const EnvironmentValues& env) { return mark.get(env); }).frame(o.size * 0.5f, 2));
     View box = RoundedRectangle(o.corner_radius)
                    .fill([=](const EnvironmentValues& env) {

@@ -22,10 +22,13 @@ struct ElgDevice {
 template <class Device>
 static void send_devices(const std::vector<Device>& devices, const ElgClosure& each) {
     for (const Device& device : devices) {
-        bool is_default = false;
-        if constexpr (requires { device.is_default; }) {
-            is_default = device.is_default;
-        }
+        const bool is_default = [&] {
+            if constexpr (requires { device.is_default; }) {
+                return device.is_default;
+            } else {
+                return false;
+            }
+        }();
         ElgDevice arg{c_str(device.id), c_str(device.name), is_default};
         call_now(each, &arg, nullptr);
     }
@@ -136,7 +139,7 @@ ELG_EXPORT AudioStream* elg_audio_stream_new(ElgStr device_id, uint32_t sample_r
     options.device_id = str(device_id);
     options.sample_rate = sample_rate;
     options.channels = channels;
-    if (SharedFn f = share(on_render)) {
+    if (const SharedFn f = share(on_render)) {
         options.on_render = [f](std::span<float> buffer) {
             ElgRenderBuffer arg{buffer.data(), buffer.size()};
             f->call(&arg, nullptr);
@@ -209,7 +212,7 @@ ELG_EXPORT AudioRecorder* elg_audio_recorder_new(ElgStr device_id, uint32_t samp
     options.device_id = str(device_id);
     options.sample_rate = sample_rate;
     options.channels = channels;
-    if (SharedFn f = share(on_samples)) {
+    if (const SharedFn f = share(on_samples)) {
         options.on_samples = [f](std::span<const float> samples) {
             ElgSamples arg{samples.data(), samples.size()};
             f->call(&arg, nullptr);
@@ -542,7 +545,7 @@ static void send_paths(const SharedFn& f, const std::vector<std::filesystem::pat
 // `done` args: ElgPaths* (empty if cancelled).
 ELG_EXPORT void elg_choose_files(const ElgFileFilter* fs, size_t filter_count, ElgStr directory, bool multiple, ElgClosure done) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(done);
+    const SharedFn f = std::make_shared<const RustFn>(done);
     choose_files({filters(fs, filter_count), path(directory), multiple},
                  [f](std::vector<std::filesystem::path> paths) { send_paths(f, paths); });
     ELG_CATCH_VOID
@@ -550,7 +553,7 @@ ELG_EXPORT void elg_choose_files(const ElgFileFilter* fs, size_t filter_count, E
 ELG_EXPORT void elg_choose_save_file(const ElgFileFilter* fs, size_t filter_count, ElgStr directory, ElgStr name,
                                      ElgClosure done) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(done);
+    const SharedFn f = std::make_shared<const RustFn>(done);
     choose_save_file({filters(fs, filter_count), path(directory), str(name)}, [f](std::optional<std::filesystem::path> p) {
         std::vector<std::filesystem::path> paths;
         if (p) {
@@ -562,7 +565,7 @@ ELG_EXPORT void elg_choose_save_file(const ElgFileFilter* fs, size_t filter_coun
 }
 ELG_EXPORT void elg_choose_folders(ElgStr directory, bool multiple, ElgClosure done) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(done);
+    const SharedFn f = std::make_shared<const RustFn>(done);
     choose_folders({path(directory), multiple}, [f](std::vector<std::filesystem::path> paths) { send_paths(f, paths); });
     ELG_CATCH_VOID
 }

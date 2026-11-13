@@ -46,8 +46,8 @@ const View kLabel = Rectangle().frame(10, 10);
 
 TEST_CASE("a toggle flips and reads as a switch", "[toggle]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<bool> on(false);
+    const detail::Scope::Use use(scope);
+    const State<bool> on(false);
     const Mounted toggle(Toggle(kLabel, on.binding()));
     CHECK(toggle.spec().role == detail::AccessRole::toggle);
     CHECK(toggle.state() == detail::ToggleState::off);
@@ -58,9 +58,9 @@ TEST_CASE("a toggle flips and reads as a switch", "[toggle]") {
 
 TEST_CASE("a check box reads as one, and a mixed one checks fully", "[toggle]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<bool> checked(false);
-    State<bool> mixed(true);
+    const detail::Scope::Use use(scope);
+    const State<bool> checked(false);
+    const State<bool> mixed(true);
     const Mounted box(Checkbox(kLabel, checked.binding(), {.mixed = mixed}));
     CHECK(box.spec().role == detail::AccessRole::checkbox);
     CHECK(box.state() == detail::ToggleState::mixed);
@@ -75,8 +75,8 @@ TEST_CASE("a check box reads as one, and a mixed one checks fully", "[toggle]") 
 
 TEST_CASE("a switch is as wide as its content unless it fills the width", "[toggle]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<bool> on(false);
+    const detail::Scope::Use use(scope);
+    const State<bool> on(false);
     const Mounted compact(Toggle(kLabel, on.binding()));
     CHECK(compact.root->size_that_fits({300.f, std::nullopt}).width == 10 + 8 + 40);
 
@@ -89,8 +89,8 @@ TEST_CASE("a switch is as wide as its content unless it fills the width", "[togg
 
 TEST_CASE("a check box's style sets its size", "[toggle]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<bool> checked(false);
+    const detail::Scope::Use use(scope);
+    const State<bool> checked(false);
     const Mounted box(Checkbox(kLabel, checked.binding()).checkbox_style(BoxCheckboxStyle{{.size = 24, .spacing = 6}}));
     const Size size = box.root->size_that_fits({300.f, std::nullopt});
     CHECK(size.width == 24 + 6 + 10);
@@ -99,8 +99,8 @@ TEST_CASE("a check box's style sets its size", "[toggle]") {
 
 TEST_CASE("a toggle without a label is just its switch", "[toggle]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<bool> on(false);
+    const detail::Scope::Use use(scope);
+    const State<bool> on(false);
     const Mounted bare(Toggle(on.binding()));
     CHECK(bare.root->size_that_fits({300.f, std::nullopt}).width == 40);
     const Mounted row(Toggle(on.binding()).toggle_style(SwitchToggleStyle{{.fills_width = true}}));
@@ -111,8 +111,8 @@ TEST_CASE("a toggle without a label is just its switch", "[toggle]") {
 
 TEST_CASE("a check box without a label is just its box", "[toggle]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<bool> checked(false);
+    const detail::Scope::Use use(scope);
+    const State<bool> checked(false);
     CHECK(EmptyView().is_empty());
     CHECK_FALSE(kLabel.is_empty());
     const Mounted bare(Checkbox(checked.binding()));

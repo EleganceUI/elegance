@@ -60,14 +60,14 @@ bool entered_outside(bool clipped) {
 
 TEST_CASE("clipped is clip_shape(Rectangle()), for drawing and hit testing", "[shorthand]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     CHECK(entered_outside(false));
     CHECK_FALSE(entered_outside(true));
 }
 
 TEST_CASE("borders, tooltips and menu buttons build from their compositions", "[shorthand]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> on(false);
     CHECK_NOTHROW(Window(Rectangle().border(ThemeColor::outline)));
     CHECK_NOTHROW(Window(Rectangle().border([=] { return on() ? Color::black : Color::white; }, 2, Circle())));
@@ -80,7 +80,7 @@ TEST_CASE("borders, tooltips and menu buttons build from their compositions", "[
 
 TEST_CASE("Text's font and weight can be reactive", "[shorthand][text]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<float> size(12);
     const State<Weight> weight(Weight::regular);
     const auto root = detail::lower(Text("Elegance")

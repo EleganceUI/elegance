@@ -73,7 +73,7 @@ constexpr Point kOutside{5, 5};
 
 TEST_CASE("a disabled view's clicks pass to the views around it; hover goes on", "[disabled]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> off(false);
     int inner = 0;
     int outer = 0;
@@ -106,7 +106,7 @@ TEST_CASE("a disabled view's clicks pass to the views around it; hover goes on",
 
 TEST_CASE("disabling a view cancels its drag; a disabled view doesn't start one", "[disabled][gesture]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> off(false);
     std::vector<std::string> calls;
     Window window(kSquare
@@ -136,7 +136,7 @@ TEST_CASE("disabling a view cancels its drag; a disabled view doesn't start one"
 
 TEST_CASE("a disabled view takes no keys or focus, and focus leaves it", "[disabled][focus]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> off(false);
     int keys = 0;
     Window window(kSquare.focusable().on_key_press(Key::space, [&] { ++keys; }).disabled([off] { return off(); }));
@@ -156,7 +156,7 @@ TEST_CASE("a disabled view takes no keys or focus, and focus leaves it", "[disab
 
 TEST_CASE("a focused control that becomes disabled loses focus", "[disabled][focus]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> off(false);
     Window window(Button("OK", [] {}).disabled([off] { return off(); }));
     window.press(Key::tab);
@@ -168,7 +168,7 @@ TEST_CASE("a focused control that becomes disabled loses focus", "[disabled][foc
 
 TEST_CASE("a disabled drop target refuses; one around it may take the drop", "[disabled][drop]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::string taker;
     const auto take = [&](std::string name) {
         return [&taker, name](const std::string&, Point) {
@@ -185,7 +185,7 @@ TEST_CASE("a disabled drop target refuses; one around it may take the drop", "[d
 
 TEST_CASE("a disabled window drag area still moves the window", "[disabled]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     Window window(kSquare.window_drag_area().disabled());
     CHECK(window.events->drags_window_at(kInside));
 }

@@ -360,7 +360,7 @@ inline void sink(ElgStrSink out, void* ctx, const std::string& s) {
 // --- std::function adapters over Rust closures ---
 
 inline std::function<void()> action(ElgClosure closure) {
-    SharedFn f = share(closure);
+    const SharedFn f = share(closure);
     if (!f) {
         return {};
     }
@@ -370,7 +370,7 @@ inline std::function<void()> action(ElgClosure closure) {
 // A closure returning R, written by the Rust side into a default-constructed R.
 template <class R>
 std::function<R()> producer(ElgClosure closure) {
-    SharedFn f = share(closure);
+    const SharedFn f = share(closure);
     if (!f) {
         return {};
     }
@@ -384,7 +384,7 @@ std::function<R()> producer(ElgClosure closure) {
 // A closure taking one argument; Rust receives a pointer to `A` (a C type).
 template <class A>
 std::function<void(A)> consumer(ElgClosure closure) {
-    SharedFn f = share(closure);
+    const SharedFn f = share(closure);
     if (!f) {
         return {};
     }
@@ -450,7 +450,7 @@ inline ElgAlignment c_alignment(elg::Alignment a) {
 
 inline elg::Font font(const ElgFont& f) {
     const auto weight = static_cast<elg::Weight>(f.weight);
-    elg::Font result = f.family.len ? elg::Font::custom(str(f.family), f.size, weight) : elg::Font::system(f.size, weight);
+    const elg::Font result = f.family.len ? elg::Font::custom(str(f.family), f.size, weight) : elg::Font::system(f.size, weight);
     return result.italic(f.italic);
 }
 
@@ -681,7 +681,7 @@ template <class T>
 elg::Prop<T> prop(const ElgProp& p) {
     switch (p.kind) {
     case 1: {
-        SharedFn f = share(p.fn);
+        const SharedFn f = share(p.fn);
         return elg::Prop<T>([f] {
             T result = blank<T>();
             f->call(nullptr, &result);
@@ -689,7 +689,7 @@ elg::Prop<T> prop(const ElgProp& p) {
         });
     }
     case 2: {
-        SharedFn f = share(p.fn);
+        const SharedFn f = share(p.fn);
         return elg::Prop<T>([f](const elg::EnvironmentValues& environment) {
             T result = blank<T>();
             f->call(const_cast<elg::EnvironmentValues*>(&environment), &result);

@@ -56,7 +56,7 @@ const View kSquare = Rectangle().fill(Color::black);
 
 TEST_CASE("a drag begins after its minimum distance and reports where it went", "[gesture]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<std::string> calls;
     std::optional<DragEvent> last;
     Window window(kSquare.recognize(DragGesture({.minimum_distance = 5})
@@ -89,7 +89,7 @@ TEST_CASE("a drag begins after its minimum distance and reports where it went", 
 
 TEST_CASE("a drag with no minimum distance begins on the press", "[gesture]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int began = 0;
     Window window(kSquare.recognize(DragGesture({.minimum_distance = 0}).on_began([&] { ++began; })));
     window.move({30, 30});
@@ -99,7 +99,7 @@ TEST_CASE("a drag with no minimum distance begins on the press", "[gesture]") {
 
 TEST_CASE("a drag that starts on a button or a click handler cancels the click", "[gesture]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int pressed = 0;
     int clicked = 0;
     int dragged = 0;
@@ -129,7 +129,7 @@ TEST_CASE("a drag that starts on a button or a click handler cancels the click",
 
 TEST_CASE("a handler that keeps its press isn't taken over by gestures around it", "[gesture]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<PointerEvent::Kind> tracked;
     int dragged = 0;
     // Like a slider: tracks the pointer itself.
@@ -160,7 +160,7 @@ TEST_CASE("a handler that keeps its press isn't taken over by gestures around it
 
 TEST_CASE("a long press fires once held, and the click doesn't", "[gesture]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int long_pressed = 0;
     int clicked = 0;
     std::vector<bool> pressing;
@@ -195,7 +195,7 @@ TEST_CASE("a long press fires once held, and the click doesn't", "[gesture]") {
 
 TEST_CASE("a long press that came due fires on the release even before a tick", "[gesture]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int long_pressed = 0;
     int clicked = 0;
     Window window(kSquare.recognize(LongPressGesture([&] { ++long_pressed; }, {.duration = 0.01})).on_click([&] { ++clicked; }));
@@ -209,7 +209,7 @@ TEST_CASE("a long press that came due fires on the release even before a tick", 
 
 TEST_CASE("trackpad gestures call their phases' callbacks", "[gesture]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<std::string> calls;
     Window window(kSquare.recognize(MagnifyGesture()
                                         .on_began([&] { calls.emplace_back("began"); })
@@ -224,7 +224,7 @@ TEST_CASE("trackpad gestures call their phases' callbacks", "[gesture]") {
 
 TEST_CASE("a high-priority gesture goes before the gestures inside it", "[gesture][compose]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int inner = 0;
     int outer = 0;
     const auto drag = [&](Window& window) {
@@ -252,7 +252,7 @@ TEST_CASE("a high-priority gesture goes before the gestures inside it", "[gestur
 
 TEST_CASE("a high-priority gesture takes presses from handlers that keep them", "[gesture][compose]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<PointerEvent::Kind> tracked;
     int dragged = 0;
     Window window(kSquare
@@ -272,7 +272,7 @@ TEST_CASE("a high-priority gesture takes presses from handlers that keep them", 
 
 TEST_CASE("a simultaneous gesture runs alongside whatever has the press", "[gesture][compose]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<std::string> inner;
     std::vector<std::string> outer;
     std::vector<PointerEvent::Kind> tracked;
@@ -308,7 +308,7 @@ TEST_CASE("a simultaneous gesture runs alongside whatever has the press", "[gest
 
 TEST_CASE("hold, then drag: it begins once held, and lets early moves go", "[gesture][compose]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<std::string> calls;
     std::optional<DragEvent> last;
     int clicked = 0;

@@ -63,7 +63,7 @@ TEST_CASE("a view going away under a still pointer takes its style with it", "[p
 
 TEST_CASE("automatic leaves the style to the views around, and the arrow is the default", "[pointer-style]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     auto root = detail::lower(Rectangle().fill(Color::white).pointer_style(PointerStyle::automatic), {});
     root->size_that_fits({100, 100});
     root->place({}, {100, 100});

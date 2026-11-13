@@ -161,7 +161,7 @@ ELG_EXPORT void* elg_signal_new(ElgClosure owner) {
 // version that changes whenever the value does.
 ELG_EXPORT void* elg_computed_new(ElgClosure compute) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(compute);
+    const SharedFn f = std::make_shared<const RustFn>(compute);
     auto node = std::make_shared<detail::ComputedNode<std::uint64_t>>([f] {
         std::uint64_t version = 0;
         f->call(nullptr, &version);
@@ -223,8 +223,8 @@ ELG_EXPORT void elg_with_animation(const Animation* animation, ElgClosure change
 
 template <class T>
 static Binding<T>* make_binding(ElgClosure get, ElgClosure set) {
-    SharedFn g = std::make_shared<const RustFn>(get);
-    SharedFn s = std::make_shared<const RustFn>(set);
+    const SharedFn g = std::make_shared<const RustFn>(get);
+    const SharedFn s = std::make_shared<const RustFn>(set);
     return new Binding<T>(
         [g] {
             T value{};
@@ -570,7 +570,7 @@ ELG_EXPORT void elg_app_window(App* app, const ElgWindowDesc* desc, ElgClosure c
     window.transparent = desc->transparent;
     window.opacity = desc->opacity;
     window.fullscreen = desc->fullscreen;
-    SharedFn f = std::make_shared<const RustFn>(content);
+    const SharedFn f = std::make_shared<const RustFn>(content);
     app->window(std::move(window), [f]() -> View {
         View result;
         f->call(nullptr, &result);
@@ -625,7 +625,7 @@ ELG_EXPORT Animation* elg_animation_smooth(double duration) {
 // `curve` (args: double* t, ret: double*) maps progress 0...1 to eased progress.
 ELG_EXPORT Animation* elg_animation_custom(ElgClosure curve, double duration) {
     ELG_TRY
-    SharedFn f = std::make_shared<const RustFn>(curve);
+    const SharedFn f = std::make_shared<const RustFn>(curve);
     return new Animation(Animation::custom(
         [f](double t) {
             double result = t;

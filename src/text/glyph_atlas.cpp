@@ -278,7 +278,7 @@ const AtlasGlyph* GlyphAtlas::find_or_add(const FontFace& face, std::uint32_t gl
     auto it = glyphs_.find(key);
     if (it == glyphs_.end()) {
         bool full = false;
-        std::optional<AtlasGlyph> placed = prepare(face, glyph_id, full);
+        const std::optional<AtlasGlyph> placed = prepare(face, glyph_id, full);
         if (full) {
             start_over_ = true; // after this frame
             return nullptr;
@@ -358,7 +358,7 @@ GlyphAtlas::GlyphAtlas() = default;
 GlyphAtlas::~GlyphAtlas() {
     {
         // Glyphs not started yet are no longer wanted.
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         pending_ -= jobs_.size();
         jobs_.clear();
     }
@@ -372,7 +372,7 @@ GlyphAtlas::~GlyphAtlas() {
 void GlyphAtlas::submit(std::unique_ptr<GlyphJob> job) {
     ++requested_;
     {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         jobs_.push_back(std::move(job));
         ++pending_;
         if (workers_.empty()) {
@@ -410,7 +410,7 @@ void GlyphAtlas::work(std::stop_token stop) {
         }
         std::function<void()> on_ready;
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             if (job->generation == generation_) { // else its slot went with an older layout
                 uploads_.push_back(std::move(upload));
             }
@@ -427,7 +427,7 @@ void GlyphAtlas::work(std::stop_token stop) {
 std::vector<GlyphUpload> GlyphAtlas::take_uploads() {
     std::vector<GlyphUpload> uploads;
     {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         uploads = std::exchange(uploads_, {});
         started_over_ = false;
     }
@@ -443,7 +443,7 @@ std::vector<GlyphUpload> GlyphAtlas::take_uploads() {
 }
 
 bool GlyphAtlas::has_uploads() const {
-    std::lock_guard lock(mutex_);
+    const std::lock_guard lock(mutex_);
     return !uploads_.empty() || started_over_;
 }
 
@@ -459,7 +459,7 @@ void GlyphAtlas::start_over() {
     shelf_height_ = 0;
     std::function<void()> on_ready;
     {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         ++generation_;
         pending_ -= jobs_.size(); // not started: for the old layout
         jobs_.clear();
@@ -473,7 +473,7 @@ void GlyphAtlas::start_over() {
 }
 
 void GlyphAtlas::set_on_ready(std::function<void()> on_ready) {
-    std::lock_guard lock(mutex_);
+    const std::lock_guard lock(mutex_);
     on_ready_ = std::move(on_ready);
 }
 
@@ -576,12 +576,12 @@ std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_
         cached = disk_->find(face, glyph_id, width, height);
     }
     if (cached) {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         uploads_.push_back({x, y, width, height, std::move(*cached)});
     } else {
     if (generation_ > 0) {
         // After starting over the slot may still show an older glyph: cleared until generated.
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         uploads_.push_back({x, y, width, height, std::vector<std::uint8_t>(std::size_t{width} * height * 4, 0)});
     }
     auto job = std::make_unique<GlyphJob>();

@@ -176,7 +176,7 @@ bool same_route(const std::shared_ptr<const void>& old_value, const ForEachItem&
 
 NavigationStackElement::Page NavigationStackElement::mount(const ForEachItem& item) {
     Page page{item.value, nullptr, std::make_unique<Scope>()};
-    Scope::Use use(*page.scope);
+    const Scope::Use use(*page.scope);
     // Building may read state (component bodies); that mustn't subscribe the effect running this.
     std::unique_ptr<Element> content = untrack([&] { return lower(item.view(), context_); });
     page.element = std::make_unique<PageElement>(std::move(content));

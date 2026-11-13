@@ -344,7 +344,7 @@ private:
 
             // Sources changed: rebuild (the new module file is picked up below).
             if (!options.build_command.empty()) {
-                std::map<fs::path, fs::file_time_type> now = scan(options.watch);
+                const std::map<fs::path, fs::file_time_type> now = scan(options.watch);
                 if (now != sources) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(150)); // editors save in steps
                     sources = scan(options.watch);

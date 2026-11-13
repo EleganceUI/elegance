@@ -27,7 +27,7 @@ public:
     RetirementWorker() : thread_([this] { run(); }) {}
     ~RetirementWorker() {
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             stopping_ = true;
         }
         wake_.notify_one();
@@ -35,7 +35,7 @@ public:
     }
     void enqueue(std::function<void()> job) {
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             jobs_.push_back(std::move(job));
         }
         wake_.notify_one();
@@ -156,7 +156,7 @@ public:
             std::unique_ptr<ValidationScope> scope;
             bool ok = false;
             {
-                std::lock_guard lock(renderer_->mutex);
+                const std::lock_guard lock(renderer_->mutex);
                 // active gates new publications only. This frame pins the Dawn device
                 // and instance through EndAccess/export, even after UI shutdown.
                 {
@@ -368,7 +368,7 @@ public:
         auto external = std::make_shared<ExternalFrame>(input, renderer);
         std::uint32_t status;
         {
-            std::lock_guard lock(renderer->mutex);
+            const std::lock_guard lock(renderer->mutex);
             if (!renderer->active) return ELG_GPU_IMAGE_DEVICE_UNAVAILABLE;
             status = external->import(input);
         }
@@ -388,7 +388,7 @@ public:
         frame.texture_lease = external;
         std::optional<VideoFrame> old;
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             const Size next_size{static_cast<float>(input.width), static_cast<float>(input.height)};
             if (!size_task_pending_ && (natural_size_.width != next_size.width ||
                                        natural_size_.height != next_size.height)) {
@@ -399,7 +399,7 @@ public:
                     if (const auto source = weak.lock()) {
                         Size latest;
                         {
-                            std::lock_guard source_lock(source->mutex_);
+                            const std::lock_guard source_lock(source->mutex_);
                             latest = source->natural_size_;
                             source->size_task_pending_ = false;
                         }
@@ -423,17 +423,17 @@ public:
     void clear() {
         std::optional<VideoFrame> old;
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             old.swap(frame_);
             ++number_;
         }
     }
     bool update() override {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         return std::exchange(reported_, number_) != number_;
     }
     std::optional<VideoFrame> current() const override {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         return frame_; // strong snapshot reservation, not a weak owner notification
     }
     const bool flipped;
