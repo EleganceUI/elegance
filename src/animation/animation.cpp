@@ -94,7 +94,7 @@ Animation Animation::repeat_forever(bool autoreverses) const {
     return copy;
 }
 
-double Animation::progress(double seconds) const noexcept {
+double Animation::progress(double seconds) const {
     const double t = seconds - delay_;
     if (t <= 0) {
         return 0;
@@ -118,7 +118,7 @@ bool Animation::finished(double seconds) const noexcept {
     return seconds - delay_ >= play_length() * plays_;
 }
 
-double Animation::play_progress(double t) const noexcept {
+double Animation::play_progress(double t) const {
     if (curve_ != Curve::spring) {
         if (duration_ <= 0 || t >= duration_) {
             return 1;

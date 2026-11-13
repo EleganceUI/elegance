@@ -9,6 +9,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -102,6 +103,13 @@ TEST_CASE("transitions describe the out pose and the in-place identity") {
     const Transition both = Transition::opacity().combined(Transition::scale(0.5f));
     CHECK(both.pose(0, false, {10, 10}).opacity == 0);
     CHECK(both.pose(0, false, {10, 10}).scale == Approx(0.5));
+}
+
+TEST_CASE("what a custom curve throws propagates from progress()") {
+    const Animation animation = Animation::custom([](double) -> double { throw std::runtime_error("curve"); }, 1);
+    CHECK_THROWS_AS(animation.progress(0.5), std::runtime_error);
+    CHECK(animation.progress(0) == 0); // not started: the curve isn't called
+    CHECK(animation.progress(2) == 1); // over
 }
 
 TEST_CASE("effects scheduled inside with_animation run with its animation") {

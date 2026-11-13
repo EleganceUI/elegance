@@ -70,7 +70,8 @@ public:
     /// @endcode
     ///
     /// @param curve Maps elapsed fraction to progress. Empty, or where it returns a value that
-    ///   isn't finite: linear.
+    ///   isn't finite: linear. What it throws propagates to whatever reads the animation, which on
+    ///   the UI thread ends App::run.
     /// @param duration Seconds; negative counts as 0 (no animation).
     /// @return The animation.
     static Animation custom(std::function<double(double)> curve, double duration = 0.25);
@@ -111,9 +112,11 @@ public:
     /// Progress at `seconds` since the start: 0 at the start, 1 at the end (springs overshoot).
     /// Repeating ones go round again each time (back down while autoreversing).
     ///
+    /// What a custom curve (custom()) throws propagates.
+    ///
     /// @param seconds Time since the animation started, delay included.
     /// @return The progress: 0 during the delay, 1 once it's done.
-    [[nodiscard]] double progress(double seconds) const noexcept;
+    [[nodiscard]] double progress(double seconds) const;
     /// Whether the animation is over at `seconds` since the start. Never for repeat_forever.
     ///
     /// @param seconds Time since the animation started, delay included.
@@ -126,7 +129,7 @@ private:
         : curve_(curve), duration_(duration), damping_(damping) {}
 
     // One play: progress, its length, and whether it's done (`t`: seconds since it started).
-    [[nodiscard]] double play_progress(double t) const noexcept;
+    [[nodiscard]] double play_progress(double t) const;
     [[nodiscard]] double play_length() const noexcept;
 
     Curve curve_;

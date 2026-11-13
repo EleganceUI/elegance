@@ -987,6 +987,8 @@ ELG_EXPORT Animation* elg_animation_smooth(double duration) {
 ///
 /// @param curve Consumed closure; args: `double*`, the fraction of `duration` elapsed (0 to 1);
 ///   ret: `double*`, the progress (0 at the start, 1 at the target), set to the fraction beforehand.
+///   A panic in it propagates like one in any callback: from an animated property, out of
+///   App::run; from elg_animation_progress(), as its error.
 /// @param duration Seconds; negative counts as 0.
 /// @return The animation, owned by the caller (elg_animation_free()), or nullptr on failure.
 ELG_EXPORT Animation* elg_animation_custom(ElgClosure curve, double duration) {
