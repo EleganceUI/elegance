@@ -171,10 +171,7 @@ TEST_CASE("a disabled drop target refuses; one around it may take the drop", "[d
     const detail::Scope::Use use(scope);
     std::string taker;
     const auto take = [&](const std::string& name) {
-        return [&taker, name](const std::string&, Point) {
-            taker = name;
-            return true;
-        };
+        return [&taker, name](const std::string&, Point) { taker = name; };
     };
     Window window(kSquare.on_drop({.text = take("inner")}).disabled().on_drop({.text = take("outer")}));
     detail::DropElement* target = detail::find_drop_target(*window.root, kInside, false);

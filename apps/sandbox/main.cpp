@@ -524,12 +524,8 @@ View DesktopCards(const State<int>& badge) {
             .frame(240, 110)
             .on_drop({.files = [=](const std::vector<std::filesystem::path>& files, Point) {
                           dropped = std::format("{} file{}: {}", files.size(), files.size() == 1 ? "" : "s", names(files));
-                          return true;
                       },
-                      .text = [=](const std::string& text, Point) {
-                          dropped = "Text: " + text.substr(0, 60);
-                          return true;
-                      },
+                      .text = [=](const std::string& text, Point) { dropped = "Text: " + text.substr(0, 60); },
                       .targeted = [=](bool on) { targeted = on; }});
 
     const State<std::vector<std::string>> picked(std::vector<std::string>{});

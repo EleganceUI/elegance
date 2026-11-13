@@ -217,13 +217,13 @@ enum class AccessibilityRole {
 };
 
 /// What a view does with things dragged in from other apps (on_drop()). Handlers get what was
-/// dropped and where (in the view's coordinates). They return whether they took it (false: it
-/// wasn't wanted), though nothing acts on the result yet.
+/// dropped and where (in the view's coordinates). A drop goes to one view: the innermost enabled
+/// one under the pointer with a handler for it (on top, among siblings), whose handler runs.
 struct DropOptions {
     /// Takes dropped files, by path. Empty: the view doesn't take files.
-    std::function<bool(const std::vector<std::filesystem::path>& files, Point location)> files;
+    std::function<void(const std::vector<std::filesystem::path>& files, Point location)> files;
     /// Takes dropped text. Empty: the view doesn't take text.
-    std::function<bool(const std::string& text, Point location)> text;
+    std::function<void(const std::string& text, Point location)> text;
     /// Set while a drag the view can take is over it (for a highlight): called with true when one
     /// comes over the view and false when it leaves or is dropped. May be empty.
     std::function<void(bool targeted)> targeted;
