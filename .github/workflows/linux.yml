@@ -118,3 +118,13 @@ jobs:
 
             - name: Test
               run: ctest --test-dir build/linux-release --output-on-failure
+
+            # The checks in .clang-tidy, on the static build's compile commands (once: they're the
+            # same sources on both architectures). clang-tidy 19 comes from LLVM's apt repository.
+            - name: clang-tidy
+              if: matrix.runner == 'ubuntu-24.04'
+              run: |
+                  wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+                  sudo bash llvm.sh 19
+                  sudo apt-get install -y --no-install-recommends clang-tidy-19 clang-tools-19
+                  python3 tools/clang-tidy.py build/linux-release

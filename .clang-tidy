@@ -1,0 +1,73 @@
+# The clang-tidy checks Elegance follows. CI runs them on Linux on every pull request, as errors.
+#
+# Left out on purpose: style-only checks (magic numbers, identifier length, literal suffixes,
+# include-cleaner, trailing return types, designated initializers everywhere), and checks that
+# rule out what the C API and the renderer need (C arrays, new/delete, reinterpret_cast, pointer
+# arithmetic, unions, macros), and readability-redundant-member-init, which removes the `{}` that
+# keeps aggregate members from warning (-Wmissing-field-initializers) when a struct is brace-
+# initialized with fewer values. Two analyzer checks for C's malloc are off: they only ever
+# reported inside stb, whose implementation is compiled into the Linux image codec, out of reach
+# of the header filters. EnumCastOutOfRange flags every combination of a bit-flag enum
+# (KeyModifiers). bugprone-exception-escape is off until CI's clang-tidy is version 20: 19 reports
+# every lambda that captures a std::string (its move constructor "may throw"), can't ignore
+# std::bad_alloc thrown by the standard library, and doesn't say what throws. A NOLINT needs a
+# comment saying why.
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  -bugprone-narrowing-conversions,
+  clang-analyzer-*,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
+  -clang-analyzer-optin.performance.Padding,
+  -clang-analyzer-optin.portability.UnixAPI,
+  -clang-analyzer-unix.Malloc,
+  concurrency-mt-unsafe,
+  cppcoreguidelines-avoid-reference-coroutine-parameters,
+  cppcoreguidelines-c-copy-assignment-signature,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-missing-std-forward,
+  cppcoreguidelines-narrowing-conversions,
+  cppcoreguidelines-prefer-member-initializer,
+  cppcoreguidelines-pro-type-member-init,
+  cppcoreguidelines-slicing,
+  cppcoreguidelines-special-member-functions,
+  cppcoreguidelines-virtual-class-destructor,
+  misc-const-correctness,
+  misc-unconventional-assign-operator,
+  misc-unused-using-decls,
+  modernize-*,
+  -modernize-avoid-c-arrays,
+  -modernize-macro-to-enum,
+  -modernize-return-braced-init-list,
+  -modernize-use-designated-initializers,
+  -modernize-use-trailing-return-type,
+  performance-*,
+  -performance-enum-size,
+  readability-braces-around-statements,
+  readability-container-contains,
+  readability-container-size-empty,
+  readability-convert-member-functions-to-static,
+  readability-isolate-declaration,
+  readability-make-member-function-const,
+  readability-redundant-*,
+  -readability-redundant-member-init,
+  readability-simplify-boolean-expr,
+  readability-use-anyofallof
+WarningsAsErrors: '*'
+HeaderFilterRegex: '/(src|include|c|apps|tests)/'
+# Third-party headers, which vcpkg installs under the build folder's include/.
+ExcludeHeaderFilterRegex: '/(build|vcpkg_installed|third_party)/'
+CheckOptions:
+  # A class with only a defaulted destructor (an interface) needn't declare the other four.
+  cppcoreguidelines-special-member-functions.AllowSoleDefaultDtor: true
+  # Pointers stay as they are; only the values that are never changed become const.
+  misc-const-correctness.AnalyzePointers: false
+  # Declarations for C (gpu_image.h, the C API) stay typedefs.
+  modernize-use-using.IgnoreExternC: true
+  # An empty catch whose comment starts "Swallowed:" says why nothing is done.
+  bugprone-empty-catch.IgnoreCatchWithKeywords: 'Swallowed:'
+  # `static_cast<void>(f())` says a result is ignored on purpose.
+  bugprone-unused-return-value.AllowCastToVoid: true
