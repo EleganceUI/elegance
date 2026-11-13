@@ -79,7 +79,7 @@ struct AudioStreamState {
         }
     }
 
-    std::size_t max_queued() const { return static_cast<std::size_t>(options.sample_rate) * options.channels; }
+    [[nodiscard]] std::size_t max_queued() const { return static_cast<std::size_t>(options.sample_rate) * options.channels; }
 
     // The audio thread.
     static void on_data(ma_device* device, void* output, const void*, ma_uint32 frames) {

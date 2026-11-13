@@ -105,6 +105,9 @@ std::pair<int, std::string> run(const std::string& command) {
         return {-1, "couldn't start the build command"};
     }
     char buffer[4096];
+    // No lock is held here: with libstdc++, the analyzer misses the unlock in ModuleHost::watch's
+    // interruptible sleep (a condition_variable_any).
+    // NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection): see above
     while (std::fgets(buffer, sizeof(buffer), pipe)) {
         output += buffer;
     }

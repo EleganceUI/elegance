@@ -8,10 +8,12 @@
 # initialized with fewer values. Two analyzer checks for C's malloc are off: they only ever
 # reported inside stb, whose implementation is compiled into the Linux image codec, out of reach
 # of the header filters. EnumCastOutOfRange flags every combination of a bit-flag enum
-# (KeyModifiers). bugprone-exception-escape is off until CI's clang-tidy is version 20: 19 reports
-# every lambda that captures a std::string (its move constructor "may throw"), can't ignore
-# std::bad_alloc thrown by the standard library, and doesn't say what throws. A NOLINT needs a
-# comment saying why.
+# (KeyModifiers). cplusplus.NewDeleteLeaks reports every lambda stored in a std::function as a leak
+# with libstdc++ (CI's), whose std::function frees it through a function pointer the analyzer can't
+# follow; run the tests in an ASan build, whose LeakSanitizer finds real leaks.
+# bugprone-exception-escape is off until CI's clang-tidy is version 20: 19 reports every lambda
+# that captures a std::string (its move constructor "may throw"), can't ignore std::bad_alloc thrown
+# by the standard library, and doesn't say what throws. A NOLINT needs a comment saying why.
 Checks: >
   -*,
   bugprone-*,
@@ -24,6 +26,7 @@ Checks: >
   -clang-analyzer-optin.performance.Padding,
   -clang-analyzer-optin.portability.UnixAPI,
   -clang-analyzer-unix.Malloc,
+  -clang-analyzer-cplusplus.NewDeleteLeaks,
   concurrency-mt-unsafe,
   cppcoreguidelines-avoid-reference-coroutine-parameters,
   cppcoreguidelines-c-copy-assignment-signature,
