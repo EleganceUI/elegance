@@ -187,7 +187,11 @@ public:
                 throw ResourceError(std::format("{} has no ELG_MODULE(...)", options_.module.filename().string()));
             }
             const ModuleEntry* entry = entry_function();
-            if (!entry || entry->abi != module_abi) {
+            if (!entry) {
+                throw ResourceError(std::format("{} returned no module entry (see its standard error output)",
+                                                options_.module.filename().string()));
+            }
+            if (entry->abi != module_abi) {
                 throw ResourceError(std::format("{} was built against another Elegance version",
                                                 options_.module.filename().string()));
             }

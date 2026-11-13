@@ -7,7 +7,9 @@
 #include "shim.h"
 
 #include <array>
-#include <mutex>
+#include <cstdio>
+#include <format>
+#include <memory>
 
 using namespace elg;
 using namespace elg_shim;
@@ -1644,10 +1646,17 @@ namespace {
 
 constexpr std::size_t kMaxPreviews = 256;
 
+// One registered module: its strings, previews, and entry. Kept for the rest of the process: the
+// host holds each module's entry, and may still read it after a newer module registered.
+struct RustModule {
+    std::vector<std::string> strings; // stable c_str()s: reserved up front
+    std::vector<PreviewEntry> previews;
+    ModuleEntry entry;
+};
+
+std::vector<std::unique_ptr<RustModule>> g_modules;
+// The newest module's: the views the host mounts after loading it.
 ElgModuleBuild g_module_build = nullptr;
-std::vector<std::string> g_preview_strings;
-std::vector<PreviewEntry> g_previews;
-ModuleEntry g_module_entry;
 
 View build_module_view(int32_t index) {
     View result;
@@ -1670,22 +1679,30 @@ const std::array<View (*)(), kMaxPreviews> g_preview_thunks = make_preview_thunk
 
 } // namespace
 
+// Called by each module as it loads (every reload is a new module), on the UI thread. Null, with
+// a usage error, when the module has more previews than the thunk table holds.
 ELG_EXPORT const ModuleEntry* elg_rust_module_entry(bool has_root, const ElgPreviewDesc* previews, size_t count,
                                                     ElgModuleBuild build) {
-    static std::once_flag once;
-    std::call_once(once, [&] {
-        g_module_build = build;
-        count = std::min(count, kMaxPreviews);
-        g_preview_strings.reserve(count * 2); // stable c_str()s
-        g_previews.reserve(count);
-        for (size_t i = 0; i < count; ++i) {
-            const char* name = g_preview_strings.emplace_back(str(previews[i].name)).c_str();
-            const char* file = g_preview_strings.emplace_back(str(previews[i].file)).c_str();
-            g_previews.push_back({name, g_preview_thunks[i], file, previews[i].line});
-        }
-        g_module_entry = {module_abi, has_root ? &module_root : nullptr, &g_previews};
-    });
-    return &g_module_entry;
+    ELG_TRY
+    if (count > kMaxPreviews) {
+        // The host calls this through the module, not through the C API: say why on stderr too.
+        const std::string message =
+            std::format("a views module can have at most {} previews; this one has {}", kMaxPreviews, count);
+        std::fprintf(stderr, "elegance: %s\n", message.c_str());
+        throw elg::UsageError(message);
+    }
+    auto module = std::make_unique<RustModule>();
+    module->strings.reserve(count * 2);
+    module->previews.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        const char* name = module->strings.emplace_back(str(previews[i].name)).c_str();
+        const char* file = module->strings.emplace_back(str(previews[i].file)).c_str();
+        module->previews.push_back({name, g_preview_thunks[i], file, previews[i].line});
+    }
+    module->entry = {module_abi, has_root ? &module_root : nullptr, &module->previews};
+    g_module_build = build;
+    return &g_modules.emplace_back(std::move(module))->entry;
+    ELG_CATCH(nullptr)
 }
 
 // --- Grids ---
