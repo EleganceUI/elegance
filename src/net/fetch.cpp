@@ -283,6 +283,20 @@ Target target_of(const urls::url& url) {
     return target;
 }
 
+// Every value of a header field that may be sent more than once, joined with ", " as RFC 9110
+// §5.3 allows: `Cache-Control: max-age=600` and `Cache-Control: no-store` mean both.
+template <class Fields>
+std::string all_values(const Fields& fields, bhttp::field name) {
+    std::string out;
+    for (auto [it, end] = fields.equal_range(name); it != end; ++it) {
+        if (!out.empty()) {
+            out += ", ";
+        }
+        out += std::string_view(it->value());
+    }
+    return out;
+}
+
 template <class Stream>
 awaitable<Reply> exchange(Stream& stream, beast::flat_buffer& buffer, const Target& target,
                           const std::optional<Proxy>& proxy, const Validators* validators, std::size_t max_body) {
@@ -316,13 +330,13 @@ awaitable<Reply> exchange(Stream& stream, beast::flat_buffer& buffer, const Targ
     reply.keep_alive = response.keep_alive() && !parser.need_eof();
     reply.location = std::string(response[bhttp::field::location]);
     reply.cache = {
-        .cache_control = std::string(response[bhttp::field::cache_control]),
+        .cache_control = all_values(response, bhttp::field::cache_control),
         .expires = std::string(response[bhttp::field::expires]),
         .date = std::string(response[bhttp::field::date]),
         .age = std::string(response[bhttp::field::age]),
         .etag = std::string(response[bhttp::field::etag]),
         .last_modified = std::string(response[bhttp::field::last_modified]),
-        .vary = std::string(response[bhttp::field::vary]),
+        .vary = all_values(response, bhttp::field::vary),
     };
     reply.body = std::move(response.body());
     co_return reply;

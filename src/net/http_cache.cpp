@@ -31,6 +31,9 @@ namespace fs = std::filesystem;
 
 constexpr std::string_view kMagic = "ELGCACHE 1";
 constexpr std::int64_t kHeuristicCap = 24 * 60 * 60; // a Last-Modified guess stays fresh at most a day
+// Delta-seconds (max-age, Age) larger than this count as this (RFC 9111 §1.2.2), so ages and
+// lifetimes add up without overflowing.
+constexpr std::int64_t kMaxDeltaSeconds = std::int64_t{1} << 31;
 
 std::string lower(std::string_view text) {
     std::string result(text);
@@ -56,6 +59,21 @@ std::optional<std::int64_t> parse_number(std::string_view text) {
         return std::nullopt;
     }
     return value;
+}
+
+// A delta-seconds value: a non-negative integer, capped at kMaxDeltaSeconds, also when it's too
+// large to parse.
+std::optional<std::int64_t> parse_delta_seconds(std::string_view text) {
+    text = trim(text);
+    std::int64_t value = 0;
+    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
+    if (error == std::errc::result_out_of_range && end == text.data() + text.size() && !text.starts_with('-')) {
+        return kMaxDeltaSeconds;
+    }
+    if (error != std::errc() || end != text.data() + text.size() || value < 0) {
+        return std::nullopt;
+    }
+    return std::min(value, kMaxDeltaSeconds);
 }
 
 struct Directives {
@@ -85,7 +103,7 @@ Directives parse_cache_control(std::string_view text) {
             out.must_revalidate = true;
         } else if (name == "max-age") {
             // An invalid max-age makes the response stale (RFC 9111 §4.2.1).
-            out.max_age = parse_number(value).value_or(0);
+            out.max_age = parse_delta_seconds(value).value_or(0);
         }
     }
     return out;
@@ -108,7 +126,7 @@ void apply_freshness(CacheEntry& entry, const CacheHeaders& headers, const Direc
     entry.received = now;
     const std::int64_t date = parse_http_date(headers.date).value_or(now);
     const std::int64_t apparent_age = std::max<std::int64_t>(0, now - date);
-    entry.initial_age = std::max(apparent_age, parse_number(headers.age).value_or(0));
+    entry.initial_age = std::min(std::max(apparent_age, parse_delta_seconds(headers.age).value_or(0)), kMaxDeltaSeconds);
     if (directives.max_age) {
         entry.lifetime = *directives.max_age;
     } else if (!headers.expires.empty()) {
@@ -119,6 +137,7 @@ void apply_freshness(CacheEntry& entry, const CacheHeaders& headers, const Direc
     } else {
         entry.lifetime = 0;
     }
+    entry.lifetime = std::min(entry.lifetime, kMaxDeltaSeconds); // a far-off Expires
     entry.no_cache = directives.no_cache;
     entry.must_revalidate = directives.must_revalidate;
 }
@@ -349,9 +368,9 @@ std::optional<CacheEntry> HttpCache::find(const std::string& url) {
         } else if (key == "received") {
             entry.received = number;
         } else if (key == "initial-age") {
-            entry.initial_age = number;
+            entry.initial_age = std::min(number, kMaxDeltaSeconds); // the file may be damaged
         } else if (key == "lifetime") {
-            entry.lifetime = number;
+            entry.lifetime = std::min(number, kMaxDeltaSeconds);
         } else if (key == "no-cache") {
             entry.no_cache = number != 0;
         } else if (key == "must-revalidate") {
