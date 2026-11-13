@@ -136,8 +136,10 @@ ELG_EXPORT void elg_view_free(View* view) {
 /// @param target The closure's `ret` (borrowed); what it held is replaced.
 /// @param take_view The view (consumed).
 ELG_EXPORT void elg_view_move_into(View* target, View* take_view) {
-    *target = std::move(*take_view);
-    delete take_view;
+    ELG_TRY
+    const Consumed consumed(take_view);
+    *target = take(take_view);
+    ELG_CATCH_VOID
 }
 
 /// Wraps `View::is_empty()`: whether this is an empty view (View(), EmptyView()), e.g. a style's
@@ -153,10 +155,12 @@ ELG_EXPORT bool elg_view_is_empty(const View* view) {
 /// component (a type with `View body() const`).
 ///
 /// @param body Consumed closure; args: null, ret: `View*` (set it with elg_view_move_into()).
+///   Required: none is a usage error.
 /// @return The new view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_view_component(ElgClosure body) {
     ELG_TRY
-    return out(View(RustComponent{share(body)}));
+    const Consumed consumed(body);
+    return out(View(RustComponent{required(body, "body")}));
     ELG_CATCH(nullptr)
 }
 
@@ -196,7 +200,8 @@ void adopt(std::shared_ptr<detail::ReactiveNode> node) {
 ///   nullptr on failure.
 ELG_EXPORT void* elg_signal_new(ElgClosure owner) {
     ELG_TRY
-    auto node = std::make_shared<OwnerNode>(std::make_shared<const RustFn>(owner));
+    const Consumed consumed(owner);
+    auto node = std::make_shared<OwnerNode>(hold(owner));
     void* raw = static_cast<detail::ReactiveNode*>(node.get());
     adopt(std::move(node));
     return raw;
@@ -209,10 +214,12 @@ ELG_EXPORT void* elg_signal_new(ElgClosure owner) {
 ///
 /// @param compute Consumed closure, run when the node is read and may have changed; args: null,
 ///   ret: `uint64_t*`. When the version stays the same, the node's dependents don't rerun.
+///   Required: none is a usage error.
 /// @return The node, for elg_node_track(). Its scope owns it, not the caller. nullptr on failure.
 ELG_EXPORT void* elg_computed_new(ElgClosure compute) {
     ELG_TRY
-    const SharedFn f = std::make_shared<const RustFn>(compute);
+    const Consumed consumed(compute);
+    const SharedFn f = required(compute, "compute");
     auto node = std::make_shared<detail::ComputedNode<std::uint64_t>>([f] {
         std::uint64_t version = 0;
         f->call(nullptr, &version);
@@ -257,19 +264,23 @@ ELG_EXPORT void elg_check_ui_thread() {
 /// current event, before the next frame). Call it while building views; it ends when those views
 /// are removed. Elsewhere it records a UsageError.
 ///
-/// @param function Consumed closure; args and ret: null.
+/// @param function Consumed closure; args and ret: null. Required: none is a usage error.
 ELG_EXPORT void elg_effect(ElgClosure function) {
     ELG_TRY
-    effect(action(function));
+    const Consumed consumed(function);
+    effect(action(required(function, "function")));
     ELG_CATCH_VOID
 }
 
 /// Runs `function` (borrowed) without tracking reads: `elg::untrack()`.
 ///
 /// @param function Borrowed closure, called once before this returns; args and ret: null.
+///   Required: none is a usage error.
 ELG_EXPORT void elg_untrack(ElgClosure function) {
     ELG_TRY
-    untrack([&] { call_now(function, nullptr, nullptr); });
+    const Consumed consumed(function);
+    const SharedFn f = required(function, "function");
+    untrack([&] { f->call(nullptr, nullptr); });
     ELG_CATCH_VOID
 }
 
@@ -277,9 +288,12 @@ ELG_EXPORT void elg_untrack(ElgClosure function) {
 /// outermost batch ends.
 ///
 /// @param function Borrowed closure, called once before this returns; args and ret: null.
+///   Required: none is a usage error.
 ELG_EXPORT void elg_batch(ElgClosure function) {
     ELG_TRY
-    batch([&] { call_now(function, nullptr, nullptr); });
+    const Consumed consumed(function);
+    const SharedFn f = required(function, "function");
+    batch([&] { f->call(nullptr, nullptr); });
     ELG_CATCH_VOID
 }
 
@@ -289,18 +303,22 @@ ELG_EXPORT void elg_batch(ElgClosure function) {
 ///
 /// @param animation The animation (borrowed).
 /// @param changes Borrowed closure, called once before this returns; args and ret: null.
+///   Required: none is a usage error.
 ELG_EXPORT void elg_with_animation(const Animation* animation, ElgClosure changes) {
     ELG_TRY
-    with_animation(*animation, [&] { call_now(changes, nullptr, nullptr); });
+    const Consumed consumed(changes);
+    const SharedFn f = required(changes, "changes");
+    with_animation(*animation, [&] { f->call(nullptr, nullptr); });
     ELG_CATCH_VOID
 }
 
 // --- Bindings to the C++ value types controls take ---
 
+// Takes over `get` and `set`; the caller's Consumed releases what this doesn't.
 template <class T>
-static Binding<T>* make_binding(ElgClosure get, ElgClosure set) {
-    const SharedFn g = std::make_shared<const RustFn>(get);
-    const SharedFn s = std::make_shared<const RustFn>(set);
+static Binding<T>* make_binding(ElgClosure& get, ElgClosure& set) {
+    const SharedFn g = required(get, "get");
+    const SharedFn s = required(set, "set");
     return new Binding<T>(
         [g] {
             T value{};
@@ -312,45 +330,69 @@ static Binding<T>* make_binding(ElgClosure get, ElgClosure set) {
 
 /// A `Binding<bool>` over a Rust value, for a control: `get` reads it, `set` writes it.
 ///
-/// @param get Consumed closure; args: null, ret: `bool*`.
-/// @param set Consumed closure; args: `bool*` (the new value), ret: null.
-/// @return The binding, owned by the caller until a function takes it (`take_*`).
+/// @param get Consumed closure; args: null, ret: `bool*`. Required: none is a usage error.
+/// @param set Consumed closure; args: `bool*` (the new value), ret: null. Required: none is a
+///   usage error.
+/// @return The binding, owned by the caller until a function takes it (`take_*`);
+///   nullptr on failure.
 ELG_EXPORT Binding<bool>* elg_binding_bool(ElgClosure get, ElgClosure set) {
+    ELG_TRY
+    const Consumed consumed(get, set);
     return make_binding<bool>(get, set);
+    ELG_CATCH(nullptr)
 }
 /// A `Binding<float>` over a Rust value, for a control: `get` reads it, `set` writes it.
 ///
-/// @param get Consumed closure; args: null, ret: `float*`.
-/// @param set Consumed closure; args: `float*` (the new value), ret: null.
+/// @param get Consumed closure; args: null, ret: `float*`. Required: none is a usage error.
+/// @param set Consumed closure; args: `float*` (the new value), ret: null. Required: none is a
+///   usage error.
 /// @return The binding, owned by the caller until a function takes it (`take_*`) or
-///   elg_binding_f32_free() frees it.
+///   elg_binding_f32_free() frees it; nullptr on failure.
 ELG_EXPORT Binding<float>* elg_binding_f32(ElgClosure get, ElgClosure set) {
+    ELG_TRY
+    const Consumed consumed(get, set);
     return make_binding<float>(get, set);
+    ELG_CATCH(nullptr)
 }
 /// A `Binding<int>` over a Rust value, for a control: `get` reads it, `set` writes it.
 ///
-/// @param get Consumed closure; args: null, ret: `int32_t*`.
-/// @param set Consumed closure; args: `int32_t*` (the new value), ret: null.
-/// @return The binding, owned by the caller until a function takes it (`take_*`).
+/// @param get Consumed closure; args: null, ret: `int32_t*`. Required: none is a usage error.
+/// @param set Consumed closure; args: `int32_t*` (the new value), ret: null. Required: none is a
+///   usage error.
+/// @return The binding, owned by the caller until a function takes it (`take_*`);
+///   nullptr on failure.
 ELG_EXPORT Binding<int>* elg_binding_i32(ElgClosure get, ElgClosure set) {
+    ELG_TRY
+    const Consumed consumed(get, set);
     return make_binding<int>(get, set);
+    ELG_CATCH(nullptr)
 }
 /// A `Binding<std::string>` over a Rust value, for a control: `get` reads it, `set` writes it.
 ///
 /// @param get Consumed closure; args: null, ret: `std::string*` (set it with elg_string_assign()).
+///   Required: none is a usage error.
 /// @param set Consumed closure; args: `std::string*`, the new value (read it with elg_string_view());
-///   ret: null.
-/// @return The binding, owned by the caller until a function takes it (`take_*`).
+///   ret: null. Required: none is a usage error.
+/// @return The binding, owned by the caller until a function takes it (`take_*`);
+///   nullptr on failure.
 ELG_EXPORT Binding<std::string>* elg_binding_string(ElgClosure get, ElgClosure set) {
+    ELG_TRY
+    const Consumed consumed(get, set);
     return make_binding<std::string>(get, set);
+    ELG_CATCH(nullptr)
 }
 /// A `Binding<double>` over a Rust value, for a control: `get` reads it, `set` writes it.
 ///
-/// @param get Consumed closure; args: null, ret: `double*`.
-/// @param set Consumed closure; args: `double*` (the new value), ret: null.
-/// @return The binding, owned by the caller until a function takes it (`take_*`).
+/// @param get Consumed closure; args: null, ret: `double*`. Required: none is a usage error.
+/// @param set Consumed closure; args: `double*` (the new value), ret: null. Required: none is a
+///   usage error.
+/// @return The binding, owned by the caller until a function takes it (`take_*`);
+///   nullptr on failure.
 ELG_EXPORT Binding<double>* elg_binding_f64(ElgClosure get, ElgClosure set) {
+    ELG_TRY
+    const Consumed consumed(get, set);
     return make_binding<double>(get, set);
+    ELG_CATCH(nullptr)
 }
 
 /// Writes an optional float into a closure's std::optional<float> result.
@@ -597,6 +639,7 @@ ELG_EXPORT void* elg_env_rust_values(const EnvironmentValues* environment) {
 ///   elg_font_assign()).
 ELG_EXPORT void elg_env_set_font(EnvironmentValues* environment, ElgProp value) {
     ELG_TRY
+    const Consumed consumed(value);
     environment->set<FontKey>(prop<Font>(value));
     ELG_CATCH_VOID
 }
@@ -606,6 +649,7 @@ ELG_EXPORT void elg_env_set_font(EnvironmentValues* environment, ElgProp value) 
 /// @param value The scheme: an ElgProp of elg::ColorScheme (kind 0: `int32_t*`, 0 light, 1 dark).
 ELG_EXPORT void elg_env_set_color_scheme(EnvironmentValues* environment, ElgProp value) {
     ELG_TRY
+    const Consumed consumed(value);
     environment->set<ColorSchemeKey>(prop<ColorScheme>(value));
     ELG_CATCH_VOID
 }
@@ -615,6 +659,7 @@ ELG_EXPORT void elg_env_set_color_scheme(EnvironmentValues* environment, ElgProp
 /// @param value The theme: an ElgProp of elg::Theme (kind 0: `elg::Theme*`).
 ELG_EXPORT void elg_env_set_theme(EnvironmentValues* environment, ElgProp value) {
     ELG_TRY
+    const Consumed consumed(value);
     environment->set<ThemeKey>(prop<Theme>(value));
     ELG_CATCH_VOID
 }
@@ -624,6 +669,7 @@ ELG_EXPORT void elg_env_set_theme(EnvironmentValues* environment, ElgProp value)
 /// @param value The color: an ElgProp of elg::Color (kind 0: `ElgColor*`; kind 3: a theme color).
 ELG_EXPORT void elg_env_set_foreground(EnvironmentValues* environment, ElgProp value) {
     ELG_TRY
+    const Consumed consumed(value);
     environment->set<ForegroundKey>(prop<Color>(value));
     ELG_CATCH_VOID
 }
@@ -633,6 +679,7 @@ ELG_EXPORT void elg_env_set_foreground(EnvironmentValues* environment, ElgProp v
 /// @param value The color: an ElgProp of elg::Color (kind 0: `ElgColor*`; kind 3: a theme color).
 ELG_EXPORT void elg_env_set_tint(EnvironmentValues* environment, ElgProp value) {
     ELG_TRY
+    const Consumed consumed(value);
     environment->set<TintKey>(prop<Color>(value));
     ELG_CATCH_VOID
 }
@@ -642,6 +689,7 @@ ELG_EXPORT void elg_env_set_tint(EnvironmentValues* environment, ElgProp value) 
 /// @param value Whether they're disabled: an ElgProp of bool (kind 0: `bool*`).
 ELG_EXPORT void elg_env_set_disabled(EnvironmentValues* environment, ElgProp value) {
     ELG_TRY
+    const Consumed consumed(value);
     environment->set<DisabledKey>(prop<bool>(value));
     ELG_CATCH_VOID
 }
@@ -651,6 +699,7 @@ ELG_EXPORT void elg_env_set_disabled(EnvironmentValues* environment, ElgProp val
 /// @param value The delay: an ElgProp of elg::HoverDelay (kind 0: `ElgHoverDelay*`).
 ELG_EXPORT void elg_env_set_hover_delay(EnvironmentValues* environment, ElgProp value) {
     ELG_TRY
+    const Consumed consumed(value);
     environment->set<HoverDelayKey>(prop<HoverDelay>(value));
     ELG_CATCH_VOID
 }
@@ -660,6 +709,7 @@ ELG_EXPORT void elg_env_set_hover_delay(EnvironmentValues* environment, ElgProp 
 /// @param value Whether it's selected: an ElgProp of bool (kind 0: `bool*`).
 ELG_EXPORT void elg_env_set_row_selected(EnvironmentValues* environment, ElgProp value) {
     ELG_TRY
+    const Consumed consumed(value);
     environment->set<RowSelectedKey>(prop<bool>(value));
     ELG_CATCH_VOID
 }
@@ -707,7 +757,8 @@ ELG_EXPORT void elg_env_set_text_field_style(EnvironmentValues* environment,
 ///   once no environment refers to it.
 ELG_EXPORT void elg_env_set_rust_values(EnvironmentValues* environment, ElgClosure values) {
     ELG_TRY
-    environment->set<RustEnvironmentKey>(SharedFn(std::make_shared<const RustFn>(values)));
+    const Consumed consumed(values);
+    environment->set<RustEnvironmentKey>(hold(values));
     ELG_CATCH_VOID
 }
 
@@ -864,9 +915,10 @@ ELG_EXPORT void elg_app_free(App* app) {
 /// @param app The app (borrowed).
 /// @param desc How the window opens (borrowed).
 /// @param content Consumed closure, called once on the UI thread; args: null, ret: `View*` (set
-///   it with elg_view_move_into()).
+///   it with elg_view_move_into()). Required: none is a usage error.
 ELG_EXPORT void elg_app_window(App* app, const ElgWindowDesc* desc, ElgClosure content) {
     ELG_TRY
+    const Consumed consumed(content);
     WindowDesc window;
     window.title = str(desc->title);
     window.width = desc->width;
@@ -885,7 +937,7 @@ ELG_EXPORT void elg_app_window(App* app, const ElgWindowDesc* desc, ElgClosure c
     window.transparent = desc->transparent;
     window.opacity = desc->opacity;
     window.fullscreen = desc->fullscreen;
-    const SharedFn f = std::make_shared<const RustFn>(content);
+    const SharedFn f = required(content, "content");
     app->window(std::move(window), [f]() -> View {
         View result;
         f->call(nullptr, &result);
@@ -921,9 +973,11 @@ ELG_EXPORT void elg_app_quit(App* app) {
 /// a task waits for the next one.
 ///
 /// @param task Consumed closure, a Send closure; it runs on the UI thread. args and ret: null.
+///   Required: none is a usage error.
 ELG_EXPORT void elg_post_to_ui_thread(ElgClosure task) {
     ELG_TRY
-    post_to_ui_thread(action(task));
+    const Consumed consumed(task);
+    post_to_ui_thread(action(required(task, "task")));
     ELG_CATCH_VOID
 }
 
@@ -988,12 +1042,13 @@ ELG_EXPORT Animation* elg_animation_smooth(double duration) {
 /// @param curve Consumed closure; args: `double*`, the fraction of `duration` elapsed (0 to 1);
 ///   ret: `double*`, the progress (0 at the start, 1 at the target), set to the fraction beforehand.
 ///   A panic in it propagates like one in any callback: from an animated property, out of
-///   App::run; from elg_animation_progress(), as its error.
+///   App::run; from elg_animation_progress(), as its error. Required: none is a usage error.
 /// @param duration Seconds; negative counts as 0.
 /// @return The animation, owned by the caller (elg_animation_free()), or nullptr on failure.
 ELG_EXPORT Animation* elg_animation_custom(ElgClosure curve, double duration) {
     ELG_TRY
-    const SharedFn f = std::make_shared<const RustFn>(curve);
+    const Consumed consumed(curve);
+    const SharedFn f = required(curve, "curve");
     return new Animation(Animation::custom(
         [f](double t) {
             double result = t;

@@ -21,9 +21,11 @@
 
 #include <elg/elegance.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <format>
 #include <functional>
 #include <memory>
 #include <string>
@@ -73,11 +75,13 @@ typedef bool (*ElgCallFn)(void* data, void* args, void* ret);
 /// @param data The closure's ElgClosure::data.
 typedef void (*ElgDropFn)(void* data);
 
-/// A Rust closure. `call` null: no closure (optional callbacks). `drop` null: borrowed.
+/// A Rust closure. `call` null: no closure, which only optional callbacks accept; a function that
+/// needs the closure fails with a usage error. `drop` null: borrowed for the duration of the call.
 ///
-/// A function either consumes a closure (Elegance calls `drop` once it's done with it) or borrows
-/// it (calls it only before returning, and never drops it). Each function's doc says which, and
-/// what `args` and `ret` point to.
+/// Elegance calls a closure's `drop` exactly once, when it no longer needs the closure: when the
+/// view or object that keeps it goes, right after the call for a closure it only calls during the
+/// call, and also when the call fails or doesn't use the closure. Each function's doc says what
+/// `args` and `ret` point to.
 struct ElgClosure {
     void* data;     ///< The closure's state, passed to `call` and `drop`.
     ElgCallFn call; ///< Runs the closure; null: no closure.
@@ -171,8 +175,9 @@ struct ElgProp {
     /// Kind 0: the value's C form (`float*`, `bool*`, `ElgStr*`, `ElgColor*`, ...), read during the
     /// call.
     const void* value;
-    /// Kinds 1 and 2: consumed; runs whenever Elegance reads the prop, and writes the C++ value
-    /// into `ret` (strings with elg_string_assign()). Other kinds ignore it and don't drop it.
+    /// Consumed. Kinds 1 and 2: runs whenever Elegance reads the prop, and writes the C++ value
+    /// into `ret` (strings with elg_string_assign()); a null `call` is a usage error. Other kinds
+    /// don't call it, and drop it.
     ElgClosure fn;
 };
 
@@ -394,14 +399,42 @@ private:
 
 using SharedFn = std::shared_ptr<const RustFn>;
 
-inline SharedFn share(ElgClosure closure) {
+// Drops a closure, if it has a drop, and clears it.
+inline void release(ElgClosure& closure) noexcept {
+    if (closure.drop) {
+        closure.drop(closure.data);
+    }
+    closure = {};
+}
+
+// Takes over an optional closure: nullptr for one with a null `call`, which is dropped. Clears
+// `closure`, so that Consumed doesn't drop it again.
+inline SharedFn share(ElgClosure& closure) {
     if (!closure.call) {
-        if (closure.drop) {
-            closure.drop(closure.data);
-        }
+        release(closure);
         return nullptr;
     }
-    return std::make_shared<const RustFn>(closure);
+    SharedFn f = std::make_shared<const RustFn>(closure);
+    closure = {};
+    return f;
+}
+
+// Takes over a closure that only carries data for its `data` and `drop`: its `call`, which may be
+// null, is never made.
+inline SharedFn hold(ElgClosure& closure) {
+    SharedFn f = std::make_shared<const RustFn>(closure);
+    closure = {};
+    return f;
+}
+
+// Takes over a closure the call needs. One with a null `call` is dropped, and is a UsageError
+// that names it.
+inline SharedFn required(ElgClosure& closure, std::string_view name) {
+    if (!closure.call) {
+        release(closure);
+        throw elg::UsageError(std::format("{} is required, but its call is null", name));
+    }
+    return share(closure);
 }
 
 // Calls a borrowed closure (one that lives for the duration of a call).
@@ -443,22 +476,22 @@ inline void sink(ElgStrSink out, void* ctx, const std::string& s) {
 
 // --- std::function adapters over Rust closures ---
 
-inline std::function<void()> action(ElgClosure closure) {
-    const SharedFn f = share(closure);
+// Each adapter takes a closure from share() (optional: none gives an empty function) or
+// required().
+inline std::function<void()> action(SharedFn f) {
     if (!f) {
         return {};
     }
-    return [f] { f->call(nullptr, nullptr); };
+    return [f = std::move(f)] { f->call(nullptr, nullptr); };
 }
 
 // A closure returning R, written by the Rust side into a default-constructed R.
 template <class R>
-std::function<R()> producer(ElgClosure closure) {
-    const SharedFn f = share(closure);
+std::function<R()> producer(SharedFn f) {
     if (!f) {
         return {};
     }
-    return [f] {
+    return [f = std::move(f)] {
         R result{};
         f->call(nullptr, &result);
         return result;
@@ -467,16 +500,15 @@ std::function<R()> producer(ElgClosure closure) {
 
 // A closure taking one argument; Rust receives a pointer to `A` (a C type).
 template <class A>
-std::function<void(A)> consumer(ElgClosure closure) {
-    const SharedFn f = share(closure);
+std::function<void(A)> consumer(SharedFn f) {
     if (!f) {
         return {};
     }
-    return [f](A value) { f->call(&value, nullptr); };
+    return [f = std::move(f)](A value) { f->call(&value, nullptr); };
 }
 
-inline std::function<elg::View()> view_builder(ElgClosure closure) {
-    return producer<elg::View>(closure);
+inline std::function<elg::View()> view_builder(SharedFn f) {
+    return producer<elg::View>(std::move(f));
 }
 
 // --- Conversions between C structs and Elegance values ---
@@ -760,11 +792,12 @@ T blank() {
     }
 }
 
+// Takes over a prop's closure (kinds 1 and 2 need one); Consumed drops the closure of other kinds.
 template <class T>
-elg::Prop<T> prop(const ElgProp& p) {
+elg::Prop<T> prop(ElgProp& p) {
     switch (p.kind) {
     case 1: {
-        const SharedFn f = share(p.fn);
+        const SharedFn f = required(p.fn, "a reactive prop's fn");
         return elg::Prop<T>([f] {
             T result = blank<T>();
             f->call(nullptr, &result);
@@ -772,7 +805,7 @@ elg::Prop<T> prop(const ElgProp& p) {
         });
     }
     case 2: {
-        const SharedFn f = share(p.fn);
+        const SharedFn f = required(p.fn, "an environment prop's fn");
         return elg::Prop<T>([f](const elg::EnvironmentValues& environment) {
             T result = blank<T>();
             f->call(const_cast<elg::EnvironmentValues*>(&environment), &result);
@@ -795,20 +828,86 @@ inline elg::View* out(elg::View view) {
     return new elg::View(std::move(view));
 }
 
-inline elg::View take(elg::View* view) {
+// Takes over a consumed view handle, and clears it.
+inline elg::View take(elg::View*& view) {
     elg::View result = std::move(*view);
-    delete view;
+    delete std::exchange(view, nullptr);
     return result;
 }
 
-inline std::vector<elg::View> take_all(elg::View** views, size_t count) {
+// Takes over a consumed handle of another type (a binding, ...), and clears it.
+template <class H>
+std::unique_ptr<H> own(H*& handle) noexcept {
+    return std::unique_ptr<H>(std::exchange(handle, nullptr));
+}
+
+// A consumed array of view handles, taken over in order by take_all().
+struct ViewArray {
+    elg::View** views = nullptr;
+    size_t count = 0;
+    size_t taken = 0;
+};
+
+inline std::vector<elg::View> take_all(ViewArray& array) {
     std::vector<elg::View> result;
-    result.reserve(count);
-    for (size_t i = 0; i < count; ++i) {
-        result.push_back(take(views[i]));
+    result.reserve(array.count);
+    for (; array.taken < array.count; ++array.taken) {
+        result.push_back(std::move(*array.views[array.taken]));
+        delete array.views[array.taken];
     }
     return result;
 }
+
+// Releases, when a C API call returns or throws, what the call consumes but hasn't taken over:
+// closures (also a prop's), handles (`take_*`) and arrays of view handles. share(), required(),
+// hold(), prop(), own(), take() and take_all() clear what they take over, so each is released
+// exactly once.
+// Declare it first, inside ELG_TRY, naming every consumed argument (by-value copies of options
+// structs that hold closures, too):
+//   const Consumed consumed(take_label, on_click, title);
+template <size_t N>
+class Consumed {
+public:
+    template <class... T>
+        requires(sizeof...(T) == N)
+    explicit Consumed(T&... items) noexcept : items_{item(items)...} {}
+    ~Consumed() {
+        for (const Item& item : items_) {
+            item.release(item.target);
+        }
+    }
+    Consumed(const Consumed&) = delete;
+    Consumed& operator=(const Consumed&) = delete;
+    Consumed(Consumed&&) = delete;
+    Consumed& operator=(Consumed&&) = delete;
+
+private:
+    struct Item {
+        void* target;
+        void (*release)(void*) noexcept;
+    };
+    static Item item(ElgClosure& closure) noexcept {
+        return {&closure, [](void* p) noexcept { elg_shim::release(*static_cast<ElgClosure*>(p)); }};
+    }
+    static Item item(ElgProp& prop) noexcept { return item(prop.fn); }
+    static Item item(ViewArray& array) noexcept {
+        return {&array, [](void* p) noexcept {
+                    auto& a = *static_cast<ViewArray*>(p);
+                    for (; a.taken < a.count; ++a.taken) {
+                        delete a.views[a.taken];
+                    }
+                }};
+    }
+    template <class H>
+    static Item item(H*& handle) noexcept {
+        return {static_cast<void*>(&handle), [](void* p) noexcept { delete std::exchange(*static_cast<H**>(p), nullptr); }};
+    }
+
+    std::array<Item, N> items_;
+};
+
+template <class... T>
+Consumed(T&...) -> Consumed<sizeof...(T)>;
 
 // A Rust component: its body runs each time the view is mounted.
 struct RustComponent {

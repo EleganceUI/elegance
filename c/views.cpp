@@ -19,6 +19,39 @@ using namespace elg_shim;
     ELG_TRY return out(__VA_ARGS__); \
     ELG_CATCH(nullptr)
 
+namespace {
+
+// Releases, when a C API call returns or throws, what the elements of a consumed array of structs
+// hold (closures, handles), from the first element not handed out yet: `release_held` releases
+// one element. next() hands out each element in turn, as a copy for the caller's own Consumed to
+// guard from then on. Declare it first, like Consumed.
+template <class T>
+class ConsumedElements {
+public:
+    ConsumedElements(const T* items, size_t count, void (*release_held)(T&) noexcept) noexcept
+        : items_(items), count_(count), release_held_(release_held) {}
+    ~ConsumedElements() {
+        for (; next_ < count_; ++next_) {
+            T item = items_[next_];
+            release_held_(item);
+        }
+    }
+    ConsumedElements(const ConsumedElements&) = delete;
+    ConsumedElements& operator=(const ConsumedElements&) = delete;
+    ConsumedElements(ConsumedElements&&) = delete;
+    ConsumedElements& operator=(ConsumedElements&&) = delete;
+
+    T next() noexcept { return items_[next_++]; }
+
+private:
+    const T* items_;
+    size_t count_;
+    void (*release_held_)(T&) noexcept;
+    size_t next_ = 0;
+};
+
+} // namespace
+
 // --- Containers ---
 
 /// Wraps `VStack()` (`VStackLayout`): the children in a column.
@@ -29,7 +62,11 @@ using namespace elg_shim;
 /// @param count How many `children` there are.
 /// @return The stack, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_vstack(int32_t alignment, ElgOptLen spacing, View** children, size_t count) {
-    VIEW_TRY(VStackLayout(static_cast<HorizontalAlignment>(alignment), length(spacing))(take_all(children, count)))
+    ELG_TRY
+    ViewArray views{children, count};
+    const Consumed consumed(views);
+    return out(VStackLayout(static_cast<HorizontalAlignment>(alignment), length(spacing))(take_all(views)));
+    ELG_CATCH(nullptr)
 }
 
 /// Wraps `HStack()` (`HStackLayout`): the children in a row.
@@ -40,7 +77,11 @@ ELG_EXPORT View* elg_vstack(int32_t alignment, ElgOptLen spacing, View** childre
 /// @param count How many `children` there are.
 /// @return The stack, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_hstack(int32_t alignment, ElgOptLen spacing, View** children, size_t count) {
-    VIEW_TRY(HStackLayout(static_cast<VerticalAlignment>(alignment), length(spacing))(take_all(children, count)))
+    ELG_TRY
+    ViewArray views{children, count};
+    const Consumed consumed(views);
+    return out(HStackLayout(static_cast<VerticalAlignment>(alignment), length(spacing))(take_all(views)));
+    ELG_CATCH(nullptr)
 }
 
 /// Wraps `ZStack()` (`ZStackLayout`): the children drawn on top of each other, the first at the back.
@@ -50,7 +91,11 @@ ELG_EXPORT View* elg_hstack(int32_t alignment, ElgOptLen spacing, View** childre
 /// @param count How many `children` there are.
 /// @return The stack, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_zstack(ElgAlignment alignment, View** children, size_t count) {
-    VIEW_TRY(ZStackLayout(elg_shim::alignment(alignment))(take_all(children, count)))
+    ELG_TRY
+    ViewArray views{children, count};
+    const Consumed consumed(views);
+    return out(ZStackLayout(elg_shim::alignment(alignment))(take_all(views)));
+    ELG_CATCH(nullptr)
 }
 
 /// Wraps `Spacer()`: flexible space that expands along its stack's axis.
@@ -135,20 +180,26 @@ ELG_EXPORT void elg_stack_layout_place(int32_t kind, ElgAlignment a, ElgOptLen s
 ///
 /// @param take_label What the button shows (consumed).
 /// @param on_click Runs when the button is clicked, or activated with Space or Enter while it has focus. No
-///   args. Must not be none: Button() calls it unchecked.
+///   args. Required: none is a usage error.
 /// @return The button, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_button(View* take_label, ElgClosure on_click) {
-    VIEW_TRY(Button(take(take_label), action(on_click)))
+    ELG_TRY
+    const Consumed consumed(take_label, on_click);
+    return out(Button(take(take_label), action(required(on_click, "on_click"))));
+    ELG_CATCH(nullptr)
 }
 
 /// Wraps `Button()` with a title: like elg_button(), labeled with text.
 ///
 /// @param title A string prop: the button's text.
 /// @param on_click Runs when the button is clicked, or activated with Space or Enter while it has focus. No
-///   args. Must not be none: Button() calls it unchecked.
+///   args. Required: none is a usage error.
 /// @return The button, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_button_title(ElgProp title, ElgClosure on_click) {
-    VIEW_TRY(Button(prop<std::string>(title), action(on_click)))
+    ELG_TRY
+    const Consumed consumed(title, on_click);
+    return out(Button(prop<std::string>(title), action(required(on_click, "on_click"))));
+    ELG_CATCH(nullptr)
 }
 
 /// The options of elg_text_field() (`TextFieldOptions`) and elg_text_area() (`TextAreaOptions`, which has no
@@ -156,11 +207,11 @@ ELG_EXPORT View* elg_button_title(ElgProp title, ElgClosure on_click) {
 struct ElgTextFieldOptions {
     /// Runs on Enter; in a text area, on Ctrl+Enter (Cmd+Enter on macOS). No args; may be none.
     ElgClosure on_submit;
-    /// A bool prop: a password field (`TextFieldOptions::secure`). elg_text_area() doesn't read it, so its
-    /// closure isn't dropped either.
+    /// A bool prop: a password field (`TextFieldOptions::secure`). elg_text_area() doesn't read it (and
+    /// drops its closure).
     ElgProp secure;
     /// An int prop: more than 1 wraps the text and grows up to this many lines (`TextFieldOptions::line_limit`).
-    /// elg_text_area() doesn't read it, so its closure isn't dropped either.
+    /// elg_text_area() doesn't read it (and drops its closure).
     ElgProp line_limit;
     /// Styles ranges of the text after every change (`TextFieldOptions::styler`); may be none.
     /// args: ElgStr* text, ret: std::vector<TextSpan>* (filled with elg_text_spans_push).
@@ -170,12 +221,11 @@ struct ElgTextFieldOptions {
     ElgClosure on_key;
 };
 
-static std::function<std::vector<TextSpan>(std::string_view)> text_styler(ElgClosure styler) {
-    const SharedFn f = share(styler);
+static std::function<std::vector<TextSpan>(std::string_view)> text_styler(SharedFn f) {
     if (!f) {
         return {};
     }
-    return [f](std::string_view text) {
+    return [f = std::move(f)](std::string_view text) {
         std::vector<TextSpan> spans;
         ElgStr arg{text.data(), text.size()};
         f->call(&arg, &spans);
@@ -183,12 +233,11 @@ static std::function<std::vector<TextSpan>(std::string_view)> text_styler(ElgClo
     };
 }
 
-static std::function<bool(const KeyEvent&)> key_handler(ElgClosure on_key) {
-    const SharedFn f = share(on_key);
+static std::function<bool(const KeyEvent&)> key_handler(SharedFn f) {
     if (!f) {
         return {};
     }
-    return [f](const KeyEvent& event) {
+    return [f = std::move(f)](const KeyEvent& event) {
         ElgKeyEvent arg = c_key_event(event);
         bool handled = false;
         f->call(&arg, &handled);
@@ -227,13 +276,15 @@ ELG_EXPORT void elg_text_spans_push(std::vector<TextSpan>* spans, size_t begin, 
 ///   true and a static `line_limit` is above 1.
 ELG_EXPORT View* elg_text_field(ElgProp placeholder, Binding<std::string>* take_text, const ElgTextFieldOptions* o) {
     ELG_TRY
-    const std::unique_ptr<Binding<std::string>> text(take_text);
+    ElgTextFieldOptions c = *o;
+    const Consumed consumed(placeholder, take_text, c.on_submit, c.secure, c.line_limit, c.styler, c.on_key);
+    const std::unique_ptr<Binding<std::string>> text = own(take_text);
     TextFieldOptions options;
-    options.on_submit = action(o->on_submit);
-    options.secure = prop<bool>(o->secure);
-    options.line_limit = prop<int>(o->line_limit);
-    options.styler = text_styler(o->styler);
-    options.on_key = key_handler(o->on_key);
+    options.on_submit = action(share(c.on_submit));
+    options.secure = prop<bool>(c.secure);
+    options.line_limit = prop<int>(c.line_limit);
+    options.styler = text_styler(share(c.styler));
+    options.on_key = key_handler(share(c.on_key));
     return out(TextField(prop<std::string>(placeholder), *text, std::move(options)));
     ELG_CATCH(nullptr)
 }
@@ -243,15 +294,18 @@ ELG_EXPORT View* elg_text_field(ElgProp placeholder, Binding<std::string>* take_
 ///
 /// @param placeholder A string prop: shown while the text is empty.
 /// @param take_text The text (consumed).
-/// @param o The options (borrowed; their closures are taken over). `secure` and `line_limit` are ignored.
+/// @param o The options (borrowed; their closures are taken over). `secure` and `line_limit` are
+///   ignored, and their closures dropped.
 /// @return The text area, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_text_area(ElgProp placeholder, Binding<std::string>* take_text, const ElgTextFieldOptions* o) {
     ELG_TRY
-    const std::unique_ptr<Binding<std::string>> text(take_text);
+    ElgTextFieldOptions c = *o;
+    const Consumed consumed(placeholder, take_text, c.on_submit, c.secure, c.line_limit, c.styler, c.on_key);
+    const std::unique_ptr<Binding<std::string>> text = own(take_text);
     TextAreaOptions options;
-    options.on_submit = action(o->on_submit);
-    options.styler = text_styler(o->styler);
-    options.on_key = key_handler(o->on_key);
+    options.on_submit = action(share(c.on_submit));
+    options.styler = text_styler(share(c.styler));
+    options.on_key = key_handler(share(c.on_key));
     return out(TextArea(prop<std::string>(placeholder), *text, std::move(options)));
     ELG_CATCH(nullptr)
 }
@@ -268,12 +322,13 @@ ELG_EXPORT View* elg_text_area(ElgProp placeholder, Binding<std::string>* take_t
 /// @return The slider, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_slider(Binding<float>* take_value, ElgProp min, ElgProp max, ElgProp step, ElgClosure on_editing_changed) {
     ELG_TRY
-    const std::unique_ptr<Binding<float>> value(take_value);
+    const Consumed consumed(take_value, min, max, step, on_editing_changed);
+    const std::unique_ptr<Binding<float>> value = own(take_value);
     SliderOptions options;
     options.min = prop<float>(min);
     options.max = prop<float>(max);
     options.step = prop<float>(step);
-    options.on_editing_changed = consumer<bool>(on_editing_changed);
+    options.on_editing_changed = consumer<bool>(share(on_editing_changed));
     return out(Slider(*value, std::move(options)));
     ELG_CATCH(nullptr)
 }
@@ -312,20 +367,22 @@ struct ElgOptNumber {
 /// @return The number input, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_number_input(Binding<double>* take_value, bool integer, const ElgNumberInputOptions* o) {
     ELG_TRY
-    const std::unique_ptr<Binding<double>> value(take_value);
+    ElgNumberInputOptions c = *o;
+    const Consumed consumed(take_value, c.min, c.max, c.step, c.decimals, c.format, c.parse, c.live, c.shows_buttons, c.scrubs);
+    const std::unique_ptr<Binding<double>> value = own(take_value);
     NumberInputOptions options;
-    options.min = prop<double>(o->min);
-    options.max = prop<double>(o->max);
-    options.step = prop<double>(o->step);
-    options.decimals = prop<int>(o->decimals);
-    if (const SharedFn f = share(o->format)) {
+    options.min = prop<double>(c.min);
+    options.max = prop<double>(c.max);
+    options.step = prop<double>(c.step);
+    options.decimals = prop<int>(c.decimals);
+    if (const SharedFn f = share(c.format)) {
         options.format = [f](double v) {
             std::string result;
             f->call(&v, &result);
             return result;
         };
     }
-    if (const SharedFn f = share(o->parse)) {
+    if (const SharedFn f = share(c.parse)) {
         options.parse = [f](std::string_view text) {
             ElgStr arg{text.data(), text.size()};
             ElgOptNumber result{};
@@ -333,9 +390,9 @@ ELG_EXPORT View* elg_number_input(Binding<double>* take_value, bool integer, con
             return result.has ? std::optional<double>(result.value) : std::nullopt;
         };
     }
-    options.live = prop<bool>(o->live);
-    options.shows_buttons = prop<bool>(o->shows_buttons);
-    options.scrubs = prop<bool>(o->scrubs);
+    options.live = prop<bool>(c.live);
+    options.shows_buttons = prop<bool>(c.shows_buttons);
+    options.scrubs = prop<bool>(c.scrubs);
     return out(detail::make_number_input(*value, integer, std::move(options)));
     ELG_CATCH(nullptr)
 }
@@ -345,24 +402,30 @@ ELG_EXPORT View* elg_number_input(Binding<double>* take_value, bool integer, con
 /// @param fraction An optional float prop (ElgOptLen): 0...1, or unset while indeterminate.
 /// @return The progress view, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_progress(ElgProp fraction) {
-    VIEW_TRY(Progress(prop<std::optional<float>>(fraction)))
+    ELG_TRY
+    const Consumed consumed(fraction);
+    return out(Progress(prop<std::optional<float>>(fraction)));
+    ELG_CATCH(nullptr)
 }
 
 /// Wraps `Picker()`: one of several options, chosen by index. Its look comes from the PickerStyle.
 ///
 /// @param labels The options' labels (copied).
 /// @param count How many `labels` there are.
-/// @param selected The chosen option's index, `count` while none is. ret: size_t*.
-/// @param select Chooses an option. args: size_t* (its index).
+/// @param selected The chosen option's index, `count` while none is. ret: size_t*. Required: none is a usage
+///   error.
+/// @param select Chooses an option. args: size_t* (its index). Required: none is a usage error.
 /// @return The picker, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_picker(const ElgStr* labels, size_t count, ElgClosure selected, ElgClosure select) {
     ELG_TRY
+    const Consumed consumed(selected, select);
     std::vector<std::string> names;
     names.reserve(count);
     for (size_t i = 0; i < count; ++i) {
         names.push_back(str(labels[i]));
     }
-    return out(detail::make_picker(std::move(names), producer<std::size_t>(selected), consumer<std::size_t>(select)));
+    return out(detail::make_picker(std::move(names), producer<std::size_t>(required(selected, "selected")),
+                                   consumer<std::size_t>(required(select, "select"))));
     ELG_CATCH(nullptr)
 }
 
@@ -374,7 +437,8 @@ ELG_EXPORT View* elg_picker(const ElgStr* labels, size_t count, ElgClosure selec
 /// @return The toggle, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_toggle(View* take_label, Binding<bool>* take_is_on) {
     ELG_TRY
-    const std::unique_ptr<Binding<bool>> is_on(take_is_on);
+    const Consumed consumed(take_label, take_is_on);
+    const std::unique_ptr<Binding<bool>> is_on = own(take_is_on);
     if (!take_label) {
         return out(Toggle(*is_on));
     }
@@ -389,7 +453,8 @@ ELG_EXPORT View* elg_toggle(View* take_label, Binding<bool>* take_is_on) {
 /// @return The toggle, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_toggle_title(ElgProp title, Binding<bool>* take_is_on) {
     ELG_TRY
-    const std::unique_ptr<Binding<bool>> is_on(take_is_on);
+    const Consumed consumed(title, take_is_on);
+    const std::unique_ptr<Binding<bool>> is_on = own(take_is_on);
     return out(Toggle(prop<std::string>(title), *is_on));
     ELG_CATCH(nullptr)
 }
@@ -403,7 +468,8 @@ ELG_EXPORT View* elg_toggle_title(ElgProp title, Binding<bool>* take_is_on) {
 /// @return The check box, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_checkbox(View* take_label, Binding<bool>* take_is_checked, ElgProp mixed) {
     ELG_TRY
-    const std::unique_ptr<Binding<bool>> is_checked(take_is_checked);
+    const Consumed consumed(take_label, take_is_checked, mixed);
+    const std::unique_ptr<Binding<bool>> is_checked = own(take_is_checked);
     CheckboxOptions options{prop<bool>(mixed)};
     if (!take_label) {
         return out(Checkbox(*is_checked, std::move(options)));
@@ -420,7 +486,8 @@ ELG_EXPORT View* elg_checkbox(View* take_label, Binding<bool>* take_is_checked, 
 /// @return The check box, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_checkbox_title(ElgProp title, Binding<bool>* take_is_checked, ElgProp mixed) {
     ELG_TRY
-    const std::unique_ptr<Binding<bool>> is_checked(take_is_checked);
+    const Consumed consumed(title, take_is_checked, mixed);
+    const std::unique_ptr<Binding<bool>> is_checked = own(take_is_checked);
     return out(Checkbox(prop<std::string>(title), *is_checked, CheckboxOptions{prop<bool>(mixed)}));
     ELG_CATCH(nullptr)
 }
@@ -433,7 +500,10 @@ ELG_EXPORT View* elg_checkbox_title(ElgProp title, Binding<bool>* take_is_checke
 /// @param inset Left clear at both ends, in points.
 /// @return The separator, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_separator(int32_t axis, ElgProp color, float thickness, float inset) {
-    VIEW_TRY(Separator(static_cast<Axis>(axis), {prop<Color>(color), thickness, inset}))
+    ELG_TRY
+    const Consumed consumed(color);
+    return out(Separator(static_cast<Axis>(axis), {prop<Color>(color), thickness, inset}));
+    ELG_CATCH(nullptr)
 }
 
 // --- Structure ---
@@ -446,7 +516,10 @@ ELG_EXPORT View* elg_separator(int32_t axis, ElgProp color, float thickness, flo
 /// @param take_else Shown otherwise (consumed); an empty view for nothing.
 /// @return The view, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_if(ElgProp condition, View* take_then, View* take_else) {
-    VIEW_TRY(If(prop<bool>(condition), take(take_then), take(take_else)))
+    ELG_TRY
+    const Consumed consumed(condition, take_then, take_else);
+    return out(If(prop<bool>(condition), take(take_then), take(take_else)));
+    ELG_CATCH(nullptr)
 }
 
 /// One ForEach item (`detail::ForEachItem`), for elg_for_each_items_push().
@@ -454,18 +527,19 @@ struct ElgForEachItem {
     bool key_is_string; ///< The item's key is `string_key`; otherwise `int_key`.
     int64_t int_key;    ///< The key, when it isn't a string.
     ElgStr string_key;  ///< The key, when it's a string (copied).
-    /// Owns the Rust item, which Elegance keeps to compare with the next update's; its `call` is unused.
+    /// Owns the Rust item, which Elegance keeps to compare with the next update's; its `call` is unused
+    /// and may be null.
     ElgClosure value;
     /// Compares two items' Rust data (their `value` closures' `data`): true when they're equal, so the item
     /// keeps its view.
     bool (*equals)(void* a, void* b);
-    ElgClosure view; ///< Builds the item's view. ret: View*.
+    ElgClosure view; ///< Builds the item's view. ret: View*. Required: none is a usage error.
 };
 
 namespace {
 
 struct RustItem {
-    std::shared_ptr<const RustFn> value;
+    SharedFn value;
     bool (*equals)(void*, void*);
 };
 
@@ -475,16 +549,9 @@ bool rust_items_equal(const void* a, const void* b) {
     return x->equals == y->equals && x->equals(x->value->data(), y->value->data());
 }
 
-std::vector<detail::ForEachItem> items_from(const ElgForEachItem* items, size_t count) {
-    std::vector<detail::ForEachItem> result;
-    result.reserve(count);
-    for (size_t i = 0; i < count; ++i) {
-        const ElgForEachItem& item = items[i];
-        ItemKey key = item.key_is_string ? ItemKey(str(item.string_key)) : ItemKey(item.int_key);
-        auto value = std::make_shared<const RustItem>(RustItem{std::make_shared<const RustFn>(item.value), item.equals});
-        result.push_back({std::move(key), value, &rust_items_equal, view_builder(item.view)});
-    }
-    return result;
+void release_held(ElgForEachItem& item) noexcept {
+    release(item.value);
+    release(item.view);
 }
 
 } // namespace
@@ -493,11 +560,12 @@ std::vector<detail::ForEachItem> items_from(const ElgForEachItem* items, size_t 
 /// views (and state), changed ones are rebuilt and removed ones are removed.
 ///
 /// @param items Lists the items; a tracked read, so the ForEach updates when what it reads changes. ret:
-///   std::vector<ForEachItem>* (filled with elg_for_each_items_push). Must not be none.
+///   std::vector<ForEachItem>* (filled with elg_for_each_items_push). Required: none is a usage error.
 /// @return The ForEach, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_for_each(ElgClosure items) {
     ELG_TRY
-    const SharedFn f = std::make_shared<const RustFn>(items);
+    const Consumed consumed(items);
+    const SharedFn f = required(items, "items");
     return out(detail::make_for_each([f] {
         std::vector<detail::ForEachItem> result;
         f->call(nullptr, &result);
@@ -514,7 +582,17 @@ ELG_EXPORT View* elg_for_each(ElgClosure items) {
 /// @param count How many `items` there are.
 ELG_EXPORT void elg_for_each_items_push(std::vector<detail::ForEachItem>* target, const ElgForEachItem* items, size_t count) {
     ELG_TRY
-    for (auto& item : items_from(items, count)) {
+    ConsumedElements<ElgForEachItem> elements(items, count, &release_held);
+    std::vector<detail::ForEachItem> result;
+    result.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        ElgForEachItem item = elements.next();
+        const Consumed consumed(item.value, item.view);
+        ItemKey key = item.key_is_string ? ItemKey(str(item.string_key)) : ItemKey(item.int_key);
+        auto value = std::make_shared<const RustItem>(RustItem{hold(item.value), item.equals});
+        result.push_back({std::move(key), value, &rust_items_equal, view_builder(required(item.view, "items[].view"))});
+    }
+    for (auto& item : result) {
         target->push_back(std::move(item));
     }
     ELG_CATCH_VOID
@@ -597,6 +675,7 @@ ELG_EXPORT void elg_scroll_position_to_string(const ScrollPosition* position, El
 ELG_EXPORT View* elg_scroll_view(View* take_content, int32_t axes, ElgProp shows_indicators, const ScrollPosition* position,
                                  ElgProp sticks_to_end) {
     ELG_TRY
+    const Consumed consumed(take_content, shows_indicators, sticks_to_end);
     ScrollViewOptions options;
     options.axes = static_cast<ScrollAxes>(axes);
     options.shows_indicators = prop<bool>(shows_indicators);
@@ -615,13 +694,14 @@ struct ElgStackSeparators {
     float thickness; ///< The lines' thickness, in points.
 };
 
-static std::optional<StackSeparators> stack_separators(const ElgStackSeparators* s) {
+// `color`: the caller's copy of `s->color`, which its Consumed guards.
+static std::optional<StackSeparators> stack_separators(const ElgStackSeparators* s, ElgProp& color) {
     if (!s) {
         return std::nullopt;
     }
     // libc++'s std::function points into its own small buffer, and re-points it when moved.
     // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
-    return StackSeparators{prop<Color>(s->color), s->inset, s->thickness};
+    return StackSeparators{prop<Color>(color), s->inset, s->thickness};
 }
 
 /// Wraps `LazyVStack()` and `LazyHStack()`: like a stack over a ForEach, but only the items in or near the
@@ -638,11 +718,13 @@ static std::optional<StackSeparators> stack_separators(const ElgStackSeparators*
 ELG_EXPORT View* elg_lazy_stack(bool vertical, int32_t alignment, ElgOptLen spacing, const ElgStackSeparators* separators,
                                 View* take_for_each) {
     ELG_TRY
+    ElgProp color = separators ? separators->color : ElgProp{};
+    const Consumed consumed(color, take_for_each);
     if (vertical) {
-        return out(LazyVStack({static_cast<HorizontalAlignment>(alignment), length(spacing), stack_separators(separators)},
+        return out(LazyVStack({static_cast<HorizontalAlignment>(alignment), length(spacing), stack_separators(separators, color)},
                               take(take_for_each)));
     }
-    return out(LazyHStack({static_cast<VerticalAlignment>(alignment), length(spacing), stack_separators(separators)},
+    return out(LazyHStack({static_cast<VerticalAlignment>(alignment), length(spacing), stack_separators(separators, color)},
                           take(take_for_each)));
     ELG_CATCH(nullptr)
 }
@@ -661,26 +743,31 @@ ELG_EXPORT View* elg_lazy_stack(bool vertical, int32_t alignment, ElgOptLen spac
 ELG_EXPORT View* elg_menu_item(ElgProp title, ElgClosure on_choose, ElgProp shortcut, ElgProp destructive,
                                const ElgProp* checked, const ElgImageSource* image) {
     ELG_TRY
+    ElgProp check = checked ? *checked : ElgProp{};
+    const Consumed consumed(title, on_choose, shortcut, destructive, check);
     MenuItemOptions options;
     options.shortcut = prop<std::string>(shortcut);
     options.destructive = prop<bool>(destructive);
     if (checked) {
-        options.checked = prop<bool>(*checked);
+        options.checked = prop<bool>(check);
     }
     if (image) {
         options.image = image_source(*image);
     }
-    return out(MenuItem(prop<std::string>(title), action(on_choose), std::move(options)));
+    return out(MenuItem(prop<std::string>(title), action(share(on_choose)), std::move(options)));
     ELG_CATCH(nullptr)
 }
 
 /// Wraps `Submenu()`: a menu item that opens another menu beside it (on hover, click, or Right).
 ///
 /// @param title A string prop: the item's text.
-/// @param menu Builds the menu, usually with elg_menu(). ret: View*.
+/// @param menu Builds the menu, usually with elg_menu(). ret: View*. Required: none is a usage error.
 /// @return The submenu item, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_submenu(ElgProp title, ElgClosure menu) {
-    VIEW_TRY(Submenu(prop<std::string>(title), view_builder(menu)))
+    ELG_TRY
+    const Consumed consumed(title, menu);
+    return out(Submenu(prop<std::string>(title), view_builder(required(menu, "menu"))));
+    ELG_CATCH(nullptr)
 }
 
 /// Wraps `Menu()`: the menu panel, its items stacked in the MenuStyle's panel. Up/Down move between items,
@@ -690,15 +777,19 @@ ELG_EXPORT View* elg_submenu(ElgProp title, ElgClosure menu) {
 /// @param count How many `items` there are.
 /// @return The menu, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_menu(View** items, size_t count) {
-    VIEW_TRY(detail::make_menu(take_all(items, count)))
+    ELG_TRY
+    ViewArray views{items, count};
+    const Consumed consumed(views);
+    return out(detail::make_menu(take_all(views)));
+    ELG_CATCH(nullptr)
 }
 
 /// Wraps `MenuButton()`: a button that opens the menu `menu` builds, in a popup window.
 ///
 /// @param take_label The button's label (consumed); null: `title` is.
 /// @param title A string prop for the label, read when `take_label` is null (borrowed; its closure is taken
-///   over).
-/// @param menu Builds the menu, usually with elg_menu(). ret: View*.
+///   over); null: `take_label` is. One of the two is required: both null is a usage error.
+/// @param menu Builds the menu, usually with elg_menu(). ret: View*. Required: none is a usage error.
 /// @param placement Where the menu opens (borrowed; required).
 /// @param shows_indicator A bool prop: the chevron after the label.
 /// @param popup_motion How the menu opens and closes; `has` false: the MenuStyle's.
@@ -706,14 +797,19 @@ ELG_EXPORT View* elg_menu(View** items, size_t count) {
 ELG_EXPORT View* elg_menu_button(View* take_label, const ElgProp* title, ElgClosure menu, const ElgFloatingPlacement* placement,
                                  ElgProp shows_indicator, ElgPopupMotion popup_motion) {
     ELG_TRY
+    ElgProp label_title = title ? *title : ElgProp{};
+    const Consumed consumed(take_label, label_title, menu, shows_indicator);
+    if (!take_label && !title) {
+        throw UsageError("elg_menu_button needs take_label or title");
+    }
     MenuButtonOptions options;
     options.placement = elg_shim::placement(*placement);
     options.shows_indicator = prop<bool>(shows_indicator);
     options.motion = motion(popup_motion);
     if (take_label) {
-        return out(MenuButton(take(take_label), view_builder(menu), std::move(options)));
+        return out(MenuButton(take(take_label), view_builder(required(menu, "menu")), std::move(options)));
     }
-    return out(MenuButton(prop<std::string>(*title), view_builder(menu), std::move(options)));
+    return out(MenuButton(prop<std::string>(label_title), view_builder(required(menu, "menu")), std::move(options)));
     ELG_CATCH(nullptr)
 }
 
@@ -727,11 +823,13 @@ struct ElgSplitViewOptions {
     float active_thickness;        ///< Drawn over the line while it's hovered or dragged, in points.
 };
 
-static SplitViewOptions split_view_options(const ElgSplitViewOptions& o) {
+// `divider` and `active_divider`: the caller's copies of o's props, which its Consumed guards
+// (`active_divider` empty when `o.active_divider` is null).
+static SplitViewOptions split_view_options(const ElgSplitViewOptions& o, ElgProp& divider, ElgProp& active_divider) {
     SplitViewOptions result;
-    result.divider = prop<Color>(o.divider);
+    result.divider = prop<Color>(divider);
     if (o.active_divider) {
-        result.active_divider = prop<Color>(*o.active_divider);
+        result.active_divider = prop<Color>(active_divider);
     }
     result.thickness = o.thickness;
     result.active_thickness = o.active_thickness;
@@ -747,7 +845,14 @@ static SplitViewOptions split_view_options(const ElgSplitViewOptions& o) {
 /// @param options How the dividers look (borrowed; required).
 /// @return The split view, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_split_view(int32_t axis, View** panes, size_t count, const ElgSplitViewOptions* options) {
-    VIEW_TRY(detail::make_split_view(static_cast<Axis>(axis), take_all(panes, count), split_view_options(*options)))
+    ELG_TRY
+    ViewArray views{panes, count};
+    ElgProp divider = options->divider;
+    ElgProp active_divider = options->active_divider ? *options->active_divider : ElgProp{};
+    const Consumed consumed(views, divider, active_divider);
+    return out(detail::make_split_view(static_cast<Axis>(axis), take_all(views),
+                                       split_view_options(*options, divider, active_divider)));
+    ELG_CATCH(nullptr)
 }
 
 /// A column's width range, in points (`ColumnWidth`).
@@ -777,18 +882,22 @@ struct ElgNavigationSplitViewOptions {
 ELG_EXPORT View* elg_navigation_split_view(View* take_sidebar, View* take_content, View* take_detail,
                                            const ElgNavigationSplitViewOptions* o) {
     ELG_TRY
+    ElgNavigationSplitViewOptions c = *o;
+    ElgProp active_divider = c.dividers.active_divider ? *c.dividers.active_divider : ElgProp{};
+    const Consumed consumed(take_sidebar, take_content, take_detail, c.take_sidebar_visible, c.sidebar_background,
+                            c.dividers.divider, active_divider);
     NavigationSplitViewOptions options;
-    if (o->take_sidebar_visible) {
-        const std::unique_ptr<Binding<bool>> visible(o->take_sidebar_visible);
+    if (c.take_sidebar_visible) {
+        const std::unique_ptr<Binding<bool>> visible = own(c.take_sidebar_visible);
         options.sidebar_visible = *visible;
     }
-    options.sidebar_transition = *o->sidebar_transition;
-    options.sidebar_background = prop<Color>(o->sidebar_background);
+    options.sidebar_transition = *c.sidebar_transition;
+    options.sidebar_background = prop<Color>(c.sidebar_background);
     const auto width = [](ElgColumnWidth w) { return ColumnWidth{w.min, w.ideal, w.max}; };
-    options.sidebar_width = width(o->sidebar_width);
-    options.content_width = width(o->content_width);
-    options.detail_width = width(o->detail_width);
-    options.dividers = split_view_options(o->dividers);
+    options.sidebar_width = width(c.sidebar_width);
+    options.content_width = width(c.content_width);
+    options.detail_width = width(c.detail_width);
+    options.dividers = split_view_options(c.dividers, c.dividers.divider, active_divider);
     if (take_content) {
         return out(NavigationSplitView(take(take_sidebar), take(take_content), take(take_detail), options));
     }
@@ -801,11 +910,11 @@ ELG_EXPORT View* elg_navigation_split_view(View* take_sidebar, View* take_conten
 ///
 /// @param take_root The root page (consumed).
 /// @param pages A page per route in the path; a tracked read of the path, as NavigationStack does. ret:
-///   std::vector<ForEachItem>* (filled with elg_for_each_items_push). Must not be none.
+///   std::vector<ForEachItem>* (filled with elg_for_each_items_push). Required: none is a usage error.
 /// @param titles The root's title, then each pushed page's, for the style; a tracked read of the path. ret:
-///   std::vector<std::string>* (filled with elg_strings_push). Must not be none.
+///   std::vector<std::string>* (filled with elg_strings_push). Required: none is a usage error.
 /// @param pop Removes the last route from the path (Alt+Left, the back gestures, a style's back button). No
-///   args.
+///   args. Required: none is a usage error.
 /// @param transition `PageTransition`: 0 slide, 1 fade, 2 none.
 /// @param animation For pushes and pops that aren't animated themselves (borrowed); null: they change at once.
 /// @param back_gestures Alt+Left, and swiping right with two fingers on a trackpad (macOS), go back.
@@ -813,8 +922,10 @@ ELG_EXPORT View* elg_navigation_split_view(View* take_sidebar, View* take_conten
 ELG_EXPORT View* elg_navigation_stack(View* take_root, ElgClosure pages, ElgClosure titles, ElgClosure pop,
                                       int32_t transition, const Animation* animation, bool back_gestures) {
     ELG_TRY
-    const SharedFn p = std::make_shared<const RustFn>(pages);
-    const SharedFn t = std::make_shared<const RustFn>(titles);
+    const Consumed consumed(take_root, pages, titles, pop);
+    const SharedFn p = required(pages, "pages");
+    const SharedFn t = required(titles, "titles");
+    const std::function<void()> back = action(required(pop, "pop"));
     return out(detail::make_navigation_stack(
         take(take_root),
         [p] {
@@ -827,7 +938,7 @@ ELG_EXPORT View* elg_navigation_stack(View* take_root, ElgClosure pages, ElgClos
             t->call(nullptr, &result);
             return result;
         },
-        action(pop), {static_cast<PageTransition>(transition), elg_shim::animation(animation), back_gestures}));
+        back, {static_cast<PageTransition>(transition), elg_shim::animation(animation), back_gestures}));
     ELG_CATCH(nullptr)
 }
 
@@ -847,6 +958,7 @@ ELG_EXPORT void elg_strings_push(std::vector<std::string>* target, ElgStr value)
 /// @return The text, owned by the caller (free it with elg_text_free()), or null on failure.
 ELG_EXPORT Text* elg_text(ElgProp content) {
     ELG_TRY
+    const Consumed consumed(content);
     return new Text(prop<std::string>(content));
     ELG_CATCH(nullptr)
 }
@@ -877,6 +989,7 @@ ELG_EXPORT View* elg_text_to_view(const Text* text) {
 /// @return `text` in that font (a new Text, owned by the caller), or null on failure.
 ELG_EXPORT Text* elg_text_font(const Text* text, ElgProp f) {
     ELG_TRY
+    const Consumed consumed(f);
     return new Text(text->font(prop<Font>(f)));
     ELG_CATCH(nullptr)
 }
@@ -887,6 +1000,7 @@ ELG_EXPORT Text* elg_text_font(const Text* text, ElgProp f) {
 /// @return `text` in that weight (a new Text, owned by the caller), or null on failure.
 ELG_EXPORT Text* elg_text_font_weight(const Text* text, ElgProp weight) {
     ELG_TRY
+    const Consumed consumed(weight);
     return new Text(text->font_weight(prop<Weight>(weight)));
     ELG_CATCH(nullptr)
 }
@@ -906,6 +1020,7 @@ ELG_EXPORT Text* elg_text_bold(const Text* text) {
 /// @return `text` in that color (a new Text, owned by the caller), or null on failure.
 ELG_EXPORT Text* elg_text_foreground_style(const Text* text, ElgProp color) {
     ELG_TRY
+    const Consumed consumed(color);
     return new Text(text->foreground_style(prop<Color>(color)));
     ELG_CATCH(nullptr)
 }
@@ -940,6 +1055,11 @@ struct ElgTextRun {
     float attachment_size; ///< The attachment's square, in ems; it's centered on the line.
 };
 
+static void release_held(ElgTextRun& run) noexcept {
+    release(run.on_tap);
+    delete std::exchange(run.take_attachment, nullptr);
+}
+
 /// Wraps `StyledText()`: text made of runs in different weights, colors and highlights, wrapping like Text.
 ///
 /// @param runs The runs (borrowed; their closures and attachments are taken over).
@@ -947,17 +1067,20 @@ struct ElgTextRun {
 /// @return The view, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_styled_text(const ElgTextRun* runs, size_t count) {
     ELG_TRY
+    ConsumedElements<ElgTextRun> elements(runs, count, &release_held);
     std::vector<TextRun> result;
     result.reserve(count);
     for (size_t i = 0; i < count; ++i) {
+        ElgTextRun c = elements.next();
+        const Consumed consumed(c.on_tap, c.take_attachment);
         TextRun run;
-        run.text = str(runs[i].text);
-        run.style = run_style(runs[i].style);
-        run.on_tap = action(runs[i].on_tap);
-        if (runs[i].take_attachment) {
-            run.attachment = take(runs[i].take_attachment);
+        run.text = str(c.text);
+        run.style = run_style(c.style);
+        run.on_tap = action(share(c.on_tap));
+        if (c.take_attachment) {
+            run.attachment = take(c.take_attachment);
         }
-        run.attachment_size = runs[i].attachment_size;
+        run.attachment_size = c.attachment_size;
         result.push_back(std::move(run));
     }
     return out(StyledText(std::move(result)));
@@ -1036,12 +1159,13 @@ ELG_EXPORT Shape* elg_path_shape(const Path* path, const ElgRect* view_box, int3
 /// Wraps `CustomShape()`: a shape whose path depends on its frame, rebuilt when the frame's size changes.
 ///
 /// @param path Builds the outline for the frame's size, given as a rect at (0, 0). args: ElgRect*, ret: Path*
-///   (written with elg_path_assign). Must not be none.
+///   (written with elg_path_assign). Required: none is a usage error.
 /// @param fill_rule `FillRule`: 0 non-zero, 1 even-odd.
 /// @return The shape, owned by the caller, or null on failure.
 ELG_EXPORT Shape* elg_custom_shape(ElgClosure path, int32_t fill_rule) {
     ELG_TRY
-    const SharedFn f = std::make_shared<const RustFn>(path);
+    const Consumed consumed(path);
+    const SharedFn f = required(path, "path");
     return new Shape(CustomShape(
         [f](Rect bounds) {
             ElgRect arg = c_rect(bounds);
@@ -1059,6 +1183,7 @@ ELG_EXPORT Shape* elg_custom_shape(ElgClosure path, int32_t fill_rule) {
 /// @return `shape` filled with `style` (a new Shape, owned by the caller), or null on failure.
 ELG_EXPORT Shape* elg_shape_fill(const Shape* shape, ElgProp style) {
     ELG_TRY
+    const Consumed consumed(style);
     return new Shape(shape->fill(prop<ShapeStyle>(style)));
     ELG_CATCH(nullptr)
 }
@@ -1071,6 +1196,7 @@ ELG_EXPORT Shape* elg_shape_fill(const Shape* shape, ElgProp style) {
 /// @return `shape` with the line (a new Shape, owned by the caller), or null on failure.
 ELG_EXPORT Shape* elg_shape_stroke(const Shape* shape, ElgProp color, const ElgStrokeStyle* style) {
     ELG_TRY
+    const Consumed consumed(color);
     return new Shape(shape->stroke(prop<Color>(color), stroke_style(*style)));
     ELG_CATCH(nullptr)
 }
@@ -1082,6 +1208,7 @@ ELG_EXPORT Shape* elg_shape_stroke(const Shape* shape, ElgProp color, const ElgS
 /// @return `shape` with the line (a new Shape, owned by the caller), or null on failure.
 ELG_EXPORT Shape* elg_shape_stroke_border(const Shape* shape, ElgProp color, float line_width) {
     ELG_TRY
+    const Consumed consumed(color);
     return new Shape(shape->stroke_border(prop<Color>(color), line_width));
     ELG_CATCH(nullptr)
 }
@@ -1263,13 +1390,16 @@ struct ElgPolyline {
 ///
 /// @param path The path (borrowed).
 /// @param tolerance The farthest the lines may stray from the curves, in points.
-/// @param polyline Called once per flattened subpath, during this call, and not dropped. args: ElgPolyline*.
+/// @param polyline Called once per flattened subpath, during this call. args: ElgPolyline*. Required: none is a
+///   usage error.
 ELG_EXPORT void elg_path_flatten(const Path* path, float tolerance, ElgClosure polyline) {
     ELG_TRY
+    const Consumed consumed(polyline);
+    const SharedFn f = required(polyline, "polyline");
     for (const Path::Polyline& line : path->flatten(tolerance)) {
         static_assert(sizeof(Point) == sizeof(ElgPoint));
         ElgPolyline arg{reinterpret_cast<const ElgPoint*>(line.points.data()), line.points.size(), line.closed};
-        call_now(polyline, &arg, nullptr);
+        f->call(&arg, nullptr);
     }
     ELG_CATCH_VOID
 }
@@ -1290,11 +1420,12 @@ ELG_EXPORT Path* elg_path_stroked(const Path* path, const ElgStrokeStyle* style,
 /// Wraps `Canvas()`: immediate-mode drawing. It takes the proposed size.
 ///
 /// @param draw Runs every time the view is drawn. args: GraphicsContext* (valid during the call; draw with
-///   the elg_gc_* functions). Must not be none.
+///   the elg_gc_* functions). Required: none is a usage error.
 /// @return The canvas, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_canvas(ElgClosure draw) {
     ELG_TRY
-    const SharedFn f = std::make_shared<const RustFn>(draw);
+    const Consumed consumed(draw);
+    const SharedFn f = required(draw, "draw");
     return out(Canvas([f](GraphicsContext& context) { f->call(&context, nullptr); }));
     ELG_CATCH(nullptr)
 }
@@ -1482,13 +1613,15 @@ struct ElgAsyncImagePhase {
 /// phase.
 ///
 /// @param url The image's URL (copied).
-/// @param content Builds the view for each phase. args: ElgAsyncImagePhase*, ret: View*. Must not be none.
+/// @param content Builds the view for each phase. args: ElgAsyncImagePhase*, ret: View*. Required: none is a
+///   usage error.
 /// @param scale Pixels per point.
 /// @param disk_cache false: kept in memory only, never in the disk cache.
 /// @return The image, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_async_image_content(ElgStr url, ElgClosure content, float scale, bool disk_cache) {
     ELG_TRY
-    const SharedFn f = std::make_shared<const RustFn>(content);
+    const Consumed consumed(content);
+    const SharedFn f = required(content, "content");
     return out(AsyncImage(
         str(url),
         [f](const AsyncImagePhase& phase) {
@@ -1507,7 +1640,10 @@ ELG_EXPORT View* elg_async_image_content(ElgStr url, ElgClosure content, float s
 /// @param icon The icon (borrowed; required).
 /// @return The label, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_label(ElgProp title, const ElgImageSource* icon) {
-    VIEW_TRY(Label(prop<std::string>(title), image_source(*icon)))
+    ELG_TRY
+    const Consumed consumed(title);
+    return out(Label(prop<std::string>(title), image_source(*icon)));
+    ELG_CATCH(nullptr)
 }
 
 /// A font file, or font data in memory (`IconFont`): `data` if it's set, else `file`, else none.
@@ -1646,7 +1782,10 @@ ELG_EXPORT void elg_shape_style_assign(ShapeStyle* target, const ElgShapeStyle* 
 /// @param insets An EdgeInsets prop (ElgEdgeInsets), in points.
 /// @return `v` padded by `insets` (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_padding(const View* v, ElgProp insets) {
-    MOD_TRY(v->padding(prop<EdgeInsets>(insets)))
+    ELG_TRY
+    const Consumed consumed(insets);
+    return out(v->padding(prop<EdgeInsets>(insets)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::padding()` on some edges.
 ///
@@ -1655,7 +1794,10 @@ ELG_EXPORT View* elg_mod_padding(const View* v, ElgProp insets) {
 /// @param length A float prop: the padding, in points.
 /// @return `v` padded on `edges` (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_padding_edges(const View* v, uint32_t edges, ElgProp length) {
-    MOD_TRY(v->padding(static_cast<Edges>(edges), prop<float>(length)))
+    ELG_TRY
+    const Consumed consumed(length);
+    return out(v->padding(static_cast<Edges>(edges), prop<float>(length)));
+    ELG_CATCH(nullptr)
 }
 
 /// The options of elg_mod_frame(): `FrameOptions`, or `FlexibleFrameOptions` when any minimum, ideal or
@@ -1700,7 +1842,10 @@ ELG_EXPORT View* elg_mod_frame(const View* v, const ElgFrameOptions* o) {
 /// @param a Where the content sits in the frame.
 /// @return `v` in the frame (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_frame_size(const View* v, ElgProp size, ElgAlignment a) {
-    MOD_TRY(v->frame(prop<Size>(size), alignment(a)))
+    ELG_TRY
+    const Consumed consumed(size);
+    return out(v->frame(prop<Size>(size), alignment(a)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::fixed_size()`: proposes nothing on the given axes, so the content takes its ideal size.
 ///
@@ -1748,7 +1893,10 @@ ELG_EXPORT View* elg_mod_layout_priority(const View* v, float priority) {
 /// @param z A float prop.
 /// @return `v` at that z index (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_z_index(const View* v, ElgProp z) {
-    MOD_TRY(v->z_index(prop<float>(z)))
+    ELG_TRY
+    const Consumed consumed(z);
+    return out(v->z_index(prop<float>(z)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::offset()`: moves the content when drawn, without affecting layout.
 ///
@@ -1757,7 +1905,10 @@ ELG_EXPORT View* elg_mod_z_index(const View* v, ElgProp z) {
 /// @param y A float prop: the vertical move, in points.
 /// @return `v`, moved (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_offset(const View* v, ElgProp x, ElgProp y) {
-    MOD_TRY(v->offset(prop<float>(x), prop<float>(y)))
+    ELG_TRY
+    const Consumed consumed(x, y);
+    return out(v->offset(prop<float>(x), prop<float>(y)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::background()` with a view.
 ///
@@ -1766,7 +1917,10 @@ ELG_EXPORT View* elg_mod_offset(const View* v, ElgProp x, ElgProp y) {
 /// @param a Where the background sits.
 /// @return `v` on the background (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_background_view(const View* v, View* take_background, ElgAlignment a) {
-    MOD_TRY(v->background(take(take_background), alignment(a)))
+    ELG_TRY
+    const Consumed consumed(take_background);
+    return out(v->background(take(take_background), alignment(a)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::background()` with a color or gradient filling the view's bounds.
 ///
@@ -1774,7 +1928,10 @@ ELG_EXPORT View* elg_mod_background_view(const View* v, View* take_background, E
 /// @param style A ShapeStyle prop (ElgShapeStyle).
 /// @return `v` on the background (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_background(const View* v, ElgProp style) {
-    MOD_TRY(v->background(prop<ShapeStyle>(style)))
+    ELG_TRY
+    const Consumed consumed(style);
+    return out(v->background(prop<ShapeStyle>(style)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::background()` with a color or gradient filling a shape.
 ///
@@ -1783,7 +1940,10 @@ ELG_EXPORT View* elg_mod_background(const View* v, ElgProp style) {
 /// @param shape The shape, filling the view's bounds (borrowed).
 /// @return `v` on the background (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_background_shape(const View* v, ElgProp style, const Shape* shape) {
-    MOD_TRY(v->background(prop<ShapeStyle>(style), *shape))
+    ELG_TRY
+    const Consumed consumed(style);
+    return out(v->background(prop<ShapeStyle>(style), *shape));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::overlay()`.
 ///
@@ -1792,7 +1952,10 @@ ELG_EXPORT View* elg_mod_background_shape(const View* v, ElgProp style, const Sh
 /// @param a Where the overlay sits.
 /// @return `v` under the overlay (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_overlay(const View* v, View* take_overlay, ElgAlignment a) {
-    MOD_TRY(v->overlay(take(take_overlay), alignment(a)))
+    ELG_TRY
+    const Consumed consumed(take_overlay);
+    return out(v->overlay(take(take_overlay), alignment(a)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::border()`: a border drawn inside the view's bounds, or along `shape`.
 ///
@@ -1803,6 +1966,7 @@ ELG_EXPORT View* elg_mod_overlay(const View* v, View* take_overlay, ElgAlignment
 /// @return `v` with the border (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_border(const View* v, ElgProp c, float width, const Shape* shape) {
     ELG_TRY
+    const Consumed consumed(c);
     if (shape) {
         return out(v->border(prop<Color>(c), width, *shape));
     }
@@ -1838,7 +2002,10 @@ ELG_EXPORT View* elg_mod_corner_radius(const View* v, float radius) {
 /// @param opacity A float prop: 0 transparent ... 1 opaque.
 /// @return `v` at that opacity (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_opacity(const View* v, ElgProp opacity) {
-    MOD_TRY(v->opacity(prop<float>(opacity)))
+    ELG_TRY
+    const Consumed consumed(opacity);
+    return out(v->opacity(prop<float>(opacity)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::shadow()`: a blurred shadow of the view's content.
 ///
@@ -1863,7 +2030,10 @@ ELG_EXPORT View* elg_mod_inner_shadow(const View* v, ElgShadow s) {
 /// @param opaque The content fills its bounds: edges stay sharp instead of fading out.
 /// @return `v`, blurred (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_blur(const View* v, ElgProp radius, bool opaque) {
-    MOD_TRY(v->blur(prop<float>(radius), opaque))
+    ELG_TRY
+    const Consumed consumed(radius);
+    return out(v->blur(prop<float>(radius), opaque));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::backdrop_blur()`: blurs what's drawn behind the view in the window (frosted glass), inside
 /// `shape`. Like a background, it goes behind everything the view draws.
@@ -1878,6 +2048,7 @@ ELG_EXPORT View* elg_mod_blur(const View* v, ElgProp radius, bool opaque) {
 ELG_EXPORT View* elg_mod_backdrop_blur(const View* v, ElgProp radius, const Shape* shape, ElgProp saturation,
                                        ElgProp brightness, ElgProp noise) {
     ELG_TRY
+    const Consumed consumed(radius, saturation, brightness, noise);
     const BackdropOptions options{prop<float>(saturation), prop<float>(brightness), prop<float>(noise)};
     if (shape) {
         return out(v->backdrop_blur(prop<float>(radius), *shape, options));
@@ -1897,6 +2068,7 @@ ELG_EXPORT View* elg_mod_backdrop_blur(const View* v, ElgProp radius, const Shap
 /// @return `v`, adjusted (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_color_filter(const View* v, int32_t kind, ElgProp amount, ElgProp c) {
     ELG_TRY
+    const Consumed consumed(amount, c);
     ColorFilter filter;
     filter.kind = static_cast<ColorFilter::Kind>(kind);
     filter.amount = prop<float>(amount);
@@ -1927,7 +2099,10 @@ ELG_EXPORT View* elg_mod_compositing_group(const View* v) {
 /// @param anchor A unit point of the view's bounds; (0.5, 0.5) is the center.
 /// @return `v`, rotated (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_rotation_effect(const View* v, ElgProp degrees, ElgPoint anchor) {
-    MOD_TRY(v->rotation_effect(prop<float>(degrees), unit_point(anchor)))
+    ELG_TRY
+    const Consumed consumed(degrees);
+    return out(v->rotation_effect(prop<float>(degrees), unit_point(anchor)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::scale_effect()`: scales the drawn content about `anchor`, without affecting layout or hit
 /// testing. A uniform scale stays sharp; an uneven one renders offscreen first.
@@ -1940,10 +2115,12 @@ ELG_EXPORT View* elg_mod_rotation_effect(const View* v, ElgProp degrees, ElgPoin
 /// @return `v`, scaled (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_scale_effect(const View* v, ElgProp x, const ElgProp* y, ElgPoint anchor) {
     ELG_TRY
+    ElgProp y_scale = y ? *y : ElgProp{};
+    const Consumed consumed(x, y_scale);
     if (!y) {
         return out(v->scale_effect(prop<float>(x), unit_point(anchor)));
     }
-    return out(v->scale_effect(prop<float>(x), prop<float>(*y), unit_point(anchor)));
+    return out(v->scale_effect(prop<float>(x), prop<float>(y_scale), unit_point(anchor)));
     ELG_CATCH(nullptr)
 }
 /// Wraps `View::mask()` with a view: shows the content only where `take_mask` is opaque.
@@ -1953,7 +2130,10 @@ ELG_EXPORT View* elg_mod_scale_effect(const View* v, ElgProp x, const ElgProp* y
 /// @param a Where the mask sits.
 /// @return `v`, masked (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_mask(const View* v, View* take_mask, ElgAlignment a) {
-    MOD_TRY(v->mask(take(take_mask), alignment(a)))
+    ELG_TRY
+    const Consumed consumed(take_mask);
+    return out(v->mask(take(take_mask), alignment(a)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::mask()` with a color or gradient: shows the content only where `style` is opaque.
 ///
@@ -1961,7 +2141,10 @@ ELG_EXPORT View* elg_mod_mask(const View* v, View* take_mask, ElgAlignment a) {
 /// @param style A ShapeStyle prop (ElgShapeStyle) filling the view's bounds; only its alpha matters.
 /// @return `v`, masked (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_mask_style(const View* v, ElgProp style) {
-    MOD_TRY(v->mask(prop<ShapeStyle>(style)))
+    ELG_TRY
+    const Consumed consumed(style);
+    return out(v->mask(prop<ShapeStyle>(style)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::content_shape()`: hit tests against `shape`, filling the bounds, instead of the drawn content.
 ///
@@ -1982,13 +2165,14 @@ ELG_EXPORT View* elg_mod_allows_hit_testing(const View* v, bool enabled) {
 /// Wraps `View::on_click()`: clicks pressed and released inside the view. The innermost click handler wins.
 ///
 /// @param v The view (borrowed).
-/// @param on_click Runs on each click. args: ElgClickEvent*. Must not be none.
+/// @param on_click Runs on each click. args: ElgClickEvent*. Required: none is a usage error.
 /// @param button `MouseButton`: 0 left, 1 middle, 2 right, 3 other.
 /// @param count The clicks: 1 single, 2 double (the first click goes on to outer handlers), 3 triple, ...
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_on_click(const View* v, ElgClosure on_click, int32_t button, int32_t count) {
     ELG_TRY
-    const SharedFn f = std::make_shared<const RustFn>(on_click);
+    const Consumed consumed(on_click);
+    const SharedFn f = required(on_click, "on_click");
     return out(v->on_click(
         [f](const ClickEvent& event) {
             ElgClickEvent arg = c_click_event(event);
@@ -2001,21 +2185,25 @@ ELG_EXPORT View* elg_mod_on_click(const View* v, ElgClosure on_click, int32_t bu
 /// has focus, or a screen reader's default action. Makes the view focusable; disabled views don't activate.
 ///
 /// @param v The view (borrowed).
-/// @param on_activate The action. No args.
+/// @param on_activate The action. No args. Required: none is a usage error.
 /// @return `v` with the action (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_on_activate(const View* v, ElgClosure on_activate) {
-    MOD_TRY(v->on_activate(action(on_activate)))
+    ELG_TRY
+    const Consumed consumed(on_activate);
+    return out(v->on_activate(action(required(on_activate, "on_activate"))));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::on_size_change()`: called after the first layout and whenever the view's size in pixels
 /// changes, including with the display scale. Runs on the UI thread, before paint.
 ///
 /// @param v The view (borrowed).
 /// @param on_size_change args: ElgPixelSize* (the logical size times the display scale, rounded up; may be
-///   zero). Must not be none.
+///   zero). Required: none is a usage error.
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_on_size_change(const View* v, ElgClosure on_size_change) {
     ELG_TRY
-    const SharedFn f = share(on_size_change);
+    const Consumed consumed(on_size_change);
+    const SharedFn f = required(on_size_change, "on_size_change");
     return out(v->on_size_change([f](PixelSize size) {
         ElgPixelSize arg{size.width, size.height};
         f->call(&arg, nullptr);
@@ -2027,12 +2215,11 @@ ELG_EXPORT View* elg_mod_on_size_change(const View* v, ElgClosure on_size_change
 
 // A callback taking a C event `C` made from the C++ event `E` by `convert`; empty if none.
 template <class E, class C>
-static std::function<void(const E&)> event_callback(ElgClosure closure, C (*convert)(const E&)) {
-    const SharedFn f = share(closure);
+static std::function<void(const E&)> event_callback(SharedFn f, C (*convert)(const E&)) {
     if (!f) {
         return {};
     }
-    return [f, convert](const E& event) {
+    return [f = std::move(f), convert](const E& event) {
         C arg = convert(event);
         f->call(&arg, nullptr);
     };
@@ -2070,17 +2257,18 @@ struct ElgDragOptions {
 ELG_EXPORT View* elg_mod_drag_gesture(const View* v, ElgDragOptions o, ElgClosure began, ElgClosure changed,
                                       ElgClosure ended, ElgClosure cancelled, ElgGestureOptions options) {
     ELG_TRY
+    const Consumed consumed(began, changed, ended, cancelled);
     DragGesture gesture({o.minimum_distance, static_cast<MouseButton>(o.button), o.hold, o.hold_tolerance});
-    if (auto f = event_callback(began, &c_drag_event)) {
+    if (auto f = event_callback(share(began), &c_drag_event)) {
         gesture = gesture.on_began(std::move(f));
     }
-    if (auto f = event_callback(changed, &c_drag_event)) {
+    if (auto f = event_callback(share(changed), &c_drag_event)) {
         gesture = gesture.on_changed(std::move(f));
     }
-    if (auto f = event_callback(ended, &c_drag_event)) {
+    if (auto f = event_callback(share(ended), &c_drag_event)) {
         gesture = gesture.on_ended(std::move(f));
     }
-    if (auto f = action(cancelled)) {
+    if (auto f = action(share(cancelled))) {
         gesture = gesture.on_cancelled(std::move(f));
     }
     return out(v->recognize(std::move(gesture), gesture_options(options)));
@@ -2107,25 +2295,27 @@ struct ElgLongPressOptions {
 ELG_EXPORT View* elg_mod_long_press_gesture(const View* v, ElgClosure on_press, ElgLongPressOptions o, ElgClosure pressing,
                                            ElgGestureOptions options) {
     ELG_TRY
-    LongPressOptions long_press{o.duration, o.maximum_distance, static_cast<MouseButton>(o.button), consumer<bool>(pressing)};
-    return out(v->recognize(LongPressGesture(action(on_press), std::move(long_press)), gesture_options(options)));
+    const Consumed consumed(on_press, pressing);
+    LongPressOptions long_press{o.duration, o.maximum_distance, static_cast<MouseButton>(o.button),
+                                consumer<bool>(share(pressing))};
+    return out(v->recognize(LongPressGesture(action(share(on_press)), std::move(long_press)), gesture_options(options)));
     ELG_CATCH(nullptr)
 }
 
 template <class Event, class C>
-static PhasedGesture<Event> phased_gesture(ElgClosure began, ElgClosure changed, ElgClosure ended, ElgClosure cancelled,
+static PhasedGesture<Event> phased_gesture(SharedFn began, SharedFn changed, SharedFn ended, SharedFn cancelled,
                                            C (*convert)(const Event&)) {
     PhasedGesture<Event> gesture;
-    if (auto f = event_callback(began, convert)) {
+    if (auto f = event_callback(std::move(began), convert)) {
         gesture = gesture.on_began(std::move(f));
     }
-    if (auto f = event_callback(changed, convert)) {
+    if (auto f = event_callback(std::move(changed), convert)) {
         gesture = gesture.on_changed(std::move(f));
     }
-    if (auto f = event_callback(ended, convert)) {
+    if (auto f = event_callback(std::move(ended), convert)) {
         gesture = gesture.on_ended(std::move(f));
     }
-    if (auto f = action(cancelled)) {
+    if (auto f = action(std::move(cancelled))) {
         gesture = gesture.on_cancelled(std::move(f));
     }
     return gesture;
@@ -2142,7 +2332,10 @@ static PhasedGesture<Event> phased_gesture(ElgClosure began, ElgClosure changed,
 /// @return `v` with the gesture (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_magnify_gesture(const View* v, ElgClosure began, ElgClosure changed, ElgClosure ended,
                                          ElgClosure cancelled) {
-    MOD_TRY(v->recognize(phased_gesture(began, changed, ended, cancelled, &c_magnify_event)))
+    ELG_TRY
+    const Consumed consumed(began, changed, ended, cancelled);
+    return out(v->recognize(phased_gesture(share(began), share(changed), share(ended), share(cancelled), &c_magnify_event)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::recognize()` with a `RotateGesture`: turning two fingers on a trackpad. The innermost one
 /// under the pointer that takes the start gets the rest.
@@ -2155,16 +2348,20 @@ ELG_EXPORT View* elg_mod_magnify_gesture(const View* v, ElgClosure began, ElgClo
 /// @return `v` with the gesture (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_rotate_gesture(const View* v, ElgClosure began, ElgClosure changed, ElgClosure ended,
                                         ElgClosure cancelled) {
-    MOD_TRY(v->recognize(phased_gesture(began, changed, ended, cancelled, &c_rotate_event)))
+    ELG_TRY
+    const Consumed consumed(began, changed, ended, cancelled);
+    return out(v->recognize(phased_gesture(share(began), share(changed), share(ended), share(cancelled), &c_rotate_event)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::on_two_finger_double_tap()`: a two-finger double tap on a trackpad (usually: zoom to fit).
 ///
 /// @param v The view (borrowed).
-/// @param on_tap args: ElgPoint* (where, in window coordinates). Must not be none.
+/// @param on_tap args: ElgPoint* (where, in window coordinates). Required: none is a usage error.
 /// @return `v` with the gesture (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_on_two_finger_double_tap(const View* v, ElgClosure on_tap) {
     ELG_TRY
-    const SharedFn f = std::make_shared<const RustFn>(on_tap);
+    const Consumed consumed(on_tap);
+    const SharedFn f = required(on_tap, "on_tap");
     return out(v->on_two_finger_double_tap([f](Point location) {
         ElgPoint arg = c_point(location);
         f->call(&arg, nullptr);
@@ -2181,7 +2378,10 @@ ELG_EXPORT View* elg_mod_on_two_finger_double_tap(const View* v, ElgClosure on_t
 /// @param style A PointerStyle prop (int32_t).
 /// @return `v` with the pointer style (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_pointer_style(const View* v, ElgProp style) {
-    MOD_TRY(v->pointer_style(prop<PointerStyle>(style)))
+    ELG_TRY
+    const Consumed consumed(style);
+    return out(v->pointer_style(prop<PointerStyle>(style)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::on_pointer_enter()` and `View::on_pointer_leave()`: called at once when the pointer comes over
 /// the view (its hit area), or when it leaves.
@@ -2192,10 +2392,11 @@ ELG_EXPORT View* elg_mod_pointer_style(const View* v, ElgProp style) {
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_on_pointer_boundary(const View* v, bool leave, ElgClosure on_cross) {
     ELG_TRY
+    const Consumed consumed(on_cross);
     if (leave) {
-        return out(v->on_pointer_leave(action(on_cross)));
+        return out(v->on_pointer_leave(action(share(on_cross))));
     }
-    return out(v->on_pointer_enter(action(on_cross)));
+    return out(v->on_pointer_enter(action(share(on_cross))));
     ELG_CATCH(nullptr)
 }
 /// Wraps `View::on_hover_change()`: hover intent. Called with true once the pointer has rested on the view for
@@ -2205,18 +2406,22 @@ ELG_EXPORT View* elg_mod_on_pointer_boundary(const View* v, bool leave, ElgClosu
 /// @param on_hover args: bool*.
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_on_hover_change(const View* v, ElgClosure on_hover) {
-    MOD_TRY(v->on_hover_change(consumer<bool>(on_hover)))
+    ELG_TRY
+    const Consumed consumed(on_hover);
+    return out(v->on_hover_change(consumer<bool>(share(on_hover))));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::on_pointer()`: raw pointer events over the view. Consuming a down captures the pointer, so the
 /// moves and the up come here wherever it goes.
 ///
 /// @param v The view (borrowed).
-/// @param on_pointer args: ElgPointerEvent* (in the view's coordinates), ret: bool* (true consumes it). Must
-///   not be none.
+/// @param on_pointer args: ElgPointerEvent* (in the view's coordinates), ret: bool* (true consumes it).
+///   Required: none is a usage error.
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_on_pointer(const View* v, ElgClosure on_pointer) {
     ELG_TRY
-    const SharedFn f = std::make_shared<const RustFn>(on_pointer);
+    const Consumed consumed(on_pointer);
+    const SharedFn f = required(on_pointer, "on_pointer");
     return out(v->on_pointer([f](const PointerEvent& event) {
         ElgPointerEvent arg = c_pointer_event(event);
         bool consumed = false;
@@ -2229,11 +2434,12 @@ ELG_EXPORT View* elg_mod_on_pointer(const View* v, ElgClosure on_pointer) {
 ///
 /// @param v The view (borrowed).
 /// @param on_scroll args: ElgScrollEvent* (in the view's coordinates), ret: bool* (true consumes it: scroll
-///   views around it then don't scroll). Must not be none.
+///   views around it then don't scroll). Required: none is a usage error.
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_on_scroll(const View* v, ElgClosure on_scroll) {
     ELG_TRY
-    const SharedFn f = std::make_shared<const RustFn>(on_scroll);
+    const Consumed consumed(on_scroll);
+    const SharedFn f = required(on_scroll, "on_scroll");
     return out(v->on_scroll([f](const ScrollEvent& event) {
         ElgScrollEvent arg = c_scroll_event(event);
         bool consumed = false;
@@ -2247,11 +2453,12 @@ ELG_EXPORT View* elg_mod_on_scroll(const View* v, ElgClosure on_scroll) {
 ///
 /// @param v The view (borrowed).
 /// @param on_text_input args: ElgTextInputEvent* (its text valid during the call), ret: bool* (true: handled).
-///   Must not be none.
+///   Required: none is a usage error.
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_on_text_input(const View* v, ElgClosure on_text_input) {
     ELG_TRY
-    const SharedFn f = std::make_shared<const RustFn>(on_text_input);
+    const Consumed consumed(on_text_input);
+    const SharedFn f = required(on_text_input, "on_text_input");
     return out(v->on_text_input([f](const TextInputEvent& event) {
         ElgTextInputEvent arg{static_cast<int32_t>(event.kind), c_str(event.text), event.cursor};
         bool consumed = false;
@@ -2287,6 +2494,7 @@ struct ElgDropText {
 /// @return `v` taking drops (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_on_drop(const View* v, ElgClosure files, ElgClosure text, ElgClosure targeted) {
     ELG_TRY
+    const Consumed consumed(files, text, targeted);
     DropOptions options;
     if (const SharedFn f = share(files)) {
         options.files = [f](const std::vector<std::filesystem::path>& paths, Point location) {
@@ -2314,7 +2522,7 @@ ELG_EXPORT View* elg_mod_on_drop(const View* v, ElgClosure files, ElgClosure tex
             return wanted;
         };
     }
-    options.targeted = consumer<bool>(targeted);
+    options.targeted = consumer<bool>(share(targeted));
     return out(v->on_drop(std::move(options)));
     ELG_CATCH(nullptr)
 }
@@ -2325,7 +2533,10 @@ ELG_EXPORT View* elg_mod_on_drop(const View* v, ElgClosure files, ElgClosure tex
 /// @param label A string prop.
 /// @return `v` with the label (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_accessibility_label(const View* v, ElgProp label) {
-    MOD_TRY(v->accessibility_label(prop<std::string>(label)))
+    ELG_TRY
+    const Consumed consumed(label);
+    return out(v->accessibility_label(prop<std::string>(label)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::accessibility_value()`: what the view holds, as words ("3 of 10", "50%").
 ///
@@ -2333,7 +2544,10 @@ ELG_EXPORT View* elg_mod_accessibility_label(const View* v, ElgProp label) {
 /// @param value A string prop.
 /// @return `v` with the value (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_accessibility_value(const View* v, ElgProp value) {
-    MOD_TRY(v->accessibility_value(prop<std::string>(value)))
+    ELG_TRY
+    const Consumed consumed(value);
+    return out(v->accessibility_value(prop<std::string>(value)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::accessibility_hint()`: what happens if the view is used, when the label doesn't say.
 ///
@@ -2341,7 +2555,10 @@ ELG_EXPORT View* elg_mod_accessibility_value(const View* v, ElgProp value) {
 /// @param hint A string prop.
 /// @return `v` with the hint (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_accessibility_hint(const View* v, ElgProp hint) {
-    MOD_TRY(v->accessibility_hint(prop<std::string>(hint)))
+    ELG_TRY
+    const Consumed consumed(hint);
+    return out(v->accessibility_hint(prop<std::string>(hint)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::accessibility_hidden()`: leaves the view, and everything inside, out for screen readers
 /// (decoration).
@@ -2372,10 +2589,13 @@ ELG_EXPORT View* elg_mod_accessibility_element(const View* v) {
 /// with gestures.
 ///
 /// @param v The view (borrowed).
-/// @param on_action The action. No args.
+/// @param on_action The action. No args. Required: none is a usage error.
 /// @return `v` with the action (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_accessibility_action(const View* v, ElgClosure on_action) {
-    MOD_TRY(v->accessibility_action(action(on_action)))
+    ELG_TRY
+    const Consumed consumed(on_action);
+    return out(v->accessibility_action(action(required(on_action, "on_action"))));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::hover_delay()`: the hover delay for on_hover_change handlers and submenus inside (default:
 /// enter 0.1 s, exit 0).
@@ -2399,10 +2619,14 @@ ELG_EXPORT View* elg_mod_window_drag_area(const View* v, bool enabled) {
 /// `menu` builds. Item actions run after it closes.
 ///
 /// @param v The view (borrowed).
-/// @param menu Builds the menu each time it opens, usually with elg_menu(). ret: View*.
+/// @param menu Builds the menu each time it opens, usually with elg_menu(). ret: View*. Required: none is a
+///   usage error.
 /// @return `v` with the menu (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_context_menu(const View* v, ElgClosure menu) {
-    MOD_TRY(v->context_menu(view_builder(menu)))
+    ELG_TRY
+    const Consumed consumed(menu);
+    return out(v->context_menu(view_builder(required(menu, "menu"))));
+    ELG_CATCH(nullptr)
 }
 /// The options of elg_mod_floating(): `FloatingOptions`.
 struct ElgFloatingOptions {
@@ -2418,19 +2642,20 @@ struct ElgFloatingOptions {
 ///
 /// @param v The view (borrowed).
 /// @param take_is_presented Whether it's shown (consumed); set back to false when it's dismissed.
-/// @param content Builds the content each time it opens. ret: View*.
+/// @param content Builds the content each time it opens. ret: View*. Required: none is a usage error.
 /// @param o The options (borrowed; required).
 /// @return `v` with the floating content (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_floating(const View* v, Binding<bool>* take_is_presented, ElgClosure content,
                                   const ElgFloatingOptions* o) {
     ELG_TRY
-    const std::unique_ptr<Binding<bool>> is_presented(take_is_presented);
+    const Consumed consumed(take_is_presented, content);
+    const std::unique_ptr<Binding<bool>> is_presented = own(take_is_presented);
     FloatingOptions options;
     options.placement = placement(o->placement);
     options.boundary = static_cast<FloatingBoundary>(o->boundary);
     options.dismiss = {o->outside_click, o->escape};
     options.motion = motion(o->motion);
-    return out(v->floating(*is_presented, view_builder(content), std::move(options)));
+    return out(v->floating(*is_presented, view_builder(required(content, "content")), std::move(options)));
     ELG_CATCH(nullptr)
 }
 /// Wraps `View::floating_container()`: marks the view as where `FloatingBoundary::container` content inside it
@@ -2458,17 +2683,19 @@ static TooltipOptions tooltip_options(const ElgTooltipOptions& o) {
 /// it leaves or presses. Screen readers don't see it.
 ///
 /// @param v The view (borrowed).
-/// @param content Builds the tooltip, when `text` is null. ret: View*. Pass none with `text`: it isn't
-///   dropped then.
+/// @param content Builds the tooltip, when `text` is null (required then). ret: View*. Dropped unused
+///   when `text` is given.
 /// @param text A string prop for a text tooltip (borrowed; its closure is taken over); null: `content`.
 /// @param o The options (borrowed; required).
 /// @return `v` with the tooltip (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_tooltip(const View* v, ElgClosure content, const ElgProp* text, const ElgTooltipOptions* o) {
     ELG_TRY
+    ElgProp title = text ? *text : ElgProp{};
+    const Consumed consumed(content, title);
     if (text) {
-        return out(v->tooltip(prop<std::string>(*text), tooltip_options(*o)));
+        return out(v->tooltip(prop<std::string>(title), tooltip_options(*o)));
     }
-    return out(v->tooltip(view_builder(content), tooltip_options(*o)));
+    return out(v->tooltip(view_builder(required(content, "content")), tooltip_options(*o)));
     ELG_CATCH(nullptr)
 }
 
@@ -2477,7 +2704,7 @@ ELG_EXPORT View* elg_mod_tooltip(const View* v, ElgClosure content, const ElgPro
 ///
 /// @param v The view (borrowed).
 /// @param take_is_presented Whether it's shown (consumed).
-/// @param content Builds the content each time it opens. ret: View*.
+/// @param content Builds the content each time it opens. ret: View*. Required: none is a usage error.
 /// @param popover_placement Where the panel goes, by the view (borrowed; required).
 /// @param boundary `FloatingBoundary`: 0 screen, 1 window, 2 container.
 /// @param padded A bool prop: false lets the content reach the panel's edges.
@@ -2487,13 +2714,14 @@ ELG_EXPORT View* elg_mod_popover(const View* v, Binding<bool>* take_is_presented
                                  const ElgFloatingPlacement* popover_placement, int32_t boundary, ElgProp padded,
                                  ElgPopupMotion popup_motion) {
     ELG_TRY
-    const std::unique_ptr<Binding<bool>> is_presented(take_is_presented);
+    const Consumed consumed(take_is_presented, content, padded);
+    const std::unique_ptr<Binding<bool>> is_presented = own(take_is_presented);
     PopoverOptions options;
     options.placement = placement(*popover_placement);
     options.boundary = static_cast<FloatingBoundary>(boundary);
     options.padded = prop<bool>(padded);
     options.motion = motion(popup_motion);
-    return out(v->popover(*is_presented, view_builder(content), options));
+    return out(v->popover(*is_presented, view_builder(required(content, "content")), options));
     ELG_CATCH(nullptr)
 }
 /// Wraps `View::focusable()`.
@@ -2513,7 +2741,8 @@ ELG_EXPORT View* elg_mod_focusable(const View* v, bool focusable) {
 /// @return `v` with the binding (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_focused(const View* v, Binding<bool>* take_is_focused) {
     ELG_TRY
-    const std::unique_ptr<Binding<bool>> is_focused(take_is_focused);
+    const Consumed consumed(take_is_focused);
+    const std::unique_ptr<Binding<bool>> is_focused = own(take_is_focused);
     return out(v->focused(*is_focused));
     ELG_CATCH(nullptr)
 }
@@ -2525,7 +2754,10 @@ ELG_EXPORT View* elg_mod_focused(const View* v, Binding<bool>* take_is_focused) 
 /// @param on_press The action. No args.
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_on_key_press(const View* v, int32_t key, ElgClosure on_press) {
-    MOD_TRY(v->on_key_press(static_cast<Key>(key), action(on_press)))
+    ELG_TRY
+    const Consumed consumed(on_press);
+    return out(v->on_key_press(static_cast<Key>(key), action(share(on_press))));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::on_key()`: sees every key down and up while the view, or something inside, has focus.
 /// Unhandled keys bubble out.
@@ -2534,7 +2766,10 @@ ELG_EXPORT View* elg_mod_on_key_press(const View* v, int32_t key, ElgClosure on_
 /// @param on_key args: ElgKeyEvent*, ret: bool* (true: handled).
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_on_key(const View* v, ElgClosure on_key) {
-    MOD_TRY(v->on_key(key_handler(on_key)))
+    ELG_TRY
+    const Consumed consumed(on_key);
+    return out(v->on_key(key_handler(share(on_key))));
+    ELG_CATCH(nullptr)
 }
 // --- Selection ---
 
@@ -2634,17 +2869,18 @@ View with_selection(const View& v, bool multiple, const SharedFn& get, const Sha
 /// @param multiple A set of rows (Ctrl+click or Cmd+click, Shift ranges, select all); false: one row or none.
 /// @param string_keys The ForEach's keys are strings; false: integers.
 /// @param get The selected keys; a tracked read. ret: std::vector<ItemKey>* (filled with elg_item_keys_push).
-///   Must not be none.
-/// @param set Sets the selected keys; with `multiple` false, one key or none. args: ElgItemKeys*. Must not be
-///   none.
+///   Required: none is a usage error.
+/// @param set Sets the selected keys; with `multiple` false, one key or none. args: ElgItemKeys*. Required:
+///   none is a usage error.
 /// @param activate Enter, or a double click on a row: opens what the row stands for. args: ElgItemKey* (its
 ///   string valid during the call); may be none.
 /// @return The selectable stack (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_selection(const View* v, bool multiple, bool string_keys, ElgClosure get, ElgClosure set,
                                    ElgClosure activate) {
     ELG_TRY
-    const SharedFn g = std::make_shared<const RustFn>(get);
-    const SharedFn s = std::make_shared<const RustFn>(set);
+    const Consumed consumed(get, set, activate);
+    const SharedFn g = required(get, "get");
+    const SharedFn s = required(set, "set");
     const SharedFn a = share(activate);
     if (string_keys) {
         return out(with_selection<std::string>(*v, multiple, g, s, a));
@@ -2659,7 +2895,10 @@ ELG_EXPORT View* elg_mod_selection(const View* v, bool multiple, bool string_key
 /// @param weight A Weight prop (int32_t, 1...1000).
 /// @return `v` with the weight set inside (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_font_weight(const View* v, ElgProp weight) {
-    MOD_TRY(v->font_weight(prop<Weight>(weight)))
+    ELG_TRY
+    const Consumed consumed(weight);
+    return out(v->font_weight(prop<Weight>(weight)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::font()`: the font of the text inside.
 ///
@@ -2667,7 +2906,10 @@ ELG_EXPORT View* elg_mod_font_weight(const View* v, ElgProp weight) {
 /// @param f A Font prop (ElgFont).
 /// @return `v` with the font set inside (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_font(const View* v, ElgProp f) {
-    MOD_TRY(v->font(prop<Font>(f)))
+    ELG_TRY
+    const Consumed consumed(f);
+    return out(v->font(prop<Font>(f)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::foreground_style()`: the color of text and unfilled shapes inside.
 ///
@@ -2675,7 +2917,10 @@ ELG_EXPORT View* elg_mod_font(const View* v, ElgProp f) {
 /// @param c A Color prop.
 /// @return `v` with the color set inside (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_foreground_style(const View* v, ElgProp c) {
-    MOD_TRY(v->foreground_style(prop<Color>(c)))
+    ELG_TRY
+    const Consumed consumed(c);
+    return out(v->foreground_style(prop<Color>(c)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::tint()`: the accent color of controls inside.
 ///
@@ -2683,7 +2928,10 @@ ELG_EXPORT View* elg_mod_foreground_style(const View* v, ElgProp c) {
 /// @param c A Color prop.
 /// @return `v` with the tint set inside (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_tint(const View* v, ElgProp c) {
-    MOD_TRY(v->tint(prop<Color>(c)))
+    ELG_TRY
+    const Consumed consumed(c);
+    return out(v->tint(prop<Color>(c)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::color_scheme()`: light or dark, for ThemeColor tokens inside.
 ///
@@ -2691,7 +2939,10 @@ ELG_EXPORT View* elg_mod_tint(const View* v, ElgProp c) {
 /// @param scheme A ColorScheme prop (int32_t: 0 light, 1 dark).
 /// @return `v` with the scheme set inside (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_color_scheme(const View* v, ElgProp scheme) {
-    MOD_TRY(v->color_scheme(prop<ColorScheme>(scheme)))
+    ELG_TRY
+    const Consumed consumed(scheme);
+    return out(v->color_scheme(prop<ColorScheme>(scheme)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::theme()`: the theme inside.
 ///
@@ -2707,7 +2958,10 @@ ELG_EXPORT View* elg_mod_theme(const View* v, const Theme* theme) {
 /// @param disabled A bool prop.
 /// @return `v`, disabled or not (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_disabled(const View* v, ElgProp disabled) {
-    MOD_TRY(v->disabled(prop<bool>(disabled)))
+    ELG_TRY
+    const Consumed consumed(disabled);
+    return out(v->disabled(prop<bool>(disabled)));
+    ELG_CATCH(nullptr)
 }
 namespace {
 // View::animation's source: Rust returns a version number that changes when its value does.
@@ -2727,10 +2981,13 @@ struct VersionSource {
 /// @param v The view (borrowed).
 /// @param animation The animation (borrowed; copied).
 /// @param version A number that changes when the value the animation follows does; read as View::animation
-///   reads its value. ret: uint64_t*. Must not be none.
+///   reads its value. ret: uint64_t*. Required: none is a usage error.
 /// @return `v`, animated (a new view, owned by the caller), or null on failure.
 ELG_EXPORT View* elg_mod_animation(const View* v, const Animation* animation, ElgClosure version) {
-    MOD_TRY(v->animation(*animation, VersionSource{std::make_shared<const RustFn>(version)}))
+    ELG_TRY
+    const Consumed consumed(version);
+    return out(v->animation(*animation, VersionSource{required(version, "version")}));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `View::transition()`: how this view enters and leaves when an If or ForEach adds or removes it with
 /// an animation.
@@ -2925,7 +3182,9 @@ static std::shared_ptr<const Layout> grid_layout(const ElgGridDesc& d) {
 /// @return The grid, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_grid(const ElgGridDesc* desc, View** children, size_t count) {
     ELG_TRY
-    std::vector<View> views = take_all(children, count);
+    ViewArray array{children, count};
+    const Consumed consumed(array);
+    std::vector<View> views = take_all(array);
     switch (desc->kind) {
     case 0: return out(VGridLayout(grid_items(desc->items, desc->item_count), alignment(desc->alignment), length(desc->spacing_a))(std::move(views)));
     case 1: return out(HGridLayout(grid_items(desc->items, desc->item_count), alignment(desc->alignment), length(desc->spacing_a))(std::move(views)));
@@ -2972,11 +3231,13 @@ ELG_EXPORT void elg_grid_layout_place(const ElgGridDesc* desc, ElgRect bounds, E
 /// @return The row, owned by the caller, or null on failure.
 ELG_EXPORT View* elg_grid_row(int32_t row_alignment, View** cells, size_t count) {
     ELG_TRY
+    ViewArray views{cells, count};
+    const Consumed consumed(views);
     GridRowOptions options;
     if (row_alignment >= 0) {
         options.alignment = static_cast<VerticalAlignment>(row_alignment);
     }
-    return out(detail::make_grid_row(options, take_all(cells, count)));
+    return out(detail::make_grid_row(options, take_all(views)));
     ELG_CATCH(nullptr)
 }
 
@@ -2989,15 +3250,18 @@ ELG_EXPORT View* elg_grid_row(int32_t row_alignment, View** cells, size_t count)
 /// @param has_length false: the tracks take their ideal sizes.
 /// @param length_value The length to fill, in points, when `has_length`; infinity: ideal sizes.
 /// @param spacing Between items without their own spacing; unset: `default_stack_spacing`.
-/// @param each Called once per track, in order, during this call, and not dropped. args: ElgGridTrack*.
+/// @param each Called once per track, in order, during this call. args: ElgGridTrack*. Required: none is a
+///   usage error.
 ELG_EXPORT void elg_resolve_grid_tracks(const ElgGridItem* items, size_t count, bool has_length, float length_value,
                                         ElgOptLen spacing, ElgClosure each) {
     ELG_TRY
+    const Consumed consumed(each);
+    const SharedFn f = required(each, "each");
     const std::vector<GridItem> list = grid_items(items, count);
     const std::optional<float> span = has_length ? std::optional<float>(length_value) : std::nullopt;
     for (const GridTrack& track : resolve_grid_tracks(list, span, length(spacing))) {
         ElgGridTrack arg{track.size, track.spacing, track.alignment.has_value(), c_alignment(track.alignment.value_or(Alignment{}))};
-        call_now(each, &arg, nullptr);
+        f->call(&arg, nullptr);
     }
     ELG_CATCH_VOID
 }

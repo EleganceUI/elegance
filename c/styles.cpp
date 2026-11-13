@@ -96,12 +96,10 @@ std::shared_ptr<const Style>* make_style(Args&&... args) {
     return new std::shared_ptr<const Style>(std::make_shared<const Concrete>(std::forward<Args>(args)...));
 }
 
-SharedFn owned(ElgClosure closure) {
-    return std::make_shared<const RustFn>(closure);
-}
-
-std::optional<Prop<Color>> optional_color(const ElgProp* p) {
-    return p ? std::optional<Prop<Color>>(prop<Color>(*p)) : std::nullopt;
+// A Color prop given by a nullable pointer: `given` is the pointer, `p` the caller's copy of what it
+// points to (named in Consumed), which this takes over.
+std::optional<Prop<Color>> optional_color(const ElgProp* given, ElgProp& p) {
+    return given ? std::optional<Prop<Color>>(prop<Color>(p)) : std::nullopt;
 }
 
 } // namespace
@@ -158,13 +156,14 @@ std::optional<Prop<Color>> optional_color(const ElgProp* p) {
     }
 
 // RUST_STYLE(name, Style, Config) defines elg_<name>_style_rust(make_body): a style implemented in
-// Rust, for families whose style has only make_body(). It calls `make_body` (must not be none) once
-// per control as it's built, with args: a heap copy of the configuration, owned by the Rust side (free
-// it with elg_<name>_config_free), ret: View*. Returns the style, owned by the caller (free it with
-// elg_<name>_style_free), or null on failure.
+// Rust, for families whose style has only make_body(). It calls `make_body` (required: none is a usage
+// error) once per control as it's built, with args: a heap copy of the configuration, owned by the Rust
+// side (free it with elg_<name>_config_free), ret: View*. Returns the style, owned by the caller (free it
+// with elg_<name>_style_free), or null on failure.
 #define RUST_STYLE(name, Style, Config)                                                                              \
     ELG_EXPORT std::shared_ptr<const Style>* elg_##name##_style_rust(ElgClosure make_body) {                         \
-        ELG_TRY return make_style<Style, RustStyle<Style, Config>>(owned(make_body));                                \
+        ELG_TRY const Consumed consumed(make_body);                                                                  \
+        return make_style<Style, RustStyle<Style, Config>>(required(make_body, "make_body"));                        \
         ELG_CATCH(nullptr)                                                                                           \
     }
 
@@ -225,13 +224,14 @@ MAKE_BODY(toggle, ToggleStyle, ToggleConfiguration)
 ///
 /// @param make_body Builds a toggle's body, once per toggle as it's built. args: a heap copy of the
 ///   configuration (ToggleConfiguration*, owned by the Rust side: free it with elg_toggle_config_free()), ret:
-///   View*. Must not be none.
+///   View*. Required: none is a usage error.
 /// @param animation How a flip animates (borrowed; copied); null: it flips at once.
 /// @return The style, owned by the caller (free it with elg_toggle_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const ToggleStyle>* elg_toggle_style_rust(ElgClosure make_body, const Animation* animation) {
     ELG_TRY
-    return make_style<ToggleStyle, RustAnimatedStyle<ToggleStyle, ToggleConfiguration>>(owned(make_body),
-                                                                                          elg_shim::animation(animation));
+    const Consumed consumed(make_body);
+    return make_style<ToggleStyle, RustAnimatedStyle<ToggleStyle, ToggleConfiguration>>(
+        required(make_body, "make_body"), elg_shim::animation(animation));
     ELG_CATCH(nullptr)
 }
 
@@ -255,10 +255,13 @@ struct ElgSwitchToggleStyleOptions {
 /// @return The style, owned by the caller (free it with elg_toggle_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const ToggleStyle>* elg_switch_toggle_style(const ElgSwitchToggleStyleOptions* o) {
     ELG_TRY
+    ElgSwitchToggleStyleOptions c = *o;
+    ElgProp on = c.on ? *c.on : ElgProp{};
+    const Consumed consumed(on, c.off, c.knob);
     SwitchToggleStyleOptions options;
-    options.on = optional_color(o->on);
-    options.off = prop<Color>(o->off);
-    options.knob = prop<Color>(o->knob);
+    options.on = optional_color(c.on, on);
+    options.off = prop<Color>(c.off);
+    options.knob = prop<Color>(c.knob);
     options.width = o->width;
     options.height = o->height;
     options.knob_inset = o->knob_inset;
@@ -310,13 +313,14 @@ MAKE_BODY(checkbox, CheckboxStyle, CheckboxConfiguration)
 ///
 /// @param make_body Builds a check box's body, once per check box as it's built. args: a heap copy of the
 ///   configuration (CheckboxConfiguration*, owned by the Rust side: free it with elg_checkbox_config_free()),
-///   ret: View*. Must not be none.
+///   ret: View*. Required: none is a usage error.
 /// @param animation How checking and unchecking animate (borrowed; copied); null: at once.
 /// @return The style, owned by the caller (free it with elg_checkbox_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const CheckboxStyle>* elg_checkbox_style_rust(ElgClosure make_body, const Animation* animation) {
     ELG_TRY
-    return make_style<CheckboxStyle, RustAnimatedStyle<CheckboxStyle, CheckboxConfiguration>>(owned(make_body),
-                                                                                              elg_shim::animation(animation));
+    const Consumed consumed(make_body);
+    return make_style<CheckboxStyle, RustAnimatedStyle<CheckboxStyle, CheckboxConfiguration>>(
+        required(make_body, "make_body"), elg_shim::animation(animation));
     ELG_CATCH(nullptr)
 }
 
@@ -341,22 +345,25 @@ struct ElgBoxCheckboxStyleOptions {
 /// @return The style, owned by the caller (free it with elg_checkbox_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const CheckboxStyle>* elg_box_checkbox_style(const ElgBoxCheckboxStyleOptions* o) {
     ELG_TRY
+    ElgBoxCheckboxStyleOptions c = *o;
+    ElgProp fill = c.fill ? *c.fill : ElgProp{};
+    const Consumed consumed(fill, c.empty, c.border, c.mark, c.take_check, c.take_dash);
     BoxCheckboxStyleOptions options;
-    options.size = o->size;
-    options.corner_radius = o->corner_radius;
-    options.fill = optional_color(o->fill);
-    options.empty = prop<Color>(o->empty);
-    options.border = prop<Color>(o->border);
-    options.border_width = o->border_width;
-    options.mark = prop<Color>(o->mark);
-    if (o->take_check) {
-        options.check = take(o->take_check);
+    options.size = c.size;
+    options.corner_radius = c.corner_radius;
+    options.fill = optional_color(c.fill, fill);
+    options.empty = prop<Color>(c.empty);
+    options.border = prop<Color>(c.border);
+    options.border_width = c.border_width;
+    options.mark = prop<Color>(c.mark);
+    if (c.take_check) {
+        options.check = take(c.take_check);
     }
-    if (o->take_dash) {
-        options.dash = take(o->take_dash);
+    if (c.take_dash) {
+        options.dash = take(c.take_dash);
     }
-    options.spacing = o->spacing;
-    options.animation = animation(o->animation);
+    options.spacing = c.spacing;
+    options.animation = animation(c.animation);
     return make_style<CheckboxStyle, BoxCheckboxStyle>(std::move(options));
     ELG_CATCH(nullptr)
 }
@@ -422,14 +429,17 @@ ELG_EXPORT std::shared_ptr<const NumberInputStyle>* elg_number_input_style_built
     if (!o) {
         return make_style<NumberInputStyle, PlainNumberInputStyle>();
     }
+    ElgBoxNumberInputStyleOptions c = *o;
+    ElgProp focused_border = c.focused_border ? *c.focused_border : ElgProp{};
+    const Consumed consumed(c.background, c.border, focused_border);
     BoxNumberInputStyleOptions options;
-    options.background = prop<Color>(o->background);
-    options.border = prop<Color>(o->border);
-    options.focused_border = optional_color(o->focused_border);
-    options.border_width = o->border_width;
-    options.corner_radius = o->corner_radius;
-    options.padding = edge_insets(o->padding);
-    options.arrow_size = o->arrow_size;
+    options.background = prop<Color>(c.background);
+    options.border = prop<Color>(c.border);
+    options.focused_border = optional_color(c.focused_border, focused_border);
+    options.border_width = c.border_width;
+    options.corner_radius = c.corner_radius;
+    options.padding = edge_insets(c.padding);
+    options.arrow_size = c.arrow_size;
     return make_style<NumberInputStyle, BoxNumberInputStyle>(std::move(options));
     ELG_CATCH(nullptr)
 }
@@ -497,12 +507,15 @@ struct ElgProgressStyleOptions {
 /// @return The style, owned by the caller (free it with elg_progress_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const ProgressStyle>* elg_progress_style_builtin(int32_t kind, const ElgProgressStyleOptions* o) {
     ELG_TRY
+    ElgProgressStyleOptions c = *o;
+    ElgProp fill = c.fill ? *c.fill : ElgProp{};
+    const Consumed consumed(c.track, fill);
     if (kind == 0) {
         return make_style<ProgressStyle, LinearProgressStyle>(
-            LinearProgressStyleOptions{prop<Color>(o->track), optional_color(o->fill), o->a});
+            LinearProgressStyleOptions{prop<Color>(c.track), optional_color(c.fill, fill), c.a});
     }
     return make_style<ProgressStyle, CircularProgressStyle>(
-        CircularProgressStyleOptions{prop<Color>(o->track), optional_color(o->fill), o->a, o->b});
+        CircularProgressStyleOptions{prop<Color>(c.track), optional_color(c.fill, fill), c.a, c.b});
     ELG_CATCH(nullptr)
 }
 /// How far along the progress is (`ProgressConfiguration::fraction`): a tracked read.
@@ -624,14 +637,19 @@ CONFIG_HANDLE(slider, SliderConfiguration)
 /// slider as it's built. args: a heap copy of the configuration (SliderConfiguration*, owned by the Rust side:
 /// free it with elg_slider_config_free()), ret: View*.
 ///
-/// @param track The track (`make_track()`), offered the slider's length less the thumb's width. Must not be
-///   none.
+/// @param track The track (`make_track()`), offered the slider's length less the thumb's width. Required:
+///   none is a usage error.
 /// @param fill Over the track from its start to the thumb's center (`make_fill()`); none: nothing.
-/// @param thumb The thumb (`make_thumb()`), at its ideal size, centered on the value. Must not be none.
+/// @param thumb The thumb (`make_thumb()`), at its ideal size, centered on the value. Required: none is a
+///   usage error.
 /// @return The style, owned by the caller (free it with elg_slider_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const SliderStyle>* elg_slider_style_rust(ElgClosure track, ElgClosure fill, ElgClosure thumb) {
     ELG_TRY
-    return make_style<SliderStyle, RustSliderStyle>(owned(track), share(fill), owned(thumb));
+    const Consumed consumed(track, fill, thumb);
+    SharedFn track_fn = required(track, "track");
+    SharedFn fill_fn = share(fill);
+    SharedFn thumb_fn = required(thumb, "thumb");
+    return make_style<SliderStyle, RustSliderStyle>(std::move(track_fn), std::move(fill_fn), std::move(thumb_fn));
     ELG_CATCH(nullptr)
 }
 
@@ -650,8 +668,11 @@ struct ElgKnobSliderStyleOptions {
 /// @return The style, owned by the caller (free it with elg_slider_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const SliderStyle>* elg_knob_slider_style(const ElgKnobSliderStyleOptions* o) {
     ELG_TRY
+    ElgKnobSliderStyleOptions c = *o;
+    ElgProp fill = c.fill ? *c.fill : ElgProp{};
+    const Consumed consumed(c.track, fill);
     return make_style<SliderStyle, KnobSliderStyle>(
-        KnobSliderStyleOptions{prop<Color>(o->track), optional_color(o->fill), o->track_thickness, o->knob_size});
+        KnobSliderStyleOptions{prop<Color>(c.track), optional_color(c.fill, fill), c.track_thickness, c.knob_size});
     ELG_CATCH(nullptr)
 }
 /// Wraps the style's `make_track()`, `make_fill()` or `make_thumb()`, so a Rust style can reuse another style's
@@ -726,12 +747,15 @@ ELG_EXPORT std::shared_ptr<const NavigationStackStyle>* elg_navigation_stack_sty
     if (!o) {
         return make_style<NavigationStackStyle, PlainNavigationStackStyle>();
     }
+    ElgBarNavigationStackStyleOptions c = *o;
+    ElgProp back_color = c.back_color ? *c.back_color : ElgProp{};
+    const Consumed consumed(c.background, back_color);
     BarNavigationStackStyleOptions options;
-    options.height = o->height;
-    options.background = prop<Color>(o->background);
-    options.title_font = font(o->title_font);
-    options.back_color = optional_color(o->back_color);
-    options.shows_divider = o->shows_divider;
+    options.height = c.height;
+    options.background = prop<Color>(c.background);
+    options.title_font = font(c.title_font);
+    options.back_color = optional_color(c.back_color, back_color);
+    options.shows_divider = c.shows_divider;
     return make_style<NavigationStackStyle, BarNavigationStackStyle>(std::move(options));
     ELG_CATCH(nullptr)
 }
@@ -782,12 +806,14 @@ MAKE_BODY(popover, PopoverStyle, PopoverConfiguration)
 ///
 /// @param make_body Wraps the content in a panel, each time a popover opens. args: a heap copy of the
 ///   configuration (PopoverConfiguration*, owned by the Rust side: free it with elg_popover_config_free()),
-///   ret: View*. Must not be none.
+///   ret: View*. Required: none is a usage error.
 /// @param popup_motion How popovers open and close (`motion()`); `has` false: at once.
 /// @return The style, owned by the caller (free it with elg_popover_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const PopoverStyle>* elg_popover_style_rust(ElgClosure make_body, ElgPopupMotion popup_motion) {
     ELG_TRY
-    return make_style<PopoverStyle, RustPopupStyle<PopoverStyle, PopoverConfiguration>>(owned(make_body), motion(popup_motion));
+    const Consumed consumed(make_body);
+    return make_style<PopoverStyle, RustPopupStyle<PopoverStyle, PopoverConfiguration>>(
+        required(make_body, "make_body"), motion(popup_motion));
     ELG_CATCH(nullptr)
 }
 /// A built-in PopoverStyle.
@@ -828,13 +854,15 @@ MAKE_BODY(tooltip, TooltipStyle, TooltipConfiguration)
 /// A TooltipStyle implemented in Rust: its `make_body()` calls `make_body`.
 ///
 /// @param make_body Wraps the content, each time a tooltip opens. args: a heap copy of the configuration
-///   (TooltipConfiguration*, owned by the Rust side: free it with elg_tooltip_config_free()), ret: View*. Must
-///   not be none.
+///   (TooltipConfiguration*, owned by the Rust side: free it with elg_tooltip_config_free()), ret: View*.
+///   Required: none is a usage error.
 /// @param popup_motion How tooltips open and close (`motion()`); `has` false: at once.
 /// @return The style, owned by the caller (free it with elg_tooltip_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const TooltipStyle>* elg_tooltip_style_rust(ElgClosure make_body, ElgPopupMotion popup_motion) {
     ELG_TRY
-    return make_style<TooltipStyle, RustPopupStyle<TooltipStyle, TooltipConfiguration>>(owned(make_body), motion(popup_motion));
+    const Consumed consumed(make_body);
+    return make_style<TooltipStyle, RustPopupStyle<TooltipStyle, TooltipConfiguration>>(
+        required(make_body, "make_body"), motion(popup_motion));
     ELG_CATCH(nullptr)
 }
 /// A built-in TooltipStyle.
@@ -866,8 +894,8 @@ MAKE_BODY(menu, MenuStyle, MenuConfiguration)
 /// A MenuStyle implemented in Rust: its `make_body()` and `make_item()` call `make_body` and `make_item`.
 ///
 /// @param make_body Wraps the items in a panel, each time a menu opens. args: a heap copy of the configuration
-///   (MenuConfiguration*, owned by the Rust side: free it with elg_menu_config_free()), ret: View*. Must not be
-///   none.
+///   (MenuConfiguration*, owned by the Rust side: free it with elg_menu_config_free()), ret: View*. Required:
+///   none is a usage error.
 /// @param make_item Builds a row, once per row. args: a heap copy of the row's configuration
 ///   (MenuItemConfiguration*, freed with elg_menu_item_config_free()), ret: View*. None: the default row.
 /// @param popup_motion How menus open and close (`motion()`); `has` false: at once.
@@ -875,7 +903,10 @@ MAKE_BODY(menu, MenuStyle, MenuConfiguration)
 ELG_EXPORT std::shared_ptr<const MenuStyle>* elg_menu_style_rust(ElgClosure make_body, ElgClosure make_item,
                                                                   ElgPopupMotion popup_motion) {
     ELG_TRY
-    return make_style<MenuStyle, RustMenuStyle>(owned(make_body), share(make_item), motion(popup_motion));
+    const Consumed consumed(make_body, make_item);
+    SharedFn body = required(make_body, "make_body");
+    SharedFn item = share(make_item);
+    return make_style<MenuStyle, RustMenuStyle>(std::move(body), std::move(item), motion(popup_motion));
     ELG_CATCH(nullptr)
 }
 /// A built-in MenuStyle.
@@ -961,9 +992,12 @@ ELG_EXPORT std::shared_ptr<const RowStyle>* elg_row_style_builtin(const ElgHighl
     if (!o) {
         return make_style<RowStyle, PlainRowStyle>();
     }
+    ElgHighlightRowStyleOptions c = *o;
+    ElgProp selected = c.selected ? *c.selected : ElgProp{};
+    const Consumed consumed(selected, c.on_selected, c.hovered);
     return make_style<RowStyle, HighlightRowStyle>(HighlightRowStyleOptions{
-        optional_color(o->selected), prop<Color>(o->on_selected), prop<Color>(o->hovered), o->corner_radius,
-        edge_insets(o->padding)});
+        optional_color(c.selected, selected), prop<Color>(c.on_selected), prop<Color>(c.hovered), c.corner_radius,
+        edge_insets(c.padding)});
     ELG_CATCH(nullptr)
 }
 /// The row's content: the ForEach item's view (`RowConfiguration::content`).
