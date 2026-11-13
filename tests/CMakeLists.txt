@@ -60,7 +60,9 @@ if (MSVC)
     target_compile_options(elegance_tests PRIVATE /utf-8)
 endif ()
 
-catch_discover_tests(elegance_tests)
+# Under LeakSanitizer: fontconfig (loaded from the system on Linux) keeps its caches until exit.
+catch_discover_tests(elegance_tests PROPERTIES ENVIRONMENT_MODIFICATION
+                     "LSAN_OPTIONS=string_append::suppressions=${CMAKE_CURRENT_SOURCE_DIR}/lsan_suppressions.txt")
 
 # Compile the public FFI surface as real C, not merely as C++ with extern "C" declarations.
 enable_language(C)

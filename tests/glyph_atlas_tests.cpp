@@ -2,8 +2,10 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// The glyph atlas: one page of distance-field glyphs, placed as frames draw them.
+// The glyph atlas (one page of distance-field glyphs, placed as frames draw them), and the
+// system fonts its glyphs come from.
 
+#include "text/font_library.h"
 #include "text/glyph_atlas.h"
 #include "text/text_system.h"
 
@@ -12,6 +14,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 
 using namespace elg;
@@ -49,3 +52,14 @@ TEST_CASE("a full glyph atlas starts over after the frame instead of dropping gl
     CHECK(atlas.find_or_add(face, *probe) != nullptr);
 }
 
+#if defined(__linux__)
+TEST_CASE("the system font for each weight is a file that exists", "[text][linux]") {
+    const auto regular = detail::system_font_candidates(Weight::regular, false);
+    const auto bold = detail::system_font_candidates(Weight::bold, false);
+    REQUIRE_FALSE(regular.empty());
+    REQUIRE_FALSE(bold.empty());
+    CHECK(std::filesystem::is_regular_file(regular.front()));
+    CHECK(std::filesystem::is_regular_file(bold.front()));
+    CHECK(regular.front() != bold.front());
+}
+#endif
