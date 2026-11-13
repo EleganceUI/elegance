@@ -133,7 +133,7 @@ private:
         }
     }
 
-    awaitable<void> serve_slowly(const bhttp::request<bhttp::string_body>& request) {
+    static awaitable<void> serve_slowly(const bhttp::request<bhttp::string_body>& request) {
         if (request.target() == "/slow") {
             asio::steady_timer timer(co_await asio::this_coro::executor, 60s);
             co_await timer.async_wait(use_awaitable);

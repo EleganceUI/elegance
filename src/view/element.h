@@ -271,7 +271,7 @@ protected:
     // Removed children animating out aren't laid out, so they'd stay where they were removed. When
     // their container moves (scrolling, its parent's layout), they move with it: call from arrange
     // with the exiting children it paints.
-    void move_exiting(const std::vector<Element*>& exiting);
+    void move_exiting(const std::vector<Element*>& exiting) const;
     // Tells the ancestors that the set of children a layout sees has changed.
     void notify_structure_changed() {
         if (parent_) {

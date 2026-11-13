@@ -524,7 +524,10 @@ std::vector<Path::Polyline> Path::flatten(float tolerance) const {
 }
 
 Rect Path::bounds() const {
-    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    float x0 = 0;
+    float y0 = 0;
+    float x1 = 0;
+    float y1 = 0;
     bool any = false;
     for (const Polyline& line : flatten(0.1f)) {
         for (const Point p : line.points) {

@@ -452,7 +452,6 @@ private:
 
 namespace elg {
 
-using detail::ViewAccess;
 
 NavigationStackStyle::~NavigationStackStyle() = default;
 

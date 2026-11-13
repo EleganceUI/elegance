@@ -144,7 +144,7 @@ void Element::notify_render_size(float scale) {
     for_each_child([scale](Element& child) { child.notify_render_size(scale); });
 }
 
-void Element::move_exiting(const std::vector<Element*>& exiting) {
+void Element::move_exiting(const std::vector<Element*>& exiting) const {
     if (moved_by_.x == 0 && moved_by_.y == 0) {
         return;
     }
@@ -217,8 +217,10 @@ Path rounded_rect_path(Rect r, const CornerRadii& radii) {
     constexpr float kKappa = 0.5522847498f;
     const float max_radius = std::min(r.width, r.height) / 2;
     const auto clamp = [&](float v) { return std::clamp(v, 0.f, max_radius); };
-    const float tl = clamp(radii.top_left), tr = clamp(radii.top_right), br = clamp(radii.bottom_right),
-                bl = clamp(radii.bottom_left);
+    const float tl = clamp(radii.top_left);
+    const float tr = clamp(radii.top_right);
+    const float br = clamp(radii.bottom_right);
+    const float bl = clamp(radii.bottom_left);
     Path path;
     path.move_to({r.x + tl, r.y}).line_to({r.max_x() - tr, r.y});
     if (tr > 0) {
@@ -242,7 +244,10 @@ Path rounded_rect_path(Rect r, const CornerRadii& radii) {
 
 std::shared_ptr<const std::vector<std::vector<Point>>> polygons_of(const Path& path, float tolerance, Rect& bounds) {
     auto polygons = std::make_shared<std::vector<std::vector<Point>>>();
-    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    float x0 = 0;
+    float y0 = 0;
+    float x1 = 0;
+    float y1 = 0;
     bool any = false;
     for (Path::Polyline& line : path.flatten(tolerance)) {
         if (line.points.size() < 3) {

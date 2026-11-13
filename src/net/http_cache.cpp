@@ -214,7 +214,10 @@ std::optional<std::int64_t> parse_http_date(std::string_view text) {
         }
         start = end + 1;
     }
-    std::string_view day_text, month_text, year_text, time_text;
+    std::string_view day_text;
+    std::string_view month_text;
+    std::string_view year_text;
+    std::string_view time_text;
     if (asctime) { // Sun Nov 6 08:49:37 1994
         if (tokens.size() != 5) {
             return std::nullopt;

@@ -71,13 +71,13 @@ struct Mounted {
         field->accessibility(out);
         return out.value;
     }
-    void type(std::string text) {
+    void type(std::string text) const {
         // Select everything first, so the typing replaces it.
         press(Key::a, primary_modifier());
         field->event_handler()->text_input({.kind = TextInputEvent::Kind::commit, .text = std::move(text)});
         detail::flush_effects();
     }
-    void press(Key key, KeyModifiers modifiers = KeyModifiers::none) {
+    void press(Key key, KeyModifiers modifiers = KeyModifiers::none) const {
         field->event_handler()->key({.kind = KeyEvent::Kind::down, .key = key, .modifiers = modifiers});
         detail::flush_effects();
     }

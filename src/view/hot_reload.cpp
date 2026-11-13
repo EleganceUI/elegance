@@ -233,7 +233,7 @@ public:
         }
     }
 
-    void set_status(Status status) { status_ = std::move(status); }
+    void set_status(Status status) const { status_ = std::move(status); }
     void clear_status_if_due() {
         if (status_.peek().phase == Phase::reloaded && Clock::now() >= clear_status_at_) {
             status_ = Status{};

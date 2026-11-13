@@ -306,7 +306,10 @@ Color apply(const ColorMatrix& m, Color color) {
 }
 
 Rect transformed_bounds(const LayerTransform& t, const Rect& r) {
-    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    float x0 = 0;
+    float y0 = 0;
+    float x1 = 0;
+    float y1 = 0;
     const Point corners[] = {{r.x, r.y}, {r.max_x(), r.y}, {r.x, r.max_y()}, {r.max_x(), r.max_y()}};
     for (std::size_t i = 0; i < 4; ++i) {
         const float dx = corners[i].x - t.pivot.x;

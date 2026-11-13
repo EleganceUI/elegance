@@ -381,7 +381,7 @@ Rect Window::system_controls_frame() {
     return native::system_controls_frame(native_);
 }
 
-void Window::request_close() {
+void Window::request_close() const {
     SDL_Event event{};
     event.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
     event.window.windowID = id_;
@@ -560,7 +560,7 @@ void Window::show() {
     SDL_ShowWindow(window_);
 }
 
-bool Window::shows_before_first_frame() const {
+bool Window::shows_before_first_frame() {
     return std::string_view(SDL_GetCurrentVideoDriver()) == "wayland";
 }
 
@@ -661,7 +661,7 @@ void Platform::post_key(std::uint32_t window_id, Key key, KeyModifiers modifiers
     }
 }
 
-void Platform::wake() {
+void Platform::wake() const {
     SDL_Event event{};
     event.type = wake_event_;
     SDL_PushEvent(&event);

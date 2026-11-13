@@ -170,7 +170,7 @@ public:
     // Whether to show the window before drawing its first frame, rather than after. Wayland
     // forbids drawing into a window before the compositor configures it, which showing does
     // (and maps windows only once they have a frame, so they never appear blank there anyway).
-    [[nodiscard]] bool shows_before_first_frame() const;
+    [[nodiscard]] static bool shows_before_first_frame();
     // The window system's handle (HWND on Windows), or nullptr.
     [[nodiscard]] void* native_handle() const;
 
@@ -178,7 +178,7 @@ public:
     void toggle_maximized();
     [[nodiscard]] bool maximized() const;
     // Asks to close, like the system close button (arrives as window_close_requested).
-    void request_close();
+    void request_close() const;
     // Where the system draws its window controls over the content (TitleBar::integrated on
     // macOS), in logical points; empty elsewhere and in fullscreen. Integrates the title bar again
     // first, as leaving fullscreen undoes it: call after window_fullscreen_changed.
@@ -252,7 +252,7 @@ public:
     std::optional<Event> poll_event();
 
     // Wakes wait_event() with EventType::wake. Thread-safe.
-    void wake();
+    void wake() const;
 
     // Queues a press and release of `key` for `window_id`, as if typed (Event::synthetic). UI
     // thread.

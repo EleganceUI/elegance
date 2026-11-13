@@ -278,7 +278,7 @@ struct AccessibilityAdapter::Impl {};
 AccessibilityAdapter::AccessibilityAdapter(void*, const Callbacks&) {}
 AccessibilityAdapter::~AccessibilityAdapter() = default;
 void AccessibilityAdapter::update() {}
-bool AccessibilityAdapter::active() const noexcept {
+bool AccessibilityAdapter::active() noexcept {
     return false;
 }
 

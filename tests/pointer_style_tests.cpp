@@ -33,7 +33,7 @@ struct Window {
         events.emplace(*root, focus);
     }
 
-    void layout() {
+    void layout() const {
         root->size_that_fits({100, 100});
         root->place({}, {100, 100});
     }

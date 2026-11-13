@@ -42,7 +42,7 @@ public:
 
     // Sends the current tree if assistive technology is listening. UI thread.
     void update();
-    [[nodiscard]] bool active() const noexcept;
+    [[nodiscard]] static bool active() noexcept;
 
     struct Impl;
 

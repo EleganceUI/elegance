@@ -242,7 +242,8 @@ public:
         node_->notify_changed();
     }
 
-    const State& operator=(T value) const {
+    // Assigns the value, not the handle, so it's const (and works on a const State).
+    const State& operator=(T value) const { // NOLINT(misc-unconventional-assign-operator,cppcoreguidelines-c-copy-assignment-signature)
         set(std::move(value));
         return *this;
     }
@@ -286,7 +287,8 @@ public:
     [[nodiscard]] T get() const { return get_(); }
     void set(T value) const { set_(std::move(value)); }
 
-    const Binding& operator=(T value) const {
+    // Assigns the value, not the handle, so it's const (and works on a const Binding).
+    const Binding& operator=(T value) const { // NOLINT(misc-unconventional-assign-operator,cppcoreguidelines-c-copy-assignment-signature)
         set(std::move(value));
         return *this;
     }

@@ -73,7 +73,8 @@ VideoTextures::VideoTextures(const Device& device, wgpu::BindGroupLayout  image_
 bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
     if (frame.kind == VideoFrame::Kind::external) {
         if (frame.device.Get() != device_.handle().Get() || !frame.texture ||
-            !frame.external_view || !frame.texture_lease) return false;
+            !frame.external_view || !frame.texture_lease) { return false;
+}
         texture.texture = frame.texture;
         texture.external = true;
         texture.group = create_image_group(device_.handle(), layout_, frame.external_view, sampler_);

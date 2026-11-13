@@ -66,12 +66,12 @@ public:
     void begin(const wgpu::RenderPassEncoder& pass, wgpu::TextureFormat format, std::uint32_t width,
                std::uint32_t height, const wgpu::Buffer& instances, const wgpu::BindGroup& image,
                const wgpu::BindGroup& stops, const wgpu::BindGroup& second_image);
-    void bind_image(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& image);
-    void bind_second_image(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& image);
+    static void bind_image(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& image);
+    static void bind_second_image(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& image);
     // Switches between "over" (the default) and "destination-in" blending, which keeps the
     // target only where the drawn quad's alpha covers it (masking a layer).
     void set_masking(const wgpu::RenderPassEncoder& pass, wgpu::TextureFormat format, bool masking);
-    void draw(const wgpu::RenderPassEncoder& pass, std::uint32_t first_instance, std::uint32_t count);
+    static void draw(const wgpu::RenderPassEncoder& pass, std::uint32_t first_instance, std::uint32_t count);
 
 private:
     struct Immediates {

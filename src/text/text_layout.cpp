@@ -57,12 +57,7 @@ bool emoji_by_default(char32_t c) {
         {0x274E, 0x274E}, {0x2753, 0x2755}, {0x2757, 0x2757}, {0x2795, 0x2797}, {0x27B0, 0x27B0}, {0x27BF, 0x27BF},
         {0x2B1B, 0x2B1C}, {0x2B50, 0x2B50}, {0x2B55, 0x2B55},
     };
-    for (const auto& range : ranges) {
-        if (c >= range[0] && c <= range[1]) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(ranges, [c](const auto& range) { return c >= range[0] && c <= range[1]; });
 }
 
 // Whether the character at `at` (decoded as `c`, ending at `next`) is drawn as an emoji: by

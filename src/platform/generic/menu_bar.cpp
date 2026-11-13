@@ -87,7 +87,7 @@ Item resolve_item(const MenuBarItem& item, std::uint32_t& id, bool macos) {
     result.checked = item.checked;
     result.shortcut = item.shortcut ? item.shortcut : standard_shortcut(item.role);
     result.role = item.role;
-    result.has_action = !(macos && !item.action && native_on_macos(item.role));
+    result.has_action = !macos || item.action || !native_on_macos(item.role);
     for (const MenuBarItem& child : item.submenu) {
         if (keeps(child, macos)) {
             result.submenu.push_back(resolve_item(child, id, macos));

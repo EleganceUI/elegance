@@ -18,6 +18,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <optional>
 #include <vector>
 
@@ -51,15 +52,14 @@ struct Window {
     }
 
     // Performs a screen reader's default action on the node that has one.
-    bool screen_reader_click() {
+    bool screen_reader_click() const {
         const detail::AccessTree tree = detail::build_accessibility_tree(*root, "Test", {100, 100}, nullptr);
-        for (const auto& [id, target] : tree.targets) {
-            if (target.action) {
-                target.action();
-                return true;
-            }
+        const auto found = std::ranges::find_if(tree.targets, [](const auto& entry) { return bool(entry.second.action); });
+        if (found == tree.targets.end()) {
+            return false;
         }
-        return false;
+        found->second.action();
+        return true;
     }
 };
 

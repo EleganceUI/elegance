@@ -37,7 +37,7 @@ public:
     // frame), and a request to be drawn again next frame. Call request_frame() on every draw
     // while it should keep moving; the window goes back to idle once nothing asks.
     //   Canvas([](GraphicsContext& g) { draw_spinner(g, g.time()); g.request_frame(); })
-    [[nodiscard]] double time() const noexcept;
+    [[nodiscard]] static double time() noexcept;
     void request_frame() noexcept;
 
     void fill_rect(Rect rect, Color color, CornerRadii radii = {});

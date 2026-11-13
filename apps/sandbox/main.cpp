@@ -282,7 +282,9 @@ struct FlowLayout : CachedLayout<FlowCache> {
     // Each child's position for a width, and the size of the whole.
     std::vector<Point> flow(float max_width, const FlowCache& cache, Size& size) const {
         std::vector<Point> positions;
-        float x = 0, y = 0, row_height = 0;
+        float x = 0;
+        float y = 0;
+        float row_height = 0;
         size = {};
         for (std::size_t i = 0; i < cache.sizes.size(); ++i) {
             const Size child = cache.sizes[i];

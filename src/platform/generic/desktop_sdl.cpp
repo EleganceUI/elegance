@@ -26,7 +26,6 @@
 
 namespace elg {
 
-using detail::log_info;
 using detail::log_warning;
 
 namespace {

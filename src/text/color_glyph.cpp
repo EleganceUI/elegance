@@ -118,7 +118,8 @@ private:
         case FT_COLR_PAINTFORMAT_ROTATE: {
             const FT_PaintRotate& r = paint.u.rotate;
             const double angle = fixed(r.angle) * std::numbers::pi; // counter-clockwise, y up
-            const double c = std::cos(angle), s = std::sin(angle);
+            const double c = std::cos(angle);
+            const double s = std::sin(angle);
             t = Affine::around({c, -s, 0, s, c, 0}, fixed(r.center_x), fixed(r.center_y));
             child = r.paint;
             return true;
@@ -173,7 +174,10 @@ private:
         }
 
         auto polygons = std::make_shared<std::vector<std::vector<Point>>>();
-        float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+        float x0 = 0;
+        float y0 = 0;
+        float x1 = 0;
+        float y1 = 0;
         bool any = false;
         for (Path::Polyline& line : outline.path.flatten(1.f / 1024)) {
             if (line.points.size() < 3) {
@@ -203,7 +207,8 @@ private:
 
     // Font units (y up) under `m` to em units (y down).
     [[nodiscard]] Point to_em(const Affine& m, double x, double y) const {
-        double ox = 0, oy = 0;
+        double ox = 0;
+        double oy = 0;
         m.apply(x, y, ox, oy);
         return {static_cast<float>(ox * em_), static_cast<float>(-oy * em_)};
     }
@@ -249,9 +254,12 @@ private:
             out.kind = ColorPaint::Kind::linear;
             out.stops = stops_of(g.colorline);
             // The gradient runs from p0 toward p1, along the normal of the line p0-p2.
-            const double x0 = fixed(g.p0.x), y0 = fixed(g.p0.y);
-            double x1 = fixed(g.p1.x), y1 = fixed(g.p1.y);
-            const double nx = -(fixed(g.p2.y) - y0), ny = fixed(g.p2.x) - x0;
+            const double x0 = fixed(g.p0.x);
+            const double y0 = fixed(g.p0.y);
+            double x1 = fixed(g.p1.x);
+            double y1 = fixed(g.p1.y);
+            const double nx = -(fixed(g.p2.y) - y0);
+            const double ny = fixed(g.p2.x) - x0;
             const double nn = nx * nx + ny * ny;
             if (nn > 1e-9) {
                 const double t = ((x1 - x0) * nx + (y1 - y0) * ny) / nn;
