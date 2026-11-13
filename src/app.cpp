@@ -548,27 +548,30 @@ int App::run() {
     State<std::vector<menus::Item>> shown_menus(menus::resolve(self.menus, macos_menus));
     State<std::map<std::uint32_t, bool>> shown_checks;
     const auto run_menu_command = [&](std::uint32_t id) {
-        const MenuBarItem* item = menus::find(self.menus, id);
-        if (!item || !item->enabled) {
+        const MenuBarItem* found = menus::find(self.menus, id);
+        if (!found || !found->enabled) {
             return;
         }
-        if (item->checked) {
+        // Copied: its callbacks may replace the menu bar (App::menu_bar), destroying the item
+        // and the function that's running.
+        const MenuBarItem item = *found;
+        if (item.checked) {
             const auto known = self.menu_checks.find(id);
-            const bool now = !(known != self.menu_checks.end() ? known->second : *item->checked);
+            const bool now = !(known != self.menu_checks.end() ? known->second : *item.checked);
             self.menu_checks[id] = now;
             shown_checks = self.menu_checks;
             platform::native::set_menu_checked(id, now);
-            if (item->toggled) {
-                item->toggled(now);
+            if (item.toggled) {
+                item.toggled(now);
             }
         }
-        if (item->action) {
-            item->action();
+        if (item.action) {
+            item.action();
             return;
         }
         const std::uint32_t focused = platform::focused_window_id();
         const auto target = find_window(focused);
-        switch (item->role) {
+        switch (item.role) {
         case MenuRole::quit: self.quit_requested = true; break;
         case MenuRole::minimize:
             if (target != windows.end()) {
@@ -582,7 +585,7 @@ int App::run() {
             break;
         default:
             // Editing: the shortcut, to the focused view (a text field takes it).
-            if (const auto key = menus::edit_key(item->role); key && focused != 0) {
+            if (const auto key = menus::edit_key(item.role); key && focused != 0) {
                 platform.post_key(focused, key->key, key->modifiers);
             }
             break;
@@ -924,6 +927,15 @@ int App::run() {
             closing.push_back(std::move(popup));
         } else {
             destroy_window(popup.id);
+        }
+    };
+    // Elements that a flush destroyed (If, ForEach, closed floating content) are forgotten by the
+    // event dispatcher before anything reads its state again: each flush is followed by this.
+    const auto forget_removed = [&] {
+        for (const auto& live : windows) {
+            if (std::exchange(live->tree_changed, false) && live->events.revalidate()) {
+                live->dirty = true;
+            }
         }
     };
     // Closing popups whose animation has finished go.
@@ -1457,6 +1469,7 @@ int App::run() {
         run_ui_tasks(); // e.g. a hot reload: state written here takes effect below
         run_due_timers(seconds_now());
         flush_effects(); // hover and other effects may ask for popups
+        forget_removed();
         process_popups();
         if (inspector) {
             auto target = find_window(inspector->target);
@@ -1500,23 +1513,21 @@ int App::run() {
         while (run_lifecycle_actions()) {
             flush_effects();
         }
+        forget_removed();
         // Views that just became .disabled() lose their press, gestures, and focus; what the
         // cancelled handlers write takes effect too.
         for (const auto& live : windows) {
             if (live->events.release_disabled()) {
                 live->dirty = true;
                 flush_effects();
+                forget_removed();
             }
         }
         const std::shared_ptr<const Animation> transaction = take_flush_animation();
         const LayoutAnimationScope layout_animation(transaction.get());
         finish_closing();
+        forget_removed();
         for (const auto& live : windows) {
-            if (std::exchange(live->tree_changed, false)) {
-                if (live->events.revalidate()) {
-                    live->dirty = true;
-                }
-            }
             if (live->dirty || live->animating) {
                 post_frame(*live);
                 // Content may have moved under the pointer (scrolling, animations).
@@ -1541,6 +1552,7 @@ int App::run() {
         // next event.
         if (std::exchange(inspector_changed, false)) {
             flush_effects();
+            forget_removed();
             for (const auto& live : windows) {
                 if (live->window.id() == inspector_window && live->dirty) {
                     post_frame(*live);
