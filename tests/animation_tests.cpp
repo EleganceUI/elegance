@@ -129,6 +129,42 @@ TEST_CASE("effects scheduled inside with_animation run with its animation") {
     CHECK(detail::current_animation() == nullptr);    // only while an effect runs
 }
 
+TEST_CASE("after a nested with_animation returns, the outer animation applies again") {
+    const Owner owner;
+    State<int> before(0);
+    State<int> inner(0);
+    State<int> after(0);
+    // Each effect records its animation's progress 0.1 s in: 0.2 for a 0.5 s linear animation, 0.5
+    // for a 0.2 s one, -1 for none.
+    std::vector<double> progress;
+    const auto record = [&](const State<int>& state) {
+        effect([&, state] {
+            (void)state();
+            const Animation* const animation = detail::current_animation();
+            progress.push_back(animation ? animation->progress(0.1) : -1);
+        });
+    };
+    record(before);
+    record(inner);
+    record(after);
+    progress.clear();
+
+    with_animation(Animation::linear(0.5), [&] {
+        before = 1;
+        with_animation(Animation::linear(0.2), [&] { inner = 1; });
+        after = 1;
+    });
+    detail::flush_effects();
+    REQUIRE(progress.size() == 3);
+    CHECK(progress[0] == Approx(0.2));
+    CHECK(progress[1] == Approx(0.5));
+    CHECK(progress[2] == Approx(0.2));
+
+    after = 2; // outside any transaction
+    detail::flush_effects();
+    CHECK(progress.back() == -1);
+}
+
 TEST_CASE("priority effects run first in a flush") {
     const Owner owner;
     State<int> source(0);

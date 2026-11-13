@@ -286,13 +286,13 @@ void flush_effects() {
     }
 }
 
-void begin_transaction(std::shared_ptr<const Animation> animation) {
+std::shared_ptr<const Animation> begin_transaction(std::shared_ptr<const Animation> animation) {
     check_ui_thread();
-    g_transaction = std::move(animation);
+    return std::exchange(g_transaction, std::move(animation));
 }
 
-void end_transaction() noexcept {
-    g_transaction = nullptr;
+void end_transaction(std::shared_ptr<const Animation> previous) noexcept {
+    g_transaction = std::move(previous);
 }
 
 const Animation* current_animation() noexcept {

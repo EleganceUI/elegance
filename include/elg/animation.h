@@ -147,19 +147,22 @@ private:
 /// with_animation(Animation::spring(), [&] { expanded = !expanded(); });
 /// @endcode
 ///
+/// Calls nest: inside an inner call its animation applies, and once it returns the outer call's
+/// animation applies again to the outer call's later writes.
+///
 /// @param animation How the changes animate.
 /// @param changes Runs once, now; the state it writes animates. Exceptions propagate.
 /// @throws UsageError Off the UI thread of a running App.
 template <std::invocable F>
 void with_animation(const Animation& animation, F&& changes) {
-    detail::begin_transaction(std::make_shared<const Animation>(animation));
+    std::shared_ptr<const Animation> previous = detail::begin_transaction(std::make_shared<const Animation>(animation));
     try {
         std::invoke(std::forward<F>(changes));
     } catch (...) {
-        detail::end_transaction();
+        detail::end_transaction(std::move(previous));
         throw;
     }
-    detail::end_transaction();
+    detail::end_transaction(std::move(previous));
 }
 
 /// How a view enters and leaves when an If/ForEach adds or removes it with an animation.
