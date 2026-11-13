@@ -12,6 +12,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <limits>
+
 using namespace elg;
 
 namespace {
@@ -39,6 +41,18 @@ public:
 };
 
 } // namespace
+
+TEST_CASE("a video's volume is clamped to 0...1 on every platform; NaN is a usage error", "[video]") {
+    const VideoPlayer player("does-not-matter.mp4");
+    player.set_volume(3.f);
+    CHECK(player.volume() == 1.f);
+    player.set_volume(-1.f);
+    CHECK(player.volume() == 0.f);
+    player.set_volume(0.25f);
+    CHECK(player.volume() == 0.25f);
+    CHECK_THROWS_AS(player.set_volume(std::numeric_limits<float>::quiet_NaN()), UsageError);
+    CHECK(player.volume() == 0.25f);
+}
 
 TEST_CASE("video players record requests before they load", "[video]") {
 #if !defined(_WIN32) && !defined(__APPLE__)

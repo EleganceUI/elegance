@@ -159,8 +159,8 @@ private:
 /// AudioStream({.on_render = [=](std::span<float> buffer) { mixer.fill(buffer); }})
 /// @endcode
 struct AudioStreamOptions {
-    /// empty: the system's default output (followed when it changes). An id that isn't connected
-    /// falls back to the default, with a warning in the log.
+    /// empty: the system's default output (followed when it changes). An id that isn't connected:
+    /// the stream doesn't play, on any device, and error() says the output isn't connected.
     std::string device_id;
     std::uint32_t sample_rate = 48000; ///< Frames per second, clamped to 8000...192000.
     std::uint32_t channels = 2;        ///< 1 (mono) or 2 (stereo); other counts are clamped.
