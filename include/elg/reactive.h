@@ -15,6 +15,7 @@
 // Computed, an effect) subscribes that closure; writing the State re-runs exactly the closures
 // that read it, once per frame. Everything is UI-thread only.
 
+#include <elg/error.h>
 #include <elg/export.h>
 
 #include <concepts>
@@ -209,6 +210,35 @@ ELG_API void flush_effects();
 [[noreturn]] ELG_API void throw_needs_environment();
 [[noreturn]] ELG_API void throw_no_environment();
 
+template <class F>
+struct IsStdFunction : std::false_type {};
+template <class Signature>
+struct IsStdFunction<std::function<Signature>> : std::true_type {};
+
+// Whether `function` is a callable that can be empty and is: an empty std::function, or a null
+// function or member pointer. Lambdas, States and the like never are; other values aren't
+// callables.
+template <class F>
+bool is_empty_function(const F& function) noexcept {
+    if constexpr ((std::is_pointer_v<F> && std::is_function_v<std::remove_pointer_t<F>>) ||
+                  std::is_member_pointer_v<F>) {
+        return function == nullptr;
+    } else if constexpr (IsStdFunction<F>::value) {
+        return !function;
+    } else {
+        return false;
+    }
+}
+
+// `function`, passed on; throws UsageError with `message` if it's empty (ELGSPEC-0010.R1).
+template <class F>
+F&& non_empty(F&& function, const char* message) {
+    if (is_empty_function(function)) {
+        throw UsageError(message);
+    }
+    return std::forward<F>(function);
+}
+
 } // namespace detail
 
 template <class T>
@@ -331,7 +361,10 @@ public:
     ///
     /// @param get Returns the value. Reads of state inside it are tracked.
     /// @param set Writes a new value.
-    Binding(std::function<T()> get, std::function<void(T)> set) : get_(std::move(get)), set_(std::move(set)) {}
+    /// @throws UsageError if `get` or `set` is empty.
+    Binding(std::function<T()> get, std::function<void(T)> set)
+        : get_(detail::non_empty(std::move(get), "Binding needs a getter")),
+          set_(detail::non_empty(std::move(set), "Binding needs a setter")) {}
     /// A binding to `state` (implicit, so a State goes wherever a Binding does).
     ///
     /// @param state The state to read and write; the binding keeps a handle to it.
@@ -429,11 +462,15 @@ public:
     /// Wraps anything callable that returns a T (or something convertible to it).
     ///
     /// @param function A State, Binding, Computed or closure; it's copied (or moved) in.
+    /// @throws UsageError if `function` is empty (an empty std::function or a null pointer).
     template <class F>
         requires(!std::same_as<std::remove_cvref_t<F>, Signal> && std::invocable<const std::remove_cvref_t<F>&> &&
                  std::convertible_to<std::invoke_result_t<const std::remove_cvref_t<F>&>, T>)
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward): forwarded into the capture
-    Signal(F&& function) : get_([f = std::remove_cvref_t<F>(std::forward<F>(function))] { return T(f()); }) {}
+    Signal(F&& function)
+        : get_([f = std::remove_cvref_t<F>(detail::non_empty(std::forward<F>(function), "Signal needs a function"))] {
+              return T(f());
+          }) {}
 
     /// Reads the value. A tracked read.
     ///
@@ -459,8 +496,10 @@ public:
     /// A computed value; `function` first runs when it's read.
     ///
     /// @param function Computes the value from state; the state it reads is tracked.
+    /// @throws UsageError if `function` is empty.
     explicit Computed(std::function<T()> function)
-        : node_(std::make_shared<detail::ComputedNode<T>>(std::move(function))) {}
+        : node_(std::make_shared<detail::ComputedNode<T>>(
+              detail::non_empty(std::move(function), "Computed needs a function"))) {}
 
     /// Reads the value, recomputing it first if state it read changed. A tracked read. If
     /// `function` threw, reads rethrow that until something it read before throwing changes.
@@ -485,6 +524,7 @@ private:
 ///
 /// @param function Computes the value from state; first runs when the value is read.
 /// @return The Computed.
+/// @throws UsageError if `function` is empty (an empty std::function or a null pointer).
 template <std::invocable F>
 auto computed(F function) -> Computed<std::decay_t<std::invoke_result_t<F>>> {
     using T = std::decay_t<std::invoke_result_t<F>>;
@@ -495,11 +535,14 @@ auto computed(F function) -> Computed<std::decay_t<std::invoke_result_t<F>>> {
 /// the next frame). Call it while building views; it ends when those views are removed.
 ///
 /// @param function The effect. Each run tracks the state it reads anew.
-/// @throws UsageError When no views are being built (nothing would end the effect), or off the
-///   UI thread of a running App.
+/// @throws UsageError When `function` is empty (an empty std::function or a null pointer), when
+///   no views are being built (nothing would end the effect), or off the UI thread of a running
+///   App.
 template <std::invocable F>
 void effect(F function) {
-    detail::start_effect(std::make_shared<detail::EffectNode>(std::function<void()>(std::move(function))));
+    std::function<void()> body(std::move(function));
+    detail::start_effect(
+        std::make_shared<detail::EffectNode>(detail::non_empty(std::move(body), "effect() needs a function")));
 }
 
 /// Reads state inside `function` without subscribing to it. Effects created inside still track

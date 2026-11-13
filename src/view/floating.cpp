@@ -762,6 +762,9 @@ View View::floating_container() const {
 }
 
 View View::popover(Binding<bool> is_presented, std::function<View()> content, const PopoverOptions& options) const {
+    if (!content) {
+        throw UsageError("popover() needs a content function");
+    }
     // The content in the environment's PopoverStyle, where the popover opens.
     auto panel = [content = std::move(content), padded = options.padded] {
         const EnvironmentValues environment = detail::styling_environment();
