@@ -440,9 +440,14 @@ ELG_EXPORT std::shared_ptr<const PickerStyle>* elg_picker_style_builtin(int32_t 
 ELG_EXPORT size_t elg_picker_config_count(const PickerConfiguration* c) {
     return c->labels.size();
 }
-// Borrowed from the configuration.
+// Borrowed from the configuration. An index past the last label is a usage error.
 ELG_EXPORT ElgStr elg_picker_config_label(const PickerConfiguration* c, size_t index) {
-    return c_str(c->labels.at(index));
+    ELG_TRY
+    if (index >= c->labels.size()) {
+        throw elg::UsageError("elg_picker_config_label: the index is past the last label");
+    }
+    return c_str(c->labels[index]);
+    ELG_CATCH(ElgStr{})
 }
 // A tracked read; the count while none is chosen.
 ELG_EXPORT size_t elg_picker_config_selected(const PickerConfiguration* c) {
