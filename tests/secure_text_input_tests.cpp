@@ -15,7 +15,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <optional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -52,16 +52,16 @@ struct Window {
     RecordingServices services;
     detail::FocusManager focus{&services};
     std::unique_ptr<detail::Element> root;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
 
     explicit Window(const View& view) {
         root = detail::lower(view.frame(200, 60, Alignment::top_leading),
                              {.text = &text_system(), .focus = &focus, .services = &services});
         root->size_that_fits({200, 60});
         root->place({}, {200, 60});
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
-    void click(Point at) {
+    void click(Point at) const {
         events->pointer_button(PointerEvent::Kind::down, at, MouseButton::left, 1, KeyModifiers::none);
         events->pointer_button(PointerEvent::Kind::up, at, MouseButton::left, 1, KeyModifiers::none);
         detail::flush_effects();

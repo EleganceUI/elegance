@@ -39,6 +39,8 @@ public:
 
     AccessibilityAdapter(const AccessibilityAdapter&) = delete;
     AccessibilityAdapter& operator=(const AccessibilityAdapter&) = delete;
+    AccessibilityAdapter(AccessibilityAdapter&&) = delete;
+    AccessibilityAdapter& operator=(AccessibilityAdapter&&) = delete;
 
     // Sends the current tree if assistive technology is listening. UI thread.
     void update();

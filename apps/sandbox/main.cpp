@@ -1140,5 +1140,8 @@ int main(int argc, char** argv) {
     } catch (const elg::Error& e) {
         std::println(stderr, "sandbox: {}", e.what());
         return 1;
+    } catch (const std::exception& e) {
+        std::println(stderr, "sandbox: unexpected error: {}", e.what());
+        return 1;
     }
 }

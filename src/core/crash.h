@@ -44,6 +44,8 @@ public:
 
     CrashHandlerScope(const CrashHandlerScope&) = delete;
     CrashHandlerScope& operator=(const CrashHandlerScope&) = delete;
+    CrashHandlerScope(CrashHandlerScope&&) = delete;
+    CrashHandlerScope& operator=(CrashHandlerScope&&) = delete;
 
 private:
     std::terminate_handler previous_;

@@ -16,19 +16,27 @@
 
 namespace elg::detail::platform {
 
-DynamicLibrary::DynamicLibrary(const std::filesystem::path& path) {
+namespace {
+
+void* open_library(const std::filesystem::path& path) {
 #if defined(_WIN32)
-    handle_ = LoadLibraryW(path.c_str());
-    if (!handle_) {
+    void* const handle = LoadLibraryW(path.c_str());
+    if (!handle) {
         throw ResourceError(std::format("can't load \"{}\" (error {})", path.string(), GetLastError()));
     }
 #else
-    handle_ = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
-    if (!handle_) {
-        throw ResourceError(std::format("can't load \"{}\": {}", path.string(), dlerror()));
+    void* const handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (!handle) {
+        // glibc and macOS keep dlerror()'s message per thread.
+        throw ResourceError(std::format("can't load \"{}\": {}", path.string(), dlerror())); // NOLINT(concurrency-mt-unsafe)
     }
 #endif
+    return handle;
 }
+
+} // namespace
+
+DynamicLibrary::DynamicLibrary(const std::filesystem::path& path) : handle_(open_library(path)) {}
 
 DynamicLibrary::~DynamicLibrary() {
 #if defined(_WIN32)

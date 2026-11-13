@@ -66,6 +66,7 @@ TEST_CASE("a navigation stack's style gets the titles and goes back", "[navigati
             .navigation_stack_style(RecordingStackStyle(seen)),
         {});
     REQUIRE(seen->stack);
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access): REQUIREd above
     const NavigationStackConfiguration& stack = *seen->stack;
     CHECK(stack.titles() == std::vector<std::string>{"Notes"});
     CHECK_FALSE(stack.can_go_back());

@@ -27,6 +27,8 @@ public:
     ~GraphicsContext();
     GraphicsContext(const GraphicsContext&) = delete;
     GraphicsContext& operator=(const GraphicsContext&) = delete;
+    GraphicsContext(GraphicsContext&&) = delete;
+    GraphicsContext& operator=(GraphicsContext&&) = delete;
 
     // Drawable area in logical points.
     [[nodiscard]] Size size() const noexcept;

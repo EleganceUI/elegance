@@ -76,7 +76,7 @@ Point place_floating(Size size, Rect anchor, const FloatingPlacement& placement,
         const float length = vertical ? size.width : size.height;
         const float area_start = vertical ? area.x : area.y;
         const float area_end = vertical ? area.max_x() : area.max_y();
-        float across = start;
+        float across = 0;
         switch (placement.alignment) {
         case FloatingAlignment::start:
             across = start;
@@ -358,6 +358,10 @@ public:
         }
         adopt(*content_);
     }
+    FloatingElement(const FloatingElement&) = delete;
+    FloatingElement(FloatingElement&&) = delete;
+    FloatingElement& operator=(const FloatingElement&) = delete;
+    FloatingElement& operator=(FloatingElement&&) = delete;
     ~FloatingElement() override {
         close();
         if (layer_) {
@@ -567,6 +571,10 @@ public:
             options_.motion = untrack([&] { return context_.environment.get<TooltipStyleKey>(); })->motion();
         }
     }
+    TooltipElement(const TooltipElement&) = delete;
+    TooltipElement(TooltipElement&&) = delete;
+    TooltipElement& operator=(const TooltipElement&) = delete;
+    TooltipElement& operator=(TooltipElement&&) = delete;
     ~TooltipElement() override { hide(); }
 
     EventHandler* event_handler() noexcept override { return this; }

@@ -68,7 +68,9 @@ public:
 protected:
     Layout() = default;
     Layout(const Layout&) = default;
+    Layout(Layout&&) = default;
     Layout& operator=(const Layout&) = default;
+    Layout& operator=(Layout&&) = default;
 
 private:
     static View make_view(std::shared_ptr<const Layout> layout, std::vector<View> children);

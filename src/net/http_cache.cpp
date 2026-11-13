@@ -30,7 +30,7 @@ namespace {
 namespace fs = std::filesystem;
 
 constexpr std::string_view kMagic = "ELGCACHE 1";
-constexpr std::int64_t kHeuristicCap = 24 * 60 * 60; // a Last-Modified guess stays fresh at most a day
+constexpr std::int64_t kHeuristicCap = std::int64_t{24} * 60 * 60; // a Last-Modified guess stays fresh at most a day
 // Delta-seconds (max-age, Age) larger than this count as this (RFC 9111 §1.2.2), so ages and
 // lifetimes add up without overflowing.
 constexpr std::int64_t kMaxDeltaSeconds = std::int64_t{1} << 31;

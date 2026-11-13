@@ -46,6 +46,8 @@ public:
     ~GlyphAtlas();
     GlyphAtlas(const GlyphAtlas&) = delete;
     GlyphAtlas& operator=(const GlyphAtlas&) = delete;
+    GlyphAtlas(GlyphAtlas&&) = delete;
+    GlyphAtlas& operator=(GlyphAtlas&&) = delete;
 
     // nullptr for glyphs with no outline (spaces), or while the atlas is full.
     const AtlasGlyph* find_or_add(const FontFace& face, std::uint32_t glyph_id);

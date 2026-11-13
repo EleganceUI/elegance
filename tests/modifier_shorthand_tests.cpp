@@ -16,7 +16,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <optional>
+#include <memory>
 
 using namespace elg;
 
@@ -31,7 +31,7 @@ detail::TextSystem& text_system() {
 struct Window {
     std::unique_ptr<detail::Element> root;
     detail::FocusManager focus;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
 
     explicit Window(const View& view) {
         root = detail::lower(ZStack({.alignment = Alignment::top_leading}, Rectangle().fill(Color::white),
@@ -39,7 +39,7 @@ struct Window {
                              {.text = &text_system()});
         root->size_that_fits({100, 100});
         root->place({}, {100, 100});
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 };
 

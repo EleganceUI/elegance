@@ -18,6 +18,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <memory>
 #include <optional>
 #include <string>
 #include <thread>
@@ -31,19 +32,19 @@ namespace {
 struct Window {
     std::unique_ptr<detail::Element> root;
     detail::FocusManager focus;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
 
     explicit Window(const View& view) {
         root = detail::lower(ZStack(Rectangle().fill(Color::white), view.frame(50, 50)), {});
         root->size_that_fits({100, 100});
         root->place({}, {100, 100});
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 
-    void down(Point at) { events->pointer_button(PointerEvent::Kind::down, at, MouseButton::left, 1, KeyModifiers::none); }
-    void up(Point at) { events->pointer_button(PointerEvent::Kind::up, at, MouseButton::left, 1, KeyModifiers::none); }
-    void move(Point at) { events->pointer_moved(at); }
-    void click(Point at) {
+    void down(Point at) const { events->pointer_button(PointerEvent::Kind::down, at, MouseButton::left, 1, KeyModifiers::none); }
+    void up(Point at) const { events->pointer_button(PointerEvent::Kind::up, at, MouseButton::left, 1, KeyModifiers::none); }
+    void move(Point at) const { events->pointer_moved(at); }
+    void click(Point at) const {
         move(at);
         down(at);
         up(at);
@@ -59,7 +60,7 @@ TEST_CASE("a drag begins after its minimum distance and reports where it went", 
     const detail::Scope::Use use(scope);
     std::vector<std::string> calls;
     std::optional<DragEvent> last;
-    Window window(kSquare.recognize(DragGesture({.minimum_distance = 5})
+    const Window window(kSquare.recognize(DragGesture({.minimum_distance = 5})
                                         .on_began([&] { calls.emplace_back("began"); })
                                         .on_changed([&](const DragEvent& e) {
                                             calls.emplace_back("changed");
@@ -80,18 +81,20 @@ TEST_CASE("a drag begins after its minimum distance and reports where it went", 
 
     CHECK(calls == std::vector<std::string>{"began", "changed", "changed", "ended"});
     REQUIRE(last);
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): REQUIRE(last) stops the test without an event
     CHECK(last->start_location.x == 5);
     CHECK(last->start_location.y == 5);
     CHECK(last->location.x == 65);
     CHECK(last->translation.x == 60);
     CHECK(last->translation.y == 60);
+    // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
 TEST_CASE("a drag with no minimum distance begins on the press", "[gesture]") {
     detail::Scope scope;
     const detail::Scope::Use use(scope);
     int began = 0;
-    Window window(kSquare.recognize(DragGesture({.minimum_distance = 0}).on_began([&] { ++began; })));
+    const Window window(kSquare.recognize(DragGesture({.minimum_distance = 0}).on_began([&] { ++began; })));
     window.move({30, 30});
     window.down({30, 30});
     CHECK(began == 1);
@@ -103,7 +106,7 @@ TEST_CASE("a drag that starts on a button or a click handler cancels the click",
     int pressed = 0;
     int clicked = 0;
     int dragged = 0;
-    Window window(VStack(Button(Rectangle().fill(Color::black).frame(50, 25), [&] { ++pressed; })
+    const Window window(VStack(Button(Rectangle().fill(Color::black).frame(50, 25), [&] { ++pressed; })
                              .button_style(PlainButtonStyle{}),
                          Rectangle().fill(Color::black).frame(50, 25))
                       .on_click([&] { ++clicked; })
@@ -139,7 +142,7 @@ TEST_CASE("a handler that keeps its press isn't taken over by gestures around it
     };
 
     SECTION("around it: the handler keeps the press") {
-        Window window(kSquare.on_pointer(track).on_drag([&](const DragEvent&) { ++dragged; }));
+        const Window window(kSquare.on_pointer(track).on_drag([&](const DragEvent&) { ++dragged; }));
         window.move({30, 30});
         window.down({30, 30});
         window.move({60, 30});
@@ -148,7 +151,7 @@ TEST_CASE("a handler that keeps its press isn't taken over by gestures around it
         CHECK(tracked.back() == PointerEvent::Kind::up);
     }
     SECTION("inside it: the gesture wins") {
-        Window window(kSquare.on_drag([&](const DragEvent&) { ++dragged; }).on_pointer(track));
+        const Window window(kSquare.on_drag([&](const DragEvent&) { ++dragged; }).on_pointer(track));
         window.move({30, 30});
         window.down({30, 30});
         window.move({60, 30});
@@ -198,7 +201,7 @@ TEST_CASE("a long press that came due fires on the release even before a tick", 
     const detail::Scope::Use use(scope);
     int long_pressed = 0;
     int clicked = 0;
-    Window window(kSquare.recognize(LongPressGesture([&] { ++long_pressed; }, {.duration = 0.01})).on_click([&] { ++clicked; }));
+    const Window window(kSquare.recognize(LongPressGesture([&] { ++long_pressed; }, {.duration = 0.01})).on_click([&] { ++clicked; }));
     window.move({50, 50});
     window.down({50, 50});
     std::this_thread::sleep_for(std::chrono::milliseconds(30));
@@ -255,7 +258,7 @@ TEST_CASE("a high-priority gesture takes presses from handlers that keep them", 
     const detail::Scope::Use use(scope);
     std::vector<PointerEvent::Kind> tracked;
     int dragged = 0;
-    Window window(kSquare
+    const Window window(kSquare
                       .on_pointer([&](const PointerEvent& e) {
                           tracked.push_back(e.kind);
                           return e.kind != PointerEvent::Kind::hover;
@@ -282,7 +285,7 @@ TEST_CASE("a simultaneous gesture runs alongside whatever has the press", "[gest
             .on_ended([&calls](const DragEvent&) { calls.emplace_back("ended"); });
     };
     SECTION("beside a gesture") {
-        Window window(kSquare.recognize(recorder(inner)).recognize(recorder(outer), {.simultaneous = true}));
+        const Window window(kSquare.recognize(recorder(inner)).recognize(recorder(outer), {.simultaneous = true}));
         window.move({30, 30});
         window.down({30, 30});
         window.move({60, 30});
@@ -291,7 +294,7 @@ TEST_CASE("a simultaneous gesture runs alongside whatever has the press", "[gest
         CHECK(outer == std::vector<std::string>{"began", "ended"});
     }
     SECTION("beside a handler that keeps its press, which isn't cancelled") {
-        Window window(kSquare
+        const Window window(kSquare
                           .on_pointer([&](const PointerEvent& e) {
                               tracked.push_back(e.kind);
                               return e.kind != PointerEvent::Kind::hover;
@@ -338,9 +341,9 @@ TEST_CASE("hold, then drag: it begins once held, and lets early moves go", "[ges
     std::this_thread::sleep_for(std::chrono::milliseconds(40));
     window.events->tick();
     REQUIRE(calls == std::vector<std::string>{"began"});
-    CHECK(last->translation.x == 0);
+    CHECK(last->translation.x == 0); // NOLINT(bugprone-unchecked-optional-access): the REQUIREd on_began set it
     window.move({53, 30});
-    CHECK(last->translation.x == 20);
+    CHECK(last->translation.x == 20); // NOLINT(bugprone-unchecked-optional-access): the REQUIREd on_began set it
     window.up({53, 30});
     CHECK(calls == std::vector<std::string>{"began", "ended"});
     CHECK(clicked == 1); // the drag took this press

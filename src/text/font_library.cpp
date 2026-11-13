@@ -196,7 +196,8 @@ FontFace::FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigne
             FT_Palette_Select(ft_face_, 0, &colors) == 0 && colors) {
             for (FT_UShort i = 0; i < palettes.num_palette_entries; ++i) {
                 const FT_Color& c = colors[i];
-                palette_.push_back(Color{c.red / 255.f, c.green / 255.f, c.blue / 255.f, c.alpha / 255.f});
+                palette_.push_back(Color{static_cast<float>(c.red) / 255.f, static_cast<float>(c.green) / 255.f,
+                                         static_cast<float>(c.blue) / 255.f, static_cast<float>(c.alpha) / 255.f});
             }
         }
     }

@@ -19,6 +19,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <vector>
@@ -49,14 +50,14 @@ View Block() {
 struct Window {
     std::unique_ptr<detail::Element> root;
     detail::FocusManager focus;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
     Size size;
 
     explicit Window(const View& view, Size window_size = {200, 200}) : size(window_size) {
         root = detail::lower(ZStack({.alignment = Alignment::top_leading}, Rectangle().fill(Color::white), view),
                              {.text = &text_system(), .focus = &focus});
         layout();
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
     void layout() {
         detail::flush_effects();
@@ -66,12 +67,12 @@ struct Window {
             events->revalidate(); // a lazy stack may have destroyed rows, as the app does after layout
         }
     }
-    void click(Point at, KeyModifiers modifiers = KeyModifiers::none, int count = 1) {
+    void click(Point at, KeyModifiers modifiers = KeyModifiers::none, int count = 1) const {
         events->pointer_button(PointerEvent::Kind::down, at, MouseButton::left, count, modifiers);
         events->pointer_button(PointerEvent::Kind::up, at, MouseButton::left, count, modifiers);
         detail::flush_effects();
     }
-    void press(Key key, KeyModifiers modifiers = KeyModifiers::none) {
+    void press(Key key, KeyModifiers modifiers = KeyModifiers::none) const {
         events->key({.kind = KeyEvent::Kind::down, .key = key, .modifiers = modifiers});
         events->key({.kind = KeyEvent::Kind::up, .key = key, .modifiers = modifiers});
         detail::flush_effects();
@@ -128,7 +129,7 @@ TEST_CASE("controls in a row keep their clicks; other children aren't rows", "[s
     const State<std::optional<int>> selected;
     int pressed = 0;
     std::vector<RowConfiguration> rows;
-    Window window(VStack({.spacing = 0},
+    const Window window(VStack({.spacing = 0},
                          Block(), // a header
                          ForEach(kItems, [&](int) {
                              return HStack({.spacing = 0}, Button(Block(), [&] { ++pressed; }).button_style(PlainButtonStyle{}),
@@ -151,7 +152,7 @@ TEST_CASE("multiple selection: Ctrl/Cmd toggles, Shift selects ranges, select al
     detail::Scope scope;
     const detail::Scope::Use use(scope);
     const State<std::set<int>> selected;
-    Window window(VStack({.spacing = 0}, ForEach(kItems, [](int) { return Block(); }))
+    const Window window(VStack({.spacing = 0}, ForEach(kItems, [](int) { return Block(); }))
                       .selection(selected.binding())
                       .row_style(PlainRowStyle{}));
 
@@ -177,7 +178,7 @@ TEST_CASE("the keyboard moves the selection and activates", "[selection]") {
     const State<std::optional<int>> selected;
     std::vector<int> opened;
     std::vector<RowConfiguration> rows;
-    Window window(VStack({.spacing = 0}, ForEach(kItems, [](int) { return Block(); }))
+    const Window window(VStack({.spacing = 0}, ForEach(kItems, [](int) { return Block(); }))
                       .selection(selected.binding(), {.on_activate = [&](int id) { opened.push_back(id); }})
                       .row_style(RecordingRowStyle(&rows)));
 
@@ -213,7 +214,7 @@ TEST_CASE("Shift+arrows extend a multiple selection; an HStack uses Left/Right",
     detail::Scope scope;
     const detail::Scope::Use use(scope);
     const State<std::set<int>> selected;
-    Window window(HStack({.spacing = 0}, ForEach(kItems, [](int) { return Rectangle().frame(20, 20); }))
+    const Window window(HStack({.spacing = 0}, ForEach(kItems, [](int) { return Rectangle().frame(20, 20); }))
                       .selection(selected.binding())
                       .row_style(PlainRowStyle{}));
     window.click({30, 10}); // the second

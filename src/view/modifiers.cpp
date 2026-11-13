@@ -141,10 +141,10 @@ ProposedSize AspectRatioModifier::content_proposal(ProposedSize proposal, const 
         return {w, w / ratio};
     }
     if (width) {
-        return {*width, *width / ratio};
+        return {width, *width / ratio};
     }
     if (height) {
-        return {*height * ratio, *height};
+        return {*height * ratio, height};
     }
     // Nothing to fit into: the content's ideal width, at the ratio.
     const Size ideal = content.size_that_fits({});

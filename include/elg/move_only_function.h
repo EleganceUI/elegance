@@ -48,6 +48,7 @@ public:
     MoveOnlyFunction& operator=(MoveOnlyFunction&&) noexcept = default;
     MoveOnlyFunction(const MoveOnlyFunction&) = delete;
     MoveOnlyFunction& operator=(const MoveOnlyFunction&) = delete;
+    ~MoveOnlyFunction() = default;
 
     MoveOnlyFunction& operator=(std::nullptr_t) noexcept {
         callable_.reset();
@@ -76,6 +77,7 @@ private:
     template <typename F>
     struct Model final : Concept {
         template <typename G>
+            requires(!std::same_as<std::remove_cvref_t<G>, Model>)
         explicit Model(G&& f) : function(std::forward<G>(f)) {}
         R call(Args&&... args) override { return std::invoke_r<R>(function, std::forward<Args>(args)...); }
         F function;

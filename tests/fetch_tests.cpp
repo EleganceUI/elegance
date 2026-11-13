@@ -101,6 +101,10 @@ public:
         thread_ = std::thread([this] { io_.run(); });
     }
 
+    TestServer(const TestServer&) = delete;
+    TestServer(TestServer&&) = delete;
+    TestServer& operator=(const TestServer&) = delete;
+    TestServer& operator=(TestServer&&) = delete;
     ~TestServer() {
         io_.stop();
         thread_.join();
@@ -118,6 +122,8 @@ public:
     int not_modified() const { return not_modified_; }
 
 private:
+    // Coroutines co_awaited right away by their caller, which owns what they refer to.
+    // NOLINTBEGIN(cppcoreguidelines-avoid-reference-coroutine-parameters)
     template <class Stream>
     awaitable<void> serve(Stream& stream) {
         boost::beast::flat_buffer buffer;
@@ -139,6 +145,7 @@ private:
             co_await timer.async_wait(use_awaitable);
         }
     }
+    // NOLINTEND(cppcoreguidelines-avoid-reference-coroutine-parameters)
 
     bhttp::response<bhttp::string_body> respond(const bhttp::request<bhttp::string_body>& request) {
         bhttp::response<bhttp::string_body> response{bhttp::status::ok, 11};
@@ -205,7 +212,7 @@ private:
                 co_await serve(socket);
             }
         } catch (const std::exception&) {
-            // The client gave up (a refused certificate, a cancelled request).
+            // Swallowed: the client gave up (a refused certificate, a cancelled request).
         }
     }
 
@@ -240,6 +247,10 @@ public:
         thread_ = std::thread([this] { io_.run(); });
     }
 
+    TestProxy(const TestProxy&) = delete;
+    TestProxy(TestProxy&&) = delete;
+    TestProxy& operator=(const TestProxy&) = delete;
+    TestProxy& operator=(TestProxy&&) = delete;
     ~TestProxy() {
         io_.stop();
         thread_.join();
@@ -259,7 +270,7 @@ private:
             }
         } catch (const std::exception&) {
             boost::system::error_code ignored;
-            to->shutdown(asio::ip::tcp::socket::shutdown_send, ignored);
+            static_cast<void>(to->shutdown(asio::ip::tcp::socket::shutdown_send, ignored));
         }
     }
 
@@ -297,6 +308,7 @@ private:
             asio::co_spawn(io_, pipe(client, server), asio::detached);
             asio::co_spawn(io_, pipe(server, client), asio::detached);
         } catch (const std::exception&) {
+            // Swallowed: the client went away before the tunnel was set up.
         }
     }
 
@@ -322,6 +334,10 @@ struct TemporaryDirectory {
         path = std::filesystem::temp_directory_path() / std::format("elg-cache-test-{:x}", random());
         std::filesystem::create_directories(path);
     }
+    TemporaryDirectory(const TemporaryDirectory&) = delete;
+    TemporaryDirectory(TemporaryDirectory&&) = delete;
+    TemporaryDirectory& operator=(const TemporaryDirectory&) = delete;
+    TemporaryDirectory& operator=(TemporaryDirectory&&) = delete;
     ~TemporaryDirectory() {
         std::error_code ignored;
         std::filesystem::remove_all(path, ignored);
@@ -468,6 +484,7 @@ TEST_CASE("proxy settings: URLs, NO_PROXY, the environment, Windows' lists", "[p
     const net::ProxyChoice full = net::parse_proxy_url("http://us%20er:p%40ss@proxy.corp:8080");
     REQUIRE(full);
     REQUIRE(full->has_value());
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): both proxies are REQUIREd before they're read
     CHECK((*full)->host == "proxy.corp");
     CHECK((*full)->port == "8080");
     CHECK((*full)->authorization == "Basic dXMgZXI6cEBzcw=="); // "us er:p@ss"
@@ -475,6 +492,7 @@ TEST_CASE("proxy settings: URLs, NO_PROXY, the environment, Windows' lists", "[p
     REQUIRE((bare && bare->has_value()));
     CHECK((*bare)->port == "1080");
     CHECK((*bare)->authorization.empty());
+    // NOLINTEND(bugprone-unchecked-optional-access)
     CHECK_FALSE(net::parse_proxy_url("https://proxy.corp:443"));
     CHECK_FALSE(net::parse_proxy_url("socks5://proxy.corp:1080"));
 
@@ -498,16 +516,16 @@ TEST_CASE("proxy settings: URLs, NO_PROXY, the environment, Windows' lists", "[p
     environment["HTTP_PROXY"] = "http://ignored.corp:3128"; // CGI servers set this from a request header
     const auto https = net::proxy_from_environment("https", "example.com", "443", get);
     REQUIRE((https && *https && https->value()));
-    CHECK(https->value()->host == "secure.corp");
+    CHECK(https->value()->host == "secure.corp"); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
     CHECK_FALSE(net::proxy_from_environment("http", "example.com", "80", get));
     environment["http_proxy"] = "plain.corp:8080";
     const auto http = net::proxy_from_environment("http", "example.com", "80", get);
     REQUIRE((http && *http && http->value()));
-    CHECK(http->value()->host == "plain.corp");
+    CHECK(http->value()->host == "plain.corp"); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
     environment["NO_PROXY"] = "example.com";
     const auto bypassed = net::proxy_from_environment("https", "example.com", "443", get);
     REQUIRE((bypassed && *bypassed));
-    CHECK_FALSE(bypassed->value().has_value());
+    CHECK_FALSE(bypassed->value().has_value()); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
 
     const auto windows = [](std::string_view proxies, std::string_view bypass, std::string_view scheme,
                             std::string_view host) -> std::string {
@@ -547,6 +565,7 @@ TEST_CASE("HTTP dates and freshness", "[cache]") {
     const auto entry = [&](const net::CacheHeaders& headers) {
         return net::make_cache_entry("https://example.com/a.png", false, headers, {1, 2, 3}, now);
     };
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): each entry is REQUIREd before it's read
     const auto max_age = entry({.cache_control = "public, max-age=60"});
     REQUIRE(max_age);
     CHECK(max_age->fresh(now + 59));
@@ -582,6 +601,7 @@ TEST_CASE("HTTP dates and freshness", "[cache]") {
     CHECK_FALSE(no_cache->usable_stale());
     // A 304 renews it.
     net::CacheEntry renewed = *aged;
+    // NOLINTEND(bugprone-unchecked-optional-access)
     net::refresh_cache_entry(renewed, {.cache_control = "max-age=60"}, now + 100);
     CHECK(renewed.fresh(now + 159));
     CHECK(renewed.etag == "\"e\"");
@@ -639,7 +659,7 @@ TEST_CASE("the disk cache keeps to its limit and clears only its own files", "[c
     std::ofstream(directory.path / "ab" / "notes.txt") << "not the cache's";
     std::ofstream(directory.path / "keep.txt") << "nor this";
 
-    net::HttpCache cache(directory.path, 16 * 1024);
+    net::HttpCache cache(directory.path, std::uint64_t{16} * 1024);
     const auto store = [&](int i) {
         auto entry = net::make_cache_entry(std::format("https://example.com/{}.png", i), false,
                                            {.cache_control = "max-age=600"}, std::vector<std::uint8_t>(1500, 7),
@@ -660,7 +680,7 @@ TEST_CASE("the disk cache keeps to its limit and clears only its own files", "[c
     auto late = net::make_cache_entry("https://example.com/late.png", false, {.cache_control = "max-age=600"}, {1},
                                       net::unix_now());
     REQUIRE(late);
-    cache.store(*late, before);
+    cache.store(*late, before); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
     CHECK_FALSE(cache.find("https://example.com/late.png"));
     CHECK_FALSE(cache.find("https://example.com/11.png"));
     CHECK(std::filesystem::exists(directory.path / "ab" / "notes.txt"));
@@ -668,7 +688,7 @@ TEST_CASE("the disk cache keeps to its limit and clears only its own files", "[c
 
     // A retired cache (replaced by set_image_cache) stores nothing.
     cache.retire();
-    cache.store(*late, cache.generation());
+    cache.store(*late, cache.generation()); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
     CHECK_FALSE(cache.find("https://example.com/late.png"));
 }
 

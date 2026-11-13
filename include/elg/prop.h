@@ -54,6 +54,7 @@ public:
     template <class F>
         requires(!std::same_as<std::remove_cvref_t<F>, Prop> && std::invocable<const std::remove_cvref_t<F>&> &&
                  std::convertible_to<std::invoke_result_t<const std::remove_cvref_t<F>&>, T>)
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward): forwarded into the capture
     Prop(F&& function)
         : value_(Reactive([f = std::remove_cvref_t<F>(std::forward<F>(function))] { return T(f()); })) {}
 
@@ -63,6 +64,7 @@ public:
         requires(!std::same_as<std::remove_cvref_t<F>, Prop> &&
                  std::invocable<const std::remove_cvref_t<F>&, const EnvironmentValues&> &&
                  std::convertible_to<std::invoke_result_t<const std::remove_cvref_t<F>&, const EnvironmentValues&>, T>)
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward): forwarded into the capture
     Prop(F&& function)
         : value_(FromEnvironment([f = std::remove_cvref_t<F>(std::forward<F>(function))](
                                      const EnvironmentValues& environment) { return T(f(environment)); })) {}

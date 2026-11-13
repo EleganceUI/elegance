@@ -70,7 +70,7 @@ View icon(Icon which, float size, Weight weight) {
     const bool caption = which == Icon::minimize || which == Icon::maximize || which == Icon::restore ||
                          which == Icon::close;
     if (caption && icon_font_available()) {
-        const char* glyph = "";
+        const char* glyph = nullptr;
         switch (which) {
         case Icon::minimize: glyph = "\xEE\xA4\xA1"; break; // U+E921 ChromeMinimize
         case Icon::maximize: glyph = "\xEE\xA4\xA2"; break; // U+E922 ChromeMaximize

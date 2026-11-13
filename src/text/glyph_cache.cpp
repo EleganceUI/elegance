@@ -49,7 +49,7 @@ std::uint64_t hash_font(const std::vector<unsigned char>& bytes) {
     std::uint64_t hash = 0x9E3779B97F4A7C15ull ^ bytes.size();
     const std::size_t words = bytes.size() / 8;
     for (std::size_t i = 0; i < words; ++i) {
-        std::uint64_t word;
+        std::uint64_t word = 0;
         std::memcpy(&word, bytes.data() + i * 8, 8);
         hash = (hash ^ word) * 0x100000001B3ull;
         hash ^= hash >> 29;
@@ -116,6 +116,7 @@ GlyphDiskCache::FontCache& GlyphDiskCache::font(const FontFace& face) {
     slot = std::make_unique<FontCache>();
     FontCache& cache = *slot;
     // A variable font's weights are different glyphs from the same file.
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access): find() and store() return before this without directory_
     cache.file = *directory_ / (face.variation_weight() > 0 ? std::format("{:016x}-wght{}.glyphs", hash_font(face.bytes()),
                                                                           face.variation_weight())
                                                             : std::format("{:016x}.glyphs", hash_font(face.bytes())));
@@ -135,7 +136,7 @@ GlyphDiskCache::FontCache& GlyphDiskCache::font(const FontFace& face) {
             valid_header = true;
             std::size_t at = sizeof(FileHeader);
             while (at + sizeof(RecordHeader) <= cache.contents.size()) {
-                RecordHeader record;
+                RecordHeader record{};
                 std::memcpy(&record, cache.contents.data() + at, sizeof(record));
                 const std::size_t size_bytes = std::size_t{record.width} * record.height * 4;
                 const std::size_t pixels = at + sizeof(record);

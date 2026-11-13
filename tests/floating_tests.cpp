@@ -23,7 +23,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <optional>
+#include <memory>
 
 using namespace elg;
 using detail::place_floating;
@@ -41,7 +41,7 @@ bool same(Point a, Point b) {
 struct Window {
     std::unique_ptr<detail::Element> root;
     detail::FocusManager focus;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
     bool tree_changed = false;
 
     explicit Window(const View& view) {
@@ -49,7 +49,7 @@ struct Window {
             detail::lower(ZStack({.alignment = Alignment::top_leading}, Rectangle().fill(Color::white), view),
                           {.text = &text_system(), .tree_changed = &tree_changed, .focus = &focus}));
         layout();
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 
     // As the app does each frame: effects (bindings changing), then layout.

@@ -79,6 +79,7 @@ Swapchain::~Swapchain() {
         try {
             device_.finish_deferred();
         } catch (...) {
+            // Swallowed: a destructor; a device error reaches the renderer on its next submit.
         }
     }
 }

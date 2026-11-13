@@ -406,7 +406,7 @@ SDL_HitTestResult SDLCALL hit_test(SDL_Window*, const SDL_Point* area, void* dat
         case HitArea::resize_left: return SDL_HITTEST_RESIZE_LEFT;
         }
     } catch (...) {
-        // Nothing may unwind through the window system; a failed test is an ordinary point.
+        // Swallowed: nothing may unwind through the window system; a failed test is an ordinary point.
     }
     return SDL_HITTEST_NORMAL;
 }

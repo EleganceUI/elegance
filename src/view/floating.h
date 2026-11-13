@@ -60,6 +60,10 @@ public:
     };
 
     explicit FloatingLayerElement(std::unique_ptr<Element> content, bool container = false);
+    FloatingLayerElement(const FloatingLayerElement&) = delete;
+    FloatingLayerElement(FloatingLayerElement&&) = delete;
+    FloatingLayerElement& operator=(const FloatingLayerElement&) = delete;
+    FloatingLayerElement& operator=(FloatingLayerElement&&) = delete;
     ~FloatingLayerElement() override;
 
     // The layer floating content with `boundary` goes in, for a view at `element`: the nearest

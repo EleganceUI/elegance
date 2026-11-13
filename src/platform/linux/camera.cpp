@@ -32,6 +32,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <thread>
 
 namespace elg::detail {
@@ -48,7 +49,7 @@ int xioctl(int fd, unsigned long request, void* argument) {
 }
 
 std::string errno_text() {
-    return std::strerror(errno);
+    return std::generic_category().message(errno); // unlike strerror, safe on any thread
 }
 
 // Owns a file descriptor.
@@ -60,6 +61,8 @@ public:
             close(fd_);
         }
     }
+    FileHandle(const FileHandle&) = delete;
+    FileHandle& operator=(const FileHandle&) = delete;
     FileHandle(FileHandle&& other) noexcept : fd_(std::exchange(other.fd_, -1)) {}
     FileHandle& operator=(FileHandle&& other) noexcept {
         std::swap(fd_, other.fd_);
@@ -119,6 +122,10 @@ class V4L2Camera final : public CameraSource {
 public:
     explicit V4L2Camera(CameraOptions options) : options_(std::move(options)) {}
 
+    V4L2Camera(const V4L2Camera&) = delete;
+    V4L2Camera(V4L2Camera&&) = delete;
+    V4L2Camera& operator=(const V4L2Camera&) = delete;
+    V4L2Camera& operator=(V4L2Camera&&) = delete;
     ~V4L2Camera() override { stop_capture(); }
 
     // --- UI thread ---
@@ -396,7 +403,7 @@ private:
             const std::size_t size = packed_size(frame.format, width, height);
             const std::size_t row_bytes = frame.format == VideoFrame::Format::yuy2 ? width * 2 : width;
             if (stride == row_bytes && data.size() >= size) {
-                frame.pixels = std::make_shared<std::vector<std::uint8_t>>(data.begin(), data.begin() + size);
+                frame.pixels = std::make_shared<std::vector<std::uint8_t>>(data.begin(), data.begin() + static_cast<std::ptrdiff_t>(size));
             } else {
                 auto pixels = std::make_shared<std::vector<std::uint8_t>>(size);
                 if (!repack(frame.format, data, width, height, stride, *pixels)) {
@@ -433,7 +440,7 @@ private:
         };
         std::vector<Plane> planes;
         switch (format) {
-        case VideoFrame::Format::yuy2: planes = {{height, width * 2u, stride}}; break;
+        case VideoFrame::Format::yuy2: planes = {{height, std::size_t{width} * 2, stride}}; break;
         case VideoFrame::Format::nv12: planes = {{height, width, stride}, {chroma_h, chroma_w * 2, stride}}; break;
         default: planes = {{height, width, stride}, {chroma_h, chroma_w, stride / 2}, {chroma_h, chroma_w, stride / 2}}; break;
         }

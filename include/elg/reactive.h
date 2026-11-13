@@ -43,6 +43,8 @@ public:
 
     ReactiveNode(const ReactiveNode&) = delete;
     ReactiveNode& operator=(const ReactiveNode&) = delete;
+    ReactiveNode(ReactiveNode&&) = delete;
+    ReactiveNode& operator=(ReactiveNode&&) = delete;
 
     // A read: subscribes the running computed/effect to this node, and brings a computed up to
     // date first.
@@ -96,6 +98,7 @@ public:
         if (error_) {
             std::rethrow_exception(error_);
         }
+        // NOLINTNEXTLINE(bugprone-unchecked-optional-access): once track() returns, error_ or value_ is set
         return *value_;
     }
 
@@ -149,6 +152,8 @@ public:
 
     Scope(const Scope&) = delete;
     Scope& operator=(const Scope&) = delete;
+    Scope(Scope&&) = delete;
+    Scope& operator=(Scope&&) = delete;
 
     void adopt(std::shared_ptr<ReactiveNode> node);
     // Runs `cleanup` when the scope ends, after its effects are disposed (timers stop, views
@@ -162,6 +167,8 @@ public:
         ~Use();
         Use(const Use&) = delete;
         Use& operator=(const Use&) = delete;
+        Use(Use&&) = delete;
+        Use& operator=(Use&&) = delete;
 
     private:
         Scope* previous_;
@@ -337,6 +344,7 @@ public:
     template <class F>
         requires(!std::same_as<std::remove_cvref_t<F>, Signal> && std::invocable<const std::remove_cvref_t<F>&> &&
                  std::convertible_to<std::invoke_result_t<const std::remove_cvref_t<F>&>, T>)
+    // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward): forwarded into the capture
     Signal(F&& function) : get_([f = std::remove_cvref_t<F>(std::forward<F>(function))] { return T(f()); }) {}
 
     T operator()() const { return get_(); }

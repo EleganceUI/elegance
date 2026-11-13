@@ -147,6 +147,8 @@ public:
 
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
+    Window(Window&&) = delete;
+    Window& operator=(Window&&) = delete;
 
     [[nodiscard]] std::uint32_t id() const noexcept { return id_; }
     [[nodiscard]] PixelSize pixel_size() const;
@@ -244,6 +246,8 @@ public:
 
     Platform(const Platform&) = delete;
     Platform& operator=(const Platform&) = delete;
+    Platform(Platform&&) = delete;
+    Platform& operator=(Platform&&) = delete;
 
     // Blocks until an event arrives.
     Event wait_event();

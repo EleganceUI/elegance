@@ -390,7 +390,7 @@ private:
 // state. The row itself handles clicks, keys and accessibility.
 struct RowConfiguration {
     View content;
-    Axis axis; // the stack's: rows usually span across it
+    Axis axis{}; // the stack's: rows usually span across it
     Signal<bool> is_selected;
     Signal<bool> is_hovered;
     Signal<bool> is_focused; // the row keys act on, while the stack has keyboard focus (Tab)

@@ -117,6 +117,8 @@ public:
     ~FullLayoutScope();
     FullLayoutScope(const FullLayoutScope&) = delete;
     FullLayoutScope& operator=(const FullLayoutScope&) = delete;
+    FullLayoutScope(FullLayoutScope&&) = delete;
+    FullLayoutScope& operator=(FullLayoutScope&&) = delete;
 
 private:
     bool previous_;
@@ -124,6 +126,11 @@ private:
 
 class Element {
 public:
+    Element() = default;
+    Element(const Element&) = delete;
+    Element(Element&&) = delete;
+    Element& operator=(const Element&) = delete;
+    Element& operator=(Element&&) = delete;
     virtual ~Element();
 
     // Describes this element for the inspector. The default names it after its type.
@@ -903,6 +910,10 @@ public:
             target->needs_frame = needs_frame;
         }
     }
+    ScrollElement(const ScrollElement&) = delete;
+    ScrollElement(ScrollElement&&) = delete;
+    ScrollElement& operator=(const ScrollElement&) = delete;
+    ScrollElement& operator=(ScrollElement&&) = delete;
     ~ScrollElement() override {
         if (options_.position) {
             if (const auto& target = ScrollTargetAccess::target(*options_.position); target->element == this) {
@@ -937,7 +948,7 @@ protected:
 private:
     struct Thumb {
         Rect rect;    // window points
-        float travel; // how far the thumb moves from start to end
+        float travel = 0; // how far the thumb moves from start to end
     };
 
     EventResult pointer(const PointerEvent& event, Rect frame) override;

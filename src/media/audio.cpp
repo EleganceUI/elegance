@@ -50,6 +50,11 @@ public:
         return ready_ ? &engine_ : nullptr;
     }
 
+    AudioEngine() = default;
+    AudioEngine(const AudioEngine&) = delete;
+    AudioEngine(AudioEngine&&) = delete;
+    AudioEngine& operator=(const AudioEngine&) = delete;
+    AudioEngine& operator=(AudioEngine&&) = delete;
     ~AudioEngine() {
         if (ready_) {
             ma_engine_uninit(&engine_);
@@ -92,6 +97,11 @@ struct SoundData {
     mutable std::mutex mutex;
     mutable std::list<Voice> voices;
 
+    SoundData() = default;
+    SoundData(const SoundData&) = delete;
+    SoundData(SoundData&&) = delete;
+    SoundData& operator=(const SoundData&) = delete;
+    SoundData& operator=(SoundData&&) = delete;
     ~SoundData() {
         for (Voice& voice : voices) {
             ma_sound_uninit(&voice.sound);
@@ -195,6 +205,11 @@ struct AudioPlayerState {
     State<float> volume{1.f};
     State<bool> looping{false};
 
+    AudioPlayerState() = default;
+    AudioPlayerState(const AudioPlayerState&) = delete;
+    AudioPlayerState(AudioPlayerState&&) = delete;
+    AudioPlayerState& operator=(const AudioPlayerState&) = delete;
+    AudioPlayerState& operator=(AudioPlayerState&&) = delete;
     ~AudioPlayerState() {
         if (ready) {
             ma_sound_uninit(&sound);
@@ -238,6 +253,11 @@ public:
         wake_.notify_all();
     }
 
+    AudioTicker() = default;
+    AudioTicker(const AudioTicker&) = delete;
+    AudioTicker(AudioTicker&&) = delete;
+    AudioTicker& operator=(const AudioTicker&) = delete;
+    AudioTicker& operator=(AudioTicker&&) = delete;
     ~AudioTicker() {
         thread_.request_stop();
         wake_.notify_all();

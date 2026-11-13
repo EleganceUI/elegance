@@ -25,8 +25,8 @@ struct Mounted {
     detail::Element* field = nullptr;
 
     // The arrows are icons, which need a text system.
-    explicit Mounted(const View& view) : root(detail::lower(view, {.text = &text_system(), .focus = &focus})) {
-        field = find_field(*root);
+    explicit Mounted(const View& view)
+        : root(detail::lower(view, {.text = &text_system(), .focus = &focus})), field(find_field(*root)) {
         REQUIRE(field);
     }
 

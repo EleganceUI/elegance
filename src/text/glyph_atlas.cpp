@@ -29,7 +29,7 @@ namespace {
 
 // Builds an msdfgen shape from a FreeType outline (font units, y up).
 struct OutlineBuilder {
-    msdfgen::Shape* shape;
+    msdfgen::Shape* shape = nullptr;
     msdfgen::Contour* contour = nullptr;
     msdfgen::Point2 position{};
 
@@ -285,7 +285,8 @@ const AtlasGlyph* GlyphAtlas::find_or_add(const FontFace& face, std::uint32_t gl
         }
         it = glyphs_.emplace(key, placed).first;
     }
-    return it->second ? &*it->second : nullptr;
+    const std::optional<AtlasGlyph>& glyph = it->second;
+    return glyph ? &*glyph : nullptr;
 }
 
 // A glyph's distance field to generate: everything a worker needs, independent of FreeType.

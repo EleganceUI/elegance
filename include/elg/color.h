@@ -18,7 +18,8 @@ struct Color {
 
     static constexpr Color rgb(std::uint8_t red, std::uint8_t green, std::uint8_t blue,
                                float alpha = 1) noexcept {
-        return {red / 255.f, green / 255.f, blue / 255.f, alpha};
+        return {static_cast<float>(red) / 255.f, static_cast<float>(green) / 255.f, static_cast<float>(blue) / 255.f,
+                alpha};
     }
 
     // From 0xRRGGBB.

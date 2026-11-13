@@ -57,6 +57,9 @@ public:
 
     QuadRenderer(const QuadRenderer&) = delete;
     QuadRenderer& operator=(const QuadRenderer&) = delete;
+    QuadRenderer(QuadRenderer&&) = delete;
+    QuadRenderer& operator=(QuadRenderer&&) = delete;
+    ~QuadRenderer() = default;
 
     // The gradient stops' group: one read-only storage buffer.
     [[nodiscard]] wgpu::BindGroup stops_group(const wgpu::Buffer& stops) const;
@@ -86,8 +89,8 @@ private:
     Immediates immediates_{};
     // Pipelines are specific to the target format (swapchain, layers) and blending.
     struct CachedPipeline {
-        wgpu::TextureFormat format;
-        bool masking;
+        wgpu::TextureFormat format{};
+        bool masking = false;
         wgpu::RenderPipeline pipeline;
     };
     std::vector<CachedPipeline> pipelines_;

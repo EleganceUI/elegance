@@ -28,6 +28,9 @@ public:
 
     PathRenderer(const PathRenderer&) = delete;
     PathRenderer& operator=(const PathRenderer&) = delete;
+    PathRenderer(PathRenderer&&) = delete;
+    PathRenderer& operator=(PathRenderer&&) = delete;
+    ~PathRenderer() = default;
 
     // Records one mask of `width` x `height` pixels: `vertex_count` fan-triangle vertices (vec2,
     // mask pixels) from `vertices` at `first_vertex`. `samples_color` (sampled) and `stencil` are

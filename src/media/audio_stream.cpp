@@ -65,6 +65,11 @@ struct AudioStreamState {
 
     State<std::string> error{std::string()};
 
+    AudioStreamState() = default;
+    AudioStreamState(const AudioStreamState&) = delete;
+    AudioStreamState(AudioStreamState&&) = delete;
+    AudioStreamState& operator=(const AudioStreamState&) = delete;
+    AudioStreamState& operator=(AudioStreamState&&) = delete;
     ~AudioStreamState() {
         if (device_ready) {
             ma_device_uninit(&device);

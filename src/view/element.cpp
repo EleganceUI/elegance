@@ -198,7 +198,7 @@ Size ShapeElement::measure(ProposedSize proposal) {
 
 ShapeOutline shape_outline(const ShapeSpec& spec, Rect frame) {
     switch (spec.kind) {
-    case ShapeKind::path: return {frame, {}};
+    case ShapeKind::path:
     case ShapeKind::rectangle: return {frame, {}};
     case ShapeKind::rounded_rectangle: return {frame, spec.radii};
     case ShapeKind::capsule: return {frame, CornerRadii::all(std::min(frame.width, frame.height) / 2)};

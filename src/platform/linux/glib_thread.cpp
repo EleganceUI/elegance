@@ -29,6 +29,10 @@ public:
         g_main_context_invoke(context_, &GLibThread::run, task);
     }
 
+    GLibThread(const GLibThread&) = delete;
+    GLibThread(GLibThread&&) = delete;
+    GLibThread& operator=(const GLibThread&) = delete;
+    GLibThread& operator=(GLibThread&&) = delete;
     ~GLibThread() {
         g_main_loop_quit(loop_);
         if (thread_.joinable()) {

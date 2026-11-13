@@ -27,6 +27,10 @@ namespace {
 // Starts and ends with no timers or queued lifecycle actions.
 struct Clean {
     Clean() { reset(); }
+    Clean(const Clean&) = delete;
+    Clean(Clean&&) = delete;
+    Clean& operator=(const Clean&) = delete;
+    Clean& operator=(Clean&&) = delete;
     ~Clean() { reset(); }
     static void reset() {
         detail::cancel_all_timers();
@@ -150,7 +154,7 @@ TEST_CASE("after fires once; every repeats, skipping runs it missed", "[timer]")
     CHECK(repeated == 1); // not once per missed second
     CHECK_FALSE(single.active());
     CHECK(repeating.active());
-    CHECK(*detail::next_timer_due() > kFarFuture);
+    CHECK(detail::next_timer_due() > kFarFuture);
 
     detail::run_due_timers(kFarFuture + 2);
     CHECK(once == 1);

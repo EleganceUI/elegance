@@ -17,6 +17,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -29,16 +30,16 @@ namespace {
 struct Window {
     std::unique_ptr<detail::Element> root;
     detail::FocusManager focus;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
 
     explicit Window(const View& view) {
         root = detail::lower(ZStack(Rectangle().fill(Color::white), view.frame(50, 50)), {});
         root->size_that_fits({100, 100});
         root->place({}, {100, 100});
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 
-    void button(PointerEvent::Kind kind, Point at) {
+    void button(PointerEvent::Kind kind, Point at) const {
         events->pointer_button(kind, at, MouseButton::left, 1, KeyModifiers::none);
     }
 };
@@ -91,10 +92,12 @@ TEST_CASE("on_scroll gets view-local scrolls; unconsumed ones go on outwards", "
 
         window.events->scroll({.location = {30, 40}, .dy = 3});
         REQUIRE(inner);
+        // NOLINTBEGIN(bugprone-unchecked-optional-access): REQUIRE(inner) stops the test without an event
         CHECK(inner->location.x == 5);
         CHECK(inner->location.y == 15);
         CHECK(inner->window_location.y == 40);
         CHECK(inner->dy == 3);
+        // NOLINTEND(bugprone-unchecked-optional-access)
         CHECK(outer == (take ? 0 : 1));
     }
 }

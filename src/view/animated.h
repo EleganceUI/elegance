@@ -35,6 +35,8 @@ public:
     ~LayoutAnimationScope();
     LayoutAnimationScope(const LayoutAnimationScope&) = delete;
     LayoutAnimationScope& operator=(const LayoutAnimationScope&) = delete;
+    LayoutAnimationScope(LayoutAnimationScope&&) = delete;
+    LayoutAnimationScope& operator=(LayoutAnimationScope&&) = delete;
 
 private:
     const Animation* previous_;

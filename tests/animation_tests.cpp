@@ -24,8 +24,8 @@ struct Owner {
 
 double peak(const Animation& animation, double until) {
     double highest = 0;
-    for (double t = 0; t <= until; t += 0.001) {
-        highest = std::max(highest, animation.progress(t));
+    for (int step = 0; step <= static_cast<int>(until * 1000); ++step) {
+        highest = std::max(highest, animation.progress(step / 1000.0));
     }
     return highest;
 }

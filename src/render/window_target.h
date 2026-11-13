@@ -51,6 +51,9 @@ public:
 
     WindowTarget(const WindowTarget&) = delete;
     WindowTarget& operator=(const WindowTarget&) = delete;
+    WindowTarget(WindowTarget&&) = delete;
+    WindowTarget& operator=(WindowTarget&&) = delete;
+    ~WindowTarget() = default;
 
     // Renders and presents the frame. Does nothing while the window is minimized.
     void render(const WindowFrame& frame, const RenderResources& resources);
@@ -68,9 +71,9 @@ private:
     // the window drawing offscreen and being copied over.
     struct DrawTarget {
         wgpu::TextureView view;
-        wgpu::TextureFormat format;
-        std::uint32_t width;
-        std::uint32_t height;
+        wgpu::TextureFormat format{};
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
         wgpu::Texture texture;
     };
 
@@ -79,9 +82,9 @@ private:
     struct PassTarget {
         wgpu::Texture texture;
         wgpu::TextureView view;
-        wgpu::TextureFormat format;
-        std::uint32_t width;
-        std::uint32_t height;
+        wgpu::TextureFormat format{};
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
         wgpu::Color clear;
     };
 

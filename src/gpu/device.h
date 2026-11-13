@@ -42,6 +42,8 @@ public:
 
     Device(const Device&) = delete;
     Device& operator=(const Device&) = delete;
+    Device(Device&&) = delete;
+    Device& operator=(Device&&) = delete;
 
     [[nodiscard]] const wgpu::Device& handle() const noexcept { return device_; }
     [[nodiscard]] const wgpu::Adapter& adapter() const noexcept { return adapter_; }

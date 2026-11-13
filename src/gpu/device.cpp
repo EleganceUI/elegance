@@ -229,7 +229,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
                 errors->fatal = std::format("the GPU device was lost ({}); device loss recovery is not implemented yet",
                                             std::string_view(message));
             } catch (...) {
-                // A C callback: even allocation failures must not unwind through Dawn.
+                // Swallowed: a C callback; even allocation failures must not unwind through Dawn.
             }
         });
     descriptor.SetUncapturedErrorCallback(
@@ -252,6 +252,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
                 internal_error(std::format("WebGPU error: {}", std::string_view(message)));
 #endif
             } catch (...) {
+                // Swallowed: a C callback; nothing may unwind through Dawn.
             }
         });
 
@@ -280,6 +281,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
                 log_debug("webgpu: {}", std::string_view(message));
             }
         } catch (...) {
+            // Swallowed: a C callback; nothing may unwind through Dawn.
         }
     });
 

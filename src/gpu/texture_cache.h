@@ -24,6 +24,9 @@ public:
 
     TextureCache(const TextureCache&) = delete;
     TextureCache& operator=(const TextureCache&) = delete;
+    TextureCache(TextureCache&&) = delete;
+    TextureCache& operator=(TextureCache&&) = delete;
+    ~TextureCache() = default;
 
     // The bind group (texture and sampler) for `image`, uploading it and recording its mips into
     // `encoder` if it isn't on the GPU yet.

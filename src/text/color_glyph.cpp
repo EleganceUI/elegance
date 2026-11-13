@@ -199,8 +199,8 @@ private:
     }
 
     struct Outline {
-        const PaintWalker* walker;
-        const Affine* m;
+        const PaintWalker* walker = nullptr;
+        const Affine* m = nullptr;
         Path path;
         Point point(const FT_Vector* v) const { return walker->to_em(*m, static_cast<double>(v->x), static_cast<double>(v->y)); }
     };

@@ -106,8 +106,8 @@ private:
     // Simultaneous gestures watching the press: they never take it, and once one recognizes it
     // gets the rest of the press's events beside whatever has it.
     struct Companion {
-        Element* element;
-        GestureRecognizer* recognizer;
+        Element* element = nullptr;
+        GestureRecognizer* recognizer = nullptr;
         bool active = false;
     };
     std::vector<Companion> companions_;

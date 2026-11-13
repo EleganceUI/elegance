@@ -572,7 +572,7 @@ void TextEditor::paint(DisplayList& list, Rect frame) const {
         } else {
             std::vector<DrawStyle> styles = styles_template_;
             for (std::size_t i = 0; i < styles.size(); ++i) {
-                styles[i].color = i < style_colors_.size() && style_colors_[i] ? *style_colors_[i] : foreground;
+                styles[i].color = i < style_colors_.size() ? style_colors_[i].value_or(foreground) : foreground;
             }
             draw_styled(list, text_system_->atlas, *face_, shape_, layout_, styles, origin, size_, scale);
         }

@@ -14,7 +14,7 @@ namespace elg::detail::gpu {
 
 namespace {
 
-constexpr std::uint64_t kMinCapacity = 64 * 1024;
+constexpr std::uint64_t kMinCapacity = std::uint64_t{64} * 1024;
 
 }
 

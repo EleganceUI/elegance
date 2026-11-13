@@ -21,8 +21,9 @@ namespace {
 // A WAV file in memory: 16-bit mono PCM.
 std::vector<unsigned char> wav(int rate, int frames) {
     const auto put32 = [](std::vector<unsigned char>& out, std::uint32_t v) {
-        for (int i = 0; i < 4; ++i) { out.push_back(static_cast<unsigned char>(v >> (8 * i)));
-}
+        for (int i = 0; i < 4; ++i) {
+            out.push_back(static_cast<unsigned char>(v >> (8 * i)));
+        }
     };
     const auto put16 = [](std::vector<unsigned char>& out, std::uint16_t v) {
         out.push_back(static_cast<unsigned char>(v));

@@ -111,7 +111,8 @@ Binding<float> VideoPlayer::progress_binding() const {
 
 Binding<float> VideoPlayer::volume_binding() const {
     const VideoPlayer self = *this;
-    return Binding<float>([self] { return self.volume(); }, [self](float v) { self.set_volume(v); });
+    return Binding<float>([self] { return self.volume(); }, [self](float v) {
+    self.set_volume(v); });
 }
 
 } // namespace elg
@@ -240,8 +241,9 @@ View VideoFeedView(const VideoFeed& feed, ContentMode mode, bool mirrored) {
 
 View GpuImageView(const ElgGpuImage* image, ContentMode mode) {
     const auto source = gpu_image_source(image);
-    if (!source) { return View{};
-}
+    if (!source) {
+        return View{};
+    }
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(
         source, mode, false, gpu_image_flipped(image)));
 }

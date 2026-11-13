@@ -21,6 +21,9 @@ public:
 
     AtlasTexture(const AtlasTexture&) = delete;
     AtlasTexture& operator=(const AtlasTexture&) = delete;
+    AtlasTexture(AtlasTexture&&) = delete;
+    AtlasTexture& operator=(AtlasTexture&&) = delete;
+    ~AtlasTexture() = default;
 
     // Copies new glyphs into the texture. Queue writes are ordered with frames: frames submitted
     // earlier still see the old contents, later ones the new.

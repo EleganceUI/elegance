@@ -18,6 +18,9 @@ public:
 
     Instance(const Instance&) = delete;
     Instance& operator=(const Instance&) = delete;
+    Instance(Instance&&) = delete;
+    Instance& operator=(Instance&&) = delete;
+    ~Instance() = default;
 
     [[nodiscard]] const wgpu::Instance& handle() const noexcept { return instance_; }
 

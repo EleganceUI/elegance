@@ -137,6 +137,10 @@ public:
         adopt(*content_);
         selection_->rows[key_] = this;
     }
+    RowElement(const RowElement&) = delete;
+    RowElement(RowElement&&) = delete;
+    RowElement& operator=(const RowElement&) = delete;
+    RowElement& operator=(RowElement&&) = delete;
     ~RowElement() override {
         if (const auto found = selection_->rows.find(key_); found != selection_->rows.end() && found->second == this) {
             selection_->rows.erase(found);
@@ -251,6 +255,10 @@ public:
         adopt(*content_);
         selection_->reveal = [this](const ItemKey& key) { reveal_row(key); };
     }
+    SelectionElement(const SelectionElement&) = delete;
+    SelectionElement(SelectionElement&&) = delete;
+    SelectionElement& operator=(const SelectionElement&) = delete;
+    SelectionElement& operator=(SelectionElement&&) = delete;
     ~SelectionElement() override { selection_->reveal = nullptr; }
 
     void inspect(Inspection& out) const override { out.name = "Selection"; }
@@ -362,14 +370,15 @@ private:
             if (offset) {
                 return;
             }
-            if ((offset = element.item_offset(key))) {
+            offset = element.item_offset(key);
+            if (offset) {
                 stack = &element;
                 return;
             }
             element.for_each_child(walk);
         };
         walk(*content_);
-        if (!stack) {
+        if (!stack || !offset) { // walk sets both or neither
             return;
         }
         if (Element* scroll = scroll_container(*stack)) {

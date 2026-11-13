@@ -202,6 +202,10 @@ struct LiveWindow {
         }
     }
 
+    LiveWindow(const LiveWindow&) = delete;
+    LiveWindow(LiveWindow&&) = delete;
+    LiveWindow& operator=(const LiveWindow&) = delete;
+    LiveWindow& operator=(LiveWindow&&) = delete;
     ~LiveWindow() { state->window = nullptr; } // handles kept by the app now do nothing
 
     // Undecorated windows: resize at the edges, move from .window_drag_area() views.

@@ -138,6 +138,8 @@ public:
     ~EnvironmentScope();
     EnvironmentScope(const EnvironmentScope&) = delete;
     EnvironmentScope& operator=(const EnvironmentScope&) = delete;
+    EnvironmentScope(EnvironmentScope&&) = delete;
+    EnvironmentScope& operator=(EnvironmentScope&&) = delete;
 
 private:
     const EnvironmentValues* previous_;

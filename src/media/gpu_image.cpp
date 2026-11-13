@@ -25,6 +25,10 @@ constexpr std::uint64_t kRetirementWaitNs = 5'000'000'000ull;
 class RetirementWorker {
 public:
     RetirementWorker() : thread_([this] { run(); }) {}
+    RetirementWorker(const RetirementWorker&) = delete;
+    RetirementWorker(RetirementWorker&&) = delete;
+    RetirementWorker& operator=(const RetirementWorker&) = delete;
+    RetirementWorker& operator=(RetirementWorker&&) = delete;
     ~RetirementWorker() {
         {
             const std::lock_guard lock(mutex_);
@@ -47,8 +51,9 @@ private:
             {
                 std::unique_lock lock(mutex_);
                 wake_.wait(lock, [this] { return stopping_ || !jobs_.empty(); });
-                if (jobs_.empty()) { return;
-}
+                if (jobs_.empty()) {
+                    return;
+                }
                 job = std::move(jobs_.front());
                 jobs_.pop_front();
             }
@@ -73,6 +78,10 @@ public:
     explicit ValidationScope(const gpu::RenderDevice& renderer) : renderer_(renderer) {
         renderer_.device.PushErrorScope(wgpu::ErrorFilter::Validation);
     }
+    ValidationScope(const ValidationScope&) = delete;
+    ValidationScope(ValidationScope&&) = delete;
+    ValidationScope& operator=(const ValidationScope&) = delete;
+    ValidationScope& operator=(ValidationScope&&) = delete;
     ~ValidationScope() {
         if (!popped_) {
             renderer_.device.PopErrorScope(wgpu::CallbackMode::AllowSpontaneous,
@@ -116,9 +125,14 @@ public:
         // This pointer and its chain are only valid for the synchronous import call.
         descriptor_.vk_image_create_info = nullptr;
     }
+    ExternalFrame(const ExternalFrame&) = delete;
+    ExternalFrame(ExternalFrame&&) = delete;
+    ExternalFrame& operator=(const ExternalFrame&) = delete;
+    ExternalFrame& operator=(ExternalFrame&&) = delete;
     ~ExternalFrame() {
-        if (!begun_) { return;
-}
+        if (!begun_) {
+            return;
+        }
         try {
             retirement_worker().enqueue([descriptor = descriptor_, renderer = renderer_,
                                          memory = memory_, image = texture, view = sample_view,
@@ -136,9 +150,12 @@ public:
     static void notify(const ElgGpuImageFrame& descriptor, bool accepted,
                        const ElgGpuImageRelease& result) noexcept {
         if (accepted) {
-            // A foreign callback is forbidden to unwind. Even a violating C++ callback must
-            // not cause a second ownership-transfer callback from our exception handler.
-            try { descriptor.release(descriptor.userdata, &result); } catch (...) {}
+            try {
+                descriptor.release(descriptor.userdata, &result);
+            } catch (...) {
+                // Swallowed: a foreign callback is forbidden to unwind. Even a violating C++
+                // callback must not cause a second ownership-transfer callback from here.
+            }
         }
     }
     static void retire(const ElgGpuImageFrame& descriptor_,
@@ -314,8 +331,9 @@ public:
             wgpu::SharedTextureMemoryVkImageLayoutBeginState vk;
             vk.oldLayout = frame.vk_old_layout;
             vk.newLayout = frame.vk_new_layout;
-            if (frame.transport == ELG_GPU_IMAGE_VULKAN_OPAQUE_FD) { access.nextInChain = &vk;
-}
+            if (frame.transport == ELG_GPU_IMAGE_VULKAN_OPAQUE_FD) {
+                access.nextInChain = &vk;
+            }
             begun_ = memory_.BeginAccess(texture, &access) == wgpu::Status::Success;
             ok = begun_;
         }
@@ -355,36 +373,41 @@ public:
         if (!input.width || !input.height || !input.release ||
             (input.format != ELG_GPU_IMAGE_RGBA8 && input.format != ELG_GPU_IMAGE_BGRA8) ||
             input.transport < ELG_GPU_IMAGE_IOSURFACE || input.transport > ELG_GPU_IMAGE_VULKAN_OPAQUE_FD ||
-            input.vk_dedicated_allocation > 1) { return ELG_GPU_IMAGE_INVALID_ARGUMENT;
-}
+            input.vk_dedicated_allocation > 1) {
+            return ELG_GPU_IMAGE_INVALID_ARGUMENT;
+        }
         if (input.transport == ELG_GPU_IMAGE_VULKAN_OPAQUE_FD) {
-            if (input.memory_fd < 0 || !input.vk_image_create_info || !input.vk_allocation_size) {
-                return ELG_GPU_IMAGE_INVALID_ARGUMENT;
-}
-        } else if (!input.handle) { return ELG_GPU_IMAGE_INVALID_ARGUMENT;
-}
+                    if (input.memory_fd < 0 || !input.vk_image_create_info || !input.vk_allocation_size) {
+                        return ELG_GPU_IMAGE_INVALID_ARGUMENT;
+                    }
+                } else if (!input.handle) {
+            return ELG_GPU_IMAGE_INVALID_ARGUMENT;
+        }
         const auto& fence = input.producer_fence;
         // Transport tags intentionally match their corresponding fence tags.
         if (fence.type != ELG_GPU_IMAGE_FENCE_NONE &&
             (fence.type != input.transport ||
              (fence.type == ELG_GPU_IMAGE_FENCE_VK_OPAQUE_FD ? fence.fd < 0 || fence.value != 1 : !fence.handle))) {
             return ELG_GPU_IMAGE_INVALID_ARGUMENT;
-}
+        }
         auto renderer = gpu::render_device();
-        if (!renderer) { return ELG_GPU_IMAGE_DEVICE_UNAVAILABLE;
-}
+        if (!renderer) {
+            return ELG_GPU_IMAGE_DEVICE_UNAVAILABLE;
+        }
         auto external = std::make_shared<ExternalFrame>(input, renderer);
-        std::uint32_t status;
+        std::uint32_t status = ELG_GPU_IMAGE_INTERNAL_ERROR;
         {
             const std::lock_guard lock(renderer->mutex);
-            if (!renderer->active) { return ELG_GPU_IMAGE_DEVICE_UNAVAILABLE;
-}
+            if (!renderer->active) {
+                return ELG_GPU_IMAGE_DEVICE_UNAVAILABLE;
+            }
             status = external->import(input);
         }
         // Destruction may EndAccess, so it must happen OUTSIDE the renderer mutex, including
         // on failed imports that successfully began access before reporting a validation error.
-        if (status != ELG_GPU_IMAGE_OK) { return status;
-}
+        if (status != ELG_GPU_IMAGE_OK) {
+            return status;
+        }
         VideoFrame frame;
         frame.kind = VideoFrame::Kind::external;
         frame.width = input.width;
@@ -418,7 +441,7 @@ public:
                         const auto previous = source->size.peek();
                         if (previous.width != latest.width || previous.height != latest.height) {
                             source->size = latest;
-}
+                        }
                     }
                 });
                 size_task_pending_ = true;
@@ -463,8 +486,9 @@ struct ElgGpuImage {
 
 extern "C" {
 ElgGpuImage* elg_gpu_image_create(uint32_t width, uint32_t height, uint32_t origin) {
-    if (!width || !height || origin > ELG_GPU_IMAGE_BOTTOM_LEFT) { return nullptr;
-}
+    if (!width || !height || origin > ELG_GPU_IMAGE_BOTTOM_LEFT) {
+        return nullptr;
+    }
     try {
         return new ElgGpuImage{std::make_shared<elg::detail::ExternalImageSource>(
             width, height, origin == ELG_GPU_IMAGE_BOTTOM_LEFT)};
@@ -472,14 +496,16 @@ ElgGpuImage* elg_gpu_image_create(uint32_t width, uint32_t height, uint32_t orig
 }
 void elg_gpu_image_destroy(ElgGpuImage* image) { delete image; }
 uint32_t elg_gpu_image_publish(ElgGpuImage* image, const ElgGpuImageFrame* frame) {
-    if (!image || !frame) { return ELG_GPU_IMAGE_INVALID_ARGUMENT;
-}
+    if (!image || !frame) {
+        return ELG_GPU_IMAGE_INVALID_ARGUMENT;
+    }
     try { return image->source->publish(*frame); }
     catch (...) { return ELG_GPU_IMAGE_INTERNAL_ERROR; }
 }
 void elg_gpu_image_clear(ElgGpuImage* image) {
-    if (image) { image->source->clear();
-}
+    if (image) {
+        image->source->clear();
+    }
 }
 }
 

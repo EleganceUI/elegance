@@ -23,6 +23,8 @@ public:
 
     Swapchain(const Swapchain&) = delete;
     Swapchain& operator=(const Swapchain&) = delete;
+    Swapchain(Swapchain&&) = delete;
+    Swapchain& operator=(Swapchain&&) = delete;
 
     // (Re)configures the surface if it's stale or the window's size changed. Returns false when
     // the window has no area (e.g. minimized); there is nothing to present then.

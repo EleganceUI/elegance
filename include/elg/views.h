@@ -398,7 +398,7 @@ template <class Source, class ContentFunction>
     requires requires { typename detail::ItemsOf<Source>::type::value_type; }
 View ForEach(Source items, ContentFunction content) {
     using T = typename detail::ItemsOf<Source>::type::value_type;
-    return ForEach(std::move(items), [](const T& value) -> const T& { return value; }, std::move(content));
+    return ForEach(std::move(items), [](const T& value) { return value; }, std::move(content));
 }
 
 // --- Menus and popups (design.md §13.1) ---

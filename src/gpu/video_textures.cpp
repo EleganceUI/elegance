@@ -73,8 +73,9 @@ VideoTextures::VideoTextures(const Device& device, wgpu::BindGroupLayout  image_
 bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
     if (frame.kind == VideoFrame::Kind::external) {
         if (frame.device.Get() != device_.handle().Get() || !frame.texture ||
-            !frame.external_view || !frame.texture_lease) { return false;
-}
+            !frame.external_view || !frame.texture_lease) {
+            return false;
+        }
         texture.texture = frame.texture;
         texture.external = true;
         texture.group = create_image_group(device_.handle(), layout_, frame.external_view, sampler_);
@@ -158,7 +159,10 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
         access.initialized = true;
         access.concurrentRead = false;
         wgpu::SharedFence wait;
-        if (frame.wait_fence && (wait = fence(frame))) {
+        if (frame.wait_fence) {
+            wait = fence(frame);
+        }
+        if (wait) {
             access.fenceCount = 1;
             access.fences = &wait;
             access.signaledValueCount = 1;
@@ -189,8 +193,11 @@ void VideoTextures::release(const std::vector<std::uint64_t>& acquired) {
             if (!it->second.memory) {
                 // All reads in this batch were submitted. External allocations stay pinned
                 // by other snapshots/current frames, then EndAccess exports completion fences.
-                if (it->second.pending_batches != 0 && --it->second.pending_batches == 0) {
-                    it->second.lease.reset();
+                if (it->second.pending_batches != 0) {
+                    --it->second.pending_batches;
+                    if (it->second.pending_batches == 0) {
+                        it->second.lease.reset();
+                    }
                 }
                 continue;
             }
@@ -247,7 +254,8 @@ void VideoTextures::end_frame() noexcept {
                (entry.second.external || frame_ - entry.second.last_used > kIdleFrames);
     });
     std::erase_if(targets_, [&](const auto& entry) { return frame_ - entry.second.last_used > kIdleFrames; });
-    std::erase_if(fences_, [&](const auto& entry) { return frame_ - entry.second.last_used > kIdleFrames; });
+    std::erase_if(fences_, [&](const auto& entry) {
+    return frame_ - entry.second.last_used > kIdleFrames; });
 }
 
 // --- Frames in memory ---

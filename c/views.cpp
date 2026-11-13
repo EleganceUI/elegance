@@ -397,6 +397,8 @@ static std::optional<StackSeparators> stack_separators(const ElgStackSeparators*
     if (!s) {
         return std::nullopt;
     }
+    // libc++'s std::function points into its own small buffer, and re-points it when moved.
+    // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
     return StackSeparators{prop<Color>(s->color), s->inset, s->thickness};
 }
 

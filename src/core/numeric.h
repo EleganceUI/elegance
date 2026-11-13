@@ -19,7 +19,7 @@ namespace elg::detail {
 template <std::integral I, std::floating_point F>
     requires(sizeof(I) <= 4)
 I clamped_cast(F value, I lo, I hi) noexcept {
-    double v = static_cast<double>(value);
+    auto v = static_cast<double>(value);
     if (v != v) { // NaN
         v = 0;
     }

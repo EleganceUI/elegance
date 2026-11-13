@@ -112,6 +112,10 @@ public:
     ConnectionPool& pool() { return pool_; }
     asio::thread_pool& blocking() { return blocking_; }
 
+    Network(const Network&) = delete;
+    Network(Network&&) = delete;
+    Network& operator=(const Network&) = delete;
+    Network& operator=(Network&&) = delete;
     ~Network() {
         work_.reset();
         io_.stop();
@@ -171,13 +175,13 @@ int add_system_roots(ssl::context& context) {
     }
 #else
     boost::system::error_code ignored;
-    context.set_default_verify_paths(ignored); // SSL_CERT_FILE and SSL_CERT_DIR, when set
+    static_cast<void>(context.set_default_verify_paths(ignored)); // SSL_CERT_FILE and SSL_CERT_DIR, when set
     for (const char* bundle : {"/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt",
                                "/etc/ssl/ca-bundle.pem", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
                                "/etc/ssl/cert.pem"}) {
         std::error_code missing;
         if (std::filesystem::exists(bundle, missing)) {
-            context.load_verify_file(bundle, ignored);
+            static_cast<void>(context.load_verify_file(bundle, ignored));
             if (!ignored) {
                 added = sk_X509_OBJECT_num(X509_STORE_get0_objects(store));
                 break;
@@ -297,6 +301,9 @@ std::string all_values(const Fields& fields, bhttp::field name) {
     return out;
 }
 
+// These coroutines take their streams, buffers and options by reference: each is co_awaited
+// right away by its caller, whose frame owns them for as long as it runs.
+// NOLINTBEGIN(cppcoreguidelines-avoid-reference-coroutine-parameters)
 template <class Stream>
 awaitable<Reply> exchange(Stream& stream, beast::flat_buffer& buffer, const Target& target,
                           const std::optional<Proxy>& proxy, const Validators* validators, std::size_t max_body) {
@@ -500,6 +507,7 @@ awaitable<std::expected<Outcome, std::string>> follow(const std::string& text, c
         co_return std::unexpected(describe(failure.code()));
     }
 }
+// NOLINTEND(cppcoreguidelines-avoid-reference-coroutine-parameters)
 
 awaitable<FetchResult> run(std::string url, FetchOptions options, std::shared_ptr<ssl::context> tls) {
     using namespace asio::experimental::awaitable_operators;

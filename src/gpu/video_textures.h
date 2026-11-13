@@ -33,6 +33,9 @@ public:
 
     VideoTextures(const VideoTextures&) = delete;
     VideoTextures& operator=(const VideoTextures&) = delete;
+    VideoTextures(VideoTextures&&) = delete;
+    VideoTextures& operator=(VideoTextures&&) = delete;
+    ~VideoTextures() = default;
 
     // The bind group to sample `frame` with: importing its texture the first time and beginning
     // access to it (once per frame: `acquired` lists what this frame has begun), or for frames in

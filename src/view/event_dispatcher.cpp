@@ -97,7 +97,7 @@ void FocusManager::forget(const Element* element) noexcept {
         try {
             notify_watches();
         } catch (...) {
-            // A binding that throws while the tree is torn down has nowhere to report to.
+            // Swallowed: a binding that throws while the tree is torn down has nowhere to report to.
         }
     }
 }
@@ -455,7 +455,7 @@ bool EventDispatcher::move_focus(bool forward) {
         return false;
     }
     const auto current = std::ranges::find(order, focus_->focused());
-    Element* next;
+    Element* next = nullptr;
     if (current == order.end()) {
         next = forward ? order.front() : order.back();
     } else {

@@ -12,6 +12,7 @@
 #include "core/numeric.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <charconv>
 #include <cmath>
@@ -470,7 +471,8 @@ std::vector<Path::Polyline> Path::flatten(float tolerance) const {
             break;
         case Verb::line:
             current = points_[p++];
-            line->points.push_back(current);
+            // Every subpath starts with a move: line_to and the curves add one when none is open.
+            line->points.push_back(current); // NOLINT(clang-analyzer-core.CallAndMessage)
             break;
         case Verb::quad: {
             const Point c = points_[p];
@@ -706,7 +708,6 @@ std::vector<std::vector<Point>> dashed(const std::vector<Point>& pts, bool close
     float remaining = std::max(style.dash[0], 0.f);
     bool on = true;
     std::size_t dashes = 0;
-    bool reported = false;
     // Start `dash_phase` into the pattern.
     float phase = std::fmod(style.dash_phase, total);
     if (phase < 0) {
@@ -744,9 +745,10 @@ std::vector<std::vector<Point>> dashed(const std::vector<Point>& pts, bool close
                 if (on && current.size() > 1) {
                     pieces.push_back(std::move(current));
                     if (++dashes >= kMaxDashes) {
-                        if (!reported) {
+                        // Once per process: the same path is usually stroked again every frame.
+                        static std::atomic<bool> reported{false};
+                        if (!reported.exchange(true)) {
                             detail::log_warning("a dashed stroke has more than {} dashes; the rest isn't drawn", kMaxDashes);
-                            reported = true;
                         }
                         return pieces;
                     }

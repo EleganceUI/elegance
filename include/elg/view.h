@@ -385,6 +385,7 @@ public:
 
     [[nodiscard]] constexpr bool has_value() const noexcept { return value_.has_value(); }
     constexpr explicit operator bool() const noexcept { return value_.has_value(); }
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access): std::optional's precondition; callers check has_value()
     constexpr float operator*() const noexcept { return *value_; }
     [[nodiscard]] constexpr float value_or(float fallback) const noexcept { return value_.value_or(fallback); }
     constexpr operator std::optional<float>() const noexcept { return value_; }

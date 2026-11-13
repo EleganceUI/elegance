@@ -53,7 +53,7 @@ std::string to_text(const StackTrace& trace) {
         text += symbols ? symbols[i] : std::format("{}", trace.frames[i]);
         text += '\n';
     }
-    std::free(symbols);
+    std::free(static_cast<void*>(symbols));
     return text;
 }
 #endif

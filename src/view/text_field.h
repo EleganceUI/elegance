@@ -195,6 +195,10 @@ public:
         editor_->attach(this);
     }
     bool always_arranges() const override { return true; } // keeps the caret in sight
+    TextEditorElement(const TextEditorElement&) = delete;
+    TextEditorElement(TextEditorElement&&) = delete;
+    TextEditorElement& operator=(const TextEditorElement&) = delete;
+    TextEditorElement& operator=(TextEditorElement&&) = delete;
     ~TextEditorElement() override {
         if (editor_->attached() == this) {
             editor_->attach(nullptr);

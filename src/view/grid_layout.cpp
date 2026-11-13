@@ -302,6 +302,7 @@ GridMetrics measure_grid(std::span<const LayoutChild> children, std::optional<fl
     // Rows that are a single child take the grid's width; with no columns, the widest of them.
     if (columns == 0) {
         for (const Row& row : m.rows) {
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access): with no columns, no row has cells: all are full width
             const float ideal = children[*row.full_width].size_that_fits({width, std::nullopt}).width;
             m.content_width = std::max(m.content_width, ideal);
         }

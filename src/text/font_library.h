@@ -70,6 +70,8 @@ public:
 
     FontFace(const FontFace&) = delete;
     FontFace& operator=(const FontFace&) = delete;
+    FontFace(FontFace&&) = delete;
+    FontFace& operator=(FontFace&&) = delete;
 
     std::uint32_t id() const noexcept { return id_; }
     // An icon set's font: glyphs get a single-channel distance field (see GlyphAtlas).
@@ -126,6 +128,8 @@ public:
 
     FontLibrary(const FontLibrary&) = delete;
     FontLibrary& operator=(const FontLibrary&) = delete;
+    FontLibrary(FontLibrary&&) = delete;
+    FontLibrary& operator=(FontLibrary&&) = delete;
 
     // Throws elg::ResourceError if the font can't be found or loaded.
     const FontFace& resolve(const Font& font);

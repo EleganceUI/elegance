@@ -75,12 +75,12 @@ TEST_CASE("video geometry follows the sampled snapshot without UI size updates",
                     "[video][render]") {
     auto source = std::make_shared<ResizingVideoSource>();
     source->size = Size{1920, 1080}; // Deliberately stale throughout both plans.
-    source->next.emplace();
-    source->next->width = 100;
-    source->next->height = 200;
-    source->next->frame_id = 1;
+    detail::VideoFrame& frame = source->next.emplace();
+    frame.width = 100;
+    frame.height = 200;
+    frame.frame_id = 1;
     const auto lease = std::make_shared<int>(42);
-    source->next->texture_lease = lease;
+    frame.texture_lease = lease;
 
     detail::DisplayList list;
     list.scale = 2;
@@ -99,26 +99,28 @@ TEST_CASE("video geometry follows the sampled snapshot without UI size updates",
     CHECK(source->snapshots == 1);
     REQUIRE(portrait.video_frames.size() == 1);
     REQUIRE(portrait.video_frames[0]);
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): portrait's frame is REQUIREd; landscape's is the same source's
     CHECK(portrait.video_frames[0]->texture_lease == lease);
 
-    source->next->width = 400;
-    source->next->height = 100;
-    source->next->frame_id = 2;
+    frame.width = 400;
+    frame.height = 100;
+    frame.frame_id = 2;
     const auto landscape = detail::plan_frame(list, 1000, 1000);
     REQUIRE(landscape.instances.size() == 2);
     CHECK(landscape.instances[0].rect == std::array<float, 4>{20, 90, 400, 100});
     CHECK(landscape.video_frames[0]->frame_id == 2);
     CHECK(portrait.video_frames[0]->frame_id == 1);
     CHECK(portrait.video_frames[0]->width == 100);
+    // NOLINTEND(bugprone-unchecked-optional-access)
     CHECK(source->size.peek().width == 1920);
 }
 
 TEST_CASE("video fill keeps destination clipping through transforms",
                     "[video][render]") {
     auto source = std::make_shared<ResizingVideoSource>();
-    source->next.emplace();
-    source->next->width = 100;
-    source->next->height = 200;
+    detail::VideoFrame& frame = source->next.emplace();
+    frame.width = 100;
+    frame.height = 200;
     detail::DisplayList list;
     list.commands.emplace_back(detail::PushClipCommand{{10, 20, 200, 100}, {8, 8, 8, 8}});
     list.commands.emplace_back(detail::VideoCommand{
@@ -141,10 +143,10 @@ TEST_CASE(
     list.commands.emplace_back(detail::VideoCommand{
             {10, 20, 200, 100}, {}, source, 1, ContentMode::fit});
     CHECK(detail::plan_frame(list, 500, 500).instances.empty());
-    source->next.emplace();
-    source->next->width = 100;
+    detail::VideoFrame& frame = source->next.emplace();
+    frame.width = 100;
     CHECK(detail::plan_frame(list, 500, 500).instances.empty());
-    source->next->height = 200;
+    frame.height = 200;
     std::get<detail::VideoCommand>(list.commands[0]).content_mode.reset();
     const auto plan = detail::plan_frame(list, 500, 500);
     REQUIRE(plan.instances.size() == 1);

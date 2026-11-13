@@ -142,6 +142,10 @@ public:
         fs::create_directories(copies_, error);
     }
 
+    ModuleHost(const ModuleHost&) = delete;
+    ModuleHost(ModuleHost&&) = delete;
+    ModuleHost& operator=(const ModuleHost&) = delete;
+    ModuleHost& operator=(ModuleHost&&) = delete;
     ~ModuleHost() {
         watcher_.request_stop();
         if (watcher_.joinable()) {

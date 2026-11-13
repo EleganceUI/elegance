@@ -165,7 +165,7 @@ void request_attention(bool critical) {
             break;
         }
     }
-    SDL_free(windows);
+    SDL_free(static_cast<void*>(windows));
 }
 
 // --- Tray icon ---
@@ -182,6 +182,11 @@ struct TrayIcon::State {
     };
     std::list<Entry> entries;
 
+    State() = default;
+    State(const State&) = delete;
+    State(State&&) = delete;
+    State& operator=(const State&) = delete;
+    State& operator=(State&&) = delete;
     ~State() {
         if (tray) {
             SDL_DestroyTray(tray);
@@ -261,7 +266,7 @@ struct TrayIcon::State {
         if (!pixels) {
             auto dot = std::make_shared<detail::DecodedImage>();
             dot->width = dot->height = 32;
-            dot->rgba.resize(32 * 32 * 4);
+            dot->rgba.resize(std::size_t{32} * 32 * 4);
             for (std::size_t y = 0; y < 32; ++y) {
                 for (std::size_t x = 0; x < 32; ++x) {
                     const float d = std::hypot(static_cast<float>(x) - 15.5f, static_cast<float>(y) - 15.5f);

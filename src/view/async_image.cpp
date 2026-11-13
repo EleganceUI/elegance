@@ -145,10 +145,16 @@ struct Loader {
     std::shared_ptr<const Bytes> bytes;
     std::string error;
 
+    Loader() = default;
+    Loader(const Loader&) = delete;
+    Loader(Loader&&) = delete;
+    Loader& operator=(const Loader&) = delete;
+    Loader& operator=(Loader&&) = delete;
     ~Loader() { task.cancel(); }
 
     void start(const std::shared_ptr<Loader>& self) {
-        if ((bytes = DownloadCache::instance().find(url))) {
+        bytes = DownloadCache::instance().find(url);
+        if (bytes) {
             phase = static_cast<int>(AsyncImagePhase::Kind::success);
             return;
         }

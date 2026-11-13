@@ -73,6 +73,11 @@ struct RecorderState {
     State<float> level{0.f};
     State<std::string> error{std::string()};
 
+    RecorderState() = default;
+    RecorderState(const RecorderState&) = delete;
+    RecorderState(RecorderState&&) = delete;
+    RecorderState& operator=(const RecorderState&) = delete;
+    RecorderState& operator=(RecorderState&&) = delete;
     ~RecorderState() {
         if (device_ready) {
             ma_device_uninit(&device);

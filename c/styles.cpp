@@ -119,6 +119,8 @@ std::optional<Prop<Color>> optional_color(const ElgProp* p) {
         ELG_CATCH(nullptr)                                                                                           \
     }
 
+// The macros' arguments are names and types, which can't be parenthesized.
+// NOLINTBEGIN(bugprone-macro-parentheses)
 #define CONFIG_HANDLE(name, Config)                                                                                  \
     ELG_EXPORT Config* elg_##name##_config_clone(const Config* c) {                                                  \
         return new Config(*c);                                                                                       \
@@ -140,6 +142,8 @@ std::optional<Prop<Color>> optional_color(const ElgProp* p) {
         ELG_TRY return make_style<Style, RustStyle<Style, Config>>(owned(make_body));                                \
         ELG_CATCH(nullptr)                                                                                           \
     }
+
+// NOLINTEND(bugprone-macro-parentheses)
 
 #define STATE(which, member)                                                                                         \
     case which: return c->member()

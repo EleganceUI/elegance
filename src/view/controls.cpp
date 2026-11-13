@@ -213,7 +213,7 @@ private:
         const float increment = step_ > 0 ? step_ : range / 20;
         const float page = std::max(increment, range / 10);
         const float current = untrack([&] { return value_(); });
-        float target;
+        float target = 0;
         switch (event.key) {
         case Key::left:
         case Key::down: target = current - increment; break;

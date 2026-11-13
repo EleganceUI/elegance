@@ -27,6 +27,9 @@ public:
 
     BlurRenderer(const BlurRenderer&) = delete;
     BlurRenderer& operator=(const BlurRenderer&) = delete;
+    BlurRenderer(BlurRenderer&&) = delete;
+    BlurRenderer& operator=(BlurRenderer&&) = delete;
+    ~BlurRenderer() = default;
 
     // Records into `pass`, covering `width` x `height` at its top-left; the source's valid region
     // is the same size. `clamp_edges`: outside it repeats its edge instead of being transparent.

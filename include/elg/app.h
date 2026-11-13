@@ -132,6 +132,8 @@ public:
 
     App(const App&) = delete;
     App& operator=(const App&) = delete;
+    App(App&&) = delete;
+    App& operator=(App&&) = delete;
 
     // app.window({.title = "Hello"}, ContentView) or with a lambda returning a View.
     App& window(WindowDesc desc, ContentFunction content);

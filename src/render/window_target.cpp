@@ -77,7 +77,7 @@ wgpu::RenderPassEncoder begin_pass(const wgpu::CommandEncoder& encoder, const wg
 // Brackets rendering into an offscreen image that is sampled afterwards.
 template <class Draw>
 void render_offscreen(const wgpu::CommandEncoder& encoder, const gpu::RenderImage& target, const char* label,
-                      Draw&& draw) {
+                      const Draw& draw) {
     const wgpu::RenderPassEncoder pass = begin_pass(encoder, target.view(), wgpu::Color{0, 0, 0, 0}, label);
     draw(pass);
     pass.End();
@@ -130,7 +130,11 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
     wgpu::TextureView view = swapchain_->acquire();
     if (!view) {
         // Out of date: reconfigured, then once more; still resizing if that fails too.
-        if (!swapchain_->prepare(width, height) || !(view = swapchain_->acquire())) {
+        if (!swapchain_->prepare(width, height)) {
+            return;
+        }
+        view = swapchain_->acquire();
+        if (!view) {
             return;
         }
     }

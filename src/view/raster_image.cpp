@@ -53,6 +53,11 @@ public:
         ready_.notify_one();
     }
 
+    DecodeQueue() = default;
+    DecodeQueue(const DecodeQueue&) = delete;
+    DecodeQueue(DecodeQueue&&) = delete;
+    DecodeQueue& operator=(const DecodeQueue&) = delete;
+    DecodeQueue& operator=(DecodeQueue&&) = delete;
     ~DecodeQueue() {
         {
             const std::lock_guard lock(mutex_);

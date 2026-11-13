@@ -21,7 +21,7 @@ struct Window {
     State<bool> shown{true};
     std::unique_ptr<detail::Element> root;
     detail::FocusManager focus;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
 
     Window() {
         const State<bool> visible = shown;
@@ -30,7 +30,7 @@ struct Window {
                                        Rectangle().fill(Color::black).frame(50, 50).pointer_style(PointerStyle::text))),
                              {});
         layout();
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 
     void layout() const {

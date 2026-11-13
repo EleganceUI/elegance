@@ -19,6 +19,8 @@ public:
 
     DynamicLibrary(const DynamicLibrary&) = delete;
     DynamicLibrary& operator=(const DynamicLibrary&) = delete;
+    DynamicLibrary(DynamicLibrary&&) = delete;
+    DynamicLibrary& operator=(DynamicLibrary&&) = delete;
 
     // The exported symbol, or nullptr.
     void* symbol(const char* name) const;

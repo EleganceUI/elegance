@@ -82,7 +82,7 @@ inline bool register_preview(const char* name, View (*body)(), const char* file,
 #define ELG_PREVIEW_IMPL_(name, id)                                                                         \
     static ::elg::View id();                                                                                \
     [[maybe_unused]] static const bool ELG_PREVIEW_CONCAT(id, _registered) =                                \
-        ::elg::detail::register_preview(name, &id, __FILE__, __LINE__);                                     \
+        ::elg::detail::register_preview((name), &(id), __FILE__, __LINE__);                                   \
     static ::elg::View id()
 
 // Registers a preview of this module, followed by its body:

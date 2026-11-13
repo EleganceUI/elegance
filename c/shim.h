@@ -296,6 +296,8 @@ public:
     }
     RustFn(const RustFn&) = delete;
     RustFn& operator=(const RustFn&) = delete;
+    RustFn(RustFn&&) = delete;
+    RustFn& operator=(RustFn&&) = delete;
 
     void call(void* args, void* ret) const {
         if (!closure_.call(closure_.data, args, ret)) {

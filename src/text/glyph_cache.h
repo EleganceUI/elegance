@@ -31,6 +31,8 @@ public:
 
     GlyphDiskCache(const GlyphDiskCache&) = delete;
     GlyphDiskCache& operator=(const GlyphDiskCache&) = delete;
+    GlyphDiskCache(GlyphDiskCache&&) = delete;
+    GlyphDiskCache& operator=(GlyphDiskCache&&) = delete;
 
     [[nodiscard]] bool enabled() const noexcept { return directory_.has_value(); }
 
