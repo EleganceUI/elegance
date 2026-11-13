@@ -132,6 +132,7 @@ TEST_CASE("a registration that fails leaves no set behind", "[image]") {
 
 TEST_CASE("icon sets register from several threads at once", "[image]") {
     std::vector<std::thread> threads;
+    threads.reserve(8);
     for (int i = 0; i < 8; ++i) {
         threads.emplace_back([i] {
             register_icon_set(std::format("test-thread-{}", i),
