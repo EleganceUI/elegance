@@ -60,7 +60,7 @@ public:
     /// @tparam Key The key: a type with a `Value` type, a `name` and a `default_value()`.
     /// @return The value.
     template <class Key>
-    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] typename Key::Value get() const {
+    [[nodiscard]] typename Key::Value get() const {
         for (const Entry* entry = head_.get(); entry; entry = entry->next.get()) {
             if (entry->key == Key::name) {
                 return static_cast<const Prop<typename Key::Value>*>(entry->value.get())->get();

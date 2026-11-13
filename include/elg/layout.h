@@ -68,7 +68,7 @@ public:
     ///   the minimum and infinity for the maximum.
     /// @param children The children, in order.
     /// @return The layout's size, from size_that_fits().
-    virtual Size cached_size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children,
+    [[nodiscard]] virtual Size cached_size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children,
                                        LayoutCache&) const {
         return size_that_fits(proposal, children);
     }
@@ -151,7 +151,7 @@ public:
     /// @param children The children, in order.
     /// @param cache The view's cache, up to date.
     /// @return The layout's size.
-    virtual Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children, Cache& cache) const = 0;
+    [[nodiscard]] virtual Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children, Cache& cache) const = 0;
     /// Like Layout::place_children(), with the cache.
     ///
     /// @param bounds Has the size reported for `proposal`, positioned by the parent.
@@ -187,7 +187,7 @@ public:
     /// @param children The children, in order.
     /// @param storage The view's cache storage.
     /// @return The layout's size.
-    Size cached_size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children,
+    [[nodiscard]] Size cached_size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children,
                                LayoutCache& storage) const final {
         return size_that_fits(proposal, children, cache_in(storage, children));
     }
@@ -203,7 +203,7 @@ public:
     }
 
 private:
-    Cache& cache_in(LayoutCache& storage, std::span<const LayoutChild> children) const {
+    [[nodiscard]] Cache& cache_in(LayoutCache& storage, std::span<const LayoutChild> children) const {
         if (!storage.value) {
             storage.value = std::make_shared<Cache>(make_cache(children));
         } else if (storage.stale) {

@@ -74,7 +74,7 @@ public:
     ///
     /// @param action Runs once, with the event where the drag began.
     /// @return A copy of this gesture with `action` set.
-    DragGesture on_began(std::function<void(const DragEvent&)> action) const {
+    [[nodiscard]] DragGesture on_began(std::function<void(const DragEvent&)> action) const {
         return with(&DragGesture::began_, std::move(action));
     }
     /// Like on_began(std::function<void(const DragEvent&)>), for an action that doesn't need
@@ -82,35 +82,35 @@ public:
     ///
     /// @param action Runs once, when the drag begins.
     /// @return A copy of this gesture with `action` set.
-    DragGesture on_began(std::function<void()> action) const {
+    [[nodiscard]] DragGesture on_began(std::function<void()> action) const {
         return on_began([action = std::move(action)](const DragEvent&) { action(); });
     }
     /// The pointer moved (also right after on_began).
     ///
     /// @param action Runs with each move of the drag.
     /// @return A copy of this gesture with `action` set.
-    DragGesture on_changed(std::function<void(const DragEvent&)> action) const {
+    [[nodiscard]] DragGesture on_changed(std::function<void(const DragEvent&)> action) const {
         return with(&DragGesture::changed_, std::move(action));
     }
     /// The button was released.
     ///
     /// @param action Runs once, with the event where the drag ended.
     /// @return A copy of this gesture with `action` set.
-    DragGesture on_ended(std::function<void(const DragEvent&)> action) const {
+    [[nodiscard]] DragGesture on_ended(std::function<void(const DragEvent&)> action) const {
         return with(&DragGesture::ended_, std::move(action));
     }
     /// The pointer was lost (e.g. the window closed) before the release.
     ///
     /// @param action Runs once, instead of the on_ended action.
     /// @return A copy of this gesture with `action` set.
-    DragGesture on_cancelled(std::function<void()> action) const {
+    [[nodiscard]] DragGesture on_cancelled(std::function<void()> action) const {
         return with(&DragGesture::cancelled_, std::move(action));
     }
 
 private:
     friend struct detail::GestureAccess;
     template <class F>
-    DragGesture with(F DragGesture::*member, F action) const {
+    [[nodiscard]] DragGesture with(F DragGesture::*member, F action) const {
         DragGesture copy = *this;
         copy.*member = std::move(action);
         return copy;
@@ -179,7 +179,7 @@ public:
     ///
     /// @param action Runs once, with the first event.
     /// @return A copy of this gesture with `action` set.
-    PhasedGesture on_began(std::function<void(const Event&)> action) const {
+    [[nodiscard]] PhasedGesture on_began(std::function<void(const Event&)> action) const {
         return with(&PhasedGesture::began_, std::move(action));
     }
     /// Like on_began(std::function<void(const Event&)>), for an action that doesn't need the
@@ -187,7 +187,7 @@ public:
     ///
     /// @param action Runs once, when the gesture begins.
     /// @return A copy of this gesture with `action` set.
-    PhasedGesture on_began(std::function<void()> action) const {
+    [[nodiscard]] PhasedGesture on_began(std::function<void()> action) const {
         return on_began([action = std::move(action)](const Event&) { action(); });
     }
     /// The fingers moved. Also gets events that aren't part of a tracked gesture
@@ -195,28 +195,28 @@ public:
     ///
     /// @param action Runs with each event.
     /// @return A copy of this gesture with `action` set.
-    PhasedGesture on_changed(std::function<void(const Event&)> action) const {
+    [[nodiscard]] PhasedGesture on_changed(std::function<void(const Event&)> action) const {
         return with(&PhasedGesture::changed_, std::move(action));
     }
     /// The fingers lifted.
     ///
     /// @param action Runs once, with the last event.
     /// @return A copy of this gesture with `action` set.
-    PhasedGesture on_ended(std::function<void(const Event&)> action) const {
+    [[nodiscard]] PhasedGesture on_ended(std::function<void(const Event&)> action) const {
         return with(&PhasedGesture::ended_, std::move(action));
     }
     /// The system took the gesture over.
     ///
     /// @param action Runs once, instead of the on_ended action.
     /// @return A copy of this gesture with `action` set.
-    PhasedGesture on_cancelled(std::function<void()> action) const {
+    [[nodiscard]] PhasedGesture on_cancelled(std::function<void()> action) const {
         return with(&PhasedGesture::cancelled_, std::move(action));
     }
 
 private:
     friend struct detail::GestureAccess;
     template <class F>
-    PhasedGesture with(F PhasedGesture::*member, F action) const {
+    [[nodiscard]] PhasedGesture with(F PhasedGesture::*member, F action) const {
         PhasedGesture copy = *this;
         copy.*member = std::move(action);
         return copy;
