@@ -6,6 +6,7 @@
 
 #include "shim.h"
 
+#include <exception>
 
 using namespace elg;
 using namespace elg_shim;
@@ -192,6 +193,13 @@ public:
         try {
             owner_->call(nullptr, &matches);
         } catch (...) {
+            // value_for can't throw, so the panic goes to the UI thread, which rethrows it: it
+            // reaches App::run like a panic in any app callback.
+            try {
+                post_to_ui_thread([error = std::current_exception()] { std::rethrow_exception(error); });
+            } catch (...) {
+                // Swallowed: posting failed (out of memory), and value_for can't throw.
+            }
             return nullptr;
         }
         return matches ? &value_ : nullptr;
@@ -208,8 +216,9 @@ private:
 ///
 /// @param v The view to modify (borrowed).
 /// @param owner Consumed closure: its `data` is the value, and its `call` (args: null, ret: `bool*`)
-///   answers whether it holds the key the Rust side is looking up. A panic there counts as false.
-///   Required: none is a usage error.
+///   answers whether it holds the key the Rust side is looking up. A panic there counts as false
+///   for the lookup, and propagates out of App::run like one in any callback. Required: none is a
+///   usage error.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_layout_value(const View* v, ElgClosure owner) {
     ELG_TRY
