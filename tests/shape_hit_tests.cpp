@@ -38,6 +38,20 @@ const View kSquare = Rectangle().fill(Color::white).frame(100, 100);
 
 } // namespace
 
+TEST_CASE("a mask takes no hits, and limits the content's to where it would be hit", "[hit-test]") {
+    detail::Scope scope; // masks lower with effects
+    const detail::Scope::Use use(scope);
+    // Content hit only where the mask is: the square's corners are outside the circle.
+    const View masked = kSquare.mask(Circle());
+    CHECK(hits(masked, {50, 50}));
+    CHECK_FALSE(hits(masked, {2, 2}));
+
+    // The mask itself: where the content (a circle) misses, a square mask doesn't take the hit.
+    const View circle = Circle().fill(Color::white).frame(100, 100).mask(Rectangle());
+    CHECK(hits(circle, {50, 50}));
+    CHECK_FALSE(hits(circle, {2, 2}));
+}
+
 TEST_CASE("a path shape takes the same points as a fill, a clip and a content shape", "[hit-test]") {
     detail::Scope scope;
     const detail::Scope::Use use(scope);

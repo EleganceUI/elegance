@@ -865,7 +865,9 @@ public:
     /// @return This view, drawn scaled.
     [[nodiscard]] ELG_API View scale_effect(Prop<float> x, Prop<float> y, UnitPoint anchor = UnitPoint::center) const;
     /// Shows the content only where `mask` (sized and aligned like an overlay) is opaque; its
-    /// colors don't matter, only its alpha. A gradient fades the content out:
+    /// colors don't matter, only its alpha. Pointer hits reach the content only where the mask
+    /// would be hit (on a shape's fill, a text's frame, ...); the mask takes none itself. A
+    /// gradient fades the content out:
     ///
     /// @code
     /// list.mask(LinearGradient({Color::black, Color::clear}, UnitPoint::center, UnitPoint::bottom))

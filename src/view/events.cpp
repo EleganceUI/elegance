@@ -347,8 +347,15 @@ bool EffectElement::hit_impl(Point point, std::vector<Element*>& path) {
 }
 
 bool DecorationElement::hit_impl(Point point, std::vector<Element*>& path) {
-    if (modifier_->placement() == DecorationModifier::Placement::in_front) {
+    switch (modifier_->placement()) {
+    case DecorationModifier::Placement::in_front:
         return decoration_->hit_test(point, path) || content_->hit_test(point, path);
+    case DecorationModifier::Placement::mask: {
+        // ELGSPEC-0009.R17
+        std::vector<Element*> mask_path;
+        return decoration_->hit_test(point, mask_path) && content_->hit_test(point, path);
+    }
+    case DecorationModifier::Placement::behind: break;
     }
     return content_->hit_test(point, path) || decoration_->hit_test(point, path);
 }
