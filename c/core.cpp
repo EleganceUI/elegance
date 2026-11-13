@@ -333,8 +333,8 @@ static Binding<T>* make_binding(ElgClosure& get, ElgClosure& set) {
 /// @param get Consumed closure; args: null, ret: `bool*`. Required: none is a usage error.
 /// @param set Consumed closure; args: `bool*` (the new value), ret: null. Required: none is a
 ///   usage error.
-/// @return The binding, owned by the caller until a function takes it (`take_*`);
-///   nullptr on failure.
+/// @return The binding, owned by the caller until a function takes it (`take_*`) or
+///   elg_binding_bool_free() frees it; nullptr on failure.
 ELG_EXPORT Binding<bool>* elg_binding_bool(ElgClosure get, ElgClosure set) {
     ELG_TRY
     const Consumed consumed(get, set);
@@ -359,8 +359,8 @@ ELG_EXPORT Binding<float>* elg_binding_f32(ElgClosure get, ElgClosure set) {
 /// @param get Consumed closure; args: null, ret: `int32_t*`. Required: none is a usage error.
 /// @param set Consumed closure; args: `int32_t*` (the new value), ret: null. Required: none is a
 ///   usage error.
-/// @return The binding, owned by the caller until a function takes it (`take_*`);
-///   nullptr on failure.
+/// @return The binding, owned by the caller until a function takes it (`take_*`) or
+///   elg_binding_i32_free() frees it; nullptr on failure.
 ELG_EXPORT Binding<int>* elg_binding_i32(ElgClosure get, ElgClosure set) {
     ELG_TRY
     const Consumed consumed(get, set);
@@ -373,8 +373,8 @@ ELG_EXPORT Binding<int>* elg_binding_i32(ElgClosure get, ElgClosure set) {
 ///   Required: none is a usage error.
 /// @param set Consumed closure; args: `std::string*`, the new value (read it with elg_string_view());
 ///   ret: null. Required: none is a usage error.
-/// @return The binding, owned by the caller until a function takes it (`take_*`);
-///   nullptr on failure.
+/// @return The binding, owned by the caller until a function takes it (`take_*`) or
+///   elg_binding_string_free() frees it; nullptr on failure.
 ELG_EXPORT Binding<std::string>* elg_binding_string(ElgClosure get, ElgClosure set) {
     ELG_TRY
     const Consumed consumed(get, set);
@@ -386,8 +386,8 @@ ELG_EXPORT Binding<std::string>* elg_binding_string(ElgClosure get, ElgClosure s
 /// @param get Consumed closure; args: null, ret: `double*`. Required: none is a usage error.
 /// @param set Consumed closure; args: `double*` (the new value), ret: null. Required: none is a
 ///   usage error.
-/// @return The binding, owned by the caller until a function takes it (`take_*`);
-///   nullptr on failure.
+/// @return The binding, owned by the caller until a function takes it (`take_*`) or
+///   elg_binding_f64_free() frees it; nullptr on failure.
 ELG_EXPORT Binding<double>* elg_binding_f64(ElgClosure get, ElgClosure set) {
     ELG_TRY
     const Consumed consumed(get, set);
@@ -427,6 +427,30 @@ ELG_EXPORT void elg_binding_f32_set(const Binding<float>* binding, float value) 
 ///
 /// @param binding The binding (consumed); may be null.
 ELG_EXPORT void elg_binding_f32_free(Binding<float>* binding) {
+    delete binding;
+}
+/// Frees a `Binding<bool>` the caller owns, from elg_binding_bool().
+///
+/// @param binding The binding (consumed); may be null.
+ELG_EXPORT void elg_binding_bool_free(Binding<bool>* binding) {
+    delete binding;
+}
+/// Frees a `Binding<int>` the caller owns, from elg_binding_i32().
+///
+/// @param binding The binding (consumed); may be null.
+ELG_EXPORT void elg_binding_i32_free(Binding<int>* binding) {
+    delete binding;
+}
+/// Frees a `Binding<std::string>` the caller owns, from elg_binding_string().
+///
+/// @param binding The binding (consumed); may be null.
+ELG_EXPORT void elg_binding_string_free(Binding<std::string>* binding) {
+    delete binding;
+}
+/// Frees a `Binding<double>` the caller owns, from elg_binding_f64().
+///
+/// @param binding The binding (consumed); may be null.
+ELG_EXPORT void elg_binding_f64_free(Binding<double>* binding) {
     delete binding;
 }
 
