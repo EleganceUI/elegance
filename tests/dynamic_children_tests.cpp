@@ -2,9 +2,11 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Children that come and go while the app runs.
+// Children that come and go while the app runs: repeated keys in lazy stacks, and handles that
+// outlive the views they point at.
 
 #include "render/display_list.h"
+#include "view/focus.h"
 #include "view/view_node.h"
 
 #include <elg/reactive.h>
@@ -13,6 +15,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
 #include <vector>
 
 using namespace elg;
@@ -64,4 +67,29 @@ TEST_CASE("a lazy stack gives each item with a repeated key its own row", "[lazy
     layout(*root);
     CHECK(built == 5);
     CHECK(hit(*root, {10, 5}) == first);
+}
+
+TEST_CASE("a scroll position that outlives its scroll view and window does nothing", "[scroll]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    const ScrollPosition position;
+    {
+        auto needs_frame = std::make_unique<bool>(false); // the window's, gone with it below
+        auto root = detail::lower(ScrollView({.position = position}, Rectangle().frame(20, 400)),
+                                  {.needs_frame = needs_frame.get()});
+        layout(*root);
+        position.scroll_to_end();
+        CHECK(*needs_frame);
+    }
+    position.scroll_to_end(); // must not write to the window that's gone
+    position.scroll_to_top();
+}
+
+TEST_CASE("only elements with a handler take focus whoever asks", "[focus]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    detail::FocusManager focus;
+    auto root = detail::lower(Rectangle().frame(10, 10), {}); // a screen reader can name it
+    CHECK_FALSE(focus.focus(root.get(), true));
+    CHECK(focus.focused() == nullptr);
 }

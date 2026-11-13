@@ -17,6 +17,9 @@ namespace elg::detail {
 // --- FocusManager ---
 
 bool FocusManager::focus(Element* element, bool visible, bool navigated) {
+    if (element && !element->event_handler()) {
+        return false; // only elements with a handler can hold focus
+    }
     navigated_ = navigated;
     if (element == focused_) {
         return std::exchange(visible_, visible) != visible;

@@ -691,7 +691,12 @@ int App::run() {
         }
         Element* element = target->second.element;
         switch (request.action.kind) {
-        case AccessibilityAction::Kind::focus: live.focus.focus(element, true); break;
+        case AccessibilityAction::Kind::focus:
+            // A screen reader can name any element; only focusable ones take focus.
+            if (const auto* handler = element->event_handler(); handler && handler->focusable()) {
+                live.focus.focus(element, true);
+            }
+            break;
         case AccessibilityAction::Kind::scroll_into_view:
             for (Element* e = element->parent(); e; e = e->parent()) {
                 e->reveal(element->frame());
