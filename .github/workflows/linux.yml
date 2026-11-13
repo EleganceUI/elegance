@@ -126,5 +126,11 @@ jobs:
               run: |
                   wget -qO llvm.sh https://apt.llvm.org/llvm.sh
                   sudo bash llvm.sh 19
-                  sudo apt-get install -y --no-install-recommends clang-tidy-19 clang-tools-19
+                  sudo apt-get install -y --no-install-recommends clang-tidy-19 clang-tools-19 python3-clang-19
                   python3 tools/clang-tidy.py build/linux-release
+
+            # Every public declaration (include/elg, the C API) has a /// comment with its @params
+            # and @return. Uses libclang 19, installed in the step above.
+            - name: API docs
+              if: matrix.runner == 'ubuntu-24.04'
+              run: python3 tools/doc-check.py build/linux-release
