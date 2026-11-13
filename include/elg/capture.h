@@ -71,20 +71,20 @@ public:
     void clear() const;  // drops what was recorded
 
     // Reactive.
-    bool is_recording() const;
-    double duration() const; // seconds recorded
-    float level() const;     // the input's recent peak, 0...1, while recording
-    std::string error() const;
+    [[nodiscard]] bool is_recording() const;
+    [[nodiscard]] double duration() const; // seconds recorded
+    [[nodiscard]] float level() const;     // the input's recent peak, 0...1, while recording
+    [[nodiscard]] std::string error() const;
 
-    std::uint32_t sample_rate() const noexcept;
-    std::uint32_t channels() const noexcept;
+    [[nodiscard]] std::uint32_t sample_rate() const noexcept;
+    [[nodiscard]] std::uint32_t channels() const noexcept;
     // What's been recorded: interleaved samples, -1...1.
-    std::vector<float> samples() const;
+    [[nodiscard]] std::vector<float> samples() const;
     // As a 16-bit WAV file, or in memory. Throws elg::ResourceError if the file can't be written.
     void save_wav(const std::filesystem::path& file) const;
-    std::vector<unsigned char> wav() const;
+    [[nodiscard]] std::vector<unsigned char> wav() const;
     // To play it back.
-    Sound sound() const;
+    [[nodiscard]] Sound sound() const;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -120,16 +120,16 @@ public:
     void stop() const;
 
     // Reactive.
-    bool is_running() const;
-    Size size() const; // pixels of the frames; zero until the first one
-    std::string error() const;
+    [[nodiscard]] bool is_running() const;
+    [[nodiscard]] Size size() const; // pixels of the frames; zero until the first one
+    [[nodiscard]] std::string error() const;
 
     // The newest frame as a PNG image (not mirrored), or nullopt before the first frame.
-    std::optional<std::vector<unsigned char>> snapshot() const;
+    [[nodiscard]] std::optional<std::vector<unsigned char>> snapshot() const;
 
     // Internal: for CameraView.
-    const std::shared_ptr<detail::VideoSource>& source() const noexcept { return source_; }
-    bool mirrored() const noexcept { return mirrored_; }
+    [[nodiscard]] const std::shared_ptr<detail::VideoSource>& source() const noexcept { return source_; }
+    [[nodiscard]] bool mirrored() const noexcept { return mirrored_; }
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN

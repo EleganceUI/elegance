@@ -166,7 +166,7 @@ struct ProposedSize {
     static constexpr ProposedSize zero() noexcept { return {0.f, 0.f}; }
     static constexpr ProposedSize infinite() noexcept { return {infinity, infinity}; }
 
-    constexpr Size replacing_unspecified(Size fallback) const noexcept {
+    [[nodiscard]] constexpr Size replacing_unspecified(Size fallback) const noexcept {
         return {width.value_or(fallback.width), height.value_or(fallback.height)};
     }
 
@@ -253,9 +253,9 @@ public:
     // At once, with no animation (the built-in styles' default).
     static PopupMotion none() { return PopupMotion(); }
 
-    const Transition* transition() const noexcept { return transition_.get(); }
-    const Animation* animation() const noexcept { return animation_.get(); }
-    bool animates() const noexcept { return transition_ && animation_; }
+    [[nodiscard]] const Transition* transition() const noexcept { return transition_.get(); }
+    [[nodiscard]] const Animation* animation() const noexcept { return animation_.get(); }
+    [[nodiscard]] bool animates() const noexcept { return transition_ && animation_; }
 
 private:
     PopupMotion() = default;
@@ -383,10 +383,10 @@ public:
         requires(std::is_arithmetic_v<T> && !std::is_same_v<T, bool>)
     constexpr OptionalLength(T length) noexcept : value_(static_cast<float>(length)) {}
 
-    constexpr bool has_value() const noexcept { return value_.has_value(); }
+    [[nodiscard]] constexpr bool has_value() const noexcept { return value_.has_value(); }
     constexpr explicit operator bool() const noexcept { return value_.has_value(); }
     constexpr float operator*() const noexcept { return *value_; }
-    constexpr float value_or(float fallback) const noexcept { return value_.value_or(fallback); }
+    [[nodiscard]] constexpr float value_or(float fallback) const noexcept { return value_.value_or(fallback); }
     constexpr operator std::optional<float>() const noexcept { return value_; }
 
 private:
@@ -425,7 +425,7 @@ public:
     ELG_API View() noexcept;
     // Whether this is an empty view (View(), EmptyView()), e.g. a style's label for a control
     // made without one.
-    ELG_API bool is_empty() const noexcept;
+    [[nodiscard]] ELG_API bool is_empty() const noexcept;
 
     // Components: any type with `View body() const` can be used as a view.
     template <class Component>
@@ -439,7 +439,7 @@ public:
     // --- The one entry point for modifiers; built-in and user modifiers alike. ---
 
     template <std::derived_from<Modifier> M>
-    View modifier(M modifier) const {
+    [[nodiscard]] View modifier(M modifier) const {
         return with_modifier(std::make_shared<const M>(std::move(modifier)));
     }
 
@@ -451,46 +451,46 @@ public:
 
     // --- Layout (elg/modifiers/layout.h) ---
 
-    ELG_API View padding(Prop<float> length = 16.f) const;
-    ELG_API View padding(Edges edges, Prop<float> length = 16.f) const;
-    ELG_API View padding(EdgeInsets insets) const; // also takes {.top = 4, ...}
-    ELG_API View padding(Prop<EdgeInsets> insets) const;
+    [[nodiscard]] ELG_API View padding(Prop<float> length = 16.f) const;
+    [[nodiscard]] ELG_API View padding(Edges edges, Prop<float> length = 16.f) const;
+    [[nodiscard]] ELG_API View padding(EdgeInsets insets) const; // also takes {.top = 4, ...}
+    [[nodiscard]] ELG_API View padding(Prop<EdgeInsets> insets) const;
 
-    ELG_API View frame(FrameOptions options) const;
-    ELG_API View frame(float width, float height, Alignment alignment = Alignment::center) const;
-    ELG_API View frame(FlexibleFrameOptions options) const;
+    [[nodiscard]] ELG_API View frame(FrameOptions options) const;
+    [[nodiscard]] ELG_API View frame(float width, float height, Alignment alignment = Alignment::center) const;
+    [[nodiscard]] ELG_API View frame(FlexibleFrameOptions options) const;
     // A fixed size that follows state, like frame(width, height) but laid out again whenever the
     // size changes (a panel or window resized by dragging).
     //   content.frame([=] { return Size{width(), height()}; })
-    ELG_API View frame(Prop<Size> size, Alignment alignment = Alignment::center) const;
+    [[nodiscard]] ELG_API View frame(Prop<Size> size, Alignment alignment = Alignment::center) const;
 
     // Proposes nothing on the given axes, so the content takes its ideal size.
-    ELG_API View fixed_size(bool horizontal = true, bool vertical = true) const;
+    [[nodiscard]] ELG_API View fixed_size(bool horizontal = true, bool vertical = true) const;
     // Sizes the view to an aspect ratio (width / height) within what's proposed; without a
     // ratio, the view's own ideal size gives it (an image's).
-    ELG_API View aspect_ratio(ContentMode mode) const;
-    ELG_API View aspect_ratio(float ratio, ContentMode mode = ContentMode::fit) const;
+    [[nodiscard]] ELG_API View aspect_ratio(ContentMode mode) const;
+    [[nodiscard]] ELG_API View aspect_ratio(float ratio, ContentMode mode = ContentMode::fit) const;
     // Raster Images: take whatever size they're offered instead of their own (stretching to
     // it; combine with aspect_ratio to keep proportions). Throws elg::UsageError on other views.
-    ELG_API View resizable() const;
+    [[nodiscard]] ELG_API View resizable() const;
     // Stacks give space to higher priorities first; in a ZStack, the highest-priority children
     // decide its size and the others are offered that size. Default 0.
-    ELG_API View layout_priority(float priority) const;
+    [[nodiscard]] ELG_API View layout_priority(float priority) const;
     // Stacking order among siblings (any stack, not just ZStack): higher draws in front and is hit
     // first. Default 0; equal values keep declaration order (later in front).
-    ELG_API View z_index(Prop<float> z) const;
+    [[nodiscard]] ELG_API View z_index(Prop<float> z) const;
     // Moves the content when drawn, without affecting layout (and animates the move during
     // animated updates). Reactive: .offset([=] { return open() ? 0.f : -200.f; }, 0)
-    ELG_API View offset(Prop<float> x, Prop<float> y) const;
+    [[nodiscard]] ELG_API View offset(Prop<float> x, Prop<float> y) const;
 
     // --- Grids (elg/grid.h) ---
 
     // A Grid cell that spans `count` columns.
-    ELG_API View grid_cell_columns(int count) const;
+    [[nodiscard]] ELG_API View grid_cell_columns(int count) const;
     // Where this view sits in its grid cell, instead of its row's, column's, or grid's alignment.
-    ELG_API View grid_cell_alignment(Alignment alignment) const;
+    [[nodiscard]] ELG_API View grid_cell_alignment(Alignment alignment) const;
     // The horizontal alignment of every cell in this cell's Grid column.
-    ELG_API View grid_column_alignment(HorizontalAlignment alignment) const;
+    [[nodiscard]] ELG_API View grid_column_alignment(HorizontalAlignment alignment) const;
 
     // --- Decoration (elg/modifiers/decoration.h) ---
     // The shorthands are exactly their compositions, drawn and hit tested the same way:
@@ -502,33 +502,33 @@ public:
     // A shape takes the same points whether it's filled, a clip_shape or a content_shape; a
     // stroke-only shape takes only its line.
 
-    ELG_API View background(View view, Alignment alignment = Alignment::center) const;
+    [[nodiscard]] ELG_API View background(View view, Alignment alignment = Alignment::center) const;
     // A color or gradient filling the view's bounds, or the given shape. Reactive arguments work:
     // .background([=] { return selected() ? accent : surface; })
-    ELG_API View background(Prop<ShapeStyle> style) const;
-    ELG_API View background(Prop<ShapeStyle> style, const Shape& shape) const;
-    ELG_API View overlay(View view, Alignment alignment = Alignment::center) const;
+    [[nodiscard]] ELG_API View background(Prop<ShapeStyle> style) const;
+    [[nodiscard]] ELG_API View background(Prop<ShapeStyle> style, const Shape& shape) const;
+    [[nodiscard]] ELG_API View overlay(View view, Alignment alignment = Alignment::center) const;
     // A border drawn inside the view's bounds, or along the given shape.
-    ELG_API View border(Prop<Color> color, float width = 1) const;
-    ELG_API View border(Prop<Color> color, float width, const Shape& shape) const;
+    [[nodiscard]] ELG_API View border(Prop<Color> color, float width = 1) const;
+    [[nodiscard]] ELG_API View border(Prop<Color> color, float width, const Shape& shape) const;
 
     // --- Effects (elg/modifiers/effects.h) ---
 
     // Clips the content to the view's bounds: clip_shape(Rectangle()).
-    ELG_API View clipped() const;
+    [[nodiscard]] ELG_API View clipped() const;
     // Clips the content to a shape filling the view's bounds (cheap for rounded rects/circles).
-    ELG_API View clip_shape(const Shape& shape) const;
+    [[nodiscard]] ELG_API View clip_shape(const Shape& shape) const;
     // Shorthand for clip_shape(RoundedRectangle(radius)).
-    ELG_API View corner_radius(float radius) const;
+    [[nodiscard]] ELG_API View corner_radius(float radius) const;
     // Fades the view as a group: overlapping content doesn't show through itself.
-    ELG_API View opacity(Prop<float> opacity) const;
+    [[nodiscard]] ELG_API View opacity(Prop<float> opacity) const;
     // A blurred shadow of the view's content.
-    ELG_API View shadow(Shadow shadow = {}) const;
+    [[nodiscard]] ELG_API View shadow(Shadow shadow = {}) const;
     // A shadow cast inside the view's content, from its edges inward (pressed-in, embossed).
-    ELG_API View inner_shadow(Shadow shadow = {.color = Color::black.opacity(0.25f), .radius = 6, .y = 2}) const;
+    [[nodiscard]] ELG_API View inner_shadow(Shadow shadow = {.color = Color::black.opacity(0.25f), .radius = 6, .y = 2}) const;
     // Gaussian blur of the content; `radius` in points. Reactive and animatable.
     // `opaque`: the content fills its bounds; edges stay sharp instead of fading out.
-    ELG_API View blur(Prop<float> radius, bool opaque = false) const;
+    [[nodiscard]] ELG_API View blur(Prop<float> radius, bool opaque = false) const;
     // Blurs what's drawn behind the view in the window (frosted glass), inside `shape` (the
     // view's bounds by default); `radius` in points. Reactive and animatable. Like .background,
     // it goes behind everything it wraps, so a tint goes on before it:
@@ -538,50 +538,50 @@ public:
     // .blur() after it blurs the view, backdrop included. Inside an offscreen group (opacity below
     // 1, a shadow, a blur, ...) it sees only what the group drew behind it, as CSS's
     // backdrop-filter does.
-    ELG_API View backdrop_blur(Prop<float> radius, BackdropOptions options = {}) const;
-    ELG_API View backdrop_blur(Prop<float> radius, const Shape& shape, BackdropOptions options = {}) const;
+    [[nodiscard]] ELG_API View backdrop_blur(Prop<float> radius, BackdropOptions options = {}) const;
+    [[nodiscard]] ELG_API View backdrop_blur(Prop<float> radius, const Shape& shape, BackdropOptions options = {}) const;
     // Color adjustments (SwiftUI's, and CSS's filter functions). Each is reactive and animatable.
     // Adds to each channel: -1 black ... 0 unchanged ... 1 white.
-    ELG_API View brightness(Prop<float> amount) const;
+    [[nodiscard]] ELG_API View brightness(Prop<float> amount) const;
     // 0 flat gray, 1 unchanged, above 1 more contrast.
-    ELG_API View contrast(Prop<float> amount) const;
+    [[nodiscard]] ELG_API View contrast(Prop<float> amount) const;
     // 0 gray, 1 unchanged, above 1 more vivid.
-    ELG_API View saturation(Prop<float> amount) const;
+    [[nodiscard]] ELG_API View saturation(Prop<float> amount) const;
     // 0 unchanged ... 1 fully gray.
-    ELG_API View grayscale(Prop<float> amount) const;
+    [[nodiscard]] ELG_API View grayscale(Prop<float> amount) const;
     // Rotates hues around the color wheel by `degrees`.
-    ELG_API View hue_rotation(Prop<float> degrees) const;
+    [[nodiscard]] ELG_API View hue_rotation(Prop<float> degrees) const;
     // 0 unchanged ... 1 fully sepia-toned.
-    ELG_API View sepia(Prop<float> amount) const;
+    [[nodiscard]] ELG_API View sepia(Prop<float> amount) const;
     // Inverts the colors, or partly (0...1).
-    ELG_API View color_invert(Prop<float> amount = 1.f) const;
+    [[nodiscard]] ELG_API View color_invert(Prop<float> amount = 1.f) const;
     // Multiplies every pixel by `color` (alpha too): tints white content, darkens the rest.
-    ELG_API View color_multiply(Prop<Color> color) const;
+    [[nodiscard]] ELG_API View color_multiply(Prop<Color> color) const;
     // Brightness becomes opacity: white stays, black disappears (for masks).
-    ELG_API View luminance_to_alpha() const;
+    [[nodiscard]] ELG_API View luminance_to_alpha() const;
     // Blends the view with what's behind it.
-    ELG_API View blend_mode(BlendMode mode) const;
+    [[nodiscard]] ELG_API View blend_mode(BlendMode mode) const;
     // Draws the content offscreen first, then composites it as one image: blend modes inside it
     // blend with each other only, and a material inside sees only what the group drew.
-    ELG_API View compositing_group() const;
+    [[nodiscard]] ELG_API View compositing_group() const;
     // Rotates the drawn content by `degrees` (clockwise) about `anchor`, without affecting layout
     // or hit testing. Reactive and animatable.
-    ELG_API View rotation_effect(Prop<float> degrees, UnitPoint anchor = UnitPoint::center) const;
+    [[nodiscard]] ELG_API View rotation_effect(Prop<float> degrees, UnitPoint anchor = UnitPoint::center) const;
     // Scales the drawn content about `anchor`, without affecting layout or hit testing. A uniform
     // scale stays sharp (vector); an uneven one renders offscreen first. Reactive and animatable.
-    ELG_API View scale_effect(Prop<float> scale, UnitPoint anchor = UnitPoint::center) const;
-    ELG_API View scale_effect(Prop<float> x, Prop<float> y, UnitPoint anchor = UnitPoint::center) const;
+    [[nodiscard]] ELG_API View scale_effect(Prop<float> scale, UnitPoint anchor = UnitPoint::center) const;
+    [[nodiscard]] ELG_API View scale_effect(Prop<float> x, Prop<float> y, UnitPoint anchor = UnitPoint::center) const;
     // Shows the content only where `mask` (sized and aligned like an overlay) is opaque; its
     // colors don't matter, only its alpha. A gradient fades the content out:
     //   list.mask(LinearGradient({Color::black, Color::clear}, UnitPoint::center, UnitPoint::bottom))
-    ELG_API View mask(View mask, Alignment alignment = Alignment::center) const;
-    ELG_API View mask(Prop<ShapeStyle> style) const;
+    [[nodiscard]] ELG_API View mask(View mask, Alignment alignment = Alignment::center) const;
+    [[nodiscard]] ELG_API View mask(Prop<ShapeStyle> style) const;
     // Hit tests against this shape (filling the bounds) instead of the drawn content, e.g.
     // content_shape(Rectangle()) makes the gaps in a stack tappable. A Button takes its whole
     // frame; .content_shape(Capsule()) narrows it to its shape.
-    ELG_API View content_shape(const Shape& shape) const;
+    [[nodiscard]] ELG_API View content_shape(const Shape& shape) const;
     // false: the view and everything in it ignore the pointer; events go to what's behind.
-    ELG_API View allows_hit_testing(bool enabled) const;
+    [[nodiscard]] ELG_API View allows_hit_testing(bool enabled) const;
 
     // --- Events (elg/modifiers/events.h) ---
 
@@ -608,11 +608,11 @@ public:
     // GestureOptions: {.priority = GesturePriority::high} goes before gestures inside the view;
     // {.simultaneous = true} runs alongside whatever has the press.
     //   row.recognize(DragGesture().on_changed(swipe), {.priority = GesturePriority::high})
-    ELG_API View recognize(DragGesture gesture, GestureOptions options = {}) const;
-    ELG_API View recognize(LongPressGesture gesture, GestureOptions options = {}) const;
-    ELG_API View recognize(MagnifyGesture gesture) const;
-    ELG_API View recognize(RotateGesture gesture) const;
-    ELG_API View recognize(TwoFingerDoubleTapGesture gesture) const;
+    [[nodiscard]] ELG_API View recognize(DragGesture gesture, GestureOptions options = {}) const;
+    [[nodiscard]] ELG_API View recognize(LongPressGesture gesture, GestureOptions options = {}) const;
+    [[nodiscard]] ELG_API View recognize(MagnifyGesture gesture) const;
+    [[nodiscard]] ELG_API View recognize(RotateGesture gesture) const;
+    [[nodiscard]] ELG_API View recognize(TwoFingerDoubleTapGesture gesture) const;
     // Shorthands: recognize(DragGesture().on_changed(action)), recognize(LongPressGesture(action)),
     // recognize(MagnifyGesture().on_changed(action)), ...
     ELG_API View on_drag(std::function<void(const DragEvent&)> action) const;
@@ -623,7 +623,7 @@ public:
     // The pointer's shape over the view, like CSS's `cursor`: .pointer_style(PointerStyle::pointer)
     // over something to click. Views inside can set their own (a text field's I-beam). Reactive:
     // .pointer_style([=] { return busy() ? PointerStyle::wait : PointerStyle::automatic; })
-    ELG_API View pointer_style(Prop<PointerStyle> style) const;
+    [[nodiscard]] ELG_API View pointer_style(Prop<PointerStyle> style) const;
     // Called at once when the pointer comes over the view (its hit area) and when it leaves: for
     // highlights.
     //   .on_pointer_enter([=] { hovered = true; }).on_pointer_leave([=] { hovered = false; })
@@ -648,7 +648,7 @@ public:
     ELG_API View on_size_change(std::function<void(PixelSize)> action) const;
     // Files or text dragged from other apps (Explorer, a browser) can be dropped here. The
     // innermost view under the pointer that takes that kind of thing gets it.
-    ELG_API View on_drop(DropOptions options) const;
+    [[nodiscard]] ELG_API View on_drop(DropOptions options) const;
 
     // --- Lifecycle ---
     // Runs `action` once the view is added: its window opened, an If/ForEach showed it, or a lazy
@@ -664,25 +664,25 @@ public:
     // --- Accessibility (design.md §12) ---
     // Built-in views describe themselves to screen readers; these adjust that.
     // What it's called (an icon-only button needs one: Image("trash") says nothing).
-    ELG_API View accessibility_label(Prop<std::string> label) const;
+    [[nodiscard]] ELG_API View accessibility_label(Prop<std::string> label) const;
     // What it holds, as words ("3 of 10", "50%").
-    ELG_API View accessibility_value(Prop<std::string> value) const;
+    [[nodiscard]] ELG_API View accessibility_value(Prop<std::string> value) const;
     // What happens if it's used, when the label doesn't say ("Deletes the draft").
-    ELG_API View accessibility_hint(Prop<std::string> hint) const;
+    [[nodiscard]] ELG_API View accessibility_hint(Prop<std::string> hint) const;
     // Leaves it (and everything inside) out: decoration.
-    ELG_API View accessibility_hidden(bool hidden = true) const;
-    ELG_API View accessibility_role(AccessibilityRole role) const;
+    [[nodiscard]] ELG_API View accessibility_hidden(bool hidden = true) const;
+    [[nodiscard]] ELG_API View accessibility_role(AccessibilityRole role) const;
     // One element for everything inside, labeled with their text (a row read as one line).
-    ELG_API View accessibility_element() const;
+    [[nodiscard]] ELG_API View accessibility_element() const;
     // What a screen reader's default action (click) does, for views made clickable with gestures.
     ELG_API View accessibility_action(std::function<void()> action) const;
     // The hover delay for on_hover_change handlers and submenus inside (default: enter 0.1 s,
     // exit 0). Controls' highlights and on_pointer_enter/leave don't wait.
-    ELG_API View hover_delay(HoverDelay delay) const;
+    [[nodiscard]] ELG_API View hover_delay(HoverDelay delay) const;
 
     // Pressing and dragging here moves the window (for custom title bars, TitleBar::hidden).
     // Double-clicking maximizes, like a system title bar. Controls inside still work.
-    ELG_API View window_drag_area(bool enabled = true) const;
+    [[nodiscard]] ELG_API View window_drag_area(bool enabled = true) const;
 
     // --- Popups (design.md §13.1) ---
 
@@ -697,7 +697,7 @@ public:
     ELG_API View tooltip(std::function<View()> content, TooltipOptions options = {}) const;
     // A text tooltip: tooltip([=] { return Text(text); }, options).
     //   Button(Image("gear"), settings).tooltip("Settings")
-    ELG_API View tooltip(Prop<std::string> text, TooltipOptions options = {}) const;
+    [[nodiscard]] ELG_API View tooltip(Prop<std::string> text, TooltipOptions options = {}) const;
     // `content` floating above everything by the view, while `is_presented` is true, with no
     // chrome of its own. The builder runs each time it opens. What closes it (and sets the
     // binding back to false), where it goes and whether it may leave the window are `options`'.
@@ -709,7 +709,7 @@ public:
     // Marks the view as where FloatingBoundary::container content inside it stays: a map whose
     // callouts mustn't cover the toolbar beside it, a card in a scroll view.
     //   MapView(pins).floating_container()
-    ELG_API View floating_container() const;
+    [[nodiscard]] ELG_API View floating_container() const;
     // A panel of `content` beside the view, shown while `is_presented` is true. Clicking outside
     // it, Esc, or switching apps closes it and sets `is_presented` back to false. The builder runs
     // each time it opens; the content can be anything, e.g. a small form.
@@ -723,10 +723,10 @@ public:
     // true: the view takes keyboard focus (Tab order, clicks); controls are focusable already.
     // false: the view and everything inside it never take focus (Tab skips them, clicking them
     // leaves focus where it was), e.g. toolbar or caption buttons.
-    ELG_API View focusable(bool focusable = true) const;
+    [[nodiscard]] ELG_API View focusable(bool focusable = true) const;
     // Two-way focus: the binding is true while the view has focus, and setting it true focuses
     // the view (false removes focus from it). Makes the view focusable.
-    ELG_API View focused(Binding<bool> is_focused) const;
+    [[nodiscard]] ELG_API View focused(Binding<bool> is_focused) const;
     // Runs `action` when `key` is pressed while the view (or something inside) has focus.
     ELG_API View on_key_press(Key key, std::function<void()> action) const;
     // Sees every key down and up while the view (or something inside) has focus; return true if
@@ -753,7 +753,7 @@ public:
     // With a std::set, more than one: Ctrl+click (Cmd on macOS) adds or removes a row, Shift+click
     // and Shift+arrows select the range from where it started, and Ctrl+A (Cmd+A) selects all.
     template <class K>
-    View selection(Binding<std::optional<K>> selection, SelectionOptions<K> options = {}) const {
+    [[nodiscard]] [[nodiscard]] View selection(Binding<std::optional<K>> selection, SelectionOptions<K> options = {}) const {
         detail::SelectionModel model;
         model.get = [selection] {
             const std::optional<K> key = selection.get();
@@ -774,7 +774,7 @@ public:
         return selection_impl(std::move(model));
     }
     template <class K>
-    View selection(Binding<std::set<K>> selection, SelectionOptions<K> options = {}) const {
+    [[nodiscard]] [[nodiscard]] View selection(Binding<std::set<K>> selection, SelectionOptions<K> options = {}) const {
         detail::SelectionModel model;
         model.multiple = true;
         model.get = [selection] {
@@ -806,51 +806,51 @@ public:
 
     // The weight of the font inside, keeping its size and family (text, and icons of sets with
     // weights): Image("gear").font_weight(Weight::bold).
-    ELG_API View font_weight(Prop<Weight> weight) const;
-    ELG_API View font(Prop<Font> font) const;
+    [[nodiscard]] ELG_API View font_weight(Prop<Weight> weight) const;
+    [[nodiscard]] ELG_API View font(Prop<Font> font) const;
     // The color of text and unfilled shapes. Also takes a ThemeColor.
-    ELG_API View foreground_style(Prop<Color> color) const;
+    [[nodiscard]] ELG_API View foreground_style(Prop<Color> color) const;
     // The accent color of controls (e.g. Button).
-    ELG_API View tint(Prop<Color> color) const;
+    [[nodiscard]] ELG_API View tint(Prop<Color> color) const;
     // Light or dark, for ThemeColor tokens inside. Windows follow the system setting by default.
-    ELG_API View color_scheme(Prop<ColorScheme> scheme) const;
-    ELG_API View theme(Theme theme) const;
+    [[nodiscard]] ELG_API View color_scheme(Prop<ColorScheme> scheme) const;
+    [[nodiscard]] ELG_API View theme(Theme theme) const;
     // Controls inside stop responding and look disabled.
-    ELG_API View disabled(Prop<bool> disabled = true) const;
+    [[nodiscard]] ELG_API View disabled(Prop<bool> disabled = true) const;
     // The style of every Button inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, ButtonStyle>
-    View button_style(Style style) const {
+    [[nodiscard]] View button_style(Style style) const {
         return button_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     // The style of the selectable rows inside (selection(), elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, RowStyle>
-    View row_style(Style style) const {
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] View row_style(Style style) const {
         return row_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     // The style of every Picker inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, PickerStyle>
-    View picker_style(Style style) const {
+    [[nodiscard]] [[nodiscard]] View picker_style(Style style) const {
         return picker_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     // The style of every Slider inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, SliderStyle>
-    View slider_style(Style style) const {
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] View slider_style(Style style) const {
         return slider_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     // The style of every Toggle inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, ToggleStyle>
-    View toggle_style(Style style) const {
+    [[nodiscard]] View toggle_style(Style style) const {
         return toggle_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     // The style of every Checkbox inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, CheckboxStyle>
-    View checkbox_style(Style style) const {
+    [[nodiscard]] View checkbox_style(Style style) const {
         return checkbox_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     // The style of every NumberInput inside (elg/styles.h).
@@ -862,35 +862,35 @@ public:
     // The styles of popovers, tooltips and menus opened from inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, PopoverStyle>
-    View popover_style(Style style) const {
+    [[nodiscard]] [[nodiscard]] View popover_style(Style style) const {
         return popover_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     template <class Style>
         requires std::derived_from<Style, TooltipStyle>
-    View tooltip_style(Style style) const {
+    [[nodiscard]] View tooltip_style(Style style) const {
         return tooltip_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     template <class Style>
         requires std::derived_from<Style, MenuStyle>
-    View menu_style(Style style) const {
+    [[nodiscard]] View menu_style(Style style) const {
         return menu_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     // The style of every Progress inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, ProgressStyle>
-    View progress_style(Style style) const {
+    [[nodiscard]] View progress_style(Style style) const {
         return progress_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     // The style of every NavigationStack inside (elg/navigation.h).
     template <class Style>
         requires std::derived_from<Style, NavigationStackStyle>
-    View navigation_stack_style(Style style) const {
+    [[nodiscard]] View navigation_stack_style(Style style) const {
         return navigation_stack_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     // The style of every TextField inside (elg/styles.h).
     template <class Style>
         requires std::derived_from<Style, TextFieldStyle>
-    View text_field_style(Style style) const {
+    [[nodiscard]] View text_field_style(Style style) const {
         return text_field_style_impl(std::make_shared<const Style>(std::move(style)));
     }
     // --- Animation (elg/animation.h) ---
@@ -898,14 +898,14 @@ public:
     // Changes inside this view animate with `animation` whenever `value` (a plain value, State,
     // or closure; it should be equality-comparable) changed in the same update.
     template <class Value>
-    View animation(const Animation& animation, Value value) const {
+    [[nodiscard]] View animation(const Animation& animation, Value value) const {
         return animation_impl(animation, detail::change_watcher(std::move(value)));
     }
     // How this view enters and leaves when an If/ForEach adds or removes it with an animation.
-    ELG_API View transition(const Transition& transition) const;
+    [[nodiscard]] ELG_API View transition(const Transition& transition) const;
     // false: this view and everything inside snap to new positions and sizes instead of easing
     // there. Colors, opacity, and transitions still animate.
-    ELG_API View animates_layout(bool enabled) const;
+    [[nodiscard]] ELG_API View animates_layout(bool enabled) const;
 
     // Sets any environment key (elg/environment.h): .environment<CompactKey>(true)
     template <class Key, class Value>
@@ -918,7 +918,7 @@ public:
     //   struct Rank { using Value = int; static int default_value() { return 0; } };
     //   Text("Gold").layout_value<Rank>(1)
     template <class Key>
-    View layout_value(typename Key::Value value) const {
+    [[nodiscard]] View layout_value(typename Key::Value value) const {
         return modifier(LayoutValueModifier<Key>(std::move(value)));
     }
 
@@ -932,21 +932,21 @@ private:
     friend struct detail::ViewAccess;
 
     ELG_API explicit View(std::shared_ptr<const detail::ViewNode> node) noexcept;
-    ELG_API View with_modifier(std::shared_ptr<const Modifier> modifier) const;
-    ELG_API View button_style_impl(std::shared_ptr<const ButtonStyle> style) const;
-    ELG_API View toggle_style_impl(std::shared_ptr<const ToggleStyle> style) const;
-    ELG_API View checkbox_style_impl(std::shared_ptr<const CheckboxStyle> style) const;
-    ELG_API View number_input_style_impl(std::shared_ptr<const NumberInputStyle> style) const;
-    ELG_API View progress_style_impl(std::shared_ptr<const ProgressStyle> style) const;
-    ELG_API View picker_style_impl(std::shared_ptr<const PickerStyle> style) const;
-    ELG_API View slider_style_impl(std::shared_ptr<const SliderStyle> style) const;
-    ELG_API View popover_style_impl(std::shared_ptr<const PopoverStyle> style) const;
-    ELG_API View tooltip_style_impl(std::shared_ptr<const TooltipStyle> style) const;
-    ELG_API View menu_style_impl(std::shared_ptr<const MenuStyle> style) const;
-    ELG_API View navigation_stack_style_impl(std::shared_ptr<const NavigationStackStyle> style) const;
-    ELG_API View text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const;
-    ELG_API View row_style_impl(std::shared_ptr<const RowStyle> style) const;
-    ELG_API View selection_impl(detail::SelectionModel model) const;
+    [[nodiscard]] ELG_API View with_modifier(std::shared_ptr<const Modifier> modifier) const;
+    [[nodiscard]] ELG_API View button_style_impl(std::shared_ptr<const ButtonStyle> style) const;
+    [[nodiscard]] ELG_API View toggle_style_impl(std::shared_ptr<const ToggleStyle> style) const;
+    [[nodiscard]] ELG_API View checkbox_style_impl(std::shared_ptr<const CheckboxStyle> style) const;
+    [[nodiscard]] ELG_API View number_input_style_impl(std::shared_ptr<const NumberInputStyle> style) const;
+    [[nodiscard]] ELG_API View progress_style_impl(std::shared_ptr<const ProgressStyle> style) const;
+    [[nodiscard]] ELG_API View picker_style_impl(std::shared_ptr<const PickerStyle> style) const;
+    [[nodiscard]] ELG_API View slider_style_impl(std::shared_ptr<const SliderStyle> style) const;
+    [[nodiscard]] ELG_API View popover_style_impl(std::shared_ptr<const PopoverStyle> style) const;
+    [[nodiscard]] ELG_API View tooltip_style_impl(std::shared_ptr<const TooltipStyle> style) const;
+    [[nodiscard]] ELG_API View menu_style_impl(std::shared_ptr<const MenuStyle> style) const;
+    [[nodiscard]] ELG_API View navigation_stack_style_impl(std::shared_ptr<const NavigationStackStyle> style) const;
+    [[nodiscard]] ELG_API View text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const;
+    [[nodiscard]] ELG_API View row_style_impl(std::shared_ptr<const RowStyle> style) const;
+    [[nodiscard]] ELG_API View selection_impl(detail::SelectionModel model) const;
     ELG_API View animation_impl(const Animation& animation, std::function<bool()> changed) const;
     ELG_API static View deferred(std::function<View()> body);
 

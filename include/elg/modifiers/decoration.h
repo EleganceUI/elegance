@@ -22,9 +22,9 @@ public:
     explicit BackgroundModifier(View view, Alignment alignment = Alignment::center)
         : view_(std::move(view)), alignment_(alignment) {}
 
-    View decoration() const override { return view_; }
-    Placement placement() const override { return Placement::behind; }
-    Alignment alignment() const override { return alignment_; }
+    [[nodiscard]] View decoration() const override { return view_; }
+    [[nodiscard]] Placement placement() const override { return Placement::behind; }
+    [[nodiscard]] Alignment alignment() const override { return alignment_; }
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -38,9 +38,9 @@ public:
     explicit OverlayModifier(View view, Alignment alignment = Alignment::center)
         : view_(std::move(view)), alignment_(alignment) {}
 
-    View decoration() const override { return view_; }
-    Placement placement() const override { return Placement::in_front; }
-    Alignment alignment() const override { return alignment_; }
+    [[nodiscard]] View decoration() const override { return view_; }
+    [[nodiscard]] Placement placement() const override { return Placement::in_front; }
+    [[nodiscard]] Alignment alignment() const override { return alignment_; }
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -56,9 +56,9 @@ public:
     explicit MaskModifier(View view, Alignment alignment = Alignment::center)
         : view_(std::move(view)), alignment_(alignment) {}
 
-    View decoration() const override { return view_; }
-    Placement placement() const override { return Placement::mask; }
-    Alignment alignment() const override { return alignment_; }
+    [[nodiscard]] View decoration() const override { return view_; }
+    [[nodiscard]] Placement placement() const override { return Placement::mask; }
+    [[nodiscard]] Alignment alignment() const override { return alignment_; }
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN

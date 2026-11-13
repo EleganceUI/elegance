@@ -131,7 +131,7 @@ class ELG_API NavigationStackStyle {
 public:
     virtual ~NavigationStackStyle();
     // Called once per NavigationStack when it's built, while Environment<K>() is available.
-    virtual View make_body(const NavigationStackConfiguration& stack) const = 0;
+    [[nodiscard]] virtual View make_body(const NavigationStackConfiguration& stack) const = 0;
 
 protected:
     // Styles are copied as their concrete type, never as a NavigationStackStyle.
@@ -145,7 +145,7 @@ protected:
 // Just the pages: go back from your own controls (or the back gestures). The default.
 class ELG_API PlainNavigationStackStyle final : public NavigationStackStyle {
 public:
-    View make_body(const NavigationStackConfiguration& stack) const override;
+    [[nodiscard]] View make_body(const NavigationStackConfiguration& stack) const override;
 };
 
 struct BarNavigationStackStyleOptions {
@@ -163,7 +163,7 @@ struct BarNavigationStackStyleOptions {
 class ELG_API BarNavigationStackStyle final : public NavigationStackStyle {
 public:
     explicit BarNavigationStackStyle(BarNavigationStackStyleOptions options = {}) : options_(std::move(options)) {}
-    View make_body(const NavigationStackConfiguration& stack) const override;
+    [[nodiscard]] View make_body(const NavigationStackConfiguration& stack) const override;
 
 private:
     BarNavigationStackStyleOptions options_;

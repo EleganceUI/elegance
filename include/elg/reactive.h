@@ -219,9 +219,9 @@ public:
         node_->track();
         return node_->value;
     }
-    const T& get() const { return (*this)(); }
+    [[nodiscard]] const T& get() const { return (*this)(); }
     // Reads without subscribing.
-    const T& peek() const noexcept { return node_->value; }
+    [[nodiscard]] const T& peek() const noexcept { return node_->value; }
 
     void set(T value) const {
         detail::check_ui_thread();
@@ -262,7 +262,7 @@ public:
     }
 
     // A two-way connection to this state, for passing to child views.
-    Binding<T> binding() const;
+    [[nodiscard]] Binding<T> binding() const;
 
 private:
     std::shared_ptr<detail::SignalNode<T>> node_;
@@ -283,7 +283,7 @@ public:
     }
 
     T operator()() const { return get_(); }
-    T get() const { return get_(); }
+    [[nodiscard]] T get() const { return get_(); }
     void set(T value) const { set_(std::move(value)); }
 
     const Binding& operator=(T value) const {
@@ -338,7 +338,7 @@ public:
     Signal(F&& function) : get_([f = std::remove_cvref_t<F>(std::forward<F>(function))] { return T(f()); }) {}
 
     T operator()() const { return get_(); }
-    T get() const { return get_(); }
+    [[nodiscard]] T get() const { return get_(); }
 
 private:
     std::function<T()> get_;
@@ -352,7 +352,7 @@ public:
         : node_(std::make_shared<detail::ComputedNode<T>>(std::move(function))) {}
 
     const T& operator()() const { return node_->get(); }
-    const T& get() const { return node_->get(); }
+    [[nodiscard]] const T& get() const { return node_->get(); }
 
 private:
     std::shared_ptr<detail::ComputedNode<T>> node_;

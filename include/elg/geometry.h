@@ -38,15 +38,15 @@ struct Rect {
     float width = 0;
     float height = 0;
 
-    constexpr float min_x() const noexcept { return x; }
-    constexpr float min_y() const noexcept { return y; }
-    constexpr float max_x() const noexcept { return x + width; }
-    constexpr float max_y() const noexcept { return y + height; }
-    constexpr Point center() const noexcept { return {x + width * 0.5f, y + height * 0.5f}; }
-    constexpr Size size() const noexcept { return {width, height}; }
+    [[nodiscard]] constexpr float min_x() const noexcept { return x; }
+    [[nodiscard]] constexpr float min_y() const noexcept { return y; }
+    [[nodiscard]] constexpr float max_x() const noexcept { return x + width; }
+    [[nodiscard]] constexpr float max_y() const noexcept { return y + height; }
+    [[nodiscard]] constexpr Point center() const noexcept { return {x + width * 0.5f, y + height * 0.5f}; }
+    [[nodiscard]] constexpr Size size() const noexcept { return {width, height}; }
 
     // Shrinks the rect by `amount` on every side (grows it when negative), never below zero size.
-    constexpr Rect inset(float amount) const noexcept {
+    [[nodiscard]] constexpr Rect inset(float amount) const noexcept {
         return {x + amount, y + amount, std::max(0.f, width - 2 * amount),
                 std::max(0.f, height - 2 * amount)};
     }

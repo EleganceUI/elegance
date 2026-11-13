@@ -43,17 +43,17 @@ public:
     // Maximizes, or restores a maximized window.
     void toggle_maximized() const;
 
-    bool is_maximized() const;
+    [[nodiscard]] bool is_maximized() const;
     // Whether the window has keyboard focus (title bars usually dim when it doesn't).
-    bool is_active() const;
+    [[nodiscard]] bool is_active() const;
     // The window's WindowDesc::title_bar.
-    TitleBar title_bar() const;
+    [[nodiscard]] TitleBar title_bar() const;
     // Where the system draws its window controls over the content (the traffic lights of a
     // TitleBar::integrated window on macOS), in the window's logical points. Empty where it
     // doesn't (other title bars and platforms, fullscreen). Keep content clear of it:
     //   VStack(EmptyView().frame([=] { return Size{0, window().system_controls_frame().max_y()}; }),
     //          content)
-    Rect system_controls_frame() const;
+    [[nodiscard]] Rect system_controls_frame() const;
 
     friend bool operator==(const WindowHandle& a, const WindowHandle& b) noexcept { return a.state_ == b.state_; }
 

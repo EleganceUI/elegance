@@ -37,12 +37,12 @@ class ELG_API Layout {
 public:
     virtual ~Layout();
 
-    virtual Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const = 0;
+    [[nodiscard]] virtual Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const = 0;
     // `bounds` has the size reported for `proposal`, positioned by the parent.
     virtual void place_children(Rect bounds, ProposedSize proposal,
                                 std::span<const LayoutChild> children) const = 0;
     // The axis along which Spacer children expand. Stacks return their axis.
-    virtual std::optional<Axis> spacer_axis() const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<Axis> spacer_axis() const { return std::nullopt; }
 
     // What the framework calls, with the view's cache storage. CachedLayout implements these;
     // other layouts ignore the cache.
@@ -87,7 +87,7 @@ private:
 template <class Cache>
 class CachedLayout : public Layout {
 public:
-    virtual Cache make_cache(std::span<const LayoutChild> children) const = 0;
+    [[nodiscard]] virtual Cache make_cache(std::span<const LayoutChild> children) const = 0;
     // Refreshes `cache` after a change; by default, makes a new one.
     virtual void update_cache(Cache& cache, std::span<const LayoutChild> children) const {
         cache = make_cache(children);
@@ -97,7 +97,7 @@ public:
                                 Cache& cache) const = 0;
 
     // Without the framework's storage (e.g. called by another layout): a fresh cache each time.
-    Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const final {
+    [[nodiscard]] Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const final {
         Cache cache = make_cache(children);
         return size_that_fits(proposal, children, cache);
     }
@@ -135,10 +135,10 @@ public:
                           OptionalLength spacing = {}) noexcept
         : alignment_(alignment), spacing_(spacing) {}
 
-    Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override;
+    [[nodiscard]] Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override;
     void place_children(Rect bounds, ProposedSize proposal,
                         std::span<const LayoutChild> children) const override;
-    std::optional<Axis> spacer_axis() const override { return Axis::vertical; }
+    [[nodiscard]] std::optional<Axis> spacer_axis() const override { return Axis::vertical; }
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -153,10 +153,10 @@ public:
                           OptionalLength spacing = {}) noexcept
         : alignment_(alignment), spacing_(spacing) {}
 
-    Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override;
+    [[nodiscard]] Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override;
     void place_children(Rect bounds, ProposedSize proposal,
                         std::span<const LayoutChild> children) const override;
-    std::optional<Axis> spacer_axis() const override { return Axis::horizontal; }
+    [[nodiscard]] std::optional<Axis> spacer_axis() const override { return Axis::horizontal; }
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -169,7 +169,7 @@ class ELG_API ZStackLayout final : public Layout {
 public:
     explicit ZStackLayout(Alignment alignment = Alignment::center) noexcept : alignment_(alignment) {}
 
-    Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override;
+    [[nodiscard]] Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override;
     void place_children(Rect bounds, ProposedSize proposal,
                         std::span<const LayoutChild> children) const override;
 

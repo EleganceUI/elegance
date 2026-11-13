@@ -54,23 +54,23 @@ public:
     void set_looping(bool looping) const;
 
     // Reactive (tracked reads).
-    bool is_playing() const;
-    bool is_ready() const; // the duration and size are known
-    double time() const;   // seconds
-    double duration() const;
-    Size natural_size() const; // pixels; zero until ready
-    float volume() const;
-    bool is_muted() const;
-    bool is_looping() const;
+    [[nodiscard]] bool is_playing() const;
+    [[nodiscard]] bool is_ready() const; // the duration and size are known
+    [[nodiscard]] double time() const;   // seconds
+    [[nodiscard]] double duration() const;
+    [[nodiscard]] Size natural_size() const; // pixels; zero until ready
+    [[nodiscard]] float volume() const;
+    [[nodiscard]] bool is_muted() const;
+    [[nodiscard]] bool is_looping() const;
     // Why it can't play (unsupported format, missing file, network error); empty when fine.
-    std::string error() const;
+    [[nodiscard]] std::string error() const;
 
     // For Sliders: progress 0...1 (writing seeks), and volume.
-    Binding<float> progress_binding() const;
-    Binding<float> volume_binding() const;
+    [[nodiscard]] Binding<float> progress_binding() const;
+    [[nodiscard]] Binding<float> volume_binding() const;
 
     // Internal: the source the views draw.
-    const std::shared_ptr<detail::VideoSource>& source() const noexcept { return source_; }
+    [[nodiscard]] const std::shared_ptr<detail::VideoSource>& source() const noexcept { return source_; }
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -109,14 +109,14 @@ public:
     void clear() const;
 
     // Reactive (UI thread).
-    Size size() const;      // pixels of the frames; zero before the first
-    bool has_frame() const; // false before the first push and after clear()
+    [[nodiscard]] Size size() const;      // pixels of the frames; zero before the first
+    [[nodiscard]] bool has_frame() const; // false before the first push and after clear()
 
     // The same feed (copies of one another).
     bool operator==(const VideoFeed& other) const noexcept { return source_ == other.source_; }
 
     // Internal: the source the views draw.
-    const std::shared_ptr<detail::VideoSource>& source() const noexcept { return source_; }
+    [[nodiscard]] const std::shared_ptr<detail::VideoSource>& source() const noexcept { return source_; }
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN

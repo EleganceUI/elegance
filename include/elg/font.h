@@ -39,17 +39,17 @@ public:
         return Font(std::move(family), size, weight);
     }
 
-    Font weight(Weight weight) const { return Font(family_, size_, weight, italic_); }
-    Font bold() const { return weight(Weight::bold); }
-    Font with_size(float size) const { return Font(family_, size, weight_, italic_); }
+    [[nodiscard]] Font weight(Weight weight) const { return Font(family_, size_, weight, italic_); }
+    [[nodiscard]] Font bold() const { return weight(Weight::bold); }
+    [[nodiscard]] Font with_size(float size) const { return Font(family_, size, weight_, italic_); }
     // The italic face (the system font's; registered families stay upright).
-    Font italic(bool italic = true) const { return Font(family_, size_, weight_, italic); }
+    [[nodiscard]] Font italic(bool italic = true) const { return Font(family_, size_, weight_, italic); }
 
     // Empty for the system font.
-    const std::string& family() const noexcept { return family_; }
-    float size() const noexcept { return size_; }
-    Weight weight() const noexcept { return weight_; }
-    bool is_italic() const noexcept { return italic_; }
+    [[nodiscard]] const std::string& family() const noexcept { return family_; }
+    [[nodiscard]] float size() const noexcept { return size_; }
+    [[nodiscard]] Weight weight() const noexcept { return weight_; }
+    [[nodiscard]] bool is_italic() const noexcept { return italic_; }
 
     // Semantic text styles (sizes are tentative until Dynamic Type-style scaling, design.md §9.5).
     static const Font large_title;

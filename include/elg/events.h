@@ -291,7 +291,7 @@ public:
   // `automatic` leaves it to the views around. For styles that depend on where
   // the pointer is (a canvas's resize handles); a fixed one is
   // View::pointer_style().
-  virtual PointerStyle pointer_style(Point location) const;
+  [[nodiscard]] virtual PointerStyle pointer_style(Point location) const;
 
   // Wheel and trackpad scrolling: goes to the handlers under the pointer,
   // innermost first, until one consumes it. `frame` as for pointer().
@@ -307,20 +307,20 @@ public:
   // first, then bubble to the handlers around it until consumed.
   virtual EventResult key(const KeyEvent &event);
   // Whether the view can take keyboard focus (Tab, clicks).
-  virtual bool focusable() const { return false; }
+  [[nodiscard]] virtual bool focusable() const { return false; }
   // The view gained (true) or lost (false) keyboard focus.
   virtual EventResult focus(bool focused);
 
   // Text input goes to the focused view's handler (then bubbles) while it
   // accepts text.
-  virtual bool accepts_text_input() const { return false; }
+  [[nodiscard]] virtual bool accepts_text_input() const { return false; }
   virtual EventResult text_input(const TextInputEvent &event);
   // This handler's own hover delay; nullopt uses the environment's
   // (.hover_delay()).
-  virtual std::optional<HoverDelay> hover_delay() const { return std::nullopt; }
+  [[nodiscard]] virtual std::optional<HoverDelay> hover_delay() const { return std::nullopt; }
   // true: the view is hit anywhere in its frame, not only where its content
   // draws (a window drag area's gaps and Spacers still drag).
-  virtual bool covers_frame() const { return false; }
+  [[nodiscard]] virtual bool covers_frame() const { return false; }
 };
 
 } // namespace elg

@@ -34,7 +34,7 @@ public:
     // Stops it; the action doesn't run again. Fine to call more than once.
     void cancel() const noexcept;
     // Still going: not cancelled, its view is still there, and for `after`, not fired yet.
-    bool active() const noexcept;
+    [[nodiscard]] bool active() const noexcept;
 
 private:
     friend ELG_API Timer after(double seconds, std::function<void()> action);

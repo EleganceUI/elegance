@@ -119,9 +119,9 @@ public:
     IconFont(const std::string& file) : file_(file) {}
     IconFont(std::span<const unsigned char> data) : data_(data) {}
 
-    const std::filesystem::path& file() const noexcept { return file_; }
-    std::span<const unsigned char> data() const noexcept { return data_; }
-    bool empty() const noexcept { return file_.empty() && data_.empty(); }
+    [[nodiscard]] const std::filesystem::path& file() const noexcept { return file_; }
+    [[nodiscard]] std::span<const unsigned char> data() const noexcept { return data_; }
+    [[nodiscard]] bool empty() const noexcept { return file_.empty() && data_.empty(); }
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN

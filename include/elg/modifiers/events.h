@@ -28,7 +28,7 @@ class ELG_API ClickModifier final : public EventModifier {
 public:
     ClickModifier(std::function<void(const ClickEvent&)> action, ClickOptions options)
         : action_(std::move(action)), options_(options) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -43,7 +43,7 @@ class ELG_API PointerBoundaryModifier final : public EventModifier {
 public:
     PointerBoundaryModifier(std::function<void()> enter, std::function<void()> leave)
         : enter_(std::move(enter)), leave_(std::move(leave)) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -58,7 +58,7 @@ private:
 class ELG_API HoverModifier final : public EventModifier {
 public:
     explicit HoverModifier(std::function<void(bool)> action) : action_(std::move(action)) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -71,7 +71,7 @@ class ELG_API DragGestureModifier final : public EventModifier {
 public:
     explicit DragGestureModifier(DragGesture gesture, GestureOptions options = {})
         : gesture_(std::move(gesture)), options_(options) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -84,7 +84,7 @@ class ELG_API LongPressGestureModifier final : public EventModifier {
 public:
     explicit LongPressGestureModifier(LongPressGesture gesture, GestureOptions options = {})
         : gesture_(std::move(gesture)), options_(options) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -96,7 +96,7 @@ private:
 class ELG_API MagnifyGestureModifier final : public EventModifier {
 public:
     explicit MagnifyGestureModifier(MagnifyGesture gesture) : gesture_(std::move(gesture)) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -107,7 +107,7 @@ private:
 class ELG_API RotateGestureModifier final : public EventModifier {
 public:
     explicit RotateGestureModifier(RotateGesture gesture) : gesture_(std::move(gesture)) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -118,7 +118,7 @@ private:
 class ELG_API TwoFingerDoubleTapModifier final : public EventModifier {
 public:
     explicit TwoFingerDoubleTapModifier(TwoFingerDoubleTapGesture gesture) : gesture_(std::move(gesture)) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -130,7 +130,7 @@ private:
 class ELG_API PointerStyleModifier final : public EventModifier {
 public:
     explicit PointerStyleModifier(Prop<PointerStyle> style) : style_(std::move(style)) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -142,7 +142,7 @@ private:
 class ELG_API FocusableModifier final : public EventModifier {
 public:
     explicit FocusableModifier(bool focusable = true) noexcept : focusable_(focusable) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     bool focusable_;
@@ -153,7 +153,7 @@ private:
 class ELG_API KeyEventModifier final : public EventModifier {
 public:
     explicit KeyEventModifier(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -166,7 +166,7 @@ private:
 class ELG_API PointerModifier final : public EventModifier {
 public:
     explicit PointerModifier(std::function<bool(const PointerEvent&)> action) : action_(std::move(action)) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -179,7 +179,7 @@ private:
 class ELG_API ScrollModifier final : public EventModifier {
 public:
     explicit ScrollModifier(std::function<bool(const ScrollEvent&)> action) : action_(std::move(action)) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -192,7 +192,7 @@ private:
 class ELG_API TextInputModifier final : public EventModifier {
 public:
     explicit TextInputModifier(std::function<bool(const TextInputEvent&)> action) : action_(std::move(action)) {}
-    std::unique_ptr<EventHandler> make_handler() const override;
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN

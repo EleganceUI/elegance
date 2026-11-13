@@ -81,15 +81,15 @@ public:
               return detail::resolve_theme_blur(environment, token);
           })) {}
 
-    bool is_reactive() const noexcept { return value_.index() != 0; }
+    [[nodiscard]] bool is_reactive() const noexcept { return value_.index() != 0; }
     // Whether the value depends on the environment it's used in (e.g. a ThemeColor).
-    bool needs_environment() const noexcept { return value_.index() == 2; }
+    [[nodiscard]] bool needs_environment() const noexcept { return value_.index() == 2; }
     // The value if it's static, else nullptr.
-    const T* static_value() const noexcept { return std::get_if<T>(&value_); }
+    [[nodiscard]] const T* static_value() const noexcept { return std::get_if<T>(&value_); }
 
     // The current value; a tracked read for reactive props. `environment` resolves
     // environment-dependent values; the framework passes the one where the prop is used.
-    T get(const EnvironmentValues& environment) const {
+    [[nodiscard]] T get(const EnvironmentValues& environment) const {
         switch (value_.index()) {
         case 0: return std::get<0>(value_);
         case 1: return std::get<1>(value_)();
@@ -98,7 +98,7 @@ public:
     }
 
     // As above, for props that don't need an environment (throws UsageError if this one does).
-    T get() const {
+    [[nodiscard]] T get() const {
         if (value_.index() == 2) {
             detail::throw_needs_environment();
         }
@@ -107,7 +107,7 @@ public:
 
     // Binds an environment-dependent prop to `environment`, producing a prop that no longer
     // needs one (other props are returned unchanged).
-    Prop resolved_in(const EnvironmentValues& environment) const;
+    [[nodiscard]] Prop resolved_in(const EnvironmentValues& environment) const;
 
 private:
     using Reactive = std::function<T()>;

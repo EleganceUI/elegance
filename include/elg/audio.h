@@ -64,7 +64,7 @@ public:
 
     void play(PlayOptions options = {}) const;
     // Seconds.
-    double duration() const noexcept;
+    [[nodiscard]] double duration() const noexcept;
 
 private:
     explicit Sound(std::shared_ptr<const detail::SoundData> data) noexcept;
@@ -89,15 +89,15 @@ public:
     void set_looping(bool looping) const;
 
     // Reactive (tracked reads): views showing them update while it plays.
-    bool is_playing() const;
-    double time() const; // seconds from the start
-    double duration() const;
-    float volume() const;
-    bool is_looping() const;
+    [[nodiscard]] bool is_playing() const;
+    [[nodiscard]] double time() const; // seconds from the start
+    [[nodiscard]] double duration() const;
+    [[nodiscard]] float volume() const;
+    [[nodiscard]] bool is_looping() const;
 
     // For a Slider: reading follows playback, writing seeks.
-    Binding<float> time_binding() const;
-    Binding<float> volume_binding() const;
+    [[nodiscard]] Binding<float> time_binding() const;
+    [[nodiscard]] Binding<float> volume_binding() const;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -129,16 +129,16 @@ public:
     // the oldest are dropped, so a stalled device doesn't build up delay.
     void write(std::span<const float> samples) const;
     void clear() const;                        // drops what's queued
-    std::size_t queued_frames() const;
+    [[nodiscard]] std::size_t queued_frames() const;
     void set_volume(float volume) const;       // 0...1 (and beyond, amplified)
     void start() const;                        // it starts playing when made; these pause it
     void stop() const;
 
     // Reactive: why it can't play (no device, failed to open); empty when fine.
-    std::string error() const;
+    [[nodiscard]] std::string error() const;
 
-    std::uint32_t sample_rate() const noexcept;
-    std::uint32_t channels() const noexcept;
+    [[nodiscard]] std::uint32_t sample_rate() const noexcept;
+    [[nodiscard]] std::uint32_t channels() const noexcept;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN

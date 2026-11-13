@@ -48,20 +48,20 @@ public:
 
     // Waits before starting. A negative delay starts partway in, like CSS: delay(-0.1) begins
     // where it would be 0.1 s in (staggering things that repeat).
-    Animation delay(double seconds) const;
+    [[nodiscard]] Animation delay(double seconds) const;
 
     // Plays `count` times in all. `autoreverses`: every other time runs backward, from the target
     // to where it started. When done, it lands on the target.
-    Animation repeat_count(int count, bool autoreverses = true) const;
+    [[nodiscard]] Animation repeat_count(int count, bool autoreverses = true) const;
     // Plays again and again until the value changes or the view goes away. A spinner turning
     // forever: rotation 0 to 360, linear, without reversing.
-    Animation repeat_forever(bool autoreverses = true) const;
+    [[nodiscard]] Animation repeat_forever(bool autoreverses = true) const;
 
     // Progress at `seconds` since the start: 0 at the start, 1 at the end (springs overshoot).
     // Repeating ones go round again each time (back down while autoreversing).
-    double progress(double seconds) const noexcept;
+    [[nodiscard]] double progress(double seconds) const noexcept;
     // Never for repeat_forever.
-    bool finished(double seconds) const noexcept;
+    [[nodiscard]] bool finished(double seconds) const noexcept;
 
 private:
     enum class Curve { linear, ease_in, ease_out, ease_in_out, spring, custom };
@@ -69,8 +69,8 @@ private:
         : curve_(curve), duration_(duration), damping_(damping) {}
 
     // One play: progress, its length, and whether it's done (`t`: seconds since it started).
-    double play_progress(double t) const noexcept;
-    double play_length() const noexcept;
+    [[nodiscard]] double play_progress(double t) const noexcept;
+    [[nodiscard]] double play_length() const noexcept;
 
     Curve curve_;
     double duration_; // seconds; a spring's response
@@ -115,7 +115,7 @@ public:
     static Transition asymmetric(const Transition& insertion, const Transition& removal);
 
     // Both at once: Transition::opacity().combined(Transition::scale(0.8f))
-    Transition combined(const Transition& other) const;
+    [[nodiscard]] Transition combined(const Transition& other) const;
 
     // How the view looks at `progress` (0: fully out, 1: in place).
     struct Pose {
@@ -127,7 +127,7 @@ public:
         float anchor_x = 0.5f;
         float anchor_y = 0.5f;
     };
-    Pose pose(float progress, bool removal, Size size) const noexcept;
+    [[nodiscard]] Pose pose(float progress, bool removal, Size size) const noexcept;
 
 private:
     struct Effect {

@@ -71,18 +71,18 @@ public:
 
     // --- Queries ---
 
-    bool empty() const noexcept { return verbs_.empty(); }
+    [[nodiscard]] bool empty() const noexcept { return verbs_.empty(); }
     // The smallest rect around the path's outline (curves included, not their control points).
-    Rect bounds() const;
-    bool contains(Point point, FillRule rule = FillRule::non_zero) const;
+    [[nodiscard]] Rect bounds() const;
+    [[nodiscard]] bool contains(Point point, FillRule rule = FillRule::non_zero) const;
 
     // Scaled, then moved: (x * scale_x + dx, y * scale_y + dy).
-    Path transformed(float scale_x, float scale_y, float dx, float dy) const;
+    [[nodiscard]] Path transformed(float scale_x, float scale_y, float dx, float dy) const;
     // Lines approximating the curves, no further than `tolerance` from them.
-    std::vector<Polyline> flatten(float tolerance = 0.25f) const;
+    [[nodiscard]] std::vector<Polyline> flatten(float tolerance = 0.25f) const;
     // The outline of the stroke: fill it with FillRule::non_zero. Curves are flattened within
     // `tolerance` first.
-    Path stroked(const StrokeStyle& style, float tolerance = 0.25f) const;
+    [[nodiscard]] Path stroked(const StrokeStyle& style, float tolerance = 0.25f) const;
 
     friend bool operator==(const Path&, const Path&) = default;
 

@@ -38,14 +38,14 @@ public:
     // Static or reactive: Text("Hello") or Text([=] { return std::format("{} items", count()); })
     ELG_API explicit Text(Prop<std::string> content);
 
-    ELG_API Text font(Prop<Font> font) const;
-    ELG_API Text font_weight(Prop<Weight> weight) const;
-    ELG_API Text bold() const;
-    ELG_API Text foreground_style(Prop<Color> color) const;
+    [[nodiscard]] ELG_API Text font(Prop<Font> font) const;
+    [[nodiscard]] ELG_API Text font_weight(Prop<Weight> weight) const;
+    [[nodiscard]] ELG_API Text bold() const;
+    [[nodiscard]] ELG_API Text foreground_style(Prop<Color> color) const;
     // Maximum number of lines; 0 for no limit.
-    ELG_API Text line_limit(int lines) const;
+    [[nodiscard]] ELG_API Text line_limit(int lines) const;
     // How lines align when the text wraps.
-    ELG_API Text multiline_text_alignment(TextAlignment alignment) const;
+    [[nodiscard]] ELG_API Text multiline_text_alignment(TextAlignment alignment) const;
 
     // Internal.
     ELG_API explicit Text(std::shared_ptr<const detail::TextNode> node);

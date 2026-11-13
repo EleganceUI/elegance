@@ -122,7 +122,7 @@ struct Theme {
     ColorTokens dark;
     BlurTokens blur;
 
-    constexpr const ColorTokens& colors(ColorScheme scheme) const noexcept {
+    [[nodiscard]] constexpr const ColorTokens& colors(ColorScheme scheme) const noexcept {
         return scheme == ColorScheme::dark ? dark : light;
     }
 

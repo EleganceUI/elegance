@@ -31,13 +31,13 @@ class Shape : public View {
 public:
     // A color or gradient, or a closure returning one. Shapes with neither a fill nor a stroke
     // use the environment's foreground.
-    ELG_API Shape fill(Prop<ShapeStyle> style) const;
+    [[nodiscard]] ELG_API Shape fill(Prop<ShapeStyle> style) const;
     // A line centered on the shape's edge.
-    ELG_API Shape stroke(Prop<Color> color, float line_width = 1) const;
+    [[nodiscard]] ELG_API Shape stroke(Prop<Color> color, float line_width = 1) const;
     // A line with caps, joins, and dashes: .stroke(ThemeColor::outline, {.width = 2, .dash = {4, 4}})
-    ELG_API Shape stroke(Prop<Color> color, StrokeStyle style) const;
+    [[nodiscard]] ELG_API Shape stroke(Prop<Color> color, StrokeStyle style) const;
     // A line inside the shape's edge.
-    ELG_API Shape stroke_border(Prop<Color> color, float line_width = 1) const;
+    [[nodiscard]] ELG_API Shape stroke_border(Prop<Color> color, float line_width = 1) const;
 
     // Internal: created by the shape functions below.
     ELG_API explicit Shape(std::shared_ptr<const detail::ShapeNode> node);

@@ -32,7 +32,7 @@ class ELG_API Modifier {
 public:
     virtual ~Modifier();
     // Stable, RTTI-free dispatch (hot reload rule 2, design.md §9.6).
-    virtual ModifierProtocol protocol() const noexcept = 0;
+    [[nodiscard]] virtual ModifierProtocol protocol() const noexcept = 0;
 
 protected:
     // Modifiers are copied as their concrete type (into the views using them), never as a Modifier.
@@ -58,9 +58,9 @@ private:
 //   };
 class ELG_API ViewModifier : public Modifier {
 public:
-    ModifierProtocol protocol() const noexcept final { return ModifierProtocol::view; }
+    [[nodiscard]] ModifierProtocol protocol() const noexcept final { return ModifierProtocol::view; }
     // Called once, when the view is mounted.
-    virtual View body(View content) const = 0;
+    [[nodiscard]] virtual View body(View content) const = 0;
 };
 
 // A child as seen by a layout or layout modifier: it can be measured and placed.
@@ -69,15 +69,15 @@ public:
     // Internal: created by the framework.
     explicit LayoutChild(detail::Element& element) noexcept;
 
-    Size size_that_fits(ProposedSize proposal) const;
+    [[nodiscard]] Size size_that_fits(ProposedSize proposal) const;
     // Positions the child's top-left corner; it sizes itself from `proposal`.
     void place(Point position, ProposedSize proposal) const;
-    float layout_priority() const noexcept;
-    bool is_spacer() const noexcept;
+    [[nodiscard]] float layout_priority() const noexcept;
+    [[nodiscard]] bool is_spacer() const noexcept;
 
     // The value set on this child with View::layout_value<Key>(...), else Key::default_value().
     template <class Key>
-    typename Key::Value value() const {
+    [[nodiscard]] typename Key::Value value() const {
         if (const void* found = layout_value(typeid(Key))) {
             return *static_cast<const typename Key::Value*>(found);
         }
@@ -85,7 +85,7 @@ public:
     }
 
 private:
-    const void* layout_value(const std::type_info& key) const;
+    [[nodiscard]] const void* layout_value(const std::type_info& key) const;
 
     detail::Element* element_;
 };
@@ -93,33 +93,33 @@ private:
 // Takes part in layout, wrapping one child (padding, frame, ...).
 class ELG_API LayoutModifier : public Modifier {
 public:
-    ModifierProtocol protocol() const noexcept final { return ModifierProtocol::layout; }
+    [[nodiscard]] ModifierProtocol protocol() const noexcept final { return ModifierProtocol::layout; }
 
-    virtual Size size_that_fits(ProposedSize proposal, const LayoutChild& content) const = 0;
+    [[nodiscard]] virtual Size size_that_fits(ProposedSize proposal, const LayoutChild& content) const = 0;
     // `bounds` has the size this modifier reported for `proposal`, positioned by the parent.
     virtual void place(Rect bounds, ProposedSize proposal, const LayoutChild& content) const = 0;
     // Overrides the content's layout priority when set.
-    virtual std::optional<float> layout_priority() const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<float> layout_priority() const { return std::nullopt; }
 };
 
 // Carries a value for the parent layout (View::layout_value) without changing layout.
 class ELG_API LayoutValueModifierBase : public LayoutModifier {
 public:
-    Size size_that_fits(ProposedSize proposal, const LayoutChild& content) const final {
+    [[nodiscard]] Size size_that_fits(ProposedSize proposal, const LayoutChild& content) const final {
         return content.size_that_fits(proposal);
     }
     void place(Rect bounds, ProposedSize proposal, const LayoutChild& content) const final {
         content.place({bounds.x, bounds.y}, proposal);
     }
     // The value for `key`, if this modifier carries it.
-    virtual const void* value_for(const std::type_info& key) const noexcept = 0;
+    [[nodiscard]] virtual const void* value_for(const std::type_info& key) const noexcept = 0;
 };
 
 template <class Key>
 class LayoutValueModifier final : public LayoutValueModifierBase {
 public:
     explicit LayoutValueModifier(typename Key::Value value) : value_(std::move(value)) {}
-    const void* value_for(const std::type_info& key) const noexcept override {
+    [[nodiscard]] const void* value_for(const std::type_info& key) const noexcept override {
         return key == typeid(Key) ? &value_ : nullptr;
     }
 
@@ -134,17 +134,17 @@ public:
     // `mask`: the decoration isn't drawn; its alpha masks the content.
     enum class Placement { behind, in_front, mask };
 
-    ModifierProtocol protocol() const noexcept final { return ModifierProtocol::decoration; }
+    [[nodiscard]] ModifierProtocol protocol() const noexcept final { return ModifierProtocol::decoration; }
 
-    virtual View decoration() const = 0;
-    virtual Placement placement() const = 0;
-    virtual Alignment alignment() const { return Alignment::center; }
+    [[nodiscard]] virtual View decoration() const = 0;
+    [[nodiscard]] virtual Placement placement() const = 0;
+    [[nodiscard]] virtual Alignment alignment() const { return Alignment::center; }
 };
 
 // Changes inherited values for everything inside the modified view (font, foreground, ...).
 class ELG_API EnvironmentModifier : public Modifier {
 public:
-    ModifierProtocol protocol() const noexcept final { return ModifierProtocol::environment; }
+    [[nodiscard]] ModifierProtocol protocol() const noexcept final { return ModifierProtocol::environment; }
     virtual void apply(EnvironmentValues& values) const = 0;
 };
 
@@ -190,15 +190,15 @@ struct Effects {
 // Changes how the modified view's content is drawn and hit tested, not its layout.
 class ELG_API EffectModifier : public Modifier {
 public:
-    ModifierProtocol protocol() const noexcept final { return ModifierProtocol::effect; }
+    [[nodiscard]] ModifierProtocol protocol() const noexcept final { return ModifierProtocol::effect; }
     virtual void apply(Effects& effects) const = 0;
 };
 
 // Handles input for the modified view: makes one EventHandler per mounted view (design.md §10).
 class ELG_API EventModifier : public Modifier {
 public:
-    ModifierProtocol protocol() const noexcept final { return ModifierProtocol::event; }
-    virtual std::unique_ptr<EventHandler> make_handler() const = 0;
+    [[nodiscard]] ModifierProtocol protocol() const noexcept final { return ModifierProtocol::event; }
+    [[nodiscard]] virtual std::unique_ptr<EventHandler> make_handler() const = 0;
 };
 
 } // namespace elg

@@ -60,12 +60,12 @@ struct GridItem {
         return {Kind::adaptive, minimum, maximum};
     }
 
-    constexpr GridItem with_spacing(OptionalLength length) const noexcept {
+    [[nodiscard]] constexpr GridItem with_spacing(OptionalLength length) const noexcept {
         GridItem item = *this;
         item.spacing = length;
         return item;
     }
-    constexpr GridItem with_alignment(Alignment cell_alignment) const noexcept {
+    [[nodiscard]] constexpr GridItem with_alignment(Alignment cell_alignment) const noexcept {
         GridItem item = *this;
         item.alignment = cell_alignment;
         return item;
@@ -97,7 +97,7 @@ public:
                          OptionalLength spacing = {})
         : columns_(std::move(columns)), alignment_(alignment), spacing_(spacing) {}
 
-    Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override;
+    [[nodiscard]] Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override;
     void place_children(Rect bounds, ProposedSize proposal, std::span<const LayoutChild> children) const override;
 
 private:
@@ -115,7 +115,7 @@ public:
                          OptionalLength spacing = {})
         : rows_(std::move(rows)), alignment_(alignment), spacing_(spacing) {}
 
-    Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override;
+    [[nodiscard]] Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override;
     void place_children(Rect bounds, ProposedSize proposal, std::span<const LayoutChild> children) const override;
 
 private:
@@ -135,7 +135,7 @@ public:
                         OptionalLength vertical_spacing = {}) noexcept
         : alignment_(alignment), horizontal_spacing_(horizontal_spacing), vertical_spacing_(vertical_spacing) {}
 
-    Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override;
+    [[nodiscard]] Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override;
     void place_children(Rect bounds, ProposedSize proposal, std::span<const LayoutChild> children) const override;
 
 private:

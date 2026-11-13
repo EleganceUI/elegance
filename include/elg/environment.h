@@ -54,7 +54,7 @@ class EnvironmentValues {
 public:
     // The value for `Key`: the nearest one set above, else the key's default. A tracked read.
     template <class Key>
-    typename Key::Value get() const {
+    [[nodiscard]] [[nodiscard]] [[nodiscard]] [[nodiscard]] typename Key::Value get() const {
         for (const Entry* entry = head_.get(); entry; entry = entry->next.get()) {
             if (entry->key == Key::name) {
                 return static_cast<const Prop<typename Key::Value>*>(entry->value.get())->get();
@@ -64,7 +64,7 @@ public:
     }
 
     // A semantic color in this environment's theme and color scheme. A tracked read.
-    Color color(ThemeColor token) const { return detail::resolve_theme_color(*this, token); }
+    [[nodiscard]] Color color(ThemeColor token) const { return detail::resolve_theme_color(*this, token); }
 
     // Sets `Key` for this environment (and everything derived from it).
     template <class Key>

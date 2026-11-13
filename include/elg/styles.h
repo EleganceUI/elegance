@@ -43,7 +43,7 @@ class ELG_API ButtonStyle {
 public:
     virtual ~ButtonStyle();
     // Called once per button when it's built, while Environment<K>() is available.
-    virtual View make_body(const ButtonConfiguration& button) const = 0;
+    [[nodiscard]] virtual View make_body(const ButtonConfiguration& button) const = 0;
 
 protected:
     // Styles are copied as their concrete type, never as a ButtonStyle.
@@ -57,19 +57,19 @@ protected:
 // Filled with the tint, label in ThemeColor::on_accent. The default.
 class ELG_API ProminentButtonStyle final : public ButtonStyle {
 public:
-    View make_body(const ButtonConfiguration& button) const override;
+    [[nodiscard]] View make_body(const ButtonConfiguration& button) const override;
 };
 
 // A raised surface with an outline, label in the tint.
 class ELG_API BorderedButtonStyle final : public ButtonStyle {
 public:
-    View make_body(const ButtonConfiguration& button) const override;
+    [[nodiscard]] View make_body(const ButtonConfiguration& button) const override;
 };
 
 // Just the label, in the colors around it (not the tint), dimmed while pressed or disabled.
 class ELG_API PlainButtonStyle final : public ButtonStyle {
 public:
-    View make_body(const ButtonConfiguration& button) const override;
+    [[nodiscard]] View make_body(const ButtonConfiguration& button) const override;
 };
 
 // What a ToggleStyle gets to build a toggle's appearance from.
@@ -87,9 +87,9 @@ class ELG_API ToggleStyle {
 public:
     virtual ~ToggleStyle();
     // Called once per toggle when it's built, while Environment<K>() is available.
-    virtual View make_body(const ToggleConfiguration& toggle) const = 0;
+    [[nodiscard]] virtual View make_body(const ToggleConfiguration& toggle) const = 0;
     // How a flip animates; nullopt: at once.
-    virtual std::optional<Animation> animation() const { return Animation::smooth(0.3); }
+    [[nodiscard]] virtual std::optional<Animation> animation() const { return Animation::smooth(0.3); }
 
 protected:
     // Styles are copied as their concrete type, never as a ToggleStyle.
@@ -119,8 +119,8 @@ struct SwitchToggleStyleOptions {
 class ELG_API SwitchToggleStyle final : public ToggleStyle {
 public:
     explicit SwitchToggleStyle(SwitchToggleStyleOptions options = {}) : options_(std::move(options)) {}
-    View make_body(const ToggleConfiguration& toggle) const override;
-    std::optional<Animation> animation() const override { return options_.animation; }
+    [[nodiscard]] View make_body(const ToggleConfiguration& toggle) const override;
+    [[nodiscard]] std::optional<Animation> animation() const override { return options_.animation; }
 
 private:
     SwitchToggleStyleOptions options_;
@@ -142,9 +142,9 @@ class ELG_API CheckboxStyle {
 public:
     virtual ~CheckboxStyle();
     // Called once per check box when it's built, while Environment<K>() is available.
-    virtual View make_body(const CheckboxConfiguration& checkbox) const = 0;
+    [[nodiscard]] virtual View make_body(const CheckboxConfiguration& checkbox) const = 0;
     // How checking and unchecking animate; nullopt: at once.
-    virtual std::optional<Animation> animation() const { return Animation::smooth(0.3); }
+    [[nodiscard]] virtual std::optional<Animation> animation() const { return Animation::smooth(0.3); }
 
 protected:
     // Styles are copied as their concrete type, never as a CheckboxStyle.
@@ -175,8 +175,8 @@ struct BoxCheckboxStyleOptions {
 class ELG_API BoxCheckboxStyle final : public CheckboxStyle {
 public:
     explicit BoxCheckboxStyle(BoxCheckboxStyleOptions options = {}) : options_(std::move(options)) {}
-    View make_body(const CheckboxConfiguration& checkbox) const override;
-    std::optional<Animation> animation() const override { return options_.animation; }
+    [[nodiscard]] View make_body(const CheckboxConfiguration& checkbox) const override;
+    [[nodiscard]] std::optional<Animation> animation() const override { return options_.animation; }
 
 private:
     BoxCheckboxStyleOptions options_;
@@ -200,7 +200,7 @@ class ELG_API NumberInputStyle {
 public:
     virtual ~NumberInputStyle();
     // Called once per number input when it's built, while Environment<K>() is available.
-    virtual View make_body(const NumberInputConfiguration& input) const = 0;
+    [[nodiscard]] virtual View make_body(const NumberInputConfiguration& input) const = 0;
 
 protected:
     // Styles are copied as their concrete type, never as a NumberInputStyle.
@@ -227,7 +227,7 @@ struct BoxNumberInputStyleOptions {
 class ELG_API BoxNumberInputStyle final : public NumberInputStyle {
 public:
     explicit BoxNumberInputStyle(BoxNumberInputStyleOptions options = {}) : options_(std::move(options)) {}
-    View make_body(const NumberInputConfiguration& input) const override;
+    [[nodiscard]] View make_body(const NumberInputConfiguration& input) const override;
 
 private:
     BoxNumberInputStyleOptions options_;
@@ -236,7 +236,7 @@ private:
 // Just the number, and the arrows if shown: for putting it in a box of your own.
 class ELG_API PlainNumberInputStyle final : public NumberInputStyle {
 public:
-    View make_body(const NumberInputConfiguration& input) const override;
+    [[nodiscard]] View make_body(const NumberInputConfiguration& input) const override;
 };
 
 // What a ProgressStyle gets: how far along it is.
@@ -248,7 +248,7 @@ class ELG_API ProgressStyle {
 public:
     virtual ~ProgressStyle();
     // Called once per Progress when it's built, while Environment<K>() is available.
-    virtual View make_body(const ProgressConfiguration& progress) const = 0;
+    [[nodiscard]] virtual View make_body(const ProgressConfiguration& progress) const = 0;
 
 protected:
     // Styles are copied as their concrete type, never as a ProgressStyle.
@@ -271,7 +271,7 @@ struct LinearProgressStyleOptions {
 class ELG_API LinearProgressStyle final : public ProgressStyle {
 public:
     explicit LinearProgressStyle(LinearProgressStyleOptions options = {}) : options_(std::move(options)) {}
-    View make_body(const ProgressConfiguration& progress) const override;
+    [[nodiscard]] View make_body(const ProgressConfiguration& progress) const override;
 
 private:
     LinearProgressStyleOptions options_;
@@ -290,7 +290,7 @@ struct CircularProgressStyleOptions {
 class ELG_API CircularProgressStyle final : public ProgressStyle {
 public:
     explicit CircularProgressStyle(CircularProgressStyleOptions options = {}) : options_(std::move(options)) {}
-    View make_body(const ProgressConfiguration& progress) const override;
+    [[nodiscard]] View make_body(const ProgressConfiguration& progress) const override;
 
 private:
     CircularProgressStyleOptions options_;
@@ -307,7 +307,7 @@ class ELG_API PickerStyle {
 public:
     virtual ~PickerStyle();
     // Called once per Picker when it's built, while Environment<K>() is available.
-    virtual View make_body(const PickerConfiguration& picker) const = 0;
+    [[nodiscard]] virtual View make_body(const PickerConfiguration& picker) const = 0;
 
 protected:
     // Styles are copied as their concrete type, never as a PickerStyle.
@@ -321,14 +321,14 @@ protected:
 // Every option visible, as segments in a rounded track; the chosen one is raised. The default.
 class ELG_API SegmentedPickerStyle final : public PickerStyle {
 public:
-    View make_body(const PickerConfiguration& picker) const override;
+    [[nodiscard]] View make_body(const PickerConfiguration& picker) const override;
 };
 
 // The chosen option on a button; the others in a menu it opens, the chosen one checked.
 //   Picker(sort.binding(), {{Sort::name, "Name"}, {Sort::date, "Date"}}).picker_style(MenuPickerStyle{})
 class ELG_API MenuPickerStyle final : public PickerStyle {
 public:
-    View make_body(const PickerConfiguration& picker) const override;
+    [[nodiscard]] View make_body(const PickerConfiguration& picker) const override;
 };
 
 // What a SliderStyle gets: where the value is and the slider's state.
@@ -352,9 +352,9 @@ class ELG_API SliderStyle {
 public:
     virtual ~SliderStyle();
     // Each is called once per Slider when it's built, while Environment<K>() is available.
-    virtual View make_track(const SliderConfiguration& slider) const = 0;
-    virtual View make_fill(const SliderConfiguration& slider) const;
-    virtual View make_thumb(const SliderConfiguration& slider) const = 0;
+    [[nodiscard]] virtual View make_track(const SliderConfiguration& slider) const = 0;
+    [[nodiscard]] virtual View make_fill(const SliderConfiguration& slider) const;
+    [[nodiscard]] virtual View make_thumb(const SliderConfiguration& slider) const = 0;
 
 protected:
     // Styles are copied as their concrete type, never as a SliderStyle.
@@ -378,9 +378,9 @@ struct KnobSliderStyleOptions {
 class ELG_API KnobSliderStyle final : public SliderStyle {
 public:
     explicit KnobSliderStyle(KnobSliderStyleOptions options = {}) : options_(std::move(options)) {}
-    View make_track(const SliderConfiguration& slider) const override;
-    View make_fill(const SliderConfiguration& slider) const override;
-    View make_thumb(const SliderConfiguration& slider) const override;
+    [[nodiscard]] View make_track(const SliderConfiguration& slider) const override;
+    [[nodiscard]] View make_fill(const SliderConfiguration& slider) const override;
+    [[nodiscard]] View make_thumb(const SliderConfiguration& slider) const override;
 
 private:
     KnobSliderStyleOptions options_;
@@ -401,7 +401,7 @@ class ELG_API RowStyle {
 public:
     virtual ~RowStyle();
     // Called once per row when it's built, while Environment<K>() is available.
-    virtual View make_body(const RowConfiguration& row) const = 0;
+    [[nodiscard]] virtual View make_body(const RowConfiguration& row) const = 0;
 
 protected:
     // Styles are copied as their concrete type, never as a RowStyle.
@@ -426,7 +426,7 @@ struct HighlightRowStyleOptions {
 class ELG_API HighlightRowStyle final : public RowStyle {
 public:
     explicit HighlightRowStyle(HighlightRowStyleOptions options = {}) : options_(std::move(options)) {}
-    View make_body(const RowConfiguration& row) const override;
+    [[nodiscard]] View make_body(const RowConfiguration& row) const override;
 
 private:
     HighlightRowStyleOptions options_;
@@ -435,7 +435,7 @@ private:
 // Just the content, for rows that show their state themselves (Environment<RowSelectedKey>()).
 class ELG_API PlainRowStyle final : public RowStyle {
 public:
-    View make_body(const RowConfiguration& row) const override;
+    [[nodiscard]] View make_body(const RowConfiguration& row) const override;
 };
 
 // What a TextFieldStyle gets: the editable text (put it where the text goes) and its state.
@@ -449,7 +449,7 @@ struct TextFieldConfiguration {
 class ELG_API TextFieldStyle {
 public:
     virtual ~TextFieldStyle();
-    virtual View make_body(const TextFieldConfiguration& field) const = 0;
+    [[nodiscard]] virtual View make_body(const TextFieldConfiguration& field) const = 0;
 
 protected:
     // Styles are copied as their concrete type, never as a TextFieldStyle.
@@ -463,13 +463,13 @@ protected:
 // A raised box with an outline that turns the tint while focused. The default.
 class ELG_API RoundedBorderTextFieldStyle final : public TextFieldStyle {
 public:
-    View make_body(const TextFieldConfiguration& field) const override;
+    [[nodiscard]] View make_body(const TextFieldConfiguration& field) const override;
 };
 
 // Just the text.
 class ELG_API PlainTextFieldStyle final : public TextFieldStyle {
 public:
-    View make_body(const TextFieldConfiguration& field) const override;
+    [[nodiscard]] View make_body(const TextFieldConfiguration& field) const override;
 };
 
 // What a PopoverStyle wraps in a panel: the popover's content.
@@ -482,9 +482,9 @@ class ELG_API PopoverStyle {
 public:
     virtual ~PopoverStyle();
     // Called each time it opens, while Environment<K>() is available.
-    virtual View make_body(const PopoverConfiguration& popover) const = 0;
+    [[nodiscard]] virtual View make_body(const PopoverConfiguration& popover) const = 0;
     // How it opens and closes; at once by default.
-    virtual PopupMotion motion() const { return PopupMotion::none(); }
+    [[nodiscard]] virtual PopupMotion motion() const { return PopupMotion::none(); }
 
 protected:
     // Styles are copied as their concrete type, never as a PopoverStyle.
@@ -498,13 +498,13 @@ protected:
 // A rounded surface with an outline and a shadow; padded content is inset 12 points. The default.
 class ELG_API DefaultPopoverStyle final : public PopoverStyle {
 public:
-    View make_body(const PopoverConfiguration& popover) const override;
+    [[nodiscard]] View make_body(const PopoverConfiguration& popover) const override;
 };
 
 // Just the content: no panel, padding or shadow.
 class ELG_API PlainPopoverStyle final : public PopoverStyle {
 public:
-    View make_body(const PopoverConfiguration& popover) const override;
+    [[nodiscard]] View make_body(const PopoverConfiguration& popover) const override;
 };
 
 // What a TooltipStyle wraps: the tooltip's content.
@@ -516,9 +516,9 @@ class ELG_API TooltipStyle {
 public:
     virtual ~TooltipStyle();
     // Called each time it opens, while Environment<K>() is available.
-    virtual View make_body(const TooltipConfiguration& tooltip) const = 0;
+    [[nodiscard]] virtual View make_body(const TooltipConfiguration& tooltip) const = 0;
     // How it opens and closes; at once by default.
-    virtual PopupMotion motion() const { return PopupMotion::none(); }
+    [[nodiscard]] virtual PopupMotion motion() const { return PopupMotion::none(); }
 
 protected:
     // Styles are copied as their concrete type, never as a TooltipStyle.
@@ -532,13 +532,13 @@ protected:
 // Small text on a rounded surface with an outline and a shadow. The default.
 class ELG_API DefaultTooltipStyle final : public TooltipStyle {
 public:
-    View make_body(const TooltipConfiguration& tooltip) const override;
+    [[nodiscard]] View make_body(const TooltipConfiguration& tooltip) const override;
 };
 
 // Just the content.
 class ELG_API PlainTooltipStyle final : public TooltipStyle {
 public:
-    View make_body(const TooltipConfiguration& tooltip) const override;
+    [[nodiscard]] View make_body(const TooltipConfiguration& tooltip) const override;
 };
 
 // What a MenuStyle wraps in a panel: a Menu's items.
@@ -561,13 +561,13 @@ class ELG_API MenuStyle {
 public:
     virtual ~MenuStyle();
     // Called each time it opens, while Environment<K>() is available.
-    virtual View make_body(const MenuConfiguration& menu) const = 0;
+    [[nodiscard]] virtual View make_body(const MenuConfiguration& menu) const = 0;
     // A row: by default the parts in a line, padded, in the danger color if destructive, dimmed
     // when disabled, on a rounded highlight. Called once per row, while Environment<K>() is
     // available.
-    virtual View make_item(const MenuItemConfiguration& item) const;
+    [[nodiscard]] virtual View make_item(const MenuItemConfiguration& item) const;
     // How it opens and closes; at once by default.
-    virtual PopupMotion motion() const { return PopupMotion::none(); }
+    [[nodiscard]] virtual PopupMotion motion() const { return PopupMotion::none(); }
 
 protected:
     // Styles are copied as their concrete type, never as a MenuStyle.
@@ -581,13 +581,13 @@ protected:
 // A surface with an outline and a shadow, at least 200 points wide. The default.
 class ELG_API DefaultMenuStyle final : public MenuStyle {
 public:
-    View make_body(const MenuConfiguration& menu) const override;
+    [[nodiscard]] View make_body(const MenuConfiguration& menu) const override;
 };
 
 // Just the items.
 class ELG_API PlainMenuStyle final : public MenuStyle {
 public:
-    View make_body(const MenuConfiguration& menu) const override;
+    [[nodiscard]] View make_body(const MenuConfiguration& menu) const override;
 };
 
 } // namespace elg

@@ -149,7 +149,7 @@ public:
     ShapeStyle(AngularGradient gradient) : value_(std::move(gradient)) {}
     ShapeStyle(detail::BackdropFill backdrop) : value_(backdrop) {}
 
-    const Value& value() const noexcept { return value_; }
+    [[nodiscard]] const Value& value() const noexcept { return value_; }
 
 private:
     Value value_;
