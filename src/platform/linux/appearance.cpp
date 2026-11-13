@@ -42,7 +42,9 @@ void store(GVariant* value) {
     }
     std::optional<Color> accent;
     if (g_variant_is_of_type(inner, G_VARIANT_TYPE("(ddd)"))) {
-        double r = 0, g = 0, b = 0;
+        double r = 0;
+        double g = 0;
+        double b = 0;
         g_variant_get(inner, "(ddd)", &r, &g, &b);
         const auto in_range = [](double c) { return c >= 0 && c <= 1; };
         if (in_range(r) && in_range(g) && in_range(b)) {
@@ -52,7 +54,7 @@ void store(GVariant* value) {
     }
     g_variant_unref(inner);
     {
-        std::lock_guard lock(g_mutex);
+        const std::lock_guard lock(g_mutex);
         if (g_accent == accent) {
             return;
         }
@@ -97,7 +99,7 @@ bool supports_material(WindowMaterial) {
 void appearance_changed(SDL_Window*, WindowParts&) {}
 
 std::optional<Color> system_accent_color() {
-    std::lock_guard lock(g_mutex);
+    const std::lock_guard lock(g_mutex);
     return g_accent;
 }
 

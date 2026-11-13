@@ -211,7 +211,7 @@ void SplitDividerElement::paint_impl(DisplayList& list) const {
     const Rect line = axis_ == Axis::horizontal
                           ? Rect{middle - width / 2, bounds.y, width, bounds.height}
                           : Rect{bounds.x, middle - width / 2, bounds.width, width};
-    list.commands.push_back(RectCommand{line, {}, ShapeStyle(color), Color::clear, 0});
+    list.commands.emplace_back(RectCommand{line, {}, ShapeStyle(color), Color::clear, 0});
 }
 
 // --- SplitElement ---
@@ -350,9 +350,9 @@ void SplitElement::paint_impl(DisplayList& list) const {
         const Rect share = pane_rects_[i];
         const Rect clip = axis_ == Axis::horizontal ? Rect{pane.x, share.y, pane.width, share.height}
                                                     : Rect{share.x, pane.y, share.width, pane.height};
-        list.commands.push_back(PushClipCommand{clip, {}});
+        list.commands.emplace_back(PushClipCommand{clip, {}});
         laid_out_[i]->paint(list);
-        list.commands.push_back(PopClipCommand{});
+        list.commands.emplace_back(PopClipCommand{});
     }
     // Panes that went, animating out where they last were.
     std::vector<Element*> exiting;
@@ -410,7 +410,7 @@ class SplitNode final : public ViewNode {
 public:
     SplitNode(Axis axis, std::vector<View> panes, SplitViewOptions options)
         : axis_(axis), panes_(std::move(panes)), options_(std::move(options)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const LowerContext pane_context = context.nested();
         std::vector<std::unique_ptr<Element>> children;
         children.reserve(panes_.size());
@@ -435,7 +435,7 @@ private:
 };
 
 // A NavigationSplitView column: its width range, the full height, content at the top.
-View column(View content, ColumnWidth width) {
+View column(const View& content, ColumnWidth width) {
     return std::move(content).frame({.min_width = width.min,
                                      .ideal_width = width.ideal,
                                      .max_width = width.max,
@@ -443,8 +443,8 @@ View column(View content, ColumnWidth width) {
                                      .alignment = Alignment::top_leading});
 }
 
-View sidebar_column(View sidebar, const NavigationSplitViewOptions& options) {
-    View result = column(std::move(sidebar), options.sidebar_width).background(
+View sidebar_column(const View& sidebar, const NavigationSplitViewOptions& options) {
+    View result = column(sidebar, options.sidebar_width).background(
         Prop<ShapeStyle>([background = options.sidebar_background](const EnvironmentValues& env) {
             return ShapeStyle(background.get(env));
         }));
@@ -456,7 +456,7 @@ View sidebar_column(View sidebar, const NavigationSplitViewOptions& options) {
     return If([visible] { return visible(); }, result.transition(options.sidebar_transition));
 }
 
-View detail_column(View detail, ColumnWidth width) {
+View detail_column(const View& detail, ColumnWidth width) {
     // The rest of the width (from its ideal, if it has one): it takes size changes first.
     FlexibleFrameOptions frame{.min_width = width.min, .max_width = width.max, .max_height = infinity};
     if (width.ideal > 0) {
@@ -475,15 +475,15 @@ View detail::make_split_view(Axis axis, std::vector<View> panes, SplitViewOption
     return ViewAccess::make(std::make_shared<const SplitNode>(axis, std::move(panes), std::move(options)));
 }
 
-View NavigationSplitView(View sidebar, View detail, NavigationSplitViewOptions options) {
-    return HSplitView(options.dividers, detail::sidebar_column(std::move(sidebar), options),
-                      detail::detail_column(std::move(detail), options.detail_width));
+View NavigationSplitView(const View& sidebar, const View& detail, const NavigationSplitViewOptions& options) {
+    return HSplitView(options.dividers, detail::sidebar_column(sidebar, options),
+                      detail::detail_column(detail, options.detail_width));
 }
 
-View NavigationSplitView(View sidebar, View content, View detail, NavigationSplitViewOptions options) {
-    return HSplitView(options.dividers, detail::sidebar_column(std::move(sidebar), options),
-                      detail::column(std::move(content), options.content_width),
-                      detail::detail_column(std::move(detail), options.detail_width));
+View NavigationSplitView(const View& sidebar, const View& content, const View& detail, const NavigationSplitViewOptions& options) {
+    return HSplitView(options.dividers, detail::sidebar_column(sidebar, options),
+                      detail::column(content, options.content_width),
+                      detail::detail_column(detail, options.detail_width));
 }
 
 } // namespace elg

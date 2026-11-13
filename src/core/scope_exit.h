@@ -18,6 +18,8 @@ public:
 
     ScopeExit(const ScopeExit&) = delete;
     ScopeExit& operator=(const ScopeExit&) = delete;
+    ScopeExit(ScopeExit&&) = delete;
+    ScopeExit& operator=(ScopeExit&&) = delete;
 
 private:
     F fn_;

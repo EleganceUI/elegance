@@ -24,8 +24,8 @@ struct Owner {
 
 double peak(const Animation& animation, double until) {
     double highest = 0;
-    for (double t = 0; t <= until; t += 0.001) {
-        highest = std::max(highest, animation.progress(t));
+    for (int step = 0; step <= static_cast<int>(until * 1000); ++step) {
+        highest = std::max(highest, animation.progress(step / 1000.0));
     }
     return highest;
 }
@@ -105,17 +105,17 @@ TEST_CASE("transitions describe the out pose and the in-place identity") {
 }
 
 TEST_CASE("effects scheduled inside with_animation run with its animation") {
-    Owner owner;
+    const Owner owner;
     State<int> animated(0);
     State<int> plain(0);
     std::vector<std::string> seen;
     effect([&] {
         (void)animated();
-        seen.push_back(detail::current_animation() ? "animated" : "jump");
+        seen.emplace_back(detail::current_animation() ? "animated" : "jump");
     });
     effect([&] {
         (void)plain();
-        seen.push_back(detail::current_animation() ? "animated" : "jump");
+        seen.emplace_back(detail::current_animation() ? "animated" : "jump");
     });
     seen.clear();
 
@@ -130,16 +130,16 @@ TEST_CASE("effects scheduled inside with_animation run with its animation") {
 }
 
 TEST_CASE("priority effects run first in a flush") {
-    Owner owner;
+    const Owner owner;
     State<int> source(0);
     std::vector<std::string> order;
     effect([&] {
         (void)source();
-        order.push_back("normal");
+        order.emplace_back("normal");
     });
     detail::start_effect(std::make_shared<detail::EffectNode>([&] {
                              (void)source();
-                             order.push_back("priority");
+                             order.emplace_back("priority");
                          }),
                          true);
     order.clear();

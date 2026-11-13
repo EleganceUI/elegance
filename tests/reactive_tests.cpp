@@ -25,7 +25,8 @@ struct Owner {
 } // namespace
 
 TEST_CASE("State reads and writes through shared handles") {
-    State<int> count(1);
+    const State<int> count(1);
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization): the copy is what's tested
     const State<int> copy = count; // same value
     copy.set(5);
     CHECK(count() == 5);
@@ -36,7 +37,7 @@ TEST_CASE("State reads and writes through shared handles") {
 }
 
 TEST_CASE("an effect runs once immediately, then after a flush when its state changed") {
-    Owner owner;
+    const Owner owner;
     State<int> count(0);
     std::vector<int> seen;
     effect([&] { seen.push_back(count()); });
@@ -72,8 +73,8 @@ TEST_CASE("computed values are lazy and memoized") {
 TEST_CASE("updates are glitch-free across a diamond") {
     // a -> b, a -> c, (b, c) -> effect: the effect must never see b and c out of sync, and must
     // run exactly once per change of a.
-    Owner owner;
-    State<int> a(1);
+    const Owner owner;
+    const State<int> a(1);
     const auto b = computed([=] { return a() + 1; });
     const auto c = computed([=] { return a() * 10; });
     std::vector<std::pair<int, int>> seen;
@@ -87,8 +88,8 @@ TEST_CASE("updates are glitch-free across a diamond") {
 }
 
 TEST_CASE("a computed that doesn't change stops propagation") {
-    Owner owner;
-    State<int> n(1);
+    const Owner owner;
+    const State<int> n(1);
     const auto positive = computed([=] { return n() > 0; });
     int runs = 0;
     effect([&] {
@@ -104,7 +105,7 @@ TEST_CASE("a computed that doesn't change stops propagation") {
 }
 
 TEST_CASE("batch groups writes into one effect run") {
-    Owner owner;
+    const Owner owner;
     State<int> x(0);
     State<int> y(0);
     int runs = 0;
@@ -121,7 +122,7 @@ TEST_CASE("batch groups writes into one effect run") {
 }
 
 TEST_CASE("untrack reads without subscribing") {
-    Owner owner;
+    const Owner owner;
     State<int> tracked(0);
     State<int> ignored(0);
     int runs = 0;
@@ -139,7 +140,7 @@ TEST_CASE("untrack reads without subscribing") {
 }
 
 TEST_CASE("effects created inside untrack still track their own reads") {
-    Owner owner;
+    const Owner owner;
     State<int> outer_source(0);
     State<int> inner_source(0);
     int outer_runs = 0;
@@ -165,7 +166,7 @@ TEST_CASE("disposing a scope ends its effects") {
     State<int> count(0);
     int runs = 0;
     {
-        Owner owner;
+        const Owner owner;
         effect([&] {
             (void)count();
             ++runs;
@@ -177,13 +178,13 @@ TEST_CASE("disposing a scope ends its effects") {
 }
 
 TEST_CASE("a Binding reads and writes its State") {
-    State<std::string> name("Ada");
+    const State<std::string> name("Ada");
     const Binding<std::string> binding = name.binding();
     CHECK(binding() == "Ada");
     binding = "Grace";
     CHECK(name() == "Grace");
 
-    State<int> count(1);
+    const State<int> count(1);
     const Binding<int> counter(count);
     counter += 4;
     CHECK(count() == 5);
@@ -194,7 +195,7 @@ TEST_CASE("Prop holds a static value or a reactive one") {
     REQUIRE(fixed.static_value());
     CHECK(*fixed.static_value() == 0.5f);
 
-    State<float> level(0.25f);
+    const State<float> level(0.25f);
     const Prop<float> from_state = level;
     CHECK(from_state.is_reactive());
     CHECK(from_state.get() == 0.25f);
@@ -208,9 +209,9 @@ TEST_CASE("effects need an owner") {
 }
 
 TEST_CASE("effects that keep re-triggering each other are reported") {
-    Owner owner;
-    State<int> a(0);
-    State<int> b(0);
+    const Owner owner;
+    const State<int> a(0);
+    const State<int> b(0);
     effect([=] { b = a() + 1; });
     effect([=] { a = b() + 1; });
     CHECK_THROWS_AS(detail::flush_effects(), UsageError);
@@ -225,8 +226,8 @@ TEST_CASE("constant() makes a binding that ignores writes") {
 }
 
 TEST_CASE("a Signal reads a State, a Binding, or a closure, and works as a Prop") {
-    Owner owner;
-    State<bool> hovered(false);
+    const Owner owner;
+    const State<bool> hovered(false);
     const Signal<bool> from_state = hovered;
     const Signal<bool> from_binding = hovered.binding();
     const Signal<bool> negated = [=] { return !hovered(); };
@@ -245,7 +246,7 @@ TEST_CASE("a Signal reads a State, a Binding, or a closure, and works as a Prop"
 
 TEST_CASE("a computed that throws rethrows until what it read changes", "[reactive]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<int> input(-1);
     int runs = 0;
     const auto doubled = computed([=, &runs] {

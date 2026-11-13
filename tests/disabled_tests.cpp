@@ -19,7 +19,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <optional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -36,29 +36,29 @@ detail::TextSystem& text_system() {
 struct Window {
     std::unique_ptr<detail::Element> root;
     detail::FocusManager focus;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
 
     explicit Window(const View& view) {
         root = detail::lower(ZStack(Rectangle().fill(Color::white), view.frame(50, 50)), {.text = &text_system(), .focus = &focus});
         root->size_that_fits({100, 100});
         root->place({}, {100, 100});
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 
-    void down(Point at) { events->pointer_button(PointerEvent::Kind::down, at, MouseButton::left, 1, KeyModifiers::none); }
-    void up(Point at) { events->pointer_button(PointerEvent::Kind::up, at, MouseButton::left, 1, KeyModifiers::none); }
-    void move(Point at) { events->pointer_moved(at); }
-    void click(Point at) {
+    void down(Point at) const { events->pointer_button(PointerEvent::Kind::down, at, MouseButton::left, 1, KeyModifiers::none); }
+    void up(Point at) const { events->pointer_button(PointerEvent::Kind::up, at, MouseButton::left, 1, KeyModifiers::none); }
+    void move(Point at) const { events->pointer_moved(at); }
+    void click(Point at) const {
         move(at);
         down(at);
         up(at);
     }
-    void press(Key key) {
+    void press(Key key) const {
         events->key({.kind = KeyEvent::Kind::down, .key = key});
         events->key({.kind = KeyEvent::Kind::up, .key = key});
     }
     // What the app does each frame.
-    void frame() {
+    void frame() const {
         detail::flush_effects();
         events->release_disabled();
         detail::flush_effects();
@@ -73,7 +73,7 @@ constexpr Point kOutside{5, 5};
 
 TEST_CASE("a disabled view's clicks pass to the views around it; hover goes on", "[disabled]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> off(false);
     int inner = 0;
     int outer = 0;
@@ -106,10 +106,10 @@ TEST_CASE("a disabled view's clicks pass to the views around it; hover goes on",
 
 TEST_CASE("disabling a view cancels its drag; a disabled view doesn't start one", "[disabled][gesture]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> off(false);
     std::vector<std::string> calls;
-    Window window(kSquare
+    const Window window(kSquare
                       .recognize(DragGesture()
                                      .on_began([&] { calls.emplace_back("began"); })
                                      .on_ended([&](const DragEvent&) { calls.emplace_back("ended"); })
@@ -136,10 +136,10 @@ TEST_CASE("disabling a view cancels its drag; a disabled view doesn't start one"
 
 TEST_CASE("a disabled view takes no keys or focus, and focus leaves it", "[disabled][focus]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> off(false);
     int keys = 0;
-    Window window(kSquare.focusable().on_key_press(Key::space, [&] { ++keys; }).disabled([off] { return off(); }));
+    const Window window(kSquare.focusable().on_key_press(Key::space, [&] { ++keys; }).disabled([off] { return off(); }));
     window.press(Key::tab);
     REQUIRE(window.focus.focused());
     window.press(Key::space);
@@ -156,9 +156,9 @@ TEST_CASE("a disabled view takes no keys or focus, and focus leaves it", "[disab
 
 TEST_CASE("a focused control that becomes disabled loses focus", "[disabled][focus]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> off(false);
-    Window window(Button("OK", [] {}).disabled([off] { return off(); }));
+    const Window window(Button("OK", [] {}).disabled([off] { return off(); }));
     window.press(Key::tab);
     REQUIRE(window.focus.focused());
     off = true;
@@ -168,9 +168,9 @@ TEST_CASE("a focused control that becomes disabled loses focus", "[disabled][foc
 
 TEST_CASE("a disabled drop target refuses; one around it may take the drop", "[disabled][drop]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::string taker;
-    const auto take = [&](std::string name) {
+    const auto take = [&](const std::string& name) {
         return [&taker, name](const std::string&, Point) {
             taker = name;
             return true;
@@ -185,7 +185,7 @@ TEST_CASE("a disabled drop target refuses; one around it may take the drop", "[d
 
 TEST_CASE("a disabled window drag area still moves the window", "[disabled]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     Window window(kSquare.window_drag_area().disabled());
     CHECK(window.events->drags_window_at(kInside));
 }

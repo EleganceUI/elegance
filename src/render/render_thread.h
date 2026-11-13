@@ -29,6 +29,8 @@ public:
 
     RenderThread(const RenderThread&) = delete;
     RenderThread& operator=(const RenderThread&) = delete;
+    RenderThread(RenderThread&&) = delete;
+    RenderThread& operator=(RenderThread&&) = delete;
 
     // The elg::Error (or std::bad_alloc) that stopped the thread, if any.
     std::exception_ptr error() const;

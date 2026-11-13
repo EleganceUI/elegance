@@ -14,7 +14,7 @@ using namespace elg;
 TEST_CASE("size observers report mount, resize and DPI without relayout",
                     "[size-observer]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     bool needs_frame = false;
     std::vector<PixelSize> sizes;
     const View view = Rectangle().on_size_change(
@@ -68,7 +68,7 @@ TEST_CASE("size observation sees nested layout bounds and zero sizes without "
                     "painting",
                     "[size-observer]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<PixelSize> sizes;
     const View view =
             Rectangle()
@@ -92,7 +92,7 @@ TEST_CASE(
         "size observation ignores invalid scale and saturates oversized dimensions",
         "[size-observer]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<PixelSize> sizes;
     auto root = detail::lower(Rectangle().on_size_change(
                                                                 [&](PixelSize size) { sizes.push_back(size); }),

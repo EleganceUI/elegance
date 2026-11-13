@@ -111,7 +111,8 @@ Binding<float> VideoPlayer::progress_binding() const {
 
 Binding<float> VideoPlayer::volume_binding() const {
     const VideoPlayer self = *this;
-    return Binding<float>([self] { return self.volume(); }, [self](float v) { self.set_volume(v); });
+    return Binding<float>([self] { return self.volume(); }, [self](float v) {
+    self.set_volume(v); });
 }
 
 } // namespace elg
@@ -155,18 +156,18 @@ protected:
         if (bounds.width <= 0 || bounds.height <= 0) {
             return;
         }
-        list.commands.push_back(RectCommand{bounds, {}, ShapeStyle(Color::black), Color::clear, 0});
+        list.commands.emplace_back(RectCommand{bounds, {}, ShapeStyle(Color::black), Color::clear, 0});
         // The render thread fits the exact frame it samples; size_ is only for layout.
         // A fill overflows and is clipped to the view.
         const bool clip = mode_ == ContentMode::fill;
         if (clip) {
-            list.commands.push_back(PushClipCommand{bounds, {}});
+            list.commands.emplace_back(PushClipCommand{bounds, {}});
         }
         // Mirrored: the texture read right to left; flipped: bottom to top.
         const Rect uv{mirrored_ ? 1.f : 0.f, flipped_ ? 1.f : 0.f, mirrored_ ? -1.f : 1.f, flipped_ ? -1.f : 1.f};
-        list.commands.push_back(VideoCommand{bounds, uv, source_, 1, mode_});
+        list.commands.emplace_back(VideoCommand{bounds, uv, source_, 1, mode_});
         if (clip) {
-            list.commands.push_back(PopClipCommand{});
+            list.commands.emplace_back(PopClipCommand{});
         }
     }
     // Opaque over its whole frame (black behind the video), so hit there like a raster image:
@@ -189,7 +190,7 @@ public:
     VideoNode(std::shared_ptr<VideoSource> source, ContentMode mode, bool mirrored = false, bool flipped = false)
         : source_(std::move(source)), mode_(mode), mirrored_(mirrored), flipped_(flipped) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto element = std::make_unique<VideoElement>(source_, mode_, mirrored_, flipped_);
         VideoElement* const target = element.get();
         // The size arrives with the video's metadata.
@@ -215,7 +216,7 @@ std::string clock(double seconds) {
 }
 
 // Two icons with one showing: a static Image can't change, its opacity can.
-View SwitchIcon(const char* on, const char* off, std::function<bool()> showing_on) {
+View SwitchIcon(const char* on, const char* off, const std::function<bool()>& showing_on) {
     return ZStack(Image(on).opacity([showing_on] { return showing_on() ? 1.f : 0.f; }),
                   Image(off).opacity([showing_on] { return showing_on() ? 0.f : 1.f; }));
 }
@@ -226,26 +227,28 @@ View SwitchIcon(const char* on, const char* off, std::function<bool()> showing_o
 
 namespace elg {
 
-View VideoView(VideoPlayer player, ContentMode mode) {
+View VideoView(const VideoPlayer& player, ContentMode mode) {
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(player.source(), mode));
 }
 
-View CameraView(Camera camera, ContentMode mode) {
+View CameraView(const Camera& camera, ContentMode mode) {
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(camera.source(), mode, camera.mirrored()));
 }
 
-View VideoFeedView(VideoFeed feed, ContentMode mode, bool mirrored) {
+View VideoFeedView(const VideoFeed& feed, ContentMode mode, bool mirrored) {
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(feed.source(), mode, mirrored));
 }
 
 View GpuImageView(const ElgGpuImage* image, ContentMode mode) {
     const auto source = gpu_image_source(image);
-    if (!source) return View{};
+    if (!source) {
+        return View{};
+    }
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(
         source, mode, false, gpu_image_flipped(image)));
 }
 
-View VideoControls(VideoPlayer player) {
+View VideoControls(const VideoPlayer& player) {
     const View play = Button(detail::SwitchIcon("pause.fill", "play.fill", [player] { return player.is_playing(); })
                                  .frame(18, 18),
                              [player] { player.toggle(); })

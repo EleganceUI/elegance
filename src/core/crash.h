@@ -34,7 +34,7 @@ std::string to_text(const StackTrace& trace);
 // (design.md §3.2). Never use this for errors the developer can handle; throw elg::Error.
 [[noreturn]] void internal_error(std::string_view message,
                                  std::source_location where = std::source_location::current(),
-                                 StackTrace trace = StackTrace::current());
+                                 const StackTrace& trace = StackTrace::current());
 
 // Routes std::terminate to internal_error() while alive, then restores the previous handler.
 class CrashHandlerScope {
@@ -44,6 +44,8 @@ public:
 
     CrashHandlerScope(const CrashHandlerScope&) = delete;
     CrashHandlerScope& operator=(const CrashHandlerScope&) = delete;
+    CrashHandlerScope(CrashHandlerScope&&) = delete;
+    CrashHandlerScope& operator=(CrashHandlerScope&&) = delete;
 
 private:
     std::terminate_handler previous_;

@@ -41,7 +41,7 @@ public:
     }
 
     // Bumped by clear(): downloads started before store nothing.
-    std::uint64_t generation() const noexcept { return generation_; }
+    [[nodiscard]] std::uint64_t generation() const noexcept { return generation_; }
     void clear() {
         entries_.clear();
         order_.clear();
@@ -145,10 +145,16 @@ struct Loader {
     std::shared_ptr<const Bytes> bytes;
     std::string error;
 
+    Loader() = default;
+    Loader(const Loader&) = delete;
+    Loader(Loader&&) = delete;
+    Loader& operator=(const Loader&) = delete;
+    Loader& operator=(Loader&&) = delete;
     ~Loader() { task.cancel(); }
 
     void start(const std::shared_ptr<Loader>& self) {
-        if ((bytes = DownloadCache::instance().find(url))) {
+        bytes = DownloadCache::instance().find(url);
+        if (bytes) {
             phase = static_cast<int>(AsyncImagePhase::Kind::success);
             return;
         }
@@ -195,7 +201,7 @@ public:
     AsyncImageNode(std::string url, std::function<View(const AsyncImagePhase&)> content, float scale, bool disk_cache)
         : url_(std::move(url)), content_(std::move(content)), scale_(scale), disk_cache_(disk_cache) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto loader = std::make_shared<Loader>();
         loader->url = url_;
         loader->disk_cache = disk_cache_;

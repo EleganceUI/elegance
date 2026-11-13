@@ -15,7 +15,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <optional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -45,23 +45,23 @@ public:
     void close_tooltip() override {}
     void close_popup(std::uint64_t) override {}
     void move_popup(std::uint64_t, Rect) override {}
-    int menu_level() const override { return -1; }
+    [[nodiscard]] int menu_level() const override { return -1; }
 };
 
 struct Window {
     RecordingServices services;
     detail::FocusManager focus{&services};
     std::unique_ptr<detail::Element> root;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
 
     explicit Window(const View& view) {
         root = detail::lower(view.frame(200, 60, Alignment::top_leading),
                              {.text = &text_system(), .focus = &focus, .services = &services});
         root->size_that_fits({200, 60});
         root->place({}, {200, 60});
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
-    void click(Point at) {
+    void click(Point at) const {
         events->pointer_button(PointerEvent::Kind::down, at, MouseButton::left, 1, KeyModifiers::none);
         events->pointer_button(PointerEvent::Kind::up, at, MouseButton::left, 1, KeyModifiers::none);
         detail::flush_effects();
@@ -72,7 +72,7 @@ struct Window {
 
 TEST_CASE("a secure field's text input is a password's", "[text-input][secure]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::string> name;
     const State<std::string> password;
     Window window(VStack({.spacing = 0}, TextField("Name", name.binding()).frame(200, 30),
@@ -87,7 +87,7 @@ TEST_CASE("a secure field's text input is a password's", "[text-input][secure]")
 
 TEST_CASE("revealing a focused password switches its text input", "[text-input][secure]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::string> password;
     const State<bool> reveal(false);
     Window window(TextField("Password", password.binding(), {.secure = [=] { return !reveal(); }}).frame(200, 30));

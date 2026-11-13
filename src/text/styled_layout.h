@@ -59,7 +59,6 @@ std::vector<CaretStop> caret_stops(const StyledShape& shape, const TextLayoutRes
 // A run's font: `base` with the style's family, weight, and slant (styled_text.cpp).
 Font run_font(const Font& base, const RunStyle& style);
 
-// How a style looks when drawn.
 struct DrawStyle {
     Color color;
     std::optional<Color> background;

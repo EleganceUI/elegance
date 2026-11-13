@@ -25,8 +25,8 @@ struct Mounted {
     detail::Element* field = nullptr;
 
     // The arrows are icons, which need a text system.
-    explicit Mounted(const View& view) : root(detail::lower(view, {.text = &text_system(), .focus = &focus})) {
-        field = find_field(*root);
+    explicit Mounted(const View& view)
+        : root(detail::lower(view, {.text = &text_system(), .focus = &focus})), field(find_field(*root)) {
         REQUIRE(field);
     }
 
@@ -48,7 +48,7 @@ struct Mounted {
         return found;
     }
 
-    detail::AccessibilityInfo info() const {
+    [[nodiscard]] detail::AccessibilityInfo info() const {
         detail::AccessibilityInfo out;
         root->accessibility(out);
         return out;
@@ -66,18 +66,18 @@ struct Mounted {
         focus.focus(nullptr, false);
         detail::flush_effects();
     }
-    std::string text() const {
+    [[nodiscard]] std::string text() const {
         detail::AccessibilityInfo out;
         field->accessibility(out);
         return out.value;
     }
-    void type(std::string text) {
+    void type(std::string text) const {
         // Select everything first, so the typing replaces it.
         press(Key::a, primary_modifier());
         field->event_handler()->text_input({.kind = TextInputEvent::Kind::commit, .text = std::move(text)});
         detail::flush_effects();
     }
-    void press(Key key, KeyModifiers modifiers = KeyModifiers::none) {
+    void press(Key key, KeyModifiers modifiers = KeyModifiers::none) const {
         field->event_handler()->key({.kind = KeyEvent::Kind::down, .key = key, .modifiers = modifiers});
         detail::flush_effects();
     }
@@ -87,8 +87,8 @@ struct Mounted {
 
 TEST_CASE("a number input reads as a spin button with its range", "[number-input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<int> guests(2);
+    const detail::Scope::Use use(scope);
+    const State<int> guests(2);
     const Mounted input(NumberInput(guests, {.min = 1, .max = 8}));
     const detail::AccessibilityInfo info = input.info();
     CHECK(info.role == detail::AccessRole::stepper);
@@ -101,8 +101,8 @@ TEST_CASE("a number input reads as a spin button with its range", "[number-input
 
 TEST_CASE("a number input steps and clamps to its bounds", "[number-input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<int> guests(7);
+    const detail::Scope::Use use(scope);
+    const State<int> guests(7);
     const Mounted input(NumberInput(guests, {.min = 1, .max = 8}));
     input.act(detail::AccessibilityAction::Kind::increment);
     CHECK(guests() == 8);
@@ -117,8 +117,8 @@ TEST_CASE("a number input steps and clamps to its bounds", "[number-input]") {
 
 TEST_CASE("typing applies on Enter and on blur, and text that isn't a number reverts", "[number-input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<double> amount(1.5);
+    const detail::Scope::Use use(scope);
+    const State<double> amount(1.5);
     Mounted input(NumberInput(amount, {.max = 100}));
     input.focus_field();
 
@@ -141,8 +141,8 @@ TEST_CASE("typing applies on Enter and on blur, and text that isn't a number rev
 
 TEST_CASE("a live number input applies valid numbers as they're typed", "[number-input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<double> amount(0);
+    const detail::Scope::Use use(scope);
+    const State<double> amount(0);
     Mounted input(NumberInput(amount, {.min = 0, .max = 10, .live = true}));
     input.focus_field();
     input.type("7");
@@ -155,8 +155,8 @@ TEST_CASE("a live number input applies valid numbers as they're typed", "[number
 
 TEST_CASE("Up and Down step from what's typed, Shift by ten", "[number-input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<float> size(12);
+    const detail::Scope::Use use(scope);
+    const State<float> size(12);
     Mounted input(NumberInput(size, {.step = 0.5}));
     input.focus_field();
     input.press(Key::up);
@@ -171,8 +171,8 @@ TEST_CASE("Up and Down step from what's typed, Shift by ten", "[number-input]") 
 
 TEST_CASE("a number input follows its value while it isn't being edited", "[number-input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<double> amount(1);
+    const detail::Scope::Use use(scope);
+    const State<double> amount(1);
     Mounted input(NumberInput(amount, {.decimals = 2}));
     CHECK(input.text() == "1.00");
     amount = 2.5;

@@ -15,6 +15,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
 #include <optional>
 
 using namespace elg;
@@ -25,7 +26,7 @@ namespace {
 struct Window {
     std::unique_ptr<detail::Element> root;
     detail::FocusManager focus;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
 
     explicit Window(const View& view) {
         root = detail::lower(ZStack({.alignment = Alignment::top_leading}, Rectangle().fill(Color::white),
@@ -33,7 +34,7 @@ struct Window {
                              {});
         root->size_that_fits({100, 100});
         root->place({}, {100, 100});
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 };
 
@@ -41,7 +42,7 @@ struct Window {
 
 TEST_CASE("pointer enter and leave fire at once; hover intent waits", "[hover]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int entered = 0;
     int left = 0;
     std::optional<bool> intent;
@@ -65,12 +66,12 @@ TEST_CASE("pointer enter and leave fire at once; hover intent waits", "[hover]")
 
 TEST_CASE("a button's highlight ignores the hover delay", "[hover]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::optional<bool> hovered;
     struct Recording final : ButtonStyle {
         std::optional<bool>* seen;
         explicit Recording(std::optional<bool>* s) : seen(s) {}
-        View make_body(const ButtonConfiguration& button) const override {
+        [[nodiscard]] View make_body(const ButtonConfiguration& button) const override {
             effect([seen = seen, hovered = button.is_hovered] { *seen = hovered(); });
             return button.label;
         }

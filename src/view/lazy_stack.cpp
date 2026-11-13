@@ -17,6 +17,7 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <ranges>
 
 namespace elg::detail {
 
@@ -155,13 +156,13 @@ protected:
                                          bounds.width - inset, thickness}
                                   : Rect{item.max_x() + spacing_ / 2 - thickness / 2, bounds.y + inset, thickness,
                                          bounds.height - inset};
-            list.commands.push_back(RectCommand{line, {}, ShapeStyle(separator_color_), Color::clear, 0});
+            list.commands.emplace_back(RectCommand{line, {}, ShapeStyle(separator_color_), Color::clear, 0});
         }
     }
 
     bool hit_impl(Point point, std::vector<Element*>& path) override {
-        for (auto it = shown_.rbegin(); it != shown_.rend(); ++it) {
-            if (it->element->hit_test(point, path)) {
+        for (auto& row : std::ranges::reverse_view(shown_)) {
+            if (row.element->hit_test(point, path)) {
                 return true;
             }
         }
@@ -217,7 +218,7 @@ private:
 
     Row mount(const ForEachItem& item) {
         Row row{item.value, nullptr, std::make_unique<Scope>()};
-        Scope::Use use(*row.scope);
+        const Scope::Use use(*row.scope);
         begin_untracked(); // building an item must not subscribe whatever is running
         try {
             row.element = lower(item.view(), context_.nested());
@@ -376,7 +377,7 @@ public:
         : axis_(axis), alignment_(alignment), spacing_(spacing), items_(std::move(items)),
           separators_(std::move(separators)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         std::optional<Separators> separators;
         if (separators_) {
             separators = Separators{separators_->inset, separators_->thickness};
@@ -429,24 +430,24 @@ namespace elg {
 
 using detail::ViewAccess;
 
-View LazyVStack(LazyVStackOptions options, View for_each) {
+View LazyVStack(LazyVStackOptions options, const View& for_each) {
     return ViewAccess::make(std::make_shared<const detail::LazyStackNode>(
         Axis::vertical, detail::fraction(options.alignment), options.spacing.value_or(default_stack_spacing),
         detail::items_of(for_each, "LazyVStack"), std::move(options.separators)));
 }
 
-View LazyVStack(View for_each) {
-    return LazyVStack(LazyVStackOptions{}, std::move(for_each));
+View LazyVStack(const View& for_each) {
+    return LazyVStack(LazyVStackOptions{}, for_each);
 }
 
-View LazyHStack(LazyHStackOptions options, View for_each) {
+View LazyHStack(LazyHStackOptions options, const View& for_each) {
     return ViewAccess::make(std::make_shared<const detail::LazyStackNode>(
         Axis::horizontal, detail::fraction(options.alignment), options.spacing.value_or(default_stack_spacing),
         detail::items_of(for_each, "LazyHStack"), std::move(options.separators)));
 }
 
-View LazyHStack(View for_each) {
-    return LazyHStack(LazyHStackOptions{}, std::move(for_each));
+View LazyHStack(const View& for_each) {
+    return LazyHStack(LazyHStackOptions{}, for_each);
 }
 
 } // namespace elg

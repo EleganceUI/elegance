@@ -29,10 +29,13 @@ namespace elg::detail::gpu {
 //   way. Queue ordering keeps frames in flight intact with one image per source.
 class VideoTextures {
 public:
-    VideoTextures(const Device& device, const wgpu::BindGroupLayout& image_layout);
+    VideoTextures(const Device& device, wgpu::BindGroupLayout  image_layout);
 
     VideoTextures(const VideoTextures&) = delete;
     VideoTextures& operator=(const VideoTextures&) = delete;
+    VideoTextures(VideoTextures&&) = delete;
+    VideoTextures& operator=(VideoTextures&&) = delete;
+    ~VideoTextures() = default;
 
     // The bind group to sample `frame` with: importing its texture the first time and beginning
     // access to it (once per frame: `acquired` lists what this frame has begun), or for frames in

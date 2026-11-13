@@ -261,13 +261,13 @@ class StyledTextNode final : public ViewNode {
 public:
     explicit StyledTextNode(std::vector<TextRun> runs) : runs_(std::move(runs)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         ELG_ASSERT(context.text, "lowering StyledText without a text system");
         const EnvironmentValues environment = context.environment;
         std::vector<Attachment> attachments;
         for (std::size_t i = 0; i < runs_.size(); ++i) {
-            if (runs_[i].attachment) {
-                attachments.push_back({i, detail::lower(*runs_[i].attachment, context)});
+            if (const std::optional<View>& attachment = runs_[i].attachment) {
+                attachments.push_back({i, detail::lower(*attachment, context)});
             }
         }
         auto element = std::make_unique<StyledTextElement>(*context.text, runs_, std::move(attachments));

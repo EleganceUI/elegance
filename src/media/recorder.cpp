@@ -73,6 +73,11 @@ struct RecorderState {
     State<float> level{0.f};
     State<std::string> error{std::string()};
 
+    RecorderState() = default;
+    RecorderState(const RecorderState&) = delete;
+    RecorderState(RecorderState&&) = delete;
+    RecorderState& operator=(const RecorderState&) = delete;
+    RecorderState& operator=(RecorderState&&) = delete;
     ~RecorderState() {
         if (device_ready) {
             ma_device_uninit(&device);
@@ -83,7 +88,7 @@ struct RecorderState {
     }
 
     double seconds() {
-        std::lock_guard lock(mutex);
+        const std::lock_guard lock(mutex);
         return static_cast<double>(samples.size()) / options.channels / options.sample_rate;
     }
 
@@ -100,7 +105,7 @@ struct RecorderState {
             peak = std::max(peak, std::abs(data[i]));
         }
         if (self->options.keeps_samples) {
-            std::lock_guard lock(self->mutex);
+            const std::lock_guard lock(self->mutex);
             self->samples.insert(self->samples.end(), data, data + count);
         }
         if (self->options.on_samples && !self->samples_failed.load(std::memory_order_relaxed)) {
@@ -254,7 +259,7 @@ void AudioRecorder::toggle() const {
 
 void AudioRecorder::clear() const {
     {
-        std::lock_guard lock(state_->mutex);
+        const std::lock_guard lock(state_->mutex);
         state_->samples.clear();
     }
     state_->duration = 0.0;
@@ -285,7 +290,7 @@ std::uint32_t AudioRecorder::channels() const noexcept {
 }
 
 std::vector<float> AudioRecorder::samples() const {
-    std::lock_guard lock(state_->mutex);
+    const std::lock_guard lock(state_->mutex);
     return state_->samples;
 }
 

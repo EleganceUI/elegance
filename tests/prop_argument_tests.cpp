@@ -21,8 +21,8 @@ bool same(Size a, Size b) {
 
 TEST_CASE("padding follows the state it's bound to", "[prop]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<float> inset(10.f);
+    const detail::Scope::Use use(scope);
+    const State<float> inset(10.f);
     auto root = detail::lower(Rectangle().frame(20, 20).padding(inset), {});
     CHECK(same(root->size_that_fits({}), {40, 40}));
 
@@ -30,7 +30,7 @@ TEST_CASE("padding follows the state it's bound to", "[prop]") {
     detail::flush_effects();
     CHECK(same(root->size_that_fits({}), {28, 28}));
 
-    State<float> top(0.f);
+    const State<float> top(0.f);
     auto edges = detail::lower(Rectangle().frame(20, 20).padding(Edges::top, top), {});
     CHECK(same(edges->size_that_fits({}), {20, 20}));
     top = 6.f;
@@ -40,16 +40,16 @@ TEST_CASE("padding follows the state it's bound to", "[prop]") {
 
 TEST_CASE("plain padding values still take braces", "[prop]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     auto root = detail::lower(Rectangle().frame(20, 20).padding({.top = 1, .leading = 2, .bottom = 3, .trailing = 4}), {});
     CHECK(same(root->size_that_fits({}), {26, 24}));
 }
 
 TEST_CASE("a slider's range follows state", "[prop]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<float> value(5.f);
-    State<float> max(10.f);
+    const detail::Scope::Use use(scope);
+    const State<float> value(5.f);
+    const State<float> max(10.f);
     auto root = detail::lower(Slider(value.binding(), {.min = 0, .max = max}), {});
     detail::AccessibilityInfo info;
     root->accessibility(info);
@@ -65,8 +65,8 @@ TEST_CASE("a slider's range follows state", "[prop]") {
 
 TEST_CASE("a lazy stack draws separators between its items", "[prop]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<Color> line(Color::black);
+    const detail::Scope::Use use(scope);
+    const State<Color> line(Color::black);
     const View rows = LazyVStack({.spacing = 10, .separators = StackSeparators{.color = line, .inset = 4}},
                                  ForEach(std::vector<int>{1, 2, 3}, [](int) { return Rectangle().frame(20, 20); }));
     auto root = detail::lower(rows, {});

@@ -21,7 +21,7 @@ struct Window {
     State<bool> shown{true};
     std::unique_ptr<detail::Element> root;
     detail::FocusManager focus;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
 
     Window() {
         const State<bool> visible = shown;
@@ -30,10 +30,10 @@ struct Window {
                                        Rectangle().fill(Color::black).frame(50, 50).pointer_style(PointerStyle::text))),
                              {});
         layout();
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 
-    void layout() {
+    void layout() const {
         root->size_that_fits({100, 100});
         root->place({}, {100, 100});
     }
@@ -63,7 +63,7 @@ TEST_CASE("a view going away under a still pointer takes its style with it", "[p
 
 TEST_CASE("automatic leaves the style to the views around, and the arrow is the default", "[pointer-style]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     auto root = detail::lower(Rectangle().fill(Color::white).pointer_style(PointerStyle::automatic), {});
     root->size_that_fits({100, 100});
     root->place({}, {100, 100});

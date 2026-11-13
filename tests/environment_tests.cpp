@@ -90,8 +90,8 @@ TEST_CASE("a ThemeBlur prop resolves against the environment's theme") {
 }
 
 TEST_CASE("an environment value set from State is reactive") {
-    Owner owner;
-    State<ColorScheme> scheme(ColorScheme::light);
+    const Owner owner;
+    const State<ColorScheme> scheme(ColorScheme::light);
     EnvironmentValues environment;
     environment.set<ColorSchemeKey>(scheme);
 

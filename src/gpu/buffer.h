@@ -18,13 +18,13 @@ namespace elg::detail::gpu {
 // every frame.
 class Buffer {
 public:
-    Buffer(const wgpu::Device& device, wgpu::BufferUsage usage) noexcept;
+    Buffer(wgpu::Device  device, wgpu::BufferUsage usage) noexcept;
 
     // Replaces the contents, growing the buffer if needed. Always leaves a (non-empty) buffer to
     // bind, even for empty data.
     void write(std::span<const std::byte> data);
 
-    const wgpu::Buffer& handle() const noexcept { return buffer_; }
+    [[nodiscard]] const wgpu::Buffer& handle() const noexcept { return buffer_; }
 
 private:
     wgpu::Device device_;

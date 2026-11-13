@@ -8,17 +8,18 @@
 #include <array>
 #include <bit>
 #include <cstring>
+#include <utility>
 
 namespace elg::detail::gpu {
 
 namespace {
 
-constexpr std::uint64_t kMinCapacity = 64 * 1024;
+constexpr std::uint64_t kMinCapacity = std::uint64_t{64} * 1024;
 
 }
 
-Buffer::Buffer(const wgpu::Device& device, wgpu::BufferUsage usage) noexcept
-    : device_(device), usage_(usage | wgpu::BufferUsage::CopyDst) {}
+Buffer::Buffer(wgpu::Device  device, wgpu::BufferUsage usage) noexcept
+    : device_(std::move(device)), usage_(usage | wgpu::BufferUsage::CopyDst) {}
 
 void Buffer::write(std::span<const std::byte> data) {
     if (!buffer_ || data.size() > capacity_) {

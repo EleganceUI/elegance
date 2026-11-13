@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <ranges>
 
 namespace elg::detail::menus {
 
@@ -86,7 +87,7 @@ Item resolve_item(const MenuBarItem& item, std::uint32_t& id, bool macos) {
     result.checked = item.checked;
     result.shortcut = item.shortcut ? item.shortcut : standard_shortcut(item.role);
     result.role = item.role;
-    result.has_action = !(macos && !item.action && native_on_macos(item.role));
+    result.has_action = !macos || item.action || !native_on_macos(item.role);
     for (const MenuBarItem& child : item.submenu) {
         if (keeps(child, macos)) {
             result.submenu.push_back(resolve_item(child, id, macos));
@@ -189,8 +190,8 @@ std::vector<Item> resolve(const std::vector<MenuBarItem>& menus, bool macos) {
 const MenuBarItem* find(const std::vector<MenuBarItem>& menus, std::uint32_t id) {
     std::uint32_t at = 1;
     std::vector<const MenuBarItem*> stack;
-    for (auto it = menus.rbegin(); it != menus.rend(); ++it) {
-        stack.push_back(&*it);
+    for (const auto& menu : std::ranges::reverse_view(menus)) {
+        stack.push_back(&menu);
     }
     while (!stack.empty()) {
         const MenuBarItem* item = stack.back();
@@ -198,8 +199,8 @@ const MenuBarItem* find(const std::vector<MenuBarItem>& menus, std::uint32_t id)
         if (at++ == id) {
             return item;
         }
-        for (auto it = item->submenu.rbegin(); it != item->submenu.rend(); ++it) {
-            stack.push_back(&*it);
+        for (const auto& child : std::ranges::reverse_view(item->submenu)) {
+            stack.push_back(&child);
         }
     }
     return nullptr;
@@ -309,11 +310,12 @@ View menu_entries(const std::vector<Item>& items, const std::function<void(std::
 
 } // namespace
 
-View menu_bar_view(Prop<std::vector<Item>> menus, std::function<void(std::uint32_t)> command,
-                   std::function<bool(std::uint32_t)> checked) {
+View menu_bar_view(const Prop<std::vector<Item>>& menus, const std::function<void(std::uint32_t)>& command,
+                   const std::function<bool(std::uint32_t)>& checked) {
     const auto indexed = [menus] {
         std::vector<std::pair<std::size_t, Item>> result;
         const std::vector<Item> items = menus.get();
+        result.reserve(items.size());
         for (std::size_t i = 0; i < items.size(); ++i) {
             result.emplace_back(i, items[i]);
         }

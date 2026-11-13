@@ -19,6 +19,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <map>
+#include <memory>
 #include <optional>
 #include <set>
 #include <vector>
@@ -36,7 +37,7 @@ detail::TextSystem& text_system() {
 struct RecordingRowStyle final : RowStyle {
     explicit RecordingRowStyle(std::vector<RowConfiguration>* seen) : rows(seen) {}
     std::vector<RowConfiguration>* rows;
-    View make_body(const RowConfiguration& row) const override {
+    [[nodiscard]] View make_body(const RowConfiguration& row) const override {
         rows->push_back(row);
         return row.content;
     }
@@ -49,14 +50,14 @@ View Block() {
 struct Window {
     std::unique_ptr<detail::Element> root;
     detail::FocusManager focus;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
     Size size;
 
     explicit Window(const View& view, Size window_size = {200, 200}) : size(window_size) {
         root = detail::lower(ZStack({.alignment = Alignment::top_leading}, Rectangle().fill(Color::white), view),
                              {.text = &text_system(), .focus = &focus});
         layout();
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
     void layout() {
         detail::flush_effects();
@@ -66,12 +67,12 @@ struct Window {
             events->revalidate(); // a lazy stack may have destroyed rows, as the app does after layout
         }
     }
-    void click(Point at, KeyModifiers modifiers = KeyModifiers::none, int count = 1) {
+    void click(Point at, KeyModifiers modifiers = KeyModifiers::none, int count = 1) const {
         events->pointer_button(PointerEvent::Kind::down, at, MouseButton::left, count, modifiers);
         events->pointer_button(PointerEvent::Kind::up, at, MouseButton::left, count, modifiers);
         detail::flush_effects();
     }
-    void press(Key key, KeyModifiers modifiers = KeyModifiers::none) {
+    void press(Key key, KeyModifiers modifiers = KeyModifiers::none) const {
         events->key({.kind = KeyEvent::Kind::down, .key = key, .modifiers = modifiers});
         events->key({.kind = KeyEvent::Kind::up, .key = key, .modifiers = modifiers});
         detail::flush_effects();
@@ -89,7 +90,7 @@ const std::vector<int> kItems{10, 20, 30, 40};
 
 TEST_CASE("a click selects a row; the style sees which", "[selection]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::optional<int>> selected;
     std::vector<RowConfiguration> rows;
     Window window(VStack({.spacing = 0}, ForEach(kItems, [](int) { return Block(); }))
@@ -124,11 +125,11 @@ TEST_CASE("a click selects a row; the style sees which", "[selection]") {
 
 TEST_CASE("controls in a row keep their clicks; other children aren't rows", "[selection]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::optional<int>> selected;
     int pressed = 0;
     std::vector<RowConfiguration> rows;
-    Window window(VStack({.spacing = 0},
+    const Window window(VStack({.spacing = 0},
                          Block(), // a header
                          ForEach(kItems, [&](int) {
                              return HStack({.spacing = 0}, Button(Block(), [&] { ++pressed; }).button_style(PlainButtonStyle{}),
@@ -149,9 +150,9 @@ TEST_CASE("controls in a row keep their clicks; other children aren't rows", "[s
 
 TEST_CASE("multiple selection: Ctrl/Cmd toggles, Shift selects ranges, select all", "[selection]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::set<int>> selected;
-    Window window(VStack({.spacing = 0}, ForEach(kItems, [](int) { return Block(); }))
+    const Window window(VStack({.spacing = 0}, ForEach(kItems, [](int) { return Block(); }))
                       .selection(selected.binding())
                       .row_style(PlainRowStyle{}));
 
@@ -173,11 +174,11 @@ TEST_CASE("multiple selection: Ctrl/Cmd toggles, Shift selects ranges, select al
 
 TEST_CASE("the keyboard moves the selection and activates", "[selection]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::optional<int>> selected;
     std::vector<int> opened;
     std::vector<RowConfiguration> rows;
-    Window window(VStack({.spacing = 0}, ForEach(kItems, [](int) { return Block(); }))
+    const Window window(VStack({.spacing = 0}, ForEach(kItems, [](int) { return Block(); }))
                       .selection(selected.binding(), {.on_activate = [&](int id) { opened.push_back(id); }})
                       .row_style(RecordingRowStyle(&rows)));
 
@@ -211,9 +212,9 @@ TEST_CASE("the keyboard moves the selection and activates", "[selection]") {
 
 TEST_CASE("Shift+arrows extend a multiple selection; an HStack uses Left/Right", "[selection]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::set<int>> selected;
-    Window window(HStack({.spacing = 0}, ForEach(kItems, [](int) { return Rectangle().frame(20, 20); }))
+    const Window window(HStack({.spacing = 0}, ForEach(kItems, [](int) { return Rectangle().frame(20, 20); }))
                       .selection(selected.binding())
                       .row_style(PlainRowStyle{}));
     window.click({30, 10}); // the second
@@ -230,8 +231,9 @@ TEST_CASE("Shift+arrows extend a multiple selection; an HStack uses Left/Right",
 
 TEST_CASE("a lazy stack's rows select by key, built or not", "[selection][lazy]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<int> items;
+    items.reserve(1000);
     for (int i = 0; i < 1000; ++i) {
         items.push_back(i);
     }
@@ -258,7 +260,7 @@ TEST_CASE("a lazy stack's rows select by key, built or not", "[selection][lazy]"
 
 TEST_CASE("screen readers see a list box of options", "[selection][accessibility]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::set<int>> selected(std::set<int>{20});
     Window window(VStack({.spacing = 0}, ForEach(kItems, [](int) { return Block(); })).selection(selected.binding()));
     const detail::AccessTree tree = detail::build_accessibility_tree(*window.root, "Test", window.size, nullptr);
@@ -289,20 +291,20 @@ TEST_CASE("screen readers see a list box of options", "[selection][accessibility
 
 TEST_CASE("rows can read whether they're selected; the default style builds", "[selection][style]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::optional<std::string>> selected;
     std::map<std::string, std::function<bool()>> readers;
     struct Row {
         std::string name;
         std::map<std::string, std::function<bool()>>* readers;
-        View body() const {
+        [[nodiscard]] View body() const {
             const auto selected = Environment<RowSelectedKey>();
             (*readers)[name] = [selected] { return selected(); };
             return Text(name);
         }
     };
     const std::vector<std::string> names{"a", "b"};
-    Window window(VStack(ForEach(names, [&](const std::string& name) { return View(Row{name, &readers}); }))
+    const Window window(VStack(ForEach(names, [&](const std::string& name) { return View(Row{name, &readers}); }))
                       .selection(selected.binding()));
     REQUIRE(readers.size() == 2);
     CHECK_FALSE(readers["b"]());

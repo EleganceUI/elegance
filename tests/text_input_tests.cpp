@@ -114,7 +114,7 @@ TEST_CASE("a text area takes the height it's offered, or its text's", "[text-inp
 
 TEST_CASE("a fixed secure field can't have several lines", "[text-input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::string> password;
     CHECK_THROWS_AS(TextField("Password", password.binding(), {.secure = true, .line_limit = 3}), UsageError);
     CHECK_NOTHROW(TextField("Password", password.binding(), {.secure = true}));

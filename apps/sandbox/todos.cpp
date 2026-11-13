@@ -47,7 +47,7 @@ View TodoRow(const Todo& todo, std::function<void()> toggle, std::function<void(
 
 } // namespace
 
-View TodoWindow(State<ColorScheme> scheme) {
+View TodoWindow(const State<ColorScheme>& scheme) {
     const auto todos = State(std::vector<Todo>{
         {1, "Design the View API", true},
         {2, "Render text with MSDF", true},

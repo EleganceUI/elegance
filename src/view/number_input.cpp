@@ -31,7 +31,7 @@ constexpr float kPointsPerStep = 4;    // scrubbed distance per step
 
 std::string default_format(double value, int decimals) {
     if (decimals >= 0) {
-        std::string text = std::format("{:.{}f}", value, decimals);
+        const std::string text = std::format("{:.{}f}", value, decimals);
         return text.find_first_not_of("-0.") == std::string::npos ? std::format("{:.{}f}", 0.0, decimals) : text;
     }
     // As many digits as it needs, up to 6.
@@ -105,8 +105,8 @@ public:
         }
         return {};
     }
-    PointerStyle pointer_style(Point) const override { return PointerStyle::resize_horizontal; }
-    bool covers_frame() const override { return true; }
+    [[nodiscard]] PointerStyle pointer_style(Point) const override { return PointerStyle::resize_horizontal; }
+    [[nodiscard]] bool covers_frame() const override { return true; }
 
 private:
     ScrubActions actions_;
@@ -118,7 +118,7 @@ private:
 class ScrubModifier final : public EventModifier {
 public:
     explicit ScrubModifier(ScrubActions actions) : actions_(std::move(actions)) {}
-    std::unique_ptr<EventHandler> make_handler() const override { return std::make_unique<ScrubHandler>(actions_); }
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override { return std::make_unique<ScrubHandler>(actions_); }
 
 private:
     ScrubActions actions_;
@@ -191,7 +191,7 @@ public:
     NumberInputNode(Binding<double> value, bool integer, NumberInputOptions options)
         : value_(std::move(value)), integer_(integer), options_(std::move(options)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     Binding<double> value_;
@@ -266,7 +266,7 @@ std::unique_ptr<Element> NumberInputNode::lower(const LowerContext& context) con
     const auto decrement = [=] { step_by(-1); };
 
     const Binding<std::string> field_text([=] { return text(); },
-                                          [=](std::string typed) {
+                                          [=](const std::string& typed) {
                                               *dirty = true;
                                               text = typed;
                                               if (untrack([&] { return o.live.get(env); })) {

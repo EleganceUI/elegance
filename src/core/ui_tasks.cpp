@@ -21,7 +21,7 @@ std::function<void()> g_wake;
 void post_ui_task(std::function<void()> task) {
     std::function<void()> wake;
     {
-        std::lock_guard lock(g_mutex);
+        const std::lock_guard lock(g_mutex);
         g_tasks.push_back(std::move(task));
         wake = g_wake;
     }
@@ -31,14 +31,14 @@ void post_ui_task(std::function<void()> task) {
 }
 
 void set_ui_task_waker(std::function<void()> wake) {
-    std::lock_guard lock(g_mutex);
+    const std::lock_guard lock(g_mutex);
     g_wake = std::move(wake);
 }
 
 bool run_ui_tasks() {
     std::vector<std::function<void()>> tasks;
     {
-        std::lock_guard lock(g_mutex);
+        const std::lock_guard lock(g_mutex);
         tasks.swap(g_tasks);
     }
     for (auto& task : tasks) {

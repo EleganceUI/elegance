@@ -21,7 +21,7 @@ constexpr float kFitTolerance = 0.01f;
 char32_t decode(std::string_view text, std::size_t& at) {
     const auto byte = [&](std::size_t i) { return static_cast<unsigned char>(text[i]); };
     const unsigned char lead = byte(at);
-    int extra = lead < 0x80 ? 0 : lead >= 0xF0 ? 3 : lead >= 0xE0 ? 2 : lead >= 0xC0 ? 1 : -1;
+    const int extra = lead < 0x80 ? 0 : lead >= 0xF0 ? 3 : lead >= 0xE0 ? 2 : lead >= 0xC0 ? 1 : -1;
     if (extra < 0 || at + static_cast<std::size_t>(extra) >= text.size() + (extra == 0 ? 1 : 0)) {
         ++at;
         return 0xFFFD;
@@ -57,12 +57,7 @@ bool emoji_by_default(char32_t c) {
         {0x274E, 0x274E}, {0x2753, 0x2755}, {0x2757, 0x2757}, {0x2795, 0x2797}, {0x27B0, 0x27B0}, {0x27BF, 0x27BF},
         {0x2B1B, 0x2B1C}, {0x2B50, 0x2B50}, {0x2B55, 0x2B55},
     };
-    for (const auto& range : ranges) {
-        if (c >= range[0] && c <= range[1]) {
-            return true;
-        }
-    }
-    return false;
+    return std::ranges::any_of(ranges, [c](const auto& range) { return c >= range[0] && c <= range[1]; });
 }
 
 // Whether the character at `at` (decoded as `c`, ending at `next`) is drawn as an emoji: by

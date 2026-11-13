@@ -20,6 +20,7 @@
 #include <elg/views.h>
 
 #include <filesystem>
+#include <utility>
 
 #if defined(_WIN32)
 #include <windows.h> // the build defines WIN32_LEAN_AND_MEAN and NOMINMAX
@@ -69,7 +70,7 @@ View icon(Icon which, float size, Weight weight) {
     const bool caption = which == Icon::minimize || which == Icon::maximize || which == Icon::restore ||
                          which == Icon::close;
     if (caption && icon_font_available()) {
-        const char* glyph = "";
+        const char* glyph = nullptr;
         switch (which) {
         case Icon::minimize: glyph = "\xEE\xA4\xA1"; break; // U+E921 ChromeMinimize
         case Icon::maximize: glyph = "\xEE\xA4\xA2"; break; // U+E922 ChromeMaximize
@@ -116,7 +117,7 @@ struct RowState {
 };
 
 // The row's look, from the MenuStyle of where the menu was opened.
-View menu_row(View title, View leading, View trailing, RowState state, Prop<bool> destructive,
+View menu_row(View title, View leading, View trailing, const RowState& state, const Prop<bool>& destructive,
               const EnvironmentValues& environment) {
     const MenuItemConfiguration configuration{
         .title = std::move(title),
@@ -131,11 +132,11 @@ View menu_row(View title, View leading, View trailing, RowState state, Prop<bool
     return style->make_item(configuration);
 }
 
-// The row as a button: hovering focuses it (so keys continue from there) and closes submenus
-// deeper than this menu; `action` runs on click, Enter, or Space.
+// The row as a button: hovering focuses it (so keys continue from there); `action` runs on
+// click, Enter, or Space.
 // `closes_deeper`: hovering closes submenus deeper than this menu (not for a submenu's own row,
 // which would otherwise close the submenu it opened whenever the pointer comes back to it).
-std::unique_ptr<ButtonElement> make_row_element(const View& row, RowState state, std::function<void()> action,
+std::unique_ptr<ButtonElement> make_row_element(const View& row, const RowState& state, std::function<void()> action,
                                                 bool closes_deeper, const LowerContext& context) {
     const State<bool> pressed(false);
     auto element = make_button_element(row, std::move(action), pressed, state.hovered, context);
@@ -165,7 +166,7 @@ public:
     MenuItemNode(Prop<std::string> title, std::function<void()> action, MenuItemOptions options)
         : title_(std::move(title)), action_(std::move(action)), options_(std::move(options)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const RowState state;
         std::vector<View> leading;
         if (options_.checked) {
@@ -210,7 +211,7 @@ private:
 class DelayedHover final : public EventHandler {
 public:
     explicit DelayedHover(std::function<void(bool)> action) : action_(std::move(action)) {}
-    std::optional<HoverDelay> hover_delay() const override { return HoverDelay{.enter = 0.25, .exit = 0}; }
+    [[nodiscard]] std::optional<HoverDelay> hover_delay() const override { return HoverDelay{.enter = 0.25, .exit = 0}; }
     EventResult hover(bool inside) override {
         action_(inside);
         return {};
@@ -224,7 +225,7 @@ class SubmenuNode final : public ViewNode {
 public:
     SubmenuNode(Prop<std::string> title, std::function<View()> menu) : title_(std::move(title)), menu_(std::move(menu)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const RowState state;
         const View row = menu_row(Text(title_), View(), icon(Icon::chevron_right, 12), state, false, context.environment);
         WindowServices* const services = context.services;
@@ -338,7 +339,7 @@ class ContextMenuNode final : public ViewNode {
 public:
     ContextMenuNode(View content, std::function<View()> popup)
         : content_(std::move(content)), popup_(std::move(popup)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto element = std::make_unique<ContextMenuElement>(detail::lower(content_, context), popup_,
                                                             context.environment, context.services);
         if (context.focus) {
@@ -356,8 +357,8 @@ private:
 class MenuButtonNode final : public ViewNode {
 public:
     MenuButtonNode(View label, std::function<View()> menu, MenuButtonOptions options)
-        : label_(std::move(label)), menu_(std::move(menu)), options_(options) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+        : label_(std::move(label)), menu_(std::move(menu)), options_(std::move(options)) {}
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const State<bool> pressed(false);
         const State<bool> hovered(false);
         const State<bool> focused(false);
@@ -428,7 +429,7 @@ namespace {
 // A menu's items in the MenuStyle of where it's placed (the popup, with its opener's environment).
 struct MenuPanel {
     View items;
-    View body() const {
+    [[nodiscard]] View body() const {
         const auto style = untrack([] { return Environment<MenuStyleKey>()(); });
         return style->make_body({.items = items});
     }
@@ -501,6 +502,7 @@ View MenuPickerStyle::make_body(const PickerConfiguration& picker) const {
     });
     return MenuButton(current, [shared, selected = picker.selected, select = picker.select] {
         std::vector<View> items;
+        items.reserve(shared->size());
         for (std::size_t i = 0; i < shared->size(); ++i) {
             items.push_back(MenuItem((*shared)[i], [select, i] { select(i); },
                                      {.checked = [selected, i] { return selected() == i; }}));

@@ -27,7 +27,7 @@ struct Seen {
 class RecordingStackStyle final : public NavigationStackStyle {
 public:
     explicit RecordingStackStyle(std::shared_ptr<Seen> seen) : seen_(std::move(seen)) {}
-    View make_body(const NavigationStackConfiguration& stack) const override {
+    [[nodiscard]] View make_body(const NavigationStackConfiguration& stack) const override {
         seen_->stack = stack;
         return stack.pages;
     }
@@ -57,7 +57,7 @@ void push(const State<std::vector<int>>& path, int route) {
 
 TEST_CASE("a navigation stack's style gets the titles and goes back", "[navigation]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::vector<int>> path;
     const auto seen = std::make_shared<Seen>();
     const auto root = detail::lower(
@@ -66,6 +66,7 @@ TEST_CASE("a navigation stack's style gets the titles and goes back", "[navigati
             .navigation_stack_style(RecordingStackStyle(seen)),
         {});
     REQUIRE(seen->stack);
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access): REQUIREd above
     const NavigationStackConfiguration& stack = *seen->stack;
     CHECK(stack.titles() == std::vector<std::string>{"Notes"});
     CHECK_FALSE(stack.can_go_back());
@@ -80,7 +81,7 @@ TEST_CASE("a navigation stack's style gets the titles and goes back", "[navigati
 
 TEST_CASE("pages slide, fade, or change at once", "[navigation]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     for (const PageTransition transition : {PageTransition::slide, PageTransition::fade, PageTransition::none}) {
         const State<std::vector<int>> path;
         const auto root = detail::lower(
@@ -93,7 +94,7 @@ TEST_CASE("pages slide, fade, or change at once", "[navigation]") {
 
 TEST_CASE("Alt+Left goes back unless back gestures are off", "[navigation]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     for (const bool gestures : {true, false}) {
         const State<std::vector<int>> path(std::vector<int>{1});
         const auto root = detail::lower(
@@ -109,7 +110,7 @@ TEST_CASE("Alt+Left goes back unless back gestures are off", "[navigation]") {
 
 TEST_CASE("a split view's divider takes its thickness between the panes", "[navigation]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     for (const float thickness : {1.f, 0.f, 6.f}) {
         const auto root = detail::lower(
             HSplitView({.thickness = thickness}, Page().frame({.max_width = infinity}),

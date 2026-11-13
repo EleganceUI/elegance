@@ -37,7 +37,7 @@ class CaptionButtonStyle final : public ButtonStyle {
 public:
     CaptionButtonStyle(bool close, WindowHandle window) : close_(close), window_(std::move(window)) {}
 
-    View make_body(const ButtonConfiguration& button) const override {
+    [[nodiscard]] View make_body(const ButtonConfiguration& button) const override {
         const auto theme = Environment<ThemeKey>();
         const auto scheme = Environment<ColorSchemeKey>();
         const auto colors = [=] { return theme().colors(scheme()); };
@@ -75,7 +75,7 @@ class TrafficLightStyle final : public ButtonStyle {
 public:
     TrafficLightStyle(Color color, WindowHandle window) : color_(color), window_(std::move(window)) {}
 
-    View make_body(const ButtonConfiguration& button) const override {
+    [[nodiscard]] View make_body(const ButtonConfiguration& button) const override {
         const Color color = color_;
         const WindowHandle window = window_;
         return Circle()

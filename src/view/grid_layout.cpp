@@ -89,21 +89,21 @@ struct LineGrid {
     Alignment alignment;
     std::optional<float> line_spacing;
 
-    float across(Size size) const { return axis == Axis::horizontal ? size.width : size.height; }
-    float along(Size size) const { return axis == Axis::horizontal ? size.height : size.width; }
-    std::optional<float> across(ProposedSize proposal) const {
+    [[nodiscard]] float across(Size size) const { return axis == Axis::horizontal ? size.width : size.height; }
+    [[nodiscard]] float along(Size size) const { return axis == Axis::horizontal ? size.height : size.width; }
+    [[nodiscard]] std::optional<float> across(ProposedSize proposal) const {
         return axis == Axis::horizontal ? proposal.width : proposal.height;
     }
-    ProposedSize proposal(std::optional<float> across_length, std::optional<float> along_length) const {
+    [[nodiscard]] ProposedSize proposal(std::optional<float> across_length, std::optional<float> along_length) const {
         return axis == Axis::horizontal ? ProposedSize{across_length, along_length}
                                         : ProposedSize{along_length, across_length};
     }
-    Size size(float across_length, float along_length) const {
+    [[nodiscard]] Size size(float across_length, float along_length) const {
         return axis == Axis::horizontal ? Size{across_length, along_length} : Size{along_length, across_length};
     }
 
     // How long each line is along the axis: its longest cell.
-    std::vector<float> line_lengths(const std::vector<GridTrack>& tracks, std::span<const LayoutChild> children) const {
+    [[nodiscard]] std::vector<float> line_lengths(const std::vector<GridTrack>& tracks, std::span<const LayoutChild> children) const {
         std::vector<float> lines;
         for (std::size_t start = 0; start < children.size(); start += tracks.size()) {
             float length = 0;
@@ -115,7 +115,7 @@ struct LineGrid {
         return lines;
     }
 
-    Size size_that_fits(ProposedSize offered, std::span<const LayoutChild> children) const {
+    [[nodiscard]] Size size_that_fits(ProposedSize offered, std::span<const LayoutChild> children) const {
         const std::vector<GridTrack> tracks = resolve_grid_tracks(items, finite(across(offered)), line_spacing);
         const std::vector<float> lines = line_lengths(tracks, children);
         const float gap = spacing_or_default(line_spacing);
@@ -203,14 +203,14 @@ struct GridMetrics {
     float row_gap = 0;
     float content_width = 0;
 
-    float span_width(const Cell& cell) const {
+    [[nodiscard]] float span_width(const Cell& cell) const {
         float width = column_gap * static_cast<float>(cell.span - 1);
         for (std::size_t c = cell.column; c < cell.column + cell.span; ++c) {
             width += widths[c];
         }
         return width;
     }
-    float height() const {
+    [[nodiscard]] float height() const {
         return heights.empty() ? 0.f
                                : std::accumulate(heights.begin(), heights.end(), 0.f) +
                                      row_gap * static_cast<float>(heights.size() - 1);
@@ -302,6 +302,7 @@ GridMetrics measure_grid(std::span<const LayoutChild> children, std::optional<fl
     // Rows that are a single child take the grid's width; with no columns, the widest of them.
     if (columns == 0) {
         for (const Row& row : m.rows) {
+            // NOLINTNEXTLINE(bugprone-unchecked-optional-access): with no columns, no row has cells: all are full width
             const float ideal = children[*row.full_width].size_that_fits({width, std::nullopt}).width;
             m.content_width = std::max(m.content_width, ideal);
         }
@@ -492,9 +493,9 @@ View detail::make_grid_row(GridRowOptions options, std::vector<View> cells) {
     items->reserve(cells.size());
     const auto value = std::make_shared<const int>(0);
     for (std::size_t i = 0; i < cells.size(); ++i) {
-        View cell = cells[i].layout_value<GridRowKey>(GridRowCell{row, static_cast<std::uint32_t>(i), options.alignment});
-        items->push_back({ItemKey(static_cast<std::int64_t>(i)), value,
-                          [](const void*, const void*) { return true; }, [cell] { return cell; }});
+        items->push_back({ItemKey(static_cast<std::int64_t>(i)), value, [](const void*, const void*) { return true; },
+                          [cell = cells[i].layout_value<GridRowKey>(
+                               GridRowCell{row, static_cast<std::uint32_t>(i), options.alignment})] { return cell; }});
     }
     // A fragment: inside a Grid, the cells are the grid's children.
     return make_for_each([items] { return *items; });

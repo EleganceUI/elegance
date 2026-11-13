@@ -30,7 +30,7 @@ namespace {
 namespace fs = std::filesystem;
 
 constexpr std::string_view kMagic = "ELGCACHE 1";
-constexpr std::int64_t kHeuristicCap = 24 * 60 * 60; // a Last-Modified guess stays fresh at most a day
+constexpr std::int64_t kHeuristicCap = std::int64_t{24} * 60 * 60; // a Last-Modified guess stays fresh at most a day
 // Delta-seconds (max-age, Age) larger than this count as this (RFC 9111 §1.2.2), so ages and
 // lifetimes add up without overflowing.
 constexpr std::int64_t kMaxDeltaSeconds = std::int64_t{1} << 31;
@@ -183,7 +183,7 @@ std::string executable_name() {
     std::error_code error;
     path = fs::read_symlink("/proc/self/exe", error);
 #endif
-    std::string name = path.stem().string();
+    const std::string name = path.stem().string();
     return name.empty() ? "app" : name;
 }
 
@@ -214,7 +214,10 @@ std::optional<std::int64_t> parse_http_date(std::string_view text) {
         }
         start = end + 1;
     }
-    std::string_view day_text, month_text, year_text, time_text;
+    std::string_view day_text;
+    std::string_view month_text;
+    std::string_view year_text;
+    std::string_view time_text;
     if (asctime) { // Sun Nov 6 08:49:37 1994
         if (tokens.size() != 5) {
             return std::nullopt;

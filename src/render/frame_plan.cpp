@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <limits>
 #include <cmath>
+#include <numbers>
 
 namespace elg::detail {
 
@@ -80,7 +81,7 @@ std::uint32_t downsample_for(float sigma) {
     return factor;
 }
 
-constexpr float kDegrees = 3.14159265f / 180;
+constexpr float kDegrees = std::numbers::pi_v<float> / 180;
 
 class Planner {
 public:
@@ -125,7 +126,7 @@ private:
     }
 
     // Converts a rect in window points to pixels relative to the current pass's origin.
-    Rect to_pixels(const Rect& r, Point origin) const {
+    [[nodiscard]] Rect to_pixels(const Rect& r, Point origin) const {
         return {r.x * scale_ - origin.x, r.y * scale_ - origin.y, r.width * scale_, r.height * scale_};
     }
 
@@ -539,7 +540,7 @@ private:
         emit(pass, out, instance, r.inset(-1), clip, {});
     }
 
-    Clip push_clip(const PushClipCommand& command, Point origin, const Clip& current) const {
+    [[nodiscard]] Clip push_clip(const PushClipCommand& command, Point origin, const Clip& current) const {
         const Rect r = to_pixels(command.rect, origin);
         const std::array<float, 4> radii = scaled_radii(command.radii, scale_, r.width, r.height);
         const CornerRadii corners{radii[0], radii[1], radii[2], radii[3]};

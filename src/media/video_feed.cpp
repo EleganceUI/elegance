@@ -47,7 +47,7 @@ public:
         }
         bool resized = false;
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             resized = width != width_ || height != height_ || !frame_;
             frame_ = std::make_shared<const std::vector<std::uint8_t>>(std::move(pixels));
             format_ = f;
@@ -71,7 +71,7 @@ public:
 
     void clear() {
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             if (!frame_) {
                 return;
             }
@@ -91,7 +91,7 @@ public:
 
     // Render thread.
     bool update() override {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         if (number_ == reported_) {
             return false;
         }
@@ -100,7 +100,7 @@ public:
     }
 
     std::optional<VideoFrame> current() const override {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         if (!frame_) {
             return std::nullopt;
         }

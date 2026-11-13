@@ -34,15 +34,17 @@ public:
     };
 
     // `native_window`: the HWND on Windows. UI thread.
-    AccessibilityAdapter(void* native_window, Callbacks callbacks);
+    AccessibilityAdapter(void* native_window, const Callbacks& callbacks);
     ~AccessibilityAdapter();
 
     AccessibilityAdapter(const AccessibilityAdapter&) = delete;
     AccessibilityAdapter& operator=(const AccessibilityAdapter&) = delete;
+    AccessibilityAdapter(AccessibilityAdapter&&) = delete;
+    AccessibilityAdapter& operator=(AccessibilityAdapter&&) = delete;
 
     // Sends the current tree if assistive technology is listening. UI thread.
     void update();
-    bool active() const noexcept;
+    [[nodiscard]] static bool active() noexcept;
 
     struct Impl;
 

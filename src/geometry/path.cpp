@@ -12,6 +12,7 @@
 #include "core/numeric.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <charconv>
 #include <cmath>
@@ -470,7 +471,8 @@ std::vector<Path::Polyline> Path::flatten(float tolerance) const {
             break;
         case Verb::line:
             current = points_[p++];
-            line->points.push_back(current);
+            // Every subpath starts with a move: line_to and the curves add one when none is open.
+            line->points.push_back(current); // NOLINT(clang-analyzer-core.CallAndMessage)
             break;
         case Verb::quad: {
             const Point c = points_[p];
@@ -512,8 +514,9 @@ std::vector<Path::Polyline> Path::flatten(float tolerance) const {
     // Drop repeated points (they have no direction).
     for (Polyline& polyline : lines) {
         std::vector<Point>& pts = polyline.points;
-        pts.erase(std::unique(pts.begin(), pts.end(),
-                              [](Point a, Point b) { return std::abs(a.x - b.x) < 1e-6f && std::abs(a.y - b.y) < 1e-6f; }),
+        pts.erase(std::ranges::unique(pts, [](Point a, Point b) {
+                      return std::abs(a.x - b.x) < 1e-6f && std::abs(a.y - b.y) < 1e-6f;
+                  }).begin(),
                   pts.end());
         if (polyline.closed && pts.size() > 1 && pts.front() == pts.back()) {
             pts.pop_back();
@@ -523,7 +526,10 @@ std::vector<Path::Polyline> Path::flatten(float tolerance) const {
 }
 
 Rect Path::bounds() const {
-    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    float x0 = 0;
+    float y0 = 0;
+    float x1 = 0;
+    float y1 = 0;
     bool any = false;
     for (const Polyline& line : flatten(0.1f)) {
         for (const Point p : line.points) {
@@ -702,7 +708,6 @@ std::vector<std::vector<Point>> dashed(const std::vector<Point>& pts, bool close
     float remaining = std::max(style.dash[0], 0.f);
     bool on = true;
     std::size_t dashes = 0;
-    bool reported = false;
     // Start `dash_phase` into the pattern.
     float phase = std::fmod(style.dash_phase, total);
     if (phase < 0) {
@@ -740,9 +745,10 @@ std::vector<std::vector<Point>> dashed(const std::vector<Point>& pts, bool close
                 if (on && current.size() > 1) {
                     pieces.push_back(std::move(current));
                     if (++dashes >= kMaxDashes) {
-                        if (!reported) {
+                        // Once per process: the same path is usually stroked again every frame.
+                        static std::atomic<bool> reported{false};
+                        if (!reported.exchange(true)) {
                             detail::log_warning("a dashed stroke has more than {} dashes; the rest isn't drawn", kMaxDashes);
-                            reported = true;
                         }
                         return pieces;
                     }

@@ -10,6 +10,6 @@
 #include <elg/view.h>
 
 // A small todo list: State holding a vector, ForEach keyed by id, and If.
-elg::View TodoWindow(elg::State<elg::ColorScheme> scheme);
+elg::View TodoWindow(const elg::State<elg::ColorScheme>& scheme);
 
 #endif // SANDBOX_TODOS_H

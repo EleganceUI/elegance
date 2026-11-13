@@ -37,7 +37,7 @@ public:
 
     // The file of the system's sans-serif face closest to `weight` (100-900) and `italic`.
     std::optional<std::filesystem::path> match(int weight, bool italic) {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         const auto key = std::pair(weight, italic);
         if (const auto known = matches_.find(key); known != matches_.end()) {
             return known->second;
@@ -126,15 +126,15 @@ std::vector<std::filesystem::path> system_font_candidates(Weight weight, bool it
         }
     }
     if (w >= 600) {
-        files.push_back("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf");
-        files.push_back("/usr/share/fonts/TTF/DejaVuSans-Bold.ttf");
-        files.push_back("/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf");
-        files.push_back("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf");
+        files.emplace_back("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf");
+        files.emplace_back("/usr/share/fonts/TTF/DejaVuSans-Bold.ttf");
+        files.emplace_back("/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf");
+        files.emplace_back("/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf");
     }
-    files.push_back("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
-    files.push_back("/usr/share/fonts/TTF/DejaVuSans.ttf");
-    files.push_back("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf");
-    files.push_back("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf");
+    files.emplace_back("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+    files.emplace_back("/usr/share/fonts/TTF/DejaVuSans.ttf");
+    files.emplace_back("/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf");
+    files.emplace_back("/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf");
     return files;
 }
 
@@ -145,7 +145,7 @@ std::vector<std::filesystem::path> fallback_font_candidates() {
                              "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
                              "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
                              "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"}) {
-        files.push_back(file);
+        files.emplace_back(file);
     }
     return files;
 }

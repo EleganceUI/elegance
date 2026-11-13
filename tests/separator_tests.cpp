@@ -25,7 +25,7 @@ Size size_of(const View& view, ProposedSize proposal) {
 
 TEST_CASE("a separator spans its axis at its thickness", "[separator]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const Size horizontal = size_of(Separator(), {200.f, 100.f});
     CHECK(horizontal.width == 200);
     CHECK(horizontal.height == 1);
@@ -37,7 +37,7 @@ TEST_CASE("a separator spans its axis at its thickness", "[separator]") {
 
 TEST_CASE("a separator reads as one", "[separator]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const auto root = detail::lower(VStack(Separator(), Separator().accessibility_hidden()), {});
     root->size_that_fits({200.f, 100.f});
     root->place({}, {200.f, 100.f});

@@ -131,7 +131,7 @@ void paint_inspector_overlay(const Inspector& inspector, Element& root, DisplayL
             return;
         }
         if (const Element* element = element_at(root, *path)) {
-            list.commands.push_back(RectCommand{element->frame(), {}, ShapeStyle(color.opacity(0.12f)), color, 1.5f});
+            list.commands.emplace_back(RectCommand{element->frame(), {}, ShapeStyle(color.opacity(0.12f)), color, 1.5f});
         }
     };
     constexpr Color kSelected{0.24f, 0.56f, 1.f, 1};
@@ -174,7 +174,7 @@ std::vector<InspectRow> visible_rows(const Inspector& inspector) {
     return out;
 }
 
-View TreeRow(const InspectRow& row, std::shared_ptr<Inspector> inspector) {
+View TreeRow(const InspectRow& row, const std::shared_ptr<Inspector>& inspector) {
     const ElementPath path = row.path;
     // A chevron to collapse or expand rows with children.
     const View disclosure =
@@ -195,7 +195,7 @@ View TreeRow(const InspectRow& row, std::shared_ptr<Inspector> inspector) {
                            });
                        }));
     const std::string size = std::format("{} × {}", format_length(row.frame.width), format_length(row.frame.height));
-    View label = HStack({.spacing = 6},
+    const View label = HStack({.spacing = 6},
                         disclosure,
                         Text(row.info.name).font_weight(Weight::semibold),
                         Text(row.info.detail).foreground_style(ThemeColor::secondary).line_limit(1),
@@ -250,7 +250,7 @@ std::vector<Property> details(const Inspector& inspector) {
 
 } // namespace
 
-View InspectorView(std::shared_ptr<Inspector> inspector) {
+View InspectorView(const std::shared_ptr<Inspector>& inspector) {
     const View toolbar = HStack(
         {.spacing = 8},
         Text([inspector] { return inspector->title(); }).font_weight(Weight::semibold).line_limit(1),

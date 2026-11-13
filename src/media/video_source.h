@@ -97,7 +97,7 @@ std::size_t packed_size(VideoFrame::Format format, std::uint32_t width, std::uin
 class VideoSource : public std::enable_shared_from_this<VideoSource> {
 public:
     // UI thread. `url` is a file path or an http(s) URL.
-    static std::shared_ptr<VideoSource> create(std::string url);
+    static std::shared_ptr<VideoSource> create(const std::string& url);
     // A source that never plays, with `message` as its error.
     static std::shared_ptr<VideoSource> unsupported(std::string message);
     virtual ~VideoSource() = default;
@@ -136,7 +136,7 @@ protected:
 };
 
 // VideoSource::create's backend: each OS's media engine (platform/<os>/video_source.*). UI thread.
-std::shared_ptr<VideoSource> create_platform_video_source(std::string url);
+std::shared_ptr<VideoSource> create_platform_video_source(const std::string& url);
 
 } // namespace elg::detail
 

@@ -170,7 +170,7 @@ IconGlyphs parse_json(std::string_view json) {
             break;
         }
         const std::string name(json.substr(at + 1, end - at - 1));
-        std::size_t value = json.find_first_not_of(" \t\r\n:", end + 1);
+        const std::size_t value = json.find_first_not_of(" \t\r\n:", end + 1);
         if (value == std::string_view::npos || json[end + 1 + json.substr(end + 1).find_first_not_of(" \t\r\n")] != ':') {
             at = end + 1;
             continue;
@@ -262,7 +262,7 @@ void register_builtin_sets() {
          .font = std::span(phosphor_duotone, phosphor_duotone_size),
          .names_data = std::string_view(reinterpret_cast<const char*>(phosphor_duotone_css), phosphor_duotone_css_size)});
 #endif
-    register_icon_set("phosphor", std::move(phosphor));
+    register_icon_set("phosphor", phosphor);
 #endif
 }
 
@@ -317,7 +317,7 @@ std::string to_utf8(char32_t code) {
 // "<set>.<icon>[.<variant>]" or "<icon>[.<variant>]" in the default set.
 ResolvedIcon resolve(std::string_view system_name) {
     ensure_builtin_sets();
-    std::lock_guard lock(g_mutex);
+    const std::lock_guard lock(g_mutex);
     std::vector<std::string_view> parts;
     for (std::size_t start = 0;;) {
         const std::size_t dot = system_name.find('.', start);
@@ -336,7 +336,7 @@ ResolvedIcon resolve(std::string_view system_name) {
     }
     const auto set = g_sets.find(set_name);
     if (set == g_sets.end()) {
-        throw UsageError(std::format("Image(\"{}\"): no icon set \"{}\" is registered", system_name, set_name));
+        throw UsageError(std::format(R"(Image("{}"): no icon set "{}" is registered)", system_name, set_name));
     }
     std::string family = set->second.family;
     const IconGlyphs* glyphs = &set->second.glyphs;
@@ -368,7 +368,7 @@ ResolvedIcon resolve(std::string_view system_name) {
         for (std::size_t i = 0; i < std::min<std::size_t>(3, nearest.size()); ++i) {
             hint += std::format("{}\"{}.{}\"", i ? ", " : "", set_name, *nearest[i].second);
         }
-        throw UsageError(std::format("Image(\"{}\"): the icon set \"{}\" has no icon \"{}\"{}", system_name, set_name,
+        throw UsageError(std::format(R"(Image("{}"): the icon set "{}" has no icon "{}"{})", system_name, set_name,
                                      icon, hint.empty() ? "" : "; did you mean " + hint + "?"));
     }
     ResolvedIcon resolved{family, {}};
@@ -380,7 +380,7 @@ ResolvedIcon resolve(std::string_view system_name) {
 
 } // namespace
 
-void register_icon_set(std::string name, IconSetOptions options) {
+void register_icon_set(std::string name, const IconSetOptions& options) {
     if (name.empty() || name.find('.') != std::string::npos) {
         throw UsageError(std::format("register_icon_set(): \"{}\" isn't a valid set name (non-empty, no dots)", name));
     }
@@ -398,7 +398,7 @@ void register_icon_set(std::string name, IconSetOptions options) {
         throw ResourceError(std::format("register_icon_set(\"{}\"): no icons found in the name map", name));
     }
     {
-        std::lock_guard lock(g_mutex);
+        const std::lock_guard lock(g_mutex);
         if (g_sets.contains(name) && !options.replace) {
             throw UsageError(std::format("register_icon_set(): \"{}\" is already registered", name));
         }
@@ -426,12 +426,12 @@ void register_icon_set(std::string name, IconSetOptions options) {
         set.variants.emplace(variant.name, std::move(variant_set));
     }
 
-    std::lock_guard lock(g_mutex);
+    const std::lock_guard lock(g_mutex);
     g_sets.insert_or_assign(std::move(name), std::move(set));
 }
 
 void set_default_icon_set(std::string name) {
-    std::lock_guard lock(g_mutex);
+    const std::lock_guard lock(g_mutex);
     g_default = std::move(name);
 }
 
@@ -446,7 +446,7 @@ class IconNode final : public ViewNode {
 public:
     IconNode(std::string family, std::string glyph) : family_(std::move(family)), glyph_(std::move(glyph)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         ELG_ASSERT(context.text, "lowering an Image without a text system");
         const EnvironmentValues environment = context.environment;
         auto element = std::make_unique<TextElement>(*context.text, 1, TextAlignment::center);
@@ -473,7 +473,7 @@ private:
 
 namespace elg {
 
-View Image(ImageSource source) {
+View Image(const ImageSource& source) {
     const int kinds = (source.system_name.empty() ? 0 : 1) + (source.file.empty() ? 0 : 1) + (source.data.empty() ? 0 : 1);
     if (kinds != 1) {
         throw UsageError("Image: set exactly one of .system_name, .file, and .data");
@@ -483,7 +483,7 @@ View Image(ImageSource source) {
     }
     ResolvedIcon icon = resolve(source.system_name);
     const auto layer = [&](std::size_t index) {
-        View view = detail::ViewAccess::make(
+        const View view = detail::ViewAccess::make(
             std::make_shared<const detail::IconNode>(icon.family, std::move(icon.layers[index].first)));
         const float opacity = icon.layers[index].second;
         return opacity < 1 ? view.opacity(opacity) : view;
@@ -493,6 +493,7 @@ View Image(ImageSource source) {
     }
     // Two-tone icons: the layers stacked, each in the same color at its own opacity.
     std::vector<View> layers;
+    layers.reserve(icon.layers.size());
     for (std::size_t i = 0; i < icon.layers.size(); ++i) {
         layers.push_back(layer(i));
     }
@@ -503,8 +504,8 @@ View Image(std::string_view system_name) {
     return Image(ImageSource{.system_name = std::string(system_name)});
 }
 
-View Label(Prop<std::string> title, ImageSource icon) {
-    return HStack({.spacing = 6}, Image(std::move(icon)), Text(std::move(title)));
+View Label(Prop<std::string> title, const ImageSource& icon) {
+    return HStack({.spacing = 6}, Image(icon), Text(std::move(title)));
 }
 
 } // namespace elg

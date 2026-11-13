@@ -41,21 +41,26 @@ public:
 
     void post(std::function<void()> task) {
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             tasks_.push_back(std::move(task));
             if (workers_.empty()) {
                 const unsigned count = std::clamp(std::thread::hardware_concurrency() / 4, 1u, 3u);
                 for (unsigned i = 0; i < count; ++i) {
-                    workers_.emplace_back([this](std::stop_token stop) { run(stop); });
+                    workers_.emplace_back([this](const std::stop_token& stop) { run(stop); });
                 }
             }
         }
         ready_.notify_one();
     }
 
+    DecodeQueue() = default;
+    DecodeQueue(const DecodeQueue&) = delete;
+    DecodeQueue(DecodeQueue&&) = delete;
+    DecodeQueue& operator=(const DecodeQueue&) = delete;
+    DecodeQueue& operator=(DecodeQueue&&) = delete;
     ~DecodeQueue() {
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             tasks_.clear();
         }
         for (std::jthread& worker : workers_) {
@@ -65,7 +70,7 @@ public:
     }
 
 private:
-    void run(std::stop_token stop) {
+    void run(const std::stop_token& stop) {
         while (true) {
             std::function<void()> task;
             {
@@ -202,7 +207,7 @@ protected:
     void arrange(Rect, ProposedSize) override {}
     void paint_impl(DisplayList& list) const override {
         if (pixels_) {
-            list.commands.push_back(ImageCommand{frame(), {0, 0, 1, 1}, pixels_, 1});
+            list.commands.emplace_back(ImageCommand{frame(), {0, 0, 1, 1}, pixels_, 1});
         }
     }
     bool hit_impl(Point point, std::vector<Element*>&) override {
@@ -224,8 +229,8 @@ public:
     RasterImageNode(fs::path file, std::shared_ptr<const Bytes> data, float scale, bool resizable)
         : file_(std::move(file)), data_(std::move(data)), scale_(scale), resizable_(resizable) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
-        std::shared_ptr<ImageAsset> asset = load_asset(file_, data_);
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
+        const std::shared_ptr<ImageAsset> asset = load_asset(file_, data_);
         auto element = std::make_unique<RasterImageElement>(asset, scale_, resizable_);
         RasterImageElement* const target = element.get();
         // Pixels arrive (or change) later: draw them then.
@@ -238,7 +243,7 @@ public:
         return element;
     }
 
-    std::shared_ptr<const RasterImageNode> resized() const {
+    [[nodiscard]] std::shared_ptr<const RasterImageNode> resized() const {
         return std::make_shared<const RasterImageNode>(file_, data_, scale_, true);
     }
 

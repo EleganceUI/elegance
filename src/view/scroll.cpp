@@ -241,7 +241,7 @@ std::optional<Axis> ScrollElement::thumb_at(Point point) const {
 }
 
 void ScrollElement::paint_impl(DisplayList& list) const {
-    list.commands.push_back(PushClipCommand{frame(), {}});
+    list.commands.emplace_back(PushClipCommand{frame(), {}});
     // Only what's in the viewport is painted.
     const std::optional<Rect> outer = list.cull;
     Rect visible = frame();
@@ -254,7 +254,7 @@ void ScrollElement::paint_impl(DisplayList& list) const {
     list.cull = visible;
     content_->paint(list);
     list.cull = outer;
-    list.commands.push_back(PopClipCommand{});
+    list.commands.emplace_back(PopClipCommand{});
 
     if (offset_x_.animating() || offset_y_.animating() || indicators_.animating() || stretching()) {
         list.animating = true;
@@ -267,8 +267,7 @@ void ScrollElement::paint_impl(DisplayList& list) const {
     color.a *= kIndicatorAlpha * visibility;
     for (const Axis axis : {Axis::vertical, Axis::horizontal}) {
         if (const std::optional<Thumb> t = thumb(axis)) {
-            list.commands.push_back(
-                RectCommand{t->rect, CornerRadii::all(kBarThickness / 2), ShapeStyle(color), Color::clear, 0});
+            list.commands.emplace_back(RectCommand{t->rect, CornerRadii::all(kBarThickness / 2), ShapeStyle(color), Color::clear, 0});
         }
     }
 }

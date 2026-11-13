@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <ranges>
 
 namespace elg::detail {
 
@@ -75,7 +76,7 @@ Point place_floating(Size size, Rect anchor, const FloatingPlacement& placement,
         const float length = vertical ? size.width : size.height;
         const float area_start = vertical ? area.x : area.y;
         const float area_end = vertical ? area.max_x() : area.max_y();
-        float across = start;
+        float across = 0;
         switch (placement.alignment) {
         case FloatingAlignment::start:
             across = start;
@@ -233,7 +234,7 @@ void FloatingLayerElement::arrange(Rect bounds, ProposedSize proposal) {
 void FloatingLayerElement::paint_impl(DisplayList& list) const {
     content_->paint(list);
     if (container_ && (!exiting_.empty() || !panels_.empty())) {
-        list.commands.push_back(PushClipCommand{frame(), {}});
+        list.commands.emplace_back(PushClipCommand{frame(), {}});
     }
     for (const Panel& panel : exiting_) {
         panel.element->paint(list);
@@ -244,13 +245,13 @@ void FloatingLayerElement::paint_impl(DisplayList& list) const {
         }
     }
     if (container_ && (!exiting_.empty() || !panels_.empty())) {
-        list.commands.push_back(PopClipCommand{});
+        list.commands.emplace_back(PopClipCommand{});
     }
 }
 
 bool FloatingLayerElement::hit_impl(Point point, std::vector<Element*>& path) {
-    for (auto it = panels_.rbegin(); it != panels_.rend(); ++it) {
-        if (it->element && it->interactive && it->element->hit_test(point, path)) {
+    for (auto& panel : std::ranges::reverse_view(panels_)) {
+        if (panel.element && panel.interactive && panel.element->hit_test(point, path)) {
             return true;
         }
     }
@@ -272,9 +273,9 @@ bool FloatingLayerElement::hit_impl(Point point, std::vector<Element*>& path) {
 }
 
 FloatingLayerElement::Panel* FloatingLayerElement::top(bool escape) {
-    for (auto it = panels_.rbegin(); it != panels_.rend(); ++it) {
-        if (escape ? it->dismiss.escape : it->dismiss.outside_click && (it->element || it->hosted)) {
-            return &*it;
+    for (auto& panel : std::ranges::reverse_view(panels_)) {
+        if (escape ? panel.dismiss.escape : panel.dismiss.outside_click && (panel.element || panel.hosted)) {
+            return &panel;
         }
     }
     return nullptr;
@@ -357,6 +358,10 @@ public:
         }
         adopt(*content_);
     }
+    FloatingElement(const FloatingElement&) = delete;
+    FloatingElement(FloatingElement&&) = delete;
+    FloatingElement& operator=(const FloatingElement&) = delete;
+    FloatingElement& operator=(FloatingElement&&) = delete;
     ~FloatingElement() override {
         close();
         if (layer_) {
@@ -476,7 +481,7 @@ private:
                                           .motion = options_.motion,
                                           .scope = std::make_unique<Scope>()};
         {
-            Scope::Use use(*panel.scope);
+            const Scope::Use use(*panel.scope);
             const EnvironmentScope environment(context_.environment);
             panel.element = detail::lower(floating_(), context_);
         }
@@ -533,7 +538,7 @@ public:
         : content_(std::move(content)), is_presented_(std::move(is_presented)), floating_(std::move(floating)),
           options_(std::move(options)), default_motion_(std::move(default_motion)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         FloatingOptions options = options_;
         if (!options.motion && default_motion_) {
             options.motion = default_motion_(context.environment);
@@ -566,6 +571,10 @@ public:
             options_.motion = untrack([&] { return context_.environment.get<TooltipStyleKey>(); })->motion();
         }
     }
+    TooltipElement(const TooltipElement&) = delete;
+    TooltipElement(TooltipElement&&) = delete;
+    TooltipElement& operator=(const TooltipElement&) = delete;
+    TooltipElement& operator=(TooltipElement&&) = delete;
     ~TooltipElement() override { hide(); }
 
     EventHandler* event_handler() noexcept override { return this; }
@@ -635,7 +644,7 @@ private:
                                           .motion = options_.motion,
                                           .scope = std::make_unique<Scope>()};
         {
-            Scope::Use use(*panel.scope);
+            const Scope::Use use(*panel.scope);
             const EnvironmentScope environment(context_.environment);
             panel.element = detail::lower(styled()(), context_);
         }
@@ -678,7 +687,7 @@ public:
     TooltipNode(View content, std::function<View()> tooltip, TooltipOptions options)
         : content_(std::move(content)), tooltip_(std::move(tooltip)), options_(std::move(options)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         return std::make_unique<TooltipElement>(detail::lower(content_, context), tooltip_, options_, context);
     }
 
@@ -697,7 +706,7 @@ public:
     PopupMotionNode(View content, PopupMotion motion, std::shared_ptr<TransitionElement*> exit)
         : content_(std::move(content)), motion_(std::move(motion)), exit_(std::move(exit)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto element = std::make_unique<TransitionElement>(*motion_.transition(), detail::lower(content_, context));
         element->insert(motion_.animation());
         *exit_ = element.get();
@@ -714,7 +723,7 @@ private:
 class FloatingContainerNode final : public ViewNode {
 public:
     explicit FloatingContainerNode(View content) : content_(std::move(content)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         return std::make_unique<FloatingLayerElement>(detail::lower(content_, context), true);
     }
 
@@ -752,7 +761,7 @@ View View::floating_container() const {
     return detail::ViewAccess::make(std::make_shared<const detail::FloatingContainerNode>(*this));
 }
 
-View View::popover(Binding<bool> is_presented, std::function<View()> content, PopoverOptions options) const {
+View View::popover(Binding<bool> is_presented, std::function<View()> content, const PopoverOptions& options) const {
     // The content in the environment's PopoverStyle, where the popover opens.
     auto panel = [content = std::move(content), padded = options.padded] {
         const EnvironmentValues environment = detail::styling_environment();

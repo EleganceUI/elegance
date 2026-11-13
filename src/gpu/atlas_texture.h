@@ -21,12 +21,15 @@ public:
 
     AtlasTexture(const AtlasTexture&) = delete;
     AtlasTexture& operator=(const AtlasTexture&) = delete;
+    AtlasTexture(AtlasTexture&&) = delete;
+    AtlasTexture& operator=(AtlasTexture&&) = delete;
+    ~AtlasTexture() = default;
 
     // Copies new glyphs into the texture. Queue writes are ordered with frames: frames submitted
     // earlier still see the old contents, later ones the new.
     void upload(std::span<const GlyphUpload> uploads);
 
-    const wgpu::BindGroup& group() const noexcept { return group_; }
+    [[nodiscard]] const wgpu::BindGroup& group() const noexcept { return group_; }
 
 private:
     const Device& device_;

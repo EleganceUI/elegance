@@ -76,7 +76,7 @@ int jpeg_orientation(std::span<const std::uint8_t> data) {
         if (marker == 0xE1 && end - start >= 14 && std::memcmp(data.data() + start, "Exif\0\0", 6) == 0) {
             const std::size_t tiff = start + 6;
             const bool little = data[tiff] == 'I' && data[tiff + 1] == 'I';
-            if (!little && !(data[tiff] == 'M' && data[tiff + 1] == 'M')) {
+            if (!little && (data[tiff] != 'M' || data[tiff + 1] != 'M')) {
                 return 1;
             }
             const auto ifd = u32(tiff + 4, little);

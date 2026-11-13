@@ -11,6 +11,7 @@
 #include <elg/modifiers/events.h>
 
 #include <algorithm>
+#include <ranges>
 
 namespace elg {
 
@@ -127,7 +128,7 @@ public:
         return {};
     }
 
-    std::optional<HoverDelay> hover_delay() const override { return delay_; }
+    [[nodiscard]] std::optional<HoverDelay> hover_delay() const override { return delay_; }
 
 private:
     std::function<void(bool)> action_;
@@ -182,8 +183,8 @@ class TextInputHandler final : public EventHandler {
 public:
     explicit TextInputHandler(std::function<bool(const TextInputEvent&)> action) : action_(std::move(action)) {}
 
-    bool focusable() const override { return true; }
-    bool accepts_text_input() const override { return true; }
+    [[nodiscard]] bool focusable() const override { return true; }
+    [[nodiscard]] bool accepts_text_input() const override { return true; }
     EventResult text_input(const TextInputEvent& event) override { return {.consumed = action_ && action_(event)}; }
 
 private:
@@ -196,7 +197,7 @@ public:
 
     // Read when the pointer moves or the views change, not in an effect: a reactive style is
     // picked up at the next frame.
-    PointerStyle pointer_style(Point) const override { return untrack([&] { return style_.get(); }); }
+    [[nodiscard]] PointerStyle pointer_style(Point) const override { return untrack([&] { return style_.get(); }); }
 
 private:
     Prop<PointerStyle> style_;
@@ -318,8 +319,8 @@ bool LayoutElement::hit_impl(Point point, std::vector<Element*>& path) {
     // Front to back, the reverse of drawing (exiting children never take hits).
     std::vector<Element*> order = laid_out_;
     std::ranges::stable_sort(order, {}, [](const Element* element) { return element->z_index(); });
-    for (auto it = order.rbegin(); it != order.rend(); ++it) {
-        if ((*it)->hit_test(point, path)) {
+    for (auto& child : std::ranges::reverse_view(order)) {
+        if (child->hit_test(point, path)) {
             return true;
         }
     }

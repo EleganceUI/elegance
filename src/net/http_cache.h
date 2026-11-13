@@ -46,10 +46,10 @@ struct CacheEntry {
     std::string last_modified;
     std::vector<std::uint8_t> body;
 
-    bool fresh(std::int64_t now) const { return !no_cache && initial_age + (now - received) < lifetime; }
-    bool revalidates() const { return !redirected && (!etag.empty() || !last_modified.empty()); }
+    [[nodiscard]] bool fresh(std::int64_t now) const { return !no_cache && initial_age + (now - received) < lifetime; }
+    [[nodiscard]] bool revalidates() const { return !redirected && (!etag.empty() || !last_modified.empty()); }
     // Offline, a stale copy beats none, unless the server said otherwise.
-    bool usable_stale() const { return !no_cache && !must_revalidate; }
+    [[nodiscard]] bool usable_stale() const { return !no_cache && !must_revalidate; }
 };
 
 // What a 200 response would be cached as, if it may be (no `no-store`, no `Vary: *`, and either
@@ -67,13 +67,13 @@ class HttpCache {
 public:
     HttpCache(std::filesystem::path directory, std::uint64_t limit);
 
-    const std::filesystem::path& directory() const noexcept { return directory_; }
+    [[nodiscard]] const std::filesystem::path& directory() const noexcept { return directory_; }
     std::optional<CacheEntry> find(const std::string& url);
     // Skipped if the cache was cleared (or retired) since `generation`.
     void store(const CacheEntry& entry, std::uint64_t generation);
     // Removes every entry (only the cache's own files), and makes downloads in flight skip storing.
     void clear();
-    std::uint64_t generation() const noexcept { return generation_.load(); }
+    [[nodiscard]] std::uint64_t generation() const noexcept { return generation_.load(); }
     // Replaced (set_image_cache): stores nothing more.
     void retire() noexcept { ++generation_; retired_ = true; }
 
@@ -85,7 +85,7 @@ private:
         std::uint64_t size = 0;
         std::filesystem::file_time_type used;
     };
-    std::filesystem::path path_for(const std::string& url) const;
+    [[nodiscard]] std::filesystem::path path_for(const std::string& url) const;
     void load_index();
     void trim();
 

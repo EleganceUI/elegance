@@ -10,6 +10,8 @@
 
 #include <elg/error.h>
 
+#include <ranges>
+
 namespace elg::detail {
 
 namespace {
@@ -18,7 +20,7 @@ class DropNode final : public ViewNode {
 public:
     DropNode(View content, DropOptions options) : content_(std::move(content)), options_(std::move(options)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const EnvironmentValues environment = context.environment;
         return std::make_unique<DropElement>(options_, detail::lower(content_, context),
                                              [environment] { return !environment.get<DisabledKey>(); });
@@ -38,8 +40,8 @@ DropElement* search(Element& element, Point point, bool files) {
     // asked first.
     std::vector<Element*> children;
     element.for_each_child([&](Element& child) { children.push_back(&child); });
-    for (auto it = children.rbegin(); it != children.rend(); ++it) {
-        if (DropElement* found = search(**it, point, files)) {
+    for (auto& child : std::ranges::reverse_view(children)) {
+        if (DropElement* found = search(*child, point, files)) {
             return found;
         }
     }

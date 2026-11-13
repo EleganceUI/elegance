@@ -17,9 +17,11 @@
 #include <unordered_map>
 #include <vector>
 
-typedef struct FT_LibraryRec_* FT_Library;
-typedef struct FT_FaceRec_* FT_Face;
-typedef struct hb_font_t hb_font_t;
+struct FT_LibraryRec_;
+struct FT_FaceRec_;
+using FT_Library = FT_LibraryRec_*; // as FreeType declares them
+using FT_Face = FT_FaceRec_*;
+struct hb_font_t;
 
 namespace elg::detail {
 
@@ -68,6 +70,8 @@ public:
 
     FontFace(const FontFace&) = delete;
     FontFace& operator=(const FontFace&) = delete;
+    FontFace(FontFace&&) = delete;
+    FontFace& operator=(FontFace&&) = delete;
 
     std::uint32_t id() const noexcept { return id_; }
     // An icon set's font: glyphs get a single-channel distance field (see GlyphAtlas).
@@ -79,9 +83,7 @@ public:
     // A COLRv1 glyph's filled regions, bottom to top (gradients, transforms); empty for other
     // glyphs. Takes precedence over color_layers. UI thread only.
     std::span<const ColorPath> color_paths(std::uint32_t glyph) const;
-    // Whether the font has a glyph for `codepoint`.
     bool has_char(char32_t codepoint) const;
-    // The font file's bytes.
     const std::vector<unsigned char>& bytes() const noexcept { return *data_; }
     const std::shared_ptr<const std::vector<unsigned char>>& shared_bytes() const noexcept { return data_; }
     // Whether the font has a weight axis (a variable font): any weight is drawn exactly.
@@ -124,6 +126,8 @@ public:
 
     FontLibrary(const FontLibrary&) = delete;
     FontLibrary& operator=(const FontLibrary&) = delete;
+    FontLibrary(FontLibrary&&) = delete;
+    FontLibrary& operator=(FontLibrary&&) = delete;
 
     // Throws elg::ResourceError if the font can't be found or loaded.
     const FontFace& resolve(const Font& font);

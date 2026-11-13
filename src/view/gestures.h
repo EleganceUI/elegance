@@ -20,7 +20,7 @@ public:
     // The press's down, moves and up, in the coordinates pointer() gets. true takes the press over.
     virtual bool observe(const PointerEvent& event, Rect frame) = 0;
     // When it wants expire() (steady clock seconds, like EventDispatcher::next_deadline()).
-    virtual std::optional<double> deadline() const { return std::nullopt; }
+    [[nodiscard]] virtual std::optional<double> deadline() const { return std::nullopt; }
     // The deadline passed: true takes the press over.
     virtual bool expire() { return false; }
     // The press ended without this taking it, or something else took it.

@@ -50,7 +50,7 @@ std::vector<detail::Element*> children(detail::Element& element) {
 struct LastOptionPickerStyle final : PickerStyle {
     explicit LastOptionPickerStyle(std::vector<std::string>* seen) : labels(seen) {}
     std::vector<std::string>* labels;
-    View make_body(const PickerConfiguration& picker) const override {
+    [[nodiscard]] View make_body(const PickerConfiguration& picker) const override {
         *labels = picker.labels;
         return Button(Text([selected = picker.selected] { return std::to_string(selected()); }),
                       [select = picker.select, count = picker.labels.size()] { select(count - 1); });
@@ -59,16 +59,16 @@ struct LastOptionPickerStyle final : PickerStyle {
 
 // A 4-point track, a fill, and a 20 x 10 thumb.
 struct BlockSliderStyle final : SliderStyle {
-    View make_track(const SliderConfiguration&) const override { return Rectangle().frame({.height = 4}); }
-    View make_fill(const SliderConfiguration&) const override { return Rectangle(); }
-    View make_thumb(const SliderConfiguration&) const override { return Rectangle().frame(20, 10); }
+    [[nodiscard]] View make_track(const SliderConfiguration&) const override { return Rectangle().frame({.height = 4}); }
+    [[nodiscard]] View make_fill(const SliderConfiguration&) const override { return Rectangle(); }
+    [[nodiscard]] View make_thumb(const SliderConfiguration&) const override { return Rectangle().frame(20, 10); }
 };
 
 } // namespace
 
 TEST_CASE("a picker is its style's body", "[picker][style]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<int> size(1);
     std::vector<std::string> labels;
     const auto root = mount(Picker(size.binding(), {{0, "S"}, {1, "M"}, {2, "L"}})
@@ -91,7 +91,7 @@ TEST_CASE("a picker is its style's body", "[picker][style]") {
 
 TEST_CASE("the built-in picker styles build", "[picker][style]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::string> size(std::string("M"));
     const std::vector<std::pair<std::string, std::string>> options{{"S", "Small"}, {"M", "Medium"}};
     CHECK_NOTHROW(mount(Picker(size.binding(), options), {200, 40}));
@@ -100,15 +100,15 @@ TEST_CASE("the built-in picker styles build", "[picker][style]") {
 
 TEST_CASE("a slider places its style's parts by the value", "[slider][style]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<float> value(5);
     const Size size{220, 30};
     const auto root = mount(Slider(value.binding(), {.min = 0, .max = 10}).slider_style(BlockSliderStyle{}), size);
     const auto parts = children(*root);
     REQUIRE(parts.size() == 3);
-    detail::Element& track = *parts[0];
-    detail::Element& fill = *parts[1];
-    detail::Element& thumb = *parts[2];
+    const detail::Element& track = *parts[0];
+    const detail::Element& fill = *parts[1];
+    const detail::Element& thumb = *parts[2];
 
     // As tall as the thumb; the track runs between the thumb's centers at either end.
     CHECK(root->frame().height == 10);
@@ -133,11 +133,11 @@ TEST_CASE("a slider places its style's parts by the value", "[slider][style]") {
 
 TEST_CASE("a slider's style sees its fraction", "[slider][style]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     struct Watching final : SliderStyle {
         explicit Watching(std::vector<float>* fractions) : seen(fractions) {}
         std::vector<float>* seen;
-        View make_track(const SliderConfiguration& slider) const override {
+        [[nodiscard]] View make_track(const SliderConfiguration& slider) const override {
             return Rectangle()
                 .frame({.height = 4})
                 .opacity([seen = seen, fraction = slider.fraction] {
@@ -145,7 +145,7 @@ TEST_CASE("a slider's style sees its fraction", "[slider][style]") {
                     return 1.f;
                 });
         }
-        View make_thumb(const SliderConfiguration&) const override { return Rectangle().frame(10, 10); }
+        [[nodiscard]] View make_thumb(const SliderConfiguration&) const override { return Rectangle().frame(10, 10); }
     };
     std::vector<float> seen;
     const State<float> value(0.25f);
@@ -160,7 +160,7 @@ TEST_CASE("a slider's style sees its fraction", "[slider][style]") {
 
 TEST_CASE("the default slider style builds", "[slider][style]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<float> value(0.5f);
     CHECK_NOTHROW(mount(Slider(value.binding()), {160, 30}));
     CHECK_NOTHROW(mount(Slider(value.binding()).slider_style(KnobSliderStyle{{.track_thickness = 2, .knob_size = 14}})

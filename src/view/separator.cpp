@@ -22,7 +22,7 @@ class SeparatorNode final : public ViewNode {
 public:
     SeparatorNode(Axis axis, SeparatorOptions options) : axis_(axis), options_(std::move(options)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const float thickness = std::max(options_.thickness, 0.f);
         const float inset = options_.inset;
         const Shape line = Rectangle().fill(Prop<ShapeStyle>([color = options_.color](const EnvironmentValues& env) {

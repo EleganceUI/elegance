@@ -16,7 +16,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <optional>
+#include <memory>
 #include <vector>
 
 using namespace elg;
@@ -40,8 +40,8 @@ struct RecordingMenuStyle final : MenuStyle {
     explicit RecordingMenuStyle(std::vector<Row>* seen) : rows(seen) {}
     std::vector<Row>* rows;
 
-    View make_body(const MenuConfiguration& menu) const override { return menu.items; }
-    View make_item(const MenuItemConfiguration& item) const override {
+    [[nodiscard]] View make_body(const MenuConfiguration& menu) const override { return menu.items; }
+    [[nodiscard]] View make_item(const MenuItemConfiguration& item) const override {
         rows->push_back({!item.leading.is_empty(), !item.trailing.is_empty(), item.is_highlighted, item.is_enabled,
                          item.is_destructive});
         return Rectangle().fill(Color::black).frame(100, 20);
@@ -51,14 +51,14 @@ struct RecordingMenuStyle final : MenuStyle {
 struct Window {
     std::unique_ptr<detail::Element> root;
     detail::FocusManager focus;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
 
     explicit Window(const View& view) {
         root = detail::lower(ZStack({.alignment = Alignment::top_leading}, Rectangle().fill(Color::white), view),
                              {.text = &text_system(), .focus = &focus});
         root->size_that_fits({200, 200});
         root->place({}, {200, 200});
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 };
 
@@ -66,7 +66,7 @@ struct Window {
 
 TEST_CASE("menu rows take their look from the menu style", "[menu][style]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<RecordingMenuStyle::Row> rows;
     int opened = 0;
     Window window(VStack({.spacing = 0},
@@ -101,7 +101,7 @@ TEST_CASE("menu rows take their look from the menu style", "[menu][style]") {
 
 TEST_CASE("the default menu row builds", "[menu][style]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     CHECK_NOTHROW(Window(Menu(MenuItem("Copy", [] {}, {.shortcut = "Ctrl+C", .image = ImageSource{.system_name = "copy"}}),
                               Separator(), Submenu("Share", [] { return Menu(MenuItem("Mail", [] {})); }))));
 }

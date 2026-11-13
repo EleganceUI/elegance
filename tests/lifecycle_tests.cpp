@@ -14,6 +14,7 @@
 #include <elg/elegance.h>
 
 #include <cmath>
+#include <numbers>
 #include <string>
 #include <variant>
 #include <vector>
@@ -26,6 +27,10 @@ namespace {
 // Starts and ends with no timers or queued lifecycle actions.
 struct Clean {
     Clean() { reset(); }
+    Clean(const Clean&) = delete;
+    Clean(Clean&&) = delete;
+    Clean& operator=(const Clean&) = delete;
+    Clean& operator=(Clean&&) = delete;
     ~Clean() { reset(); }
     static void reset() {
         detail::cancel_all_timers();
@@ -92,7 +97,7 @@ TEST_CASE("timing_curve follows a CSS cubic-bezier", "[animation]") {
 
 TEST_CASE("on_appear runs after the update that added the view", "[lifecycle]") {
     std::vector<std::string> log;
-    Window window(Rectangle().on_appear([&] { log.push_back("appear"); }));
+    const Window window(Rectangle().on_appear([&] { log.emplace_back("appear"); }));
     CHECK(log.empty()); // not while building
     CHECK(detail::run_lifecycle_actions());
     CHECK(log == std::vector<std::string>{"appear"});
@@ -101,7 +106,7 @@ TEST_CASE("on_appear runs after the update that added the view", "[lifecycle]") 
 
 TEST_CASE("on_disappear runs once the view is gone, only if it appeared", "[lifecycle]") {
     std::vector<std::string> log;
-    Window window(Rectangle().on_appear([&] { log.push_back("appear"); }).on_disappear([&] { log.push_back("gone"); }));
+    const Window window(Rectangle().on_appear([&] { log.emplace_back("appear"); }).on_disappear([&] { log.emplace_back("gone"); }));
     detail::run_lifecycle_actions();
     window.shown = false;
     detail::flush_effects();
@@ -122,7 +127,7 @@ TEST_CASE("on_disappear runs once the view is gone, only if it appeared", "[life
 TEST_CASE("a timer started in on_appear stops with the view", "[lifecycle][timer]") {
     int ticks = 0;
     Timer timer;
-    Window window(Rectangle().on_appear([&] { timer = every(0.5, [&] { ++ticks; }); }));
+    const Window window(Rectangle().on_appear([&] { timer = every(0.5, [&] { ++ticks; }); }));
     detail::run_lifecycle_actions();
     REQUIRE(timer.active());
     detail::run_due_timers(kFarFuture);
@@ -137,7 +142,7 @@ TEST_CASE("a timer started in on_appear stops with the view", "[lifecycle][timer
 }
 
 TEST_CASE("after fires once; every repeats, skipping runs it missed", "[timer]") {
-    Clean clean;
+    const Clean clean;
     int once = 0;
     int repeated = 0;
     const Timer single = after(0, [&] { ++once; });
@@ -149,7 +154,7 @@ TEST_CASE("after fires once; every repeats, skipping runs it missed", "[timer]")
     CHECK(repeated == 1); // not once per missed second
     CHECK_FALSE(single.active());
     CHECK(repeating.active());
-    CHECK(*detail::next_timer_due() > kFarFuture);
+    CHECK(detail::next_timer_due() > kFarFuture);
 
     detail::run_due_timers(kFarFuture + 2);
     CHECK(once == 1);
@@ -157,7 +162,7 @@ TEST_CASE("after fires once; every repeats, skipping runs it missed", "[timer]")
 }
 
 TEST_CASE("cancelled timers don't run, even from an earlier timer's action", "[timer]") {
-    Clean clean;
+    const Clean clean;
     int runs = 0;
     Timer later;
     const Timer first = after(0, [&] { later.cancel(); });
@@ -178,11 +183,11 @@ TEST_CASE("cancelled timers don't run, even from an earlier timer's action", "[t
 }
 
 TEST_CASE("timers started outside views run until cancelled", "[timer]") {
-    Clean clean;
+    const Clean clean;
     int runs = 0;
     Timer timer;
     {
-        detail::Scope scope; // ends, but the timer wasn't started in it
+        const detail::Scope scope; // ends, but the timer wasn't started in it
         timer = every(1, [&] { ++runs; });
     }
     detail::run_due_timers(kFarFuture);
@@ -192,9 +197,9 @@ TEST_CASE("timers started outside views run until cancelled", "[timer]") {
 }
 
 TEST_CASE("a view started spinning in on_appear keeps turning", "[lifecycle][animation]") {
-    Clean clean;
+    const Clean clean;
     detail::Scope scope;
-    detail::Scope::Use use{scope};
+    const detail::Scope::Use use{scope};
     const State<bool> spinning(false);
     auto root = detail::lower(Circle()
                                   .fill(Color::white)
@@ -215,7 +220,7 @@ TEST_CASE("a view started spinning in on_appear keeps turning", "[lifecycle][ani
         }
         for (const detail::DrawCommand& command : list.commands) {
             if (const auto* layer = std::get_if<detail::PushLayerCommand>(&command); layer && layer->transform) {
-                return std::atan2(layer->transform->b, layer->transform->a) * 180 / 3.14159265f;
+                return std::atan2(layer->transform->b, layer->transform->a) * 180 / std::numbers::pi_v<float>;
             }
         }
         return 0.f;

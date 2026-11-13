@@ -341,8 +341,8 @@ private:
 
 } // namespace
 
-std::shared_ptr<VideoSource> create_platform_video_source(std::string url) {
-    auto source = std::make_shared<GStreamerSource>(std::move(url));
+std::shared_ptr<VideoSource> create_platform_video_source(const std::string& url) {
+    auto source = std::make_shared<GStreamerSource>(url);
     source->open();
     return source;
 }
@@ -353,7 +353,7 @@ std::shared_ptr<VideoSource> create_platform_video_source(std::string url) {
 
 namespace elg::detail {
 
-std::shared_ptr<VideoSource> create_platform_video_source(std::string url) {
+std::shared_ptr<VideoSource> create_platform_video_source(const std::string& url) {
     (void)url;
     return VideoSource::unsupported("video playback needs GStreamer, which this build doesn't have");
 }

@@ -15,13 +15,15 @@
 namespace elg::detail {
 
 // `value` as an I in [lo, hi]: NaN becomes 0, then the value is clamped before the conversion.
-template <std::integral I>
-    requires(sizeof(I) <= 4) // every value of I is exact in a double
-I clamped_cast(double value, I lo, I hi) noexcept {
-    if (value != value) { // NaN
-        value = 0;
+// Clamped as a double, where every value of I is exact (a float can't hold UINT32_MAX).
+template <std::integral I, std::floating_point F>
+    requires(sizeof(I) <= 4)
+I clamped_cast(F value, I lo, I hi) noexcept {
+    auto v = static_cast<double>(value);
+    if (v != v) { // NaN
+        v = 0;
     }
-    return static_cast<I>(std::clamp(value, static_cast<double>(lo), static_cast<double>(hi)));
+    return static_cast<I>(std::clamp(v, static_cast<double>(lo), static_cast<double>(hi)));
 }
 
 } // namespace elg::detail

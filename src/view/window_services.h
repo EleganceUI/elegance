@@ -76,7 +76,7 @@ public:
     virtual void close_popup(std::uint64_t token) = 0;
     virtual void move_popup(std::uint64_t token, Rect anchor) = 0;
     // For a menu popup window: its level; -1 for other windows.
-    virtual int menu_level() const = 0;
+    [[nodiscard]] virtual int menu_level() const = 0;
 };
 
 } // namespace elg::detail

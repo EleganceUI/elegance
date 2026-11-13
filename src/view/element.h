@@ -117,6 +117,8 @@ public:
     ~FullLayoutScope();
     FullLayoutScope(const FullLayoutScope&) = delete;
     FullLayoutScope& operator=(const FullLayoutScope&) = delete;
+    FullLayoutScope(FullLayoutScope&&) = delete;
+    FullLayoutScope& operator=(FullLayoutScope&&) = delete;
 
 private:
     bool previous_;
@@ -124,6 +126,11 @@ private:
 
 class Element {
 public:
+    Element() = default;
+    Element(const Element&) = delete;
+    Element(Element&&) = delete;
+    Element& operator=(const Element&) = delete;
+    Element& operator=(Element&&) = delete;
     virtual ~Element();
 
     // Describes this element for the inspector. The default names it after its type.
@@ -271,7 +278,7 @@ protected:
     // Removed children animating out aren't laid out, so they'd stay where they were removed. When
     // their container moves (scrolling, its parent's layout), they move with it: call from arrange
     // with the exiting children it paints.
-    void move_exiting(const std::vector<Element*>& exiting);
+    void move_exiting(const std::vector<Element*>& exiting) const;
     // Tells the ancestors that the set of children a layout sees has changed.
     void notify_structure_changed() {
         if (parent_) {
@@ -536,7 +543,7 @@ public:
         return content_->find_layout_value(key);
     }
     TransitionElement(Transition transition, std::unique_ptr<Element> content)
-        : transition_(std::move(transition)), content_(std::move(content)) {
+        : transition_(transition), content_(std::move(content)) {
         adopt(*content_);
     }
 
@@ -763,8 +770,8 @@ public:
     EventResult hover(bool inside) override { return handler_->hover(inside); }
     EventResult scroll(const ScrollEvent& event, Rect frame) override { return handler_->scroll(event, frame); }
     EventResult focus(bool focused) override { return handler_->focus(focused); }
-    std::optional<HoverDelay> hover_delay() const override { return handler_->hover_delay(); }
-    bool covers_frame() const override { return handler_->covers_frame(); }
+    [[nodiscard]] std::optional<HoverDelay> hover_delay() const override { return handler_->hover_delay(); }
+    [[nodiscard]] bool covers_frame() const override { return handler_->covers_frame(); }
 
 private:
     EventHandler* handler_;
@@ -903,6 +910,10 @@ public:
             target->needs_frame = needs_frame;
         }
     }
+    ScrollElement(const ScrollElement&) = delete;
+    ScrollElement(ScrollElement&&) = delete;
+    ScrollElement& operator=(const ScrollElement&) = delete;
+    ScrollElement& operator=(ScrollElement&&) = delete;
     ~ScrollElement() override {
         if (options_.position) {
             if (const auto& target = ScrollTargetAccess::target(*options_.position); target->element == this) {
@@ -937,7 +948,7 @@ protected:
 private:
     struct Thumb {
         Rect rect;    // window points
-        float travel; // how far the thumb moves from start to end
+        float travel = 0; // how far the thumb moves from start to end
     };
 
     EventResult pointer(const PointerEvent& event, Rect frame) override;
@@ -957,8 +968,8 @@ private:
         float velocity = 0;     // points per second, at the start
         bool active = false;
 
-        float at(double time) const;
-        bool settled(double time) const;
+        [[nodiscard]] float at(double time) const;
+        [[nodiscard]] bool settled(double time) const;
     };
     // Gliding on after the fingers lift, slowing down exponentially.
     struct Coast {
@@ -967,9 +978,9 @@ private:
         float velocity = 0; // points per second, at the start
         bool active = false;
 
-        float at(double time) const;
-        float velocity_at(double time) const;
-        float end() const;
+        [[nodiscard]] float at(double time) const;
+        [[nodiscard]] float velocity_at(double time) const;
+        [[nodiscard]] float end() const;
     };
 
     bool scrolls(Axis axis) const noexcept;

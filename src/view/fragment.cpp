@@ -8,6 +8,7 @@
 
 #include "core/log.h"
 
+#include <ranges>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -61,7 +62,7 @@ std::unique_ptr<Element> ForEachNode::lower(const LowerContext& context) const {
 
 FragmentElement::Child FragmentElement::mount(const ForEachItem& item, const Animation* animation) {
     Child child{item.key, item.value, nullptr, nullptr, std::make_unique<Scope>()};
-    Scope::Use use(*child.scope);
+    const Scope::Use use(*child.scope);
     // Building views may read state directly (e.g. in a component body); that must not subscribe
     // the If/ForEach effect running this.
     begin_untracked();
@@ -212,8 +213,8 @@ void FragmentElement::paint_impl(DisplayList& list) const {
 }
 
 bool FragmentElement::hit_impl(Point point, std::vector<Element*>& path) {
-    for (auto it = laid_out_.rbegin(); it != laid_out_.rend(); ++it) {
-        if ((*it)->hit_test(point, path)) {
+    for (auto& child : std::ranges::reverse_view(laid_out_)) {
+        if (child->hit_test(point, path)) {
             return true;
         }
     }

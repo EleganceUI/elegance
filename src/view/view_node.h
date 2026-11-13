@@ -45,7 +45,6 @@ struct LowerContext {
     std::shared_ptr<ImplicitAnimation> implicit_animation;
     // false inside `.animates_layout(false)`.
     bool animates_layout = true;
-    // The window's keyboard focus.
     FocusManager* focus = nullptr;
     // The window's text input, clipboard, cursor, and timed redraws.
     WindowServices* services = nullptr;
@@ -54,7 +53,7 @@ struct LowerContext {
     std::shared_ptr<SelectionController> selection;
 
     // The context for a view that isn't a direct child of the current layout.
-    LowerContext nested() const {
+    [[nodiscard]] LowerContext nested() const {
         LowerContext copy = *this;
         copy.spacer_axis.reset();
         return copy;
@@ -64,7 +63,7 @@ struct LowerContext {
 class ViewNode {
 public:
     virtual ~ViewNode() = default;
-    virtual std::unique_ptr<Element> lower(const LowerContext& context) const = 0;
+    [[nodiscard]] virtual std::unique_ptr<Element> lower(const LowerContext& context) const = 0;
 };
 
 struct ViewAccess {
@@ -138,6 +137,8 @@ public:
     ~EnvironmentScope();
     EnvironmentScope(const EnvironmentScope&) = delete;
     EnvironmentScope& operator=(const EnvironmentScope&) = delete;
+    EnvironmentScope(EnvironmentScope&&) = delete;
+    EnvironmentScope& operator=(EnvironmentScope&&) = delete;
 
 private:
     const EnvironmentValues* previous_;
@@ -147,7 +148,7 @@ class ModifiedNode final : public ViewNode {
 public:
     ModifiedNode(View content, std::shared_ptr<const Modifier> modifier)
         : content_(std::move(content)), modifier_(std::move(modifier)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     View content_;
@@ -158,7 +159,7 @@ class LayoutNode final : public ViewNode {
 public:
     LayoutNode(std::shared_ptr<const Layout> layout, std::vector<View> children)
         : layout_(std::move(layout)), children_(std::move(children)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     std::shared_ptr<const Layout> layout_;
@@ -168,8 +169,8 @@ private:
 class ShapeNode final : public ViewNode {
 public:
     explicit ShapeNode(ShapeSpec spec) : spec_(std::move(spec)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
-    const ShapeSpec& spec() const noexcept { return spec_; }
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] const ShapeSpec& spec() const noexcept { return spec_; }
 
 private:
     ShapeSpec spec_;
@@ -178,9 +179,9 @@ private:
 class TextNode final : public ViewNode {
 public:
     TextNode(Prop<std::string> content, TextStyle style) : content_(std::move(content)), style_(std::move(style)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
-    const Prop<std::string>& content() const noexcept { return content_; }
-    const TextStyle& style() const noexcept { return style_; }
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] const Prop<std::string>& content() const noexcept { return content_; }
+    [[nodiscard]] const TextStyle& style() const noexcept { return style_; }
 
 private:
     Prop<std::string> content_;
@@ -190,7 +191,7 @@ private:
 class ButtonNode final : public ViewNode {
 public:
     ButtonNode(View label, std::function<void()> action) : label_(std::move(label)), action_(std::move(action)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     View label_;
@@ -199,8 +200,8 @@ private:
 
 class ScrollNode final : public ViewNode {
 public:
-    ScrollNode(ScrollViewOptions options, View content) : options_(options), content_(std::move(content)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    ScrollNode(ScrollViewOptions options, View content) : options_(std::move(options)), content_(std::move(content)) {}
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     ScrollViewOptions options_;
@@ -212,7 +213,7 @@ public:
     // `area`: a TextArea, whose options are a TextField's that don't apply (secure, line_limit).
     TextFieldNode(Prop<std::string> placeholder, Binding<std::string> text, TextFieldOptions options, bool area)
         : placeholder_(std::move(placeholder)), text_(std::move(text)), options_(std::move(options)), area_(area) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     Prop<std::string> placeholder_;
@@ -228,7 +229,7 @@ public:
     enum class Kind { toggle, checkbox };
     ToggleNode(Kind kind, View label, Binding<bool> value, Prop<bool> mixed = false)
         : kind_(kind), label_(std::move(label)), value_(std::move(value)), mixed_(std::move(mixed)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     Kind kind_;
@@ -237,23 +238,23 @@ private:
     Prop<bool> mixed_;
 };
 
-// `.focused(binding)`.
 // `.on_activate(action)`: clicks, Space/Enter while focused, and the accessibility action.
 class ActivateNode final : public ViewNode {
 public:
     ActivateNode(View content, std::function<void()> action)
         : content_(std::move(content)), action_(std::move(action)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     View content_;
     std::function<void()> action_;
 };
 
+// `.focused(binding)`.
 class FocusedNode final : public ViewNode {
 public:
     FocusedNode(View content, Binding<bool> is_focused) : content_(std::move(content)), is_focused_(std::move(is_focused)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     View content_;
@@ -264,8 +265,8 @@ private:
 class AnimationNode final : public ViewNode {
 public:
     AnimationNode(View content, Animation animation, std::function<bool()> changed)
-        : content_(std::move(content)), animation_(animation), changed_(std::move(changed)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+        : content_(std::move(content)), animation_(std::move(animation)), changed_(std::move(changed)) {}
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     View content_;
@@ -276,7 +277,7 @@ private:
 class LayoutAnimationNode final : public ViewNode {
 public:
     LayoutAnimationNode(View content, bool enabled) : content_(std::move(content)), enabled_(enabled) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         LowerContext inner = context;
         inner.animates_layout = enabled_;
         return detail::lower(content_, inner);
@@ -289,8 +290,8 @@ private:
 
 class TransitionNode final : public ViewNode {
 public:
-    TransitionNode(View content, Transition transition) : content_(std::move(content)), transition_(std::move(transition)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    TransitionNode(View content, Transition transition) : content_(std::move(content)), transition_(transition) {}
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     View content_;
@@ -301,7 +302,7 @@ class IfNode final : public ViewNode {
 public:
     IfNode(Prop<bool> condition, View then_view, View else_view)
         : condition_(std::move(condition)), then_(std::move(then_view)), else_(std::move(else_view)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     Prop<bool> condition_;
@@ -312,8 +313,8 @@ private:
 class ForEachNode final : public ViewNode {
 public:
     explicit ForEachNode(std::function<std::vector<ForEachItem>()> items) : items_(std::move(items)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
-    const std::function<std::vector<ForEachItem>()>& items() const noexcept { return items_; }
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] const std::function<std::vector<ForEachItem>()>& items() const noexcept { return items_; }
 
 private:
     std::function<std::vector<ForEachItem>()> items_;
@@ -369,7 +370,7 @@ private:
 class SpacerNode final : public ViewNode {
 public:
     explicit SpacerNode(float min_length) : min_length_(min_length) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     float min_length_;
@@ -378,7 +379,7 @@ private:
 class CanvasNode final : public ViewNode {
 public:
     explicit CanvasNode(std::function<void(GraphicsContext&)> draw) : draw_(std::move(draw)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     std::function<void(GraphicsContext&)> draw_;
@@ -388,7 +389,7 @@ private:
 class DeferredNode final : public ViewNode {
 public:
     explicit DeferredNode(std::function<View()> body) : body_(std::move(body)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override;
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     std::function<View()> body_;

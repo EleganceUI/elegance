@@ -44,47 +44,71 @@ class VideoSource;
 
 // --- Microphone ---
 
-// The system's audio inputs (microphones, line in, virtual devices).
+/// The system's audio inputs (microphones, line in, virtual devices).
+///
+/// @return The inputs; empty when the system has no audio.
 ELG_API std::vector<AudioDevice> audio_input_devices();
 
+/// Options for AudioRecorder.
 struct AudioRecorderOptions {
-    std::string device_id; // empty: the system's default input
-    std::uint32_t sample_rate = 48000;
-    std::uint32_t channels = 1;
-    // Each block of samples as it arrives (interleaved, -1...1), for streaming or analysis. Runs on
-    // the audio thread: keep it short, and don't touch views or state from it.
+    /// empty: the system's default input. An id that isn't connected makes start() fail, with
+    /// error() saying so.
+    std::string device_id;
+    std::uint32_t sample_rate = 48000; ///< Frames per second, clamped to 8000...192000.
+    std::uint32_t channels = 1;        ///< 1 (mono) or 2 (stereo); other counts are clamped.
+    /// Each block of samples as it arrives (interleaved, -1...1), for streaming or analysis. Runs on
+    /// the audio thread: keep it short, and don't touch views or state from it. If it throws, it
+    /// isn't called again and the exception is rethrown on the UI thread.
     std::function<void(std::span<const float>)> on_samples;
-    // false: samples only go to on_samples (live audio, a meter), so memory doesn't grow while it
-    // runs; duration() and samples() then stay empty.
+    /// false: samples only go to on_samples (live audio, a meter), so memory doesn't grow while it
+    /// runs; duration() and samples() then stay empty.
     bool keeps_samples = true;
 };
 
-// Records from a microphone into memory. Copies share the recording; it stops when the last copy
-// goes.
+/// Records from a microphone into memory. Copies share the recording; it stops when the last copy
+/// goes. Making one doesn't open the microphone; start() does.
 class ELG_API AudioRecorder {
 public:
+    /// @param options The device, format, and what happens to the samples.
     explicit AudioRecorder(AudioRecorderOptions options = {});
 
-    void start() const;  // continues the recording
+    /// Starts recording, after what's already recorded. On failure, error() says why.
+    void start() const;
+    /// Stops recording, keeping what was recorded.
     void stop() const;
+    /// Stops while recording, starts otherwise.
     void toggle() const;
-    void clear() const;  // drops what was recorded
+    /// Drops what was recorded.
+    void clear() const;
 
     // Reactive.
-    bool is_recording() const;
-    double duration() const; // seconds recorded
-    float level() const;     // the input's recent peak, 0...1, while recording
-    std::string error() const;
 
-    std::uint32_t sample_rate() const noexcept;
-    std::uint32_t channels() const noexcept;
-    // What's been recorded: interleaved samples, -1...1.
-    std::vector<float> samples() const;
-    // As a 16-bit WAV file, or in memory. Throws elg::ResourceError if the file can't be written.
+    /// @return Whether it's recording (tracked).
+    [[nodiscard]] bool is_recording() const;
+    /// @return Seconds recorded (tracked; updated about 15 times a second while recording).
+    [[nodiscard]] double duration() const;
+    /// @return The input's recent peak, 0...1, while recording (tracked); 0 when stopped.
+    [[nodiscard]] float level() const;
+    /// @return Why it can't record (no input, access denied); empty when fine (tracked).
+    [[nodiscard]] std::string error() const;
+
+    /// @return The sample rate in use, after clamping.
+    [[nodiscard]] std::uint32_t sample_rate() const noexcept;
+    /// @return The channel count in use, after clamping.
+    [[nodiscard]] std::uint32_t channels() const noexcept;
+    /// @return What's been recorded: interleaved samples, -1...1 (a copy).
+    [[nodiscard]] std::vector<float> samples() const;
+    /// Writes the recording as a 16-bit WAV file.
+    ///
+    /// @param file Where to write it; an existing file is replaced.
+    /// @throws ResourceError If the file can't be written.
     void save_wav(const std::filesystem::path& file) const;
-    std::vector<unsigned char> wav() const;
-    // To play it back.
-    Sound sound() const;
+    /// @return The recording as a 16-bit WAV file, in memory.
+    [[nodiscard]] std::vector<unsigned char> wav() const;
+    /// To play it back.
+    ///
+    /// @return The recording so far, as a Sound.
+    [[nodiscard]] Sound sound() const;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -94,42 +118,60 @@ private:
 
 // --- Camera ---
 
+/// A camera, as listed by camera_devices().
 struct CameraDevice {
-    std::string id; // for CameraOptions::device_id
-    std::string name;
+    std::string id;   ///< for CameraOptions::device_id
+    std::string name; ///< As the system shows it.
 };
 
-// The system's cameras.
+/// The system's cameras. UI thread.
+///
+/// @return The cameras; empty when there are none.
 ELG_API std::vector<CameraDevice> camera_devices();
 
+/// Options for Camera.
 struct CameraOptions {
-    std::string device_id; // empty: the first camera
-    // The preferred resolution; the camera's closest mode is used.
+    std::string device_id; ///< empty: the first camera
+    /// The preferred width in pixels; the camera's closest mode is used.
     std::uint32_t width = 1280;
+    /// The preferred height in pixels; the camera's closest mode is used.
     std::uint32_t height = 720;
-    bool mirrored = true; // the preview shows a mirror image, as people expect of themselves
+    bool mirrored = true; ///< the preview shows a mirror image, as people expect of themselves
 };
 
-// A camera's live picture. Frames go to the GPU, and views showing it redraw on their own. Copies
-// share the camera; it stops when the last copy (and the last view showing it) goes.
+/// A camera's live picture. Frames go to the GPU, and views showing it redraw on their own. Copies
+/// share the camera; it stops when the last copy (and the last view showing it) goes. Making one
+/// doesn't start capturing; start() does.
 class ELG_API Camera {
 public:
+    /// @param options The device, preferred resolution, and whether the preview is mirrored.
     explicit Camera(CameraOptions options = {});
 
+    /// Starts capturing. Failures (no camera, access denied) show in error().
     void start() const;
+    /// Stops capturing.
     void stop() const;
 
     // Reactive.
-    bool is_running() const;
-    Size size() const; // pixels of the frames; zero until the first one
-    std::string error() const;
 
-    // The newest frame as a PNG image (not mirrored), or nullopt before the first frame.
-    std::optional<std::vector<unsigned char>> snapshot() const;
+    /// @return Whether it's capturing (tracked).
+    [[nodiscard]] bool is_running() const;
+    /// @return Pixels of the frames (tracked); zero until the first one.
+    [[nodiscard]] Size size() const;
+    /// @return Why it can't capture; empty when fine (tracked).
+    [[nodiscard]] std::string error() const;
 
-    // Internal: for CameraView.
-    const std::shared_ptr<detail::VideoSource>& source() const noexcept { return source_; }
-    bool mirrored() const noexcept { return mirrored_; }
+    /// @return The newest frame as a PNG image (not mirrored), or nullopt before the first frame.
+    [[nodiscard]] std::optional<std::vector<unsigned char>> snapshot() const;
+
+    /// Internal: for CameraView.
+    ///
+    /// @return The camera's frame source.
+    [[nodiscard]] const std::shared_ptr<detail::VideoSource>& source() const noexcept { return source_; }
+    /// Internal: for CameraView.
+    ///
+    /// @return CameraOptions::mirrored.
+    [[nodiscard]] bool mirrored() const noexcept { return mirrored_; }
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -138,8 +180,13 @@ private:
     ELG_PRIVATE_MEMBERS_END
 };
 
-// The camera's picture, filling (cropped to) or fitted into the space offered.
-ELG_API View CameraView(Camera camera, ContentMode mode = ContentMode::fill);
+/// The camera's picture, filling (cropped to) or fitted into the space offered, on black. Without a
+/// proposed size, it takes the frames' size (320 x 180 until the first frame).
+///
+/// @param camera The camera to show; the view keeps it alive. Mirrored if CameraOptions::mirrored.
+/// @param mode ContentMode::fill crops the picture to the view; ContentMode::fit shows all of it.
+/// @return The view.
+ELG_API View CameraView(const Camera& camera, ContentMode mode = ContentMode::fill);
 
 } // namespace elg
 

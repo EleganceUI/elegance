@@ -37,7 +37,7 @@ struct Affine {
         oy = yx * x + yy * y + dy;
     }
     // The transform's average scale (for radii).
-    double scale() const { return std::sqrt(std::abs(xx * yy - xy * yx)); }
+    [[nodiscard]] double scale() const { return std::sqrt(std::abs(xx * yy - xy * yx)); }
 
     static Affine translate(double x, double y) { return {1, 0, x, 0, 1, y}; }
     // `m` about the point (cx, cy).
@@ -118,7 +118,8 @@ private:
         case FT_COLR_PAINTFORMAT_ROTATE: {
             const FT_PaintRotate& r = paint.u.rotate;
             const double angle = fixed(r.angle) * std::numbers::pi; // counter-clockwise, y up
-            const double c = std::cos(angle), s = std::sin(angle);
+            const double c = std::cos(angle);
+            const double s = std::sin(angle);
             t = Affine::around({c, -s, 0, s, c, 0}, fixed(r.center_x), fixed(r.center_y));
             child = r.paint;
             return true;
@@ -173,7 +174,10 @@ private:
         }
 
         auto polygons = std::make_shared<std::vector<std::vector<Point>>>();
-        float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+        float x0 = 0;
+        float y0 = 0;
+        float x1 = 0;
+        float y1 = 0;
         bool any = false;
         for (Path::Polyline& line : outline.path.flatten(1.f / 1024)) {
             if (line.points.size() < 3) {
@@ -195,15 +199,16 @@ private:
     }
 
     struct Outline {
-        const PaintWalker* walker;
-        const Affine* m;
+        const PaintWalker* walker = nullptr;
+        const Affine* m = nullptr;
         Path path;
         Point point(const FT_Vector* v) const { return walker->to_em(*m, static_cast<double>(v->x), static_cast<double>(v->y)); }
     };
 
     // Font units (y up) under `m` to em units (y down).
-    Point to_em(const Affine& m, double x, double y) const {
-        double ox = 0, oy = 0;
+    [[nodiscard]] Point to_em(const Affine& m, double x, double y) const {
+        double ox = 0;
+        double oy = 0;
         m.apply(x, y, ox, oy);
         return {static_cast<float>(ox * em_), static_cast<float>(-oy * em_)};
     }
@@ -218,7 +223,7 @@ private:
         return true;
     }
 
-    std::vector<ColorStop> stops_of(FT_ColorLine line) const {
+    [[nodiscard]] std::vector<ColorStop> stops_of(FT_ColorLine line) const {
         std::vector<ColorStop> stops;
         FT_ColorStop stop{};
         while (FT_Get_Colorline_Stops(face_, &stop, &line.color_stop_iterator)) {
@@ -249,9 +254,12 @@ private:
             out.kind = ColorPaint::Kind::linear;
             out.stops = stops_of(g.colorline);
             // The gradient runs from p0 toward p1, along the normal of the line p0-p2.
-            const double x0 = fixed(g.p0.x), y0 = fixed(g.p0.y);
-            double x1 = fixed(g.p1.x), y1 = fixed(g.p1.y);
-            const double nx = -(fixed(g.p2.y) - y0), ny = fixed(g.p2.x) - x0;
+            const double x0 = fixed(g.p0.x);
+            const double y0 = fixed(g.p0.y);
+            double x1 = fixed(g.p1.x);
+            double y1 = fixed(g.p1.y);
+            const double nx = -(fixed(g.p2.y) - y0);
+            const double ny = fixed(g.p2.x) - x0;
             const double nn = nx * nx + ny * ny;
             if (nn > 1e-9) {
                 const double t = ((x1 - x0) * nx + (y1 - y0) * ny) / nn;
@@ -284,7 +292,7 @@ private:
             for (const ColorStop& s : stops) {
                 sum = {sum.r + s.color.r, sum.g + s.color.g, sum.b + s.color.b, sum.a + s.color.a};
             }
-            const float n = static_cast<float>(stops.size());
+            const auto n = static_cast<float>(stops.size());
             out.color = {sum.r / n, sum.g / n, sum.b / n, sum.a / n};
             out.foreground = stops.front().foreground;
             return true;

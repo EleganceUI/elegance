@@ -92,7 +92,7 @@ public:
     void reset() override { tracking_ = false; }
 
     // Hold, then drag: held long enough, it begins where the pointer is.
-    std::optional<double> deadline() const override {
+    [[nodiscard]] std::optional<double> deadline() const override {
         return tracking_ && !active_ && options_.hold > 0 ? std::optional(held_due_) : std::nullopt;
     }
     bool expire() override {
@@ -145,7 +145,7 @@ private:
         }
     }
 
-    DragEvent make_event(const PointerEvent& event, Rect frame) const {
+    [[nodiscard]] DragEvent make_event(const PointerEvent& event, Rect frame) const {
         return {
             .location = {event.location.x - frame.x, event.location.y - frame.y},
             .start_location = start_,
@@ -166,7 +166,7 @@ private:
         }
     }
 
-    Point velocity() const {
+    [[nodiscard]] Point velocity() const {
         if (samples_.size() < 2) {
             return {};
         }
@@ -224,7 +224,7 @@ public:
         return false;
     }
 
-    std::optional<double> deadline() const override {
+    [[nodiscard]] std::optional<double> deadline() const override {
         return pressing_ && !active_ ? std::optional(due_) : std::nullopt;
     }
 
@@ -279,7 +279,7 @@ struct PhasedCallbacks {
     std::function<void(const Event&)> ended;
     std::function<void()> cancelled;
 
-    EventResult deliver(const Event& event) const {
+    [[nodiscard]] EventResult deliver(const Event& event) const {
         const auto call = [&](const std::function<void(const Event&)>& action) {
             if (action) {
                 action(event);

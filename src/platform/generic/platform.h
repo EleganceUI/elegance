@@ -64,7 +64,7 @@ enum class EventType {
     window_fullscreen_changed,
     magnify,       // trackpad pinch
     rotate,        // two fingers turning
-    two_finger_double_tap, // two-finger double tap
+    two_finger_double_tap,
     system_theme_changed,
     // Drag and drop from other apps: begin, position (while over the window), a file or text
     // (one event each), complete (dropped, or the drag left).
@@ -147,14 +147,16 @@ public:
 
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
+    Window(Window&&) = delete;
+    Window& operator=(Window&&) = delete;
 
-    std::uint32_t id() const noexcept { return id_; }
-    PixelSize pixel_size() const;
+    [[nodiscard]] std::uint32_t id() const noexcept { return id_; }
+    [[nodiscard]] PixelSize pixel_size() const;
     // Pixels per logical point.
-    float scale() const;
-    Size logical_size() const;
+    [[nodiscard]] float scale() const;
+    [[nodiscard]] Size logical_size() const;
     // Converts window coordinates (as in pointer events) to logical points.
-    Point to_logical(float x, float y) const;
+    [[nodiscard]] Point to_logical(float x, float y) const;
     // Text input (IME) for this window, and where the text being edited is (logical points).
     // `secure`: a password's, as the platforms' password fields do it: SDL's password input type
     // (Wayland turns the IME off), the IME detached (Windows), and Secure Event Input while the
@@ -170,15 +172,15 @@ public:
     // Whether to show the window before drawing its first frame, rather than after. Wayland
     // forbids drawing into a window before the compositor configures it, which showing does
     // (and maps windows only once they have a frame, so they never appear blank there anyway).
-    bool shows_before_first_frame() const;
+    [[nodiscard]] static bool shows_before_first_frame();
     // The window system's handle (HWND on Windows), or nullptr.
-    void* native_handle() const;
+    [[nodiscard]] void* native_handle() const;
 
     void minimize();
     void toggle_maximized();
-    bool maximized() const;
+    [[nodiscard]] bool maximized() const;
     // Asks to close, like the system close button (arrives as window_close_requested).
-    void request_close();
+    void request_close() const;
     // Where the system draws its window controls over the content (TitleBar::integrated on
     // macOS), in logical points; empty elsewhere and in fullscreen. Integrates the title bar again
     // first, as leaving fullscreen undoes it: call after window_fullscreen_changed.
@@ -191,8 +193,8 @@ public:
     void set_popup_frame(Rect frame);
     // The usable area of this window's display (without taskbars), in this window's logical
     // points relative to its content.
-    Rect usable_area() const;
-    HitArea hit_test_at(Point point) const { return hit_test_ ? hit_test_(point) : HitArea::normal; }
+    [[nodiscard]] Rect usable_area() const;
+    [[nodiscard]] HitArea hit_test_at(Point point) const { return hit_test_ ? hit_test_(point) : HitArea::normal; }
 
     // The system's light/dark setting changed: what the OS draws itself follows it (Windows'
     // title bar and Mica).
@@ -200,7 +202,7 @@ public:
 
     // The handles the render thread creates this window's surface from. The surface must be
     // gone before this window.
-    SurfaceSource surface_source() const;
+    [[nodiscard]] SurfaceSource surface_source() const;
 
 private:
     SDL_Window* window_ = nullptr;
@@ -221,7 +223,6 @@ bool draws_material(const WindowDesc& desc);
 // default background is then clear and its surface composited with alpha.
 bool see_through(const WindowDesc& desc);
 
-// Owns SDL's lifetime. Construct on the main thread, which becomes the UI thread.
 // Whether one of the app's windows has keyboard focus.
 bool any_window_focused();
 // The window with keyboard focus (0: none).
@@ -235,6 +236,7 @@ void set_clipboard_text(const std::string& text);
 // The pointer's shape (automatic: the arrow).
 void set_pointer_style(PointerStyle style);
 
+// Owns SDL's lifetime. Construct on the main thread, which becomes the UI thread.
 class Platform {
 public:
     using LiveResizeCallback = MoveOnlyFunction<void(std::uint32_t window_id)>;
@@ -244,6 +246,8 @@ public:
 
     Platform(const Platform&) = delete;
     Platform& operator=(const Platform&) = delete;
+    Platform(Platform&&) = delete;
+    Platform& operator=(Platform&&) = delete;
 
     // Blocks until an event arrives.
     Event wait_event();
@@ -252,7 +256,7 @@ public:
     std::optional<Event> poll_event();
 
     // Wakes wait_event() with EventType::wake. Thread-safe.
-    void wake();
+    void wake() const;
 
     // Queues a press and release of `key` for `window_id`, as if typed (Event::synthetic). UI
     // thread.

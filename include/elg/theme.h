@@ -15,29 +15,36 @@
 
 namespace elg {
 
+/// Light or dark: which of a Theme's color sets applies (View::color_scheme()).
 enum class ColorScheme { light, dark };
 
-// Semantic colors, resolved against the environment's theme and color scheme where they're used:
-//   Text("Details").foreground_style(ThemeColor::secondary)
-//   RoundedRectangle(12).fill(ThemeColor::surface)
+/// Semantic colors, resolved against the environment's theme and color scheme where they're used:
+///
+/// @code
+/// Text("Details").foreground_style(ThemeColor::secondary)
+/// RoundedRectangle(12).fill(ThemeColor::surface)
+/// @endcode
 enum class ThemeColor {
-    background,     // window background
-    surface,        // cards, panels
-    surface_raised, // controls and panels on surfaces
-    outline,        // borders, separators
-    primary,        // main text and icons
-    secondary,      // supporting text
-    tertiary,       // hints, disabled text
-    accent,         // the tint: prominent buttons, selection
-    on_accent,      // text and icons on the accent
+    background,     ///< window background
+    surface,        ///< cards, panels
+    surface_raised, ///< controls and panels on surfaces
+    outline,        ///< borders, separators
+    primary,        ///< main text and icons
+    secondary,      ///< supporting text
+    tertiary,       ///< hints, disabled text
+    accent,         ///< the tint: prominent buttons, selection
+    on_accent,      ///< text and icons on the accent
     danger,
     success,
     warning,
-    // Frosted glass: translucent tints for under a .backdrop_blur(), thinnest to thickest. Light
-    // in light mode and dark in dark mode by default:
-    //   Text("Now playing").padding(12)
-    //       .background(ThemeColor::glass_regular, RoundedRectangle(12))
-    //       .backdrop_blur(ThemeBlur::xl, RoundedRectangle(12), {.saturation = 1.8f, .noise = 0.02f})
+    /// Frosted glass: translucent tints for under a .backdrop_blur(), thinnest to thickest. Light
+    /// in light mode and dark in dark mode by default:
+    ///
+    /// @code
+    /// Text("Now playing").padding(12)
+    ///     .background(ThemeColor::glass_regular, RoundedRectangle(12))
+    ///     .backdrop_blur(ThemeBlur::xl, RoundedRectangle(12), {.saturation = 1.8f, .noise = 0.02f})
+    /// @endcode
     glass_ultra_thin,
     glass_thin,
     glass_regular,
@@ -45,25 +52,30 @@ enum class ThemeColor {
     glass_ultra_thick,
 };
 
+/// A Theme's colors for one color scheme: one per ThemeColor, named after it.
 struct ColorTokens {
-    Color background;
-    Color surface;
-    Color surface_raised;
-    Color outline;
-    Color primary;
-    Color secondary;
-    Color tertiary;
-    Color accent;
-    Color on_accent;
-    Color danger;
-    Color success;
-    Color warning;
-    Color glass_ultra_thin;
-    Color glass_thin;
-    Color glass_regular;
-    Color glass_thick;
-    Color glass_ultra_thick;
+    Color background;        ///< ThemeColor::background
+    Color surface;           ///< ThemeColor::surface
+    Color surface_raised;    ///< ThemeColor::surface_raised
+    Color outline;           ///< ThemeColor::outline
+    Color primary;           ///< ThemeColor::primary
+    Color secondary;         ///< ThemeColor::secondary
+    Color tertiary;          ///< ThemeColor::tertiary
+    Color accent;            ///< ThemeColor::accent
+    Color on_accent;         ///< ThemeColor::on_accent
+    Color danger;            ///< ThemeColor::danger
+    Color success;           ///< ThemeColor::success
+    Color warning;           ///< ThemeColor::warning
+    Color glass_ultra_thin;  ///< ThemeColor::glass_ultra_thin
+    Color glass_thin;        ///< ThemeColor::glass_thin
+    Color glass_regular;     ///< ThemeColor::glass_regular
+    Color glass_thick;       ///< ThemeColor::glass_thick
+    Color glass_ultra_thick; ///< ThemeColor::glass_ultra_thick
 
+    /// The color for a token.
+    ///
+    /// @param token The semantic color.
+    /// @return The field named after `token`.
     constexpr Color operator[](ThemeColor token) const noexcept {
         switch (token) {
         case ThemeColor::background: return background;
@@ -88,21 +100,28 @@ struct ColorTokens {
     }
 };
 
-// Blur radii, smallest to largest, resolved against the environment's theme where they're used
-// (.blur(), .backdrop_blur()). xxl and xxxl are 2xl and 3xl.
-//   Image({.file = "cover.jpg"}).blur(ThemeBlur::sm)
+/// Blur radii, smallest to largest, resolved against the environment's theme where they're used
+/// (.blur(), .backdrop_blur()). xxl and xxxl are 2xl and 3xl.
+///
+/// @code
+/// Image({.file = "cover.jpg"}).blur(ThemeBlur::sm)
+/// @endcode
 enum class ThemeBlur { xs, sm, md, lg, xl, xxl, xxxl };
 
-// In points.
+/// A Theme's blur radii, one per ThemeBlur, named after it. In points.
 struct BlurTokens {
-    float xs = 4;
-    float sm = 8;
-    float md = 12;
-    float lg = 16;
-    float xl = 24;
-    float xxl = 40;
-    float xxxl = 64;
+    float xs = 4;    ///< ThemeBlur::xs
+    float sm = 8;    ///< ThemeBlur::sm
+    float md = 12;   ///< ThemeBlur::md
+    float lg = 16;   ///< ThemeBlur::lg
+    float xl = 24;   ///< ThemeBlur::xl
+    float xxl = 40;  ///< ThemeBlur::xxl
+    float xxxl = 64; ///< ThemeBlur::xxxl
 
+    /// The radius for a token.
+    ///
+    /// @param token The blur size.
+    /// @return The field named after `token`, in points.
     constexpr float operator[](ThemeBlur token) const noexcept {
         switch (token) {
         case ThemeBlur::xs: return xs;
@@ -117,16 +136,24 @@ struct BlurTokens {
     }
 };
 
+/// What ThemeColor and ThemeBlur tokens resolve to: colors for light and dark, and blur radii.
+/// Set for a subtree with View::theme().
 struct Theme {
-    ColorTokens light;
-    ColorTokens dark;
-    BlurTokens blur;
+    ColorTokens light; ///< colors in ColorScheme::light
+    ColorTokens dark;  ///< colors in ColorScheme::dark
+    BlurTokens blur{}; ///< blur radii, the same in both schemes
 
-    constexpr const ColorTokens& colors(ColorScheme scheme) const noexcept {
+    /// The colors for a color scheme.
+    ///
+    /// @param scheme Light or dark.
+    /// @return `dark` for ColorScheme::dark, else `light`.
+    [[nodiscard]] constexpr const ColorTokens& colors(ColorScheme scheme) const noexcept {
         return scheme == ColorScheme::dark ? dark : light;
     }
 
-    // The default: neutral grays with a blue accent.
+    /// The default: neutral grays with a blue accent.
+    ///
+    /// @return The standard theme, the environment's default (ThemeKey).
     static constexpr Theme standard() noexcept {
         return {
             .light = {
@@ -171,9 +198,12 @@ struct Theme {
     }
 };
 
-// The accent color the person chose in the system's settings, or nullopt where there's none
-// (or the platform doesn't say: Linux desktops through the settings portal, if at all).
-// Reactive: reads update when it changes. UI thread, while an App runs.
+/// The accent color the person chose in the system's settings, or nullopt where there's none
+/// (or the platform doesn't say: Linux desktops through the settings portal, if at all).
+/// Reactive: reads update when it changes. UI thread, while an App runs; without one it asks the
+/// system each time, and the read isn't tracked.
+///
+/// @return The accent color, or std::nullopt.
 ELG_API std::optional<Color> system_accent_color();
 
 } // namespace elg

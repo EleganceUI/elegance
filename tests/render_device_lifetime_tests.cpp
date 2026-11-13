@@ -1,5 +1,7 @@
-// This Source Code Form is subject to the terms of the Mozilla Public License,
-// v. 2.0.
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file, You can obtain one at
+// https://mozilla.org/MPL/2.0/.
+
 #include "gpu/device.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -11,8 +13,8 @@ TEST_CASE("accepted frames can retain a usable device after renderer shutdown",
   using namespace elg::detail::gpu;
   std::shared_ptr<RenderDevice> retained;
   {
-    Instance instance;
-    Device device(instance);
+    const Instance instance;
+    const Device device(instance);
     retained = render_device();
     REQUIRE(retained);
     REQUIRE(retained->active);

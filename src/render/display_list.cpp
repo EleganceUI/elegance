@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numbers>
 
 namespace elg::detail {
 
@@ -157,22 +158,22 @@ void append_faded(DisplayList& list, DisplayList&& content, float opacity) {
         if (auto* rect = std::get_if<RectCommand>(&content.commands.front())) {
             rect->fill = with_opacity(rect->fill, opacity);
             rect->border = rect->border.opacity(opacity);
-            list.commands.push_back(std::move(*rect));
+            list.commands.emplace_back(std::move(*rect));
             return;
         }
         if (auto* video = std::get_if<VideoCommand>(&content.commands.front())) {
             video->opacity *= opacity;
-            list.commands.push_back(std::move(*video));
+            list.commands.emplace_back(std::move(*video));
             return;
         }
         if (auto* image = std::get_if<ImageCommand>(&content.commands.front())) {
             image->opacity *= opacity;
-            list.commands.push_back(std::move(*image));
+            list.commands.emplace_back(std::move(*image));
             return;
         }
         if (auto* path = std::get_if<PathCommand>(&content.commands.front())) {
             path->fill = with_opacity(path->fill, opacity);
-            list.commands.push_back(std::move(*path));
+            list.commands.emplace_back(std::move(*path));
             return;
         }
     }
@@ -185,10 +186,10 @@ void append_faded(DisplayList& list, DisplayList&& content, float opacity) {
     if (!bounds) {
         return;
     }
-    list.commands.push_back(PushLayerCommand{*bounds, opacity, std::nullopt, std::nullopt});
+    list.commands.emplace_back(PushLayerCommand{*bounds, opacity, std::nullopt, std::nullopt});
     list.commands.insert(list.commands.end(), std::make_move_iterator(content.commands.begin()),
                          std::make_move_iterator(content.commands.end()));
-    list.commands.push_back(PopLayerCommand{});
+    list.commands.emplace_back(PopLayerCommand{});
 }
 
 Rect union_of(const Rect& a, const Rect& b) {
@@ -254,7 +255,7 @@ ColorMatrix color_matrix(ColorFilter::Kind kind, float amount, Color color) {
     case Kind::saturation: saturate(std::max(amount, 0.f)); break;
     case Kind::grayscale: saturate(1 - std::clamp(amount, 0.f, 1.f)); break;
     case Kind::hue_rotation: {
-        const float radians = amount * 3.14159265f / 180;
+        const float radians = amount * std::numbers::pi_v<float> / 180;
         const float c = std::cos(radians);
         const float s = std::sin(radians);
         rgb({0.213f + c * 0.787f - s * 0.213f, 0.715f - c * 0.715f - s * 0.715f, 0.072f - c * 0.072f + s * 0.928f,
@@ -305,7 +306,10 @@ Color apply(const ColorMatrix& m, Color color) {
 }
 
 Rect transformed_bounds(const LayerTransform& t, const Rect& r) {
-    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    float x0 = 0;
+    float y0 = 0;
+    float x1 = 0;
+    float y1 = 0;
     const Point corners[] = {{r.x, r.y}, {r.max_x(), r.y}, {r.x, r.max_y()}, {r.max_x(), r.max_y()}};
     for (std::size_t i = 0; i < 4; ++i) {
         const float dx = corners[i].x - t.pivot.x;

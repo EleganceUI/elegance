@@ -23,7 +23,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <optional>
+#include <memory>
 
 using namespace elg;
 using detail::place_floating;
@@ -41,7 +41,7 @@ bool same(Point a, Point b) {
 struct Window {
     std::unique_ptr<detail::Element> root;
     detail::FocusManager focus;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
     bool tree_changed = false;
 
     explicit Window(const View& view) {
@@ -49,7 +49,7 @@ struct Window {
             detail::lower(ZStack({.alignment = Alignment::top_leading}, Rectangle().fill(Color::white), view),
                           {.text = &text_system(), .tree_changed = &tree_changed, .focus = &focus}));
         layout();
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 
     // As the app does each frame: effects (bindings changing), then layout.
@@ -76,7 +76,7 @@ struct Window {
 };
 
 // A 50 x 20 button at (100, 100) with 80 x 40 floating content.
-View Anchored(State<bool> shown, int& anchor_clicks, int& content_clicks, FloatingOptions options) {
+View Anchored(const State<bool>& shown, int& anchor_clicks, int& content_clicks, FloatingOptions options) {
     options.boundary = FloatingBoundary::window;
     return Rectangle()
         .fill(Color::black)
@@ -117,7 +117,7 @@ TEST_CASE("floating content flips to fit, and stays inside its area", "[floating
 
 TEST_CASE("in-window floating content opens by its view and takes clicks", "[floating]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> shown(false);
     int anchor_clicks = 0;
     int content_clicks = 0;
@@ -140,7 +140,7 @@ TEST_CASE("in-window floating content opens by its view and takes clicks", "[flo
 
 TEST_CASE("a press outside in-window floating content closes it, and goes no further", "[floating]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> shown(true);
     int anchor_clicks = 0;
     int content_clicks = 0;
@@ -157,7 +157,7 @@ TEST_CASE("a press outside in-window floating content closes it, and goes no fur
 
 TEST_CASE("in-window floating content that ignores outside clicks leaves the window usable", "[floating]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> shown(true);
     int anchor_clicks = 0;
     int content_clicks = 0;
@@ -190,12 +190,12 @@ int children(detail::Element& element) {
 
 TEST_CASE("a popover's chrome comes from the environment's PopoverStyle", "[floating]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     struct Recording final : PopoverStyle {
         int* built;
         bool* padded;
         Recording(int* b, bool* p) : built(b), padded(p) {}
-        View make_body(const PopoverConfiguration& popover) const override {
+        [[nodiscard]] View make_body(const PopoverConfiguration& popover) const override {
             ++*built;
             *padded = popover.is_padded();
             return popover.content;
@@ -216,7 +216,7 @@ TEST_CASE("a popover's chrome comes from the environment's PopoverStyle", "[floa
 
 TEST_CASE("an in-window tooltip shows on hover, lets the pointer through, and hides on leaving", "[floating]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int built = 0;
     int clicks = 0;
     Window window(ZStack({.alignment = Alignment::top_leading},
@@ -250,17 +250,17 @@ TEST_CASE("an in-window tooltip shows on hover, lets the pointer through, and hi
 
 TEST_CASE("a menu's panel comes from the environment's MenuStyle", "[floating]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int built = 0;
     struct Recording final : MenuStyle {
         int* built;
         explicit Recording(int* b) : built(b) {}
-        View make_body(const MenuConfiguration& menu) const override {
+        [[nodiscard]] View make_body(const MenuConfiguration& menu) const override {
             ++*built;
             return menu.items;
         }
     };
-    Window window(Menu(MenuItem("Open", [] {})).menu_style(Recording(&built)));
+    const Window window(Menu(MenuItem("Open", [] {})).menu_style(Recording(&built)));
     CHECK(built == 1);
 }
 
@@ -294,7 +294,7 @@ TEST_CASE("a scale transition can grow from an edge", "[floating]") {
 
 TEST_CASE("in-window floating content with a motion animates in, then out before it goes", "[floating]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     detail::set_frame_time(100);
     const State<bool> shown(false);
     int anchor_clicks = 0;
@@ -333,11 +333,11 @@ TEST_CASE("in-window floating content with a motion animates in, then out before
 
 TEST_CASE("a popover takes its motion from its style unless its options give one", "[floating]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     detail::set_frame_time(100);
     struct Fading final : PopoverStyle {
-        View make_body(const PopoverConfiguration& popover) const override { return popover.content; }
-        PopupMotion motion() const override { return {Transition::opacity(), Animation::linear(1)}; }
+        [[nodiscard]] View make_body(const PopoverConfiguration& popover) const override { return popover.content; }
+        [[nodiscard]] PopupMotion motion() const override { return {Transition::opacity(), Animation::linear(1)}; }
     };
     const State<bool> styled(true);
     const State<bool> overridden(true);
@@ -356,7 +356,7 @@ TEST_CASE("a popover takes its motion from its style unless its options give one
 
 TEST_CASE("a press on in-window floating content that nothing in it takes keeps it open", "[floating]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> shown(true);
     Window window(Rectangle()
                       .fill(Color::black)
@@ -407,7 +407,7 @@ struct ContainerScene {
 
 TEST_CASE("container-bound floating content stays inside its container", "[floating][container]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     ContainerScene scene;
     Window window(scene.view(true));
     window.layout();
@@ -424,7 +424,7 @@ TEST_CASE("container-bound floating content stays inside its container", "[float
 
 TEST_CASE("without a container, container-bound content uses the window", "[floating][container]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     ContainerScene scene;
     Window window(scene.view(false));
     window.layout();
@@ -435,7 +435,7 @@ TEST_CASE("without a container, container-bound content uses the window", "[floa
 
 TEST_CASE("presses and Esc close container-bound content from anywhere in the window", "[floating][container]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     ContainerScene scene;
     Window window(scene.view(true));
     window.layout();
@@ -452,7 +452,7 @@ TEST_CASE("presses and Esc close container-bound content from anywhere in the wi
 
 TEST_CASE("container-bound content is drawn clipped to its container", "[floating][container]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     ContainerScene scene;
     Window window(scene.view(true));
     window.layout();
@@ -469,7 +469,7 @@ TEST_CASE("container-bound content is drawn clipped to its container", "[floatin
 
 TEST_CASE("container-bound content moves with its container", "[floating][container]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     ContainerScene scene;
     Window window(scene.view(true).offset(0, 50));
     window.layout();
@@ -481,7 +481,7 @@ TEST_CASE("container-bound content moves with its container", "[floating][contai
 
 TEST_CASE("Esc closes in-window floating content under the pointer after the event", "[floating]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> shown(true);
     int anchor_clicks = 0;
     int content_clicks = 0;
@@ -498,7 +498,7 @@ TEST_CASE("Esc closes in-window floating content under the pointer after the eve
 
 TEST_CASE("closing container-bound content by Esc or a press takes it off the screen", "[floating][container]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     ContainerScene scene;
     Window window(scene.view(true));
     window.layout();
@@ -520,7 +520,7 @@ TEST_CASE("closing container-bound content by Esc or a press takes it off the sc
 
 TEST_CASE("container-bound content leaves the window's layer with its container", "[floating][container]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<bool> container_shown(true);
     const State<bool> shown(true);
     int content_clicks = 0;

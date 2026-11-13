@@ -35,6 +35,8 @@ public:
     ~LayoutAnimationScope();
     LayoutAnimationScope(const LayoutAnimationScope&) = delete;
     LayoutAnimationScope& operator=(const LayoutAnimationScope&) = delete;
+    LayoutAnimationScope(LayoutAnimationScope&&) = delete;
+    LayoutAnimationScope& operator=(LayoutAnimationScope&&) = delete;
 
 private:
     const Animation* previous_;
@@ -46,7 +48,7 @@ struct ImplicitAnimation {
     Animation animation;
     std::uint64_t fired_flush = 0;
 
-    bool fired() const noexcept { return fired_flush != 0 && fired_flush == current_flush(); }
+    [[nodiscard]] bool fired() const noexcept { return fired_flush != 0 && fired_flush == current_flush(); }
 };
 
 inline float interpolate(float a, float b, double t) {
@@ -99,7 +101,7 @@ public:
         start_ = frame_time();
     }
 
-    T current() const {
+    [[nodiscard]] T current() const {
         if (!animation_) {
             return to_;
         }
@@ -113,8 +115,8 @@ public:
         to_ = to_ + delta;
     }
 
-    bool animating() const { return animation_ && !animation_->finished(frame_time() - start_); }
-    const T& target() const noexcept { return to_; }
+    [[nodiscard]] bool animating() const { return animation_ && !animation_->finished(frame_time() - start_); }
+    [[nodiscard]] const T& target() const noexcept { return to_; }
 
 private:
     T from_;

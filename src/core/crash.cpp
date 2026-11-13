@@ -53,7 +53,7 @@ std::string to_text(const StackTrace& trace) {
         text += symbols ? symbols[i] : std::format("{}", trace.frames[i]);
         text += '\n';
     }
-    std::free(symbols);
+    std::free(static_cast<void*>(symbols));
     return text;
 }
 #endif
@@ -95,7 +95,7 @@ std::filesystem::path write_report(const std::string& report) {
 
 [[noreturn]] void on_terminate() noexcept {
     std::string message = "std::terminate called";
-    if (std::exception_ptr current = std::current_exception()) {
+    if (const std::exception_ptr current = std::current_exception()) {
         try {
             std::rethrow_exception(current);
         } catch (const std::exception& e) {
@@ -109,7 +109,7 @@ std::filesystem::path write_report(const std::string& report) {
 
 } // namespace
 
-void internal_error(std::string_view message, std::source_location where, StackTrace trace) {
+void internal_error(std::string_view message, std::source_location where, const StackTrace& trace) {
     // A crash while reporting a crash: give up immediately.
     if (g_crashing.test_and_set()) {
         std::abort();

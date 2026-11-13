@@ -38,7 +38,7 @@ void layout(detail::Element& root) {
 
 TEST_CASE("a lazy stack gives each item with a repeated key its own row", "[lazy]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const State<std::vector<int>> items(std::vector<int>{1, 1, 2});
     int built = 0;
     auto root = detail::lower(LazyVStack({.spacing = 0}, ForEach(items, [](int item) { return item; },
@@ -71,7 +71,7 @@ TEST_CASE("a lazy stack gives each item with a repeated key its own row", "[lazy
 
 TEST_CASE("a scroll position that outlives its scroll view and window does nothing", "[scroll]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const ScrollPosition position;
     {
         auto needs_frame = std::make_unique<bool>(false); // the window's, gone with it below
@@ -87,7 +87,7 @@ TEST_CASE("a scroll position that outlives its scroll view and window does nothi
 
 TEST_CASE("only elements with a handler take focus whoever asks", "[focus]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     detail::FocusManager focus;
     auto root = detail::lower(Rectangle().frame(10, 10), {}); // a screen reader can name it
     CHECK_FALSE(focus.focus(root.get(), true));

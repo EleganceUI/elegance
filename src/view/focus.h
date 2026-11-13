@@ -21,10 +21,10 @@ public:
     // `services` turns text input on while a view that accepts text has focus.
     explicit FocusManager(WindowServices* services = nullptr) noexcept : services_(services) {}
 
-    Element* focused() const noexcept { return focused_; }
-    bool ring_visible() const noexcept { return visible_; }
+    [[nodiscard]] Element* focused() const noexcept { return focused_; }
+    [[nodiscard]] bool ring_visible() const noexcept { return visible_; }
     // Whether focus last arrived by Tab (not a click or code): text fields select all then.
-    bool navigated() const noexcept { return navigated_; }
+    [[nodiscard]] bool navigated() const noexcept { return navigated_; }
 
     // Moves focus to `element` (nullptr: none) and tells the handlers that lost and gained it.
     // `navigated`: by Tab. Returns true when the window needs a new frame.

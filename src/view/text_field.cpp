@@ -322,7 +322,7 @@ void TextEditor::relayout(float width) {
     text_stops_.push_back(0);
     text_stops_.push_back(text_.size());
     std::ranges::sort(text_stops_);
-    text_stops_.erase(std::unique(text_stops_.begin(), text_stops_.end()), text_stops_.end());
+    text_stops_.erase(std::ranges::unique(text_stops_).begin(), text_stops_.end());
 }
 
 void TextEditor::layout_changed() {
@@ -521,7 +521,7 @@ void TextEditor::paint(DisplayList& list, Rect frame) const {
     const float line_height = shape_.line_height > 0 ? shape_.line_height : line_height_;
     const Point origin{frame.x - scroll_x_, frame.y - scroll_y_};
 
-    list.commands.push_back(PushClipCommand{Rect{frame.x - kCaretWidth, frame.y, frame.width + 2 * kCaretWidth, frame.height}, {}});
+    list.commands.emplace_back(PushClipCommand{Rect{frame.x - kCaretWidth, frame.y, frame.width + 2 * kCaretWidth, frame.height}, {}});
 
     if (focused_ && !composing() && caret_ != anchor_) {
         const std::size_t s0 = to_shown(selection_start());
@@ -554,7 +554,7 @@ void TextEditor::paint(DisplayList& list, Rect frame) const {
             if (s1 > last->byte) {
                 x1 += size_ * 0.3f; // a selected line break shows as a sliver
             }
-            list.commands.push_back(RectCommand{{origin.x + x0, origin.y + static_cast<float>(li) * line_height, x1 - x0,
+            list.commands.emplace_back(RectCommand{{origin.x + x0, origin.y + static_cast<float>(li) * line_height, x1 - x0,
                                                  line_height},
                                                 {}, ShapeStyle(selection), Color::clear, 0});
         }
@@ -572,7 +572,7 @@ void TextEditor::paint(DisplayList& list, Rect frame) const {
         } else {
             std::vector<DrawStyle> styles = styles_template_;
             for (std::size_t i = 0; i < styles.size(); ++i) {
-                styles[i].color = i < style_colors_.size() && style_colors_[i] ? *style_colors_[i] : foreground;
+                styles[i].color = i < style_colors_.size() ? style_colors_[i].value_or(foreground) : foreground;
             }
             draw_styled(list, text_system_->atlas, *face_, shape_, layout_, styles, origin, size_, scale);
         }
@@ -585,7 +585,7 @@ void TextEditor::paint(DisplayList& list, Rect frame) const {
         const CaretStop& end = stop_at(at + composition_.size());
         if (start.line == end.line) {
             const float y = origin.y + static_cast<float>(start.line) * line_height + shape_.ascent + 2;
-            list.commands.push_back(RectCommand{{origin.x + start.x, snap(y), end.x - start.x, 1}, {},
+            list.commands.emplace_back(RectCommand{{origin.x + start.x, snap(y), end.x - start.x, 1}, {},
                                                 ShapeStyle(foreground), Color::clear, 0});
         }
     }
@@ -595,7 +595,7 @@ void TextEditor::paint(DisplayList& list, Rect frame) const {
         const auto phase = static_cast<long long>(elapsed / kBlinkHalfPeriod);
         if (phase % 2 == 0) {
             const CaretStop& caret = stop_at(to_shown(caret_) + (composing() ? composition_cursor_ : 0));
-            list.commands.push_back(RectCommand{{snap(origin.x + caret.x), origin.y + static_cast<float>(caret.line) * line_height,
+            list.commands.emplace_back(RectCommand{{snap(origin.x + caret.x), origin.y + static_cast<float>(caret.line) * line_height,
                                                  kCaretWidth, line_height},
                                                 {}, ShapeStyle(tint), Color::clear, 0});
         }
@@ -604,7 +604,7 @@ void TextEditor::paint(DisplayList& list, Rect frame) const {
         }
     }
 
-    list.commands.push_back(PopClipCommand{});
+    list.commands.emplace_back(PopClipCommand{});
 }
 
 // --- Editing ---

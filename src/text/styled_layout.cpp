@@ -155,17 +155,16 @@ void draw_styled(DisplayList& list, GlyphAtlas& atlas, const FontFace& base, con
             }
             const DrawStyle& look = style_of(style);
             if (look.background) {
-                list.commands.push_back(RectCommand{{start - kBackgroundPad, top + 1, pen - start + 2 * kBackgroundPad,
+                list.commands.emplace_back(RectCommand{{start - kBackgroundPad, top + 1, pen - start + 2 * kBackgroundPad,
                                                      shape.line_height - 2},
                                                     CornerRadii::all(kBackgroundRadius), ShapeStyle(*look.background),
                                                     Color::clear, 0});
             }
             if (look.underline) {
-                list.commands.push_back(
-                    RectCommand{{start, snap(baseline + 2), pen - start, 1}, {}, ShapeStyle(look.color), Color::clear, 0});
+                list.commands.emplace_back(RectCommand{{start, snap(baseline + 2), pen - start, 1}, {}, ShapeStyle(look.color), Color::clear, 0});
             }
             if (look.strikethrough) {
-                list.commands.push_back(RectCommand{{start, snap(baseline - shape.ascent * 0.3f), pen - start, 1}, {},
+                list.commands.emplace_back(RectCommand{{start, snap(baseline - shape.ascent * 0.3f), pen - start, 1}, {},
                                                     ShapeStyle(look.color), Color::clear, 0});
             }
         }

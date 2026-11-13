@@ -119,7 +119,7 @@ class BoundFrameNode final : public detail::ViewNode {
 public:
     BoundFrameNode(View content, Prop<Size> size, Alignment alignment)
         : content_(std::move(content)), size_(std::move(size)), alignment_(alignment) {}
-    std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
         auto element = std::make_unique<BoundFrameElement>(alignment_, detail::lower(content_, context));
         BoundFrameElement* const target = element.get();
         detail::bind(size_, context, [target](Size size) { target->set_size(size); });
@@ -177,7 +177,7 @@ private:
 class BoundPaddingNode final : public detail::ViewNode {
 public:
     BoundPaddingNode(View content, Prop<EdgeInsets> insets) : content_(std::move(content)), insets_(std::move(insets)) {}
-    std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
         auto element = std::make_unique<BoundPaddingElement>(detail::lower(content_, context));
         BoundPaddingElement* const target = element.get();
         detail::bind(insets_, context, [target](EdgeInsets insets) { target->set_insets(insets); });
@@ -265,11 +265,11 @@ View View::blur(Prop<float> radius, bool opaque) const {
     return modifier(BlurModifier(std::move(radius), opaque));
 }
 
-View View::backdrop_blur(Prop<float> radius, BackdropOptions options) const {
-    return backdrop_blur(std::move(radius), Rectangle(), std::move(options));
+View View::backdrop_blur(const Prop<float>& radius, const BackdropOptions& options) const {
+    return backdrop_blur(radius, Rectangle(), options);
 }
 
-View View::backdrop_blur(Prop<float> radius, const Shape& shape, BackdropOptions options) const {
+View View::backdrop_blur(const Prop<float>& radius, const Shape& shape, const BackdropOptions& options) const {
     const float* blur = radius.static_value();
     const float* saturation = options.saturation.static_value();
     const float* brightness = options.brightness.static_value();
@@ -345,7 +345,7 @@ View View::rotation_effect(Prop<float> degrees, UnitPoint anchor) const {
     return modifier(RotationModifier(std::move(degrees), anchor));
 }
 
-View View::scale_effect(Prop<float> scale, UnitPoint anchor) const {
+View View::scale_effect(const Prop<float>& scale, UnitPoint anchor) const {
     return modifier(ScaleModifier(scale, scale, anchor));
 }
 
@@ -470,7 +470,7 @@ public:
     LifecycleNode(View content, std::function<void()> appear, std::function<void()> disappear)
         : content_(std::move(content)), appear_(std::move(appear)), disappear_(std::move(disappear)) {}
 
-    std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
         auto element = detail::lower(content_, context);
         struct Life {
             bool appeared = false;
@@ -523,7 +523,7 @@ namespace {
 class WindowDragAreaModifier final : public EventModifier {
 public:
     explicit WindowDragAreaModifier(bool enabled) noexcept : enabled_(enabled) {}
-    std::unique_ptr<EventHandler> make_handler() const override {
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override {
         return std::make_unique<detail::WindowDragHandler>(enabled_);
     }
 
@@ -781,7 +781,7 @@ View ScrollView(View content) {
     return ScrollView({}, std::move(content));
 }
 
-View ScrollView(ScrollViewOptions options, View content) {
+View ScrollView(const ScrollViewOptions& options, View content) {
     return ViewAccess::make(std::make_shared<const detail::ScrollNode>(options, std::move(content)));
 }
 
@@ -941,7 +941,7 @@ public:
         }
         return {.consumed = true};
     }
-    bool focusable() const override { return untrack(enabled_); }
+    [[nodiscard]] bool focusable() const override { return untrack(enabled_); }
 
 private:
     std::function<void()> action_;
@@ -954,7 +954,7 @@ private:
 class FocusScopeHandler final : public EventHandler {
 public:
     void set_scope(Element* scope) noexcept { scope_ = scope; }
-    bool focusable() const override {
+    [[nodiscard]] bool focusable() const override {
         bool inner = false;
         std::function<void(Element&)> walk = [&](Element& element) {
             if (inner) {
@@ -1156,7 +1156,7 @@ public:
     explicit TextEditorNode(std::shared_ptr<TextEditor> editor) : editor_(std::move(editor)) {}
     // The text takes its font and colors from where the style put it (so a style's .font() or
     // .foreground_style() on the field applies).
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const EnvironmentValues environment = context.environment;
         editor_->set_environment(environment);
         auto element = std::make_unique<TextEditorElement>(editor_);
@@ -1300,8 +1300,6 @@ std::unique_ptr<Element> ToggleNode::lower(const LowerContext& context) const {
     return with_accessibility(std::move(element), std::move(semantics));
 }
 
-// Like SwiftUI: the binding is true while focus is anywhere inside the view, and setting it
-// focuses the first focusable view inside (or the view itself if nothing inside can be).
 std::unique_ptr<Element> ActivateNode::lower(const LowerContext& context) const {
     const EnvironmentValues environment = context.environment;
     const std::function<bool()> enabled = [environment] { return !environment.get<DisabledKey>(); };
@@ -1316,6 +1314,8 @@ std::unique_ptr<Element> ActivateNode::lower(const LowerContext& context) const 
     return with_accessibility(std::move(element), std::move(semantics), environment);
 }
 
+// Like SwiftUI: the binding is true while focus is anywhere inside the view, and setting it
+// focuses the first focusable view inside (or the view itself if nothing inside can be).
 std::unique_ptr<Element> FocusedNode::lower(const LowerContext& context) const {
     auto handler = std::make_unique<FocusScopeHandler>();
     FocusScopeHandler* const scope_handler = handler.get();

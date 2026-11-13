@@ -61,14 +61,16 @@ TEST_CASE("images with too many pixels are refused before decoding", "[image]") 
 }
 
 TEST_CASE("decoded images are scaled down to the size asked for", "[image]") {
-    const std::vector<std::uint8_t> pixels(64 * 32 * 4, 0x80);
+    const std::vector<std::uint8_t> pixels(std::size_t{64} * 32 * 4, 0x80);
     const auto png = detail::encode_png(pixels, 64, 32);
     REQUIRE(png);
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): REQUIRE(png) stops the test without one
     const auto image = detail::decode_image(*png, 16);
     CHECK(image->width == 16);
     CHECK(image->height == 8);
     CHECK(image->rgba.size() == std::size_t{16} * 8 * 4);
     CHECK(detail::decode_image(*png)->width == 64); // within the default size: as it is
+    // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
 TEST_CASE("a JPEG's EXIF orientation turns its upright size", "[image]") {

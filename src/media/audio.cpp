@@ -22,6 +22,7 @@
 #include <list>
 #include <mutex>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace elg::detail {
@@ -49,6 +50,11 @@ public:
         return ready_ ? &engine_ : nullptr;
     }
 
+    AudioEngine() = default;
+    AudioEngine(const AudioEngine&) = delete;
+    AudioEngine(AudioEngine&&) = delete;
+    AudioEngine& operator=(const AudioEngine&) = delete;
+    AudioEngine& operator=(AudioEngine&&) = delete;
     ~AudioEngine() {
         if (ready_) {
             ma_engine_uninit(&engine_);
@@ -91,6 +97,11 @@ struct SoundData {
     mutable std::mutex mutex;
     mutable std::list<Voice> voices;
 
+    SoundData() = default;
+    SoundData(const SoundData&) = delete;
+    SoundData(SoundData&&) = delete;
+    SoundData& operator=(const SoundData&) = delete;
+    SoundData& operator=(SoundData&&) = delete;
     ~SoundData() {
         for (Voice& voice : voices) {
             ma_sound_uninit(&voice.sound);
@@ -116,7 +127,7 @@ std::shared_ptr<const SoundData> decode_sound(std::span<const unsigned char> byt
     data->channels = channels;
     data->sample_rate = rate;
     data->frame_count = count;
-    const float* samples = static_cast<const float*>(frames);
+    const auto* samples = static_cast<const float*>(frames);
     data->frames.assign(samples, samples + count * channels);
     ma_free(frames, nullptr);
     return data;
@@ -147,7 +158,7 @@ void Sound::play(PlayOptions options) const {
     if (!engine || !data_ || data_->frame_count == 0) {
         return;
     }
-    std::lock_guard lock(data_->mutex);
+    const std::lock_guard lock(data_->mutex);
     // Finished voices are swept here, on a calling thread (never the audio thread).
     auto& voices = data_->voices;
     for (auto it = voices.begin(); it != voices.end();) {
@@ -194,6 +205,11 @@ struct AudioPlayerState {
     State<float> volume{1.f};
     State<bool> looping{false};
 
+    AudioPlayerState() = default;
+    AudioPlayerState(const AudioPlayerState&) = delete;
+    AudioPlayerState(AudioPlayerState&&) = delete;
+    AudioPlayerState& operator=(const AudioPlayerState&) = delete;
+    AudioPlayerState& operator=(AudioPlayerState&&) = delete;
     ~AudioPlayerState() {
         if (ready) {
             ma_sound_uninit(&sound);
@@ -227,23 +243,28 @@ public:
 
     void watch(const std::shared_ptr<AudioPlayerState>& player) {
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             std::erase_if(players_, [](const auto& weak) { return weak.expired(); });
             players_.push_back(player);
             if (!thread_.joinable()) {
-                thread_ = std::jthread([this](std::stop_token stop) { run(stop); });
+                thread_ = std::jthread([this](const std::stop_token& stop) { run(stop); });
             }
         }
         wake_.notify_all();
     }
 
+    AudioTicker() = default;
+    AudioTicker(const AudioTicker&) = delete;
+    AudioTicker(AudioTicker&&) = delete;
+    AudioTicker& operator=(const AudioTicker&) = delete;
+    AudioTicker& operator=(AudioTicker&&) = delete;
     ~AudioTicker() {
         thread_.request_stop();
         wake_.notify_all();
     }
 
 private:
-    void run(std::stop_token stop) {
+    void run(const std::stop_token& stop) {
         bool was_playing = false;
         while (!stop.stop_requested()) {
             std::vector<std::weak_ptr<AudioPlayerState>> playing;
@@ -271,7 +292,7 @@ private:
             // One more update after playback ends, so the states settle (stopped, at the end).
             std::vector<std::weak_ptr<AudioPlayerState>> all;
             {
-                std::lock_guard lock(mutex_);
+                const std::lock_guard lock(mutex_);
                 all = players_;
             }
             post_ui_task([all] {

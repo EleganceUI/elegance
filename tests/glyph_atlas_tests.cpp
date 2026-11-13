@@ -36,6 +36,7 @@ TEST_CASE("a full glyph atlas starts over after the frame instead of dropping gl
         }
     }
     REQUIRE(probe);
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): REQUIRE(probe) stops the test without one
 
     // Every other glyph of the font, far more than a page holds: then there's no room for it.
     detail::GlyphAtlas atlas;
@@ -50,6 +51,7 @@ TEST_CASE("a full glyph atlas starts over after the frame instead of dropping gl
     atlas.take_uploads();
     CHECK(atlas.has_uploads());
     CHECK(atlas.find_or_add(face, *probe) != nullptr);
+    // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
 #if defined(__linux__)

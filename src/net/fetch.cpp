@@ -112,6 +112,10 @@ public:
     ConnectionPool& pool() { return pool_; }
     asio::thread_pool& blocking() { return blocking_; }
 
+    Network(const Network&) = delete;
+    Network(Network&&) = delete;
+    Network& operator=(const Network&) = delete;
+    Network& operator=(Network&&) = delete;
     ~Network() {
         work_.reset();
         io_.stop();
@@ -144,7 +148,7 @@ awaitable<std::invoke_result_t<Work&>> off_network_thread(Work work) {
 int add_system_roots(ssl::context& context) {
     X509_STORE* store = SSL_CTX_get_cert_store(context.native_handle());
     int added = 0;
-    const auto add_der = [&](const unsigned char* data, long size) {
+    [[maybe_unused]] const auto add_der = [&](const unsigned char* data, long size) { // not on Linux
         if (X509* certificate = d2i_X509(nullptr, &data, size)) {
             added += X509_STORE_add_cert(store, certificate) == 1;
             X509_free(certificate);
@@ -171,13 +175,13 @@ int add_system_roots(ssl::context& context) {
     }
 #else
     boost::system::error_code ignored;
-    context.set_default_verify_paths(ignored); // SSL_CERT_FILE and SSL_CERT_DIR, when set
+    static_cast<void>(context.set_default_verify_paths(ignored)); // SSL_CERT_FILE and SSL_CERT_DIR, when set
     for (const char* bundle : {"/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt",
                                "/etc/ssl/ca-bundle.pem", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
                                "/etc/ssl/cert.pem"}) {
         std::error_code missing;
         if (std::filesystem::exists(bundle, missing)) {
-            context.load_verify_file(bundle, ignored);
+            static_cast<void>(context.load_verify_file(bundle, ignored));
             if (!ignored) {
                 added = sk_X509_OBJECT_num(X509_STORE_get0_objects(store));
                 break;
@@ -297,6 +301,9 @@ std::string all_values(const Fields& fields, bhttp::field name) {
     return out;
 }
 
+// These coroutines take their streams, buffers and options by reference: each is co_awaited
+// right away by its caller, whose frame owns them for as long as it runs.
+// NOLINTBEGIN(cppcoreguidelines-avoid-reference-coroutine-parameters)
 template <class Stream>
 awaitable<Reply> exchange(Stream& stream, beast::flat_buffer& buffer, const Target& target,
                           const std::optional<Proxy>& proxy, const Validators* validators, std::size_t max_body) {
@@ -500,6 +507,7 @@ awaitable<std::expected<Outcome, std::string>> follow(const std::string& text, c
         co_return std::unexpected(describe(failure.code()));
     }
 }
+// NOLINTEND(cppcoreguidelines-avoid-reference-coroutine-parameters)
 
 awaitable<FetchResult> run(std::string url, FetchOptions options, std::shared_ptr<ssl::context> tls) {
     using namespace asio::experimental::awaitable_operators;
@@ -573,7 +581,7 @@ FetchTask fetch(std::string url, std::function<void(FetchResult)> done, FetchOpt
         }
         asio::co_spawn(io, run(std::move(url), std::move(options), std::move(tls)),
                        asio::bind_cancellation_slot(state->signal.slot(),
-                                                    [state, done = std::move(done)](std::exception_ptr failure,
+                                                    [state, done = std::move(done)](const std::exception_ptr& failure,
                                                                                     FetchResult result) {
                                                         if (state->cancelled) {
                                                             return;

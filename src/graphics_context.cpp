@@ -23,7 +23,7 @@ GraphicsContext::~GraphicsContext() {
 void GraphicsContext::push_clip(Rect rect, CornerRadii radii) {
     rect.x += bounds_.x;
     rect.y += bounds_.y;
-    list_->commands.push_back(detail::PushClipCommand{rect, radii});
+    list_->commands.emplace_back(detail::PushClipCommand{rect, radii});
     ++clips_;
 }
 
@@ -31,7 +31,7 @@ void GraphicsContext::pop_clip() {
     if (clips_ == 0) {
         return;
     }
-    list_->commands.push_back(detail::PopClipCommand{});
+    list_->commands.emplace_back(detail::PopClipCommand{});
     --clips_;
 }
 
@@ -43,7 +43,7 @@ float GraphicsContext::scale() const noexcept {
     return scale_;
 }
 
-double GraphicsContext::time() const noexcept {
+double GraphicsContext::time() noexcept {
     return detail::frame_time();
 }
 
@@ -64,7 +64,10 @@ namespace {
 std::shared_ptr<const std::vector<std::vector<Point>>> closed_polygons(const Path& path, float tolerance, Rect& bounds) {
     auto polygons = std::make_shared<std::vector<std::vector<Point>>>();
     bool any = false;
-    float x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+    float x0 = 0;
+    float y0 = 0;
+    float x1 = 0;
+    float y1 = 0;
     for (Path::Polyline& line : path.flatten(tolerance)) {
         if (line.points.size() < 3) {
             continue;
@@ -90,7 +93,7 @@ void GraphicsContext::fill_path(const Path& path, ShapeStyle style, FillRule rul
     if (polygons->empty()) {
         return;
     }
-    list_->commands.push_back(detail::PathCommand{std::move(polygons), bounds, 1, {bounds_.x, bounds_.y},
+    list_->commands.emplace_back(detail::PathCommand{std::move(polygons), bounds, 1, {bounds_.x, bounds_.y},
                                                   {bounds_.x + bounds.x, bounds_.y + bounds.y, bounds.width, bounds.height},
                                                   std::move(style), rule});
 }
@@ -106,7 +109,7 @@ void GraphicsContext::draw_rect(Rect rect, CornerRadii radii, Color fill, Color 
     }
     rect.x += bounds_.x;
     rect.y += bounds_.y;
-    list_->commands.push_back(detail::RectCommand{rect, radii, fill, border, std::max(0.f, border_width)});
+    list_->commands.emplace_back(detail::RectCommand{rect, radii, fill, border, std::max(0.f, border_width)});
 }
 
 } // namespace elg

@@ -17,14 +17,22 @@
 
 namespace elg {
 
+/// Draws a view behind the content, offered exactly the content's size (View::background()).
 class ELG_API BackgroundModifier final : public DecorationModifier {
 public:
+    /// `view` behind the content.
+    ///
+    /// @param view The background.
+    /// @param alignment Where `view` sits when its size differs from the content's.
     explicit BackgroundModifier(View view, Alignment alignment = Alignment::center)
         : view_(std::move(view)), alignment_(alignment) {}
 
-    View decoration() const override { return view_; }
-    Placement placement() const override { return Placement::behind; }
-    Alignment alignment() const override { return alignment_; }
+    /// @return The background.
+    [[nodiscard]] View decoration() const override { return view_; }
+    /// @return Placement::behind.
+    [[nodiscard]] Placement placement() const override { return Placement::behind; }
+    /// @return Where the background sits when its size differs from the content's.
+    [[nodiscard]] Alignment alignment() const override { return alignment_; }
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -33,14 +41,22 @@ private:
     ELG_PRIVATE_MEMBERS_END
 };
 
+/// Draws a view in front of the content, offered exactly the content's size (View::overlay()).
 class ELG_API OverlayModifier final : public DecorationModifier {
 public:
+    /// `view` in front of the content.
+    ///
+    /// @param view The overlay.
+    /// @param alignment Where `view` sits when its size differs from the content's.
     explicit OverlayModifier(View view, Alignment alignment = Alignment::center)
         : view_(std::move(view)), alignment_(alignment) {}
 
-    View decoration() const override { return view_; }
-    Placement placement() const override { return Placement::in_front; }
-    Alignment alignment() const override { return alignment_; }
+    /// @return The overlay.
+    [[nodiscard]] View decoration() const override { return view_; }
+    /// @return Placement::in_front.
+    [[nodiscard]] Placement placement() const override { return Placement::in_front; }
+    /// @return Where the overlay sits when its size differs from the content's.
+    [[nodiscard]] Alignment alignment() const override { return alignment_; }
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
@@ -49,16 +65,22 @@ private:
     ELG_PRIVATE_MEMBERS_END
 };
 
-// Composition only: an overlay of Rectangle().stroke_border(color, width).
-// Shows the content only where the mask view is opaque (View::mask).
+/// Shows the content only where the mask view is opaque (View::mask).
 class ELG_API MaskModifier final : public DecorationModifier {
 public:
+    /// The content, masked by `view`.
+    ///
+    /// @param view The mask; only its alpha matters.
+    /// @param alignment Where `view` sits when its size differs from the content's.
     explicit MaskModifier(View view, Alignment alignment = Alignment::center)
         : view_(std::move(view)), alignment_(alignment) {}
 
-    View decoration() const override { return view_; }
-    Placement placement() const override { return Placement::mask; }
-    Alignment alignment() const override { return alignment_; }
+    /// @return The mask.
+    [[nodiscard]] View decoration() const override { return view_; }
+    /// @return Placement::mask.
+    [[nodiscard]] Placement placement() const override { return Placement::mask; }
+    /// @return Where the mask sits when its size differs from the content's.
+    [[nodiscard]] Alignment alignment() const override { return alignment_; }
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN

@@ -25,7 +25,7 @@ const TextNode& node_of(const Text& text) {
 }
 
 template <class F>
-Text with_style(const Text& text, F&& change) {
+Text with_style(const Text& text, const F& change) {
     const TextNode& node = node_of(text);
     TextStyle style = node.style();
     change(style);

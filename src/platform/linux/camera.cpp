@@ -32,6 +32,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <system_error>
 #include <thread>
 
 namespace elg::detail {
@@ -48,7 +49,7 @@ int xioctl(int fd, unsigned long request, void* argument) {
 }
 
 std::string errno_text() {
-    return std::strerror(errno);
+    return std::generic_category().message(errno); // unlike strerror, safe on any thread
 }
 
 // Owns a file descriptor.
@@ -60,12 +61,14 @@ public:
             close(fd_);
         }
     }
+    FileHandle(const FileHandle&) = delete;
+    FileHandle& operator=(const FileHandle&) = delete;
     FileHandle(FileHandle&& other) noexcept : fd_(std::exchange(other.fd_, -1)) {}
     FileHandle& operator=(FileHandle&& other) noexcept {
         std::swap(fd_, other.fd_);
         return *this;
     }
-    int get() const noexcept { return fd_; }
+    [[nodiscard]] int get() const noexcept { return fd_; }
     explicit operator bool() const noexcept { return fd_ >= 0; }
 
 private:
@@ -99,6 +102,7 @@ std::vector<std::filesystem::path> video_nodes() {
     }
     std::ranges::sort(nodes);
     std::vector<std::filesystem::path> paths;
+    paths.reserve(nodes.size());
     for (auto& [number, path] : nodes) {
         paths.push_back(std::move(path));
     }
@@ -118,6 +122,10 @@ class V4L2Camera final : public CameraSource {
 public:
     explicit V4L2Camera(CameraOptions options) : options_(std::move(options)) {}
 
+    V4L2Camera(const V4L2Camera&) = delete;
+    V4L2Camera(V4L2Camera&&) = delete;
+    V4L2Camera& operator=(const V4L2Camera&) = delete;
+    V4L2Camera& operator=(V4L2Camera&&) = delete;
     ~V4L2Camera() override { stop_capture(); }
 
     // --- UI thread ---
@@ -129,7 +137,7 @@ public:
         error = std::string();
         playing = true;
         playing_now_ = true;
-        thread_ = std::jthread([this, weak = std::weak_ptr<VideoSource>(shared_from_this())](std::stop_token stop) {
+        thread_ = std::jthread([this, weak = std::weak_ptr<VideoSource>(shared_from_this())](const std::stop_token& stop) {
             capture(stop, weak);
         });
     }
@@ -147,7 +155,7 @@ public:
     std::optional<std::vector<unsigned char>> snapshot() const override {
         std::optional<VideoFrame> frame;
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             frame = current_;
         }
         if (!frame || !frame->pixels) {
@@ -164,7 +172,7 @@ public:
     // --- Render thread ---
 
     bool update() override {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         if (frame_number_ == reported_) {
             return false;
         }
@@ -173,7 +181,7 @@ public:
     }
 
     std::optional<VideoFrame> current() const override {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         return current_;
     }
 
@@ -198,7 +206,7 @@ private:
             fail(weak, "no camera was found");
             return;
         }
-        FileHandle fd(open(path.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC));
+        const FileHandle fd(open(path.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC));
         if (!fd) {
             fail(weak, errno == EACCES ? std::format("no permission to use the camera {} (is the user in the video group?)", path)
                                        : std::format("can't open the camera {}: {}", path, errno_text()));
@@ -228,7 +236,7 @@ private:
         }
         std::vector<Mapping> mappings(request.count);
         const auto unmap = [&] {
-            for (Mapping& mapping : mappings) {
+            for (const Mapping& mapping : mappings) {
                 if (mapping.data != MAP_FAILED) {
                     munmap(mapping.data, mapping.length);
                 }
@@ -297,7 +305,7 @@ private:
 
     static std::string first_camera() {
         for (const auto& node : video_nodes()) {
-            FileHandle fd(open(node.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC));
+            const FileHandle fd(open(node.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC));
             if (fd && capture_capability(fd.get())) {
                 return node.string();
             }
@@ -395,7 +403,7 @@ private:
             const std::size_t size = packed_size(frame.format, width, height);
             const std::size_t row_bytes = frame.format == VideoFrame::Format::yuy2 ? width * 2 : width;
             if (stride == row_bytes && data.size() >= size) {
-                frame.pixels = std::make_shared<std::vector<std::uint8_t>>(data.begin(), data.begin() + size);
+                frame.pixels = std::make_shared<std::vector<std::uint8_t>>(data.begin(), data.begin() + static_cast<std::ptrdiff_t>(size));
             } else {
                 auto pixels = std::make_shared<std::vector<std::uint8_t>>(size);
                 if (!repack(frame.format, data, width, height, stride, *pixels)) {
@@ -407,7 +415,7 @@ private:
         const Size frame_size{static_cast<float>(frame.width), static_cast<float>(frame.height)};
         bool resized = false;
         {
-            std::lock_guard lock(mutex_);
+            const std::lock_guard lock(mutex_);
             resized = !current_ || current_->width != frame.width || current_->height != frame.height;
             current_ = std::move(frame);
             ++frame_number_;
@@ -432,7 +440,7 @@ private:
         };
         std::vector<Plane> planes;
         switch (format) {
-        case VideoFrame::Format::yuy2: planes = {{height, width * 2u, stride}}; break;
+        case VideoFrame::Format::yuy2: planes = {{height, std::size_t{width} * 2, stride}}; break;
         case VideoFrame::Format::nv12: planes = {{height, width, stride}, {chroma_h, chroma_w * 2, stride}}; break;
         default: planes = {{height, width, stride}, {chroma_h, chroma_w, stride / 2}, {chroma_h, chroma_w, stride / 2}}; break;
         }
@@ -478,7 +486,7 @@ private:
 std::vector<CameraDevice> platform_camera_devices() {
     std::vector<CameraDevice> devices;
     for (const auto& node : video_nodes()) {
-        FileHandle fd(open(node.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC));
+        const FileHandle fd(open(node.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC));
         if (!fd) {
             continue;
         }

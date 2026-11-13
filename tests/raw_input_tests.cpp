@@ -17,6 +17,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -29,16 +30,16 @@ namespace {
 struct Window {
     std::unique_ptr<detail::Element> root;
     detail::FocusManager focus;
-    std::optional<detail::EventDispatcher> events;
+    std::unique_ptr<detail::EventDispatcher> events;
 
     explicit Window(const View& view) {
         root = detail::lower(ZStack(Rectangle().fill(Color::white), view.frame(50, 50)), {});
         root->size_that_fits({100, 100});
         root->place({}, {100, 100});
-        events.emplace(*root, focus);
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 
-    void button(PointerEvent::Kind kind, Point at) {
+    void button(PointerEvent::Kind kind, Point at) const {
         events->pointer_button(kind, at, MouseButton::left, 1, KeyModifiers::none);
     }
 };
@@ -49,7 +50,7 @@ const View kSquare = Rectangle().fill(Color::black);
 
 TEST_CASE("on_pointer gets view-local events, and a consumed down captures the pointer", "[input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<PointerEvent> seen;
     Window window(kSquare.on_pointer([&](const PointerEvent& event) {
         seen.push_back(event);
@@ -74,7 +75,7 @@ TEST_CASE("on_pointer gets view-local events, and a consumed down captures the p
 
 TEST_CASE("on_scroll gets view-local scrolls; unconsumed ones go on outwards", "[input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     for (const bool take : {false, true}) {
         std::optional<ScrollEvent> inner;
         int outer = 0;
@@ -91,17 +92,19 @@ TEST_CASE("on_scroll gets view-local scrolls; unconsumed ones go on outwards", "
 
         window.events->scroll({.location = {30, 40}, .dy = 3});
         REQUIRE(inner);
+        // NOLINTBEGIN(bugprone-unchecked-optional-access): REQUIRE(inner) stops the test without an event
         CHECK(inner->location.x == 5);
         CHECK(inner->location.y == 15);
         CHECK(inner->window_location.y == 40);
         CHECK(inner->dy == 3);
+        // NOLINTEND(bugprone-unchecked-optional-access)
         CHECK(outer == (take ? 0 : 1));
     }
 }
 
 TEST_CASE("a video view is hit over its frame, so its handlers get events", "[input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     int pointers = 0;
     int scrolls = 0;
     Window window(VideoFeedView(VideoFeed(), ContentMode::fill)
@@ -123,7 +126,7 @@ TEST_CASE("a video view is hit over its frame, so its handlers get events", "[in
 
 TEST_CASE("on_key sees downs and ups; on_key_press only downs", "[input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::vector<KeyEvent::Kind> keys;
     int presses = 0;
     Window window(kSquare.focusable().on_key_press(Key::a, [&] { ++presses; }).on_key([&](const KeyEvent& event) {
@@ -144,7 +147,7 @@ TEST_CASE("on_key sees downs and ups; on_key_press only downs", "[input]") {
 
 TEST_CASE("on_text_input makes the view focusable and gets what's typed", "[input]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     std::string typed;
     Window window(kSquare.on_text_input([&](const TextInputEvent& event) {
         if (event.kind == TextInputEvent::Kind::commit) {

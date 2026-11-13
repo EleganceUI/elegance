@@ -29,22 +29,25 @@ namespace elg {
 
 // --- In a views module ---
 
-// A preview: a view shown on its own in the preview host (SwiftUI Previews-style).
+/// A preview: a view shown on its own in the preview host (SwiftUI Previews-style). ELG_PREVIEW
+/// registers one.
 struct PreviewEntry {
-    const char* name;
-    View (*body)();
-    const char* file;
-    int line;
+    const char* name; ///< shown in the preview list; it lives in the module
+    View (*body)();   ///< builds the preview
+    const char* file; ///< the source file of its ELG_PREVIEW
+    int line;         ///< the line of its ELG_PREVIEW
 };
 
-// What a views module exports (elg_module_entry). Host and module must be built with the same
-// compiler, runtime, and Elegance (design.md §9.6, rule 4).
+/// What a views module exports (elg_module_entry). Host and module must be built with the same
+/// compiler, runtime, and Elegance (design.md §9.6, rule 4). ELG_MODULE defines it.
 struct ModuleEntry {
-    std::uint32_t abi = 0;
-    View (*root)() = nullptr; // the app's content; nullptr for preview-only modules
-    const std::vector<PreviewEntry>* previews = nullptr;
+    std::uint32_t abi = 0; ///< the module_abi the module was built with
+    View (*root)() = nullptr; ///< the app's content; nullptr for preview-only modules
+    const std::vector<PreviewEntry>* previews = nullptr; ///< the module's previews
 };
 
+/// The version of ModuleEntry this Elegance loads. A module built with another one isn't loaded;
+/// HotReload() shows an error instead.
 inline constexpr std::uint32_t module_abi = 1;
 
 namespace detail {
@@ -68,8 +71,8 @@ inline bool register_preview(const char* name, View (*body)(), const char* file,
 #define ELG_MODULE_EXPORT extern "C" __attribute__((visibility("default")))
 #endif
 
-// Makes this shared library a views module, with `root` (a View() function, or nullptr) as the
-// app's content.
+/// Makes this shared library a views module, with `root` (a View() function, or nullptr) as the
+/// app's content.
 #define ELG_MODULE(root)                                                                          \
     ELG_MODULE_EXPORT const ::elg::ModuleEntry* elg_module_entry();                               \
     ELG_MODULE_EXPORT const ::elg::ModuleEntry* elg_module_entry() {                              \
@@ -82,36 +85,47 @@ inline bool register_preview(const char* name, View (*body)(), const char* file,
 #define ELG_PREVIEW_IMPL_(name, id)                                                                         \
     static ::elg::View id();                                                                                \
     [[maybe_unused]] static const bool ELG_PREVIEW_CONCAT(id, _registered) =                                \
-        ::elg::detail::register_preview(name, &id, __FILE__, __LINE__);                                     \
+        ::elg::detail::register_preview((name), &(id), __FILE__, __LINE__);                                   \
     static ::elg::View id()
 
-// Registers a preview of this module, followed by its body:
-//   ELG_PREVIEW("Dark") { return Card().color_scheme(ColorScheme::dark); }
+/// Registers a preview of this module, followed by its body:
+///
+/// @code
+/// ELG_PREVIEW("Dark") { return Card().color_scheme(ColorScheme::dark); }
+/// @endcode
 #define ELG_PREVIEW(name) ELG_PREVIEW_IMPL_(name, ELG_PREVIEW_CONCAT(elg_preview_, __LINE__))
 
 // --- In the host ---
 
+/// What HotReload() shows of the module.
 enum class HotReloadShow {
-    root,     // the module's root view
-    previews, // a list of the module's previews and the selected one
+    root,     ///< the module's root view
+    previews, ///< a list of the module's previews and the selected one
 };
 
+/// The module HotReload() loads, and how it rebuilds it.
 struct HotReloadOptions {
-    // The views module as the build writes it. It's loaded from a copy, so the build can
-    // replace it while the app runs.
+    /// The views module as the build writes it. It's loaded from a copy, so the build can
+    /// replace it while the app runs.
     std::filesystem::path module;
-    // Run (through the shell) when a watched file changes, e.g.
-    // "cmake --build build --target todo_views". Empty: never rebuild, only reload when the
-    // module file itself changes.
+    /// Run (through the shell) when a watched file changes, e.g.
+    /// "cmake --build build --target todo_views". Empty: never rebuild, only reload when the
+    /// module file itself changes.
     std::string build_command;
-    // Files and folders (searched recursively) whose changes trigger a rebuild.
+    /// Files and folders (searched recursively) whose changes trigger a rebuild.
     std::vector<std::filesystem::path> watch;
-    HotReloadShow show = HotReloadShow::root;
+    HotReloadShow show = HotReloadShow::root; ///< the root view, or the previews
 };
 
-// The views module's content, rebuilt and reloaded when its sources change. A small status
-// badge shows building, errors, and reloads. Call it while building views (e.g. as a window's
-// content); the module is loaded right away.
+/// The views module's content, rebuilt and reloaded when its sources change. A small status
+/// badge shows building, errors, and reloads. Call it while building views (e.g. as a window's
+/// content); the module is loaded right away, or built first if it doesn't exist yet and there's
+/// a `build_command`. A background thread checks the watched files a few times a second, and a
+/// new module file is loaded once it stops changing. Failures (a build error, a missing or
+/// incompatible module) show in the badge rather than throw.
+///
+/// @param options The module, the build command and what to watch.
+/// @return The module's content with the status badge over it.
 ELG_API View HotReload(HotReloadOptions options);
 
 } // namespace elg

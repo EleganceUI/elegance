@@ -50,7 +50,7 @@ std::vector<detail::BackdropFill> backdrops(const detail::DisplayList& list) {
 
 TEST_CASE("a backdrop blur goes behind what it wraps", "[backdrop]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const auto root = detail::lower(Rectangle()
                                         .fill(Color::white)
                                         .background(Color::black.opacity(0.5f))
@@ -71,9 +71,9 @@ TEST_CASE("a backdrop blur goes behind what it wraps", "[backdrop]") {
 
 TEST_CASE("a backdrop blur follows its state", "[backdrop]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
-    State<float> radius(10.f);
-    State<float> saturation(1.f);
+    const detail::Scope::Use use(scope);
+    const State<float> radius(10.f);
+    const State<float> saturation(1.f);
     const auto root =
         detail::lower(Rectangle().fill(Color::clear).backdrop_blur(radius, Capsule(), {.saturation = saturation}), {});
     REQUIRE(backdrops(paint(*root)).front().blur == 10);
@@ -87,7 +87,7 @@ TEST_CASE("a backdrop blur follows its state", "[backdrop]") {
 
 TEST_CASE("a backdrop blur takes its radius from the theme", "[backdrop]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const auto standard = detail::lower(Rectangle().fill(Color::clear).backdrop_blur(ThemeBlur::xxl), {});
     CHECK(backdrops(paint(*standard)).front().blur == 40);
 
@@ -100,7 +100,7 @@ TEST_CASE("a backdrop blur takes its radius from the theme", "[backdrop]") {
 
 TEST_CASE("the renderer blurs the backdrop and adjusts its colors", "[backdrop]") {
     detail::Scope scope;
-    detail::Scope::Use use(scope);
+    const detail::Scope::Use use(scope);
     const auto plain = detail::lower(Rectangle().fill(Color::clear).backdrop_blur(8), {});
     const detail::FramePlan without = detail::plan_frame(paint(*plain), 100, 50);
     REQUIRE(without.backdrops.size() == 1);

@@ -228,8 +228,8 @@ struct AccessibilityAdapter::Impl {
     }
 };
 
-AccessibilityAdapter::AccessibilityAdapter(void* native_window, Callbacks callbacks) : impl_(std::make_unique<Impl>()) {
-    impl_->callbacks = std::move(callbacks);
+AccessibilityAdapter::AccessibilityAdapter(void* native_window, const Callbacks& callbacks) : impl_(std::make_unique<Impl>()) {
+    impl_->callbacks = callbacks;
     impl_->adapter = accesskit_windows_subclassing_adapter_new(static_cast<HWND>(native_window), Impl::build_update,
                                                                impl_.get(), Impl::on_action, impl_.get());
 }
@@ -275,10 +275,10 @@ bool AccessibilityAdapter::active() const noexcept {
 
 struct AccessibilityAdapter::Impl {};
 
-AccessibilityAdapter::AccessibilityAdapter(void*, Callbacks) {}
+AccessibilityAdapter::AccessibilityAdapter(void*, const Callbacks&) {}
 AccessibilityAdapter::~AccessibilityAdapter() = default;
 void AccessibilityAdapter::update() {}
-bool AccessibilityAdapter::active() const noexcept {
+bool AccessibilityAdapter::active() noexcept {
     return false;
 }
 

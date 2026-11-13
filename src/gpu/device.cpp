@@ -44,12 +44,12 @@ struct Device::Errors {
     static Registry& registry() {
         // Retained Dawn handles can report errors during static teardown. Keep the small
         // registry/mutex alive for the process; per-device entries are removed on shutdown.
-        static Registry* const registry = new Registry;
+        static auto* const registry = new Registry;
         return *registry;
     }
     static std::shared_ptr<Errors> find(WGPUDevice device) {
         auto& states = registry();
-        std::lock_guard lock(states.mutex);
+        const std::lock_guard lock(states.mutex);
         const auto it = states.devices.find(device);
         return it == states.devices.end() ? nullptr : it->second.lock();
     }
@@ -130,7 +130,7 @@ bool dxc_available() {
 } // namespace
 
 std::shared_ptr<RenderDevice> render_device() {
-    std::lock_guard lock(g_render_device_mutex);
+    const std::lock_guard lock(g_render_device_mutex);
     return g_render_device.lock();
 }
 
@@ -225,11 +225,11 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
                 if (reason == wgpu::DeviceLostReason::Destroyed || reason == wgpu::DeviceLostReason::CallbackCancelled) {
                     return; // our own shutdown
                 }
-                std::lock_guard lock(errors->mutex);
+                const std::lock_guard lock(errors->mutex);
                 errors->fatal = std::format("the GPU device was lost ({}); device loss recovery is not implemented yet",
                                             std::string_view(message));
             } catch (...) {
-                // A C callback: even allocation failures must not unwind through Dawn.
+                // Swallowed: a C callback; even allocation failures must not unwind through Dawn.
             }
         });
     descriptor.SetUncapturedErrorCallback(
@@ -241,7 +241,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
                     return; // not published yet, or the renderer has shut down
                 }
                 if (type == wgpu::ErrorType::OutOfMemory) {
-                    std::lock_guard lock(errors->mutex);
+                    const std::lock_guard lock(errors->mutex);
                     errors->fatal = std::format("the GPU ran out of memory: {}", std::string_view(message));
                     return;
                 }
@@ -252,6 +252,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
                 internal_error(std::format("WebGPU error: {}", std::string_view(message)));
 #endif
             } catch (...) {
+                // Swallowed: a C callback; nothing may unwind through Dawn.
             }
         });
 
@@ -280,6 +281,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
                 log_debug("webgpu: {}", std::string_view(message));
             }
         } catch (...) {
+            // Swallowed: a C callback; nothing may unwind through Dawn.
         }
     });
 
@@ -292,12 +294,12 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     published_->backend = backend_;
     {
         auto& states = Errors::registry();
-        std::lock_guard lock(states.mutex);
+        const std::lock_guard lock(states.mutex);
         // Also prune expired entries from constructors that failed after registration.
         std::erase_if(states.devices, [](const auto& entry) { return entry.second.expired(); });
         states.devices[device_.Get()] = errors_;
     }
-    std::lock_guard lock(g_render_device_mutex);
+    const std::lock_guard lock(g_render_device_mutex);
     g_render_device = published_;
 }
 
@@ -305,17 +307,17 @@ Device::~Device() {
     // Stop new publications, but let accepted external frames finish EndAccess using
     // their retained device/instance after the render thread has stopped.
     {
-        std::lock_guard lock(g_render_device_mutex);
+        const std::lock_guard lock(g_render_device_mutex);
         if (g_render_device.lock() == published_) {
             g_render_device.reset();
         }
     }
     {
         auto& states = Errors::registry();
-        std::lock_guard lock(states.mutex);
+        const std::lock_guard lock(states.mutex);
         states.devices.erase(device_.Get());
     }
-    std::lock_guard lock(published_->mutex);
+    const std::lock_guard lock(published_->mutex);
     published_->active = false;
     // Do not eagerly Destroy(): imported frames may still need to export completion
     // fences. Dawn references held by those frames and submitted work own the remaining
@@ -323,7 +325,7 @@ Device::~Device() {
 }
 
 void Device::check() const {
-    std::lock_guard lock(errors_->mutex);
+    const std::lock_guard lock(errors_->mutex);
     if (!errors_->fatal.empty()) {
         throw GpuError(errors_->fatal);
     }

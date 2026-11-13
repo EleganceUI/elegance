@@ -57,21 +57,24 @@ public:
 
     QuadRenderer(const QuadRenderer&) = delete;
     QuadRenderer& operator=(const QuadRenderer&) = delete;
+    QuadRenderer(QuadRenderer&&) = delete;
+    QuadRenderer& operator=(QuadRenderer&&) = delete;
+    ~QuadRenderer() = default;
 
     // The gradient stops' group: one read-only storage buffer.
-    wgpu::BindGroup stops_group(const wgpu::Buffer& stops) const;
+    [[nodiscard]] wgpu::BindGroup stops_group(const wgpu::Buffer& stops) const;
 
     // Binds everything for drawing into `pass`, whose target is `format`; draws cover `width` x
     // `height` pixels at its top-left (the target may be larger).
     void begin(const wgpu::RenderPassEncoder& pass, wgpu::TextureFormat format, std::uint32_t width,
                std::uint32_t height, const wgpu::Buffer& instances, const wgpu::BindGroup& image,
                const wgpu::BindGroup& stops, const wgpu::BindGroup& second_image);
-    void bind_image(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& image);
-    void bind_second_image(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& image);
+    static void bind_image(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& image);
+    static void bind_second_image(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& image);
     // Switches between "over" (the default) and "destination-in" blending, which keeps the
     // target only where the drawn quad's alpha covers it (masking a layer).
     void set_masking(const wgpu::RenderPassEncoder& pass, wgpu::TextureFormat format, bool masking);
-    void draw(const wgpu::RenderPassEncoder& pass, std::uint32_t first_instance, std::uint32_t count);
+    static void draw(const wgpu::RenderPassEncoder& pass, std::uint32_t first_instance, std::uint32_t count);
 
 private:
     struct Immediates {
@@ -86,8 +89,8 @@ private:
     Immediates immediates_{};
     // Pipelines are specific to the target format (swapchain, layers) and blending.
     struct CachedPipeline {
-        wgpu::TextureFormat format;
-        bool masking;
+        wgpu::TextureFormat format{};
+        bool masking = false;
         wgpu::RenderPipeline pipeline;
     };
     std::vector<CachedPipeline> pipelines_;

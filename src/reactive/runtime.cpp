@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <deque>
 #include <optional>
+#include <ranges>
 #include <thread>
 
 namespace elg::detail {
@@ -139,8 +140,8 @@ void ReactiveNode::track() {
 }
 
 void ReactiveNode::notify_changed() {
-    for (std::size_t i = 0; i < observers_.size(); ++i) {
-        Runtime::mark(observers_[i], dirty);
+    for (auto& observer : observers_) {
+        Runtime::mark(observer, dirty);
     }
 }
 
@@ -182,8 +183,8 @@ Scope::~Scope() {
     for (auto& node : nodes_) {
         node->dispose();
     }
-    for (auto it = cleanups_.rbegin(); it != cleanups_.rend(); ++it) {
-        (*it)();
+    for (auto& cleanup : std::ranges::reverse_view(cleanups_)) {
+        cleanup();
     }
 }
 

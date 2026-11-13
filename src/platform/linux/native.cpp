@@ -60,7 +60,7 @@ void detach_ime(SDL_Window*) {}
 
 void set_secure_event_input(bool) {}
 
-void* install_input_monitor(InputSink) {
+void* install_input_monitor(const InputSink&) {
     return nullptr;
 }
 

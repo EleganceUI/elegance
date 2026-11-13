@@ -69,7 +69,7 @@ struct PathCommand {
     ShapeStyle fill;
     FillRule rule = FillRule::non_zero;
 
-    Rect window_bounds() const {
+    [[nodiscard]] Rect window_bounds() const {
         return {bounds.x * scale + offset.x, bounds.y * scale + offset.y, bounds.width * scale, bounds.height * scale};
     }
 };

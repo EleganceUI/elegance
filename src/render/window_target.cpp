@@ -77,7 +77,7 @@ wgpu::RenderPassEncoder begin_pass(const wgpu::CommandEncoder& encoder, const wg
 // Brackets rendering into an offscreen image that is sampled afterwards.
 template <class Draw>
 void render_offscreen(const wgpu::CommandEncoder& encoder, const gpu::RenderImage& target, const char* label,
-                      Draw&& draw) {
+                      const Draw& draw) {
     const wgpu::RenderPassEncoder pass = begin_pass(encoder, target.view(), wgpu::Color{0, 0, 0, 0}, label);
     draw(pass);
     pass.End();
@@ -130,7 +130,11 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
     wgpu::TextureView view = swapchain_->acquire();
     if (!view) {
         // Out of date: reconfigured, then once more; still resizing if that fails too.
-        if (!swapchain_->prepare(width, height) || !(view = swapchain_->acquire())) {
+        if (!swapchain_->prepare(width, height)) {
+            return;
+        }
+        view = swapchain_->acquire();
+        if (!view) {
             return;
         }
     }
@@ -290,12 +294,11 @@ wgpu::BindGroup WindowTarget::take_backdrop(const wgpu::CommandEncoder& encoder,
     destination.texture = copy.texture();
     const wgpu::Extent3D size{backdrop.width, backdrop.height, 1};
     encoder.CopyTextureToTexture(&source, &destination, &size);
-    const wgpu::BindGroup group = image_group(resources, copy.view());
     if (backdrop.sigma <= 0) {
-        return group;
+        return image_group(resources, copy.view());
     }
-    return blur_color(encoder, group, backdrop.width, backdrop.height, backdrop.sigma, backdrop.downsample, true,
-                      slot, resources);
+    return blur_color(encoder, image_group(resources, copy.view()), backdrop.width, backdrop.height, backdrop.sigma,
+                      backdrop.downsample, true, slot, resources);
 }
 
 void WindowTarget::draw_pass(const wgpu::CommandEncoder& encoder, const PassTarget& target, const PlanPass& plan_pass,

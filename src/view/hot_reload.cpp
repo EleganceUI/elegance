@@ -29,6 +29,7 @@
 #include <mutex>
 #include <stop_token>
 #include <thread>
+#include <utility>
 
 #if defined(_WIN32)
 #include <process.h>
@@ -104,6 +105,9 @@ std::pair<int, std::string> run(const std::string& command) {
         return {-1, "couldn't start the build command"};
     }
     char buffer[4096];
+    // No lock is held here: with libstdc++, the analyzer misses the unlock in ModuleHost::watch's
+    // interruptible sleep (a condition_variable_any).
+    // NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection): see above
     while (std::fgets(buffer, sizeof(buffer), pipe)) {
         output += buffer;
     }
@@ -141,6 +145,10 @@ public:
         fs::create_directories(copies_, error);
     }
 
+    ModuleHost(const ModuleHost&) = delete;
+    ModuleHost(ModuleHost&&) = delete;
+    ModuleHost& operator=(const ModuleHost&) = delete;
+    ModuleHost& operator=(ModuleHost&&) = delete;
     ~ModuleHost() {
         watcher_.request_stop();
         if (watcher_.joinable()) {
@@ -162,7 +170,7 @@ public:
             load();
         }
         watcher_ = std::jthread([weak = weak_from_this(), options = options_, initial = initial_build_,
-                                 loaded = loaded_time_](std::stop_token stop) {
+                                 loaded = loaded_time_](const std::stop_token& stop) {
             watch(stop, weak, options, initial, loaded);
         });
     }
@@ -232,7 +240,7 @@ public:
         }
     }
 
-    void set_status(Status status) { status_ = std::move(status); }
+    void set_status(Status status) const { status_ = std::move(status); }
     void clear_status_if_due() {
         if (status_.peek().phase == Phase::reloaded && Clock::now() >= clear_status_at_) {
             status_ = Status{};
@@ -303,7 +311,7 @@ private:
     }
 
     // The watcher thread: rebuilds when sources change, and reloads when the module file changes.
-    static void watch(std::stop_token stop, std::weak_ptr<ModuleHost> weak, HotReloadOptions options, bool build_now,
+    static void watch(const std::stop_token& stop, const std::weak_ptr<ModuleHost>& weak, HotReloadOptions options, bool build_now,
                       std::optional<fs::file_time_type> loaded) {
         const auto post = [weak](auto action) {
             post_ui_task([weak, action = std::move(action)] {
@@ -344,7 +352,7 @@ private:
 
             // Sources changed: rebuild (the new module file is picked up below).
             if (!options.build_command.empty()) {
-                std::map<fs::path, fs::file_time_type> now = scan(options.watch);
+                const std::map<fs::path, fs::file_time_type> now = scan(options.watch);
                 if (now != sources) {
                     std::this_thread::sleep_for(std::chrono::milliseconds(150)); // editors save in steps
                     sources = scan(options.watch);
@@ -376,7 +384,7 @@ private:
     std::jthread watcher_;
 };
 
-View StatusBadge(std::shared_ptr<ModuleHost> host) {
+View StatusBadge(const std::shared_ptr<ModuleHost>& host) {
     const auto color = [host]() -> Color {
         switch (host->status_().phase) {
         case Phase::building: return Color::hex(0x8AADF4);
