@@ -144,7 +144,7 @@ awaitable<std::invoke_result_t<Work&>> off_network_thread(Work work) {
 int add_system_roots(ssl::context& context) {
     X509_STORE* store = SSL_CTX_get_cert_store(context.native_handle());
     int added = 0;
-    const auto add_der = [&](const unsigned char* data, long size) {
+    [[maybe_unused]] const auto add_der = [&](const unsigned char* data, long size) { // not on Linux
         if (X509* certificate = d2i_X509(nullptr, &data, size)) {
             added += X509_STORE_add_cert(store, certificate) == 1;
             X509_free(certificate);
