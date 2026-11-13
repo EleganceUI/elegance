@@ -26,14 +26,18 @@ namespace detail {
 struct TimerState;
 } // namespace detail
 
-// A started timer. Copies refer to the same one; dropping them doesn't stop it.
+/// A started timer, from after() or every(). Copies refer to the same one; dropping them doesn't
+/// stop it. A default-constructed Timer refers to none: it's never active.
 class ELG_API Timer {
 public:
     Timer() = default;
 
-    // Stops it; the action doesn't run again. Fine to call more than once.
+    /// Stops it; the action doesn't run again. Fine to call more than once.
     void cancel() const noexcept;
-    // Still going: not cancelled, its view is still there, and for `after`, not fired yet.
+    /// Whether the timer is still going: not cancelled, its view is still there, and for
+    /// `after`, not fired yet.
+    ///
+    /// @return true while it's going.
     [[nodiscard]] bool active() const noexcept;
 
 private:
@@ -46,10 +50,28 @@ private:
     ELG_PRIVATE_MEMBERS_END
 };
 
-// Runs `action` once, `seconds` from now (0: as soon as the current event is handled). UI thread.
+/// Runs `action` once, `seconds` from now (0: as soon as the current event is handled). UI thread.
+///
+/// @code
+/// const Timer hide = after(3, [=] { loading = false; });
+/// @endcode
+///
+/// @param seconds The delay; negative or not finite counts as 0.
+/// @param action Runs on the UI thread. Empty: the timer is never active.
+/// @return The timer, to cancel() it.
+/// @throws UsageError Off the UI thread of a running App.
 ELG_API Timer after(double seconds, std::function<void()> action);
-// Runs `action` every `seconds` (at least a millisecond), the first time `seconds` from now. If
-// the app falls behind, missed runs are skipped rather than run back to back. UI thread.
+/// Runs `action` every `seconds` (at least a millisecond), the first time `seconds` from now. If
+/// the app falls behind, missed runs are skipped rather than run back to back. UI thread.
+///
+/// @code
+/// .on_appear([=] { every(1, [=] { seconds += 1; }); })  // ends with the view
+/// @endcode
+///
+/// @param seconds The interval; less than a millisecond, or not finite, counts as a millisecond.
+/// @param action Runs on the UI thread. Empty: the timer is never active.
+/// @return The timer, to cancel() it.
+/// @throws UsageError Off the UI thread of a running App.
 ELG_API Timer every(double seconds, std::function<void()> action);
 
 } // namespace elg

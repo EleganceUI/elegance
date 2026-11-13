@@ -213,23 +213,48 @@ ELG_API void flush_effects();
 template <class T>
 class Binding;
 
-// A piece of mutable state: a cheap handle to a shared value. Copies refer to the same value,
-// so lambdas can capture it by value and still write to it.
+/// A piece of mutable state: a cheap handle to a shared value. Copies refer to the same value,
+/// so lambdas can capture it by value and still write to it. UI thread only: other threads hand
+/// their results over with post_to_ui_thread().
+///
+/// @code
+/// auto count = State(0);
+/// Text([=] { return std::format("Count: {}", count()); })   // re-renders that one Text
+/// Button("+", [=] { count += 1; })
+/// @endcode
+///
+/// @tparam T The value's type. Equality-comparable types skip writes of an equal value.
 template <class T>
 class State {
 public:
-    // Explicit, so `count = 1` assigns the value rather than a new State.
+    /// A new piece of state. Explicit, so `count = 1` assigns the value rather than a new State.
+    ///
+    /// @param initial The starting value.
     explicit State(T initial = T{}) : node_(std::make_shared<detail::SignalNode<T>>(std::move(initial))) {}
 
-    // Reads the value, subscribing the running computed/effect/reactive argument.
+    /// Reads the value, subscribing the running computed/effect/reactive argument.
+    ///
+    /// @return The current value.
     const T& operator()() const {
         node_->track();
         return node_->value;
     }
+    /// Like operator()(): reads the value, subscribing the running computed/effect/reactive
+    /// argument.
+    ///
+    /// @return The current value.
     [[nodiscard]] const T& get() const { return (*this)(); }
-    // Reads without subscribing.
+    /// Reads without subscribing.
+    ///
+    /// @return The current value.
     [[nodiscard]] const T& peek() const noexcept { return node_->value; }
 
+    /// Writes the value. What read it runs again (effects after the current event, before the
+    /// next frame). For an equality-comparable T, writing a value equal to the current one does
+    /// nothing.
+    ///
+    /// @param value The new value.
+    /// @throws UsageError Off the UI thread of a running App.
     void set(T value) const {
         detail::check_ui_thread();
         if constexpr (std::equality_comparable<T>) {
@@ -241,7 +266,11 @@ public:
         node_->notify_changed();
     }
 
-    // Changes the value in place: count.update([](int& c) { c += 2; })
+    /// Changes the value in place: `count.update([](int& c) { c += 2; })`. Always counts as a
+    /// change, even when `change` leaves the value as it was.
+    ///
+    /// @param change Gets the value by reference and modifies it.
+    /// @throws UsageError Off the UI thread of a running App.
     template <std::invocable<T&> F>
     void update(F&& change) const {
         detail::check_ui_thread();
@@ -249,12 +278,20 @@ public:
         node_->notify_changed();
     }
 
-    // Assigns the value, not the handle, so it's const (and works on a const State).
+    /// Assigns the value, not the handle, so it's const (and works on a const State). Same as
+    /// set().
+    ///
+    /// @param value The new value.
+    /// @return This State.
     const State& operator=(T value) const { // NOLINT(misc-unconventional-assign-operator,cppcoreguidelines-c-copy-assignment-signature)
         set(std::move(value));
         return *this;
     }
 
+    /// Adds to the value in place, as update() does: `count += 1`.
+    ///
+    /// @param amount What to add.
+    /// @return This State.
     template <class U>
         requires requires(T& t, const U& u) { t += u; }
     const State& operator+=(const U& amount) const {
@@ -262,6 +299,10 @@ public:
         return *this;
     }
 
+    /// Subtracts from the value in place, as update() does: `count -= 1`.
+    ///
+    /// @param amount What to subtract.
+    /// @return This State.
     template <class U>
         requires requires(T& t, const U& u) { t -= u; }
     const State& operator-=(const U& amount) const {
@@ -269,37 +310,68 @@ public:
         return *this;
     }
 
-    // A two-way connection to this state, for passing to child views.
+    /// A two-way connection to this state, for passing to child views.
+    ///
+    /// @return A Binding that reads (tracked) and writes this State.
     [[nodiscard]] Binding<T> binding() const;
 
 private:
     std::shared_ptr<detail::SignalNode<T>> node_;
 };
 
-// Read/write access to a value owned elsewhere (usually a State). Child components take
-// Bindings so they can change their parent's state.
+/// Read/write access to a value owned elsewhere (usually a State). Child components take
+/// Bindings so they can change their parent's state. Copies share the getter and setter.
+///
+/// @tparam T The value's type.
 template <class T>
 class Binding {
 public:
+    /// A binding through your own getter and setter, e.g. to one field of a State.
+    ///
+    /// @param get Returns the value. Reads of state inside it are tracked.
+    /// @param set Writes a new value.
     Binding(std::function<T()> get, std::function<void(T)> set) : get_(std::move(get)), set_(std::move(set)) {}
+    /// A binding to `state` (implicit, so a State goes wherever a Binding does).
+    ///
+    /// @param state The state to read and write; the binding keeps a handle to it.
     Binding(const State<T>& state)
         : get_([state] { return state(); }), set_([state](T value) { state.set(std::move(value)); }) {}
 
-    // A binding to a fixed value; writes are ignored. Handy for previews.
+    /// A binding to a fixed value; writes are ignored. Handy for previews.
+    ///
+    /// @param value The value it always reads.
+    /// @return The binding.
     static Binding constant(const T& value) {
         return Binding([value] { return value; }, [](const T&) {});
     }
 
+    /// Reads the value through the getter (a tracked read, for a binding to a State).
+    ///
+    /// @return The value.
     T operator()() const { return get_(); }
+    /// Like operator()(): reads the value through the getter.
+    ///
+    /// @return The value.
     [[nodiscard]] T get() const { return get_(); }
+    /// Writes the value through the setter.
+    ///
+    /// @param value The new value.
     void set(T value) const { set_(std::move(value)); }
 
-    // Assigns the value, not the handle, so it's const (and works on a const Binding).
+    /// Assigns the value, not the handle, so it's const (and works on a const Binding). Same as
+    /// set().
+    ///
+    /// @param value The new value.
+    /// @return This Binding.
     const Binding& operator=(T value) const { // NOLINT(misc-unconventional-assign-operator,cppcoreguidelines-c-copy-assignment-signature)
         set(std::move(value));
         return *this;
     }
 
+    /// Reads the value, adds to it and writes it back: `volume += 0.1f`.
+    ///
+    /// @param amount What to add.
+    /// @return This Binding.
     template <class U>
         requires requires(T& t, const U& u) { t += u; }
     const Binding& operator+=(const U& amount) const {
@@ -309,6 +381,10 @@ public:
         return *this;
     }
 
+    /// Reads the value, subtracts from it and writes it back: `volume -= 0.1f`.
+    ///
+    /// @param amount What to subtract.
+    /// @return This Binding.
     template <class U>
         requires requires(T& t, const U& u) { t -= u; }
     const Binding& operator-=(const U& amount) const {
@@ -328,61 +404,108 @@ Binding<T> State<T>::binding() const {
     return Binding<T>(*this);
 }
 
-// A binding to a fixed value, for a control that should show `value` and ignore edits:
-//   Toggle("Always on", constant(true))
+/// A binding to a fixed value, for a control that should show `value` and ignore edits:
+///
+/// @code
+/// Toggle("Always on", constant(true))
+/// @endcode
+///
+/// @param value The value it always reads (copied).
+/// @return A Binding that reads `value` and ignores writes.
 template <class T>
 Binding<std::decay_t<T>> constant(T&& value) {
     return Binding<std::decay_t<T>>::constant(std::forward<T>(value));
 }
 
-// Read-only access to a value that can change: a State, Binding, Computed, or closure. Reading it
-// is a tracked read. What a style gets for a control's state (is_hovered, is_on, ...); pass it
-// anywhere a Prop goes.
+/// Read-only access to a value that can change: a State, Binding, Computed, or closure. Reading it
+/// is a tracked read. What a style gets for a control's state (is_hovered, is_on, ...); pass it
+/// anywhere a Prop goes.
+///
+/// @tparam T The value's type.
 template <class T>
 class Signal {
 public:
+    /// Wraps anything callable that returns a T (or something convertible to it).
+    ///
+    /// @param function A State, Binding, Computed or closure; it's copied (or moved) in.
     template <class F>
         requires(!std::same_as<std::remove_cvref_t<F>, Signal> && std::invocable<const std::remove_cvref_t<F>&> &&
                  std::convertible_to<std::invoke_result_t<const std::remove_cvref_t<F>&>, T>)
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward): forwarded into the capture
     Signal(F&& function) : get_([f = std::remove_cvref_t<F>(std::forward<F>(function))] { return T(f()); }) {}
 
+    /// Reads the value. A tracked read.
+    ///
+    /// @return The value.
     T operator()() const { return get_(); }
+    /// Like operator()(): reads the value. A tracked read.
+    ///
+    /// @return The value.
     [[nodiscard]] T get() const { return get_(); }
 
 private:
     std::function<T()> get_;
 };
 
-// A value derived from state: recomputed lazily, at most once per change, and only when read.
+/// A value derived from state: recomputed lazily, at most once per change, and only when read.
+/// Copies share the value. Usually made with computed().
+///
+/// @tparam T The value's type. When it's equality-comparable, a recomputed value equal to the
+///   last one doesn't count as a change for what reads it.
 template <class T>
 class Computed {
 public:
+    /// A computed value; `function` first runs when it's read.
+    ///
+    /// @param function Computes the value from state; the state it reads is tracked.
     explicit Computed(std::function<T()> function)
         : node_(std::make_shared<detail::ComputedNode<T>>(std::move(function))) {}
 
+    /// Reads the value, recomputing it first if state it read changed. A tracked read. If
+    /// `function` threw, reads rethrow that until something it read before throwing changes.
+    ///
+    /// @return The value.
     const T& operator()() const { return node_->get(); }
+    /// Like operator()(): reads the value, recomputing it first if needed. A tracked read, which
+    /// rethrows what `function` threw as operator()() does.
+    ///
+    /// @return The value.
     [[nodiscard]] const T& get() const { return node_->get(); }
 
 private:
     std::shared_ptr<detail::ComputedNode<T>> node_;
 };
 
-// auto doubled = computed([=] { return count() * 2; });
+/// Makes a Computed from a closure, deducing its type:
+///
+/// @code
+/// auto doubled = computed([=] { return count() * 2; });
+/// @endcode
+///
+/// @param function Computes the value from state; first runs when the value is read.
+/// @return The Computed.
 template <std::invocable F>
 auto computed(F function) -> Computed<std::decay_t<std::invoke_result_t<F>>> {
     using T = std::decay_t<std::invoke_result_t<F>>;
     return Computed<T>(std::function<T()>(std::move(function)));
 }
 
-// Runs `function` now and again whenever state it read changes (after the current event, before
-// the next frame). Call it while building views; it ends when those views are removed.
+/// Runs `function` now and again whenever state it read changes (after the current event, before
+/// the next frame). Call it while building views; it ends when those views are removed.
+///
+/// @param function The effect. Each run tracks the state it reads anew.
+/// @throws UsageError When no views are being built (nothing would end the effect), or off the
+///   UI thread of a running App.
 template <std::invocable F>
 void effect(F function) {
     detail::start_effect(std::make_shared<detail::EffectNode>(std::function<void()>(std::move(function))));
 }
 
-// Reads state inside `function` without subscribing to it.
+/// Reads state inside `function` without subscribing to it. Effects created inside still track
+/// their own reads.
+///
+/// @param function Runs once, now.
+/// @return What `function` returns.
 template <std::invocable F>
 decltype(auto) untrack(F&& function) {
     detail::begin_untracked();
@@ -398,7 +521,11 @@ decltype(auto) untrack(F&& function) {
     return std::invoke(std::forward<F>(function));
 }
 
-// Groups several writes: effects run once, after the outermost batch ends.
+/// Groups several writes: effects run once, after the outermost batch ends. The outermost batch
+/// runs them right away, rather than before the next frame.
+///
+/// @param function Runs once, now. If it throws, the effects stay scheduled and the exception
+///   propagates.
 template <std::invocable F>
 void batch(F&& function) {
     detail::begin_batch();

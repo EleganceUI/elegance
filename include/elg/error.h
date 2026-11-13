@@ -16,36 +16,37 @@ namespace elg {
 #pragma warning(disable : 4275) // std::runtime_error is part of the C++ runtime, not our DLL
 #endif
 
-// Base class for errors Elegance reports to the developer (design.md §3.2). Bugs inside
-// Elegance itself are never thrown; they produce a crash report instead.
+/// Base class for errors Elegance reports to the developer (design.md §3.2). Bugs inside
+/// Elegance itself are never thrown; they produce a crash report instead. Construct it (and its
+/// subclasses) with a message, as std::runtime_error; what() returns it.
 class ELG_API Error : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
     ~Error() override;
 };
 
-// A font, image, or file failed to load.
+/// A font, image, or file failed to load.
 class ELG_API ResourceError : public Error {
 public:
     using Error::Error;
     ~ResourceError() override;
 };
 
-// No suitable GPU, out of GPU memory, or the device was lost and couldn't be recovered.
+/// No suitable GPU, out of GPU memory, or the device was lost and couldn't be recovered.
 class ELG_API GpuError : public Error {
 public:
     using Error::Error;
     ~GpuError() override;
 };
 
-// The OS or windowing layer failed.
+/// The OS or windowing layer failed.
 class ELG_API PlatformError : public Error {
 public:
     using Error::Error;
     ~PlatformError() override;
 };
 
-// The API was used incorrectly.
+/// The API was used incorrectly, e.g. writing a State off the UI thread.
 class ELG_API UsageError : public Error {
 public:
     using Error::Error;

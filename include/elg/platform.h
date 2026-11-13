@@ -21,12 +21,16 @@
 
 namespace elg {
 
+/// An operating system Elegance runs on.
 enum class Platform {
     windows,
     macos,
     linux,
 };
 
+/// The platform the app was built for, known at compile time.
+///
+/// @return Platform::windows, Platform::macos or Platform::linux (anything else counts as Linux).
 constexpr Platform current_platform() noexcept {
 #if defined(_WIN32)
     return Platform::windows;
