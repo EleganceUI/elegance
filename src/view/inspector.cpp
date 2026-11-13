@@ -174,7 +174,7 @@ std::vector<InspectRow> visible_rows(const Inspector& inspector) {
     return out;
 }
 
-View TreeRow(const InspectRow& row, std::shared_ptr<Inspector> inspector) {
+View TreeRow(const InspectRow& row, const std::shared_ptr<Inspector>& inspector) {
     const ElementPath path = row.path;
     // A chevron to collapse or expand rows with children.
     const View disclosure =
@@ -250,7 +250,7 @@ std::vector<Property> details(const Inspector& inspector) {
 
 } // namespace
 
-View InspectorView(std::shared_ptr<Inspector> inspector) {
+View InspectorView(const std::shared_ptr<Inspector>& inspector) {
     const View toolbar = HStack(
         {.spacing = 8},
         Text([inspector] { return inspector->title(); }).font_weight(Weight::semibold).line_limit(1),

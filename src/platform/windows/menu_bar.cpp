@@ -121,9 +121,9 @@ bool menu_bar_handles_shortcuts() {
     return false;
 }
 
-void set_menu_bar(const std::vector<menus::Item>& menus, MenuCommand command) {
+void set_menu_bar(const std::vector<menus::Item>& menus, const MenuCommand& command) {
     g_menus = menus;
-    g_command = std::move(command);
+    g_command = command;
     for (auto& [window, menu] : g_windows) {
         show(window, menu);
     }

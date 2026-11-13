@@ -144,7 +144,7 @@ public:
             return;
         }
         if (info.role != AccessRole::none) {
-            add(element, info, out, std::move(pending));
+            add(element, info, out, pending);
             return;
         }
         // Transparent. Settings waiting for an element pass to an only child; around several
@@ -153,14 +153,14 @@ public:
         element.for_each_child([&](Element&) { ++count; });
         if (pending.any() && count != 1) {
             info.role = AccessRole::group;
-            add(element, info, out, std::move(pending));
+            add(element, info, out, pending);
             return;
         }
         element.for_each_child([&](Element& child) { visit(child, out, count == 1 ? pending : Pending{}); });
     }
 
 private:
-    void add(Element& element, AccessibilityInfo info, std::vector<std::uint64_t>& out, Pending pending) {
+    void add(Element& element, AccessibilityInfo info, std::vector<std::uint64_t>& out, const Pending& pending) {
         pending.apply(info);
         AccessNode node;
         node.id = element.accessibility_id();

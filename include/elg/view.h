@@ -538,8 +538,8 @@ public:
     // .blur() after it blurs the view, backdrop included. Inside an offscreen group (opacity below
     // 1, a shadow, a blur, ...) it sees only what the group drew behind it, as CSS's
     // backdrop-filter does.
-    [[nodiscard]] ELG_API View backdrop_blur(Prop<float> radius, BackdropOptions options = {}) const;
-    [[nodiscard]] ELG_API View backdrop_blur(Prop<float> radius, const Shape& shape, BackdropOptions options = {}) const;
+    [[nodiscard]] ELG_API View backdrop_blur(const Prop<float>& radius, const BackdropOptions& options = {}) const;
+    [[nodiscard]] ELG_API View backdrop_blur(const Prop<float>& radius, const Shape& shape, const BackdropOptions& options = {}) const;
     // Color adjustments (SwiftUI's, and CSS's filter functions). Each is reactive and animatable.
     // Adds to each channel: -1 black ... 0 unchanged ... 1 white.
     [[nodiscard]] ELG_API View brightness(Prop<float> amount) const;
@@ -569,7 +569,7 @@ public:
     [[nodiscard]] ELG_API View rotation_effect(Prop<float> degrees, UnitPoint anchor = UnitPoint::center) const;
     // Scales the drawn content about `anchor`, without affecting layout or hit testing. A uniform
     // scale stays sharp (vector); an uneven one renders offscreen first. Reactive and animatable.
-    [[nodiscard]] ELG_API View scale_effect(Prop<float> scale, UnitPoint anchor = UnitPoint::center) const;
+    [[nodiscard]] ELG_API View scale_effect(const Prop<float>& scale, UnitPoint anchor = UnitPoint::center) const;
     [[nodiscard]] ELG_API View scale_effect(Prop<float> x, Prop<float> y, UnitPoint anchor = UnitPoint::center) const;
     // Shows the content only where `mask` (sized and aligned like an overlay) is opaque; its
     // colors don't matter, only its alpha. A gradient fades the content out:
@@ -716,7 +716,7 @@ public:
     //   Button("Details", [=] { showing = true; })
     //       .popover(showing.binding(), [=] { return VStack(Text("Release notes"), ...); })
     ELG_API View popover(Binding<bool> is_presented, std::function<View()> content,
-                         PopoverOptions options = {}) const;
+                         const PopoverOptions& options = {}) const;
 
     // --- Keyboard and focus (design.md §10) ---
 
@@ -753,7 +753,7 @@ public:
     // With a std::set, more than one: Ctrl+click (Cmd on macOS) adds or removes a row, Shift+click
     // and Shift+arrows select the range from where it started, and Ctrl+A (Cmd+A) selects all.
     template <class K>
-    [[nodiscard]] [[nodiscard]] View selection(Binding<std::optional<K>> selection, SelectionOptions<K> options = {}) const {
+    [[nodiscard]] [[nodiscard]] View selection(const Binding<std::optional<K>>& selection, SelectionOptions<K> options = {}) const {
         detail::SelectionModel model;
         model.get = [selection] {
             const std::optional<K> key = selection.get();
@@ -774,7 +774,7 @@ public:
         return selection_impl(std::move(model));
     }
     template <class K>
-    [[nodiscard]] [[nodiscard]] View selection(Binding<std::set<K>> selection, SelectionOptions<K> options = {}) const {
+    [[nodiscard]] [[nodiscard]] View selection(const Binding<std::set<K>>& selection, SelectionOptions<K> options = {}) const {
         detail::SelectionModel model;
         model.multiple = true;
         model.get = [selection] {
@@ -787,7 +787,7 @@ public:
         model.contains = [selection](const ItemKey& key) {
             return selection.get().contains(detail::from_item_key<K>(key));
         };
-        model.set = [selection](std::vector<ItemKey> keys) {
+        model.set = [selection](const std::vector<ItemKey>& keys) {
             std::set<K> selected;
             for (const ItemKey& key : keys) {
                 selected.insert(detail::from_item_key<K>(key));

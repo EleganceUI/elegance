@@ -232,7 +232,8 @@ TEST_CASE("a lazy stack's rows select by key, built or not", "[selection][lazy]"
     detail::Scope scope;
     const detail::Scope::Use use(scope);
     std::vector<int> items;
-    for (int i = 0; i < 1000; ++i) {
+    items.reserve(1000);
+for (int i = 0; i < 1000; ++i) {
         items.push_back(i);
     }
     const State<std::optional<int>> selected;

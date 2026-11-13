@@ -34,7 +34,7 @@ public:
     };
 
     // `native_window`: the HWND on Windows. UI thread.
-    AccessibilityAdapter(void* native_window, Callbacks callbacks);
+    AccessibilityAdapter(void* native_window, const Callbacks& callbacks);
     ~AccessibilityAdapter();
 
     AccessibilityAdapter(const AccessibilityAdapter&) = delete;

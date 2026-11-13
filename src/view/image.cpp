@@ -262,7 +262,7 @@ void register_builtin_sets() {
          .font = std::span(phosphor_duotone, phosphor_duotone_size),
          .names_data = std::string_view(reinterpret_cast<const char*>(phosphor_duotone_css), phosphor_duotone_css_size)});
 #endif
-    register_icon_set("phosphor", std::move(phosphor));
+    register_icon_set("phosphor", phosphor);
 #endif
 }
 
@@ -380,7 +380,7 @@ ResolvedIcon resolve(std::string_view system_name) {
 
 } // namespace
 
-void register_icon_set(std::string name, IconSetOptions options) {
+void register_icon_set(std::string name, const IconSetOptions& options) {
     if (name.empty() || name.find('.') != std::string::npos) {
         throw UsageError(std::format("register_icon_set(): \"{}\" isn't a valid set name (non-empty, no dots)", name));
     }
@@ -473,7 +473,7 @@ private:
 
 namespace elg {
 
-View Image(ImageSource source) {
+View Image(const ImageSource& source) {
     const int kinds = (source.system_name.empty() ? 0 : 1) + (source.file.empty() ? 0 : 1) + (source.data.empty() ? 0 : 1);
     if (kinds != 1) {
         throw UsageError("Image: set exactly one of .system_name, .file, and .data");
@@ -493,7 +493,8 @@ View Image(ImageSource source) {
     }
     // Two-tone icons: the layers stacked, each in the same color at its own opacity.
     std::vector<View> layers;
-    for (std::size_t i = 0; i < icon.layers.size(); ++i) {
+    layers.reserve(icon.layers.size());
+for (std::size_t i = 0; i < icon.layers.size(); ++i) {
         layers.push_back(layer(i));
     }
     return ZStackLayout()(std::move(layers));
@@ -503,8 +504,8 @@ View Image(std::string_view system_name) {
     return Image(ImageSource{.system_name = std::string(system_name)});
 }
 
-View Label(Prop<std::string> title, ImageSource icon) {
-    return HStack({.spacing = 6}, Image(std::move(icon)), Text(std::move(title)));
+View Label(Prop<std::string> title, const ImageSource& icon) {
+    return HStack({.spacing = 6}, Image(icon), Text(std::move(title)));
 }
 
 } // namespace elg

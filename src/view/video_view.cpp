@@ -215,7 +215,7 @@ std::string clock(double seconds) {
 }
 
 // Two icons with one showing: a static Image can't change, its opacity can.
-View SwitchIcon(const char* on, const char* off, std::function<bool()> showing_on) {
+View SwitchIcon(const char* on, const char* off, const std::function<bool()>& showing_on) {
     return ZStack(Image(on).opacity([showing_on] { return showing_on() ? 1.f : 0.f; }),
                   Image(off).opacity([showing_on] { return showing_on() ? 0.f : 1.f; }));
 }
@@ -226,15 +226,15 @@ View SwitchIcon(const char* on, const char* off, std::function<bool()> showing_o
 
 namespace elg {
 
-View VideoView(VideoPlayer player, ContentMode mode) {
+View VideoView(const VideoPlayer& player, ContentMode mode) {
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(player.source(), mode));
 }
 
-View CameraView(Camera camera, ContentMode mode) {
+View CameraView(const Camera& camera, ContentMode mode) {
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(camera.source(), mode, camera.mirrored()));
 }
 
-View VideoFeedView(VideoFeed feed, ContentMode mode, bool mirrored) {
+View VideoFeedView(const VideoFeed& feed, ContentMode mode, bool mirrored) {
     return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(feed.source(), mode, mirrored));
 }
 
@@ -245,7 +245,7 @@ View GpuImageView(const ElgGpuImage* image, ContentMode mode) {
         source, mode, false, gpu_image_flipped(image)));
 }
 
-View VideoControls(VideoPlayer player) {
+View VideoControls(const VideoPlayer& player) {
     const View play = Button(detail::SwitchIcon("pause.fill", "play.fill", [player] { return player.is_playing(); })
                                  .frame(18, 18),
                              [player] { player.toggle(); })

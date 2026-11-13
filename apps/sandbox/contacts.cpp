@@ -46,7 +46,7 @@ std::vector<Contact> make_contacts(int count) {
         const std::string family = last[static_cast<std::size_t>(i / 7) % last.size()];
         std::string name = std::format("{} {}", given, family);
         std::string email = std::format("{}.{}{}@example.com", lowercase(given), lowercase(family), i);
-        std::string key = lowercase(name + " " + email);
+        std::string key = lowercase(std::format("{} {}", name, email));
         contacts.push_back({i + 1, std::move(name), std::move(email), std::move(key)});
     }
     return contacts;
@@ -71,7 +71,7 @@ View ContactRow(const Contact& contact) {
 
 } // namespace
 
-View ContactsWindow(State<ColorScheme> scheme) {
+View ContactsWindow(const State<ColorScheme>& scheme) {
     const auto all = std::make_shared<const std::vector<Contact>>(make_contacts(10'000));
     const auto query = State(std::string());
     // Recomputed per keystroke; the list keeps the rows whose contact is unchanged.

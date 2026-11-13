@@ -195,7 +195,7 @@ ELG_API View make_number_input(Binding<double> value, bool integer, NumberInputO
 //   NumberInput(opacity.binding(), {.min = 0, .max = 1, .step = 0.05, .decimals = 2})
 template <class T>
     requires std::same_as<T, int> || std::same_as<T, float> || std::same_as<T, double>
-View NumberInput(Binding<T> value, NumberInputOptions options = {}) {
+View NumberInput(const Binding<T>& value, NumberInputOptions options = {}) {
     Binding<double> as_double([value] { return static_cast<double>(value()); },
                               [value](double v) {
                                   if constexpr (std::same_as<T, int>) {
@@ -231,7 +231,7 @@ ELG_API View make_picker(std::vector<std::string> labels, std::function<std::siz
 //   Picker(size.binding(), {{Size::small, "S"}, {Size::medium, "M"}, {Size::large, "L"}})
 template <class T>
     requires std::equality_comparable<T>
-View Picker(Binding<T> selection, std::vector<std::pair<T, std::string>> options) {
+View Picker(const Binding<T>& selection, std::vector<std::pair<T, std::string>> options) {
     const auto shared = std::make_shared<const std::vector<std::pair<T, std::string>>>(std::move(options));
     std::vector<std::string> labels;
     labels.reserve(shared->size());
@@ -353,7 +353,7 @@ struct ScrollViewOptions {
 // Trackpad gestures (macOS) follow the axis they start along, stretch past the ends, and coast.
 //   ScrollView(VStack(rows...))
 ELG_API View ScrollView(View content);
-ELG_API View ScrollView(ScrollViewOptions options, View content);
+ELG_API View ScrollView(const ScrollViewOptions& options, View content);
 
 
 // One view per item of a collection, identified by key:
@@ -465,10 +465,10 @@ struct LazyHStackOptions {
 // lists (thousands of rows). Items scrolled far away are destroyed with their state.
 //   ScrollView(LazyVStack(ForEach(messages, &Message::id, MessageRow)))
 // `for_each` must be a ForEach. Outside a ScrollView every item is built.
-ELG_API View LazyVStack(LazyVStackOptions options, View for_each);
-ELG_API View LazyVStack(View for_each);
-ELG_API View LazyHStack(LazyHStackOptions options, View for_each);
-ELG_API View LazyHStack(View for_each);
+ELG_API View LazyVStack(LazyVStackOptions options, const View& for_each);
+ELG_API View LazyVStack(const View& for_each);
+ELG_API View LazyHStack(LazyHStackOptions options, const View& for_each);
+ELG_API View LazyHStack(const View& for_each);
 
 } // namespace elg
 

@@ -76,7 +76,7 @@ struct Inspector {
 void reveal_in_inspector(Inspector& inspector, const ElementPath& path);
 
 // The Inspector window's content.
-View InspectorView(std::shared_ptr<Inspector> inspector);
+View InspectorView(const std::shared_ptr<Inspector>& inspector);
 
 // Draws the selection and pick highlights over the inspected window's content.
 void paint_inspector_overlay(const Inspector& inspector, Element& root, DisplayList& list);

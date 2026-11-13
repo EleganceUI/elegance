@@ -290,12 +290,11 @@ wgpu::BindGroup WindowTarget::take_backdrop(const wgpu::CommandEncoder& encoder,
     destination.texture = copy.texture();
     const wgpu::Extent3D size{backdrop.width, backdrop.height, 1};
     encoder.CopyTextureToTexture(&source, &destination, &size);
-    const wgpu::BindGroup group = image_group(resources, copy.view());
     if (backdrop.sigma <= 0) {
-        return group;
+        return image_group(resources, copy.view());
     }
-    return blur_color(encoder, group, backdrop.width, backdrop.height, backdrop.sigma, backdrop.downsample, true,
-                      slot, resources);
+    return blur_color(encoder, image_group(resources, copy.view()), backdrop.width, backdrop.height, backdrop.sigma,
+                      backdrop.downsample, true, slot, resources);
 }
 
 void WindowTarget::draw_pass(const wgpu::CommandEncoder& encoder, const PassTarget& target, const PlanPass& plan_pass,

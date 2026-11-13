@@ -8,6 +8,6 @@
 #include <elg/elegance.h>
 
 // A List of 10,000 contacts with a live filter: exercises lazy stacks.
-elg::View ContactsWindow(elg::State<elg::ColorScheme> scheme);
+elg::View ContactsWindow(const elg::State<elg::ColorScheme>& scheme);
 
 #endif // SANDBOX_CONTACTS_H

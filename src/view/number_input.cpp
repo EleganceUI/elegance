@@ -266,7 +266,7 @@ std::unique_ptr<Element> NumberInputNode::lower(const LowerContext& context) con
     const auto decrement = [=] { step_by(-1); };
 
     const Binding<std::string> field_text([=] { return text(); },
-                                          [=](std::string typed) {
+                                          [=](const std::string& typed) {
                                               *dirty = true;
                                               text = typed;
                                               if (untrack([&] { return o.live.get(env); })) {

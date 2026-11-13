@@ -265,11 +265,11 @@ View View::blur(Prop<float> radius, bool opaque) const {
     return modifier(BlurModifier(std::move(radius), opaque));
 }
 
-View View::backdrop_blur(Prop<float> radius, BackdropOptions options) const {
-    return backdrop_blur(std::move(radius), Rectangle(), std::move(options));
+View View::backdrop_blur(const Prop<float>& radius, const BackdropOptions& options) const {
+    return backdrop_blur(radius, Rectangle(), options);
 }
 
-View View::backdrop_blur(Prop<float> radius, const Shape& shape, BackdropOptions options) const {
+View View::backdrop_blur(const Prop<float>& radius, const Shape& shape, const BackdropOptions& options) const {
     const float* blur = radius.static_value();
     const float* saturation = options.saturation.static_value();
     const float* brightness = options.brightness.static_value();
@@ -345,7 +345,7 @@ View View::rotation_effect(Prop<float> degrees, UnitPoint anchor) const {
     return modifier(RotationModifier(std::move(degrees), anchor));
 }
 
-View View::scale_effect(Prop<float> scale, UnitPoint anchor) const {
+View View::scale_effect(const Prop<float>& scale, UnitPoint anchor) const {
     return modifier(ScaleModifier(scale, scale, anchor));
 }
 
@@ -781,7 +781,7 @@ View ScrollView(View content) {
     return ScrollView({}, std::move(content));
 }
 
-View ScrollView(ScrollViewOptions options, View content) {
+View ScrollView(const ScrollViewOptions& options, View content) {
     return ViewAccess::make(std::make_shared<const detail::ScrollNode>(options, std::move(content)));
 }
 

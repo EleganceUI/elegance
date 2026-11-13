@@ -76,7 +76,7 @@ struct Window {
 };
 
 // A 50 x 20 button at (100, 100) with 80 x 40 floating content.
-View Anchored(State<bool> shown, int& anchor_clicks, int& content_clicks, FloatingOptions options) {
+View Anchored(const State<bool>& shown, int& anchor_clicks, int& content_clicks, FloatingOptions options) {
     options.boundary = FloatingBoundary::window;
     return Rectangle()
         .fill(Color::black)

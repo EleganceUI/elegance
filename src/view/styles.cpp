@@ -347,7 +347,7 @@ public:
 
 // The field, then (if shown) the arrows stacked at its trailing edge.
 View number_row(const NumberInputConfiguration& input, float arrow_size) {
-    const auto arrow = [&](detail::Icon which, std::function<void()> action, Signal<bool> can, const char* name) {
+    const auto arrow = [&](detail::Icon which, std::function<void()> action, const Signal<bool>& can, const char* name) {
         return Button(detail::icon(which, arrow_size, Weight::bold), std::move(action))
             .button_style(ArrowButtonStyle{})
             .disabled([can] { return !can(); })

@@ -96,7 +96,7 @@ void SDLCALL dialog_closed(void* userdata, const char* const* files, int) {
 
 } // namespace
 
-void choose_files(OpenFilesOptions options, std::function<void(std::vector<fs::path>)> done) {
+void choose_files(const OpenFilesOptions& options, std::function<void(std::vector<fs::path>)> done) {
     require_app("choose_files");
     auto request = std::make_unique<DialogRequest>();
     request->set_filters(options.filters);
@@ -108,7 +108,7 @@ void choose_files(OpenFilesOptions options, std::function<void(std::vector<fs::p
                            options.multiple);
 }
 
-void choose_save_file(SaveFileOptions options, std::function<void(std::optional<fs::path>)> done) {
+void choose_save_file(const SaveFileOptions& options, std::function<void(std::optional<fs::path>)> done) {
     require_app("choose_save_file");
     auto request = std::make_unique<DialogRequest>();
     request->set_filters(options.filters);
@@ -123,7 +123,7 @@ void choose_save_file(SaveFileOptions options, std::function<void(std::optional<
                            static_cast<int>(raw->filters.size()), raw->location.empty() ? nullptr : raw->location.c_str());
 }
 
-void choose_folders(ChooseFolderOptions options, std::function<void(std::vector<fs::path>)> done) {
+void choose_folders(const ChooseFolderOptions& options, std::function<void(std::vector<fs::path>)> done) {
     require_app("choose_folders");
     auto request = std::make_unique<DialogRequest>();
     request->location = utf8(options.directory);
@@ -135,14 +135,14 @@ void choose_folders(ChooseFolderOptions options, std::function<void(std::vector<
 
 // --- Notifications ---
 
-void notify(Notification notification) {
+void notify(const Notification& notification) {
     require_app("notify");
     detail::platform::native::show_notification(notification);
 }
 
 // --- Dock and taskbar ---
 
-void set_badge(std::optional<std::string> text) {
+void set_badge(const std::optional<std::string>& text) {
     require_app("set_badge");
     detail::platform::native::set_badge(text);
 }

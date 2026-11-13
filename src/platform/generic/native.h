@@ -50,7 +50,7 @@ void set_secure_event_input(bool on);
 // an Event with window coordinates (wheel deltas: points if precise, else notches; modifiers are
 // filled in by the caller) and returns whether it took it. Returns a handle, or nullptr.
 using InputSink = std::function<bool(Event)>;
-void* install_input_monitor(InputSink push);
+void* install_input_monitor(const InputSink& push);
 void remove_input_monitor(void* monitor);
 
 // Shows a system notification (platform/<os>/notifications.*). UI thread, while an App runs.
@@ -87,7 +87,7 @@ bool menu_bar_handles_shortcuts();
 // title bar, now and when created. `command` gets the id of a chosen item that has an action.
 // UI thread.
 using MenuCommand = std::function<void(std::uint32_t id)>;
-void set_menu_bar(const std::vector<menus::Item>& menus, MenuCommand command);
+void set_menu_bar(const std::vector<menus::Item>& menus, const MenuCommand& command);
 // A check box item's mark.
 void set_menu_checked(std::uint32_t id, bool checked);
 

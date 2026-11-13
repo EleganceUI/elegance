@@ -75,7 +75,7 @@ private:
     // Forgets every glyph: they're placed again, from the top-left, as frames draw them.
     void start_over();
     void submit(std::unique_ptr<GlyphJob> job);
-    void work(std::stop_token stop);
+    void work(const std::stop_token& stop);
 
     std::unordered_map<std::uint64_t, std::optional<AtlasGlyph>> glyphs_;
     std::unique_ptr<GlyphDiskCache> disk_; // used by the workers too (it's thread-safe)

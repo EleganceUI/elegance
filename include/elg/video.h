@@ -80,11 +80,11 @@ private:
 
 // The video's picture, fitted into (or filling, clipped to) the space offered, on black. Its
 // ideal size is the video's own.
-ELG_API View VideoView(VideoPlayer player, ContentMode mode = ContentMode::fit);
+ELG_API View VideoView(const VideoPlayer& player, ContentMode mode = ContentMode::fit);
 
 // Built-in controls: play/pause, a scrubber, the time, and mute. Lay them over (or under) a
 // VideoView.
-ELG_API View VideoControls(VideoPlayer player);
+ELG_API View VideoControls(const VideoPlayer& player);
 
 // --- Frames from the app ---
 
@@ -126,7 +126,7 @@ private:
 
 // The feed's picture, fitted into (or filling, clipped to) the space offered, on black;
 // `mirrored` shows it flipped left to right (someone's own camera).
-ELG_API View VideoFeedView(VideoFeed feed, ContentMode mode = ContentMode::fit, bool mirrored = false);
+ELG_API View VideoFeedView(const VideoFeed& feed, ContentMode mode = ContentMode::fit, bool mirrored = false);
 
 } // namespace elg
 

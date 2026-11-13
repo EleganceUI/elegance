@@ -68,7 +68,7 @@ public:
 
     // Sets `Key` for this environment (and everything derived from it).
     template <class Key>
-    void set(Prop<typename Key::Value> value) {
+    void set(const Prop<typename Key::Value>& value) {
         // Environment-dependent values (e.g. a ThemeColor) resolve against the environment they
         // were set in, so a key's value never depends on itself.
         auto resolved = std::make_shared<const Prop<typename Key::Value>>(value.resolved_in(*this));

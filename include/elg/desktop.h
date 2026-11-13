@@ -57,11 +57,11 @@ struct ChooseFolderOptions {
 
 // The system's open dialog, over the active window. `done` gets the chosen files, or none if
 // cancelled.
-ELG_API void choose_files(OpenFilesOptions options, std::function<void(std::vector<std::filesystem::path>)> done);
+ELG_API void choose_files(const OpenFilesOptions& options, std::function<void(std::vector<std::filesystem::path>)> done);
 // The system's save dialog. `done` gets the chosen path, or nullopt if cancelled. The file isn't
 // created; the dialog asked about replacing an existing one.
-ELG_API void choose_save_file(SaveFileOptions options, std::function<void(std::optional<std::filesystem::path>)> done);
-ELG_API void choose_folders(ChooseFolderOptions options, std::function<void(std::vector<std::filesystem::path>)> done);
+ELG_API void choose_save_file(const SaveFileOptions& options, std::function<void(std::optional<std::filesystem::path>)> done);
+ELG_API void choose_folders(const ChooseFolderOptions& options, std::function<void(std::vector<std::filesystem::path>)> done);
 
 // --- Notifications ---
 
@@ -72,7 +72,7 @@ struct Notification {
 };
 
 // Shows a system notification (Windows: a toast, also kept in the notification center).
-ELG_API void notify(Notification notification);
+ELG_API void notify(const Notification& notification);
 
 // --- Dock and taskbar ---
 
@@ -88,7 +88,7 @@ enum class ProgressState {
 // shows the text. Windows: a small badge over the taskbar button (fits about two characters).
 // Linux: launchers that support it (the Unity LauncherEntry API: GNOME's Dash to Dock, KDE)
 // show only a number, so other text is ignored.
-ELG_API void set_badge(std::optional<std::string> text);
+ELG_API void set_badge(const std::optional<std::string>& text);
 // A progress bar on the app's icon, 0...1; nullopt removes it. Windows shows it on every window's
 // taskbar button; macOS on the Dock icon; Linux where the launcher supports it.
 ELG_API void set_progress(std::optional<double> fraction, ProgressState state = ProgressState::normal);

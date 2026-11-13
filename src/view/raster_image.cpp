@@ -46,7 +46,7 @@ public:
             if (workers_.empty()) {
                 const unsigned count = std::clamp(std::thread::hardware_concurrency() / 4, 1u, 3u);
                 for (unsigned i = 0; i < count; ++i) {
-                    workers_.emplace_back([this](std::stop_token stop) { run(stop); });
+                    workers_.emplace_back([this](const std::stop_token& stop) { run(stop); });
                 }
             }
         }
@@ -65,7 +65,7 @@ public:
     }
 
 private:
-    void run(std::stop_token stop) {
+    void run(const std::stop_token& stop) {
         while (true) {
             std::function<void()> task;
             {

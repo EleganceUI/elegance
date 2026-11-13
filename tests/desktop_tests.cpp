@@ -12,9 +12,9 @@
 using namespace elg;
 
 TEST_CASE("desktop services need a running app", "[desktop]") {
-    CHECK_THROWS_AS(choose_files({}, [](std::vector<std::filesystem::path>) {}), UsageError);
-    CHECK_THROWS_AS(choose_save_file({}, [](std::optional<std::filesystem::path>) {}), UsageError);
-    CHECK_THROWS_AS(choose_folders({}, [](std::vector<std::filesystem::path>) {}), UsageError);
+    CHECK_THROWS_AS(choose_files({}, [](const std::vector<std::filesystem::path>&) {}), UsageError);
+    CHECK_THROWS_AS(choose_save_file({}, [](const std::optional<std::filesystem::path>&) {}), UsageError);
+    CHECK_THROWS_AS(choose_folders({}, [](const std::vector<std::filesystem::path>&) {}), UsageError);
     CHECK_THROWS_AS(notify({.title = "x"}), UsageError);
     CHECK_THROWS_AS(TrayIcon({.tooltip = "x"}), UsageError);
 }

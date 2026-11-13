@@ -26,6 +26,7 @@
 #include <print>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -51,7 +52,7 @@ struct PillButtonStyle : ButtonStyle {
     }
 };
 
-View TitleBar(State<ColorScheme> scheme) {
+View TitleBar(const State<ColorScheme>& scheme) {
     // Animated: every theme color cross-fades.
     const auto toggle = [=] {
         with_animation(Animation::ease_in_out(0.35), [=] {
@@ -73,7 +74,7 @@ View TitleBar(State<ColorScheme> scheme) {
 }
 
 // A shape above its caption.
-View Captioned(View shape, std::string caption) {
+View Captioned(const View& shape, std::string caption) {
     return VStack({.alignment = HorizontalAlignment::leading, .spacing = 12},
                   shape,
                   Text(std::move(caption)).font(Font::caption).foreground_style(ThemeColor::secondary));
@@ -98,7 +99,7 @@ View ShapeCards() {
 // a tooltip. Each reports what was chosen.
 View MenuCards() {
     const auto last = State(std::string("Nothing chosen yet"));
-    const auto say = [=](std::string what) { return [=] { last = what; }; };
+    const auto say = [=](const std::string& what) { return [=] { last = what; }; };
 
     const View target =
         Text("Right-click me")
@@ -218,7 +219,7 @@ std::optional<std::string> g_emoji_family;
 
 // The built-in icon set (Phosphor): weights follow the font, variants by name, Label for icon + text.
 View IconCards() {
-    const auto row = [](std::string suffix, Weight weight) {
+    const auto row = [](const std::string& suffix, Weight weight) {
         std::vector<View> icons;
         for (const char* name : {"house", "magnifying-glass", "bell", "gear", "user", "star", "heart"}) {
             icons.push_back(Image(std::string(name) + suffix).font(Font::system(24, weight)));
@@ -495,14 +496,14 @@ View AnimationCards() {
 }
 
 // Shows `count` on the app's icon in the Dock or taskbar (none at zero).
-void set_badge_count(State<int> badge, int count) {
+void set_badge_count(const State<int>& badge, int count) {
     badge = std::max(count, 0);
     set_badge(badge() > 0 ? std::optional(std::to_string(badge())) : std::nullopt);
 }
 
 // Desktop integration (design.md §13.4): dropping files, the system's file dialogs,
 // notifications, a tray icon, and the app icon's badge.
-View DesktopCards(State<int> badge) {
+View DesktopCards(const State<int>& badge) {
     const State<bool> targeted(false);
     const State<std::string> dropped(std::string("Nothing dropped yet"));
     const auto names = [](const std::vector<std::filesystem::path>& files) {
@@ -649,9 +650,8 @@ View CaptureCards() {
                        }))
             .button_style(BorderedButtonStyle{}),
         Text([=] {
-            const std::string error = camera.error();
-            if (!error.empty()) {
-                return error;
+            if (!camera.error().empty()) {
+                return camera.error();
             }
             const Size size = camera.size();
             return (cameras.empty() ? std::string("No camera found") : cameras.front().name) +
@@ -791,7 +791,7 @@ void log(const char* message) {
 }
 
 // A child component that edits its parent's state through a Binding.
-View CountStepper(Binding<int> value) {
+View CountStepper(const Binding<int>& value) {
     return HStack({.spacing = 8},
                   Button("-", [=] { value -= 1; }).disabled([=] { return value() <= 0; }),
                   Text([=] { return std::to_string(value()); })
@@ -987,7 +987,7 @@ View LoaderWindow() {
 
 // A transparent, undecorated window: only the rounded glass panel is drawn, the desktop shows
 // around and (faintly) through it. Drag it anywhere on the panel.
-View WidgetWindow(State<ColorScheme> scheme) {
+View WidgetWindow(const State<ColorScheme>& scheme) {
     const auto taps = State(0);
     const View panel =
         VStack({.alignment = HorizontalAlignment::leading, .spacing = 8},
@@ -1011,7 +1011,7 @@ View WidgetWindow(State<ColorScheme> scheme) {
         .color_scheme(scheme);
 }
 
-View ContentView(State<ColorScheme> scheme, State<int> badge, std::function<void()> quit) {
+View ContentView(const State<ColorScheme>& scheme, const State<int>& badge, std::function<void()> quit) {
     return VStack({.spacing = 0},
                   TitleBar(scheme),
                   // The title bar stays put; the cards scroll under it.
@@ -1046,7 +1046,7 @@ View ContentView(State<ColorScheme> scheme, State<int> badge, std::function<void
 
 // The menu bar (design.md §13.4): the system's on macOS and Windows, drawn above each window's
 // content on Linux. Items with a role and no action do the standard thing.
-std::vector<MenuBarItem> SandboxMenus(State<ColorScheme> scheme, State<int> badge) {
+std::vector<MenuBarItem> SandboxMenus(const State<ColorScheme>& scheme, const State<int>& badge) {
     const bool macos = current_platform() == Platform::macos;
     return {
         // macOS shows the app's name for this one; elsewhere it's File, with Exit or Quit.

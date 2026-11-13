@@ -278,8 +278,8 @@ public:
         : get_([state] { return state(); }), set_([state](T value) { state.set(std::move(value)); }) {}
 
     // A binding to a fixed value; writes are ignored. Handy for previews.
-    static Binding constant(T value) {
-        return Binding([value] { return value; }, [](T) {});
+    static Binding constant(const T& value) {
+        return Binding([value] { return value; }, [](const T&) {});
     }
 
     T operator()() const { return get_(); }
@@ -377,8 +377,14 @@ template <std::invocable F>
 decltype(auto) untrack(F&& function) {
     detail::begin_untracked();
     struct End {
+        End() = default;
+        End(const End&) = delete;
+        End(End&&) = delete;
+        End& operator=(const End&) = delete;
+        End& operator=(End&&) = delete;
         ~End() { detail::end_untracked(); }
-    } end;
+    };
+    const End end;
     return std::invoke(std::forward<F>(function));
 }
 

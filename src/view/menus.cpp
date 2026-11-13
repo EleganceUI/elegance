@@ -117,7 +117,7 @@ struct RowState {
 };
 
 // The row's look, from the MenuStyle of where the menu was opened.
-View menu_row(View title, View leading, View trailing, RowState state, Prop<bool> destructive,
+View menu_row(View title, View leading, View trailing, const RowState& state, const Prop<bool>& destructive,
               const EnvironmentValues& environment) {
     const MenuItemConfiguration configuration{
         .title = std::move(title),
@@ -136,7 +136,7 @@ View menu_row(View title, View leading, View trailing, RowState state, Prop<bool
 // deeper than this menu; `action` runs on click, Enter, or Space.
 // `closes_deeper`: hovering closes submenus deeper than this menu (not for a submenu's own row,
 // which would otherwise close the submenu it opened whenever the pointer comes back to it).
-std::unique_ptr<ButtonElement> make_row_element(const View& row, RowState state, std::function<void()> action,
+std::unique_ptr<ButtonElement> make_row_element(const View& row, const RowState& state, std::function<void()> action,
                                                 bool closes_deeper, const LowerContext& context) {
     const State<bool> pressed(false);
     auto element = make_button_element(row, std::move(action), pressed, state.hovered, context);
@@ -502,7 +502,8 @@ View MenuPickerStyle::make_body(const PickerConfiguration& picker) const {
     });
     return MenuButton(current, [shared, selected = picker.selected, select = picker.select] {
         std::vector<View> items;
-        for (std::size_t i = 0; i < shared->size(); ++i) {
+        items.reserve(shared->size());
+for (std::size_t i = 0; i < shared->size(); ++i) {
             items.push_back(MenuItem((*shared)[i], [select, i] { select(i); },
                                      {.checked = [selected, i] { return selected() == i; }}));
         }

@@ -386,14 +386,14 @@ void GlyphAtlas::submit(std::unique_ptr<GlyphJob> job) {
 #endif
             const unsigned count = std::clamp(std::thread::hardware_concurrency(), 2u, kMaxWorkers + 1) - 1;
             for (unsigned i = 0; i < count; ++i) {
-                workers_.emplace_back([this](std::stop_token stop) { work(stop); });
+                workers_.emplace_back([this](const std::stop_token& stop) { work(stop); });
             }
         }
     }
     wake_workers_.notify_one();
 }
 
-void GlyphAtlas::work(std::stop_token stop) {
+void GlyphAtlas::work(const std::stop_token& stop) {
     while (true) {
         std::unique_ptr<GlyphJob> job;
         {

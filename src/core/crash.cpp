@@ -109,7 +109,7 @@ std::filesystem::path write_report(const std::string& report) {
 
 } // namespace
 
-void internal_error(std::string_view message, std::source_location where, StackTrace trace) {
+void internal_error(std::string_view message, std::source_location where, const StackTrace& trace) {
     // A crash while reporting a crash: give up immediately.
     if (g_crashing.test_and_set()) {
         std::abort();

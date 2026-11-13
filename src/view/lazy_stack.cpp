@@ -430,24 +430,24 @@ namespace elg {
 
 using detail::ViewAccess;
 
-View LazyVStack(LazyVStackOptions options, View for_each) {
+View LazyVStack(LazyVStackOptions options, const View& for_each) {
     return ViewAccess::make(std::make_shared<const detail::LazyStackNode>(
         Axis::vertical, detail::fraction(options.alignment), options.spacing.value_or(default_stack_spacing),
         detail::items_of(for_each, "LazyVStack"), std::move(options.separators)));
 }
 
-View LazyVStack(View for_each) {
-    return LazyVStack(LazyVStackOptions{}, std::move(for_each));
+View LazyVStack(const View& for_each) {
+    return LazyVStack(LazyVStackOptions{}, for_each);
 }
 
-View LazyHStack(LazyHStackOptions options, View for_each) {
+View LazyHStack(LazyHStackOptions options, const View& for_each) {
     return ViewAccess::make(std::make_shared<const detail::LazyStackNode>(
         Axis::horizontal, detail::fraction(options.alignment), options.spacing.value_or(default_stack_spacing),
         detail::items_of(for_each, "LazyHStack"), std::move(options.separators)));
 }
 
-View LazyHStack(View for_each) {
-    return LazyHStack(LazyHStackOptions{}, std::move(for_each));
+View LazyHStack(const View& for_each) {
+    return LazyHStack(LazyHStackOptions{}, for_each);
 }
 
 } // namespace elg

@@ -53,7 +53,7 @@ struct ImageSource {
 // decode in the background and appear once ready; their size is known right away, so layout
 // doesn't jump. A file that can't be read or decoded logs a warning and shows nothing.
 // Throws elg::UsageError for an unknown icon (naming the closest matches).
-ELG_API View Image(ImageSource source);
+ELG_API View Image(const ImageSource& source);
 ELG_API View Image(std::string_view system_name);
 
 // --- AsyncImage: an image from the network ---
@@ -106,7 +106,7 @@ ELG_API void set_image_cache(ImageCacheOptions options);
 ELG_API void clear_image_cache();
 
 // An icon followed by a title, spaced for buttons, menus, and lists.
-ELG_API View Label(Prop<std::string> title, ImageSource icon);
+ELG_API View Label(Prop<std::string> title, const ImageSource& icon);
 
 // --- Icon sets ---
 
@@ -158,7 +158,7 @@ struct IconSetOptions {
 // Makes "<name>.<icon>" available to Image. Throws elg::UsageError if the name is taken (unless
 // `replace`) or the options are incomplete, elg::ResourceError if a file can't be read.
 //   register_icon_set("brand", {.font = "brand-icons.ttf", .names = "brand-icons.css"});
-ELG_API void register_icon_set(std::string name, IconSetOptions options);
+ELG_API void register_icon_set(std::string name, const IconSetOptions& options);
 
 // The set for names without a set prefix ("phosphor" unless changed).
 ELG_API void set_default_icon_set(std::string name);

@@ -29,6 +29,7 @@
 #include <mutex>
 #include <stop_token>
 #include <thread>
+#include <utility>
 
 #if defined(_WIN32)
 #include <process.h>
@@ -162,7 +163,7 @@ public:
             load();
         }
         watcher_ = std::jthread([weak = weak_from_this(), options = options_, initial = initial_build_,
-                                 loaded = loaded_time_](std::stop_token stop) {
+                                 loaded = loaded_time_](const std::stop_token& stop) {
             watch(stop, weak, options, initial, loaded);
         });
     }
@@ -303,7 +304,7 @@ private:
     }
 
     // The watcher thread: rebuilds when sources change, and reloads when the module file changes.
-    static void watch(std::stop_token stop, std::weak_ptr<ModuleHost> weak, HotReloadOptions options, bool build_now,
+    static void watch(const std::stop_token& stop, const std::weak_ptr<ModuleHost>& weak, HotReloadOptions options, bool build_now,
                       std::optional<fs::file_time_type> loaded) {
         const auto post = [weak](auto action) {
             post_ui_task([weak, action = std::move(action)] {
@@ -376,7 +377,7 @@ private:
     std::jthread watcher_;
 };
 
-View StatusBadge(std::shared_ptr<ModuleHost> host) {
+View StatusBadge(const std::shared_ptr<ModuleHost>& host) {
     const auto color = [host]() -> Color {
         switch (host->status_().phase) {
         case Phase::building: return Color::hex(0x8AADF4);

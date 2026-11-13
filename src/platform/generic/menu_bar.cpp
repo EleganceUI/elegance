@@ -310,12 +310,13 @@ View menu_entries(const std::vector<Item>& items, const std::function<void(std::
 
 } // namespace
 
-View menu_bar_view(Prop<std::vector<Item>> menus, std::function<void(std::uint32_t)> command,
-                   std::function<bool(std::uint32_t)> checked) {
+View menu_bar_view(const Prop<std::vector<Item>>& menus, const std::function<void(std::uint32_t)>& command,
+                   const std::function<bool(std::uint32_t)>& checked) {
     const auto indexed = [menus] {
         std::vector<std::pair<std::size_t, Item>> result;
         const std::vector<Item> items = menus.get();
-        for (std::size_t i = 0; i < items.size(); ++i) {
+        result.reserve(items.size());
+for (std::size_t i = 0; i < items.size(); ++i) {
             result.emplace_back(i, items[i]);
         }
         return result;

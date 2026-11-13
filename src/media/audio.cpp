@@ -22,6 +22,7 @@
 #include <list>
 #include <mutex>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace elg::detail {
@@ -231,7 +232,7 @@ public:
             std::erase_if(players_, [](const auto& weak) { return weak.expired(); });
             players_.push_back(player);
             if (!thread_.joinable()) {
-                thread_ = std::jthread([this](std::stop_token stop) { run(stop); });
+                thread_ = std::jthread([this](const std::stop_token& stop) { run(stop); });
             }
         }
         wake_.notify_all();
@@ -243,7 +244,7 @@ public:
     }
 
 private:
-    void run(std::stop_token stop) {
+    void run(const std::stop_token& stop) {
         bool was_playing = false;
         while (!stop.stop_requested()) {
             std::vector<std::weak_ptr<AudioPlayerState>> playing;

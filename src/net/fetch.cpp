@@ -573,7 +573,7 @@ FetchTask fetch(std::string url, std::function<void(FetchResult)> done, FetchOpt
         }
         asio::co_spawn(io, run(std::move(url), std::move(options), std::move(tls)),
                        asio::bind_cancellation_slot(state->signal.slot(),
-                                                    [state, done = std::move(done)](std::exception_ptr failure,
+                                                    [state, done = std::move(done)](const std::exception_ptr& failure,
                                                                                     FetchResult result) {
                                                         if (state->cancelled) {
                                                             return;

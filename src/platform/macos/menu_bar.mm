@@ -203,8 +203,8 @@ bool menu_bar_handles_shortcuts() {
     return true;
 }
 
-void set_menu_bar(const std::vector<menus::Item>& menus, MenuCommand command) {
-    g_command = std::move(command);
+void set_menu_bar(const std::vector<menus::Item>& menus, const MenuCommand& command) {
+    g_command = command;
     if (!g_target) {
         g_target = [ElgMenuTarget new];
     }

@@ -289,7 +289,7 @@ private:
 
 class TransitionNode final : public ViewNode {
 public:
-    TransitionNode(View content, Transition transition) : content_(std::move(content)), transition_(std::move(transition)) {}
+    TransitionNode(View content, Transition transition) : content_(std::move(content)), transition_(transition) {}
     [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:

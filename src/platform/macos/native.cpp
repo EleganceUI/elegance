@@ -89,8 +89,8 @@ void set_secure_event_input(bool on) {
     macos::set_secure_event_input(on);
 }
 
-void* install_input_monitor(InputSink push) {
-    return macos::install_input_monitor([push = std::move(push)](const macos::NativeInput& input) {
+void* install_input_monitor(const InputSink& push) {
+    return macos::install_input_monitor([push](const macos::NativeInput& input) {
         SDL_Window* window = nullptr;
         int count = 0;
         if (SDL_Window** windows = SDL_GetWindows(&count)) {

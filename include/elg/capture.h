@@ -139,7 +139,7 @@ private:
 };
 
 // The camera's picture, filling (cropped to) or fitted into the space offered.
-ELG_API View CameraView(Camera camera, ContentMode mode = ContentMode::fill);
+ELG_API View CameraView(const Camera& camera, ContentMode mode = ContentMode::fill);
 
 } // namespace elg
 

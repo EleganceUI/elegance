@@ -536,7 +536,7 @@ public:
         return content_->find_layout_value(key);
     }
     TransitionElement(Transition transition, std::unique_ptr<Element> content)
-        : transition_(std::move(transition)), content_(std::move(content)) {
+        : transition_(transition), content_(std::move(content)) {
         adopt(*content_);
     }
 

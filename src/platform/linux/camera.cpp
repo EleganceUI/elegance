@@ -99,7 +99,8 @@ std::vector<std::filesystem::path> video_nodes() {
     }
     std::ranges::sort(nodes);
     std::vector<std::filesystem::path> paths;
-    for (auto& [number, path] : nodes) {
+    paths.reserve(nodes.size());
+for (auto& [number, path] : nodes) {
         paths.push_back(std::move(path));
     }
     return paths;
@@ -129,7 +130,7 @@ public:
         error = std::string();
         playing = true;
         playing_now_ = true;
-        thread_ = std::jthread([this, weak = std::weak_ptr<VideoSource>(shared_from_this())](std::stop_token stop) {
+        thread_ = std::jthread([this, weak = std::weak_ptr<VideoSource>(shared_from_this())](const std::stop_token& stop) {
             capture(stop, weak);
         });
     }

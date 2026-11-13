@@ -57,8 +57,8 @@ std::uint32_t match_shortcut(const std::vector<Item>& menus, const KeyboardShort
 
 // Linux: the bar of menus at the top of a window. `menus` is read reactively (it changes when
 // App::menu_bar is called again); `command` runs an item; `checked` says whether a check box is.
-View menu_bar_view(Prop<std::vector<Item>> menus, std::function<void(std::uint32_t)> command,
-                   std::function<bool(std::uint32_t)> checked);
+View menu_bar_view(const Prop<std::vector<Item>>& menus, const std::function<void(std::uint32_t)>& command,
+                   const std::function<bool(std::uint32_t)>& checked);
 
 } // namespace elg::detail::menus
 

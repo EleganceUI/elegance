@@ -59,7 +59,7 @@ std::exception_ptr RenderThread::error() const {
 
 void RenderThread::run(std::promise<void> ready) noexcept {
     bool started = false;
-    const auto fail = [&](std::exception_ptr error) {
+    const auto fail = [&](const std::exception_ptr& error) {
         if (!started) {
             ready.set_exception(error);
             return;

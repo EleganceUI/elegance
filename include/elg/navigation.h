@@ -92,9 +92,9 @@ struct NavigationSplitViewOptions {
 // with a draggable divider between: an HSplitView of framed columns. The detail takes the rest of
 // the width.
 //   NavigationSplitView(ScrollView(LazyVStack(ForEach(folders, &Folder::id, FolderRow))), NoteEditor(selected))
-ELG_API View NavigationSplitView(View sidebar, View detail, NavigationSplitViewOptions options = {});
+ELG_API View NavigationSplitView(const View& sidebar, const View& detail, const NavigationSplitViewOptions& options = {});
 // Three columns: sidebar, content (e.g. a list of what's in the chosen folder), detail.
-ELG_API View NavigationSplitView(View sidebar, View content, View detail, NavigationSplitViewOptions options = {});
+ELG_API View NavigationSplitView(const View& sidebar, const View& content, const View& detail, const NavigationSplitViewOptions& options = {});
 
 // How a page comes in when pushed and goes when popped.
 enum class PageTransition {
@@ -176,7 +176,7 @@ struct NavigationStackBehavior {
     bool back_gestures = true;
 };
 ELG_API View make_navigation_stack(View root, std::function<std::vector<ForEachItem>()> pages,
-                                   std::function<std::vector<std::string>()> titles, std::function<void()> pop,
+                                   std::function<std::vector<std::string>()> titles, const std::function<void()>& pop,
                                    NavigationStackBehavior behavior);
 } // namespace detail
 
@@ -196,7 +196,7 @@ template <class Route>
     requires std::equality_comparable<Route>
 View NavigationStack(Binding<std::vector<Route>> path, View root,
                      std::type_identity_t<std::function<View(const Route&)>> destination,
-                     NavigationStackOptions<Route> options = {}) {
+                     const NavigationStackOptions<Route>& options = {}) {
     bool (*equals)(const void*, const void*) = [](const void* a, const void* b) {
         return *static_cast<const Route*>(a) == *static_cast<const Route*>(b);
     };
@@ -234,7 +234,7 @@ template <class Route>
     requires std::equality_comparable<Route>
 View NavigationStack(const State<std::vector<Route>>& path, View root,
                      std::type_identity_t<std::function<View(const Route&)>> destination,
-                     NavigationStackOptions<Route> options = {}) {
+                     const NavigationStackOptions<Route>& options = {}) {
     return NavigationStack(path.binding(), std::move(root), std::move(destination), std::move(options));
 }
 

@@ -17,7 +17,7 @@ bool menu_bar_handles_shortcuts() {
     return false;
 }
 
-void set_menu_bar(const std::vector<menus::Item>&, MenuCommand) {}
+void set_menu_bar(const std::vector<menus::Item>&, const MenuCommand&) {}
 
 void set_menu_checked(std::uint32_t, bool) {}
 

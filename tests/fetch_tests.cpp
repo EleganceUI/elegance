@@ -544,7 +544,7 @@ TEST_CASE("HTTP dates and freshness", "[cache]") {
     CHECK_FALSE(net::parse_http_date("Sun, 31 Feb 1994 08:49:37 GMT"));
 
     const std::int64_t now = kNov6;
-    const auto entry = [&](net::CacheHeaders headers) {
+    const auto entry = [&](const net::CacheHeaders& headers) {
         return net::make_cache_entry("https://example.com/a.png", false, headers, {1, 2, 3}, now);
     };
     const auto max_age = entry({.cache_control = "public, max-age=60"});

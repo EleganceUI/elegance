@@ -383,7 +383,7 @@ ELG_EXPORT View* elg_scroll_view(View* take_content, int32_t axes, ElgProp shows
         options.position = *position;
     }
     options.sticks_to_end = prop<bool>(sticks_to_end);
-    return out(ScrollView(std::move(options), take(take_content)));
+    return out(ScrollView(options, take(take_content)));
     ELG_CATCH(nullptr)
 }
 
@@ -508,9 +508,9 @@ ELG_EXPORT View* elg_navigation_split_view(View* take_sidebar, View* take_conten
     options.detail_width = width(o->detail_width);
     options.dividers = split_view_options(o->dividers);
     if (take_content) {
-        return out(NavigationSplitView(take(take_sidebar), take(take_content), take(take_detail), std::move(options)));
+        return out(NavigationSplitView(take(take_sidebar), take(take_content), take(take_detail), options));
     }
-    return out(NavigationSplitView(take(take_sidebar), take(take_detail), std::move(options)));
+    return out(NavigationSplitView(take(take_sidebar), take(take_detail), options));
     ELG_CATCH(nullptr)
 }
 
@@ -935,7 +935,7 @@ ELG_EXPORT void elg_register_icon_set(ElgStr name, ElgIconFont font, const ElgIc
     options.names = path(names);
     options.names_data = view(names_data);
     options.replace = replace;
-    register_icon_set(str(name), std::move(options));
+    register_icon_set(str(name), options);
     ELG_CATCH_VOID
 }
 
@@ -1087,11 +1087,11 @@ ELG_EXPORT View* elg_mod_blur(const View* v, ElgProp radius, bool opaque) {
 ELG_EXPORT View* elg_mod_backdrop_blur(const View* v, ElgProp radius, const Shape* shape, ElgProp saturation,
                                        ElgProp brightness, ElgProp noise) {
     ELG_TRY
-    BackdropOptions options{prop<float>(saturation), prop<float>(brightness), prop<float>(noise)};
+    const BackdropOptions options{prop<float>(saturation), prop<float>(brightness), prop<float>(noise)};
     if (shape) {
-        return out(v->backdrop_blur(prop<float>(radius), *shape, std::move(options)));
+        return out(v->backdrop_blur(prop<float>(radius), *shape, options));
     }
-    return out(v->backdrop_blur(prop<float>(radius), std::move(options)));
+    return out(v->backdrop_blur(prop<float>(radius), options));
     ELG_CATCH(nullptr)
 }
 // kind: ColorFilter::Kind. `amount` (unused for multiply, luminance_to_alpha), `color` (multiply only).
@@ -1452,7 +1452,7 @@ ELG_EXPORT View* elg_mod_popover(const View* v, Binding<bool>* take_is_presented
     options.boundary = static_cast<FloatingBoundary>(boundary);
     options.padded = prop<bool>(padded);
     options.motion = motion(popup_motion);
-    return out(v->popover(*is_presented, view_builder(content), std::move(options)));
+    return out(v->popover(*is_presented, view_builder(content), options));
     ELG_CATCH(nullptr)
 }
 ELG_EXPORT View* elg_mod_focusable(const View* v, bool focusable) {
@@ -1515,7 +1515,7 @@ void write_keys(const RustFn& set, const std::vector<ItemKey>& keys) {
 
 // View::selection over the Rust selection, with keys of type K (std::int64_t or std::string).
 template <class K>
-View with_selection(const View& v, bool multiple, SharedFn get, SharedFn set, SharedFn activate) {
+View with_selection(const View& v, bool multiple, const SharedFn& get, const SharedFn& set, const SharedFn& activate) {
     SelectionOptions<K> options;
     if (activate) {
         options.on_activate = [activate](const K& key) {
@@ -1525,7 +1525,7 @@ View with_selection(const View& v, bool multiple, SharedFn get, SharedFn set, Sh
         };
     }
     if (multiple) {
-        Binding<std::set<K>> binding(
+        const Binding<std::set<K>> binding(
             [get] {
                 std::set<K> keys;
                 for (const ItemKey& key : read_keys(*get)) {
@@ -1533,16 +1533,17 @@ View with_selection(const View& v, bool multiple, SharedFn get, SharedFn set, Sh
                 }
                 return keys;
             },
-            [set](std::set<K> keys) {
+            [set](const std::set<K>& keys) {
                 std::vector<ItemKey> items;
-                for (const K& key : keys) {
+                items.reserve(keys.size());
+for (const K& key : keys) {
                     items.push_back(detail::to_item_key(key));
                 }
                 write_keys(*set, items);
             });
         return v.selection(std::move(binding), std::move(options));
     }
-    Binding<std::optional<K>> binding(
+    const Binding<std::optional<K>> binding(
         [get]() -> std::optional<K> {
             const std::vector<ItemKey> keys = read_keys(*get);
             return keys.empty() ? std::nullopt : std::optional<K>(detail::from_item_key<K>(keys.front()));

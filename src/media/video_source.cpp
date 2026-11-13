@@ -67,8 +67,8 @@ public:
 
 } // namespace
 
-std::shared_ptr<VideoSource> VideoSource::create(std::string url) {
-    return create_platform_video_source(std::move(url));
+std::shared_ptr<VideoSource> VideoSource::create(const std::string& url) {
+    return create_platform_video_source(url);
 }
 
 std::shared_ptr<VideoSource> VideoSource::unsupported(std::string message) {

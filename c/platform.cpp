@@ -531,11 +531,13 @@ static std::vector<FileFilter> filters(const ElgFileFilter* items, size_t count)
 
 static void send_paths(const SharedFn& f, const std::vector<std::filesystem::path>& paths) {
     std::vector<std::string> names;
-    for (const auto& p : paths) {
+    names.reserve(paths.size());
+for (const auto& p : paths) {
         names.push_back(utf8(p));
     }
     std::vector<ElgStr> items;
-    for (const auto& n : names) {
+    items.reserve(names.size());
+for (const auto& n : names) {
         items.push_back(c_str(n));
     }
     ElgPaths arg{items.data(), items.size()};
@@ -547,7 +549,7 @@ ELG_EXPORT void elg_choose_files(const ElgFileFilter* fs, size_t filter_count, E
     ELG_TRY
     const SharedFn f = std::make_shared<const RustFn>(done);
     choose_files({filters(fs, filter_count), path(directory), multiple},
-                 [f](std::vector<std::filesystem::path> paths) { send_paths(f, paths); });
+                 [f](const std::vector<std::filesystem::path>& paths) { send_paths(f, paths); });
     ELG_CATCH_VOID
 }
 ELG_EXPORT void elg_choose_save_file(const ElgFileFilter* fs, size_t filter_count, ElgStr directory, ElgStr name,
@@ -566,7 +568,7 @@ ELG_EXPORT void elg_choose_save_file(const ElgFileFilter* fs, size_t filter_coun
 ELG_EXPORT void elg_choose_folders(ElgStr directory, bool multiple, ElgClosure done) {
     ELG_TRY
     const SharedFn f = std::make_shared<const RustFn>(done);
-    choose_folders({path(directory), multiple}, [f](std::vector<std::filesystem::path> paths) { send_paths(f, paths); });
+    choose_folders({path(directory), multiple}, [f](const std::vector<std::filesystem::path>& paths) { send_paths(f, paths); });
     ELG_CATCH_VOID
 }
 

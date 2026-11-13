@@ -38,7 +38,8 @@ inline void draw_glyph(DisplayList& list, GlyphAtlas& atlas, const FontFace& fac
             };
             const ColorPaint& paint = path.paint;
             std::vector<GradientStop> stops;
-            for (const ColorStop& stop : paint.stops) {
+            stops.reserve(paint.stops.size());
+for (const ColorStop& stop : paint.stops) {
                 stops.push_back({tint(stop.color, stop.foreground), stop.offset});
             }
             ShapeStyle fill(Color::clear);

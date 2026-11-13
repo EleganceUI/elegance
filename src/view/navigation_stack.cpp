@@ -497,7 +497,7 @@ View BarNavigationStackStyle::make_body(const NavigationStackConfiguration& stac
 }
 
 View detail::make_navigation_stack(View root, std::function<std::vector<ForEachItem>()> pages,
-                                   std::function<std::vector<std::string>()> titles, std::function<void()> pop,
+                                   std::function<std::vector<std::string>()> titles, const std::function<void()>& pop,
                                    NavigationStackBehavior behavior) {
     const bool back_gestures = behavior.back_gestures;
     const View pages_view = ViewAccess::make(

@@ -170,7 +170,7 @@ TEST_CASE("a disabled drop target refuses; one around it may take the drop", "[d
     detail::Scope scope;
     const detail::Scope::Use use(scope);
     std::string taker;
-    const auto take = [&](std::string name) {
+    const auto take = [&](const std::string& name) {
         return [&taker, name](const std::string&, Point) {
             taker = name;
             return true;

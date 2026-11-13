@@ -608,7 +608,7 @@ int App::run() {
     }
     if (platform::native::draws_menu_bar_in_content()) {
         for (WindowEntry& entry : self.windows) {
-            entry.wrap = [&shown_menus, &shown_checks, &run_menu_command](View content) {
+            entry.wrap = [&shown_menus, &shown_checks, &run_menu_command](const View& content) {
                 const float infinity = std::numeric_limits<float>::infinity();
                 View bar = menus::menu_bar_view([&shown_menus] { return shown_menus(); },
                                                 [&run_menu_command](std::uint32_t id) { run_menu_command(id); },
