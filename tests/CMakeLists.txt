@@ -16,6 +16,7 @@ add_executable(elegance_tests
         capture_tests.cpp
         desktop_tests.cpp
         environment_tests.cpp
+        glyph_atlas_tests.cpp
         gpu_image_tests.cpp
         grid_tests.cpp
         hover_tests.cpp
@@ -24,6 +25,7 @@ add_executable(elegance_tests
         raw_input_tests.cpp
         gesture_tests.cpp
         disabled_tests.cpp
+        dynamic_children_tests.cpp
         floating_tests.cpp
         modifier_shorthand_tests.cpp
         picker_slider_style_tests.cpp
@@ -31,6 +33,7 @@ add_executable(elegance_tests
         selection_tests.cpp
         secure_text_input_tests.cpp
         fetch_tests.cpp
+        image_decode_tests.cpp
         image_tests.cpp
         navigation_tests.cpp
         number_input_tests.cpp
@@ -57,7 +60,9 @@ if (MSVC)
     target_compile_options(elegance_tests PRIVATE /utf-8)
 endif ()
 
-catch_discover_tests(elegance_tests)
+# Under LeakSanitizer: fontconfig (loaded from the system on Linux) keeps its caches until exit.
+catch_discover_tests(elegance_tests PROPERTIES ENVIRONMENT_MODIFICATION
+                     "LSAN_OPTIONS=string_append::suppressions=${CMAKE_CURRENT_SOURCE_DIR}/lsan_suppressions.txt")
 
 # Compile the public FFI surface as real C, not merely as C++ with extern "C" declarations.
 enable_language(C)

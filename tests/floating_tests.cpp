@@ -478,3 +478,69 @@ TEST_CASE("container-bound content moves with its container", "[floating][contai
     window.click({125, 110}); // where it was: in the container, outside it
     CHECK_FALSE(scene.shown.peek());
 }
+
+TEST_CASE("Esc closes in-window floating content under the pointer after the event", "[floating]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    const State<bool> shown(true);
+    int anchor_clicks = 0;
+    int content_clicks = 0;
+    Window window(Anchored(shown, anchor_clicks, content_clicks, {.placement = {.spacing = 4}}));
+    window.layout();
+    window.events->pointer_moved({110, 130}); // over the content
+    window.events->key({.kind = KeyEvent::Kind::down, .key = Key::escape});
+    window.layout();
+    window.events->refresh_hover(); // as each frame does; must not reach the closed content
+    CHECK_FALSE(shown.peek());
+    window.click({110, 130});
+    CHECK(content_clicks == 0);
+}
+
+TEST_CASE("closing container-bound content by Esc or a press takes it off the screen", "[floating][container]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    ContainerScene scene;
+    Window window(scene.view(true));
+    window.layout();
+    window.events->key({.kind = KeyEvent::Kind::down, .key = Key::escape});
+    window.layout();
+    REQUIRE_FALSE(scene.shown.peek());
+    window.click({125, 110}); // where the content was
+    CHECK(scene.content_clicks == 0);
+    CHECK(scene.container_clicks == 1);
+
+    scene.shown = true;
+    window.layout();
+    window.click({20, 250}); // outside it: only closes it
+    REQUIRE_FALSE(scene.shown.peek());
+    window.click({125, 110});
+    CHECK(scene.content_clicks == 0);
+    CHECK(scene.container_clicks == 2);
+}
+
+TEST_CASE("container-bound content leaves the window's layer with its container", "[floating][container]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    const State<bool> container_shown(true);
+    const State<bool> shown(true);
+    int content_clicks = 0;
+    int sibling_clicks = 0;
+    const View container =
+        ZStack({.alignment = Alignment::top_leading}, Rectangle().fill(Color::white).frame(200, 300),
+               Rectangle()
+                   .fill(Color::black)
+                   .frame(50, 20)
+                   .floating(shown.binding(),
+                             [&] { return Rectangle().fill(Color::black).frame(80, 40).on_click([&] { ++content_clicks; }); },
+                             {.placement = {.edge = FloatingEdge::trailing}, .boundary = FloatingBoundary::container})
+                   .offset(100, 100))
+            .floating_container();
+    Window window(HStack({.spacing = 0}, If([=] { return container_shown(); }, container),
+                         Rectangle().fill(Color::white).frame(200, 300).on_click([&] { ++sibling_clicks; })));
+    window.layout();
+    container_shown = false; // the container goes, its content still open
+    window.layout();
+    window.click({100, 150}); // the sibling, now at the leading edge
+    CHECK(sibling_clicks == 1);
+    CHECK(content_clicks == 0);
+}

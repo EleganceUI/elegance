@@ -182,6 +182,11 @@ private:
             response.set(bhttp::field::cache_control, "no-store");
             response.set(bhttp::field::etag, "\"n\"");
             response.body() = "secret";
+        } else if (target == "/two-fields") {
+            // Two Cache-Control fields: together they mean "don't store".
+            response.insert(bhttp::field::cache_control, "max-age=600");
+            response.insert(bhttp::field::cache_control, "no-store");
+            response.body() = "split";
         } else {
             response.result(bhttp::status::not_found);
         }
@@ -548,6 +553,11 @@ TEST_CASE("HTTP dates and freshness", "[cache]") {
     CHECK_FALSE(max_age->fresh(now + 60));
     // Age counts against it; so does a Date in the past.
     CHECK_FALSE(entry({.cache_control = "max-age=60", .age = "60"}));
+    // Ages past 2^31, even too large to parse, count as 2^31 (RFC 9111): old, never fresh.
+    CHECK_FALSE(entry({.cache_control = "max-age=60", .age = "99999999999999999999"}));
+    const auto ancient = entry({.cache_control = "max-age=60", .age = "9223372036854775807", .etag = "\"e\""});
+    REQUIRE(ancient);
+    CHECK_FALSE(ancient->fresh(now + 1));
     const auto aged = entry({.cache_control = "max-age=60", .age = "30", .etag = "\"e\""});
     REQUIRE(aged);
     CHECK_FALSE(aged->fresh(now + 30));
@@ -599,6 +609,14 @@ TEST_CASE("the disk cache answers while fresh and revalidates after", "[fetch][c
     CHECK(text(fetch(server.url("/nostore"), options)) == "secret");
     CHECK(server.hits("/nostore") == 2);
     CHECK(directory.files() == before);
+
+    // no-store in a second Cache-Control field counts too. (Stored entries appear within a few
+    // milliseconds; this one must not.)
+    CHECK(text(fetch(server.url("/two-fields"), options)) == "split");
+    for (int i = 0; i < 30 && !cache->find(server.url("/two-fields")); ++i) {
+        std::this_thread::sleep_for(10ms);
+    }
+    CHECK_FALSE(cache->find(server.url("/two-fields")));
 }
 
 TEST_CASE("the disk cache answers with a stale copy when the server is gone", "[fetch][cache]") {

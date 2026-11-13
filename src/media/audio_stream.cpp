@@ -7,6 +7,7 @@
 #include <elg/audio.h>
 
 #include "core/log.h"
+#include "core/ui_tasks.h"
 
 #include <elg/reactive.h>
 
@@ -16,6 +17,7 @@
 #include <atomic>
 #include <cstring>
 #include <deque>
+#include <exception>
 #include <format>
 #include <mutex>
 #include <optional>
@@ -59,6 +61,7 @@ struct AudioStreamState {
     std::mutex mutex;
     std::deque<float> queue; // interleaved
     std::atomic<float> volume{1.f};
+    std::atomic<bool> render_failed{false}; // on_render threw: it isn't called again
 
     State<std::string> error{std::string()};
 
@@ -80,7 +83,17 @@ struct AudioStreamState {
         const std::size_t count = static_cast<std::size_t>(frames) * self->options.channels;
         std::fill(out, out + count, 0.f);
         if (self->options.on_render) {
-            self->options.on_render(std::span(out, count));
+            if (!self->render_failed.load(std::memory_order_relaxed)) {
+                try {
+                    self->options.on_render(std::span(out, count));
+                } catch (...) {
+                    // Nothing may unwind into the audio library: the stream goes silent, and the
+                    // error goes to the UI thread, as one from the app's code there would.
+                    std::fill(out, out + count, 0.f);
+                    self->render_failed = true;
+                    post_ui_task([error = std::current_exception()] { std::rethrow_exception(error); });
+                }
+            }
         } else {
             std::lock_guard lock(self->mutex);
             const std::size_t take = std::min(count, self->queue.size());

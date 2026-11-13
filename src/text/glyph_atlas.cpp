@@ -277,12 +277,21 @@ const AtlasGlyph* GlyphAtlas::find_or_add(const FontFace& face, std::uint32_t gl
     const std::uint64_t key = (static_cast<std::uint64_t>(face.id()) << 32) | glyph_id;
     auto it = glyphs_.find(key);
     if (it == glyphs_.end()) {
-        it = glyphs_.emplace(key, prepare(face, glyph_id)).first;
+        bool full = false;
+        std::optional<AtlasGlyph> placed = prepare(face, glyph_id, full);
+        if (full) {
+            start_over_ = true; // after this frame
+            return nullptr;
+        }
+        it = glyphs_.emplace(key, placed).first;
     }
     return it->second ? &*it->second : nullptr;
 }
 
 // A glyph's distance field to generate: everything a worker needs, independent of FreeType.
+// Frames (taken uploads) between two starts over at least.
+constexpr std::uint32_t kFramesBetweenStartsOver = 30;
+
 struct GlyphJob {
     msdfgen::Shape shape;
     const FontFace* face = nullptr; // for the disk cache (fonts outlive the atlas)
@@ -294,6 +303,7 @@ struct GlyphJob {
     double scale = 1;
     msdfgen::Vector2 translate;
     bool icon = false;
+    std::uint64_t generation = 0; // the atlas's when placed
 };
 
 namespace {
@@ -401,7 +411,9 @@ void GlyphAtlas::work(std::stop_token stop) {
         std::function<void()> on_ready;
         {
             std::lock_guard lock(mutex_);
-            uploads_.push_back(std::move(upload));
+            if (job->generation == generation_) { // else its slot went with an older layout
+                uploads_.push_back(std::move(upload));
+            }
             --pending_;
             on_ready = on_ready_;
         }
@@ -413,13 +425,51 @@ void GlyphAtlas::work(std::stop_token stop) {
 }
 
 std::vector<GlyphUpload> GlyphAtlas::take_uploads() {
-    std::lock_guard lock(mutex_);
-    return std::exchange(uploads_, {});
+    std::vector<GlyphUpload> uploads;
+    {
+        std::lock_guard lock(mutex_);
+        uploads = std::exchange(uploads_, {});
+        started_over_ = false;
+    }
+    // These are for the layout the frame just built used; starting over comes after them. Not
+    // every frame: when one frame alone needs more glyphs than fit, starting over every frame
+    // would redraw without end; some of its glyphs stay undrawn instead.
+    ++frames_since_start_over_;
+    if (start_over_ && frames_since_start_over_ >= kFramesBetweenStartsOver) {
+        start_over();
+    }
+    start_over_ = false;
+    return uploads;
 }
 
 bool GlyphAtlas::has_uploads() const {
     std::lock_guard lock(mutex_);
-    return !uploads_.empty();
+    return !uploads_.empty() || started_over_;
+}
+
+void GlyphAtlas::start_over() {
+    if (!reported_full_) {
+        log_warning("the glyph atlas is full; it starts over, and glyphs are placed again as they're drawn");
+        reported_full_ = true;
+    }
+    frames_since_start_over_ = 0;
+    glyphs_.clear();
+    shelf_x_ = 0;
+    shelf_y_ = 0;
+    shelf_height_ = 0;
+    std::function<void()> on_ready;
+    {
+        std::lock_guard lock(mutex_);
+        ++generation_;
+        pending_ -= jobs_.size(); // not started: for the old layout
+        jobs_.clear();
+        started_over_ = true;
+        on_ready = on_ready_;
+    }
+    idle_.notify_all();
+    if (on_ready) {
+        on_ready(); // the event loop draws the windows again
+    }
 }
 
 void GlyphAtlas::set_on_ready(std::function<void()> on_ready) {
@@ -439,24 +489,29 @@ bool GlyphAtlas::wait_idle(std::chrono::milliseconds timeout) {
     return idle_.wait_for(lock, timeout, [&] { return pending_ == 0; });
 }
 
-bool GlyphAtlas::allocate(std::uint32_t width, std::uint32_t height, std::uint32_t& x, std::uint32_t& y) {
+GlyphAtlas::Allocation GlyphAtlas::allocate(std::uint32_t width, std::uint32_t height, std::uint32_t& x,
+                                            std::uint32_t& y) {
+    // Checked first: a glyph that can never fit must not close a shelf.
+    if (width + 1 > kAtlasSize || height + 1 > kAtlasSize) {
+        return Allocation::too_large;
+    }
     // Simple shelf packing with a 1px gap between glyphs.
     if (shelf_x_ + width + 1 > kAtlasSize) {
         shelf_y_ += shelf_height_;
         shelf_x_ = 0;
         shelf_height_ = 0;
     }
-    if (width + 1 > kAtlasSize || shelf_y_ + height + 1 > kAtlasSize) {
-        return false;
+    if (shelf_y_ + height + 1 > kAtlasSize) {
+        return Allocation::full;
     }
     x = shelf_x_ + 1;
     y = shelf_y_ + 1;
     shelf_x_ += width + 1;
     shelf_height_ = std::max(shelf_height_, height + 1);
-    return true;
+    return Allocation::placed;
 }
 
-std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_t glyph_id) {
+std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_t glyph_id, bool& full) {
     FT_Face ft = face.ft_face();
     if (FT_Load_Glyph(ft, glyph_id, FT_LOAD_NO_SCALE | FT_LOAD_NO_BITMAP | FT_LOAD_NO_HINTING) != 0) {
         log_warning("failed to load glyph {} of font {}", glyph_id, face.id());
@@ -503,10 +558,13 @@ std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_
 
     std::uint32_t x = 0;
     std::uint32_t y = 0;
-    if (!allocate(width, height, x, y)) {
-        if (!reported_full_) {
-            log_warning("the glyph atlas is full; further new glyphs won't be drawn");
-            reported_full_ = true;
+    switch (allocate(width, height, x, y)) {
+    case Allocation::placed: break;
+    case Allocation::full: full = true; return std::nullopt;
+    case Allocation::too_large:
+        if (!reported_too_large_) {
+            log_warning("glyph {} of font {} is too large for the glyph atlas; it isn't drawn", glyph_id, face.id());
+            reported_too_large_ = true;
         }
         return std::nullopt;
     }
@@ -521,6 +579,11 @@ std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_
         std::lock_guard lock(mutex_);
         uploads_.push_back({x, y, width, height, std::move(*cached)});
     } else {
+    if (generation_ > 0) {
+        // After starting over the slot may still show an older glyph: cleared until generated.
+        std::lock_guard lock(mutex_);
+        uploads_.push_back({x, y, width, height, std::vector<std::uint8_t>(std::size_t{width} * height * 4, 0)});
+    }
     auto job = std::make_unique<GlyphJob>();
     job->x = x;
     job->y = y;
@@ -532,6 +595,7 @@ std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_
     job->shape = std::move(shape);
     job->face = &face;
     job->glyph = glyph_id;
+    job->generation = generation_;
     submit(std::move(job));
     }
 

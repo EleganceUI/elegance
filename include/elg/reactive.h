@@ -19,6 +19,7 @@
 
 #include <concepts>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -89,16 +90,29 @@ class ComputedNode final : public ReactiveNode {
 public:
     explicit ComputedNode(std::function<T()> function) : ReactiveNode(Kind::computed), function_(std::move(function)) {}
 
+    // Rethrows what the function threw, until something it read before throwing changes.
     const T& get() {
         track(); // runs the function if needed
+        if (error_) {
+            std::rethrow_exception(error_);
+        }
         return *value_;
     }
 
 protected:
     bool compute() override {
-        T next = function_();
+        std::optional<T> next;
+        try {
+            next.emplace(function_());
+        } catch (...) {
+            error_ = std::current_exception();
+            throw;
+        }
+        // Recovering from an error is a change even to an equal value: readers that failed on it
+        // run again.
+        const bool recovered = std::exchange(error_, nullptr) != nullptr;
         if constexpr (std::equality_comparable<T>) {
-            if (value_ && *value_ == next) {
+            if (!recovered && value_ && *value_ == *next) {
                 return false;
             }
         }
@@ -109,6 +123,7 @@ protected:
 private:
     std::function<T()> function_;
     std::optional<T> value_;
+    std::exception_ptr error_;
 };
 
 class EffectNode final : public ReactiveNode {

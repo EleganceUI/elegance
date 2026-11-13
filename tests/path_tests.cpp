@@ -110,3 +110,24 @@ TEST_CASE("transforms scale then move", "[path]") {
     CHECK(r.y == Approx(50));
     CHECK(r.width == Approx(24));
 }
+
+TEST_CASE("SVG path data takes only finite numbers of reasonable size", "[path]") {
+    CHECK_THROWS_AS(Path::svg("M nan 0 L 1 1"), UsageError);
+    CHECK_THROWS_AS(Path::svg("M 0 0 L 1 inf"), UsageError);
+    CHECK_THROWS_AS(Path::svg("M 0 0 L 1e10 1"), UsageError);
+    CHECK_THROWS_AS(Path::svg("M 0 0 L -1e39 1"), UsageError); // overflows to -inf
+    CHECK_NOTHROW(Path::svg("M 0 0 L 1e9 -1e9"));
+}
+
+TEST_CASE("strokes end, whatever the tolerance and the dash pattern", "[path]") {
+    Path line;
+    line.move_to({0, 0}).line_to({10, 0});
+    // A tolerance of 0 asks for infinitely many segments around a round cap.
+    CHECK(line.stroked({.width = 2, .cap = LineCap::round}, 0).contains({-0.9f, 0}));
+
+    // Far more dashes than are drawn, on a line so long that a dash doesn't shorten what's left.
+    Path long_line;
+    long_line.move_to({0, 0}).line_to({1e9f, 0});
+    const Path dashes = long_line.stroked({.width = 2, .dash = {0.01f, 0.01f}});
+    CHECK(dashes.contains({0.005f, 0}));
+}

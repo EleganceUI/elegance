@@ -11,6 +11,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstring>
+#include <format>
 #include <utility>
 
 namespace elg::detail {
@@ -18,6 +20,10 @@ namespace elg::detail {
 namespace {
 
 std::atomic<std::uint64_t> g_next_id{1};
+
+// Images with more pixels are refused before decoding: a few bytes of header can ask for
+// gigabytes. 2^27 RGBA pixels are 512 MiB.
+constexpr std::uint64_t kMaxPixels = std::uint64_t{1} << 27;
 
 // EXIF orientation 1-8: whether the stored pixels are turned a quarter (the upright size swaps).
 bool swaps_axes(int orientation) {
@@ -31,12 +37,15 @@ void orient(DecodedImage& image, int orientation) {
     }
     const std::uint32_t w = image.width;
     const std::uint32_t h = image.height;
+    if (image.rgba.size() < std::size_t{w} * h * 4) {
+        throw ResourceError("the decoder returned fewer pixels than the image's size");
+    }
     const bool swap = swaps_axes(orientation);
     const std::uint32_t out_w = swap ? h : w;
     const std::uint32_t out_h = swap ? w : h;
     std::vector<std::uint8_t> out(image.rgba.size());
-    const auto* in = reinterpret_cast<const std::uint32_t*>(image.rgba.data());
-    auto* dst = reinterpret_cast<std::uint32_t*>(out.data());
+    const std::uint8_t* const in = image.rgba.data();
+    std::uint8_t* const dst = out.data();
     for (std::uint32_t y = 0; y < out_h; ++y) {
         for (std::uint32_t x = 0; x < out_w; ++x) {
             // The stored pixel shown at (x, y).
@@ -52,7 +61,7 @@ void orient(DecodedImage& image, int orientation) {
             case 8: sx = w - 1 - y; sy = x; break;         // turned left: rotate 90 counter-clockwise
             default: break;
             }
-            dst[y * out_w + x] = in[sy * w + sx];
+            std::memcpy(dst + (std::size_t{y} * out_w + x) * 4, in + (std::size_t{sy} * w + sx) * 4, 4);
         }
     }
     image.rgba = std::move(out);
@@ -68,6 +77,11 @@ ImageInfo probe_image(std::span<const std::uint8_t> data) {
 }
 
 std::shared_ptr<const DecodedImage> decode_image(std::span<const std::uint8_t> data, std::uint32_t max_size) {
+    const StoredImageInfo info = platform_probe_image(data);
+    if (std::uint64_t{info.width} * info.height > kMaxPixels) {
+        throw ResourceError(std::format("the image is {} x {} pixels, more than the {} an image may have", info.width,
+                                        info.height, kMaxPixels));
+    }
     auto image = std::make_shared<DecodedImage>();
     image->id = g_next_id.fetch_add(1);
     const int orientation = platform_decode_image(data, max_size, *image);

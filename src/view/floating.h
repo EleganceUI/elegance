@@ -98,6 +98,8 @@ private:
     std::unique_ptr<Element> content_;
     std::vector<Panel> panels_;  // oldest first
     std::vector<Panel> exiting_; // animating out
+    // Container layers: the window's layer that has entries for this one's panels.
+    FloatingLayerElement* stub_layer_ = nullptr;
     bool container_ = false;
     bool closing_ = false;
 };

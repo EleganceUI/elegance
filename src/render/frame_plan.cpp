@@ -4,10 +4,12 @@
 
 #include "render/frame_plan.h"
 
+#include "core/numeric.h"
 #include "render/color_space.h"
 #include "text/atlas.h"
 
 #include <algorithm>
+#include <limits>
 #include <cmath>
 
 namespace elg::detail {
@@ -25,6 +27,11 @@ struct Overloaded : Fs... {
 
 constexpr float kUnclipped = 1e7f;
 constexpr std::uint32_t kMaxLayerSize = 8192;
+
+// Pixel positions and sizes from geometry, which may be NaN or infinite.
+std::uint32_t to_pixel_count(float v) {
+    return clamped_cast<std::uint32_t>(v, 0, std::numeric_limits<std::uint32_t>::max());
+}
 // Blurs run at a lower resolution once sigma passes this many texels: the result is the same
 // (a blur that wide has no fine detail left) and the cost stays bounded.
 constexpr float kMaxBlurSigma = 12;
@@ -264,10 +271,10 @@ private:
         const float y1 = std::ceil(wanted.max_y());
         if (x1 > x0 && y1 > y0) {
             PlanBackdrop backdrop;
-            backdrop.x = static_cast<std::uint32_t>(x0);
-            backdrop.y = static_cast<std::uint32_t>(y0);
-            backdrop.width = static_cast<std::uint32_t>(x1 - x0);
-            backdrop.height = static_cast<std::uint32_t>(y1 - y0);
+            backdrop.x = to_pixel_count(x0);
+            backdrop.y = to_pixel_count(y0);
+            backdrop.width = to_pixel_count(x1 - x0);
+            backdrop.height = to_pixel_count(y1 - y0);
             backdrop.sigma = sigma;
             backdrop.downsample = downsample_for(sigma);
 
@@ -329,13 +336,15 @@ private:
         const float y1 = std::ceil(bounds.max_y()) + 1;
         const Rect area{x0, y0, std::min(x1 - x0, static_cast<float>(kMaxLayerSize)),
                         std::min(y1 - y0, static_cast<float>(kMaxLayerSize))};
-        if (!mask_pass && (area.width < 1 || area.height < 1 || (clip.active && (!overlaps(area, clip.rect) || !overlaps(area, clip.scissor))))) {
+        // Written so that NaN (a path with non-finite points) is skipped too.
+        if (!mask_pass && (!(area.width >= 1) || !(area.height >= 1) ||
+                           (clip.active && (!overlaps(area, clip.rect) || !overlaps(area, clip.scissor))))) {
             return;
         }
 
         PlanPath path;
-        path.width = static_cast<std::uint32_t>(area.width);
-        path.height = static_cast<std::uint32_t>(area.height);
+        path.width = clamped_cast<std::uint32_t>(area.width, 1, kMaxLayerSize);
+        path.height = clamped_cast<std::uint32_t>(area.height, 1, kMaxLayerSize);
         path.first_vertex = static_cast<std::uint32_t>(plan_.path_vertices.size());
         path.even_odd = command.rule == FillRule::even_odd;
         const float k = command.scale * scale_;
@@ -365,8 +374,7 @@ private:
         const float subpixel_y = dy - std::floor(dy);
         const std::array<float, 3> placement{k, subpixel_x, subpixel_y};
         mix(placement.data(), sizeof(placement));
-        const std::array<std::uint32_t, 3> shape{static_cast<std::uint32_t>(area.width),
-                                                  static_cast<std::uint32_t>(area.height),
+        const std::array<std::uint32_t, 3> shape{path.width, path.height,
                                                   command.rule == FillRule::even_odd ? 1u : 0u};
         mix(shape.data(), sizeof(shape));
         path.key = key;
@@ -572,7 +580,7 @@ private:
         const float x1 = std::ceil(content.max_x() + margin);
         const float y1 = std::ceil(content.max_y() + margin);
         const auto clamp_size = [](float v) {
-            return static_cast<std::uint32_t>(std::clamp(v, 1.f, static_cast<float>(kMaxLayerSize)));
+            return clamped_cast<std::uint32_t>(v, 1, kMaxLayerSize);
         };
         PlanPass layer;
         layer.width = clamp_size(x1 - x0);
@@ -664,10 +672,10 @@ private:
                 return; // nothing of it is in the pass
             }
             PlanBackdrop backdrop;
-            backdrop.x = static_cast<std::uint32_t>(bx0);
-            backdrop.y = static_cast<std::uint32_t>(by0);
-            backdrop.width = static_cast<std::uint32_t>(bx1 - bx0);
-            backdrop.height = static_cast<std::uint32_t>(by1 - by0);
+            backdrop.x = to_pixel_count(bx0);
+            backdrop.y = to_pixel_count(by0);
+            backdrop.width = to_pixel_count(bx1 - bx0);
+            backdrop.height = to_pixel_count(by1 - by0);
             how.backdrop = backdrop;
             composite.params[2] = static_cast<float>(command.blend);
             composite.border_color = {bx0, by0, 1, 0};

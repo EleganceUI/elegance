@@ -906,7 +906,9 @@ public:
     ~ScrollElement() override {
         if (options_.position) {
             if (const auto& target = ScrollTargetAccess::target(*options_.position); target->element == this) {
+                // The position may outlive this view and its window: requests then do nothing.
                 target->element = nullptr;
+                target->needs_frame = nullptr;
             }
         }
     }

@@ -8,6 +8,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -240,4 +241,24 @@ TEST_CASE("a Signal reads a State, a Binding, or a closure, and works as a Prop"
     hovered = true;
     detail::flush_effects();
     CHECK(seen == std::vector<bool>{false, true});
+}
+
+TEST_CASE("a computed that throws rethrows until what it read changes", "[reactive]") {
+    detail::Scope scope;
+    detail::Scope::Use use(scope);
+    const State<int> input(-1);
+    int runs = 0;
+    const auto doubled = computed([=, &runs] {
+        ++runs;
+        if (input() < 0) {
+            throw std::runtime_error("negative");
+        }
+        return input() * 2;
+    });
+    CHECK_THROWS_AS(doubled(), std::runtime_error);
+    CHECK_THROWS_AS(doubled(), std::runtime_error); // kept, not run again
+    CHECK(runs == 1);
+    input = 3;
+    CHECK(doubled() == 6);
+    CHECK(runs == 2);
 }

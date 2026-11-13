@@ -113,6 +113,14 @@ FloatingLayerElement::FloatingLayerElement(std::unique_ptr<Element> content, boo
 }
 
 FloatingLayerElement::~FloatingLayerElement() {
+    // A container's panels have entries in the window's layer (for Esc and outside clicks),
+    // which point at them: those go first. The window's layer is an ancestor, so it's still
+    // there (if it's being destroyed itself, it's closing and ignores this).
+    if (stub_layer_) {
+        for (const Panel& panel : panels_) {
+            stub_layer_->remove(panel.token);
+        }
+    }
     // Panels first (their content may hold floating content of its own, which removes itself
     // here), then the window's content, whose floating views find nothing left to remove.
     exiting_.clear();
@@ -154,6 +162,7 @@ void FloatingLayerElement::add(Panel panel) {
                              .dismissed = panel.dismissed,
                              .interactive = panel.interactive,
                              .hosted = panel.element.get()});
+                stub_layer_ = window;
             }
         }
     }
@@ -274,11 +283,17 @@ FloatingLayerElement::Panel* FloatingLayerElement::top(bool escape) {
 void FloatingLayerElement::dismiss(Panel& panel) {
     // Copied first: the callback (the binding going false) may change the list.
     const std::uint64_t token = panel.token;
+    const bool shows_elements = panel.element || panel.hosted;
     const std::function<void()> dismissed = panel.dismissed;
     if (dismissed) {
         dismissed();
     }
-    remove(token);
+    // Content drawn in a layer closes through its binding, whose effect runs after this event:
+    // nothing it shows is destroyed while the event is still being dispatched, and it leaves
+    // every layer that has it. Entries for content in popup windows own nothing: they go now.
+    if (!shows_elements || !dismissed) {
+        remove(token);
+    }
 }
 
 EventResult FloatingLayerElement::pointer(const PointerEvent& event, Rect) {
@@ -385,8 +400,20 @@ private:
     // Modal: the app's popup stack (menus, popovers), which takes the pointer while open.
     bool modal() const { return hosted_on_screen() && options_.dismiss.outside_click; }
 
-    // Closed by the user or the system: the binding goes back to false, which then finds nothing
-    // left to close.
+    // In-window content closed by the user (Esc, an outside click): the binding goes back to
+    // false, and its effect then closes the content as if the app had, after the event.
+    std::function<void()> on_closed_by_user() {
+        return [presence = presence_, binding = is_presented_, generation = presence_->generation] {
+            if (presence->generation != generation || !presence->wanted) {
+                return;
+            }
+            presence->wanted = false;
+            binding.set(false);
+        };
+    }
+
+    // Popup windows closed by the user or the system: the binding goes back to false, which then
+    // finds nothing left to close.
     std::function<void()> on_dismissed() {
         return [presence = presence_, binding = is_presented_, generation = presence_->generation] {
             if (presence->generation != generation) {
@@ -445,7 +472,7 @@ private:
                                           .anchor = this,
                                           .placement = options_.placement,
                                           .dismiss = options_.dismiss,
-                                          .dismissed = on_dismissed(),
+                                          .dismissed = on_closed_by_user(),
                                           .motion = options_.motion,
                                           .scope = std::make_unique<Scope>()};
         {

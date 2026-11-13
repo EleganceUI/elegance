@@ -8,6 +8,9 @@
 
 #include <elg/error.h>
 
+#include "core/log.h"
+#include "core/numeric.h"
+
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -24,6 +27,10 @@ namespace elg {
 namespace {
 
 constexpr float kPi = std::numbers::pi_v<float>;
+// Path data: larger numbers make lengths and areas overflow to infinity.
+constexpr float kMaxCoordinate = 1e9f;
+// Dashes made for one path at most: a long path with a tiny dash pattern stops there.
+constexpr std::size_t kMaxDashes = 100'000;
 // Cubic Bézier handles for a quarter circle of radius 1.
 constexpr float kKappa = 0.5522847498f;
 
@@ -57,7 +64,7 @@ Point perpendicular(Point a) {
 // Segments needed to keep a curve of this degree within `tolerance` (Wang's formula).
 int subdivisions(float second_difference, float degree_factor, float tolerance) {
     const float n = std::sqrt(degree_factor * second_difference / std::max(tolerance, 1e-4f));
-    return std::clamp(static_cast<int>(std::ceil(n)), 1, 1000);
+    return detail::clamped_cast<int>(std::ceil(n), 1, 1000);
 }
 
 } // namespace
@@ -315,6 +322,10 @@ public:
             fail("expected a number");
         }
 #endif
+        // Not finite (from_chars reads "nan" and "inf") or so large that lengths overflow.
+        if (!std::isfinite(value) || std::abs(value) > kMaxCoordinate) {
+            fail("expected a finite number of at most 10^9");
+        }
         at_ = static_cast<std::size_t>(next - data_.data());
         return value;
     }
@@ -595,7 +606,8 @@ void add_polygon(Path& out, const std::vector<Point>& points) {
 }
 
 void add_disc(Path& out, Point center, float radius, float tolerance) {
-    const int n = std::clamp(static_cast<int>(std::ceil(kPi / std::acos(std::max(-1.f, 1 - tolerance / std::max(radius, 1e-3f))))), 8, 256);
+    // A tolerance of 0 makes the angle 0, and the count infinite: clamped to 256.
+    const int n = detail::clamped_cast<int>(std::ceil(kPi / std::acos(std::max(-1.f, 1 - tolerance / std::max(radius, 1e-3f)))), 8, 256);
     std::vector<Point> points;
     points.reserve(static_cast<std::size_t>(n));
     for (int i = 0; i < n; ++i) {
@@ -689,6 +701,8 @@ std::vector<std::vector<Point>> dashed(const std::vector<Point>& pts, bool close
     std::size_t index = 0;
     float remaining = std::max(style.dash[0], 0.f);
     bool on = true;
+    std::size_t dashes = 0;
+    bool reported = false;
     // Start `dash_phase` into the pattern.
     float phase = std::fmod(style.dash_phase, total);
     if (phase < 0) {
@@ -725,6 +739,13 @@ std::vector<std::vector<Point>> dashed(const std::vector<Point>& pts, bool close
             if (remaining <= 1e-6f) {
                 if (on && current.size() > 1) {
                     pieces.push_back(std::move(current));
+                    if (++dashes >= kMaxDashes) {
+                        if (!reported) {
+                            detail::log_warning("a dashed stroke has more than {} dashes; the rest isn't drawn", kMaxDashes);
+                            reported = true;
+                        }
+                        return pieces;
+                    }
                 }
                 current.clear();
                 index = (index + 1) % style.dash.size();
