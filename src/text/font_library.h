@@ -83,9 +83,7 @@ public:
     // A COLRv1 glyph's filled regions, bottom to top (gradients, transforms); empty for other
     // glyphs. Takes precedence over color_layers. UI thread only.
     std::span<const ColorPath> color_paths(std::uint32_t glyph) const;
-    // Whether the font has a glyph for `codepoint`.
     bool has_char(char32_t codepoint) const;
-    // The font file's bytes.
     const std::vector<unsigned char>& bytes() const noexcept { return *data_; }
     const std::shared_ptr<const std::vector<unsigned char>>& shared_bytes() const noexcept { return data_; }
     // Whether the font has a weight axis (a variable font): any weight is drawn exactly.

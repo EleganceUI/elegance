@@ -64,7 +64,7 @@ enum class EventType {
     window_fullscreen_changed,
     magnify,       // trackpad pinch
     rotate,        // two fingers turning
-    two_finger_double_tap, // two-finger double tap
+    two_finger_double_tap,
     system_theme_changed,
     // Drag and drop from other apps: begin, position (while over the window), a file or text
     // (one event each), complete (dropped, or the drag left).
@@ -223,7 +223,6 @@ bool draws_material(const WindowDesc& desc);
 // default background is then clear and its surface composited with alpha.
 bool see_through(const WindowDesc& desc);
 
-// Owns SDL's lifetime. Construct on the main thread, which becomes the UI thread.
 // Whether one of the app's windows has keyboard focus.
 bool any_window_focused();
 // The window with keyboard focus (0: none).
@@ -237,6 +236,7 @@ void set_clipboard_text(const std::string& text);
 // The pointer's shape (automatic: the arrow).
 void set_pointer_style(PointerStyle style);
 
+// Owns SDL's lifetime. Construct on the main thread, which becomes the UI thread.
 class Platform {
 public:
     using LiveResizeCallback = MoveOnlyFunction<void(std::uint32_t window_id)>;

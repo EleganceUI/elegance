@@ -132,8 +132,8 @@ View menu_row(View title, View leading, View trailing, const RowState& state, co
     return style->make_item(configuration);
 }
 
-// The row as a button: hovering focuses it (so keys continue from there) and closes submenus
-// deeper than this menu; `action` runs on click, Enter, or Space.
+// The row as a button: hovering focuses it (so keys continue from there); `action` runs on
+// click, Enter, or Space.
 // `closes_deeper`: hovering closes submenus deeper than this menu (not for a submenu's own row,
 // which would otherwise close the submenu it opened whenever the pointer comes back to it).
 std::unique_ptr<ButtonElement> make_row_element(const View& row, const RowState& state, std::function<void()> action,

@@ -94,7 +94,6 @@ View ShapeCards() {
         .frame({.height = 170});
 }
 
-// Wrapping, truncation, and alignment.
 // Popups: a context menu with a submenu, a menu button with checkable items, a menu Picker, and
 // a tooltip. Each reports what was chosen.
 View MenuCards() {
@@ -716,6 +715,7 @@ View StackCards() {
                   Captioned(sized.frame({.height = 100}), "ZStack + layout_priority").card());
 }
 
+// Wrapping, truncation, and alignment.
 View TextCards() {
     const std::string story =
         "Elegance lays text out with HarfBuzz and draws it from a multi-channel signed distance "
@@ -1107,7 +1107,7 @@ int main(int argc, char** argv) {
 
     try {
         App app;
-        // Shared by both windows: the title bar's toggle switches them together.
+        // Shared by the windows: the title bar's toggle switches them together.
         const State<ColorScheme> scheme(light ? ColorScheme::light : ColorScheme::dark);
         const State<int> badge(0);
         app.menu_bar(SandboxMenus(scheme, badge));
@@ -1133,7 +1133,7 @@ int main(int argc, char** argv) {
                    [scheme] { return WidgetWindow(scheme); });
         // The orbiting dots loader (on_appear and a repeating animation).
         app.window({.title = "Elegance Loader", .width = 240, .height = 240}, [] { return LoaderWindow(); });
-        // A third: a 10,000-row List (lazy stacks).
+        // A 10,000-row List (lazy stacks).
         app.window({.title = "Elegance Contacts", .width = 520, .height = 640},
                    [scheme] { return ContactsWindow(scheme); });
         return app.run();

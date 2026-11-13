@@ -45,7 +45,6 @@ struct LowerContext {
     std::shared_ptr<ImplicitAnimation> implicit_animation;
     // false inside `.animates_layout(false)`.
     bool animates_layout = true;
-    // The window's keyboard focus.
     FocusManager* focus = nullptr;
     // The window's text input, clipboard, cursor, and timed redraws.
     WindowServices* services = nullptr;
@@ -239,7 +238,6 @@ private:
     Prop<bool> mixed_;
 };
 
-// `.focused(binding)`.
 // `.on_activate(action)`: clicks, Space/Enter while focused, and the accessibility action.
 class ActivateNode final : public ViewNode {
 public:
@@ -252,6 +250,7 @@ private:
     std::function<void()> action_;
 };
 
+// `.focused(binding)`.
 class FocusedNode final : public ViewNode {
 public:
     FocusedNode(View content, Binding<bool> is_focused) : content_(std::move(content)), is_focused_(std::move(is_focused)) {}

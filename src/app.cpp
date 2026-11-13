@@ -658,7 +658,6 @@ int App::run() {
                                       live->window.native_handle()});
     }
 
-    // Builds and posts a window's frame. Glyphs it used for the first time go to the atlas first.
     // The inspector (design.md §16): F12 opens it for the focused window.
     std::shared_ptr<Inspector> inspector;
     std::unique_ptr<WindowEntry> inspector_entry;
@@ -761,6 +760,7 @@ int App::run() {
         live.window.set_popup_frame({origin.x - kPopupMargin, origin.y - kPopupMargin, size.width, size.height});
     };
 
+    // Builds and posts a window's frame. Glyphs it used for the first time go to the atlas first.
     const auto post_frame = [&](LiveWindow& live) {
         // Cleared first: layout may ask for another frame (lazy stacks measuring new items,
         // ScrollPosition requests settling), and that request must survive.

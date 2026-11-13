@@ -88,6 +88,7 @@ wmZAujteSAEKpmLCsCEVJ8Z884hfe+U0WYC9HPiHLcu3n1AfGNHyekNG
 //   /revalidate 200 "fresh" with an ETag, revalidated every time (304 when it matches)
 //   /stale      200, stale at once, with an ETag
 //   /nostore    200, not to be stored
+//   /two-fields 200 with Cache-Control in two fields, together "don't store"
 // Connections stay open for more requests, unless `drop` (closed after each response, without
 // saying so).
 class TestServer {

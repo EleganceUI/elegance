@@ -289,10 +289,10 @@ const AtlasGlyph* GlyphAtlas::find_or_add(const FontFace& face, std::uint32_t gl
     return glyph ? &*glyph : nullptr;
 }
 
-// A glyph's distance field to generate: everything a worker needs, independent of FreeType.
 // Frames (taken uploads) between two starts over at least.
 constexpr std::uint32_t kFramesBetweenStartsOver = 30;
 
+// A glyph's distance field to generate: everything a worker needs, independent of FreeType.
 struct GlyphJob {
     msdfgen::Shape shape;
     const FontFace* face = nullptr; // for the disk cache (fonts outlive the atlas)

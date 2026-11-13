@@ -1300,8 +1300,6 @@ std::unique_ptr<Element> ToggleNode::lower(const LowerContext& context) const {
     return with_accessibility(std::move(element), std::move(semantics));
 }
 
-// Like SwiftUI: the binding is true while focus is anywhere inside the view, and setting it
-// focuses the first focusable view inside (or the view itself if nothing inside can be).
 std::unique_ptr<Element> ActivateNode::lower(const LowerContext& context) const {
     const EnvironmentValues environment = context.environment;
     const std::function<bool()> enabled = [environment] { return !environment.get<DisabledKey>(); };
@@ -1316,6 +1314,8 @@ std::unique_ptr<Element> ActivateNode::lower(const LowerContext& context) const 
     return with_accessibility(std::move(element), std::move(semantics), environment);
 }
 
+// Like SwiftUI: the binding is true while focus is anywhere inside the view, and setting it
+// focuses the first focusable view inside (or the view itself if nothing inside can be).
 std::unique_ptr<Element> FocusedNode::lower(const LowerContext& context) const {
     auto handler = std::make_unique<FocusScopeHandler>();
     FocusScopeHandler* const scope_handler = handler.get();
