@@ -6,6 +6,8 @@
 
 #include "shim.h"
 
+#include <exception>
+
 using namespace elg;
 using namespace elg_shim;
 
@@ -74,14 +76,17 @@ private:
 
 /// A container laid out by Rust: an elg::Layout whose methods call `layout`, used like a stack.
 ///
-/// @param layout Consumed closure; args: `ElgLayoutCall*`, ret: what its `op` says.
+/// @param layout Consumed closure; args: `ElgLayoutCall*`, ret: what its `op` says. Required: none
+///   is a usage error.
 /// @param children The child views: each is consumed; the array is borrowed.
 /// @param count Number of `children`.
 /// @return The container, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_rust_layout_view(ElgClosure layout, View** children, size_t count) {
     ELG_TRY
-    const RustLayout rust_layout(std::make_shared<const RustFn>(layout));
-    return out(rust_layout(take_all(children, count)));
+    ViewArray views{children, count};
+    const Consumed consumed(layout, views);
+    const RustLayout rust_layout(required(layout, "layout"));
+    return out(rust_layout(take_all(views)));
     ELG_CATCH(nullptr)
 }
 
@@ -102,7 +107,10 @@ ELG_EXPORT void* elg_layout_cache_get(const LayoutCache* cache) {
 /// @param owner Consumed closure that's never called: its `data` is the cache, and its `drop` runs
 ///   when it's replaced or the view goes away.
 ELG_EXPORT void elg_layout_cache_set(LayoutCache* cache, ElgClosure owner) {
-    cache->value = std::shared_ptr<void>(std::make_shared<RustFn>(owner));
+    ELG_TRY
+    const Consumed consumed(owner);
+    cache->value = std::const_pointer_cast<RustFn>(hold(owner));
+    ELG_CATCH_VOID
 }
 /// Reads LayoutCache::stale: set when the children change or one of them may have a new size.
 ///
@@ -185,6 +193,13 @@ public:
         try {
             owner_->call(nullptr, &matches);
         } catch (...) {
+            // value_for can't throw, so the panic goes to the UI thread, which rethrows it: it
+            // reaches App::run like a panic in any app callback.
+            try {
+                post_to_ui_thread([error = std::current_exception()] { std::rethrow_exception(error); });
+            } catch (...) {
+                // Swallowed: posting failed (out of memory), and value_for can't throw.
+            }
             return nullptr;
         }
         return matches ? &value_ : nullptr;
@@ -201,11 +216,14 @@ private:
 ///
 /// @param v The view to modify (borrowed).
 /// @param owner Consumed closure: its `data` is the value, and its `call` (args: null, ret: `bool*`)
-///   answers whether it holds the key the Rust side is looking up. A panic there counts as false.
+///   answers whether it holds the key the Rust side is looking up. A panic there counts as false
+///   for the lookup, and propagates out of App::run like one in any callback. Required: none is a
+///   usage error.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_layout_value(const View* v, ElgClosure owner) {
     ELG_TRY
-    return out(v->modifier(RustLayoutValueModifier(std::make_shared<const RustFn>(owner))));
+    const Consumed consumed(owner);
+    return out(v->modifier(RustLayoutValueModifier(required(owner, "owner"))));
     ELG_CATCH(nullptr)
 }
 
@@ -246,11 +264,13 @@ private:
 ///
 /// @param v The view to modify (borrowed).
 /// @param body Consumed closure; args: `View*`, the content (owned by the Rust side, which must
-///   consume or free it); ret: `View*` (set it with elg_view_move_into()).
+///   consume or free it); ret: `View*` (set it with elg_view_move_into()). Required: none is a
+///   usage error.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_view_modifier(const View* v, ElgClosure body) {
     ELG_TRY
-    return out(v->modifier(RustViewModifier(std::make_shared<const RustFn>(body))));
+    const Consumed consumed(body);
+    return out(v->modifier(RustViewModifier(required(body, "body"))));
     ELG_CATCH(nullptr)
 }
 
@@ -337,11 +357,12 @@ private:
 ///
 /// @param v The view to modify (borrowed).
 /// @param layout Consumed closure; args: `ElgLayoutModifierCall*`, ret: what its `op` says. For
-///   layout_priority, `has` false keeps the content's own.
+///   layout_priority, `has` false keeps the content's own. Required: none is a usage error.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_layout_modifier(const View* v, ElgClosure layout) {
     ELG_TRY
-    return out(v->modifier(RustLayoutModifier(std::make_shared<const RustFn>(layout))));
+    const Consumed consumed(layout);
+    return out(v->modifier(RustLayoutModifier(required(layout, "layout"))));
     ELG_CATCH(nullptr)
 }
 /// An elg::DecorationModifier implemented in Rust: a secondary view sized to the content, which
@@ -349,14 +370,15 @@ ELG_EXPORT View* elg_mod_rust_layout_modifier(const View* v, ElgClosure layout) 
 ///
 /// @param v The view to modify (borrowed).
 /// @param decoration Consumed closure that builds the decoration; args: null, ret: `View*` (set it
-///   with elg_view_move_into()).
+///   with elg_view_move_into()). Required: none is a usage error.
 /// @param placement DecorationModifier::Placement (behind, in_front, mask): 0 drawn behind the
 ///   content, 1 in front of it, 2 not drawn but masking the content with its alpha.
 /// @param a How the decoration is aligned with the content.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_decoration_modifier(const View* v, ElgClosure decoration, int32_t placement, ElgAlignment a) {
     ELG_TRY
-    return out(v->modifier(RustDecorationModifier(std::make_shared<const RustFn>(decoration),
+    const Consumed consumed(decoration);
+    return out(v->modifier(RustDecorationModifier(required(decoration, "decoration"),
                                                   static_cast<DecorationModifier::Placement>(placement), alignment(a))));
     ELG_CATCH(nullptr)
 }
@@ -365,11 +387,12 @@ ELG_EXPORT View* elg_mod_rust_decoration_modifier(const View* v, ElgClosure deco
 ///
 /// @param v The view to modify (borrowed).
 /// @param apply Consumed closure; args: `EnvironmentValues*`, to change with the elg_env_set_*
-///   functions; ret: null.
+///   functions; ret: null. Required: none is a usage error.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_environment_modifier(const View* v, ElgClosure apply) {
     ELG_TRY
-    return out(v->modifier(RustEnvironmentModifier(std::make_shared<const RustFn>(apply))));
+    const Consumed consumed(apply);
+    return out(v->modifier(RustEnvironmentModifier(required(apply, "apply"))));
     ELG_CATCH(nullptr)
 }
 /// An elg::EffectModifier implemented in Rust: changes how the view's content is drawn and hit
@@ -377,11 +400,12 @@ ELG_EXPORT View* elg_mod_rust_environment_modifier(const View* v, ElgClosure app
 ///
 /// @param v The view to modify (borrowed).
 /// @param apply Consumed closure; args: `Effects*`, to change with the elg_effects_* functions;
-///   ret: null.
+///   ret: null. Required: none is a usage error.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_effect_modifier(const View* v, ElgClosure apply) {
     ELG_TRY
-    return out(v->modifier(RustEffectModifier(std::make_shared<const RustFn>(apply))));
+    const Consumed consumed(apply);
+    return out(v->modifier(RustEffectModifier(required(apply, "apply"))));
     ELG_CATCH(nullptr)
 }
 
@@ -405,6 +429,7 @@ ELG_EXPORT void elg_effects_set_clip_shape(Effects* e, const Shape* shape) {
 /// @param opacity The opacity, 0 to 1: an ElgProp of float.
 ELG_EXPORT void elg_effects_set_opacity(Effects* e, ElgProp opacity) {
     ELG_TRY
+    const Consumed consumed(opacity);
     e->opacity = prop<float>(opacity);
     ELG_CATCH_VOID
 }
@@ -427,6 +452,7 @@ ELG_EXPORT void elg_effects_set_shadow(Effects* e, const ElgShadow* s) {
 /// @param y Vertical offset in points: an ElgProp of float.
 ELG_EXPORT void elg_effects_set_offset(Effects* e, ElgProp x, ElgProp y) {
     ELG_TRY
+    const Consumed consumed(x, y);
     e->offset_x = prop<float>(x);
     e->offset_y = prop<float>(y);
     ELG_CATCH_VOID
@@ -437,8 +463,10 @@ ELG_EXPORT void elg_effects_set_offset(Effects* e, ElgProp x, ElgProp y) {
 /// @param z The z index: an ElgProp of float; null: unset.
 ELG_EXPORT void elg_effects_set_z_index(Effects* e, const ElgProp* z) {
     ELG_TRY
+    ElgProp value = z ? *z : ElgProp{};
+    const Consumed consumed(value);
     if (z) {
-        e->z_index = prop<float>(*z);
+        e->z_index = prop<float>(value);
     } else {
         e->z_index.reset();
     }
@@ -475,8 +503,10 @@ ELG_EXPORT void elg_effects_set_inner_shadow(Effects* e, const ElgShadow* s) {
 ///   out.
 ELG_EXPORT void elg_effects_set_blur(Effects* e, const ElgProp* radius, bool opaque) {
     ELG_TRY
+    ElgProp value = radius ? *radius : ElgProp{};
+    const Consumed consumed(value);
     if (radius) {
-        e->blur = prop<float>(*radius);
+        e->blur = prop<float>(value);
     } else {
         e->blur.reset();
     }
@@ -490,11 +520,12 @@ ELG_EXPORT void elg_effects_set_blur(Effects* e, const ElgProp* radius, bool opa
 /// @param kind A ColorFilter::Kind: 0 brightness, 1 contrast, 2 saturation, 3 grayscale,
 ///   4 hue_rotation, 5 sepia, 6 invert, 7 multiply, 8 luminance_to_alpha. kind < 0: none.
 /// @param amount An ElgProp of float: degrees for hue_rotation; unused for multiply and
-///   luminance_to_alpha. Ignored, and its closure not dropped, when `kind` < 0.
-/// @param c An ElgProp of elg::Color, for multiply only. Ignored, and its closure not dropped, when
+///   luminance_to_alpha. Ignored, and its closure dropped, when `kind` < 0.
+/// @param c An ElgProp of elg::Color, for multiply only. Ignored, and its closure dropped, when
 ///   `kind` < 0.
 ELG_EXPORT void elg_effects_set_color_filter(Effects* e, int32_t kind, ElgProp amount, ElgProp c) {
     ELG_TRY
+    const Consumed consumed(amount, c);
     if (kind < 0) {
         e->color_filter.reset();
         return;
@@ -543,8 +574,10 @@ ELG_EXPORT void elg_effects_set_compositing_group(Effects* e, bool group) {
 /// @param degrees Clockwise, as an ElgProp of float; null: unset.
 ELG_EXPORT void elg_effects_set_rotation(Effects* e, const ElgProp* degrees) {
     ELG_TRY
+    ElgProp value = degrees ? *degrees : ElgProp{};
+    const Consumed consumed(value);
     if (degrees) {
-        e->rotation = prop<float>(*degrees);
+        e->rotation = prop<float>(value);
     } else {
         e->rotation.reset();
     }
@@ -558,13 +591,16 @@ ELG_EXPORT void elg_effects_set_rotation(Effects* e, const ElgProp* degrees) {
 /// @param y Vertical scale, as an ElgProp of float; null: unset.
 ELG_EXPORT void elg_effects_set_scale(Effects* e, const ElgProp* x, const ElgProp* y) {
     ELG_TRY
+    ElgProp horizontal = x ? *x : ElgProp{};
+    ElgProp vertical = y ? *y : ElgProp{};
+    const Consumed consumed(horizontal, vertical);
     if (x) {
-        e->scale_x = prop<float>(*x);
+        e->scale_x = prop<float>(horizontal);
     } else {
         e->scale_x.reset();
     }
     if (y) {
-        e->scale_y = prop<float>(*y);
+        e->scale_y = prop<float>(vertical);
     } else {
         e->scale_y.reset();
     }
@@ -737,8 +773,9 @@ public:
     // ret: ElgClosure* (the new handler).
     [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override {
         ElgClosure handler{};
+        const Consumed consumed(handler);
         f_->call(nullptr, &handler);
-        return std::make_unique<RustEventHandler>(std::make_shared<const RustFn>(handler));
+        return std::make_unique<RustEventHandler>(required(handler, "the handler make_handler returned"));
     }
 
 private:
@@ -753,11 +790,12 @@ private:
 /// @param v The view to modify (borrowed).
 /// @param make_handler Consumed closure, called when the view mounts; args: null, ret:
 ///   `ElgClosure*`, the new handler, which Elegance consumes. The handler's args:
-///   `ElgEventCall*`; its ret: what the call's `op` says.
+///   `ElgEventCall*`; its ret: what the call's `op` says. Required: none is a usage error.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_event_modifier(const View* v, ElgClosure make_handler) {
     ELG_TRY
-    return out(v->modifier(RustEventModifier(std::make_shared<const RustFn>(make_handler))));
+    const Consumed consumed(make_handler);
+    return out(v->modifier(RustEventModifier(required(make_handler, "make_handler"))));
     ELG_CATCH(nullptr)
 }
 

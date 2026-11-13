@@ -187,9 +187,10 @@ ELG_API Scope* current_scope() noexcept;
 ELG_API void start_effect(std::shared_ptr<EffectNode> effect, bool priority = false);
 
 // Animated transactions (with_animation): effects scheduled by writes inside one run with
-// current_animation() set to its animation.
-ELG_API void begin_transaction(std::shared_ptr<const Animation> animation);
-ELG_API void end_transaction() noexcept;
+// current_animation() set to its animation. begin_transaction returns the transaction it
+// replaces, which end_transaction restores, so transactions nest.
+ELG_API std::shared_ptr<const Animation> begin_transaction(std::shared_ptr<const Animation> animation);
+ELG_API void end_transaction(std::shared_ptr<const Animation> previous) noexcept;
 ELG_API const Animation* current_animation() noexcept;
 // Counts flushes; a flush's number lasts until the next flush starts (through layout).
 ELG_API std::uint64_t current_flush() noexcept;

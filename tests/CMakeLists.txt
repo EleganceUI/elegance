@@ -56,6 +56,13 @@ target_include_directories(elegance_tests SYSTEM PRIVATE
         $<TARGET_PROPERTY:dawn::webgpu_dawn,INTERFACE_INCLUDE_DIRECTORIES>)
 
 elegance_warnings(elegance_tests)
+
+# The C API's contract with bindings, tested against its objects (only in builds that compile it).
+if (TARGET elegance_c_api)
+    target_sources(elegance_tests PRIVATE c_api_tests.cpp)
+    target_link_libraries(elegance_tests PRIVATE elegance_c_api)
+    target_include_directories(elegance_tests PRIVATE ${PROJECT_SOURCE_DIR}/c)
+endif ()
 if (MSVC)
     target_compile_options(elegance_tests PRIVATE /utf-8)
 endif ()
