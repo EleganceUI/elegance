@@ -20,6 +20,7 @@
 #include <elg/views.h>
 
 #include <filesystem>
+#include <utility>
 
 #if defined(_WIN32)
 #include <windows.h> // the build defines WIN32_LEAN_AND_MEAN and NOMINMAX
@@ -356,7 +357,7 @@ private:
 class MenuButtonNode final : public ViewNode {
 public:
     MenuButtonNode(View label, std::function<View()> menu, MenuButtonOptions options)
-        : label_(std::move(label)), menu_(std::move(menu)), options_(options) {}
+        : label_(std::move(label)), menu_(std::move(menu)), options_(std::move(options)) {}
     [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const State<bool> pressed(false);
         const State<bool> hovered(false);

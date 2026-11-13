@@ -18,7 +18,7 @@ namespace elg::detail::gpu {
 // every frame.
 class Buffer {
 public:
-    Buffer(const wgpu::Device& device, wgpu::BufferUsage usage) noexcept;
+    Buffer(wgpu::Device  device, wgpu::BufferUsage usage) noexcept;
 
     // Replaces the contents, growing the buffer if needed. Always leaves a (non-empty) buffer to
     // bind, even for empty data.

@@ -131,7 +131,7 @@ void paint_inspector_overlay(const Inspector& inspector, Element& root, DisplayL
             return;
         }
         if (const Element* element = element_at(root, *path)) {
-            list.commands.push_back(RectCommand{element->frame(), {}, ShapeStyle(color.opacity(0.12f)), color, 1.5f});
+            list.commands.emplace_back(RectCommand{element->frame(), {}, ShapeStyle(color.opacity(0.12f)), color, 1.5f});
         }
     };
     constexpr Color kSelected{0.24f, 0.56f, 1.f, 1};

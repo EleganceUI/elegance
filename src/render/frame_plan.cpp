@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <limits>
 #include <cmath>
+#include <numbers>
 
 namespace elg::detail {
 
@@ -80,7 +81,7 @@ std::uint32_t downsample_for(float sigma) {
     return factor;
 }
 
-constexpr float kDegrees = 3.14159265f / 180;
+constexpr float kDegrees = std::numbers::pi_v<float> / 180;
 
 class Planner {
 public:

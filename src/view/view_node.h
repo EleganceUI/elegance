@@ -199,7 +199,7 @@ private:
 
 class ScrollNode final : public ViewNode {
 public:
-    ScrollNode(ScrollViewOptions options, View content) : options_(options), content_(std::move(content)) {}
+    ScrollNode(ScrollViewOptions options, View content) : options_(std::move(options)), content_(std::move(content)) {}
     [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
@@ -264,7 +264,7 @@ private:
 class AnimationNode final : public ViewNode {
 public:
     AnimationNode(View content, Animation animation, std::function<bool()> changed)
-        : content_(std::move(content)), animation_(animation), changed_(std::move(changed)) {}
+        : content_(std::move(content)), animation_(std::move(animation)), changed_(std::move(changed)) {}
     [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:

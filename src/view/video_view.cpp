@@ -155,18 +155,18 @@ protected:
         if (bounds.width <= 0 || bounds.height <= 0) {
             return;
         }
-        list.commands.push_back(RectCommand{bounds, {}, ShapeStyle(Color::black), Color::clear, 0});
+        list.commands.emplace_back(RectCommand{bounds, {}, ShapeStyle(Color::black), Color::clear, 0});
         // The render thread fits the exact frame it samples; size_ is only for layout.
         // A fill overflows and is clipped to the view.
         const bool clip = mode_ == ContentMode::fill;
         if (clip) {
-            list.commands.push_back(PushClipCommand{bounds, {}});
+            list.commands.emplace_back(PushClipCommand{bounds, {}});
         }
         // Mirrored: the texture read right to left; flipped: bottom to top.
         const Rect uv{mirrored_ ? 1.f : 0.f, flipped_ ? 1.f : 0.f, mirrored_ ? -1.f : 1.f, flipped_ ? -1.f : 1.f};
-        list.commands.push_back(VideoCommand{bounds, uv, source_, 1, mode_});
+        list.commands.emplace_back(VideoCommand{bounds, uv, source_, 1, mode_});
         if (clip) {
-            list.commands.push_back(PopClipCommand{});
+            list.commands.emplace_back(PopClipCommand{});
         }
     }
     // Opaque over its whole frame (black behind the video), so hit there like a raster image:

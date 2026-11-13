@@ -202,7 +202,7 @@ protected:
     void arrange(Rect, ProposedSize) override {}
     void paint_impl(DisplayList& list) const override {
         if (pixels_) {
-            list.commands.push_back(ImageCommand{frame(), {0, 0, 1, 1}, pixels_, 1});
+            list.commands.emplace_back(ImageCommand{frame(), {0, 0, 1, 1}, pixels_, 1});
         }
     }
     bool hit_impl(Point point, std::vector<Element*>&) override {

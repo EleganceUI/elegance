@@ -29,7 +29,7 @@ namespace elg::detail::gpu {
 //   way. Queue ordering keeps frames in flight intact with one image per source.
 class VideoTextures {
 public:
-    VideoTextures(const Device& device, const wgpu::BindGroupLayout& image_layout);
+    VideoTextures(const Device& device, wgpu::BindGroupLayout  image_layout);
 
     VideoTextures(const VideoTextures&) = delete;
     VideoTextures& operator=(const VideoTextures&) = delete;

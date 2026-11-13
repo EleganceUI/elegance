@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <ranges>
 
 namespace elg::detail {
 
@@ -233,7 +234,7 @@ void FloatingLayerElement::arrange(Rect bounds, ProposedSize proposal) {
 void FloatingLayerElement::paint_impl(DisplayList& list) const {
     content_->paint(list);
     if (container_ && (!exiting_.empty() || !panels_.empty())) {
-        list.commands.push_back(PushClipCommand{frame(), {}});
+        list.commands.emplace_back(PushClipCommand{frame(), {}});
     }
     for (const Panel& panel : exiting_) {
         panel.element->paint(list);
@@ -244,13 +245,13 @@ void FloatingLayerElement::paint_impl(DisplayList& list) const {
         }
     }
     if (container_ && (!exiting_.empty() || !panels_.empty())) {
-        list.commands.push_back(PopClipCommand{});
+        list.commands.emplace_back(PopClipCommand{});
     }
 }
 
 bool FloatingLayerElement::hit_impl(Point point, std::vector<Element*>& path) {
-    for (auto it = panels_.rbegin(); it != panels_.rend(); ++it) {
-        if (it->element && it->interactive && it->element->hit_test(point, path)) {
+    for (auto& panel : std::ranges::reverse_view(panels_)) {
+        if (panel.element && panel.interactive && panel.element->hit_test(point, path)) {
             return true;
         }
     }
@@ -272,9 +273,9 @@ bool FloatingLayerElement::hit_impl(Point point, std::vector<Element*>& path) {
 }
 
 FloatingLayerElement::Panel* FloatingLayerElement::top(bool escape) {
-    for (auto it = panels_.rbegin(); it != panels_.rend(); ++it) {
-        if (escape ? it->dismiss.escape : it->dismiss.outside_click && (it->element || it->hosted)) {
-            return &*it;
+    for (auto& panel : std::ranges::reverse_view(panels_)) {
+        if (escape ? panel.dismiss.escape : panel.dismiss.outside_click && (panel.element || panel.hosted)) {
+            return &panel;
         }
     }
     return nullptr;

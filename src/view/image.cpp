@@ -336,7 +336,7 @@ ResolvedIcon resolve(std::string_view system_name) {
     }
     const auto set = g_sets.find(set_name);
     if (set == g_sets.end()) {
-        throw UsageError(std::format("Image(\"{}\"): no icon set \"{}\" is registered", system_name, set_name));
+        throw UsageError(std::format(R"(Image("{}"): no icon set "{}" is registered)", system_name, set_name));
     }
     std::string family = set->second.family;
     const IconGlyphs* glyphs = &set->second.glyphs;
@@ -368,7 +368,7 @@ ResolvedIcon resolve(std::string_view system_name) {
         for (std::size_t i = 0; i < std::min<std::size_t>(3, nearest.size()); ++i) {
             hint += std::format("{}\"{}.{}\"", i ? ", " : "", set_name, *nearest[i].second);
         }
-        throw UsageError(std::format("Image(\"{}\"): the icon set \"{}\" has no icon \"{}\"{}", system_name, set_name,
+        throw UsageError(std::format(R"(Image("{}"): the icon set "{}" has no icon "{}"{})", system_name, set_name,
                                      icon, hint.empty() ? "" : "; did you mean " + hint + "?"));
     }
     ResolvedIcon resolved{family, {}};

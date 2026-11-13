@@ -211,7 +211,7 @@ void SplitDividerElement::paint_impl(DisplayList& list) const {
     const Rect line = axis_ == Axis::horizontal
                           ? Rect{middle - width / 2, bounds.y, width, bounds.height}
                           : Rect{bounds.x, middle - width / 2, bounds.width, width};
-    list.commands.push_back(RectCommand{line, {}, ShapeStyle(color), Color::clear, 0});
+    list.commands.emplace_back(RectCommand{line, {}, ShapeStyle(color), Color::clear, 0});
 }
 
 // --- SplitElement ---
@@ -350,9 +350,9 @@ void SplitElement::paint_impl(DisplayList& list) const {
         const Rect share = pane_rects_[i];
         const Rect clip = axis_ == Axis::horizontal ? Rect{pane.x, share.y, pane.width, share.height}
                                                     : Rect{share.x, pane.y, share.width, pane.height};
-        list.commands.push_back(PushClipCommand{clip, {}});
+        list.commands.emplace_back(PushClipCommand{clip, {}});
         laid_out_[i]->paint(list);
-        list.commands.push_back(PopClipCommand{});
+        list.commands.emplace_back(PopClipCommand{});
     }
     // Panes that went, animating out where they last were.
     std::vector<Element*> exiting;

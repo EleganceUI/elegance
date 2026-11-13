@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <ranges>
 
 namespace elg::detail::menus {
 
@@ -189,8 +190,8 @@ std::vector<Item> resolve(const std::vector<MenuBarItem>& menus, bool macos) {
 const MenuBarItem* find(const std::vector<MenuBarItem>& menus, std::uint32_t id) {
     std::uint32_t at = 1;
     std::vector<const MenuBarItem*> stack;
-    for (auto it = menus.rbegin(); it != menus.rend(); ++it) {
-        stack.push_back(&*it);
+    for (const auto& menu : std::ranges::reverse_view(menus)) {
+        stack.push_back(&menu);
     }
     while (!stack.empty()) {
         const MenuBarItem* item = stack.back();
@@ -198,8 +199,8 @@ const MenuBarItem* find(const std::vector<MenuBarItem>& menus, std::uint32_t id)
         if (at++ == id) {
             return item;
         }
-        for (auto it = item->submenu.rbegin(); it != item->submenu.rend(); ++it) {
-            stack.push_back(&*it);
+        for (const auto& child : std::ranges::reverse_view(item->submenu)) {
+            stack.push_back(&child);
         }
     }
     return nullptr;

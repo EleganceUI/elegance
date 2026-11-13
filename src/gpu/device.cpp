@@ -44,7 +44,7 @@ struct Device::Errors {
     static Registry& registry() {
         // Retained Dawn handles can report errors during static teardown. Keep the small
         // registry/mutex alive for the process; per-device entries are removed on shutdown.
-        static Registry* const registry = new Registry;
+        static auto* const registry = new Registry;
         return *registry;
     }
     static std::shared_ptr<Errors> find(WGPUDevice device) {

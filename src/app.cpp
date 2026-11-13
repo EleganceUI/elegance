@@ -37,6 +37,7 @@
 #include <exception>
 #include <map>
 #include <memory>
+#include <ranges>
 #include <thread>
 #include <vector>
 
@@ -1544,9 +1545,9 @@ int App::run() {
         // The pointer's shape follows what's under it, here after layout: content that moved,
         // appeared, or went away under a still pointer changes it too. A popup over its window
         // comes later in the list, and wins.
-        for (auto it = windows.rbegin(); it != windows.rend(); ++it) {
-            if ((*it)->events.pointer_inside()) {
-                if (const PointerStyle style = (*it)->events.pointer_style(); style != pointer_style) {
+        for (auto& window : std::ranges::reverse_view(windows)) {
+            if (window->events.pointer_inside()) {
+                if (const PointerStyle style = window->events.pointer_style(); style != pointer_style) {
                     pointer_style = style;
                     platform::set_pointer_style(style);
                 }

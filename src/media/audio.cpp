@@ -116,7 +116,7 @@ std::shared_ptr<const SoundData> decode_sound(std::span<const unsigned char> byt
     data->channels = channels;
     data->sample_rate = rate;
     data->frame_count = count;
-    const float* samples = static_cast<const float*>(frames);
+    const auto* samples = static_cast<const float*>(frames);
     data->frames.assign(samples, samples + count * channels);
     ma_free(frames, nullptr);
     return data;

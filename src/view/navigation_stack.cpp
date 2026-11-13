@@ -368,16 +368,15 @@ void NavigationStackElement::paint_slide(DisplayList& list, const PageElement& u
         append_faded(list, std::move(content), 1);
     };
 
-    list.commands.push_back(PushClipCommand{bounds, {}});
+    list.commands.emplace_back(PushClipCommand{bounds, {}});
     paint_moved(under, -bounds.width * kUnderneathShift * in);
-    list.commands.push_back(RectCommand{bounds, {}, ShapeStyle(Color::black.opacity(0.08f * in)), Color::clear, 0});
+    list.commands.emplace_back(RectCommand{bounds, {}, ShapeStyle(Color::black.opacity(0.08f * in)), Color::clear, 0});
     // The page on top is opaque while it moves, and casts a soft shadow on the one underneath.
     const Rect over_rect{bounds.x + bounds.width * (1 - in), bounds.y, bounds.width, bounds.height};
-    list.commands.push_back(BoxShadowCommand{over_rect, {}, Color::black.opacity(0.18f), 12});
-    list.commands.push_back(
-        RectCommand{over_rect, {}, ShapeStyle(context_.environment.color(ThemeColor::background)), Color::clear, 0});
+    list.commands.emplace_back(BoxShadowCommand{over_rect, {}, Color::black.opacity(0.18f), 12});
+    list.commands.emplace_back(RectCommand{over_rect, {}, ShapeStyle(context_.environment.color(ThemeColor::background)), Color::clear, 0});
     paint_moved(over, bounds.width * (1 - in));
-    list.commands.push_back(PopClipCommand{});
+    list.commands.emplace_back(PopClipCommand{});
 }
 
 void NavigationStackElement::paint_fade(DisplayList& list, const PageElement& under, const PageElement& over,
@@ -389,10 +388,10 @@ void NavigationStackElement::paint_fade(DisplayList& list, const PageElement& un
         list.animating |= content.animating;
         append_faded(list, std::move(content), opacity);
     };
-    list.commands.push_back(PushClipCommand{frame(), {}});
+    list.commands.emplace_back(PushClipCommand{frame(), {}});
     paint_faded(under, 1 - in);
     paint_faded(over, in);
-    list.commands.push_back(PopClipCommand{});
+    list.commands.emplace_back(PopClipCommand{});
 }
 
 class NavigationStackNode final : public ViewNode {

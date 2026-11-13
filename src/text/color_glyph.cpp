@@ -284,7 +284,7 @@ private:
             for (const ColorStop& s : stops) {
                 sum = {sum.r + s.color.r, sum.g + s.color.g, sum.b + s.color.b, sum.a + s.color.a};
             }
-            const float n = static_cast<float>(stops.size());
+            const auto n = static_cast<float>(stops.size());
             out.color = {sum.r / n, sum.g / n, sum.b / n, sum.a / n};
             out.foreground = stops.front().foreground;
             return true;

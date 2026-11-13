@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <bit>
+#include <utility>
 
 namespace elg::detail::gpu {
 
@@ -24,8 +25,8 @@ constexpr std::size_t kBudgetBytes = 512ull << 20;
 
 } // namespace
 
-TextureCache::TextureCache(const Device& device, const wgpu::BindGroupLayout& image_layout)
-    : device_(device), layout_(image_layout), sampler_(create_linear_sampler(device.handle())) {
+TextureCache::TextureCache(const Device& device, wgpu::BindGroupLayout  image_layout)
+    : device_(device), layout_(std::move(image_layout)), sampler_(create_linear_sampler(device.handle())) {
     const wgpu::Device& dev = device.handle();
     const wgpu::ShaderModule module = create_shader(dev, kMipmapWgsl, "mipmap.wgsl");
     wgpu::PipelineLayoutDescriptor layout_info;

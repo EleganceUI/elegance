@@ -17,9 +17,11 @@
 #include <unordered_map>
 #include <vector>
 
-typedef struct FT_LibraryRec_* FT_Library;
-typedef struct FT_FaceRec_* FT_Face;
-typedef struct hb_font_t hb_font_t;
+struct FT_LibraryRec_;
+struct FT_FaceRec_;
+using FT_Library = FT_LibraryRec_*; // as FreeType declares them
+using FT_Face = FT_FaceRec_*;
+struct hb_font_t;
 
 namespace elg::detail {
 

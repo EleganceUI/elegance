@@ -8,6 +8,7 @@
 
 #include "core/log.h"
 
+#include <ranges>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -212,8 +213,8 @@ void FragmentElement::paint_impl(DisplayList& list) const {
 }
 
 bool FragmentElement::hit_impl(Point point, std::vector<Element*>& path) {
-    for (auto it = laid_out_.rbegin(); it != laid_out_.rend(); ++it) {
-        if ((*it)->hit_test(point, path)) {
+    for (auto& child : std::ranges::reverse_view(laid_out_)) {
+        if (child->hit_test(point, path)) {
             return true;
         }
     }

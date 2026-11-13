@@ -512,8 +512,9 @@ std::vector<Path::Polyline> Path::flatten(float tolerance) const {
     // Drop repeated points (they have no direction).
     for (Polyline& polyline : lines) {
         std::vector<Point>& pts = polyline.points;
-        pts.erase(std::unique(pts.begin(), pts.end(),
-                              [](Point a, Point b) { return std::abs(a.x - b.x) < 1e-6f && std::abs(a.y - b.y) < 1e-6f; }),
+        pts.erase(std::ranges::unique(pts, [](Point a, Point b) {
+                      return std::abs(a.x - b.x) < 1e-6f && std::abs(a.y - b.y) < 1e-6f;
+                  }).begin(),
                   pts.end());
         if (polyline.closed && pts.size() > 1 && pts.front() == pts.back()) {
             pts.pop_back();

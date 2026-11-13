@@ -551,7 +551,7 @@ std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_
 
     // Size the bitmap to the glyph at kGlyphEmPixels, plus room for the distance field.
     const msdfgen::Shape::Bounds bounds = shape.getBounds();
-    const double scale = static_cast<double>(kGlyphEmPixels / face.units_per_em()); // pixels per font unit
+    const auto scale = static_cast<double>(kGlyphEmPixels / face.units_per_em()); // pixels per font unit
     const double pad = static_cast<double>(kDistanceRange) / 2.0 + 1.0;             // pixels
     const auto width = static_cast<std::uint32_t>(std::ceil((bounds.r - bounds.l) * scale + 2 * pad));
     const auto height = static_cast<std::uint32_t>(std::ceil((bounds.t - bounds.b) * scale + 2 * pad));

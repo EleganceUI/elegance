@@ -14,6 +14,7 @@
 #include <elg/elegance.h>
 
 #include <cmath>
+#include <numbers>
 #include <string>
 #include <variant>
 #include <vector>
@@ -92,7 +93,7 @@ TEST_CASE("timing_curve follows a CSS cubic-bezier", "[animation]") {
 
 TEST_CASE("on_appear runs after the update that added the view", "[lifecycle]") {
     std::vector<std::string> log;
-    const Window window(Rectangle().on_appear([&] { log.push_back("appear"); }));
+    const Window window(Rectangle().on_appear([&] { log.emplace_back("appear"); }));
     CHECK(log.empty()); // not while building
     CHECK(detail::run_lifecycle_actions());
     CHECK(log == std::vector<std::string>{"appear"});
@@ -101,7 +102,7 @@ TEST_CASE("on_appear runs after the update that added the view", "[lifecycle]") 
 
 TEST_CASE("on_disappear runs once the view is gone, only if it appeared", "[lifecycle]") {
     std::vector<std::string> log;
-    const Window window(Rectangle().on_appear([&] { log.push_back("appear"); }).on_disappear([&] { log.push_back("gone"); }));
+    const Window window(Rectangle().on_appear([&] { log.emplace_back("appear"); }).on_disappear([&] { log.emplace_back("gone"); }));
     detail::run_lifecycle_actions();
     window.shown = false;
     detail::flush_effects();
@@ -215,7 +216,7 @@ TEST_CASE("a view started spinning in on_appear keeps turning", "[lifecycle][ani
         }
         for (const detail::DrawCommand& command : list.commands) {
             if (const auto* layer = std::get_if<detail::PushLayerCommand>(&command); layer && layer->transform) {
-                return std::atan2(layer->transform->b, layer->transform->a) * 180 / 3.14159265f;
+                return std::atan2(layer->transform->b, layer->transform->a) * 180 / std::numbers::pi_v<float>;
             }
         }
         return 0.f;

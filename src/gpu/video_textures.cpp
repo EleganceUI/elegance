@@ -7,6 +7,7 @@
 #include "core/log.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace elg::detail::gpu {
 
@@ -30,8 +31,8 @@ struct ConvertImmediates {
 
 } // namespace
 
-VideoTextures::VideoTextures(const Device& device, const wgpu::BindGroupLayout& image_layout)
-    : device_(device), layout_(image_layout), sampler_(create_linear_sampler(device.handle())) {
+VideoTextures::VideoTextures(const Device& device, wgpu::BindGroupLayout  image_layout)
+    : device_(device), layout_(std::move(image_layout)), sampler_(create_linear_sampler(device.handle())) {
     const wgpu::Device& dev = device.handle();
     const wgpu::ShaderModule module = create_shader(dev, kConvertWgsl, "video_convert.wgsl");
 

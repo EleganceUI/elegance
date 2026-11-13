@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cmath>
 #include <functional>
+#include <ranges>
 #include <unordered_set>
 
 namespace elg::detail {
@@ -165,11 +166,11 @@ bool EventDispatcher::tick() {
     const double now = now_seconds();
     bool redraw = expire_watchers();
     // Leaves innermost first, then enters outermost first, like the DOM's mouseleave/enter.
-    for (auto it = hovers_.rbegin(); it != hovers_.rend(); ++it) {
-        if (it->due >= 0 && it->due <= now && !it->over) {
-            it->reported = false;
-            it->due = -1;
-            redraw |= it->element->event_handler()->hover(false).redraw;
+    for (auto& hover : std::ranges::reverse_view(hovers_)) {
+        if (hover.due >= 0 && hover.due <= now && !hover.over) {
+            hover.reported = false;
+            hover.due = -1;
+            redraw |= hover.element->event_handler()->hover(false).redraw;
         }
     }
     for (Hover& hover : hovers_) {
@@ -206,16 +207,16 @@ std::optional<double> EventDispatcher::next_deadline() const {
 
 bool EventDispatcher::bubble(const std::vector<Element*>& path, const PointerEvent& event) {
     bool redraw = false;
-    for (auto it = path.rbegin(); it != path.rend(); ++it) {
-        EventHandler* handler = (*it)->event_handler();
+    for (auto element : std::ranges::reverse_view(path)) {
+        EventHandler* handler = element->event_handler();
         if (!handler) {
             continue;
         }
-        const EventResult result = deliver(event, **it);
+        const EventResult result = deliver(event, *element);
         redraw |= result.redraw;
         if (result.consumed) {
             if (event.kind == PointerEvent::Kind::down) {
-                captured_ = *it;
+                captured_ = element;
                 captured_cancellable_ = result.cancellable;
             }
             break;
@@ -263,9 +264,9 @@ bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, Mo
     if (kind == PointerEvent::Kind::down) {
         // Clicking focuses what was clicked (without a ring) or, on nothing focusable, clears focus.
         Element* target = nullptr;
-        for (auto it = path.rbegin(); it != path.rend(); ++it) {
-            if (EventHandler* handler = (*it)->event_handler(); handler && handler->focusable()) {
-                target = *it;
+        for (auto element : std::ranges::reverse_view(path)) {
+            if (EventHandler* handler = element->event_handler(); handler && handler->focusable()) {
+                target = element;
                 break;
             }
         }
@@ -302,20 +303,20 @@ bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, Mo
         // ones only watch.
         std::vector<Watcher> high;
         bool inside_captor = true; // innermost first: until passing captured_
-        for (auto it = path.rbegin(); it != path.rend(); ++it) {
-            if (*it == captured_) {
+        for (auto element : std::ranges::reverse_view(path)) {
+            if (element == captured_) {
                 inside_captor = false;
             }
-            auto* recognizer = dynamic_cast<GestureRecognizer*>((*it)->event_handler());
+            auto* recognizer = dynamic_cast<GestureRecognizer*>(element->event_handler());
             if (!recognizer) {
                 continue;
             }
             if (recognizer->gesture_options.simultaneous) {
-                companions_.push_back({*it, recognizer});
+                companions_.push_back({element, recognizer});
             } else if (recognizer->gesture_options.priority == GesturePriority::high) {
-                high.push_back({*it, recognizer});
+                high.push_back({element, recognizer});
             } else if (inside_captor || captured_cancellable_) {
-                watchers_.push_back({*it, recognizer});
+                watchers_.push_back({element, recognizer});
             }
         }
         watchers_.insert(watchers_.begin(), high.begin(), high.end());
@@ -498,13 +499,13 @@ bool EventDispatcher::scroll(ScrollEvent event) {
         path = path_at(location);
     }
     bool redraw = false;
-    for (auto it = path.rbegin(); it != path.rend(); ++it) {
-        if (EventHandler* handler = (*it)->event_handler()) {
-            const EventResult result = handler->scroll(event, (*it)->frame());
+    for (auto& element : std::ranges::reverse_view(path)) {
+        if (EventHandler* handler = element->event_handler()) {
+            const EventResult result = handler->scroll(event, element->frame());
             redraw |= result.redraw;
             if (result.consumed) {
                 if (!wheel_latched_) {
-                    wheel_latched_ = *it;
+                    wheel_latched_ = element;
                 }
                 break;
             }
@@ -522,12 +523,12 @@ bool gesture(Element*& latched, const std::vector<Element*>& path, const Event& 
     bool redraw = false;
     if (event.phase == GesturePhase::began || event.phase == GesturePhase::none) {
         latched = nullptr;
-        for (auto it = path.rbegin(); it != path.rend(); ++it) {
-            if (EventHandler* handler = (*it)->event_handler()) {
+        for (auto element : std::ranges::reverse_view(path)) {
+            if (EventHandler* handler = element->event_handler()) {
                 const EventResult result = deliver(*handler, event);
                 redraw |= result.redraw;
                 if (result.consumed) {
-                    latched = *it;
+                    latched = element;
                     break;
                 }
             }
@@ -562,8 +563,8 @@ bool EventDispatcher::rotate(RotateEvent event) {
 bool EventDispatcher::two_finger_double_tap(Point location) {
     bool redraw = false;
     const std::vector<Element*> path = path_at(location);
-    for (auto it = path.rbegin(); it != path.rend(); ++it) {
-        if (EventHandler* handler = (*it)->event_handler()) {
+    for (auto element : std::ranges::reverse_view(path)) {
+        if (EventHandler* handler = element->event_handler()) {
             const EventResult result = handler->two_finger_double_tap(location);
             redraw |= result.redraw;
             if (result.consumed) {
@@ -590,8 +591,8 @@ bool EventDispatcher::text_input(const TextInputEvent& event) {
 
 bool EventDispatcher::drags_window_at(Point location) {
     const std::vector<Element*> path = path_at(location);
-    for (auto it = path.rbegin(); it != path.rend(); ++it) {
-        if (EventHandler* handler = (*it)->event_handler()) {
+    for (auto element : std::ranges::reverse_view(path)) {
+        if (EventHandler* handler = element->event_handler()) {
             const auto* drag = dynamic_cast<const WindowDragHandler*>(handler);
             return drag && drag->enabled();
         }
@@ -608,8 +609,8 @@ PointerStyle EventDispatcher::pointer_style() {
     } else {
         path = path_at(last_location_);
     }
-    for (auto it = path.rbegin(); it != path.rend(); ++it) {
-        if (const EventHandler* handler = (*it)->event_handler()) {
+    for (auto& element : std::ranges::reverse_view(path)) {
+        if (const EventHandler* handler = element->event_handler()) {
             if (const PointerStyle style = handler->pointer_style(last_location_); style != PointerStyle::automatic) {
                 return style;
             }

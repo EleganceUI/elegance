@@ -21,7 +21,7 @@ inline void draw_glyph(DisplayList& list, GlyphAtlas& atlas, const FontFace& fac
             const Rect quad{pen + (glyph.x_offset + placed->left) * size, baseline - (glyph.y_offset + placed->top) * size,
                             (placed->right - placed->left) * size, (placed->top - placed->bottom) * size};
             const Rect uv{placed->u0, placed->v0, placed->u1 - placed->u0, placed->v1 - placed->v0};
-            list.commands.push_back(GlyphCommand{quad, uv, tint, size});
+            list.commands.emplace_back(GlyphCommand{quad, uv, tint, size});
         }
     };
     // COLRv1: filled regions with gradients, drawn as vector paths.
@@ -49,7 +49,7 @@ inline void draw_glyph(DisplayList& list, GlyphAtlas& atlas, const FontFace& fac
                 fill = ShapeStyle(RadialGradient(std::move(stops), unit(paint.p0), paint.r0 * size, paint.r1 * size));
                 break;
             }
-            list.commands.push_back(PathCommand{path.polygons, path.bounds, size, origin, frame, std::move(fill),
+            list.commands.emplace_back(PathCommand{path.polygons, path.bounds, size, origin, frame, std::move(fill),
                                                 FillRule::non_zero});
         }
         return;

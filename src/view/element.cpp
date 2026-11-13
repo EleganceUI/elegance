@@ -11,6 +11,7 @@
 #include <atomic>
 #include <cmath>
 #include <limits>
+#include <numbers>
 
 namespace elg::detail {
 
@@ -44,7 +45,7 @@ void Element::paint_focus_ring(DisplayList& list) const {
     constexpr float kGap = 3;
     constexpr float kWidth = 2;
     constexpr float kRadius = 8;
-    list.commands.push_back(RectCommand{frame().inset(-kGap - kWidth), CornerRadii::all(kRadius + kGap),
+    list.commands.emplace_back(RectCommand{frame().inset(-kGap - kWidth), CornerRadii::all(kRadius + kGap),
                                         ShapeStyle(Color::clear), focus_ring_color_(), kWidth});
 }
 
@@ -415,14 +416,14 @@ void ShapeElement::paint_impl(DisplayList& list) const {
         const ShapeStyle fill = has_fill_ ? fill_.current() : ShapeStyle(Color::clear);
         if (spec_.kind == ShapeKind::path) {
             if (g.fill && !is_clear(fill)) {
-                list.commands.push_back(PathCommand{g.fill, g.fill_bounds, 1, origin, bounds, fill, spec_.path->rule});
+                list.commands.emplace_back(PathCommand{g.fill, g.fill_bounds, 1, origin, bounds, fill, spec_.path->rule});
             }
         } else if (!is_clear(fill)) {
             const auto [rect, radii] = shape_outline(spec_, bounds);
-            list.commands.push_back(RectCommand{rect, radii, fill, Color::clear, 0});
+            list.commands.emplace_back(RectCommand{rect, radii, fill, Color::clear, 0});
         }
         if (g.stroke) {
-            list.commands.push_back(PathCommand{g.stroke, g.stroke_bounds, 1, origin, bounds,
+            list.commands.emplace_back(PathCommand{g.stroke, g.stroke_bounds, 1, origin, bounds,
                                                 ShapeStyle(stroke_color_.current()), FillRule::non_zero});
         }
         return;
@@ -436,23 +437,23 @@ void ShapeElement::paint_impl(DisplayList& list) const {
     const ShapeStyle fill = has_fill_ ? fill_.current() : ShapeStyle(Color::clear);
     const Color stroke_color = stroke_color_.current();
     if (!spec_.stroke) {
-        list.commands.push_back(RectCommand{rect, radii, fill, Color::clear, 0});
+        list.commands.emplace_back(RectCommand{rect, radii, fill, Color::clear, 0});
         return;
     }
 
     const ShapeStroke& stroke = *spec_.stroke;
     if (!stroke.centered) {
-        list.commands.push_back(RectCommand{rect, radii, fill, stroke_color, stroke.width});
+        list.commands.emplace_back(RectCommand{rect, radii, fill, stroke_color, stroke.width});
         return;
     }
 
     // Centered: the line straddles the edge, so it's a border on a rect grown by half the width.
     if (!is_clear(fill)) {
-        list.commands.push_back(RectCommand{rect, radii, fill, Color::clear, 0});
+        list.commands.emplace_back(RectCommand{rect, radii, fill, Color::clear, 0});
     }
     const float half = stroke.width / 2;
     const auto grow = [&](float r) { return r > 0 ? r + half : 0.f; };
-    list.commands.push_back(RectCommand{rect.inset(-half),
+    list.commands.emplace_back(RectCommand{rect.inset(-half),
                                         {grow(radii.top_left), grow(radii.top_right),
                                          grow(radii.bottom_right), grow(radii.bottom_left)},
                                         Color::clear, stroke_color, stroke.width});
@@ -692,7 +693,7 @@ std::optional<LayerTransform> EffectElement::layer_transform() const {
     if (degrees == 0 && sx == 1 && sy == 1) {
         return std::nullopt;
     }
-    const float radians = degrees * 3.14159265f / 180;
+    const float radians = degrees * std::numbers::pi_v<float> / 180;
     const float c = std::cos(radians);
     const float s = std::sin(radians);
     const Rect f = frame();
@@ -769,14 +770,14 @@ void EffectElement::paint_impl(DisplayList& list) const {
         const Rect bounds = frame();
         const Rect mask_bounds{bounds.x + mask->bounds.x, bounds.y + mask->bounds.y, mask->bounds.width,
                                mask->bounds.height};
-        content.commands.push_back(PushLayerCommand{
+        content.commands.emplace_back(PushLayerCommand{
             mask_bounds, 1, std::nullopt,
             PathCommand{mask->polygons, mask->bounds, 1, {bounds.x, bounds.y}, bounds, ShapeStyle(Color::white),
                         mask->rule}});
-        content.commands.push_back(PushClipCommand{mask_bounds, {}});
+        content.commands.emplace_back(PushClipCommand{mask_bounds, {}});
         content_->paint(content);
-        content.commands.push_back(PopClipCommand{});
-        content.commands.push_back(PopLayerCommand{});
+        content.commands.emplace_back(PopClipCommand{});
+        content.commands.emplace_back(PopLayerCommand{});
         list.animating |= content.animating;
     }
     const bool clips = !mask && effects_.clip_shape.has_value();
@@ -786,14 +787,14 @@ void EffectElement::paint_impl(DisplayList& list) const {
             const auto& node = static_cast<const ShapeNode&>(*ViewAccess::node(*effects_.clip_shape));
             clip = shape_outline(node.spec(), frame());
         }
-        content.commands.push_back(PushClipCommand{clip.rect, clip.radii});
+        content.commands.emplace_back(PushClipCommand{clip.rect, clip.radii});
     }
     if (!mask) {
         content_->paint(content);
         list.animating |= content.animating;
     }
     if (clips) {
-        content.commands.push_back(PopClipCommand{});
+        content.commands.emplace_back(PopClipCommand{});
     }
     if (drawing_moves() || opacity_.animating() || filter_amount_.animating() || filter_color_.animating()) {
         list.animating = true;
@@ -858,7 +859,7 @@ void EffectElement::paint_impl(DisplayList& list) const {
                 rect.border = adjust(rect.border);
                 const RectCommand shape = rect;
                 if (inner_shadow) {
-                    content.commands.push_back(InnerShadowCommand{shape.rect, shape.radii, adjust(inner_shadow->color),
+                    content.commands.emplace_back(InnerShadowCommand{shape.rect, shape.radii, adjust(inner_shadow->color),
                                                                   inner_shadow->radius,
                                                                   {inner_shadow->x, inner_shadow->y},
                                                                   inner_shadow->spread});
@@ -898,9 +899,9 @@ void EffectElement::paint_impl(DisplayList& list) const {
     layer.blend = effects_.blend_mode;
     layer.transform = layer_transform;
     layer.inner_shadow = inner_shadow;
-    list.commands.push_back(std::move(layer));
+    list.commands.emplace_back(std::move(layer));
     append_content();
-    list.commands.push_back(PopLayerCommand{});
+    list.commands.emplace_back(PopLayerCommand{});
 }
 
 // --- DecorationElement ---
@@ -933,13 +934,13 @@ void DecorationElement::paint_impl(DisplayList& list) const {
         if (!bounds) {
             return;
         }
-        list.commands.push_back(PushLayerCommand{*bounds});
+        list.commands.emplace_back(PushLayerCommand{*bounds});
         list.commands.insert(list.commands.end(), std::make_move_iterator(content.commands.begin()),
                              std::make_move_iterator(content.commands.end()));
-        list.commands.push_back(LayerMaskCommand{});
+        list.commands.emplace_back(LayerMaskCommand{});
         list.commands.insert(list.commands.end(), std::make_move_iterator(mask.commands.begin()),
                              std::make_move_iterator(mask.commands.end()));
-        list.commands.push_back(PopLayerCommand{});
+        list.commands.emplace_back(PopLayerCommand{});
         return;
     }
     if (modifier_->placement() == DecorationModifier::Placement::behind) {

@@ -20,7 +20,7 @@ namespace elg::detail::gpu {
 // a while. Render thread only.
 class TextureCache {
 public:
-    TextureCache(const Device& device, const wgpu::BindGroupLayout& image_layout);
+    TextureCache(const Device& device, wgpu::BindGroupLayout  image_layout);
 
     TextureCache(const TextureCache&) = delete;
     TextureCache& operator=(const TextureCache&) = delete;

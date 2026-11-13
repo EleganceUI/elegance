@@ -17,6 +17,7 @@
 #include <cmath>
 #include <limits>
 #include <map>
+#include <ranges>
 
 namespace elg::detail {
 
@@ -155,13 +156,13 @@ protected:
                                          bounds.width - inset, thickness}
                                   : Rect{item.max_x() + spacing_ / 2 - thickness / 2, bounds.y + inset, thickness,
                                          bounds.height - inset};
-            list.commands.push_back(RectCommand{line, {}, ShapeStyle(separator_color_), Color::clear, 0});
+            list.commands.emplace_back(RectCommand{line, {}, ShapeStyle(separator_color_), Color::clear, 0});
         }
     }
 
     bool hit_impl(Point point, std::vector<Element*>& path) override {
-        for (auto it = shown_.rbegin(); it != shown_.rend(); ++it) {
-            if (it->element->hit_test(point, path)) {
+        for (auto& row : std::ranges::reverse_view(shown_)) {
+            if (row.element->hit_test(point, path)) {
                 return true;
             }
         }

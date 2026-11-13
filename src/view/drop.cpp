@@ -10,6 +10,8 @@
 
 #include <elg/error.h>
 
+#include <ranges>
+
 namespace elg::detail {
 
 namespace {
@@ -38,8 +40,8 @@ DropElement* search(Element& element, Point point, bool files) {
     // asked first.
     std::vector<Element*> children;
     element.for_each_child([&](Element& child) { children.push_back(&child); });
-    for (auto it = children.rbegin(); it != children.rend(); ++it) {
-        if (DropElement* found = search(**it, point, files)) {
+    for (auto& child : std::ranges::reverse_view(children)) {
+        if (DropElement* found = search(*child, point, files)) {
             return found;
         }
     }

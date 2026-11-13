@@ -111,11 +111,11 @@ TEST_CASE("effects scheduled inside with_animation run with its animation") {
     std::vector<std::string> seen;
     effect([&] {
         (void)animated();
-        seen.push_back(detail::current_animation() ? "animated" : "jump");
+        seen.emplace_back(detail::current_animation() ? "animated" : "jump");
     });
     effect([&] {
         (void)plain();
-        seen.push_back(detail::current_animation() ? "animated" : "jump");
+        seen.emplace_back(detail::current_animation() ? "animated" : "jump");
     });
     seen.clear();
 
@@ -135,11 +135,11 @@ TEST_CASE("priority effects run first in a flush") {
     std::vector<std::string> order;
     effect([&] {
         (void)source();
-        order.push_back("normal");
+        order.emplace_back("normal");
     });
     detail::start_effect(std::make_shared<detail::EffectNode>([&] {
                              (void)source();
-                             order.push_back("priority");
+                             order.emplace_back("priority");
                          }),
                          true);
     order.clear();

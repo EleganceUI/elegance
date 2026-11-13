@@ -23,6 +23,7 @@
 #include <optional>
 #include <format>
 #include <functional>
+#include <print>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -785,7 +786,7 @@ View EffectCards() {
 }
 
 void log(const char* message) {
-    std::printf("sandbox: %s\n", message);
+    std::println("sandbox: {}", message);
     std::fflush(stdout);
 }
 
@@ -1135,7 +1136,7 @@ int main(int argc, char** argv) {
                    [scheme] { return ContactsWindow(scheme); });
         return app.run();
     } catch (const elg::Error& e) {
-        std::fprintf(stderr, "sandbox: %s\n", e.what());
+        std::println(stderr, "sandbox: {}", e.what());
         return 1;
     }
 }

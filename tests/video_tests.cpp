@@ -84,7 +84,7 @@ TEST_CASE("video geometry follows the sampled snapshot without UI size updates",
 
     detail::DisplayList list;
     list.scale = 2;
-    list.commands.push_back(detail::VideoCommand{
+    list.commands.emplace_back(detail::VideoCommand{
             {10, 20, 200, 100}, {1, 1, -1, -1}, source, 0.5f, ContentMode::fit});
     // Repeated draws must share one snapshot, even if the producer changes
     // between reads.
@@ -120,11 +120,10 @@ TEST_CASE("video fill keeps destination clipping through transforms",
     source->next->width = 100;
     source->next->height = 200;
     detail::DisplayList list;
-    list.commands.push_back(
-            detail::PushClipCommand{{10, 20, 200, 100}, {8, 8, 8, 8}});
-    list.commands.push_back(detail::VideoCommand{
+    list.commands.emplace_back(detail::PushClipCommand{{10, 20, 200, 100}, {8, 8, 8, 8}});
+    list.commands.emplace_back(detail::VideoCommand{
             {10, 20, 200, 100}, {1, 0, -1, 1}, source, 1, ContentMode::fill});
-    list.commands.push_back(detail::PopClipCommand{});
+    list.commands.emplace_back(detail::PopClipCommand{});
     detail::transform(list.commands, 5, 7, 2, {});
     const auto plan = detail::plan_frame(list, 1000, 1000);
     REQUIRE(plan.instances.size() == 1);
@@ -139,7 +138,7 @@ TEST_CASE(
         "[video][render]") {
     auto source = std::make_shared<ResizingVideoSource>();
     detail::DisplayList list;
-    list.commands.push_back(detail::VideoCommand{
+    list.commands.emplace_back(detail::VideoCommand{
             {10, 20, 200, 100}, {}, source, 1, ContentMode::fit});
     CHECK(detail::plan_frame(list, 500, 500).instances.empty());
     source->next.emplace();

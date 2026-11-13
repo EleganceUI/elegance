@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <format>
 #include <memory>
+#include <print>
 
 using namespace elg;
 using namespace elg_shim;
@@ -1640,7 +1641,7 @@ struct ElgPreviewDesc {
 };
 
 // Builds view `index` into `ret`; false if it panicked.
-typedef bool (*ElgModuleBuild)(int32_t index, View* ret);
+using ElgModuleBuild = bool (*)(int32_t index, View* ret);
 
 namespace {
 
@@ -1688,7 +1689,7 @@ ELG_EXPORT const ModuleEntry* elg_rust_module_entry(bool has_root, const ElgPrev
         // The host calls this through the module, not through the C API: say why on stderr too.
         const std::string message =
             std::format("a views module can have at most {} previews; this one has {}", kMaxPreviews, count);
-        std::fprintf(stderr, "elegance: %s\n", message.c_str());
+        std::println(stderr, "elegance: {}", message);
         throw elg::UsageError(message);
     }
     auto module = std::make_unique<RustModule>();
