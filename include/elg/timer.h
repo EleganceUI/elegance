@@ -56,10 +56,11 @@ private:
 /// const Timer hide = after(3, [=] { loading = false; });
 /// @endcode
 ///
-/// @param seconds The delay; negative or not finite counts as 0.
+/// @param seconds The delay; negative (including negative infinity) counts as 0. Positive
+///   infinity never runs `action`: the timer stays active until it's cancelled or its scope ends.
 /// @param action Runs on the UI thread. Empty: the timer is never active.
 /// @return The timer, to cancel() it.
-/// @throws UsageError Off the UI thread of a running App.
+/// @throws UsageError When `seconds` is NaN, or off the UI thread of a running App.
 ELG_API Timer after(double seconds, std::function<void()> action);
 /// Runs `action` every `seconds` (at least a millisecond), the first time `seconds` from now. If
 /// the app falls behind, missed runs are skipped rather than run back to back. UI thread.
@@ -68,10 +69,12 @@ ELG_API Timer after(double seconds, std::function<void()> action);
 /// .on_appear([=] { every(1, [=] { seconds += 1; }); })  // ends with the view
 /// @endcode
 ///
-/// @param seconds The interval; less than a millisecond, or not finite, counts as a millisecond.
+/// @param seconds The interval; less than a millisecond (including negative infinity) counts as a
+///   millisecond. Positive infinity never runs `action`: the timer stays active until it's
+///   cancelled or its scope ends.
 /// @param action Runs on the UI thread. Empty: the timer is never active.
 /// @return The timer, to cancel() it.
-/// @throws UsageError Off the UI thread of a running App.
+/// @throws UsageError When `seconds` is NaN, or off the UI thread of a running App.
 ELG_API Timer every(double seconds, std::function<void()> action);
 
 } // namespace elg

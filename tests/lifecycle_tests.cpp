@@ -14,6 +14,7 @@
 #include <elg/elegance.h>
 
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <string>
 #include <variant>
@@ -159,6 +160,44 @@ TEST_CASE("after fires once; every repeats, skipping runs it missed", "[timer]")
     detail::run_due_timers(kFarFuture + 2);
     CHECK(once == 1);
     CHECK(repeated == 2);
+}
+
+TEST_CASE("an infinite delay or interval never runs, and the timer stays active until cancelled", "[timer]") {
+    const Clean clean;
+    constexpr double kInfinity = std::numeric_limits<double>::infinity();
+    int runs = 0;
+    const Timer never_once = after(kInfinity, [&] { ++runs; });
+    const Timer never_repeating = every(kInfinity, [&] { ++runs; });
+    CHECK_FALSE(detail::next_timer_due()); // nothing to wake up for
+    detail::run_due_timers(kFarFuture);
+    CHECK(runs == 0);
+    CHECK(never_once.active());
+    CHECK(never_repeating.active());
+    never_once.cancel();
+    never_repeating.cancel();
+    CHECK_FALSE(never_once.active());
+    CHECK_FALSE(never_repeating.active());
+}
+
+TEST_CASE("a negative infinite delay or interval counts as the shortest one", "[timer]") {
+    const Clean clean;
+    constexpr double kInfinity = std::numeric_limits<double>::infinity();
+    int once = 0;
+    int repeated = 0;
+    const Timer single = after(-kInfinity, [&] { ++once; });
+    const Timer repeating = every(-kInfinity, [&] { ++repeated; });
+    detail::run_due_timers(kFarFuture);
+    CHECK(once == 1);
+    CHECK(repeated == 1);
+    CHECK(detail::next_timer_due() == Catch::Approx(kFarFuture + 0.001));
+}
+
+TEST_CASE("a NaN delay or interval is a usage error and starts nothing", "[timer]") {
+    const Clean clean;
+    constexpr double kNaN = std::numeric_limits<double>::quiet_NaN();
+    CHECK_THROWS_AS(after(kNaN, [] {}), UsageError);
+    CHECK_THROWS_AS(every(kNaN, [] {}), UsageError);
+    CHECK_FALSE(detail::next_timer_due());
 }
 
 TEST_CASE("cancelled timers don't run, even from an earlier timer's action", "[timer]") {

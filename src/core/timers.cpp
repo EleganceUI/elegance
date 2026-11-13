@@ -4,6 +4,7 @@
 
 #include "core/timers.h"
 
+#include <elg/error.h>
 #include <elg/reactive.h>
 #include <elg/timer.h>
 
@@ -36,8 +37,8 @@ double seconds_now() {
 
 std::shared_ptr<TimerState> start(double seconds, double interval, std::function<void()> action) {
     check_ui_thread();
-    auto state = std::make_shared<TimerState>(TimerState{
-        seconds_now() + (std::isfinite(seconds) ? std::max(seconds, 0.0) : 0.0), interval, std::move(action)});
+    // Positive infinity: due never (ELGSPEC-0011.R3).
+    auto state = std::make_shared<TimerState>(TimerState{seconds_now() + std::max(seconds, 0.0), interval, std::move(action)});
     if (!state->action) {
         state->done = true;
         return state;
@@ -59,7 +60,7 @@ std::shared_ptr<TimerState> start(double seconds, double interval, std::function
 std::optional<double> next_timer_due() {
     std::optional<double> due;
     for (const auto& timer : g_timers) {
-        if (!timer->done && (!due || timer->due < *due)) {
+        if (!timer->done && std::isfinite(timer->due) && (!due || timer->due < *due)) {
             due = timer->due;
         }
     }
@@ -138,11 +139,17 @@ bool Timer::active() const noexcept {
 }
 
 Timer after(double seconds, std::function<void()> action) {
+    if (std::isnan(seconds)) {
+        throw UsageError("after(): the delay is NaN");
+    }
     return Timer(detail::start(seconds, 0, std::move(action)));
 }
 
 Timer every(double seconds, std::function<void()> action) {
-    const double interval = std::isfinite(seconds) ? std::max(seconds, 0.001) : 0.001;
+    if (std::isnan(seconds)) {
+        throw UsageError("every(): the interval is NaN");
+    }
+    const double interval = std::max(seconds, 0.001);
     return Timer(detail::start(interval, interval, std::move(action)));
 }
 
