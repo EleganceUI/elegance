@@ -9,6 +9,8 @@
 
 option(ELG_WARNINGS_AS_ERRORS "Treat compiler warnings in Elegance's own code as errors" OFF)
 
+include(CheckCXXCompilerFlag)
+
 function(elegance_warnings target)
     if (MSVC)
         set(warnings
@@ -65,6 +67,12 @@ function(elegance_warnings target)
                 -Wdeprecated # e.g. implicit copies of classes with a user-declared destructor
                 -Wunreachable-code-aggressive
             )
+            # Clang 19 flags designated initializers that leave fields at their defaults, as GCC
+            # does (see below).
+            check_cxx_compiler_flag(-Wmissing-designated-field-initializers ELG_HAS_WARNING_DESIGNATED_FIELDS)
+            if (ELG_HAS_WARNING_DESIGNATED_FIELDS)
+                list(APPEND warnings -Wno-missing-designated-field-initializers)
+            endif ()
         else ()
             list(APPEND warnings
                 -Wshadow
@@ -77,7 +85,7 @@ function(elegance_warnings target)
                 # CachedLayout's cached size_that_fits) and so hiding the others is intended.
                 -Woverloaded-virtual=1
                 # GCC also flags designated initializers that leave fields at their defaults,
-                # Elegance's idiom ({.title = "Notes"}); Clang doesn't.
+                # Elegance's idiom ({.title = "Notes"}), which Clang only does from 19 on.
                 -Wno-missing-field-initializers
             )
         endif ()

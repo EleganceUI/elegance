@@ -141,7 +141,7 @@ struct BlurTokens {
 struct Theme {
     ColorTokens light; ///< colors in ColorScheme::light
     ColorTokens dark;  ///< colors in ColorScheme::dark
-    BlurTokens blur;   ///< blur radii, the same in both schemes
+    BlurTokens blur{}; ///< blur radii, the same in both schemes
 
     /// The colors for a color scheme.
     ///

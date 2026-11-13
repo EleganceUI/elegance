@@ -241,7 +241,7 @@ struct FloatingPlacement {
     /// Where it lines up along that edge: with the anchor's start, center or end.
     FloatingAlignment alignment = FloatingAlignment::start;
     float spacing = 0; ///< Points between the anchor and the content (negative: overlapping).
-    Point offset;      ///< Then moved by this, in points.
+    Point offset{};    ///< Then moved by this, in points.
     /// Instead of an edge: the content's top-leading corner here, in the anchor's coordinates.
     std::optional<Point> position;
 };
