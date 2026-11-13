@@ -18,6 +18,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <exception>
 #include <format>
 #include <fstream>
 #include <mutex>
@@ -64,6 +65,7 @@ struct RecorderState {
 
     std::atomic<float> peak{0};
     std::atomic<double> last_post{0};
+    std::atomic<bool> samples_failed{false}; // on_samples threw: it isn't called again
     std::weak_ptr<RecorderState> self;
 
     State<bool> recording{false};
@@ -101,8 +103,15 @@ struct RecorderState {
             std::lock_guard lock(self->mutex);
             self->samples.insert(self->samples.end(), data, data + count);
         }
-        if (self->options.on_samples) {
-            self->options.on_samples(std::span(data, count));
+        if (self->options.on_samples && !self->samples_failed.load(std::memory_order_relaxed)) {
+            try {
+                self->options.on_samples(std::span(data, count));
+            } catch (...) {
+                // Nothing may unwind into the audio library: the error goes to the UI thread, as
+                // one from the app's code there would, and the callback isn't called again.
+                self->samples_failed = true;
+                post_ui_task([error = std::current_exception()] { std::rethrow_exception(error); });
+            }
         }
         // The meter and the duration, about 15 times a second.
         self->peak = std::max(self->peak.load(), peak);
