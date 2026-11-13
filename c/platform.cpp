@@ -901,12 +901,12 @@ static std::vector<FileFilter> filters(const ElgFileFilter* items, size_t count)
 static void send_paths(const SharedFn& f, const std::vector<std::filesystem::path>& paths) {
     std::vector<std::string> names;
     names.reserve(paths.size());
-for (const auto& p : paths) {
+    for (const auto& p : paths) {
         names.push_back(utf8(p));
     }
     std::vector<ElgStr> items;
     items.reserve(names.size());
-for (const auto& n : names) {
+    for (const auto& n : names) {
         items.push_back(c_str(n));
     }
     ElgPaths arg{items.data(), items.size()};

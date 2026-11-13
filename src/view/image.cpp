@@ -494,7 +494,7 @@ View Image(const ImageSource& source) {
     // Two-tone icons: the layers stacked, each in the same color at its own opacity.
     std::vector<View> layers;
     layers.reserve(icon.layers.size());
-for (std::size_t i = 0; i < icon.layers.size(); ++i) {
+    for (std::size_t i = 0; i < icon.layers.size(); ++i) {
         layers.push_back(layer(i));
     }
     return ZStackLayout()(std::move(layers));

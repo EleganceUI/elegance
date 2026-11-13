@@ -316,7 +316,7 @@ View menu_bar_view(const Prop<std::vector<Item>>& menus, const std::function<voi
         std::vector<std::pair<std::size_t, Item>> result;
         const std::vector<Item> items = menus.get();
         result.reserve(items.size());
-for (std::size_t i = 0; i < items.size(); ++i) {
+        for (std::size_t i = 0; i < items.size(); ++i) {
             result.emplace_back(i, items[i]);
         }
         return result;

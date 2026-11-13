@@ -503,7 +503,7 @@ View MenuPickerStyle::make_body(const PickerConfiguration& picker) const {
     return MenuButton(current, [shared, selected = picker.selected, select = picker.select] {
         std::vector<View> items;
         items.reserve(shared->size());
-for (std::size_t i = 0; i < shared->size(); ++i) {
+        for (std::size_t i = 0; i < shared->size(); ++i) {
             items.push_back(MenuItem((*shared)[i], [select, i] { select(i); },
                                      {.checked = [selected, i] { return selected() == i; }}));
         }

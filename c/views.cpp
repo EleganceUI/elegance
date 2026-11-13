@@ -2607,7 +2607,7 @@ View with_selection(const View& v, bool multiple, const SharedFn& get, const Sha
             [set](const std::set<K>& keys) {
                 std::vector<ItemKey> items;
                 items.reserve(keys.size());
-for (const K& key : keys) {
+                for (const K& key : keys) {
                     items.push_back(detail::to_item_key(key));
                 }
                 write_keys(*set, items);

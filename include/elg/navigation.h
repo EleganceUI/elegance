@@ -309,7 +309,7 @@ template <class Route>
 View NavigationStack(const State<std::vector<Route>>& path, View root,
                      std::type_identity_t<std::function<View(const Route&)>> destination,
                      const NavigationStackOptions<Route>& options = {}) {
-    return NavigationStack(path.binding(), std::move(root), std::move(destination), std::move(options));
+    return NavigationStack(path.binding(), std::move(root), std::move(destination), options);
 }
 
 } // namespace elg

@@ -26,7 +26,8 @@ struct Owner {
 
 TEST_CASE("State reads and writes through shared handles") {
     const State<int> count(1);
-    const State<int>& copy = count; // same value
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization): the copy is what's tested
+    const State<int> copy = count; // same value
     copy.set(5);
     CHECK(count() == 5);
     count += 2;

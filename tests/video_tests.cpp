@@ -66,7 +66,8 @@ TEST_CASE("video players record requests before they load", "[video]") {
     CHECK(player.time() == 0.0);
 
     // Copies control the same video.
-    const VideoPlayer& copy = player;
+    // NOLINTNEXTLINE(performance-unnecessary-copy-initialization): the copy is what's tested
+    const VideoPlayer copy = player;
     copy.play();
     CHECK(player.is_playing());
 }

@@ -103,7 +103,7 @@ std::vector<std::filesystem::path> video_nodes() {
     std::ranges::sort(nodes);
     std::vector<std::filesystem::path> paths;
     paths.reserve(nodes.size());
-for (auto& [number, path] : nodes) {
+    for (auto& [number, path] : nodes) {
         paths.push_back(std::move(path));
     }
     return paths;
