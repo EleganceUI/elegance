@@ -241,6 +241,68 @@ void register_icon_font(const std::string& family, const IconFont& font, Weight 
     }
 }
 
+// Registers a set: everything is read and checked before the first font is registered
+// (ELGSPEC-0013.R2), and one registration runs at a time, from any thread (ELGSPEC-0013.R3).
+std::mutex g_register_mutex;
+
+void add_icon_set(std::string name, const IconSetOptions& options) {
+    if (name.empty() || name.find('.') != std::string::npos) {
+        throw UsageError(std::format("register_icon_set(): \"{}\" isn't a valid set name (non-empty, no dots)", name));
+    }
+    if (options.font.empty()) {
+        throw UsageError(std::format("register_icon_set(\"{}\"): no font", name));
+    }
+    for (const IconVariant& variant : options.variants) {
+        if (variant.name.empty() || variant.name.find('.') != std::string::npos || variant.font.empty()) {
+            throw UsageError(std::format("register_icon_set(\"{}\"): variants need a name (no dots) and a font", name));
+        }
+    }
+    const std::string names_text = options.names_data.empty() && !options.names.empty() ? read_text(options.names)
+                                                                                          : std::string(options.names_data);
+    if (names_text.empty()) {
+        throw UsageError(std::format("register_icon_set(\"{}\"): no name map (.names or .names_data)", name));
+    }
+    IconSet set;
+    set.glyphs = parse_names(names_text);
+    if (set.glyphs.empty()) {
+        throw ResourceError(std::format("register_icon_set(\"{}\"): no icons found in the name map", name));
+    }
+    std::vector<IconVariantSet> variant_sets;
+    variant_sets.reserve(options.variants.size());
+    for (const IconVariant& variant : options.variants) {
+        IconVariantSet& variant_set = variant_sets.emplace_back();
+        if (!variant.names_data.empty() || !variant.names.empty()) {
+            variant_set.glyphs = parse_names(variant.names_data.empty() ? read_text(variant.names)
+                                                                         : std::string(variant.names_data));
+        }
+    }
+
+    const std::lock_guard registering(g_register_mutex);
+    {
+        const std::lock_guard lock(g_mutex);
+        if (g_sets.contains(name) && !options.replace) {
+            throw UsageError(std::format("register_icon_set(): \"{}\" is already registered", name));
+        }
+    }
+    // Each registration gets fresh font families, so replacing a set never mixes fonts.
+    static int generation = 0;
+    const int id = ++generation;
+    set.family = std::format("elg.icons.{}.{}", name, id);
+    register_icon_font(set.family, options.font, Weight::regular);
+    for (const auto& [weight, font] : options.weights) {
+        register_icon_font(set.family, font, weight);
+    }
+    for (std::size_t i = 0; i < options.variants.size(); ++i) {
+        const IconVariant& variant = options.variants[i];
+        variant_sets[i].family = std::format("elg.icons.{}.{}.{}", name, id, variant.name);
+        register_icon_font(variant_sets[i].family, variant.font, Weight::regular);
+        set.variants.emplace(variant.name, std::move(variant_sets[i]));
+    }
+
+    const std::lock_guard lock(g_mutex);
+    g_sets.insert_or_assign(std::move(name), std::move(set));
+}
+
 // --- Built-in sets ---
 
 void register_builtin_sets() {
@@ -262,7 +324,7 @@ void register_builtin_sets() {
          .font = std::span(phosphor_duotone, phosphor_duotone_size),
          .names_data = std::string_view(reinterpret_cast<const char*>(phosphor_duotone_css), phosphor_duotone_css_size)});
 #endif
-    register_icon_set("phosphor", phosphor);
+    add_icon_set("phosphor", phosphor);
 #endif
 }
 
@@ -381,53 +443,8 @@ ResolvedIcon resolve(std::string_view system_name) {
 } // namespace
 
 void register_icon_set(std::string name, const IconSetOptions& options) {
-    if (name.empty() || name.find('.') != std::string::npos) {
-        throw UsageError(std::format("register_icon_set(): \"{}\" isn't a valid set name (non-empty, no dots)", name));
-    }
-    if (options.font.empty()) {
-        throw UsageError(std::format("register_icon_set(\"{}\"): no font", name));
-    }
-    const std::string names_text = options.names_data.empty() && !options.names.empty() ? read_text(options.names)
-                                                                                          : std::string(options.names_data);
-    if (names_text.empty()) {
-        throw UsageError(std::format("register_icon_set(\"{}\"): no name map (.names or .names_data)", name));
-    }
-    IconSet set;
-    set.glyphs = parse_names(names_text);
-    if (set.glyphs.empty()) {
-        throw ResourceError(std::format("register_icon_set(\"{}\"): no icons found in the name map", name));
-    }
-    {
-        const std::lock_guard lock(g_mutex);
-        if (g_sets.contains(name) && !options.replace) {
-            throw UsageError(std::format("register_icon_set(): \"{}\" is already registered", name));
-        }
-    }
-
-    // Each registration gets fresh font families, so replacing a set never mixes fonts.
-    static int generation = 0;
-    const int id = ++generation;
-    set.family = std::format("elg.icons.{}.{}", name, id);
-    register_icon_font(set.family, options.font, Weight::regular);
-    for (const auto& [weight, font] : options.weights) {
-        register_icon_font(set.family, font, weight);
-    }
-    for (const IconVariant& variant : options.variants) {
-        if (variant.name.empty() || variant.name.find('.') != std::string::npos || variant.font.empty()) {
-            throw UsageError(std::format("register_icon_set(\"{}\"): variants need a name (no dots) and a font", name));
-        }
-        IconVariantSet variant_set;
-        variant_set.family = std::format("elg.icons.{}.{}.{}", name, id, variant.name);
-        if (!variant.names_data.empty() || !variant.names.empty()) {
-            variant_set.glyphs = parse_names(variant.names_data.empty() ? read_text(variant.names)
-                                                                         : std::string(variant.names_data));
-        }
-        register_icon_font(variant_set.family, variant.font, Weight::regular);
-        set.variants.emplace(variant.name, std::move(variant_set));
-    }
-
-    const std::lock_guard lock(g_mutex);
-    g_sets.insert_or_assign(std::move(name), std::move(set));
+    ensure_builtin_sets(); // ELGSPEC-0013.R1
+    add_icon_set(std::move(name), options);
 }
 
 void set_default_icon_set(std::string name) {
