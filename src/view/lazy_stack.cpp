@@ -7,6 +7,8 @@
 
 #include "view/view_node.h"
 
+#include "core/log.h"
+
 #include <elg/error.h>
 #include <elg/shapes.h>
 #include <elg/views.h>
@@ -39,18 +41,27 @@ public:
     bool always_arranges() const override { return true; } // builds what scrolled into view
 
     // Takes the ForEach's items. Built items whose key is gone or whose value changed are
-    // destroyed (and rebuilt by the next layout if still in view).
+    // destroyed (and rebuilt by the next layout if still in view). Items with a repeated key
+    // each get their own row, as in ForEach, rebuilt on every change.
     void set_items(std::vector<ForEachItem> items) {
         std::map<ItemKey, const ForEachItem*> by_key;
-        for (const ForEachItem& item : items) {
-            by_key.emplace(item.key, &item);
+        std::vector<std::size_t> occurrences(items.size(), 0);
+        std::map<ItemKey, std::size_t> seen;
+        for (std::size_t i = 0; i < items.size(); ++i) {
+            by_key.emplace(items[i].key, &items[i]);
+            occurrences[i] = seen[items[i].key]++;
+        }
+        if (seen.size() != items.size() && !reported_duplicate_) {
+            log_warning("ForEach has duplicate keys; items with a repeated key are rebuilt on every change");
+            reported_duplicate_ = true;
         }
         bool removed = false;
         for (auto it = rows_.begin(); it != rows_.end();) {
-            const auto found = by_key.find(it->first);
-            if (found == by_key.end() || !found->second->equals(found->second->value.get(), it->second.value.get())) {
+            const auto found = by_key.find(it->first.key);
+            if (it->first.occurrence > 0 || found == by_key.end() ||
+                !found->second->equals(found->second->value.get(), it->second.value.get())) {
                 if (found == by_key.end()) {
-                    sizes_.erase(it->first);
+                    sizes_.erase(it->first.key);
                 }
                 it = rows_.erase(it);
                 removed = true;
@@ -59,6 +70,7 @@ public:
             }
         }
         items_ = std::move(items);
+        occurrences_ = std::move(occurrences);
         // Known sizes by position, so layout doesn't look every item up by key.
         known_.assign(items_.size(), -1.f);
         known_sum_ = 0;
@@ -168,6 +180,12 @@ private:
         Element* element;
         std::size_t index;
     };
+    // A row's key: the item's, and which item with that key it is (0 unless keys repeat).
+    struct RowKey {
+        ItemKey key;
+        std::size_t occurrence = 0;
+        auto operator<=>(const RowKey&) const = default;
+    };
 
     float main_of(Size size) const { return axis_ == Axis::vertical ? size.height : size.width; }
     float cross_of(Size size) const { return axis_ == Axis::vertical ? size.width : size.height; }
@@ -219,7 +237,9 @@ private:
     std::optional<Separators> separators_;
     Color separator_color_;
     std::vector<ForEachItem> items_;
-    std::map<ItemKey, Row> rows_;    // built items
+    std::vector<std::size_t> occurrences_; // per item: earlier items with the same key
+    bool reported_duplicate_ = false;
+    std::map<RowKey, Row> rows_;     // built items
     std::map<ItemKey, float> sizes_; // measured main-axis sizes, by key (kept across item changes)
     std::vector<float> known_;       // the same by item position; -1 when not measured yet
     double known_sum_ = 0; // double: sums of thousands of sizes
@@ -263,7 +283,7 @@ void LazyStackElement::arrange(Rect bounds, ProposedSize) {
     };
     std::vector<Placement> placements;
     std::optional<float> anchor_now; // where the anchor row is now
-    std::map<ItemKey, Row> kept;
+    std::map<RowKey, Row> kept;
     bool structure_changed = false;
     bool size_changed = false;
     shown_.clear();
@@ -272,7 +292,8 @@ void LazyStackElement::arrange(Rect bounds, ProposedSize) {
         const ForEachItem& item = items_[i];
         float size = size_at(i, estimate);
         if (position + static_cast<double>(size) >= low && position <= high) {
-            auto existing = rows_.find(item.key);
+            const RowKey row_key{item.key, occurrences_[i]};
+            auto existing = rows_.find(row_key);
             Row row;
             if (existing != rows_.end()) {
                 row = std::move(existing->second);
@@ -290,7 +311,7 @@ void LazyStackElement::arrange(Rect bounds, ProposedSize) {
             placements.push_back({row.element.get(), static_cast<float>(position), size,
                                   (cross - cross_of(actual)) * alignment_});
             shown_.push_back({row.element.get(), i});
-            kept.emplace(item.key, std::move(row));
+            kept.emplace(row_key, std::move(row));
         }
         if (anchor_ && item.key == anchor_->key) {
             anchor_now = static_cast<float>(position);
