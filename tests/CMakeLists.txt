@@ -32,6 +32,7 @@ add_executable(elegance_tests
         selection_tests.cpp
         secure_text_input_tests.cpp
         fetch_tests.cpp
+        image_decode_tests.cpp
         image_tests.cpp
         navigation_tests.cpp
         number_input_tests.cpp
