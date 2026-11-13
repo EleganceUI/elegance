@@ -43,18 +43,18 @@ public:
     Device(const Device&) = delete;
     Device& operator=(const Device&) = delete;
 
-    const wgpu::Device& handle() const noexcept { return device_; }
-    const wgpu::Adapter& adapter() const noexcept { return adapter_; }
-    const wgpu::Queue& queue() const noexcept { return queue_; }
-    const Instance& instance() const noexcept { return instance_; }
-    const std::string& name() const noexcept { return name_; }
-    wgpu::BackendType backend() const noexcept { return backend_; }
+    [[nodiscard]] const wgpu::Device& handle() const noexcept { return device_; }
+    [[nodiscard]] const wgpu::Adapter& adapter() const noexcept { return adapter_; }
+    [[nodiscard]] const wgpu::Queue& queue() const noexcept { return queue_; }
+    [[nodiscard]] const Instance& instance() const noexcept { return instance_; }
+    [[nodiscard]] const std::string& name() const noexcept { return name_; }
+    [[nodiscard]] wgpu::BackendType backend() const noexcept { return backend_; }
 
     // Whether the device was created with this (optional) feature.
-    bool has_feature(wgpu::FeatureName feature) const { return device_.HasFeature(feature); }
+    [[nodiscard]] bool has_feature(wgpu::FeatureName feature) const { return device_.HasFeature(feature); }
     // The adapter's LUID on Windows: Direct3D devices that share textures with this one (video
     // decoding, composition) must run on the same adapter.
-    std::optional<std::array<std::uint8_t, 8>> luid() const noexcept { return luid_; }
+    [[nodiscard]] std::optional<std::array<std::uint8_t, 8>> luid() const noexcept { return luid_; }
 
     // Submits `commands`, then throws elg::GpuError if the device was lost or ran out of memory.
     void submit(const wgpu::CommandBuffer& commands) const;

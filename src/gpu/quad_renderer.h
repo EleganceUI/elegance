@@ -59,7 +59,7 @@ public:
     QuadRenderer& operator=(const QuadRenderer&) = delete;
 
     // The gradient stops' group: one read-only storage buffer.
-    wgpu::BindGroup stops_group(const wgpu::Buffer& stops) const;
+    [[nodiscard]] wgpu::BindGroup stops_group(const wgpu::Buffer& stops) const;
 
     // Binds everything for drawing into `pass`, whose target is `format`; draws cover `width` x
     // `height` pixels at its top-left (the target may be larger).

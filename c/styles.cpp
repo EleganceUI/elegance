@@ -30,7 +30,7 @@ template <class Style, class Config>
 class RustStyle final : public Style {
 public:
     explicit RustStyle(SharedFn f) : f_(std::move(f)) {}
-    View make_body(const Config& config) const override { return call(*f_, config); }
+    [[nodiscard]] View make_body(const Config& config) const override { return call(*f_, config); }
 
 private:
     SharedFn f_;
@@ -41,8 +41,8 @@ template <class Style, class Config>
 class RustAnimatedStyle final : public Style {
 public:
     RustAnimatedStyle(SharedFn f, std::optional<Animation> animation) : f_(std::move(f)), animation_(std::move(animation)) {}
-    View make_body(const Config& config) const override { return call(*f_, config); }
-    std::optional<Animation> animation() const override { return animation_; }
+    [[nodiscard]] View make_body(const Config& config) const override { return call(*f_, config); }
+    [[nodiscard]] std::optional<Animation> animation() const override { return animation_; }
 
 private:
     SharedFn f_;
@@ -54,8 +54,8 @@ template <class Style, class Config>
 class RustPopupStyle final : public Style {
 public:
     RustPopupStyle(SharedFn f, std::optional<PopupMotion> motion) : f_(std::move(f)), motion_(std::move(motion)) {}
-    View make_body(const Config& config) const override { return call(*f_, config); }
-    PopupMotion motion() const override { return motion_ ? *motion_ : Style::motion(); }
+    [[nodiscard]] View make_body(const Config& config) const override { return call(*f_, config); }
+    [[nodiscard]] PopupMotion motion() const override { return motion_ ? *motion_ : Style::motion(); }
 
 private:
     SharedFn f_;
@@ -66,11 +66,11 @@ class RustSliderStyle final : public SliderStyle {
 public:
     RustSliderStyle(SharedFn track, SharedFn fill, SharedFn thumb)
         : track_(std::move(track)), fill_(std::move(fill)), thumb_(std::move(thumb)) {}
-    View make_track(const SliderConfiguration& slider) const override { return call(*track_, slider); }
-    View make_fill(const SliderConfiguration& slider) const override {
+    [[nodiscard]] View make_track(const SliderConfiguration& slider) const override { return call(*track_, slider); }
+    [[nodiscard]] View make_fill(const SliderConfiguration& slider) const override {
         return fill_ ? call(*fill_, slider) : SliderStyle::make_fill(slider);
     }
-    View make_thumb(const SliderConfiguration& slider) const override { return call(*thumb_, slider); }
+    [[nodiscard]] View make_thumb(const SliderConfiguration& slider) const override { return call(*thumb_, slider); }
 
 private:
     SharedFn track_, fill_, thumb_;
@@ -80,11 +80,11 @@ class RustMenuStyle final : public MenuStyle {
 public:
     RustMenuStyle(SharedFn body, SharedFn item, std::optional<PopupMotion> motion)
         : body_(std::move(body)), item_(std::move(item)), motion_(std::move(motion)) {}
-    View make_body(const MenuConfiguration& menu) const override { return call(*body_, menu); }
-    View make_item(const MenuItemConfiguration& item) const override {
+    [[nodiscard]] View make_body(const MenuConfiguration& menu) const override { return call(*body_, menu); }
+    [[nodiscard]] View make_item(const MenuItemConfiguration& item) const override {
         return item_ ? call(*item_, item) : MenuStyle::make_item(item);
     }
-    PopupMotion motion() const override { return motion_ ? *motion_ : MenuStyle::motion(); }
+    [[nodiscard]] PopupMotion motion() const override { return motion_ ? *motion_ : MenuStyle::motion(); }
 
 private:
     SharedFn body_, item_;

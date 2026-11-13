@@ -376,7 +376,7 @@ public:
         : axis_(axis), alignment_(alignment), spacing_(spacing), items_(std::move(items)),
           separators_(std::move(separators)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         std::optional<Separators> separators;
         if (separators_) {
             separators = Separators{separators_->inset, separators_->thickness};

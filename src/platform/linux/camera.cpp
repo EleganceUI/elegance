@@ -65,7 +65,7 @@ public:
         std::swap(fd_, other.fd_);
         return *this;
     }
-    int get() const noexcept { return fd_; }
+    [[nodiscard]] int get() const noexcept { return fd_; }
     explicit operator bool() const noexcept { return fd_ >= 0; }
 
 private:

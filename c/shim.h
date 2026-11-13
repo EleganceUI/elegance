@@ -282,7 +282,7 @@ namespace elg_shim {
 
 // Thrown through Elegance when a Rust closure panicked; the panic payload stays on the Rust side.
 struct RustPanic final : std::exception {
-    const char* what() const noexcept override { return "a Rust callback panicked"; }
+    [[nodiscard]] const char* what() const noexcept override { return "a Rust callback panicked"; }
 };
 
 // Owns a Rust closure.
@@ -302,7 +302,7 @@ public:
             throw RustPanic();
         }
     }
-    void* data() const noexcept { return closure_.data; }
+    [[nodiscard]] void* data() const noexcept { return closure_.data; }
 
 private:
     ElgClosure closure_;
@@ -730,7 +730,7 @@ inline std::vector<elg::View> take_all(elg::View** views, size_t count) {
 // A Rust component: its body runs each time the view is mounted.
 struct RustComponent {
     SharedFn body_fn;
-    elg::View body() const {
+    [[nodiscard]] elg::View body() const {
         elg::View result;
         body_fn->call(nullptr, &result);
         return result;

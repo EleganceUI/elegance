@@ -189,7 +189,7 @@ public:
     VideoNode(std::shared_ptr<VideoSource> source, ContentMode mode, bool mirrored = false, bool flipped = false)
         : source_(std::move(source)), mode_(mode), mirrored_(mirrored), flipped_(flipped) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto element = std::make_unique<VideoElement>(source_, mode_, mirrored_, flipped_);
         VideoElement* const target = element.get();
         // The size arrives with the video's metadata.

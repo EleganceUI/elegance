@@ -6,4 +6,4 @@
 // class body, so it holds member declarations only; definitions are in view_extensions.cpp.
 
 // A padded, rounded "card" surface with a hairline border.
-View card(float corner_radius = 16) const;
+[[nodiscard]] View card(float corner_radius = 16) const;

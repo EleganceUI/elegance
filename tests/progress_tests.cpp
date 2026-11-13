@@ -29,14 +29,14 @@ struct Mounted {
         return system;
     }
 
-    detail::AccessibilityInfo info() const {
+    [[nodiscard]] detail::AccessibilityInfo info() const {
         detail::AccessibilityInfo out;
         root->accessibility(out);
         return out;
     }
-    Size size(ProposedSize proposal) const { return root->size_that_fits(proposal); }
+    [[nodiscard]] Size size(ProposedSize proposal) const { return root->size_that_fits(proposal); }
     // Lays it out in `proposal` and draws it.
-    detail::DisplayList paint(ProposedSize proposal) const {
+    [[nodiscard]] detail::DisplayList paint(ProposedSize proposal) const {
         root->size_that_fits(proposal);
         root->place({}, proposal);
         detail::DisplayList list;
@@ -100,7 +100,7 @@ namespace {
 // A custom style sees the fraction.
 class TextProgressStyle final : public ProgressStyle {
 public:
-    View make_body(const ProgressConfiguration& progress) const override {
+    [[nodiscard]] View make_body(const ProgressConfiguration& progress) const override {
         return Text([fraction = progress.fraction] {
             const std::optional<float> f = fraction();
             return f ? std::to_string(static_cast<int>(*f * 100)) + "%" : std::string("…");

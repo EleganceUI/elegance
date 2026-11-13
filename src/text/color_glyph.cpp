@@ -37,7 +37,7 @@ struct Affine {
         oy = yx * x + yy * y + dy;
     }
     // The transform's average scale (for radii).
-    double scale() const { return std::sqrt(std::abs(xx * yy - xy * yx)); }
+    [[nodiscard]] double scale() const { return std::sqrt(std::abs(xx * yy - xy * yx)); }
 
     static Affine translate(double x, double y) { return {1, 0, x, 0, 1, y}; }
     // `m` about the point (cx, cy).
@@ -202,7 +202,7 @@ private:
     };
 
     // Font units (y up) under `m` to em units (y down).
-    Point to_em(const Affine& m, double x, double y) const {
+    [[nodiscard]] Point to_em(const Affine& m, double x, double y) const {
         double ox = 0, oy = 0;
         m.apply(x, y, ox, oy);
         return {static_cast<float>(ox * em_), static_cast<float>(-oy * em_)};
@@ -218,7 +218,7 @@ private:
         return true;
     }
 
-    std::vector<ColorStop> stops_of(FT_ColorLine line) const {
+    [[nodiscard]] std::vector<ColorStop> stops_of(FT_ColorLine line) const {
         std::vector<ColorStop> stops;
         FT_ColorStop stop{};
         while (FT_Get_Colorline_Stops(face_, &stop, &line.color_stop_iterator)) {

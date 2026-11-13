@@ -120,7 +120,7 @@ public:
             popups_->close_tooltip();
         }
     }
-    int menu_level() const override { return menu_level_; }
+    [[nodiscard]] int menu_level() const override { return menu_level_; }
     void close_popup(std::uint64_t token) override {
         if (popups_) {
             popups_->close_popup(token);
@@ -143,7 +143,7 @@ public:
         }
     }
 
-    std::optional<double> wake() const noexcept { return wake_; }
+    [[nodiscard]] std::optional<double> wake() const noexcept { return wake_; }
     // True (and forgets it) when the requested wake time has come.
     bool take_due(double now) noexcept {
         if (wake_ && *wake_ <= now) {
@@ -483,7 +483,7 @@ int App::run() {
         std::vector<std::pair<PopupRequest, std::uint32_t>> opens;
         std::vector<std::uint64_t> close_tokens;
         std::vector<std::pair<std::uint64_t, Rect>> moves;
-        bool any() const {
+        [[nodiscard]] bool any() const {
             return close_level || close_tooltip || !after_close.empty() || !opens.empty() || !close_tokens.empty() ||
                    !moves.empty();
         }

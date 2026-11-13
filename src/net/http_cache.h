@@ -46,10 +46,10 @@ struct CacheEntry {
     std::string last_modified;
     std::vector<std::uint8_t> body;
 
-    bool fresh(std::int64_t now) const { return !no_cache && initial_age + (now - received) < lifetime; }
-    bool revalidates() const { return !redirected && (!etag.empty() || !last_modified.empty()); }
+    [[nodiscard]] bool fresh(std::int64_t now) const { return !no_cache && initial_age + (now - received) < lifetime; }
+    [[nodiscard]] bool revalidates() const { return !redirected && (!etag.empty() || !last_modified.empty()); }
     // Offline, a stale copy beats none, unless the server said otherwise.
-    bool usable_stale() const { return !no_cache && !must_revalidate; }
+    [[nodiscard]] bool usable_stale() const { return !no_cache && !must_revalidate; }
 };
 
 // What a 200 response would be cached as, if it may be (no `no-store`, no `Vary: *`, and either

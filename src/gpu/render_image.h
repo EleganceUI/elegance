@@ -19,11 +19,11 @@ public:
                 std::uint32_t samples = 1,
                 wgpu::TextureUsage usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding);
 
-    const wgpu::Texture& texture() const noexcept { return texture_; }
-    const wgpu::TextureView& view() const noexcept { return view_; }
-    wgpu::TextureFormat format() const noexcept { return format_; }
-    std::uint32_t width() const noexcept { return width_; }
-    std::uint32_t height() const noexcept { return height_; }
+    [[nodiscard]] const wgpu::Texture& texture() const noexcept { return texture_; }
+    [[nodiscard]] const wgpu::TextureView& view() const noexcept { return view_; }
+    [[nodiscard]] wgpu::TextureFormat format() const noexcept { return format_; }
+    [[nodiscard]] std::uint32_t width() const noexcept { return width_; }
+    [[nodiscard]] std::uint32_t height() const noexcept { return height_; }
 
 private:
     wgpu::TextureFormat format_;

@@ -70,7 +70,7 @@ TEST_CASE("a button's highlight ignores the hover delay", "[hover]") {
     struct Recording final : ButtonStyle {
         std::optional<bool>* seen;
         explicit Recording(std::optional<bool>* s) : seen(s) {}
-        View make_body(const ButtonConfiguration& button) const override {
+        [[nodiscard]] View make_body(const ButtonConfiguration& button) const override {
             effect([seen = seen, hovered = button.is_hovered] { *seen = hovered(); });
             return button.label;
         }

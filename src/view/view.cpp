@@ -119,7 +119,7 @@ class BoundFrameNode final : public detail::ViewNode {
 public:
     BoundFrameNode(View content, Prop<Size> size, Alignment alignment)
         : content_(std::move(content)), size_(std::move(size)), alignment_(alignment) {}
-    std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
         auto element = std::make_unique<BoundFrameElement>(alignment_, detail::lower(content_, context));
         BoundFrameElement* const target = element.get();
         detail::bind(size_, context, [target](Size size) { target->set_size(size); });
@@ -177,7 +177,7 @@ private:
 class BoundPaddingNode final : public detail::ViewNode {
 public:
     BoundPaddingNode(View content, Prop<EdgeInsets> insets) : content_(std::move(content)), insets_(std::move(insets)) {}
-    std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
         auto element = std::make_unique<BoundPaddingElement>(detail::lower(content_, context));
         BoundPaddingElement* const target = element.get();
         detail::bind(insets_, context, [target](EdgeInsets insets) { target->set_insets(insets); });
@@ -470,7 +470,7 @@ public:
     LifecycleNode(View content, std::function<void()> appear, std::function<void()> disappear)
         : content_(std::move(content)), appear_(std::move(appear)), disappear_(std::move(disappear)) {}
 
-    std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
         auto element = detail::lower(content_, context);
         struct Life {
             bool appeared = false;
@@ -523,7 +523,7 @@ namespace {
 class WindowDragAreaModifier final : public EventModifier {
 public:
     explicit WindowDragAreaModifier(bool enabled) noexcept : enabled_(enabled) {}
-    std::unique_ptr<EventHandler> make_handler() const override {
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override {
         return std::make_unique<detail::WindowDragHandler>(enabled_);
     }
 
@@ -941,7 +941,7 @@ public:
         }
         return {.consumed = true};
     }
-    bool focusable() const override { return untrack(enabled_); }
+    [[nodiscard]] bool focusable() const override { return untrack(enabled_); }
 
 private:
     std::function<void()> action_;
@@ -954,7 +954,7 @@ private:
 class FocusScopeHandler final : public EventHandler {
 public:
     void set_scope(Element* scope) noexcept { scope_ = scope; }
-    bool focusable() const override {
+    [[nodiscard]] bool focusable() const override {
         bool inner = false;
         std::function<void(Element&)> walk = [&](Element& element) {
             if (inner) {
@@ -1156,7 +1156,7 @@ public:
     explicit TextEditorNode(std::shared_ptr<TextEditor> editor) : editor_(std::move(editor)) {}
     // The text takes its font and colors from where the style put it (so a style's .font() or
     // .foreground_style() on the field applies).
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const EnvironmentValues environment = context.environment;
         editor_->set_environment(environment);
         auto element = std::make_unique<TextEditorElement>(editor_);

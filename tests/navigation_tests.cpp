@@ -27,7 +27,7 @@ struct Seen {
 class RecordingStackStyle final : public NavigationStackStyle {
 public:
     explicit RecordingStackStyle(std::shared_ptr<Seen> seen) : seen_(std::move(seen)) {}
-    View make_body(const NavigationStackConfiguration& stack) const override {
+    [[nodiscard]] View make_body(const NavigationStackConfiguration& stack) const override {
         seen_->stack = stack;
         return stack.pages;
     }

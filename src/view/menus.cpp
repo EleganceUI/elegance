@@ -165,7 +165,7 @@ public:
     MenuItemNode(Prop<std::string> title, std::function<void()> action, MenuItemOptions options)
         : title_(std::move(title)), action_(std::move(action)), options_(std::move(options)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const RowState state;
         std::vector<View> leading;
         if (options_.checked) {
@@ -210,7 +210,7 @@ private:
 class DelayedHover final : public EventHandler {
 public:
     explicit DelayedHover(std::function<void(bool)> action) : action_(std::move(action)) {}
-    std::optional<HoverDelay> hover_delay() const override { return HoverDelay{.enter = 0.25, .exit = 0}; }
+    [[nodiscard]] std::optional<HoverDelay> hover_delay() const override { return HoverDelay{.enter = 0.25, .exit = 0}; }
     EventResult hover(bool inside) override {
         action_(inside);
         return {};
@@ -224,7 +224,7 @@ class SubmenuNode final : public ViewNode {
 public:
     SubmenuNode(Prop<std::string> title, std::function<View()> menu) : title_(std::move(title)), menu_(std::move(menu)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const RowState state;
         const View row = menu_row(Text(title_), View(), icon(Icon::chevron_right, 12), state, false, context.environment);
         WindowServices* const services = context.services;
@@ -338,7 +338,7 @@ class ContextMenuNode final : public ViewNode {
 public:
     ContextMenuNode(View content, std::function<View()> popup)
         : content_(std::move(content)), popup_(std::move(popup)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto element = std::make_unique<ContextMenuElement>(detail::lower(content_, context), popup_,
                                                             context.environment, context.services);
         if (context.focus) {
@@ -357,7 +357,7 @@ class MenuButtonNode final : public ViewNode {
 public:
     MenuButtonNode(View label, std::function<View()> menu, MenuButtonOptions options)
         : label_(std::move(label)), menu_(std::move(menu)), options_(options) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const State<bool> pressed(false);
         const State<bool> hovered(false);
         const State<bool> focused(false);
@@ -428,7 +428,7 @@ namespace {
 // A menu's items in the MenuStyle of where it's placed (the popup, with its opener's environment).
 struct MenuPanel {
     View items;
-    View body() const {
+    [[nodiscard]] View body() const {
         const auto style = untrack([] { return Environment<MenuStyleKey>()(); });
         return style->make_body({.items = items});
     }

@@ -37,12 +37,12 @@ public:
     // Plain images stay the default: some platforms compress them only when nothing else reads them.
     void request_copy_source();
     // The acquired image when it can be copied from, else null.
-    wgpu::Texture copy_source() const { return copyable_ ? texture_ : wgpu::Texture(); }
+    [[nodiscard]] wgpu::Texture copy_source() const { return copyable_ ? texture_ : wgpu::Texture(); }
 
     // The format of the views acquire() returns (sRGB).
-    wgpu::TextureFormat view_format() const noexcept { return view_format_; }
-    std::uint32_t width() const noexcept { return width_; }
-    std::uint32_t height() const noexcept { return height_; }
+    [[nodiscard]] wgpu::TextureFormat view_format() const noexcept { return view_format_; }
+    [[nodiscard]] std::uint32_t width() const noexcept { return width_; }
+    [[nodiscard]] std::uint32_t height() const noexcept { return height_; }
 
 private:
     const Device& device_;

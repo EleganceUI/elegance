@@ -72,7 +72,7 @@ struct Pending {
     std::function<std::optional<ToggleState>()> toggled;
     std::function<bool()> selected;
 
-    bool any() const { return label || value || hint || role || combine || action || toggled || selected; }
+    [[nodiscard]] bool any() const { return label || value || hint || role || combine || action || toggled || selected; }
 
     void absorb(const AccessibilityElement& element) {
         const AccessibilitySpec& spec = element.spec();
@@ -269,7 +269,7 @@ class AccessibilityNode final : public ViewNode {
 public:
     AccessibilityNode(View content, AccessibilitySpec spec) : content_(std::move(content)), spec_(std::move(spec)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         return with_accessibility(detail::lower(content_, context), spec_, context.environment);
     }
 

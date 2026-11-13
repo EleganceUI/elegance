@@ -127,7 +127,7 @@ public:
         return {};
     }
 
-    std::optional<HoverDelay> hover_delay() const override { return delay_; }
+    [[nodiscard]] std::optional<HoverDelay> hover_delay() const override { return delay_; }
 
 private:
     std::function<void(bool)> action_;
@@ -182,8 +182,8 @@ class TextInputHandler final : public EventHandler {
 public:
     explicit TextInputHandler(std::function<bool(const TextInputEvent&)> action) : action_(std::move(action)) {}
 
-    bool focusable() const override { return true; }
-    bool accepts_text_input() const override { return true; }
+    [[nodiscard]] bool focusable() const override { return true; }
+    [[nodiscard]] bool accepts_text_input() const override { return true; }
     EventResult text_input(const TextInputEvent& event) override { return {.consumed = action_ && action_(event)}; }
 
 private:
@@ -196,7 +196,7 @@ public:
 
     // Read when the pointer moves or the views change, not in an effect: a reactive style is
     // picked up at the next frame.
-    PointerStyle pointer_style(Point) const override { return untrack([&] { return style_.get(); }); }
+    [[nodiscard]] PointerStyle pointer_style(Point) const override { return untrack([&] { return style_.get(); }); }
 
 private:
     Prop<PointerStyle> style_;

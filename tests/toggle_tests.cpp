@@ -30,10 +30,10 @@ struct Mounted {
     }
 
     // Toggle and Checkbox mount as their accessibility wrapper around the button.
-    const detail::AccessibilitySpec& spec() const {
+    [[nodiscard]] const detail::AccessibilitySpec& spec() const {
         return static_cast<const detail::AccessibilityElement&>(*root).spec();
     }
-    std::optional<detail::ToggleState> state() const { return spec().toggled(); }
+    [[nodiscard]] std::optional<detail::ToggleState> state() const { return spec().toggled(); }
     void click() const {
         root->for_each_child([](detail::Element& button) { button.accessibility_action({}); });
         detail::flush_effects();

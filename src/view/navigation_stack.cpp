@@ -401,7 +401,7 @@ public:
                         NavigationStackBehavior behavior)
         : root_(std::move(root)), pages_(std::move(pages)), pop_(std::move(pop)), behavior_(std::move(behavior)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const LowerContext nested = context.nested();
         auto element =
             std::make_unique<NavigationStackElement>(detail::lower(root_, nested), nested, pop_, behavior_);
@@ -424,7 +424,7 @@ public:
     StyledNavigationStackNode(View pages, std::function<std::vector<std::string>()> titles, std::function<void()> pop)
         : pages_(std::move(pages)), titles_(std::move(titles)), pop_(std::move(pop)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const EnvironmentValues env = context.environment;
         const std::shared_ptr<const NavigationStackStyle> style =
             untrack([&] { return env.get<NavigationStackStyleKey>(); });

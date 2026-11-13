@@ -195,7 +195,7 @@ TEST_CASE("a popover's chrome comes from the environment's PopoverStyle", "[floa
         int* built;
         bool* padded;
         Recording(int* b, bool* p) : built(b), padded(p) {}
-        View make_body(const PopoverConfiguration& popover) const override {
+        [[nodiscard]] View make_body(const PopoverConfiguration& popover) const override {
             ++*built;
             *padded = popover.is_padded();
             return popover.content;
@@ -255,7 +255,7 @@ TEST_CASE("a menu's panel comes from the environment's MenuStyle", "[floating]")
     struct Recording final : MenuStyle {
         int* built;
         explicit Recording(int* b) : built(b) {}
-        View make_body(const MenuConfiguration& menu) const override {
+        [[nodiscard]] View make_body(const MenuConfiguration& menu) const override {
             ++*built;
             return menu.items;
         }
@@ -336,8 +336,8 @@ TEST_CASE("a popover takes its motion from its style unless its options give one
     detail::Scope::Use use(scope);
     detail::set_frame_time(100);
     struct Fading final : PopoverStyle {
-        View make_body(const PopoverConfiguration& popover) const override { return popover.content; }
-        PopupMotion motion() const override { return {Transition::opacity(), Animation::linear(1)}; }
+        [[nodiscard]] View make_body(const PopoverConfiguration& popover) const override { return popover.content; }
+        [[nodiscard]] PopupMotion motion() const override { return {Transition::opacity(), Animation::linear(1)}; }
     };
     const State<bool> styled(true);
     const State<bool> overridden(true);

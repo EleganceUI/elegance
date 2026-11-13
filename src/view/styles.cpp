@@ -327,7 +327,7 @@ namespace {
 // A number input's stacked arrow: highlighted while hovered or pressed.
 class ArrowButtonStyle final : public ButtonStyle {
 public:
-    View make_body(const ButtonConfiguration& button) const override {
+    [[nodiscard]] View make_body(const ButtonConfiguration& button) const override {
         return button.label
             .foreground_style([=](const EnvironmentValues& env) {
                 return env.color(button.is_enabled() ? ThemeColor::secondary : ThemeColor::tertiary);

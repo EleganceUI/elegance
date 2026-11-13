@@ -446,7 +446,7 @@ class IconNode final : public ViewNode {
 public:
     IconNode(std::string family, std::string glyph) : family_(std::move(family)), glyph_(std::move(glyph)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         ELG_ASSERT(context.text, "lowering an Image without a text system");
         const EnvironmentValues environment = context.environment;
         auto element = std::make_unique<TextElement>(*context.text, 1, TextAlignment::center);

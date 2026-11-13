@@ -50,7 +50,7 @@ std::vector<detail::Element*> children(detail::Element& element) {
 struct LastOptionPickerStyle final : PickerStyle {
     explicit LastOptionPickerStyle(std::vector<std::string>* seen) : labels(seen) {}
     std::vector<std::string>* labels;
-    View make_body(const PickerConfiguration& picker) const override {
+    [[nodiscard]] View make_body(const PickerConfiguration& picker) const override {
         *labels = picker.labels;
         return Button(Text([selected = picker.selected] { return std::to_string(selected()); }),
                       [select = picker.select, count = picker.labels.size()] { select(count - 1); });
@@ -59,9 +59,9 @@ struct LastOptionPickerStyle final : PickerStyle {
 
 // A 4-point track, a fill, and a 20 x 10 thumb.
 struct BlockSliderStyle final : SliderStyle {
-    View make_track(const SliderConfiguration&) const override { return Rectangle().frame({.height = 4}); }
-    View make_fill(const SliderConfiguration&) const override { return Rectangle(); }
-    View make_thumb(const SliderConfiguration&) const override { return Rectangle().frame(20, 10); }
+    [[nodiscard]] View make_track(const SliderConfiguration&) const override { return Rectangle().frame({.height = 4}); }
+    [[nodiscard]] View make_fill(const SliderConfiguration&) const override { return Rectangle(); }
+    [[nodiscard]] View make_thumb(const SliderConfiguration&) const override { return Rectangle().frame(20, 10); }
 };
 
 } // namespace
@@ -137,7 +137,7 @@ TEST_CASE("a slider's style sees its fraction", "[slider][style]") {
     struct Watching final : SliderStyle {
         explicit Watching(std::vector<float>* fractions) : seen(fractions) {}
         std::vector<float>* seen;
-        View make_track(const SliderConfiguration& slider) const override {
+        [[nodiscard]] View make_track(const SliderConfiguration& slider) const override {
             return Rectangle()
                 .frame({.height = 4})
                 .opacity([seen = seen, fraction = slider.fraction] {
@@ -145,7 +145,7 @@ TEST_CASE("a slider's style sees its fraction", "[slider][style]") {
                     return 1.f;
                 });
         }
-        View make_thumb(const SliderConfiguration&) const override { return Rectangle().frame(10, 10); }
+        [[nodiscard]] View make_thumb(const SliderConfiguration&) const override { return Rectangle().frame(10, 10); }
     };
     std::vector<float> seen;
     const State<float> value(0.25f);

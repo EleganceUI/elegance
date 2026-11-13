@@ -16,9 +16,9 @@ namespace elg::detail {
 class WindowDragHandler final : public EventHandler {
 public:
     explicit WindowDragHandler(bool enabled) noexcept : enabled_(enabled) {}
-    bool enabled() const noexcept { return enabled_; }
+    [[nodiscard]] bool enabled() const noexcept { return enabled_; }
     // The whole area drags, gaps included, like a system title bar.
-    bool covers_frame() const override { return enabled_; }
+    [[nodiscard]] bool covers_frame() const override { return enabled_; }
 
 private:
     bool enabled_;
@@ -29,8 +29,8 @@ private:
 class FocusableHandler final : public EventHandler {
 public:
     explicit FocusableHandler(bool focusable) noexcept : focusable_(focusable) {}
-    bool focusable() const override { return focusable_; }
-    bool blocks_focus() const noexcept { return !focusable_; }
+    [[nodiscard]] bool focusable() const override { return focusable_; }
+    [[nodiscard]] bool blocks_focus() const noexcept { return !focusable_; }
 
 private:
     bool focusable_;

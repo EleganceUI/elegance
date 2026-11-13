@@ -33,7 +33,7 @@ using namespace elg;
 
 // A custom ButtonStyle: a tinted circle that deepens on hover and press.
 struct PillButtonStyle : ButtonStyle {
-    View make_body(const ButtonConfiguration& button) const override {
+    [[nodiscard]] View make_body(const ButtonConfiguration& button) const override {
         const auto tint = Environment<TintKey>();
         return button.label.font(Font::headline)
             .foreground_style([=] { return button.is_enabled() ? tint() : tint().opacity(0.35f); })
@@ -268,7 +268,7 @@ struct FlowCache {
 struct FlowLayout : CachedLayout<FlowCache> {
     float spacing = 8;
 
-    FlowCache make_cache(std::span<const LayoutChild> children) const override {
+    [[nodiscard]] FlowCache make_cache(std::span<const LayoutChild> children) const override {
         FlowCache cache;
         for (const LayoutChild& child : children) {
             cache.sizes.push_back(child.size_that_fits({}));

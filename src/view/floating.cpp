@@ -533,7 +533,7 @@ public:
         : content_(std::move(content)), is_presented_(std::move(is_presented)), floating_(std::move(floating)),
           options_(std::move(options)), default_motion_(std::move(default_motion)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         FloatingOptions options = options_;
         if (!options.motion && default_motion_) {
             options.motion = default_motion_(context.environment);
@@ -678,7 +678,7 @@ public:
     TooltipNode(View content, std::function<View()> tooltip, TooltipOptions options)
         : content_(std::move(content)), tooltip_(std::move(tooltip)), options_(std::move(options)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         return std::make_unique<TooltipElement>(detail::lower(content_, context), tooltip_, options_, context);
     }
 
@@ -697,7 +697,7 @@ public:
     PopupMotionNode(View content, PopupMotion motion, std::shared_ptr<TransitionElement*> exit)
         : content_(std::move(content)), motion_(std::move(motion)), exit_(std::move(exit)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto element = std::make_unique<TransitionElement>(*motion_.transition(), detail::lower(content_, context));
         element->insert(motion_.animation());
         *exit_ = element.get();
@@ -714,7 +714,7 @@ private:
 class FloatingContainerNode final : public ViewNode {
 public:
     explicit FloatingContainerNode(View content) : content_(std::move(content)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         return std::make_unique<FloatingLayerElement>(detail::lower(content_, context), true);
     }
 

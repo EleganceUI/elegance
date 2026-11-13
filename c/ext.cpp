@@ -26,13 +26,13 @@ class RustLayout final : public Layout {
 public:
     explicit RustLayout(SharedFn f) : f_(std::move(f)) {}
 
-    Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override {
+    [[nodiscard]] Size size_that_fits(ProposedSize proposal, std::span<const LayoutChild> children) const override {
         return size(proposal, {}, children, nullptr);
     }
     void place_children(Rect bounds, ProposedSize proposal, std::span<const LayoutChild> children) const override {
         place(bounds, proposal, children, nullptr);
     }
-    std::optional<Axis> spacer_axis() const override {
+    [[nodiscard]] std::optional<Axis> spacer_axis() const override {
         ElgLayoutCall call{2, {}, {}, nullptr, 0, nullptr};
         int32_t axis = -1;
         f_->call(&call, &axis);
@@ -127,7 +127,7 @@ struct RustLayoutKey {
 class RustLayoutValueModifier final : public LayoutValueModifierBase {
 public:
     explicit RustLayoutValueModifier(SharedFn owner) : owner_(std::move(owner)), value_{owner_->data()} {}
-    const void* value_for(const std::type_info& key) const noexcept override {
+    [[nodiscard]] const void* value_for(const std::type_info& key) const noexcept override {
         if (key != typeid(RustLayoutKey)) {
             return nullptr;
         }
@@ -168,7 +168,7 @@ class RustViewModifier final : public ViewModifier {
 public:
     explicit RustViewModifier(SharedFn f) : f_(std::move(f)) {}
     // args: View* (owned by the Rust side), ret: View*.
-    View body(View content) const override {
+    [[nodiscard]] View body(View content) const override {
         View result;
         f_->call(new View(std::move(content)), &result);
         return result;
@@ -199,7 +199,7 @@ class RustLayoutModifier final : public LayoutModifier {
 public:
     explicit RustLayoutModifier(SharedFn f) : f_(std::move(f)) {}
 
-    Size size_that_fits(ProposedSize proposal, const LayoutChild& content) const override {
+    [[nodiscard]] Size size_that_fits(ProposedSize proposal, const LayoutChild& content) const override {
         ElgLayoutModifierCall call{0, c_proposed(proposal), {}, &content};
         ElgSize result{};
         f_->call(&call, &result);
@@ -209,7 +209,7 @@ public:
         ElgLayoutModifierCall call{1, c_proposed(proposal), c_rect(bounds), &content};
         f_->call(&call, nullptr);
     }
-    std::optional<float> layout_priority() const override {
+    [[nodiscard]] std::optional<float> layout_priority() const override {
         ElgLayoutModifierCall call{2, {}, {}, nullptr};
         ElgOptLen result{};
         f_->call(&call, &result);
@@ -227,13 +227,13 @@ class RustDecorationModifier final : public DecorationModifier {
 public:
     RustDecorationModifier(SharedFn f, Placement placement, Alignment alignment)
         : f_(std::move(f)), placement_(placement), alignment_(alignment) {}
-    View decoration() const override {
+    [[nodiscard]] View decoration() const override {
         View result;
         f_->call(nullptr, &result);
         return result;
     }
-    Placement placement() const override { return placement_; }
-    Alignment alignment() const override { return alignment_; }
+    [[nodiscard]] Placement placement() const override { return placement_; }
+    [[nodiscard]] Alignment alignment() const override { return alignment_; }
 
 private:
     SharedFn f_;
@@ -454,7 +454,7 @@ public:
         call.flag = inside;
         return result(call);
     }
-    PointerStyle pointer_style(Point location) const override {
+    [[nodiscard]] PointerStyle pointer_style(Point location) const override {
         ElgEventCall call{};
         call.op = 10;
         call.location = {location.x, location.y};
@@ -493,21 +493,21 @@ public:
         call.key = c_key_event(event);
         return result(call);
     }
-    bool focusable() const override { return flag(4); }
+    [[nodiscard]] bool focusable() const override { return flag(4); }
     EventResult focus(bool focused) override {
         ElgEventCall call{};
         call.op = 5;
         call.flag = focused;
         return result(call);
     }
-    bool accepts_text_input() const override { return flag(6); }
+    [[nodiscard]] bool accepts_text_input() const override { return flag(6); }
     EventResult text_input(const TextInputEvent& event) override {
         ElgEventCall call{};
         call.op = 7;
         call.text = {static_cast<int32_t>(event.kind), c_str(event.text), event.cursor};
         return result(call);
     }
-    std::optional<HoverDelay> hover_delay() const override {
+    [[nodiscard]] std::optional<HoverDelay> hover_delay() const override {
         ElgEventCall call{};
         call.op = 8;
         ElgOptHoverDelay delay{};
@@ -517,7 +517,7 @@ public:
         }
         return elg_shim::hover_delay(delay.delay);
     }
-    bool covers_frame() const override { return flag(9); }
+    [[nodiscard]] bool covers_frame() const override { return flag(9); }
 
 private:
     EventResult result(ElgEventCall& call) {
@@ -525,7 +525,7 @@ private:
         f_->call(&call, &r);
         return {r.consumed, r.redraw, r.cancellable};
     }
-    bool flag(int32_t op) const {
+    [[nodiscard]] bool flag(int32_t op) const {
         ElgEventCall call{};
         call.op = op;
         bool value = false;
@@ -540,7 +540,7 @@ class RustEventModifier final : public EventModifier {
 public:
     explicit RustEventModifier(SharedFn f) : f_(std::move(f)) {}
     // ret: ElgClosure* (the new handler).
-    std::unique_ptr<EventHandler> make_handler() const override {
+    [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override {
         ElgClosure handler{};
         f_->call(nullptr, &handler);
         return std::make_unique<RustEventHandler>(std::make_shared<const RustFn>(handler));

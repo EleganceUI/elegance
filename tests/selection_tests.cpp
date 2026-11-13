@@ -36,7 +36,7 @@ detail::TextSystem& text_system() {
 struct RecordingRowStyle final : RowStyle {
     explicit RecordingRowStyle(std::vector<RowConfiguration>* seen) : rows(seen) {}
     std::vector<RowConfiguration>* rows;
-    View make_body(const RowConfiguration& row) const override {
+    [[nodiscard]] View make_body(const RowConfiguration& row) const override {
         rows->push_back(row);
         return row.content;
     }
@@ -295,7 +295,7 @@ TEST_CASE("rows can read whether they're selected; the default style builds", "[
     struct Row {
         std::string name;
         std::map<std::string, std::function<bool()>>* readers;
-        View body() const {
+        [[nodiscard]] View body() const {
             const auto selected = Environment<RowSelectedKey>();
             (*readers)[name] = [selected] { return selected(); };
             return Text(name);

@@ -24,7 +24,7 @@ public:
     // bind, even for empty data.
     void write(std::span<const std::byte> data);
 
-    const wgpu::Buffer& handle() const noexcept { return buffer_; }
+    [[nodiscard]] const wgpu::Buffer& handle() const noexcept { return buffer_; }
 
 private:
     wgpu::Device device_;

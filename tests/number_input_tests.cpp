@@ -48,7 +48,7 @@ struct Mounted {
         return found;
     }
 
-    detail::AccessibilityInfo info() const {
+    [[nodiscard]] detail::AccessibilityInfo info() const {
         detail::AccessibilityInfo out;
         root->accessibility(out);
         return out;
@@ -66,7 +66,7 @@ struct Mounted {
         focus.focus(nullptr, false);
         detail::flush_effects();
     }
-    std::string text() const {
+    [[nodiscard]] std::string text() const {
         detail::AccessibilityInfo out;
         field->accessibility(out);
         return out.value;

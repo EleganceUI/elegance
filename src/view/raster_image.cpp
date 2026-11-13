@@ -224,7 +224,7 @@ public:
     RasterImageNode(fs::path file, std::shared_ptr<const Bytes> data, float scale, bool resizable)
         : file_(std::move(file)), data_(std::move(data)), scale_(scale), resizable_(resizable) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         std::shared_ptr<ImageAsset> asset = load_asset(file_, data_);
         auto element = std::make_unique<RasterImageElement>(asset, scale_, resizable_);
         RasterImageElement* const target = element.get();
@@ -238,7 +238,7 @@ public:
         return element;
     }
 
-    std::shared_ptr<const RasterImageNode> resized() const {
+    [[nodiscard]] std::shared_ptr<const RasterImageNode> resized() const {
         return std::make_shared<const RasterImageNode>(file_, data_, scale_, true);
     }
 

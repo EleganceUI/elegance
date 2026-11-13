@@ -410,7 +410,7 @@ class SplitNode final : public ViewNode {
 public:
     SplitNode(Axis axis, std::vector<View> panes, SplitViewOptions options)
         : axis_(axis), panes_(std::move(panes)), options_(std::move(options)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const LowerContext pane_context = context.nested();
         std::vector<std::unique_ptr<Element>> children;
         children.reserve(panes_.size());

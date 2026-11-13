@@ -763,8 +763,8 @@ public:
     EventResult hover(bool inside) override { return handler_->hover(inside); }
     EventResult scroll(const ScrollEvent& event, Rect frame) override { return handler_->scroll(event, frame); }
     EventResult focus(bool focused) override { return handler_->focus(focused); }
-    std::optional<HoverDelay> hover_delay() const override { return handler_->hover_delay(); }
-    bool covers_frame() const override { return handler_->covers_frame(); }
+    [[nodiscard]] std::optional<HoverDelay> hover_delay() const override { return handler_->hover_delay(); }
+    [[nodiscard]] bool covers_frame() const override { return handler_->covers_frame(); }
 
 private:
     EventHandler* handler_;
@@ -957,8 +957,8 @@ private:
         float velocity = 0;     // points per second, at the start
         bool active = false;
 
-        float at(double time) const;
-        bool settled(double time) const;
+        [[nodiscard]] float at(double time) const;
+        [[nodiscard]] bool settled(double time) const;
     };
     // Gliding on after the fingers lift, slowing down exponentially.
     struct Coast {
@@ -967,9 +967,9 @@ private:
         float velocity = 0; // points per second, at the start
         bool active = false;
 
-        float at(double time) const;
-        float velocity_at(double time) const;
-        float end() const;
+        [[nodiscard]] float at(double time) const;
+        [[nodiscard]] float velocity_at(double time) const;
+        [[nodiscard]] float end() const;
     };
 
     bool scrolls(Axis axis) const noexcept;

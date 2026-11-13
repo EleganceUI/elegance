@@ -49,10 +49,10 @@ struct SelectionController {
     State<bool> focused{false};                  // the stack has keyboard focus, shown (RowConfiguration)
     std::function<void(const ItemKey&)> reveal;  // scrolls a row into view (the stack's element)
 
-    std::vector<ItemKey> selected() const { return untrack(model.get); }
+    [[nodiscard]] std::vector<ItemKey> selected() const { return untrack(model.get); }
 
     // The keys from `from` to `to` in ForEach order, or `to` alone if `from` is gone.
-    std::vector<ItemKey> range(const ItemKey& from, const ItemKey& to) const {
+    [[nodiscard]] std::vector<ItemKey> range(const ItemKey& from, const ItemKey& to) const {
         const auto start = std::ranges::find(keys, from);
         const auto end = std::ranges::find(keys, to);
         if (start == keys.end() || end == keys.end()) {
@@ -99,7 +99,7 @@ struct SelectionController {
     }
 
     // Where the keys go from: the cursor, else the first selected row.
-    std::optional<std::size_t> current_index() const {
+    [[nodiscard]] std::optional<std::size_t> current_index() const {
         if (const std::optional<ItemKey>& at = cursor.peek()) {
             if (const auto found = std::ranges::find(keys, *at); found != keys.end()) {
                 return static_cast<std::size_t>(found - keys.begin());
@@ -207,7 +207,7 @@ public:
     RowNode(View content, ItemKey key, std::shared_ptr<SelectionController> selection)
         : content_(std::move(content)), key_(std::move(key)), selection_(std::move(selection)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const std::shared_ptr<SelectionController> selection = selection_;
         const ItemKey key = key_;
         const State<bool> hovered(false);
@@ -397,7 +397,7 @@ class SelectionNode final : public ViewNode {
 public:
     SelectionNode(View content, SelectionModel model) : content_(std::move(content)), model_(std::move(model)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto selection = std::make_shared<SelectionController>();
         selection->model = model_;
         const EnvironmentValues environment = context.environment;

@@ -40,8 +40,8 @@ struct RecordingMenuStyle final : MenuStyle {
     explicit RecordingMenuStyle(std::vector<Row>* seen) : rows(seen) {}
     std::vector<Row>* rows;
 
-    View make_body(const MenuConfiguration& menu) const override { return menu.items; }
-    View make_item(const MenuItemConfiguration& item) const override {
+    [[nodiscard]] View make_body(const MenuConfiguration& menu) const override { return menu.items; }
+    [[nodiscard]] View make_item(const MenuItemConfiguration& item) const override {
         rows->push_back({!item.leading.is_empty(), !item.trailing.is_empty(), item.is_highlighted, item.is_enabled,
                          item.is_destructive});
         return Rectangle().fill(Color::black).frame(100, 20);

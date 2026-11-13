@@ -248,7 +248,7 @@ private:
 class SliderNode final : public ViewNode {
 public:
     SliderNode(Binding<float> value, SliderOptions options) : value_(std::move(value)), options_(std::move(options)) {}
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const EnvironmentValues environment = context.environment;
         const SliderState state;
         const SliderConfiguration configuration{
@@ -306,7 +306,7 @@ public:
                std::function<void(std::size_t)> select)
         : labels_(std::move(labels)), selected_(std::move(selected)), select_(std::move(select)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const EnvironmentValues& environment = context.environment;
         const std::shared_ptr<const PickerStyle> style = untrack([&] { return environment.get<PickerStyleKey>(); });
         View body;
@@ -328,7 +328,7 @@ class PickerSegmentStyle final : public ButtonStyle {
 public:
     explicit PickerSegmentStyle(std::function<bool()> selected) : selected_(std::move(selected)) {}
 
-    View make_body(const ButtonConfiguration& button) const override {
+    [[nodiscard]] View make_body(const ButtonConfiguration& button) const override {
         const auto theme = Environment<ThemeKey>();
         const auto scheme = Environment<ColorSchemeKey>();
         const auto colors = [=] { return theme().colors(scheme()); };

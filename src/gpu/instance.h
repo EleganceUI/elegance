@@ -19,13 +19,13 @@ public:
     Instance(const Instance&) = delete;
     Instance& operator=(const Instance&) = delete;
 
-    const wgpu::Instance& handle() const noexcept { return instance_; }
+    [[nodiscard]] const wgpu::Instance& handle() const noexcept { return instance_; }
 
     // Blocks until `future` (from a WaitAnyOnly callback) has completed.
     void wait(wgpu::Future future) const;
 
     // A surface for a window. The window must outlive it.
-    wgpu::Surface create_surface(const platform::SurfaceSource& source) const;
+    [[nodiscard]] wgpu::Surface create_surface(const platform::SurfaceSource& source) const;
 
 private:
     wgpu::Instance instance_;

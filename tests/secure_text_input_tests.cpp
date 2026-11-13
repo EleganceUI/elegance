@@ -45,7 +45,7 @@ public:
     void close_tooltip() override {}
     void close_popup(std::uint64_t) override {}
     void move_popup(std::uint64_t, Rect) override {}
-    int menu_level() const override { return -1; }
+    [[nodiscard]] int menu_level() const override { return -1; }
 };
 
 struct Window {

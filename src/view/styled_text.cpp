@@ -261,7 +261,7 @@ class StyledTextNode final : public ViewNode {
 public:
     explicit StyledTextNode(std::vector<TextRun> runs) : runs_(std::move(runs)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         ELG_ASSERT(context.text, "lowering StyledText without a text system");
         const EnvironmentValues environment = context.environment;
         std::vector<Attachment> attachments;

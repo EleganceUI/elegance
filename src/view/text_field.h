@@ -55,10 +55,10 @@ public:
     // The binding changed from outside (not by editing).
     void set_text(std::string value);
     // Assistive technology: the text (empty for secure fields), the placeholder, and replacing it.
-    std::string accessible_text() const { return secure_ ? std::string() : text_; }
-    const std::string& placeholder() const noexcept { return placeholder_; }
-    bool secure() const noexcept { return secure_; }
-    bool area() const noexcept { return area_; }
+    [[nodiscard]] std::string accessible_text() const { return secure_ ? std::string() : text_; }
+    [[nodiscard]] const std::string& placeholder() const noexcept { return placeholder_; }
+    [[nodiscard]] bool secure() const noexcept { return secure_; }
+    [[nodiscard]] bool area() const noexcept { return area_; }
     void replace_all(std::string value);
 
     // Input, from the TextFieldElement.
@@ -71,8 +71,8 @@ public:
 
     // Layout and drawing, from the TextEditorElement.
     void attach(TextEditorElement* element) noexcept { element_ = element; }
-    TextEditorElement* attached() const noexcept { return element_; }
-    Size measure(ProposedSize proposal) const;
+    [[nodiscard]] TextEditorElement* attached() const noexcept { return element_; }
+    [[nodiscard]] Size measure(ProposedSize proposal) const;
     void arranged(Rect frame);
     void paint(DisplayList& list, Rect frame) const;
 
@@ -91,34 +91,34 @@ private:
         bool atomic;
     };
 
-    bool enabled() const;
+    [[nodiscard]] bool enabled() const;
     // Secure fields are one line.
-    bool multiline() const noexcept { return !secure_ && (area_ || max_lines_ > 1); }
-    bool composing() const noexcept { return !composition_.empty(); }
-    std::size_t selection_start() const noexcept { return std::min(caret_, anchor_); }
-    std::size_t selection_end() const noexcept { return std::max(caret_, anchor_); }
-    std::string clean(std::string text) const; // what the field takes: one line, unless multiline
+    [[nodiscard]] bool multiline() const noexcept { return !secure_ && (area_ || max_lines_ > 1); }
+    [[nodiscard]] bool composing() const noexcept { return !composition_.empty(); }
+    [[nodiscard]] std::size_t selection_start() const noexcept { return std::min(caret_, anchor_); }
+    [[nodiscard]] std::size_t selection_end() const noexcept { return std::max(caret_, anchor_); }
+    [[nodiscard]] std::string clean(std::string text) const; // what the field takes: one line, unless multiline
     void lines_changed(); // secure or the line limit changed: the text may have to become one line
     void shape_placeholder();
 
     // Text <-> shown bytes. Bytes inside an atomic segment go to its nearer end (or `toward_end`).
-    std::size_t shown_without_composition(std::size_t text_byte) const;
-    std::size_t to_shown(std::size_t text_byte) const;
-    std::size_t to_text(std::size_t shown_byte, std::optional<bool> toward_end = std::nullopt) const;
+    [[nodiscard]] std::size_t shown_without_composition(std::size_t text_byte) const;
+    [[nodiscard]] std::size_t to_shown(std::size_t text_byte) const;
+    [[nodiscard]] std::size_t to_text(std::size_t shown_byte, std::optional<bool> toward_end = std::nullopt) const;
     // Inside an atomic segment: out of it, toward its end or start.
-    std::size_t out_of_atomic(std::size_t text_byte, bool toward_end) const;
+    [[nodiscard]] std::size_t out_of_atomic(std::size_t text_byte, bool toward_end) const;
 
     void reshape();                 // the text or style changed: segments, shown text, shaping
     void relayout(float width);     // line breaking for this width, caret stops
-    TextLayoutResult layout_for(std::optional<float> width) const;
-    const CaretStop& stop_at(std::size_t shown_byte) const; // where a shown byte's caret goes
-    std::size_t line_of(std::size_t text_byte) const;
-    std::size_t byte_at(Point local) const; // nearest caret stop to a point (in the text's coordinates)
-    std::size_t byte_on_line(std::size_t line, float x) const;
-    std::size_t previous_stop(std::size_t byte) const;
-    std::size_t next_stop(std::size_t byte) const;
-    std::size_t previous_word(std::size_t byte) const;
-    std::size_t next_word(std::size_t byte) const;
+    [[nodiscard]] TextLayoutResult layout_for(std::optional<float> width) const;
+    [[nodiscard]] const CaretStop& stop_at(std::size_t shown_byte) const; // where a shown byte's caret goes
+    [[nodiscard]] std::size_t line_of(std::size_t text_byte) const;
+    [[nodiscard]] std::size_t byte_at(Point local) const; // nearest caret stop to a point (in the text's coordinates)
+    [[nodiscard]] std::size_t byte_on_line(std::size_t line, float x) const;
+    [[nodiscard]] std::size_t previous_stop(std::size_t byte) const;
+    [[nodiscard]] std::size_t next_stop(std::size_t byte) const;
+    [[nodiscard]] std::size_t previous_word(std::size_t byte) const;
+    [[nodiscard]] std::size_t next_word(std::size_t byte) const;
     void select_word(std::size_t byte);
 
     void move_caret(std::size_t byte, bool extend);

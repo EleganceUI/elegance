@@ -32,7 +32,7 @@ public:
     GlyphDiskCache(const GlyphDiskCache&) = delete;
     GlyphDiskCache& operator=(const GlyphDiskCache&) = delete;
 
-    bool enabled() const noexcept { return directory_.has_value(); }
+    [[nodiscard]] bool enabled() const noexcept { return directory_.has_value(); }
 
     // The cached pixels (RGBA) of `glyph` at `width` x `height`, if any.
     std::optional<std::vector<std::uint8_t>> find(const FontFace& face, std::uint32_t glyph, std::uint32_t width,

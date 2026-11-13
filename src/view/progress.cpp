@@ -64,7 +64,7 @@ class ProgressNode final : public ViewNode {
 public:
     explicit ProgressNode(Prop<std::optional<float>> fraction) : fraction_(std::move(fraction)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         const EnvironmentValues env = context.environment;
         const auto fraction = [prop = fraction_, env] { return prop.get(env); };
         const std::shared_ptr<const ProgressStyle> style = untrack([&] { return env.get<ProgressStyleKey>(); });
@@ -196,7 +196,7 @@ public:
                   std::optional<Prop<Color>> fill)
         : fraction_(std::move(fraction)), spec_(spec), track_(std::move(track)), fill_(std::move(fill)) {}
 
-    std::unique_ptr<Element> lower(const LowerContext& context) const override {
+    [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto element = std::make_unique<IndicatorElement>(spec_);
         IndicatorElement* const target = element.get();
         detail::bind(Prop<std::optional<float>>(fraction_), context,

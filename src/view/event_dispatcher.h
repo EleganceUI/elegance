@@ -38,7 +38,7 @@ public:
     bool pointer_left();
     // Whether the pointer is over this window, and its shape there: the innermost style under it
     // (or along the view a press is captured by), else the arrow.
-    bool pointer_inside() const noexcept { return pointer_inside_; }
+    [[nodiscard]] bool pointer_inside() const noexcept { return pointer_inside_; }
     PointerStyle pointer_style();
     bool key(const KeyEvent& event);
     // Menus: unhandled Up/Down move focus like Shift+Tab/Tab, Home/End to the first/last item.
@@ -67,7 +67,7 @@ public:
     // Delivers hover changes whose delay has passed, and long presses held long enough.
     bool tick();
     // When the next pending hover change or long press is due (steady clock seconds), if any.
-    std::optional<double> next_deadline() const;
+    [[nodiscard]] std::optional<double> next_deadline() const;
 
 private:
     // A handler-bearing element the pointer is over, or that still has to hear that it left.

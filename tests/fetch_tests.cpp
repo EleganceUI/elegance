@@ -245,7 +245,7 @@ public:
         thread_.join();
     }
 
-    std::string url(std::string_view credentials = {}) const {
+    [[nodiscard]] std::string url(std::string_view credentials = {}) const {
         return std::format("http://{}127.0.0.1:{}", credentials, acceptor_.local_endpoint().port());
     }
 
@@ -327,7 +327,7 @@ struct TemporaryDirectory {
         std::filesystem::remove_all(path, ignored);
     }
     // Stored entries (not the temporary files of stores under way).
-    std::size_t files() const {
+    [[nodiscard]] std::size_t files() const {
         std::size_t count = 0;
         for (const auto& entry : std::filesystem::recursive_directory_iterator(path)) {
             count += entry.is_regular_file() && entry.path().extension() != ".tmp";
