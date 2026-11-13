@@ -46,8 +46,8 @@ struct StrokeStyle {
     LineCap cap = LineCap::butt;     ///< how open ends (and each dash's ends) look
     LineJoin join = LineJoin::miter; ///< how corners look
     float miter_limit = 4;           ///< miter joins longer than this many widths become bevels
-    /// on, off, on, off... lengths; empty: solid. Give an even number of lengths: unlike SVG, an odd
-    /// count isn't repeated to make it even.
+    /// on, off, on, off... lengths; empty: solid. An odd number of lengths is used written twice, as
+    /// in SVG: {4} is {4, 4}, and {4, 2, 1} is {4, 2, 1, 4, 2, 1}.
     std::vector<float> dash;
     float dash_phase = 0;            ///< how far into the pattern the stroke starts
 };

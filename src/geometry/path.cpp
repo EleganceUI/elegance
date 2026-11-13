@@ -692,8 +692,14 @@ void stroke_polyline(Path& out, const std::vector<Point>& pts, bool closed, cons
 
 // Splits a polyline into the "on" stretches of a dash pattern.
 std::vector<std::vector<Point>> dashed(const std::vector<Point>& pts, bool closed, const StrokeStyle& style) {
+    // An odd count is used written twice, keeping drawn and skipped stretches alternating
+    // (ELGSPEC-0014.R2).
+    std::vector<float> dash = style.dash;
+    if (dash.size() % 2 != 0) {
+        dash.insert(dash.end(), style.dash.begin(), style.dash.end());
+    }
     float total = 0;
-    for (const float d : style.dash) {
+    for (const float d : dash) {
         total += std::max(d, 0.f);
     }
     std::vector<std::vector<Point>> pieces;
@@ -705,7 +711,7 @@ std::vector<std::vector<Point>> dashed(const std::vector<Point>& pts, bool close
         return pieces;
     }
     std::size_t index = 0;
-    float remaining = std::max(style.dash[0], 0.f);
+    float remaining = std::max(dash[0], 0.f);
     bool on = true;
     std::size_t dashes = 0;
     // Start `dash_phase` into the pattern.
@@ -718,8 +724,8 @@ std::vector<std::vector<Point>> dashed(const std::vector<Point>& pts, bool close
         phase -= step;
         remaining -= step;
         if (remaining <= 0) {
-            index = (index + 1) % style.dash.size();
-            remaining = std::max(style.dash[index], 0.f);
+            index = (index + 1) % dash.size();
+            remaining = std::max(dash[index], 0.f);
             on = index % 2 == 0;
         }
     }
@@ -754,8 +760,8 @@ std::vector<std::vector<Point>> dashed(const std::vector<Point>& pts, bool close
                     }
                 }
                 current.clear();
-                index = (index + 1) % style.dash.size();
-                remaining = std::max(style.dash[index], 0.f);
+                index = (index + 1) % dash.size();
+                remaining = std::max(dash[index], 0.f);
                 on = index % 2 == 0;
                 if (on) {
                     current.push_back(a);
