@@ -37,7 +37,9 @@ struct GlyphJob;
 // on the UI thread (so layout and drawing never wait), and its distance field is generated on a
 // pool of worker threads; the pixels are queued for the render thread, which owns the texture.
 // Until they arrive the glyph's slot is empty. UI thread only, except where noted.
-// TODO: evict (LRU) or add pages when full.
+// When the page is full, the glyphs that don't fit aren't drawn in that frame, and the atlas
+// starts over once its uploads are taken: every glyph is placed again as frames draw it (from
+// the disk cache, or generated again).
 class GlyphAtlas {
 public:
     GlyphAtlas();
@@ -45,12 +47,14 @@ public:
     GlyphAtlas(const GlyphAtlas&) = delete;
     GlyphAtlas& operator=(const GlyphAtlas&) = delete;
 
-    // nullptr for glyphs with no outline (spaces), or when the atlas is full.
+    // nullptr for glyphs with no outline (spaces), or while the atlas is full.
     const AtlasGlyph* find_or_add(const FontFace& face, std::uint32_t glyph_id);
 
     // Glyph pixels finished since the last call; post them before any frame that uses them.
+    // Between frames: a full atlas starts over here.
     std::vector<GlyphUpload> take_uploads();
-    // Whether glyphs finished since take_uploads() (windows showing them need a frame).
+    // Whether glyphs finished since take_uploads(), or the atlas started over (windows showing
+    // text need a frame).
     bool has_uploads() const;
     // Called on a worker thread whenever a glyph finishes (e.g. to wake the event loop).
     void set_on_ready(std::function<void()> on_ready);
@@ -64,8 +68,12 @@ public:
     void set_disk_cache(std::optional<std::filesystem::path> directory);
 
 private:
-    std::optional<AtlasGlyph> prepare(const FontFace& face, std::uint32_t glyph_id);
-    bool allocate(std::uint32_t width, std::uint32_t height, std::uint32_t& x, std::uint32_t& y);
+    enum class Allocation { placed, full, too_large };
+    // nullopt with `full` set: no room now (not cached, so it's placed again after starting over).
+    std::optional<AtlasGlyph> prepare(const FontFace& face, std::uint32_t glyph_id, bool& full);
+    Allocation allocate(std::uint32_t width, std::uint32_t height, std::uint32_t& x, std::uint32_t& y);
+    // Forgets every glyph: they're placed again, from the top-left, as frames draw them.
+    void start_over();
     void submit(std::unique_ptr<GlyphJob> job);
     void work(std::stop_token stop);
 
@@ -79,6 +87,9 @@ private:
     std::deque<std::unique_ptr<GlyphJob>> jobs_;
     std::vector<GlyphUpload> uploads_;
     std::size_t pending_ = 0; // queued or being generated
+    // Counts start_over(): pixels of glyphs placed before it are dropped, not uploaded.
+    std::uint64_t generation_ = 0;
+    bool started_over_ = false; // since the last take_uploads()
     std::function<void()> on_ready_;
     std::vector<std::jthread> workers_;
 
@@ -86,7 +97,10 @@ private:
     std::uint32_t shelf_x_ = 0;
     std::uint32_t shelf_y_ = 0;
     std::uint32_t shelf_height_ = 0;
+    bool start_over_ = false; // a glyph didn't fit this frame
+    std::uint32_t frames_since_start_over_ = 1'000'000;
     bool reported_full_ = false;
+    bool reported_too_large_ = false;
 };
 
 } // namespace elg::detail
