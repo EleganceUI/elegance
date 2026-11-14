@@ -11,7 +11,6 @@ on:
 
 permissions:
     contents: read
-    actions: write # deleting superseded caches
 
 # One run at a time per branch, so each starts from the previous one's cache (pull requests:
 # replace the older run).
@@ -21,16 +20,20 @@ concurrency:
 
 jobs:
     build:
+        name: arm64
+        permissions:
+            contents: read
+            actions: write # deleting superseded caches
         runs-on: macos-15
         env:
             VCPKG_ROOT: ${{ github.workspace }}/../vcpkg
             # Inside the workspace: actions/cache rejects paths with "..", and saved nothing.
             VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
         steps:
-            - uses: actions/checkout@v7
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             # Xcode 16's libc++ does not expose std::jthread / std::stop_token.
-            - uses: maxim-lobanov/setup-xcode@v1
+            - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
               with:
                   xcode-version: "26"
 
@@ -51,7 +54,7 @@ jobs:
             # Unique save keys allow ABI changes to refresh the binary cache.
             - name: Restore vcpkg binaries
               id: vcpkg-cache
-              uses: actions/cache/restore@v6
+              uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.vcpkg-cache
                   key: vcpkg-v2-macos-15-xcode-26-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
@@ -61,7 +64,9 @@ jobs:
 
             - name: Configure (build or restore dependencies)
               id: configure
-              run: cmake --preset macos-debug
+              run: |
+                  cmake --preset macos-debug -DELG_WARNINGS_AS_ERRORS=ON
+                  cmake --preset macos-release -DELG_WARNINGS_AS_ERRORS=ON
 
             # Keep only the archives this build installed (each is named after the SHA-256 of its
             # package's vcpkg_abi_info.txt). Otherwise every superseded build stays in the cache, which
@@ -80,7 +85,7 @@ jobs:
             - name: Save vcpkg binaries
               id: save
               if: ${{ !cancelled() && steps.vcpkg-cache.outputs.cache-primary-key != '' }}
-              uses: actions/cache/save@v6
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.vcpkg-cache
                   key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
@@ -96,8 +101,20 @@ jobs:
                     --limit 100 --json id,key --jq ".[] | select(.key != \"$CURRENT\") | .id" |
                     while read -r id; do gh cache delete "$id" --repo "$GITHUB_REPOSITORY"; done
 
+            # The library, the sandbox, the preview host (the shared build) and the tests.
             - name: Build
-              run: cmake --build build/macos-debug --target elegance
+              run: |
+                  cmake --build build/macos-debug
+                  cmake --build build/macos-release
 
             - name: Test
-              run: ctest --test-dir build/macos-debug --output-on-failure
+              run: |
+                  ctest --test-dir build/macos-debug --output-on-failure
+                  ctest --test-dir build/macos-release --output-on-failure
+
+            # On the runner's Metal device (ELGSPEC-0006.R9).
+            - name: GPU tests and smoke tests
+              run: |
+                  build/macos-release/bin/elegance_tests "[.gpu]"
+                  build/macos-debug/bin/sandbox --smoke-test
+                  build/macos-debug/bin/elegance-preview --smoke-test
