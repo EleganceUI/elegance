@@ -8,8 +8,10 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace elg;
@@ -262,4 +264,98 @@ TEST_CASE("a computed that throws rethrows until what it read changes", "[reacti
     input = 3;
     CHECK(doubled() == 6);
     CHECK(runs == 2);
+}
+
+TEST_CASE("a batch inside an effect leaves what it schedules until the effect is done", "[reactive]") {
+    const Owner owner;
+    const State<int> trigger(0);
+    const State<int> written(0);
+    std::vector<std::string> log;
+    effect([=, &log] {
+        if (trigger() > 0) {
+            batch([=] { written = trigger(); });
+            log.emplace_back("writer done");
+        }
+    });
+    effect([=, &log] { log.push_back("reader " + std::to_string(written())); });
+    log.clear();
+    trigger = 1;
+    detail::flush_effects();
+    CHECK(log == std::vector<std::string>{"writer done", "reader 1"});
+}
+
+TEST_CASE("a flush asked for inside a flush leaves the effects to the one running", "[reactive]") {
+    const Owner owner;
+    const State<int> first(0);
+    const State<int> second(0);
+    std::vector<std::string> log;
+    effect([=, &log] {
+        if (first() > 0) {
+            second = first();
+            detail::flush_effects();
+            log.emplace_back("first done");
+        }
+    });
+    effect([=, &log] { log.push_back("second " + std::to_string(second())); });
+    log.clear();
+    first = 1;
+    detail::flush_effects();
+    CHECK(log == std::vector<std::string>{"first done", "second 1"});
+}
+
+TEST_CASE("no flush runs while effects are deferred", "[reactive]") {
+    const Owner owner;
+    const State<int> count(0);
+    std::vector<int> seen;
+    effect([=, &seen] { seen.push_back(count()); });
+    {
+        const detail::DeferEffects deferred;
+        batch([=] { count = 1; });
+        detail::flush_effects();
+        CHECK(seen == std::vector<int>{0});
+    }
+    CHECK(seen == std::vector<int>{0}); // waiting for the next flush
+    CHECK(detail::has_scheduled_effects());
+    detail::flush_effects();
+    CHECK(seen == std::vector<int>{0, 1});
+}
+
+TEST_CASE("an effect that throws leaves the effects after it scheduled", "[reactive]") {
+    const Owner owner;
+    const State<int> count(0);
+    std::vector<int> seen;
+    effect([=] {
+        if (count() == 1) {
+            throw std::runtime_error("failed");
+        }
+    });
+    effect([=, &seen] { seen.push_back(count()); });
+    count = 1;
+    CHECK_THROWS_AS(detail::flush_effects(), std::runtime_error);
+    CHECK(detail::has_scheduled_effects());
+    detail::flush_effects(); // a later flush runs what's left
+    CHECK(seen == std::vector<int>{0, 1});
+}
+
+TEST_CASE("an effect disposed while it runs doesn't subscribe to what it reads afterwards", "[reactive]") {
+    auto scope = std::make_unique<detail::Scope>();
+    const State<bool> stop(false);
+    const State<int> later(0);
+    detail::EffectNode* self = nullptr;
+    {
+        const detail::Scope::Use use(*scope);
+        auto node = std::make_shared<detail::EffectNode>([&self, stop, later] {
+            if (stop()) {
+                self->dispose();
+                (void)later();
+            }
+        });
+        self = node.get();
+        detail::start_effect(std::move(node));
+    }
+    stop = true;
+    detail::flush_effects();
+    scope.reset(); // frees the effect
+    later = 1;     // subscribed, the freed effect would be scheduled (ASan reports the read)
+    CHECK_FALSE(detail::has_scheduled_effects());
 }

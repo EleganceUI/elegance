@@ -30,7 +30,11 @@ ReactiveNode* g_observer = nullptr;
 // Observers hidden by untrack(); restored when it ends.
 std::vector<ReactiveNode*> g_hidden_observers;
 Scope* g_scope = nullptr;
+// Open batches and holds (DeferEffects): no flush starts until the last one ends.
 int g_batch_depth = 0;
+// Computed values and effects running now, nested; no flush starts inside them.
+int g_running = 0;
+bool g_flushing = false;
 // Effects waiting to run, in order. Disposed nodes remove themselves, so the queue never holds
 // a dangling pointer, even when running one effect disposes others (e.g. If unmounting a
 // branch).
@@ -100,15 +104,18 @@ struct Runtime {
         unlink_sources(node); // dependencies are re-tracked on every run
         ReactiveNode* const previous = g_observer;
         g_observer = node;
+        ++g_running;
         bool changed = false;
         try {
             changed = node->compute();
         } catch (...) {
             g_observer = previous;
+            --g_running;
             node->status_ = clean;
             throw;
         }
         g_observer = previous;
+        --g_running;
         if (changed && node->kind_ == ReactiveNode::Kind::computed) {
             for (ReactiveNode* observer : node->observers_) {
                 observer->status_ = dirty;
@@ -130,7 +137,8 @@ void ReactiveNode::track() {
         update();
     }
     ReactiveNode* const observer = g_observer;
-    if (!observer || observer == this) {
+    // A disposed node links to nothing: an effect disposed while it runs reads on, unsubscribed.
+    if (!observer || observer == this || observer->disposed_ || disposed_) {
         return;
     }
     if (std::ranges::find(observer->sources_, this) == observer->sources_.end()) {
@@ -254,9 +262,21 @@ void end_untracked() noexcept {
 }
 
 void flush_effects() {
-    if (g_batch_depth > 0) {
+    // Not inside a batch or hold, an effect or computed value, or another flush: the effects stay
+    // scheduled for the next flush allowed (ELGSPEC-0003.R5).
+    if (g_batch_depth > 0 || g_running > 0 || g_flushing) {
         return;
     }
+    g_flushing = true;
+    struct Done {
+        Done() = default;
+        Done(const Done&) = delete;
+        Done(Done&&) = delete;
+        Done& operator=(const Done&) = delete;
+        Done& operator=(Done&&) = delete;
+        ~Done() { g_flushing = false; }
+    };
+    const Done done;
     ++g_flush;
     for (int runs = 0; !g_pending.empty(); ++runs) {
         if (runs >= kMaxEffectRuns) {
@@ -284,6 +304,10 @@ void flush_effects() {
         }
         g_running_animation = previous;
     }
+}
+
+bool has_scheduled_effects() noexcept {
+    return !g_pending.empty();
 }
 
 std::shared_ptr<const Animation> begin_transaction(std::shared_ptr<const Animation> animation) {
