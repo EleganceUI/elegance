@@ -295,7 +295,7 @@ struct LiveWindow {
     EnvironmentValues environment; // the root environment (system color scheme)
     LiveWindowServices services;
     FocusManager focus{&services}; // outlives the tree (elements let go of it when destroyed)
-    std::optional<Scope> scope{std::in_place};
+    std::unique_ptr<Scope> scope = std::make_unique<Scope>();
     std::unique_ptr<Element> root;
     EventDispatcher events{*root, focus};
     // Screen readers (design.md §12); made by App::run, dormant until one asks.
