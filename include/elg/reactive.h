@@ -270,6 +270,10 @@ class Binding;
 /// so lambdas can capture it by value and still write to it. UI thread only: other threads hand
 /// their results over with post_to_ui_thread().
 ///
+/// Reads return a reference to the value itself. It stays valid until the state is next written,
+/// or its last handle is gone: copy what has to outlive a write. `for (auto& item : list())
+/// list.update(...)` goes on reading the old, freed value.
+///
 /// @code
 /// auto count = State(0);
 /// Text([=] { return std::format("Count: {}", count()); })   // re-renders that one Text
@@ -509,6 +513,9 @@ private:
 
 /// A value derived from state: recomputed lazily, at most once per change, and only when read.
 /// Copies share the value. Usually made with computed().
+///
+/// Reads return a reference to the value itself. It stays valid until the value is next
+/// recomputed, or its last handle is gone.
 ///
 /// @tparam T The value's type. When it's equality-comparable, a recomputed value equal to the
 ///   last one doesn't count as a change for what reads it.
