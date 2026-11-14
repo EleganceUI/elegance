@@ -39,11 +39,6 @@ bool FrameMailbox::wait_until_done(std::uint64_t sequence, std::chrono::millisec
     return work_done_.wait_for(lock, timeout, [&] { return closed_ || done_ >= sequence; });
 }
 
-void FrameMailbox::wait_until_done(std::uint64_t sequence) {
-    std::unique_lock lock(mutex_);
-    work_done_.wait(lock, [&] { return closed_ || done_ >= sequence; });
-}
-
 void FrameMailbox::request_stop() {
     const std::lock_guard lock(mutex_);
     stop_ = true;

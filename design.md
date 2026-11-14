@@ -1680,6 +1680,12 @@ Separate render thread from day one (decided).
 - Every post returns a sequence number. The UI thread can wait on it (with a timeout) when a
   frame must be on screen first: the first frame before showing a window, and each frame
   during live resize.
+- Every wait has a timeout:
+  - The UI thread waits at most 100 ms for a frame during live resize, 1 s for a new window's
+    first frame, 50 ms for the previous frame while animating, and 5 s for other work of the
+    render thread (releasing a closed window's surface).
+  - The render thread waits at most 5 s for the GPU (adapter and device requests, and waiting
+    for submitted work). A wait that times out is treated as a lost device.
 - **Resource handles**: the UI thread allocates handles (generation-indexed IDs) right away. The
   render thread creates the backing GPU objects. A draw that references a not-yet-ready resource
   draws a placeholder or skips, and the UI never blocks waiting for an upload.
