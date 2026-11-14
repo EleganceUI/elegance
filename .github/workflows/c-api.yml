@@ -221,9 +221,9 @@ jobs:
 
             - name: Build
               run: |
-                  cmake --build build/c
+                  cmake --build build/c -- -k 0
                   cmake --install build/c --prefix dist
-                  cmake --build build/c-static
+                  cmake --build build/c-static -- -k 0
                   cmake --install build/c-static --prefix dist-static
 
             # Both packages linked into a program that calls them (the build links it). The shared

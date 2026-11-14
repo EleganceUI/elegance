@@ -151,7 +151,7 @@ jobs:
             - name: Build
               run: |
                   for preset in $PRESETS; do
-                    cmake --build "build/$preset"
+                    cmake --build "build/$preset" -- -k 0
                   done
 
             - name: Test

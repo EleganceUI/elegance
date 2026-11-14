@@ -110,8 +110,8 @@ jobs:
             # The library, the sandbox, the preview host (the shared build) and the tests.
             - name: Build
               run: |
-                  cmake --build build/windows-debug
-                  cmake --build build/windows-release
+                  cmake --build build/windows-debug -- -k 0
+                  cmake --build build/windows-release -- -k 0
 
             - name: Test
               run: |

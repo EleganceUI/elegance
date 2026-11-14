@@ -104,8 +104,8 @@ jobs:
             # The library, the sandbox, the preview host (the shared build) and the tests.
             - name: Build
               run: |
-                  cmake --build build/macos-debug
-                  cmake --build build/macos-release
+                  cmake --build build/macos-debug -- -k 0
+                  cmake --build build/macos-release -- -k 0
 
             - name: Test
               run: |
