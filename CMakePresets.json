@@ -96,6 +96,35 @@
             }
         },
         {
+            "name": "linux-clang-libcxx-base",
+            "hidden": true,
+            "inherits": "linux-base",
+            "description": "Clang and libc++; the build adds what libc++ needs and builds the dependencies against it. Pick a Clang 19 or later with -DCMAKE_CXX_COMPILER=clang++-19 -DCMAKE_C_COMPILER=clang-19 where clang++ is older.",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "CMAKE_CXX_FLAGS": "-stdlib=libc++"
+            }
+        },
+        {
+            "name": "linux-clang-libcxx-debug",
+            "displayName": "Linux Debug, Clang and libc++ (shared)",
+            "inherits": "linux-clang-libcxx-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "ELG_BUILD_SHARED": true
+            }
+        },
+        {
+            "name": "linux-clang-libcxx-release",
+            "displayName": "Linux Release, Clang and libc++ (static)",
+            "inherits": "linux-clang-libcxx-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "ELG_BUILD_SHARED": false
+            }
+        },
+        {
             "name": "linux-debug",
             "displayName": "Linux Debug (shared)",
             "inherits": "linux-base",

@@ -8,7 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # C++23 mode alone does not guarantee the standard library provides these APIs (Xcode 16).
 include(CheckCXXSourceCompiles)
-check_cxx_source_compiles([=[
+set(elg_jthread_check [=[
     #include <condition_variable>
     #include <mutex>
     #include <stop_token>
@@ -22,7 +22,27 @@ check_cxx_source_compiles([=[
         });
         worker.request_stop();
     }
-]=] ELG_HAVE_JTHREAD)
+]=])
+check_cxx_source_compiles("${elg_jthread_check}" ELG_HAVE_JTHREAD)
+# libc++ 19 has them only under -fexperimental-library, which the build then adds itself, also to
+# what links Elegance (ELGSPEC-0006.R14).
+set(ELG_LIBCXX_EXPERIMENTAL OFF)
+if (NOT ELG_HAVE_JTHREAD)
+    check_cxx_source_compiles("#include <version>\n#ifndef _LIBCPP_VERSION\n#error\n#endif\nint main() {}" ELG_LIBCXX)
+    if (ELG_LIBCXX)
+        set(CMAKE_REQUIRED_FLAGS -fexperimental-library)
+        set(CMAKE_REQUIRED_LINK_OPTIONS -fexperimental-library)
+        check_cxx_source_compiles("${elg_jthread_check}" ELG_HAVE_JTHREAD_EXPERIMENTAL)
+        unset(CMAKE_REQUIRED_FLAGS)
+        unset(CMAKE_REQUIRED_LINK_OPTIONS)
+        if (ELG_HAVE_JTHREAD_EXPERIMENTAL)
+            set(ELG_LIBCXX_EXPERIMENTAL ON)
+            set(ELG_HAVE_JTHREAD ON)
+            add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fexperimental-library>)
+            add_link_options(-fexperimental-library)
+        endif ()
+    endif ()
+endif ()
 if (NOT ELG_HAVE_JTHREAD)
     message(FATAL_ERROR
         "Elegance requires std::jthread, std::stop_token, and stop-aware condition variables. "

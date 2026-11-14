@@ -355,6 +355,13 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     endif ()
 endif ()
 
+# libc++ 19's std::jthread needs -fexperimental-library (the top-level CMakeLists.txt finds out), in
+# what links Elegance too.
+if (ELG_LIBCXX_EXPERIMENTAL)
+    target_compile_options(elegance INTERFACE $<$<COMPILE_LANGUAGE:CXX>:-fexperimental-library>)
+    target_link_options(elegance INTERFACE -fexperimental-library)
+endif ()
+
 set_target_properties(elegance PROPERTIES
         CXX_VISIBILITY_PRESET hidden
         VISIBILITY_INLINES_HIDDEN ON
