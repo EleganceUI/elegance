@@ -2,6 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
+#include "reactive/runtime.h"
+
 #include <elg/error.h>
 #include <elg/prop.h>
 #include <elg/reactive.h>
@@ -11,6 +13,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -386,4 +389,35 @@ TEST_CASE("an effect's later runs create effects in the scope that owns it", "[r
     count = 2;
     detail::flush_effects();
     CHECK(inner_runs == 2);
+}
+
+TEST_CASE("state read off the UI thread of a running App throws in debug builds", "[reactive][threads]") {
+#ifdef NDEBUG
+    SKIP("reads are checked in debug builds");
+#else
+    const State<int> count(1);
+    const auto computed_count = computed([=] { return count() + 1; });
+    detail::set_ui_thread(std::this_thread::get_id()); // as App::run does
+    bool read = false;
+    bool peeked = false;
+    bool computed_read = false;
+    std::thread([&] {
+        const auto throws = [](const auto& read_it) {
+            try {
+                (void)read_it();
+            } catch (const UsageError&) {
+                return true;
+            }
+            return false;
+        };
+        read = throws([&] { return count(); });
+        peeked = throws([&] { return count.peek(); });
+        computed_read = throws([&] { return computed_count(); });
+    }).join();
+    detail::set_ui_thread(std::nullopt);
+    CHECK(read);
+    CHECK(peeked);
+    CHECK(computed_read);
+    CHECK(count() == 1); // on the UI thread: fine
+#endif
 }
