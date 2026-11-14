@@ -127,7 +127,8 @@ void release_on_ui_thread(void* object, void (*destroy)(void*) noexcept) noexcep
                 g_releases.push_back({object, destroy});
                 handed_over = true;
                 wake = g_wake;
-            } catch (...) { // out of memory: here, then, rather than not at all
+            } catch (...) {
+                // Swallowed: out of memory, so it's destroyed here, rather than not at all.
             }
         }
     }
