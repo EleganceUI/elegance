@@ -104,13 +104,17 @@ jobs:
             # The library, the sandbox, the preview host (the shared build) and the tests.
             - name: Build
               run: |
-                  cmake --build build/macos-debug -- -k 0
-                  cmake --build build/macos-release -- -k 0
+                  status=0
+                  cmake --build build/macos-debug -- -k 0 || status=1
+                  cmake --build build/macos-release -- -k 0 || status=1
+                  exit $status
 
             - name: Test
               run: |
-                  ctest --test-dir build/macos-debug --output-on-failure
-                  ctest --test-dir build/macos-release --output-on-failure
+                  status=0
+                  ctest --test-dir build/macos-debug --output-on-failure || status=1
+                  ctest --test-dir build/macos-release --output-on-failure || status=1
+                  exit $status
 
             # On the runner's Metal device (ELGSPEC-0006.R9).
             - name: GPU tests and smoke tests

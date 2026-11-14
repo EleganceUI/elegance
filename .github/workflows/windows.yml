@@ -110,13 +110,17 @@ jobs:
             # The library, the sandbox, the preview host (the shared build) and the tests.
             - name: Build
               run: |
-                  cmake --build build/windows-debug -- -k 0
-                  cmake --build build/windows-release -- -k 0
+                  status=0
+                  cmake --build build/windows-debug -- -k 0 || status=1
+                  cmake --build build/windows-release -- -k 0 || status=1
+                  exit $status
 
             - name: Test
               run: |
-                  ctest --test-dir build/windows-debug --output-on-failure
-                  ctest --test-dir build/windows-release --output-on-failure
+                  status=0
+                  ctest --test-dir build/windows-debug --output-on-failure || status=1
+                  ctest --test-dir build/windows-release --output-on-failure || status=1
+                  exit $status
 
             - name: GPU tests and smoke tests
               env:

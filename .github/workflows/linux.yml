@@ -147,19 +147,24 @@ jobs:
                     --limit 100 --json id,key --jq ".[] | select(.key != \"$CURRENT\") | .id" |
                     while read -r id; do gh cache delete "$id" --repo "$GITHUB_REPOSITORY"; done
 
-            # The library, the sandbox, the preview host (shared builds) and the tests.
+            # The library, the sandbox, the preview host (shared builds) and the tests. Every preset
+            # builds (and is tested) even when one fails, so a run reports all of their errors.
             - name: Build
               run: |
+                  status=0
                   for preset in $PRESETS; do
-                    cmake --build "build/$preset" -- -k 0
+                    cmake --build "build/$preset" -- -k 0 || status=1
                   done
+                  exit $status
 
             - name: Test
               if: matrix.gpu != true
               run: |
+                  status=0
                   for preset in $PRESETS; do
-                    ctest --test-dir "build/$preset" --output-on-failure
+                    ctest --test-dir "build/$preset" --output-on-failure || status=1
                   done
+                  exit $status
 
             # Under Xvfb, on Mesa's software Vulkan driver (lavapipe); then the tests that need the
             # internet.
