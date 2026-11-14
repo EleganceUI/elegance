@@ -55,6 +55,9 @@ void remove_input_monitor(void* monitor);
 
 // Shows a system notification (platform/<os>/notifications.*). UI thread, while an App runs.
 void show_notification(const Notification& notification);
+// Destroys the click handlers of the notifications shown so far: a click on them after this does
+// nothing. UI thread, as an App's run ends.
+void forget_notification_handlers();
 
 // --- Dock and taskbar (platform/<os>/dock.*). UI thread, while an App runs. ---
 
@@ -88,6 +91,9 @@ bool menu_bar_handles_shortcuts();
 // UI thread.
 using MenuCommand = std::function<void(std::uint32_t id)>;
 void set_menu_bar(const std::vector<menus::Item>& menus, const MenuCommand& command);
+// Drops set_menu_bar()'s `command`: items chosen after this do nothing. UI thread, as an App's run
+// ends.
+void forget_menu_command();
 // A check box item's mark.
 void set_menu_checked(std::uint32_t id, bool checked);
 

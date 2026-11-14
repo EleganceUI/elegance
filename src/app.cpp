@@ -455,6 +455,12 @@ int App::run() {
     const CrashHandlerScope crash_handlers;
     platform::Platform platform;
     self.platform = &platform;
+    // What this run handed the system to call back goes with it: notification click handlers and
+    // the native menu bar's command (which refers to this function's locals).
+    const ScopeExit forget_handlers([] {
+        platform::native::forget_notification_handlers();
+        platform::native::forget_menu_command();
+    });
 
     // Fonts and glyphs, shared by all windows; outlives every element tree. Glyphs finishing on
     // the atlas's workers wake the event loop to draw them.

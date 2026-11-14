@@ -16,6 +16,8 @@
 #include "core/ui_tasks.h"
 #include "platform/linux/glib_thread.h"
 
+#include <cstdint>
+#include <functional>
 #include <map>
 
 namespace elg::detail::platform::native {
@@ -24,36 +26,58 @@ namespace {
 
 using linux_desktop::on_glib_thread;
 
+// UI thread: the click handlers of the notifications shown in this run, by a token of their own.
+// They're called and destroyed only here; the GLib thread knows the tokens.
+std::map<std::uint64_t, std::function<void()>> g_handlers;
+std::uint64_t g_last_token = 0;
+
+// UI thread: runs `token`'s handler (once), or only lets go of it.
+void handle(std::uint64_t token, bool clicked) {
+    const auto found = g_handlers.find(token);
+    if (found == g_handlers.end()) {
+        return; // forgotten: its run ended
+    }
+    const std::function<void()> click = std::move(found->second);
+    g_handlers.erase(found);
+    if (clicked) {
+        click();
+    }
+}
+
 // GLib thread.
 guint g_subscription = 0;
-std::map<guint32, std::function<void()>> g_clicks; // by notification id
+std::map<guint32, std::uint64_t> g_tokens; // by notification id
 
 struct Request {
     std::string title;
     std::string body;
-    std::function<void()> on_click;
+    std::uint64_t token = 0; // 0: no click handler
 };
+
+// GLib thread: hands what happened to `token`'s notification to the UI thread.
+void report(std::uint64_t token, bool clicked) {
+    if (token != 0) {
+        post_ui_task([token, clicked] { handle(token, clicked); });
+    }
+}
 
 void on_signal(GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar* signal, GVariant* parameters,
                gpointer) {
     guint32 id = 0;
-    std::function<void()> click;
+    bool clicked = false;
     if (g_strcmp0(signal, "ActionInvoked") == 0) {
         const gchar* action = nullptr;
         g_variant_get(parameters, "(u&s)", &id, &action);
-        if (const auto found = g_clicks.find(id); found != g_clicks.end()) {
-            if (g_strcmp0(action, "default") == 0) {
-                click = std::move(found->second);
-            }
-            g_clicks.erase(found);
-        }
+        clicked = g_strcmp0(action, "default") == 0;
     } else if (g_strcmp0(signal, "NotificationClosed") == 0) {
         guint32 reason = 0;
         g_variant_get(parameters, "(uu)", &id, &reason);
-        g_clicks.erase(id);
+    } else {
+        return;
     }
-    if (click) {
-        post_ui_task(std::move(click));
+    if (const auto found = g_tokens.find(id); found != g_tokens.end()) {
+        report(found->second, clicked);
+        g_tokens.erase(found);
     }
 }
 
@@ -65,12 +89,13 @@ void sent(GObject* bus, GAsyncResult* result, gpointer data) {
         guint32 id = 0;
         g_variant_get(reply, "(u)", &id);
         g_variant_unref(reply);
-        if (request->on_click) {
-            g_clicks[id] = std::move(request->on_click);
+        if (request->token != 0) {
+            g_tokens[id] = request->token;
         }
     } else {
         log_warning("notify: the notification server refused it: {}", error ? error->message : "unknown error");
         g_clear_error(&error);
+        report(request->token, false);
     }
     delete request;
 }
@@ -78,6 +103,7 @@ void sent(GObject* bus, GAsyncResult* result, gpointer data) {
 void send(GDBusConnection* bus, Request* request) {
     if (!bus) {
         log_info("notification (not shown: no session bus): {}: {}", request->title, request->body);
+        report(request->token, false);
         delete request;
         return;
     }
@@ -88,7 +114,7 @@ void send(GDBusConnection* bus, Request* request) {
     }
     GVariantBuilder actions;
     g_variant_builder_init(&actions, G_VARIANT_TYPE("as"));
-    if (request->on_click) {
+    if (request->token != 0) {
         // "default": clicking the notification itself.
         g_variant_builder_add(&actions, "s", "default");
         g_variant_builder_add(&actions, "s", "");
@@ -107,8 +133,17 @@ void send(GDBusConnection* bus, Request* request) {
 } // namespace
 
 void show_notification(const Notification& notification) {
-    auto* request = new Request{notification.title, notification.body, notification.on_click};
+    std::uint64_t token = 0;
+    if (notification.on_click) {
+        token = ++g_last_token;
+        g_handlers[token] = notification.on_click;
+    }
+    auto* request = new Request{notification.title, notification.body, token};
     on_glib_thread([request](GDBusConnection* bus) { send(bus, request); });
+}
+
+void forget_notification_handlers() {
+    g_handlers.clear();
 }
 
 } // namespace elg::detail::platform::native
@@ -120,6 +155,8 @@ namespace elg::detail::platform::native {
 void show_notification(const Notification& notification) {
     log_info("notification (not shown: this build has no D-Bus): {}: {}", notification.title, notification.body);
 }
+
+void forget_notification_handlers() {}
 
 } // namespace elg::detail::platform::native
 

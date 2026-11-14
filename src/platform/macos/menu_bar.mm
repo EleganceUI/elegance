@@ -220,6 +220,10 @@ void set_menu_bar(const std::vector<menus::Item>& menus, const MenuCommand& comm
     NSApp.mainMenu = bar;
 }
 
+void forget_menu_command() {
+    g_command = {}; // ElgMenuTarget calls nothing then
+}
+
 void set_menu_checked(std::uint32_t id, bool checked) {
     if (const auto found = g_items.find(id); found != g_items.end()) {
         found->second.state = checked ? NSControlStateValueOn : NSControlStateValueOff;

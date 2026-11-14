@@ -19,6 +19,8 @@ bool menu_bar_handles_shortcuts() {
 
 void set_menu_bar(const std::vector<menus::Item>&, const MenuCommand&) {}
 
+void forget_menu_command() {}
+
 void set_menu_checked(std::uint32_t, bool) {}
 
 } // namespace elg::detail::platform::native
