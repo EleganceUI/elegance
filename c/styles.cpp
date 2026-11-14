@@ -111,7 +111,7 @@ std::optional<Prop<Color>> optional_color(const ElgProp* given, ElgProp& p) {
 //
 // STYLE_HANDLE(name, Style) defines:
 //   elg_<name>_style_clone(s): copies a style handle (`s`, borrowed); both point at the same style.
-//     Returns the copy, owned by the caller.
+//     Returns the copy, owned by the caller, or null on failure.
 //   elg_<name>_style_free(s): frees a style handle (consumed; may be null). The style lives on while
 //     views or other handles hold it.
 //   elg_mod_<name>_style(v, style): sets the style of this family's controls inside `v`, as
@@ -119,10 +119,12 @@ std::optional<Prop<Color>> optional_color(const ElgProp* given, ElgProp& p) {
 //     own reference to the style. Returns the new view, owned by the caller, or null on failure.
 #define STYLE_HANDLE(name, Style)                                                                                    \
     ELG_EXPORT std::shared_ptr<const Style>* elg_##name##_style_clone(const std::shared_ptr<const Style>* s) {       \
-        return new std::shared_ptr<const Style>(*s);                                                                 \
+        ELG_TRY return new std::shared_ptr<const Style>(*s);                                                         \
+        ELG_CATCH(nullptr)                                                                                           \
     }                                                                                                                \
     ELG_EXPORT void elg_##name##_style_free(std::shared_ptr<const Style>* s) {                                       \
-        delete s;                                                                                                    \
+        ELG_TRY delete s;                                                                                            \
+        ELG_CATCH_VOID                                                                                               \
     }                                                                                                                \
     ELG_EXPORT View* elg_mod_##name##_style(const View* v, const std::shared_ptr<const Style>* style) {             \
         ELG_TRY return out(v->modifier(Style##Modifier(*style)));                                                    \
@@ -134,15 +136,17 @@ std::optional<Prop<Color>> optional_color(const ElgProp* given, ElgProp& p) {
 
 // CONFIG_HANDLE(name, Config) defines:
 //   elg_<name>_config_clone(c): copies a configuration (borrowed), e.g. to keep one past the call that
-//     got it. Returns the copy, owned by the caller.
+//     got it. Returns the copy, owned by the caller, or null on failure.
 //   elg_<name>_config_free(c): frees a configuration (consumed; may be null): one a Rust style's
 //     make_body got, or a copy.
 #define CONFIG_HANDLE(name, Config)                                                                                  \
     ELG_EXPORT Config* elg_##name##_config_clone(const Config* c) {                                                  \
-        return new Config(*c);                                                                                       \
+        ELG_TRY return new Config(*c);                                                                               \
+        ELG_CATCH(nullptr)                                                                                           \
     }                                                                                                                \
     ELG_EXPORT void elg_##name##_config_free(Config* c) {                                                            \
-        delete c;                                                                                                    \
+        ELG_TRY delete c;                                                                                            \
+        ELG_CATCH_VOID                                                                                               \
     }
 
 // MAKE_BODY(name, Style, Config) defines elg_<name>_style_make_body(s, c): the style's make_body(),
@@ -183,20 +187,24 @@ RUST_STYLE(button, ButtonStyle, ButtonConfiguration)
 ///
 /// @param kind 0 `ProminentButtonStyle` (filled with the tint; the default), 1 `BorderedButtonStyle`, anything
 ///   else `PlainButtonStyle`.
-/// @return The style, owned by the caller (free it with elg_button_style_free()).
+/// @return The style, owned by the caller (free it with elg_button_style_free()). Null on failure.
 ELG_EXPORT std::shared_ptr<const ButtonStyle>* elg_button_style_builtin(int32_t kind) {
+    ELG_TRY
     switch (kind) {
     case 0: return make_style<ButtonStyle, ProminentButtonStyle>();
     case 1: return make_style<ButtonStyle, BorderedButtonStyle>();
     default: return make_style<ButtonStyle, PlainButtonStyle>();
     }
+    ELG_CATCH(nullptr)
 }
 /// The button's label (`ButtonConfiguration::label`).
 ///
 /// @param c The configuration (borrowed).
-/// @return A copy of the label, owned by the caller.
+/// @return A copy of the label, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_button_config_label(const ButtonConfiguration* c) {
+    ELG_TRY
     return new View(c->label);
+    ELG_CATCH(nullptr)
 }
 /// One of the button's states (`ButtonConfiguration`): a tracked read, so read it inside reactive arguments.
 ///
@@ -274,9 +282,11 @@ ELG_EXPORT std::shared_ptr<const ToggleStyle>* elg_switch_toggle_style(const Elg
 /// The toggle's label (`ToggleConfiguration::label`).
 ///
 /// @param c The configuration (borrowed).
-/// @return A copy of the label, owned by the caller.
+/// @return A copy of the label, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_toggle_config_label(const ToggleConfiguration* c) {
+    ELG_TRY
     return new View(c->label);
+    ELG_CATCH(nullptr)
 }
 /// One of the toggle's states (`ToggleConfiguration`): a tracked read, so read it inside reactive arguments.
 ///
@@ -370,9 +380,11 @@ ELG_EXPORT std::shared_ptr<const CheckboxStyle>* elg_box_checkbox_style(const El
 /// The check box's label (`CheckboxConfiguration::label`).
 ///
 /// @param c The configuration (borrowed).
-/// @return A copy of the label, owned by the caller.
+/// @return A copy of the label, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_checkbox_config_label(const CheckboxConfiguration* c) {
+    ELG_TRY
     return new View(c->label);
+    ELG_CATCH(nullptr)
 }
 /// One of the check box's states (`CheckboxConfiguration`): a tracked read, so read it inside reactive
 /// arguments.
@@ -446,9 +458,11 @@ ELG_EXPORT std::shared_ptr<const NumberInputStyle>* elg_number_input_style_built
 /// The editable number (`NumberInputConfiguration::field`): put it where the text goes.
 ///
 /// @param c The configuration (borrowed).
-/// @return A copy of the field, owned by the caller.
+/// @return A copy of the field, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_number_input_config_field(const NumberInputConfiguration* c) {
+    ELG_TRY
     return new View(c->field);
+    ELG_CATCH(nullptr)
 }
 /// One of the number input's states (`NumberInputConfiguration`): a tracked read, so read it inside reactive
 /// arguments.
@@ -540,19 +554,23 @@ RUST_STYLE(text_field, TextFieldStyle, TextFieldConfiguration)
 ///
 /// @param kind 0 `RoundedBorderTextFieldStyle` (a raised box with an outline; the default), anything else
 ///   `PlainTextFieldStyle` (just the text).
-/// @return The style, owned by the caller (free it with elg_text_field_style_free()).
+/// @return The style, owned by the caller (free it with elg_text_field_style_free()). Null on failure.
 ELG_EXPORT std::shared_ptr<const TextFieldStyle>* elg_text_field_style_builtin(int32_t kind) {
+    ELG_TRY
     if (kind == 0) {
         return make_style<TextFieldStyle, RoundedBorderTextFieldStyle>();
     }
     return make_style<TextFieldStyle, PlainTextFieldStyle>();
+    ELG_CATCH(nullptr)
 }
 /// The editable text (`TextFieldConfiguration::field`): put it where the text goes.
 ///
 /// @param c The configuration (borrowed).
-/// @return A copy of the field, owned by the caller.
+/// @return A copy of the field, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_text_field_config_field(const TextFieldConfiguration* c) {
+    ELG_TRY
     return new View(c->field);
+    ELG_CATCH(nullptr)
 }
 /// One of the text field's states (`TextFieldConfiguration`): a tracked read, so read it inside reactive
 /// arguments.
@@ -581,19 +599,23 @@ RUST_STYLE(picker, PickerStyle, PickerConfiguration)
 ///
 /// @param kind 0 `SegmentedPickerStyle` (segments in a rounded track; the default), anything else
 ///   `MenuPickerStyle` (a button that opens a menu of the options).
-/// @return The style, owned by the caller (free it with elg_picker_style_free()).
+/// @return The style, owned by the caller (free it with elg_picker_style_free()). Null on failure.
 ELG_EXPORT std::shared_ptr<const PickerStyle>* elg_picker_style_builtin(int32_t kind) {
+    ELG_TRY
     if (kind == 0) {
         return make_style<PickerStyle, SegmentedPickerStyle>();
     }
     return make_style<PickerStyle, MenuPickerStyle>();
+    ELG_CATCH(nullptr)
 }
 /// How many options the picker has (`PickerConfiguration::labels`).
 ///
 /// @param c The configuration (borrowed).
-/// @return The number of options.
+/// @return The number of options. 0 on failure.
 ELG_EXPORT size_t elg_picker_config_count(const PickerConfiguration* c) {
+    ELG_TRY
     return c->labels.size();
+    ELG_CATCH(0)
 }
 /// An option's label (`PickerConfiguration::labels`).
 ///
@@ -762,9 +784,11 @@ ELG_EXPORT std::shared_ptr<const NavigationStackStyle>* elg_navigation_stack_sty
 /// The pages (`NavigationStackConfiguration::pages`): put them where they go.
 ///
 /// @param c The configuration (borrowed).
-/// @return A copy of the pages view, owned by the caller.
+/// @return A copy of the pages view, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_navigation_stack_config_pages(const NavigationStackConfiguration* c) {
+    ELG_TRY
     return new View(c->pages);
+    ELG_CATCH(nullptr)
 }
 /// The pages' titles (`NavigationStackConfiguration::titles`): a tracked read.
 ///
@@ -820,19 +844,23 @@ ELG_EXPORT std::shared_ptr<const PopoverStyle>* elg_popover_style_rust(ElgClosur
 ///
 /// @param kind 0 `DefaultPopoverStyle` (a rounded surface with an outline and a shadow), anything else
 ///   `PlainPopoverStyle` (just the content).
-/// @return The style, owned by the caller (free it with elg_popover_style_free()).
+/// @return The style, owned by the caller (free it with elg_popover_style_free()). Null on failure.
 ELG_EXPORT std::shared_ptr<const PopoverStyle>* elg_popover_style_builtin(int32_t kind) {
+    ELG_TRY
     if (kind == 0) {
         return make_style<PopoverStyle, DefaultPopoverStyle>();
     }
     return make_style<PopoverStyle, PlainPopoverStyle>();
+    ELG_CATCH(nullptr)
 }
 /// The popover's content (`PopoverConfiguration::content`).
 ///
 /// @param c The configuration (borrowed).
-/// @return A copy of the content, owned by the caller.
+/// @return A copy of the content, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_popover_config_content(const PopoverConfiguration* c) {
+    ELG_TRY
     return new View(c->content);
+    ELG_CATCH(nullptr)
 }
 /// Whether to pad the content (`PopoverConfiguration::is_padded`, from `PopoverOptions::padded`): a tracked
 /// read. false lets the content reach the panel's edges.
@@ -869,19 +897,23 @@ ELG_EXPORT std::shared_ptr<const TooltipStyle>* elg_tooltip_style_rust(ElgClosur
 ///
 /// @param kind 0 `DefaultTooltipStyle` (small text on a rounded surface), anything else `PlainTooltipStyle`
 ///   (just the content).
-/// @return The style, owned by the caller (free it with elg_tooltip_style_free()).
+/// @return The style, owned by the caller (free it with elg_tooltip_style_free()). Null on failure.
 ELG_EXPORT std::shared_ptr<const TooltipStyle>* elg_tooltip_style_builtin(int32_t kind) {
+    ELG_TRY
     if (kind == 0) {
         return make_style<TooltipStyle, DefaultTooltipStyle>();
     }
     return make_style<TooltipStyle, PlainTooltipStyle>();
+    ELG_CATCH(nullptr)
 }
 /// The tooltip's content (`TooltipConfiguration::content`); for a text tooltip, the text.
 ///
 /// @param c The configuration (borrowed).
-/// @return A copy of the content, owned by the caller.
+/// @return A copy of the content, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_tooltip_config_content(const TooltipConfiguration* c) {
+    ELG_TRY
     return new View(c->content);
+    ELG_CATCH(nullptr)
 }
 
 // --- Menus ---
@@ -913,12 +945,14 @@ ELG_EXPORT std::shared_ptr<const MenuStyle>* elg_menu_style_rust(ElgClosure make
 ///
 /// @param kind 0 `DefaultMenuStyle` (a surface with an outline and a shadow), anything else `PlainMenuStyle`
 ///   (just the items).
-/// @return The style, owned by the caller (free it with elg_menu_style_free()).
+/// @return The style, owned by the caller (free it with elg_menu_style_free()). Null on failure.
 ELG_EXPORT std::shared_ptr<const MenuStyle>* elg_menu_style_builtin(int32_t kind) {
+    ELG_TRY
     if (kind == 0) {
         return make_style<MenuStyle, DefaultMenuStyle>();
     }
     return make_style<MenuStyle, PlainMenuStyle>();
+    ELG_CATCH(nullptr)
 }
 /// Wraps the style's `make_item()`: its row for an item's configuration, so a Rust style can reuse another
 /// style's rows (by default the parts in a line, padded, on a rounded highlight).
@@ -934,22 +968,26 @@ ELG_EXPORT View* elg_menu_style_make_item(const std::shared_ptr<const MenuStyle>
 /// The menu's rows, stacked (`MenuConfiguration::items`); rows span the panel's width.
 ///
 /// @param c The configuration (borrowed).
-/// @return A copy of the items view, owned by the caller.
+/// @return A copy of the items view, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_menu_config_items(const MenuConfiguration* c) {
+    ELG_TRY
     return new View(c->items);
+    ELG_CATCH(nullptr)
 }
 /// One of a menu row's parts (`MenuItemConfiguration`), for the style to lay out.
 ///
 /// @param c The row's configuration (borrowed).
 /// @param which 0 the title; 1 the leading part: the check mark and icon, empty when the item has neither;
 ///   anything else the trailing part: the shortcut hint or a submenu's chevron, empty when there's neither.
-/// @return A copy of the part, owned by the caller.
+/// @return A copy of the part, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_menu_item_config_view(const MenuItemConfiguration* c, int32_t which) {
+    ELG_TRY
     switch (which) {
     case 0: return new View(c->title);
     case 1: return new View(c->leading);
     default: return new View(c->trailing);
     }
+    ELG_CATCH(nullptr)
 }
 /// One of a menu row's states (`MenuItemConfiguration`): a tracked read, so read it inside reactive arguments.
 ///
@@ -1003,16 +1041,20 @@ ELG_EXPORT std::shared_ptr<const RowStyle>* elg_row_style_builtin(const ElgHighl
 /// The row's content: the ForEach item's view (`RowConfiguration::content`).
 ///
 /// @param c The configuration (borrowed).
-/// @return A copy of the content, owned by the caller.
+/// @return A copy of the content, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_row_config_content(const RowConfiguration* c) {
+    ELG_TRY
     return new View(c->content);
+    ELG_CATCH(nullptr)
 }
 /// The stack's axis (`RowConfiguration::axis`): rows usually span across it.
 ///
 /// @param c The configuration (borrowed).
-/// @return `Axis`: 0 horizontal, 1 vertical.
+/// @return `Axis`: 0 horizontal, 1 vertical. 0 on failure.
 ELG_EXPORT int32_t elg_row_config_axis(const RowConfiguration* c) {
+    ELG_TRY
     return static_cast<int32_t>(c->axis);
+    ELG_CATCH(0)
 }
 /// One of the row's states (`RowConfiguration`): a tracked read, so read it inside reactive arguments.
 ///
@@ -1038,6 +1080,7 @@ ELG_EXPORT bool elg_row_config_state(const RowConfiguration* c, int32_t which) {
 /// @param out Called once per struct with a "name size align" line.
 /// @param ctx Passed to `out`.
 ELG_EXPORT void elg_layouts_styles(ElgStrSink out, void* ctx) {
+    ELG_TRY
     ELG_LAYOUT(ElgSwitchToggleStyleOptions);
     ELG_LAYOUT(ElgBoxCheckboxStyleOptions);
     ELG_LAYOUT(ElgBoxNumberInputStyleOptions);
@@ -1045,4 +1088,5 @@ ELG_EXPORT void elg_layouts_styles(ElgStrSink out, void* ctx) {
     ELG_LAYOUT(ElgKnobSliderStyleOptions);
     ELG_LAYOUT(ElgBarNavigationStackStyleOptions);
     ELG_LAYOUT(ElgHighlightRowStyleOptions);
+    ELG_CATCH_VOID
 }

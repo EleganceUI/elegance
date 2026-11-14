@@ -73,15 +73,19 @@ ELG_EXPORT Sound* elg_sound_load_data(ElgBytes data) {
 /// Copies a sound; copies share the decoded audio.
 ///
 /// @param sound The sound (borrowed).
-/// @return The copy, owned by the caller (elg_sound_free()).
+/// @return The copy, owned by the caller (elg_sound_free()). Null on failure.
 ELG_EXPORT Sound* elg_sound_clone(const Sound* sound) {
+    ELG_TRY
     return new Sound(*sound);
+    ELG_CATCH(nullptr)
 }
 /// Frees a sound.
 ///
 /// @param sound The sound (consumed); may be null.
 ELG_EXPORT void elg_sound_free(Sound* sound) {
+    ELG_TRY
     delete sound;
+    ELG_CATCH_VOID
 }
 /// Wraps `Sound::play()`: plays the sound in a new voice, so plays overlap. Without an output
 /// device it does nothing.
@@ -98,9 +102,11 @@ ELG_EXPORT void elg_sound_play(const Sound* sound, float volume, float pitch, fl
 /// Wraps `Sound::duration()`.
 ///
 /// @param sound The sound (borrowed).
-/// @return The length in seconds.
+/// @return The length in seconds. 0 on failure.
 ELG_EXPORT double elg_sound_duration(const Sound* sound) {
+    ELG_TRY
     return sound->duration();
+    ELG_CATCH(0)
 }
 
 /// Wraps `AudioPlayer(file)`: music, speech, anything long, decoded while it plays.
@@ -116,15 +122,19 @@ ELG_EXPORT AudioPlayer* elg_audio_player_new(ElgStr file) {
 /// Copies a player; copies control the same player.
 ///
 /// @param player The player (borrowed).
-/// @return The copy, owned by the caller (elg_audio_player_free()).
+/// @return The copy, owned by the caller (elg_audio_player_free()). Null on failure.
 ELG_EXPORT AudioPlayer* elg_audio_player_clone(const AudioPlayer* player) {
+    ELG_TRY
     return new AudioPlayer(*player);
+    ELG_CATCH(nullptr)
 }
 /// Frees a player; it stops when the last copy goes.
 ///
 /// @param player The player (consumed); may be null.
 ELG_EXPORT void elg_audio_player_free(AudioPlayer* player) {
+    ELG_TRY
     delete player;
+    ELG_CATCH_VOID
 }
 /// Wraps `AudioPlayer::play()`, `pause()`, `toggle()` and `stop()` (which pauses and goes back to
 /// the start).
@@ -241,15 +251,19 @@ ELG_EXPORT AudioStream* elg_audio_stream_new(ElgStr device_id, uint32_t sample_r
 /// Copies a stream; copies share it.
 ///
 /// @param stream The stream (borrowed).
-/// @return The copy, owned by the caller (elg_audio_stream_free()).
+/// @return The copy, owned by the caller (elg_audio_stream_free()). Null on failure.
 ELG_EXPORT AudioStream* elg_audio_stream_clone(const AudioStream* stream) {
+    ELG_TRY
     return new AudioStream(*stream);
+    ELG_CATCH(nullptr)
 }
 /// Frees a stream; it stops when the last copy goes.
 ///
 /// @param stream The stream (consumed); may be null.
 ELG_EXPORT void elg_audio_stream_free(AudioStream* stream) {
+    ELG_TRY
     delete stream;
+    ELG_CATCH_VOID
 }
 /// Wraps `AudioStream::write()`: queues samples to play (without `on_render`). Callable from any
 /// thread. Beyond about a second queued, the oldest are dropped.
@@ -306,16 +320,20 @@ ELG_EXPORT void elg_audio_stream_error(const AudioStream* stream, ElgStrSink out
 /// Wraps `AudioStream::sample_rate()`.
 ///
 /// @param stream The stream (borrowed).
-/// @return Frames per second, after clamping.
+/// @return Frames per second, after clamping. 0 on failure.
 ELG_EXPORT uint32_t elg_audio_stream_sample_rate(const AudioStream* stream) {
+    ELG_TRY
     return stream->sample_rate();
+    ELG_CATCH(0)
 }
 /// Wraps `AudioStream::channels()`.
 ///
 /// @param stream The stream (borrowed).
-/// @return The number of channels, after clamping.
+/// @return The number of channels, after clamping. 0 on failure.
 ELG_EXPORT uint32_t elg_audio_stream_channels(const AudioStream* stream) {
+    ELG_TRY
     return stream->channels();
+    ELG_CATCH(0)
 }
 
 // --- Capture ---
@@ -373,15 +391,19 @@ ELG_EXPORT AudioRecorder* elg_audio_recorder_new(ElgStr device_id, uint32_t samp
 /// Copies a recorder; copies share the recording.
 ///
 /// @param recorder The recorder (borrowed).
-/// @return The copy, owned by the caller (elg_audio_recorder_free()).
+/// @return The copy, owned by the caller (elg_audio_recorder_free()). Null on failure.
 ELG_EXPORT AudioRecorder* elg_audio_recorder_clone(const AudioRecorder* recorder) {
+    ELG_TRY
     return new AudioRecorder(*recorder);
+    ELG_CATCH(nullptr)
 }
 /// Frees a recorder; it stops when the last copy goes.
 ///
 /// @param recorder The recorder (consumed); may be null.
 ELG_EXPORT void elg_audio_recorder_free(AudioRecorder* recorder) {
+    ELG_TRY
     delete recorder;
+    ELG_CATCH_VOID
 }
 /// Wraps `AudioRecorder::start()` (which continues the recording), `stop()`, `toggle()` and
 /// `clear()` (which drops what was recorded).
@@ -438,16 +460,20 @@ ELG_EXPORT void elg_audio_recorder_error(const AudioRecorder* recorder, ElgStrSi
 /// Wraps `AudioRecorder::sample_rate()`.
 ///
 /// @param recorder The recorder (borrowed).
-/// @return Frames per second, after clamping.
+/// @return Frames per second, after clamping. 0 on failure.
 ELG_EXPORT uint32_t elg_audio_recorder_sample_rate(const AudioRecorder* recorder) {
+    ELG_TRY
     return recorder->sample_rate();
+    ELG_CATCH(0)
 }
 /// Wraps `AudioRecorder::channels()`.
 ///
 /// @param recorder The recorder (borrowed).
-/// @return The number of channels, after clamping.
+/// @return The number of channels, after clamping. 0 on failure.
 ELG_EXPORT uint32_t elg_audio_recorder_channels(const AudioRecorder* recorder) {
+    ELG_TRY
     return recorder->channels();
+    ELG_CATCH(0)
 }
 /// Wraps `AudioRecorder::samples()`: calls `each` (args: ElgSamples*) once with all the samples.
 ///
@@ -525,15 +551,19 @@ ELG_EXPORT Camera* elg_camera_new(ElgStr device_id, uint32_t width, uint32_t hei
 /// Copies a camera; copies share it.
 ///
 /// @param camera The camera (borrowed).
-/// @return The copy, owned by the caller (elg_camera_free()).
+/// @return The copy, owned by the caller (elg_camera_free()). Null on failure.
 ELG_EXPORT Camera* elg_camera_clone(const Camera* camera) {
+    ELG_TRY
     return new Camera(*camera);
+    ELG_CATCH(nullptr)
 }
 /// Frees a camera; it stops when the last copy (and the last view showing it) goes.
 ///
 /// @param camera The camera (consumed); may be null.
 ELG_EXPORT void elg_camera_free(Camera* camera) {
+    ELG_TRY
     delete camera;
+    ELG_CATCH_VOID
 }
 /// Wraps `Camera::start()` and `stop()`.
 ///
@@ -580,9 +610,11 @@ ELG_EXPORT void elg_camera_error(const Camera* camera, ElgStrSink out, void* ctx
 /// Wraps `Camera::mirrored()`.
 ///
 /// @param camera The camera (borrowed).
-/// @return Whether the preview shows a mirror image.
+/// @return Whether the preview shows a mirror image. False on failure.
 ELG_EXPORT bool elg_camera_mirrored(const Camera* camera) {
+    ELG_TRY
     return camera->mirrored();
+    ELG_CATCH(false)
 }
 /// Wraps `Camera::snapshot()`: calls `each` (args: ElgBytes*) with a PNG of the latest frame
 /// (not mirrored); returns false if there's none.
@@ -640,15 +672,19 @@ ELG_EXPORT VideoPlayer* elg_video_player_new_file(ElgStr file) {
 /// Copies a player; copies control the same video.
 ///
 /// @param player The player (borrowed).
-/// @return The copy, owned by the caller (elg_video_player_free()).
+/// @return The copy, owned by the caller (elg_video_player_free()). Null on failure.
 ELG_EXPORT VideoPlayer* elg_video_player_clone(const VideoPlayer* player) {
+    ELG_TRY
     return new VideoPlayer(*player);
+    ELG_CATCH(nullptr)
 }
 /// Frees a player; the video stops when the last copy (and the last view showing it) goes.
 ///
 /// @param player The player (consumed); may be null.
 ELG_EXPORT void elg_video_player_free(VideoPlayer* player) {
+    ELG_TRY
     delete player;
+    ELG_CATCH_VOID
 }
 /// Wraps `VideoPlayer::play()`, `pause()`, `toggle()` and `stop()` (which pauses and goes back to
 /// the start).
@@ -811,23 +847,29 @@ ELG_EXPORT VideoFeed* elg_video_feed_new() {
 /// Copies a feed; copies share it.
 ///
 /// @param feed The feed (borrowed).
-/// @return The copy, owned by the caller (elg_video_feed_free()).
+/// @return The copy, owned by the caller (elg_video_feed_free()). Null on failure.
 ELG_EXPORT VideoFeed* elg_video_feed_clone(const VideoFeed* feed) {
+    ELG_TRY
     return new VideoFeed(*feed);
+    ELG_CATCH(nullptr)
 }
 /// Frees a feed.
 ///
 /// @param feed The feed (consumed); may be null.
 ELG_EXPORT void elg_video_feed_free(VideoFeed* feed) {
+    ELG_TRY
     delete feed;
+    ELG_CATCH_VOID
 }
 /// Whether two feeds are the same feed (copies of one another): `VideoFeed`'s operator==.
 ///
 /// @param a A feed (borrowed).
 /// @param b Another feed (borrowed).
-/// @return true for the same feed.
+/// @return true for the same feed. False on failure.
 ELG_EXPORT bool elg_video_feed_eq(const VideoFeed* a, const VideoFeed* b) {
+    ELG_TRY
     return *a == *b;
+    ELG_CATCH(false)
 }
 /// Wraps `VideoFeed::push()`: a new frame. Callable from any thread. Frames are packed (no row
 /// padding), top to bottom. A frame with a zero dimension, or fewer bytes than its size needs, is
@@ -1093,15 +1135,19 @@ ELG_EXPORT TrayIcon* elg_tray_icon_new(const ElgImageSource* icon, ElgStr toolti
 /// Copies a tray icon handle; copies share the icon.
 ///
 /// @param icon The tray icon (borrowed).
-/// @return The copy, owned by the caller (elg_tray_icon_free()).
+/// @return The copy, owned by the caller (elg_tray_icon_free()). Null on failure.
 ELG_EXPORT TrayIcon* elg_tray_icon_clone(const TrayIcon* icon) {
+    ELG_TRY
     return new TrayIcon(*icon);
+    ELG_CATCH(nullptr)
 }
 /// Frees a tray icon handle; the icon goes away with the last copy.
 ///
 /// @param icon The tray icon (consumed); may be null.
 ELG_EXPORT void elg_tray_icon_free(TrayIcon* icon) {
+    ELG_TRY
     delete icon;
+    ELG_CATCH_VOID
 }
 /// Wraps `TrayIcon::set_tooltip()`.
 ///
@@ -1132,6 +1178,7 @@ ELG_EXPORT void elg_tray_icon_set_menu(const TrayIcon* icon, const ElgTrayMenuIt
 /// @param out Receives each line.
 /// @param ctx Passed to `out`.
 ELG_EXPORT void elg_layouts_platform(ElgStrSink out, void* ctx) {
+    ELG_TRY
     ELG_LAYOUT(ElgDevice);
     ELG_LAYOUT(ElgRenderBuffer);
     ELG_LAYOUT(ElgSamples);
@@ -1141,4 +1188,5 @@ ELG_EXPORT void elg_layouts_platform(ElgStrSink out, void* ctx) {
     ELG_LAYOUT(ElgGpuImageFence);
     ELG_LAYOUT(ElgGpuImageRelease);
     ELG_LAYOUT(ElgGpuImageFrame);
+    ELG_CATCH_VOID
 }
