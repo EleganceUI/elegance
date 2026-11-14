@@ -19,6 +19,7 @@ using elg::View;
 
 extern "C" {
 int32_t elg_take_error(ElgStrSink out, void* ctx);
+uint32_t elg_abi_version();
 View* elg_empty_view();
 void elg_view_free(View* view);
 View* elg_vstack(int32_t alignment, ElgOptLen spacing, View** children, size_t count);
@@ -174,4 +175,8 @@ TEST_CASE("bindings of every type can be freed, which drops their closures", "[c
     CHECK(get.drops == 4);
     CHECK(set.drops == 4);
     CHECK(take_error() == 0);
+}
+
+TEST_CASE("the C API reports its ABI version", "[c-api]") {
+    CHECK(elg_abi_version() >= 1);
 }
