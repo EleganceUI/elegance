@@ -154,7 +154,8 @@ public:
         if (watcher_.joinable()) {
             watcher_.join();
         }
-        // Loaded modules stay loaded: elements built from them may still be torn down after this.
+        // Loaded modules stay loaded: elements built from them may still be torn down after this,
+        // and their code still run (see load()).
         for (LoadedModule& module : modules_) {
             [[maybe_unused]] auto* leaked = module.library.release();
         }
@@ -223,11 +224,10 @@ public:
         }
         preview_names_ = std::move(names);
 
-        // Older modules than the previous one are unloaded: their views left long ago (the
-        // previous module's may still be fading out).
-        while (modules_.size() > 2) {
-            modules_.erase(modules_.begin());
-        }
+        // Earlier loads stay loaded, as long as the process runs: code from them can still run
+        // after their views are gone (posted tasks, timers, the callbacks of fetches and image
+        // loads, styles and environment values holding their closures, views still fading out),
+        // and nothing tracks when the last of it is gone.
         const bool first = generation_.peek() == 0;
         generation_ += 1;
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count();
