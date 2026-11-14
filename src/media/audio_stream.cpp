@@ -8,6 +8,7 @@
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
+#include "media/sample_ring.h"
 
 #include <elg/reactive.h>
 
@@ -16,9 +17,9 @@
 #include <algorithm>
 #include <atomic>
 #include <cstring>
-#include <deque>
 #include <exception>
 #include <format>
+#include <memory>
 #include <mutex>
 #include <optional>
 
@@ -58,8 +59,10 @@ struct AudioStreamState {
     bool context_ready = false;
     bool device_ready = false;
 
-    std::mutex mutex;
-    std::deque<float> queue; // interleaved
+    // What write() queued (interleaved), for the audio thread, which takes it without locking.
+    // Writers take turns.
+    std::mutex writing;
+    std::unique_ptr<SampleRing> queue;
     std::atomic<float> volume{1.f};
     std::atomic<bool> render_failed{false}; // on_render threw: it isn't called again
 
@@ -100,10 +103,7 @@ struct AudioStreamState {
                 }
             }
         } else {
-            const std::lock_guard lock(self->mutex);
-            const std::size_t take = std::min(count, self->queue.size());
-            std::copy_n(self->queue.begin(), take, out);
-            self->queue.erase(self->queue.begin(), self->queue.begin() + static_cast<std::ptrdiff_t>(take));
+            self->queue->read(std::span(out, count)); // what's missing stays silent
         }
         const float volume = self->volume.load();
         if (volume != 1.f) {
@@ -165,35 +165,29 @@ std::vector<AudioDevice> audio_output_devices() {
     return devices;
 }
 
-AudioStream::AudioStream(AudioStreamOptions options) : state_(std::make_shared<detail::AudioStreamState>()) {
+AudioStream::AudioStream(AudioStreamOptions options) : state_(detail::make_ui_shared<detail::AudioStreamState>()) {
     options.sample_rate = std::clamp<std::uint32_t>(options.sample_rate, 8000, 192000);
     options.channels = std::clamp<std::uint32_t>(options.channels, 1, 2);
     state_->options = std::move(options);
+    // About a second: older samples are dropped, so a stalled device doesn't build up delay.
+    state_->queue = std::make_unique<detail::SampleRing>(state_->max_queued());
     if (state_->open() && ma_device_start(&state_->device) != MA_SUCCESS) {
         state_->error = std::string("can't start the audio output");
     }
 }
 
 void AudioStream::write(std::span<const float> samples) const {
-    const std::lock_guard lock(state_->mutex);
-    state_->queue.insert(state_->queue.end(), samples.begin(), samples.end());
-    const std::size_t limit = state_->max_queued();
-    if (state_->queue.size() > limit) {
-        // Whole frames, so channels stay in step.
-        std::size_t drop = state_->queue.size() - limit;
-        drop -= drop % state_->options.channels;
-        state_->queue.erase(state_->queue.begin(), state_->queue.begin() + static_cast<std::ptrdiff_t>(drop));
-    }
+    const std::lock_guard lock(state_->writing);
+    state_->queue->write(samples);
 }
 
 void AudioStream::clear() const {
-    const std::lock_guard lock(state_->mutex);
-    state_->queue.clear();
+    const std::lock_guard lock(state_->writing);
+    state_->queue->clear();
 }
 
 std::size_t AudioStream::queued_frames() const {
-    const std::lock_guard lock(state_->mutex);
-    return state_->queue.size() / state_->options.channels;
+    return state_->queue->size() / state_->options.channels;
 }
 
 void AudioStream::set_volume(float volume) const {

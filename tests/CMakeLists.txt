@@ -43,6 +43,7 @@ add_executable(elegance_tests
         pointer_style_tests.cpp
         reactive_tests.cpp
         required_callback_tests.cpp
+        sample_ring_tests.cpp
         separator_tests.cpp
         shape_hit_tests.cpp
         render_device_lifetime_tests.cpp
