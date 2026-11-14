@@ -157,17 +157,6 @@
                 "static",
                 "macos-release"
             ]
-        },
-        {
-            "name": "local-offline-static",
-            "displayName": "macOS Release, existing offline dependencies (Apple Silicon)",
-            "description": "Reuse the local-offline-static dependency installation and AccessKit sources; requires that build to have been populated already.",
-            "inherits": "macos-release-static",
-            "cacheVariables": {
-                "VCPKG_INSTALLED_DIR": "${sourceDir}/build/local-offline-static/vcpkg_installed",
-                "VCPKG_MANIFEST_INSTALL": false,
-                "FETCHCONTENT_SOURCE_DIR_ACCESSKIT_C": "${sourceDir}/build/local-offline-static/_deps/accesskit_c-src"
-            }
         }
     ]
 }
