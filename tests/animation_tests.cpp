@@ -227,3 +227,28 @@ TEST_CASE("an implicit animation applies to every flush before the layout pass, 
     CHECK(root->frame().width == 50);
     CHECK(root->frame().height == 30); // jumps there
 }
+
+TEST_CASE("two mounts of one view each notice what .animation() watches change", "[animation]") {
+    const Owner owner;
+    const State<float> width(10);
+    const View view = Rectangle()
+                          .frame(Prop<Size>([=] { return Size{width(), 10}; }))
+                          .animation(Animation::linear(1), [=] { return width(); });
+    const auto first = detail::lower(view, {});
+    const auto second = detail::lower(view, {});
+    const auto lay_out = [&] {
+        for (auto* root : {first.get(), second.get()}) {
+            root->size_that_fits({100.f, 100.f});
+            root->place({}, {100.f, 100.f});
+        }
+        detail::end_update();
+    };
+    detail::set_frame_time(10);
+    lay_out();
+
+    width = 50;
+    detail::flush_effects();
+    lay_out();
+    CHECK(first->frame().width == 10); // both ease from 10, starting now
+    CHECK(second->frame().width == 10);
+}

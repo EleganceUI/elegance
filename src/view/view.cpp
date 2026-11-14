@@ -619,8 +619,8 @@ View View::disabled(Prop<bool> disabled) const {
     return modifier(DisabledModifier(std::move(disabled)));
 }
 
-View View::animation_impl(const Animation& animation, std::function<bool()> changed) const {
-    return View(std::make_shared<const detail::AnimationNode>(*this, animation, std::move(changed)));
+View View::animation_impl(const Animation& animation, std::function<std::function<bool()>()> watchers) const {
+    return View(std::make_shared<const detail::AnimationNode>(*this, animation, std::move(watchers)));
 }
 
 View View::animates_layout(bool enabled) const {
@@ -867,8 +867,8 @@ std::unique_ptr<Element> lower(const View& view, const LowerContext& context) {
 std::unique_ptr<Element> AnimationNode::lower(const LowerContext& context) const {
     auto implicit = std::make_shared<ImplicitAnimation>(ImplicitAnimation{animation_});
     // Runs before other effects in a flush, so the property effects it should animate see it
-    // fired.
-    start_effect(std::make_shared<EffectNode>([implicit, changed = changed_] {
+    // fired. Its watcher is this mount's own: another mount compares against what it saw.
+    start_effect(std::make_shared<EffectNode>([implicit, changed = watchers_()] {
                      if (changed()) {
                          implicit->fired_update = current_update();
                      }

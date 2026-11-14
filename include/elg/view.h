@@ -37,10 +37,10 @@ namespace detail {
 class ViewNode;
 struct ViewAccess;
 
-// For View::animation: a function that reads `source` (a tracked read) and returns whether it
-// changed since the previous call (false on the first call).
+// For View::animation: makes, for each mount, a function that reads `source` (a tracked read)
+// and returns whether it changed since that function's previous call (false on the first).
 template <class Source>
-std::function<bool()> change_watcher(Source source) {
+std::function<std::function<bool()>()> change_watchers(Source source) {
     auto read = [source = std::move(source)] {
         if constexpr (std::invocable<const Source&>) {
             return std::invoke(source);
@@ -49,14 +49,16 @@ std::function<bool()> change_watcher(Source source) {
         }
     };
     using Value = std::decay_t<decltype(read())>;
-    return [read = std::move(read), last = std::make_shared<std::optional<Value>>()]() {
-        Value value = read();
-        bool changed = last->has_value();
-        if constexpr (std::equality_comparable<Value>) {
-            changed = changed && !(**last == value);
-        }
-        *last = std::move(value);
-        return changed;
+    return [read = std::move(read)]() -> std::function<bool()> {
+        return [read, last = std::make_shared<std::optional<Value>>()]() {
+            Value value = read();
+            bool changed = last->has_value();
+            if constexpr (std::equality_comparable<Value>) {
+                changed = changed && !(**last == value);
+            }
+            *last = std::move(value);
+            return changed;
+        };
     };
 }
 
@@ -1504,7 +1506,7 @@ public:
     template <class Value>
     [[nodiscard]] View animation(const Animation& animation, Value value) const {
         return animation_impl(animation,
-                              detail::change_watcher(detail::non_empty(std::move(value), "animation() needs a value")));
+                              detail::change_watchers(detail::non_empty(std::move(value), "animation() needs a value")));
     }
     /// How this view enters and leaves when an If/ForEach adds or removes it with an animation.
     ///
@@ -1569,7 +1571,8 @@ private:
     [[nodiscard]] ELG_API View text_field_style_impl(std::shared_ptr<const TextFieldStyle> style) const;
     [[nodiscard]] ELG_API View row_style_impl(std::shared_ptr<const RowStyle> style) const;
     [[nodiscard]] ELG_API View selection_impl(detail::SelectionModel model) const;
-    [[nodiscard]] ELG_API View animation_impl(const Animation& animation, std::function<bool()> changed) const;
+    [[nodiscard]] ELG_API View animation_impl(const Animation& animation,
+                                              std::function<std::function<bool()>()> watchers) const;
     ELG_API static View deferred(std::function<View()> body);
 
     std::shared_ptr<const detail::ViewNode> node_;
