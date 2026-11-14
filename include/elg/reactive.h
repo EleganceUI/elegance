@@ -34,6 +34,8 @@ class Animation;
 
 namespace detail {
 
+class Scope;
+
 // A node in the dependency graph: a signal (State), a computed value, or an effect.
 // The update algorithm pushes "maybe changed" marks down the graph on writes and pulls fresh
 // values on reads, so every node recomputes at most once per change, never with half-updated
@@ -73,6 +75,7 @@ private:
     bool queued_ = false;
     bool disposed_ = false;
     bool priority_ = false; // runs before other effects in a flush
+    Scope* owner_ = nullptr; // effects: the scope that owns them, current while they run
     ELG_PRIVATE_MEMBERS_BEGIN
     std::vector<ReactiveNode*> sources_;
     std::vector<ReactiveNode*> observers_;

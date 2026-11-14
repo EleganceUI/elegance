@@ -100,6 +100,9 @@ struct Runtime {
         node->sources_.clear();
     }
 
+    static Scope* owner(const ReactiveNode* node) noexcept { return node->owner_; }
+    static void set_owner(ReactiveNode* node, Scope* scope) noexcept { node->owner_ = scope; }
+
     static void run(ReactiveNode* node) {
         unlink_sources(node); // dependencies are re-tracked on every run
         ReactiveNode* const previous = g_observer;
@@ -228,6 +231,7 @@ void start_effect(std::shared_ptr<EffectNode> effect, bool priority) {
                          "argument), so it has an owner that ends it");
     }
     EffectNode* const node = effect.get();
+    Runtime::set_owner(node, g_scope); // later runs build into it too
     g_scope->adopt(std::move(effect));
     node->update(); // first run, establishing its dependencies
 }
@@ -296,6 +300,11 @@ void flush_effects() {
             g_flush_animation = transaction;
         }
         const Animation* const previous = std::exchange(g_running_animation, transaction.get());
+        // In the scope that owns it, which owns what this run creates (ELGSPEC-0003.R9).
+        std::optional<Scope::Use> in_owner;
+        if (Scope* const owner = Runtime::owner(node)) {
+            in_owner.emplace(*owner);
+        }
         try {
             node->update();
         } catch (...) {

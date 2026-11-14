@@ -359,3 +359,31 @@ TEST_CASE("an effect disposed while it runs doesn't subscribe to what it reads a
     later = 1;     // subscribed, the freed effect would be scheduled (ASan reports the read)
     CHECK_FALSE(detail::has_scheduled_effects());
 }
+
+TEST_CASE("an effect's later runs create effects in the scope that owns it", "[reactive]") {
+    auto scope = std::make_unique<detail::Scope>();
+    const State<bool> on(false);
+    const State<int> count(0);
+    int inner_runs = 0;
+    {
+        const detail::Scope::Use use(*scope);
+        effect([=, &inner_runs] {
+            if (on()) {
+                effect([=, &inner_runs] {
+                    (void)count();
+                    ++inner_runs;
+                });
+            }
+        });
+    }
+    on = true;
+    REQUIRE_NOTHROW(detail::flush_effects()); // it has an owner: the outer effect's
+    CHECK(inner_runs == 1);
+    count = 1;
+    detail::flush_effects();
+    CHECK(inner_runs == 2);
+    scope.reset(); // ends both
+    count = 2;
+    detail::flush_effects();
+    CHECK(inner_runs == 2);
+}
