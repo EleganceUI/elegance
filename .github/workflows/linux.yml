@@ -157,8 +157,9 @@ jobs:
                   done
                   exit $status
 
+            # Also when a build failed: the presets that built are still tested.
             - name: Test
-              if: matrix.gpu != true
+              if: ${{ matrix.gpu != true && !cancelled() && steps.configure.outcome == 'success' }}
               run: |
                   status=0
                   for preset in $PRESETS; do
@@ -169,7 +170,7 @@ jobs:
             # Under Xvfb, on Mesa's software Vulkan driver (lavapipe); then the tests that need the
             # internet.
             - name: GPU, smoke and network tests
-              if: matrix.gpu == true
+              if: ${{ matrix.gpu == true && !cancelled() && steps.configure.outcome == 'success' }}
               env:
                   ELG_GPU_BACKEND: vulkan
               run: |
@@ -181,7 +182,7 @@ jobs:
             # The checks in .clang-tidy, on the static build's compile commands (once: they're the
             # same sources on both architectures). clang-tidy 19 comes from LLVM's apt repository.
             - name: clang-tidy
-              if: matrix.checks == true
+              if: ${{ matrix.checks == true && !cancelled() && steps.configure.outcome == 'success' }}
               run: |
                   wget -qO llvm.sh https://apt.llvm.org/llvm.sh
                   sudo bash llvm.sh 19
@@ -191,10 +192,10 @@ jobs:
             # Every public declaration (include/elg, the C API) has a /// comment with its @params
             # and @return. Uses libclang 19, installed in the step above.
             - name: API docs
-              if: matrix.checks == true
+              if: ${{ matrix.checks == true && !cancelled() && steps.configure.outcome == 'success' }}
               run: python3 tools/doc-check.py build/linux-release
 
             # Every function the C API exports catches C++ exceptions (R11).
             - name: C API exceptions
-              if: matrix.checks == true
+              if: ${{ matrix.checks == true && !cancelled() }}
               run: python3 tools/c-api-check.py

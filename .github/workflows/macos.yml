@@ -109,7 +109,9 @@ jobs:
                   cmake --build build/macos-release -- -k 0 || status=1
                   exit $status
 
+            # Also when a build failed: the presets that built are still tested.
             - name: Test
+              if: ${{ !cancelled() && steps.configure.outcome == 'success' }}
               run: |
                   status=0
                   ctest --test-dir build/macos-debug --output-on-failure || status=1
@@ -118,6 +120,7 @@ jobs:
 
             # On the runner's Metal device (ELGSPEC-0006.R9).
             - name: GPU tests and smoke tests
+              if: ${{ !cancelled() && steps.configure.outcome == 'success' }}
               run: |
                   build/macos-release/bin/elegance_tests "[.gpu]"
                   build/macos-debug/bin/sandbox --smoke-test
