@@ -26,6 +26,8 @@
 #include <boost/beast/http.hpp>
 #include <boost/beast/ssl.hpp>
 #include <boost/url.hpp>
+#include <openssl/crypto.h>
+#include <openssl/ssl.h>
 
 #if defined(__APPLE__)
 #include <Security/Security.h>
@@ -124,7 +126,15 @@ public:
     }
 
 private:
-    Network() : work_(asio::make_work_guard(io_)), thread_([this] { io_.run(); }) {}
+    Network() : work_(asio::make_work_guard(io_)), thread_([this] {
+        io_.run();
+        OPENSSL_thread_stop(); // this thread's OpenSSL state
+    }) {
+        // OpenSSL cleans up at exit, but not the state of threads still running then. Initializing
+        // it here schedules that cleanup before this object's destruction, which ends the thread, so
+        // it runs after it.
+        OPENSSL_init_ssl(0, nullptr);
+    }
 
     asio::io_context io_;
     ConnectionPool pool_; // closed after the thread stops, before the io_context goes
