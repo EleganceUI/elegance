@@ -217,7 +217,9 @@ struct IconSetOptions {
     bool replace = false;        ///< replace a set registered under the same name
 };
 
-/// Makes "<name>.<icon>" available to Image.
+/// Makes "<name>.<icon>" available to Image. The built-in sets ("phosphor") count as registered
+/// from the start, so taking one's name needs `replace`. A registration that throws leaves the
+/// registered sets as they were. Any thread, also while other threads register sets or make Images.
 ///
 /// @code
 /// register_icon_set("brand", {.font = "brand-icons.ttf", .names = "brand-icons.css"});
@@ -231,7 +233,7 @@ struct IconSetOptions {
 ELG_API void register_icon_set(std::string name, const IconSetOptions& options);
 
 /// Chooses the icon set for names without a set prefix ("phosphor" unless changed). Names are resolved
-/// when an Image is made, so an unregistered set makes those Images throw then.
+/// when an Image is made, so an unregistered set makes those Images throw then. Any thread.
 ///
 /// @param name A registered set's name.
 ELG_API void set_default_icon_set(std::string name);

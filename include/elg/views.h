@@ -7,6 +7,7 @@
 
 // Built-in container and primitive views.
 
+#include <elg/error.h>
 #include <elg/export.h>
 #include <elg/graphics_context.h>
 #include <elg/image.h>
@@ -159,7 +160,8 @@ ELG_API View EmptyView();
 /// points where a dimension is left open). It's drawn again when state that `draw` reads changes;
 /// to see what that is, `draw` also runs once when the view is built.
 ///
-/// @param draw Draws the view, in a context that covers its frame.
+/// @param draw Draws the view, in a context that covers its frame. May be empty: the canvas then
+///   draws nothing.
 /// @return The canvas.
 ELG_API View Canvas(std::function<void(GraphicsContext&)> draw);
 
@@ -175,6 +177,7 @@ ELG_API View Canvas(std::function<void(GraphicsContext&)> draw);
 /// @param action Runs when the button is clicked, or activated with Space or Enter while it
 ///   has focus.
 /// @return The button.
+/// @throws UsageError if `action` is empty.
 ELG_API View Button(View label, std::function<void()> action);
 /// Like Button(View, std::function<void()>), with a Text label.
 ///
@@ -182,6 +185,7 @@ ELG_API View Button(View label, std::function<void()> action);
 /// @param action Runs when the button is clicked, or activated with Space or Enter while it
 ///   has focus.
 /// @return The button.
+/// @throws UsageError if `action` is empty.
 ELG_API View Button(Prop<std::string> title, std::function<void()> action);
 
 /// What a TextField does besides editing: submitting, secure entry, more lines, styling, keys.
@@ -577,6 +581,7 @@ ELG_API View ScrollView(const ScrollViewOptions& options, View content);
 ///   (`&Todo::id`) works too.
 /// @param content Builds an item's view.
 /// @return The items' views.
+/// @throws UsageError if `items`, `key` or `content` is an empty std::function or a null pointer.
 template <class Source, class KeyFunction, class ContentFunction>
     requires requires { typename detail::ItemsOf<Source>::type::value_type; }
 View ForEach(Source items, KeyFunction key, ContentFunction content) {
@@ -585,6 +590,15 @@ View ForEach(Source items, KeyFunction key, ContentFunction content) {
     static_assert(std::is_invocable_v<const KeyFunction&, const T&>, "the key function takes an item");
     static_assert(std::is_convertible_v<std::invoke_result_t<const ContentFunction&, const T&>, View>,
                   "the content function takes an item and returns a view");
+    if (detail::is_empty_function(items)) {
+        throw UsageError("ForEach() needs an items function");
+    }
+    if (detail::is_empty_function(key)) {
+        throw UsageError("ForEach() needs a key function");
+    }
+    if (detail::is_empty_function(content)) {
+        throw UsageError("ForEach() needs a content function");
+    }
 
     bool (*equals)(const void*, const void*) = []([[maybe_unused]] const void* a, [[maybe_unused]] const void* b) {
         if constexpr (std::equality_comparable<T>) {
@@ -614,6 +628,7 @@ View ForEach(Source items, KeyFunction key, ContentFunction content) {
 ///   one.
 /// @param content Builds an item's view.
 /// @return The items' views.
+/// @throws UsageError if `items` or `content` is an empty std::function or a null pointer.
 template <class Source, class ContentFunction>
     requires requires { typename detail::ItemsOf<Source>::type::value_type; }
 View ForEach(Source items, ContentFunction content) {
@@ -634,7 +649,8 @@ struct MenuItemOptions {
 /// A menu command. Choosing it closes the menu, then runs `action`. Disable it with .disabled().
 ///
 /// @param title The command's name.
-/// @param action Runs once the menus have closed; it may open a dialog or another menu.
+/// @param action Runs once the menus have closed; it may open a dialog or another menu. May be
+///   empty: choosing the item then only closes the menus.
 /// @param options A shortcut hint, the danger color, a check mark, an icon.
 /// @return The menu item.
 ELG_API View MenuItem(Prop<std::string> title, std::function<void()> action, MenuItemOptions options = {});
@@ -644,6 +660,7 @@ ELG_API View MenuItem(Prop<std::string> title, std::function<void()> action, Men
 /// @param title The item's name.
 /// @param menu Builds the submenu (a Menu) each time it opens.
 /// @return The menu item.
+/// @throws UsageError if `menu` is empty.
 ELG_API View Submenu(Prop<std::string> title, std::function<View()> menu);
 
 namespace detail {
@@ -679,6 +696,7 @@ struct MenuButtonOptions {
 /// @param menu Builds the menu (a Menu) each time it opens.
 /// @param options Where the menu opens, the chevron, and the motion.
 /// @return The menu button.
+/// @throws UsageError if `menu` is empty.
 ELG_API View MenuButton(View label, std::function<View()> menu, MenuButtonOptions options = {});
 /// Like MenuButton(View, std::function<View()>, MenuButtonOptions), with a Text label.
 ///
@@ -686,6 +704,7 @@ ELG_API View MenuButton(View label, std::function<View()> menu, MenuButtonOption
 /// @param menu Builds the menu (a Menu) each time it opens.
 /// @param options Where the menu opens, the chevron, and the motion.
 /// @return The menu button.
+/// @throws UsageError if `menu` is empty.
 ELG_API View MenuButton(Prop<std::string> title, std::function<View()> menu, MenuButtonOptions options = {});
 
 /// Lines between a lazy stack's items, in the middle of the spacing:

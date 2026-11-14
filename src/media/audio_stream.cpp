@@ -129,10 +129,10 @@ struct AudioStreamState {
         if (!options.device_id.empty()) {
             id = find_output(context, options.device_id);
             if (!id) {
-                log_warning("AudioStream: output {} isn't connected; using the default", options.device_id);
-            } else {
-                config.playback.pDeviceID = &*id;
+                error = std::string("that output isn't connected");
+                return false;
             }
+            config.playback.pDeviceID = &*id;
         }
         if (ma_device_init(&context, &config, &device) != MA_SUCCESS) {
             error = std::string("can't open the audio output");

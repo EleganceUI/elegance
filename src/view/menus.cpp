@@ -421,6 +421,9 @@ View MenuItem(Prop<std::string> title, std::function<void()> action, MenuItemOpt
 }
 
 View Submenu(Prop<std::string> title, std::function<View()> menu) {
+    if (!menu) {
+        throw UsageError("Submenu() needs a menu function");
+    }
     return ViewAccess::make(std::make_shared<const detail::SubmenuNode>(std::move(title), std::move(menu)));
 }
 
@@ -482,6 +485,9 @@ View MenuStyle::make_item(const MenuItemConfiguration& item) const {
 }
 
 View MenuButton(View label, std::function<View()> menu, MenuButtonOptions options) {
+    if (!menu) {
+        throw UsageError("MenuButton() needs a menu function");
+    }
     return ViewAccess::make(
         std::make_shared<const detail::MenuButtonNode>(std::move(label), std::move(menu), std::move(options)));
 }
@@ -491,6 +497,9 @@ View MenuButton(Prop<std::string> title, std::function<View()> menu, MenuButtonO
 }
 
 View View::context_menu(std::function<View()> menu) const {
+    if (!menu) {
+        throw UsageError("context_menu() needs a menu function");
+    }
     return ViewAccess::make(std::make_shared<const detail::ContextMenuNode>(*this, std::move(menu)));
 }
 

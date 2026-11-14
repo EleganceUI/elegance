@@ -9,6 +9,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <type_traits>
+
 using namespace elg;
 
 TEST_CASE("desktop services need a running app", "[desktop]") {
@@ -21,6 +23,10 @@ TEST_CASE("desktop services need a running app", "[desktop]") {
 
 TEST_CASE("drop targets need a handler", "[desktop]") {
     CHECK_THROWS_AS(Text("x").on_drop({}), UsageError);
-    CHECK_NOTHROW(Text("x").on_drop({.files = [](const std::vector<std::filesystem::path>&, Point) { return true; }}));
-    CHECK_NOTHROW(Text("x").on_drop({.text = [](const std::string&, Point) { return true; }, .targeted = [](bool) {}}));
+    CHECK_NOTHROW(Text("x").on_drop({.files = [](const std::vector<std::filesystem::path>&, Point) {}}));
+    CHECK_NOTHROW(Text("x").on_drop({.text = [](const std::string&, Point) {}, .targeted = [](bool) {}}));
+    // Drop handlers return nothing; one that returns a value still fits.
+    STATIC_REQUIRE(std::is_void_v<decltype(DropOptions::files)::result_type>);
+    STATIC_REQUIRE(std::is_void_v<decltype(DropOptions::text)::result_type>);
+    CHECK_NOTHROW(Text("x").on_drop({.text = [](const std::string&, Point) { return true; }}));
 }

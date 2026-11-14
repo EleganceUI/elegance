@@ -119,6 +119,25 @@ TEST_CASE("SVG path data takes only finite numbers of reasonable size", "[path]"
     CHECK_NOTHROW(Path::svg("M 0 0 L 1e9 -1e9"));
 }
 
+TEST_CASE("a dash pattern of odd length is used written twice", "[path]") {
+    Path line;
+    line.move_to({0, 0}).line_to({20, 0});
+
+    // {4} is {4, 4}: drawn 0-4, skipped 4-8, drawn 8-12.
+    const Path single = line.stroked({.width = 2, .dash = {4}});
+    CHECK(single.contains({2, 0}));
+    CHECK_FALSE(single.contains({6, 0}));
+    CHECK(single.contains({10, 0}));
+
+    // {4, 2, 1} is {4, 2, 1, 4, 2, 1}: drawn 0-4, skipped 4-6, drawn 6-7, skipped 7-11, drawn 11-13.
+    const Path three = line.stroked({.width = 2, .dash = {4, 2, 1}});
+    CHECK(three.contains({2, 0}));
+    CHECK_FALSE(three.contains({5, 0}));
+    CHECK(three.contains({6.5f, 0}));
+    CHECK_FALSE(three.contains({9, 0}));
+    CHECK(three.contains({12, 0}));
+}
+
 TEST_CASE("strokes end, whatever the tolerance and the dash pattern", "[path]") {
     Path line;
     line.move_to({0, 0}).line_to({10, 0});

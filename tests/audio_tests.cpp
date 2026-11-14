@@ -59,6 +59,15 @@ TEST_CASE("sounds decode from memory", "[audio]") {
     CHECK_NOTHROW(sound.play({.volume = 0}));
 }
 
+TEST_CASE("an AudioStream asked for an output that isn't connected doesn't play", "[audio]") {
+    const AudioStream stream({.device_id = "no-such-output"});
+    const std::string error = stream.error();
+    REQUIRE_FALSE(error.empty());
+    if (error != "audio output isn't available") { // no audio system here at all
+        CHECK(error == "that output isn't connected");
+    }
+}
+
 TEST_CASE("audio errors", "[audio]") {
     CHECK_THROWS_AS(Sound::load("no-such-file.wav"), ResourceError);
     const std::vector<unsigned char> garbage(100, 7);

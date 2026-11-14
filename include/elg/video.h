@@ -64,7 +64,8 @@ public:
     ///
     /// @param seconds Seconds from the start; negative counts as 0.
     void seek(double seconds) const;
-    /// @param volume 0...1; clamped.
+    /// @param volume 0...1; clamped, on every platform (volume() returns the clamped value).
+    /// @throws UsageError When `volume` is NaN.
     void set_volume(float volume) const;
     /// @param muted Whether the sound is off, keeping the volume.
     void set_muted(bool muted) const;

@@ -63,12 +63,16 @@ public:
     ///
     /// @param function Called (as a tracked read) each time the value is needed; copied or moved
     ///   in.
+    /// @throws UsageError if `function` is empty (an empty std::function or a null pointer).
     template <class F>
         requires(!std::same_as<std::remove_cvref_t<F>, Prop> && std::invocable<const std::remove_cvref_t<F>&> &&
                  std::convertible_to<std::invoke_result_t<const std::remove_cvref_t<F>&>, T>)
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward): forwarded into the capture
     Prop(F&& function)
-        : value_(Reactive([f = std::remove_cvref_t<F>(std::forward<F>(function))] { return T(f()); })) {}
+        : value_(Reactive(
+              [f = std::remove_cvref_t<F>(detail::non_empty(std::forward<F>(function), "Prop needs a function"))] {
+                  return T(f());
+              })) {}
 
     /// Closures that need the environment where the prop is used, e.g. to mix state with theme
     /// colors:
@@ -79,14 +83,16 @@ public:
     ///
     /// @param function Called with the environment where the prop is used, each time the value
     ///   is needed; copied or moved in.
+    /// @throws UsageError if `function` is empty (an empty std::function or a null pointer).
     template <class F>
         requires(!std::same_as<std::remove_cvref_t<F>, Prop> &&
                  std::invocable<const std::remove_cvref_t<F>&, const EnvironmentValues&> &&
                  std::convertible_to<std::invoke_result_t<const std::remove_cvref_t<F>&, const EnvironmentValues&>, T>)
     // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward): forwarded into the capture
     Prop(F&& function)
-        : value_(FromEnvironment([f = std::remove_cvref_t<F>(std::forward<F>(function))](
-                                     const EnvironmentValues& environment) { return T(f(environment)); })) {}
+        : value_(FromEnvironment(
+              [f = std::remove_cvref_t<F>(detail::non_empty(std::forward<F>(function), "Prop needs a function"))](
+                  const EnvironmentValues& environment) { return T(f(environment)); })) {}
 
     /// Semantic theme colors, for any T a Color converts to (Color, ShapeStyle).
     ///

@@ -2485,10 +2485,9 @@ struct ElgDropText {
 /// the pointer that takes that kind of thing gets it.
 ///
 /// @param v The view (borrowed).
-/// @param files Takes dropped files. args: ElgDropFiles*, ret: bool* (false: not wanted). None: files aren't
-///   taken.
-/// @param text Takes dropped text. args: ElgDropText*, ret: bool* (false: not wanted). None: text isn't
-///   taken.
+/// @param files Takes dropped files. args: ElgDropFiles*; ret: a bool* that's ignored (what it returns has no
+///   effect). None: files aren't taken.
+/// @param text Takes dropped text. args: ElgDropText*; ret: a bool* that's ignored. None: text isn't taken.
 /// @param targeted Called with true while a drag the view can take is over it (for a highlight), and false
 ///   when it leaves. args: bool*; may be none.
 /// @return `v` taking drops (a new view, owned by the caller), or null on failure.
@@ -2509,17 +2508,15 @@ ELG_EXPORT View* elg_mod_on_drop(const View* v, ElgClosure files, ElgClosure tex
                 c_names.push_back(c_str(n));
             }
             ElgDropFiles arg{c_names.data(), c_names.size(), {location.x, location.y}};
-            bool wanted = false;
-            f->call(&arg, &wanted);
-            return wanted;
+            bool ignored = false; // bindings that still return a result write it here
+            f->call(&arg, &ignored);
         };
     }
     if (const SharedFn f = share(text)) {
         options.text = [f](const std::string& dropped, Point location) {
             ElgDropText arg{c_str(dropped), {location.x, location.y}};
-            bool wanted = false;
-            f->call(&arg, &wanted);
-            return wanted;
+            bool ignored = false; // bindings that still return a result write it here
+            f->call(&arg, &ignored);
         };
     }
     options.targeted = consumer<bool>(share(targeted));

@@ -374,6 +374,9 @@ View View::on_click(std::function<void(const ClickEvent&)> action, ClickOptions 
 }
 
 View View::on_click(std::function<void()> action, ClickOptions options) const {
+    if (!action) {
+        return on_click(std::function<void(const ClickEvent&)>(), options);
+    }
     return on_click([action = std::move(action)](const ClickEvent&) { action(); }, options);
 }
 
@@ -727,6 +730,9 @@ View Canvas(std::function<void(GraphicsContext&)> draw) {
 }
 
 View Button(View label, std::function<void()> action) {
+    if (!action) {
+        throw UsageError("Button() needs an action");
+    }
     return ViewAccess::make(std::make_shared<const detail::ButtonNode>(std::move(label), std::move(action)));
 }
 

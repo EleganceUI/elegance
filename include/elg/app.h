@@ -194,6 +194,7 @@ private:
 /// order posted. Posted while no App runs, it waits for the next one.
 ///
 /// @param task The work to run; it's moved to the UI thread.
+/// @throws UsageError if `task` is empty.
 ELG_API void post_to_ui_thread(std::function<void()> task);
 
 /// Library version string.

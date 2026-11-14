@@ -7,6 +7,7 @@
 
 #include <elg/video.h>
 #include <elg/capture.h>
+#include <elg/error.h>
 #include <elg/gpu_image.h>
 
 #include "media/video_source.h"
@@ -19,6 +20,7 @@
 #include <elg/theme.h>
 #include <elg/views.h>
 
+#include <algorithm>
 #include <cmath>
 #include <format>
 
@@ -63,7 +65,10 @@ void VideoPlayer::seek(double seconds) const {
     source_->seek(seconds);
 }
 void VideoPlayer::set_volume(float volume) const {
-    source_->set_volume(volume);
+    if (std::isnan(volume)) {
+        throw UsageError("VideoPlayer::set_volume(): the volume is NaN");
+    }
+    source_->set_volume(std::clamp(volume, 0.f, 1.f));
 }
 void VideoPlayer::set_muted(bool muted) const {
     source_->set_muted(muted);

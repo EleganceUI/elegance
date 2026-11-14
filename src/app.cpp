@@ -1583,6 +1583,9 @@ const char* version() {
 }
 
 void post_to_ui_thread(std::function<void()> task) {
+    if (!task) {
+        throw UsageError("post_to_ui_thread() needs a task");
+    }
     detail::post_ui_task(std::move(task));
 }
 

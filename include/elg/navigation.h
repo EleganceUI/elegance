@@ -9,6 +9,7 @@
 // of pages driven by a path.
 
 #include <elg/animation.h>
+#include <elg/error.h>
 #include <elg/export.h>
 #include <elg/font.h>
 #include <elg/prop.h>
@@ -259,11 +260,15 @@ ELG_API View make_navigation_stack(View root, std::function<std::vector<ForEachI
 /// @param destination Builds the page for a route.
 /// @param options Titles, the transition and animation, and the back gestures.
 /// @return The stack.
+/// @throws UsageError if `destination` is empty.
 template <class Route>
     requires std::equality_comparable<Route>
 View NavigationStack(Binding<std::vector<Route>> path, View root,
                      std::type_identity_t<std::function<View(const Route&)>> destination,
                      const NavigationStackOptions<Route>& options = {}) {
+    if (!destination) {
+        throw UsageError("NavigationStack() needs a destination function");
+    }
     bool (*equals)(const void*, const void*) = [](const void* a, const void* b) {
         return *static_cast<const Route*>(a) == *static_cast<const Route*>(b);
     };
@@ -304,6 +309,7 @@ View NavigationStack(Binding<std::vector<Route>> path, View root,
 /// @param destination Builds the page for a route.
 /// @param options Titles, the transition and animation, and the back gestures.
 /// @return The stack.
+/// @throws UsageError if `destination` is empty.
 template <class Route>
     requires std::equality_comparable<Route>
 View NavigationStack(const State<std::vector<Route>>& path, View root,

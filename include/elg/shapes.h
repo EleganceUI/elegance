@@ -123,7 +123,7 @@ ELG_API Shape PathShape(Path path, PathShapeOptions options = {});
 /// @endcode
 ///
 /// @param path Builds the outline. It gets the frame's size as a rect at (0, 0) and returns the path in
-///   points from the frame's corner.
+///   points from the frame's corner. May be empty: the shape is then empty too.
 /// @param fill_rule Which points the path's outline encloses.
 /// @return The shape.
 ELG_API Shape CustomShape(std::function<Path(Rect)> path, FillRule fill_rule = FillRule::non_zero);

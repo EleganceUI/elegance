@@ -217,13 +217,13 @@ enum class AccessibilityRole {
 };
 
 /// What a view does with things dragged in from other apps (on_drop()). Handlers get what was
-/// dropped and where (in the view's coordinates). They return whether they took it (false: it
-/// wasn't wanted), though nothing acts on the result yet.
+/// dropped and where (in the view's coordinates). A drop goes to one view: the innermost enabled
+/// one under the pointer with a handler for it (on top, among siblings), whose handler runs.
 struct DropOptions {
     /// Takes dropped files, by path. Empty: the view doesn't take files.
-    std::function<bool(const std::vector<std::filesystem::path>& files, Point location)> files;
+    std::function<void(const std::vector<std::filesystem::path>& files, Point location)> files;
     /// Takes dropped text. Empty: the view doesn't take text.
-    std::function<bool(const std::string& text, Point location)> text;
+    std::function<void(const std::string& text, Point location)> text;
     /// Set while a drag the view can take is over it (for a highlight): called with true when one
     /// comes over the view and false when it leaves or is dropped. May be empty.
     std::function<void(bool targeted)> targeted;
@@ -865,7 +865,9 @@ public:
     /// @return This view, drawn scaled.
     [[nodiscard]] ELG_API View scale_effect(Prop<float> x, Prop<float> y, UnitPoint anchor = UnitPoint::center) const;
     /// Shows the content only where `mask` (sized and aligned like an overlay) is opaque; its
-    /// colors don't matter, only its alpha. A gradient fades the content out:
+    /// colors don't matter, only its alpha. Pointer hits reach the content only where the mask
+    /// would be hit (on a shape's fill, a text's frame, ...); the mask takes none itself. A
+    /// gradient fades the content out:
     ///
     /// @code
     /// list.mask(LinearGradient({Color::black, Color::clear}, UnitPoint::center, UnitPoint::bottom))
@@ -906,24 +908,25 @@ public:
     /// Row().on_click(select).on_double_click(open)
     /// @endcode
     ///
-    /// @param action Called with the click, located in the view's own coordinates.
+    /// @param action Called with the click, located in the view's own coordinates. May be empty.
     /// @param options The button and click count.
     /// @return This view, clickable.
     [[nodiscard]] ELG_API View on_click(std::function<void(const ClickEvent&)> action, ClickOptions options = {}) const;
     /// Like on_click(action, options), for an action that doesn't need the event.
     ///
-    /// @param action Called on each click.
+    /// @param action Called on each click. May be empty.
     /// @param options The button and click count.
     /// @return This view, clickable.
     [[nodiscard]] ELG_API View on_click(std::function<void()> action, ClickOptions options = {}) const;
     /// on_click with .count = 2. The first click goes on to outer click handlers.
     ///
-    /// @param action Called with the double click, located in the view's own coordinates.
+    /// @param action Called with the double click, located in the view's own coordinates. May be
+    ///   empty.
     /// @return This view, double-clickable.
     [[nodiscard]] ELG_API View on_double_click(std::function<void(const ClickEvent&)> action) const;
     /// on_click with .count = 2, for an action that doesn't need the event.
     ///
-    /// @param action Called on each double click.
+    /// @param action Called on each double click. May be empty.
     /// @return This view, double-clickable.
     [[nodiscard]] ELG_API View on_double_click(std::function<void()> action) const;
     /// The view's action, however it's used: a left click, Space or Enter while it has focus, or a
@@ -981,27 +984,27 @@ public:
     [[nodiscard]] ELG_API View recognize(TwoFingerDoubleTapGesture gesture) const;
     /// Shorthand for recognize(DragGesture().on_changed(action)).
     ///
-    /// @param action Called as the drag moves.
+    /// @param action Called as the drag moves. May be empty.
     /// @return This view, draggable.
     [[nodiscard]] ELG_API View on_drag(std::function<void(const DragEvent&)> action) const;
     /// Shorthand for recognize(LongPressGesture(action)).
     ///
-    /// @param action Called when the long press is recognized.
+    /// @param action Called when the long press is recognized. May be empty.
     /// @return This view, recognizing long presses.
     [[nodiscard]] ELG_API View on_long_press(std::function<void()> action) const;
     /// Shorthand for recognize(MagnifyGesture().on_changed(action)).
     ///
-    /// @param action Called as the pinch changes.
+    /// @param action Called as the pinch changes. May be empty.
     /// @return This view, recognizing pinches.
     [[nodiscard]] ELG_API View on_magnify(std::function<void(const MagnifyEvent&)> action) const;
     /// Shorthand for recognize(RotateGesture().on_changed(action)).
     ///
-    /// @param action Called as the rotation changes.
+    /// @param action Called as the rotation changes. May be empty.
     /// @return This view, recognizing rotations.
     [[nodiscard]] ELG_API View on_rotate(std::function<void(const RotateEvent&)> action) const;
     /// Shorthand for recognize(TwoFingerDoubleTapGesture(action)).
     ///
-    /// @param action Called with where the tap was.
+    /// @param action Called with where the tap was. May be empty.
     /// @return This view, recognizing two-finger double taps.
     [[nodiscard]] ELG_API View on_two_finger_double_tap(std::function<void(Point)> action) const;
     /// The pointer's shape over the view, like CSS's `cursor`: .pointer_style(PointerStyle::pointer)
@@ -1020,12 +1023,12 @@ public:
     /// .on_pointer_enter([=] { hovered = true; }).on_pointer_leave([=] { hovered = false; })
     /// @endcode
     ///
-    /// @param action Called when the pointer enters.
+    /// @param action Called when the pointer enters. May be empty.
     /// @return This view, watching the pointer come in.
     [[nodiscard]] ELG_API View on_pointer_enter(std::function<void()> action) const;
     /// Called at once when the pointer leaves the view (its hit area): for highlights.
     ///
-    /// @param action Called when the pointer leaves.
+    /// @param action Called when the pointer leaves. May be empty.
     /// @return This view, watching the pointer go.
     [[nodiscard]] ELG_API View on_pointer_leave(std::function<void()> action) const;
     /// Raw pointer events over the view (down, up, moves while captured, hover moves, cancel),
@@ -1033,13 +1036,13 @@ public:
     /// pointer, so the moves and the up come here wherever it goes. For drawing and custom
     /// controls; prefer on_click and gestures otherwise.
     ///
-    /// @param action Called with each event; returns whether it consumed it.
+    /// @param action Called with each event; returns whether it consumed it. May be empty.
     /// @return This view, handling pointer events.
     [[nodiscard]] ELG_API View on_pointer(std::function<bool(const PointerEvent&)> action) const;
     /// Wheel and trackpad scrolling over the view, located in its own coordinates. Return true to
     /// consume it (scroll views around it then don't scroll).
     ///
-    /// @param action Called with each scroll; returns whether it consumed it.
+    /// @param action Called with each scroll; returns whether it consumed it. May be empty.
     /// @return This view, handling scrolling.
     [[nodiscard]] ELG_API View on_scroll(std::function<bool(const ScrollEvent&)> action) const;
     /// Hover intent: called with true once the pointer has rested on the view for the hover
@@ -1047,14 +1050,14 @@ public:
     /// `exit`): for previews and other things that shouldn't flash as the pointer passes. The
     /// delay comes from the environment (no wait by default): .on_hover_change(action).hover_delay({.enter = 0.5})
     ///
-    /// @param action Called with whether the view is hovered.
+    /// @param action Called with whether the view is hovered. May be empty.
     /// @return This view, reporting hover changes.
     [[nodiscard]] ELG_API View on_hover_change(std::function<void(bool)> action) const;
     /// Called after initial layout and when physical dimensions change, including display scale.
     /// Dimensions are ceil(logical size * display scale), before visual transforms, and may be zero.
     /// Runs on the UI thread before paint: queue renderer input, do not mutate layout here.
     ///
-    /// @param action Called with the view's size in physical pixels.
+    /// @param action Called with the view's size in physical pixels. May be empty.
     /// @return This view, reporting its size.
     [[nodiscard]] ELG_API View on_size_change(std::function<void(PixelSize)> action) const;
     /// Files or text dragged from other apps (Explorer, a browser) can be dropped here. The
@@ -1076,13 +1079,13 @@ public:
     /// Spinner().on_appear([=] { spinning = true; })
     /// @endcode
     ///
-    /// @param action Runs when the view appears.
+    /// @param action Runs when the view appears. May be empty.
     /// @return This view, running `action` when it appears.
     [[nodiscard]] ELG_API View on_appear(std::function<void()> action) const;
     /// Runs `action` once the view is gone: after its exit transition, or when its window closed.
     /// Only for views that appeared.
     ///
-    /// @param action Runs when the view disappears.
+    /// @param action Runs when the view disappears. May be empty.
     /// @return This view, running `action` when it disappears.
     [[nodiscard]] ELG_API View on_disappear(std::function<void()> action) const;
 
@@ -1151,6 +1154,7 @@ public:
     ///
     /// @param menu Builds the menu.
     /// @return This view, with the context menu.
+    /// @throws UsageError if `menu` is empty.
     [[nodiscard]] ELG_API View context_menu(std::function<View()> menu) const;
     /// A tooltip: `content` (in the environment's TooltipStyle) shown after the pointer rests on
     /// the view for a moment, until it leaves or presses. Screen readers don't see it.
@@ -1214,6 +1218,7 @@ public:
     /// @param content Builds the panel's content.
     /// @param options Where it goes, how far it may go, padding, and how it moves.
     /// @return This view, with the popover.
+    /// @throws UsageError if `content` is empty.
     [[nodiscard]] ELG_API View popover(Binding<bool> is_presented, std::function<View()> content,
                          const PopoverOptions& options = {}) const;
 
@@ -1237,19 +1242,19 @@ public:
     /// whatever modifier keys are held, and again for key repeats. The key is then handled.
     ///
     /// @param key The key.
-    /// @param action Runs on each press.
+    /// @param action Runs on each press. May be empty.
     /// @return This view, handling `key`.
     [[nodiscard]] ELG_API View on_key_press(Key key, std::function<void()> action) const;
     /// Sees every key down and up while the view (or something inside) has focus; return true if
     /// handled (unhandled keys bubble out).
     ///
-    /// @param action Called with each key event; returns whether it handled it.
+    /// @param action Called with each key event; returns whether it handled it. May be empty.
     /// @return This view, handling keys.
     [[nodiscard]] ELG_API View on_key(std::function<bool(const KeyEvent&)> action) const;
     /// Makes the view focusable and sees the text typed while it has focus: commits, and an IME's
     /// compositions in progress. Keys still go to on_key. Return true if handled.
     ///
-    /// @param action Called with each text input; returns whether it handled it.
+    /// @param action Called with each text input; returns whether it handled it. May be empty.
     /// @return This view, taking text input.
     [[nodiscard]] ELG_API View on_text_input(std::function<bool(const TextInputEvent&)> action) const;
 
@@ -1495,9 +1500,11 @@ public:
     /// @param animation The timing of the changes.
     /// @param value What to watch. A closure is read as a tracked read.
     /// @return This view, animating its changes when `value` changes.
+    /// @throws UsageError if `value` is an empty std::function or a null pointer.
     template <class Value>
     [[nodiscard]] View animation(const Animation& animation, Value value) const {
-        return animation_impl(animation, detail::change_watcher(std::move(value)));
+        return animation_impl(animation,
+                              detail::change_watcher(detail::non_empty(std::move(value), "animation() needs a value")));
     }
     /// How this view enters and leaves when an If/ForEach adds or removes it with an animation.
     ///

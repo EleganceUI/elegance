@@ -11,8 +11,11 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <array>
+#include <format>
 #include <span>
 #include <string>
+#include <thread>
+#include <vector>
 
 using namespace elg;
 using Catch::Matchers::ContainsSubstring;
@@ -103,6 +106,45 @@ TEST_CASE("icon set registration errors", "[image]") {
     CHECK_THROWS_AS(register_icon_set("has.dot", {.font = std::span<const unsigned char>(kFakeFont), .names_data = "a e000\n"}), UsageError);
     CHECK_THROWS_AS(register_icon_set("no-font", {.names_data = "a e000\n"}), UsageError);
     CHECK_THROWS_AS(register_icon_set("no-names", {.font = std::span<const unsigned char>(kFakeFont)}), UsageError);
+}
+
+TEST_CASE("a set named like a built-in one is refused without replace, even before the first lookup", "[image]") {
+    // In a test process of its own (as ctest runs them), no icon has been looked up yet.
+    CHECK_THAT(error_of([] { register_icon_set("phosphor", {.font = std::span<const unsigned char>(kFakeFont), .names_data = "mine e000\n"}); }),
+               ContainsSubstring("already registered"));
+    CHECK_NOTHROW(Image({.system_name = "phosphor.heart"}));
+}
+
+TEST_CASE("a registration that fails leaves no set behind", "[image]") {
+    const IconSetOptions bad_variant{.font = std::span<const unsigned char>(kFakeFont),
+                                     .variants = {{.name = "", .font = std::span<const unsigned char>(kFakeFont)}},
+                                     .names_data = "a e000\n"};
+    CHECK_THROWS_AS(register_icon_set("test-bad-variant", bad_variant), UsageError);
+    CHECK_THROWS_AS(Image({.system_name = "test-bad-variant.a"}), UsageError);
+
+    const IconSetOptions unreadable_variant{
+        .font = std::span<const unsigned char>(kFakeFont),
+        .variants = {{.name = "fill", .font = std::span<const unsigned char>(kFakeFont), .names = "missing-names.css"}},
+        .names_data = "a e000\n"};
+    CHECK_THROWS_AS(register_icon_set("test-unreadable-variant", unreadable_variant), ResourceError);
+    CHECK_THROWS_AS(Image({.system_name = "test-unreadable-variant.a"}), UsageError);
+}
+
+TEST_CASE("icon sets register from several threads at once", "[image]") {
+    std::vector<std::thread> threads;
+    threads.reserve(8);
+    for (int i = 0; i < 8; ++i) {
+        threads.emplace_back([i] {
+            register_icon_set(std::format("test-thread-{}", i),
+                              {.font = std::span<const unsigned char>(kFakeFont), .names_data = "a e000\n", .replace = true});
+        });
+    }
+    for (std::thread& thread : threads) {
+        thread.join();
+    }
+    for (int i = 0; i < 8; ++i) {
+        CHECK_NOTHROW(Image({.system_name = std::format("test-thread-{}.a", i)}));
+    }
 }
 
 TEST_CASE("the default set can change", "[image]") {
