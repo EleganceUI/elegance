@@ -39,7 +39,7 @@ std::vector<std::uint8_t> frame_to_bgra(VideoFrame::Format format, VideoFrame::M
     const float kg = 1 - kr - kb;
     const float y_scale = full_range ? 1.f / 255 : 1.f / 219;
     const float c_scale = full_range ? 1.f / 255 : 1.f / 224;
-    const float y_offset = full_range ? 0 : 16;
+    const float y_offset = full_range ? 0.f : 16.f;
     const std::uint32_t chroma_w = (width + 1) / 2;
     const std::uint32_t chroma_h = (height + 1) / 2;
     const auto store = [&](std::size_t i, int y, int cb, int cr) {

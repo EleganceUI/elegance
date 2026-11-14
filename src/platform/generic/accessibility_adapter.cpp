@@ -267,10 +267,6 @@ void AccessibilityAdapter::update() {
     impl.remember(tree);
 }
 
-bool AccessibilityAdapter::active() const noexcept {
-    return impl_->active;
-}
-
 #else
 
 struct AccessibilityAdapter::Impl {};
@@ -278,9 +274,6 @@ struct AccessibilityAdapter::Impl {};
 AccessibilityAdapter::AccessibilityAdapter(void*, const Callbacks&) {}
 AccessibilityAdapter::~AccessibilityAdapter() = default;
 void AccessibilityAdapter::update() {}
-bool AccessibilityAdapter::active() noexcept {
-    return false;
-}
 
 #endif
 
