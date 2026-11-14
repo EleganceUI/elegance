@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 using namespace elg;
@@ -53,17 +54,73 @@ void append_chunk(std::vector<std::uint8_t>& png, std::string_view type, const s
     append_u32(png, ~crc);
 }
 
-// A PNG file of a `width` x `height` RGBA image whose image data stops at its start: decoders read
-// its size, but it has no pixels to decode.
-std::vector<std::uint8_t> png_header(std::uint32_t width, std::uint32_t height) {
+// Packs bits into bytes as deflate does, from each byte's least significant bit.
+class Bits {
+public:
+    // `count` bits of `value`, least significant first: one of deflate's numbers.
+    void number(std::uint32_t value, int count) {
+        for (int i = 0; i < count; ++i) {
+            put((value >> i) & 1U);
+        }
+    }
+    // A Huffman code of `length` bits, most significant first.
+    void code(std::uint32_t value, int length) {
+        for (int i = length - 1; i >= 0; --i) {
+            put((value >> i) & 1U);
+        }
+    }
+    // The bytes, the last one padded with zeros.
+    std::vector<std::uint8_t> take() { return std::move(bytes_); }
+
+private:
+    void put(std::uint32_t bit) {
+        if (used_ == 0) {
+            bytes_.push_back(0);
+        }
+        bytes_.back() = static_cast<std::uint8_t>(bytes_.back() | (bit << used_));
+        used_ = (used_ + 1) % 8;
+    }
+
+    std::vector<std::uint8_t> bytes_;
+    int used_ = 0;
+};
+
+// A zlib stream of `count` zero bytes (at least one): one block of deflate's fixed Huffman codes, a
+// literal 0, then copies of the 258 bytes before as long as they fit, then literals.
+std::vector<std::uint8_t> zlib_zeros(std::size_t count) {
+    Bits bits;
+    bits.number(0x78, 8); // zlib's header: deflate, a 32 KB window
+    bits.number(0x01, 8);
+    bits.number(1, 1); // the last block
+    bits.number(1, 2); // fixed codes
+    bits.code(0x30, 8); // literal 0
+    std::size_t left = count - 1;
+    for (; left >= 258; left -= 258) {
+        bits.code(0xC5, 8); // length 258 (symbol 285)
+        bits.code(0, 5); // distance 1
+    }
+    for (; left > 0; --left) {
+        bits.code(0x30, 8);
+    }
+    bits.code(0, 7); // the end of the block (symbol 256)
+    std::vector<std::uint8_t> zlib = bits.take();
+    // Adler-32: over zeros, the sum of the bytes stays 1 and the sum of those sums is the count.
+    append_u32(zlib, static_cast<std::uint32_t>(((count % 65521) << 16) | 1));
+    return zlib;
+}
+
+// A whole PNG file (ImageIO doesn't read the size of one cut short) of a `width` x `height` image,
+// all black at one bit a pixel: its rows are all zero bytes, which compress to almost nothing.
+std::vector<std::uint8_t> black_png(std::uint32_t width, std::uint32_t height) {
     std::vector<std::uint8_t> png;
     append(png, {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A});
     std::vector<std::uint8_t> header;
     append_u32(header, width);
     append_u32(header, height);
-    append(header, {8, 6, 0, 0, 0}); // 8-bit RGBA, not interlaced
+    append(header, {1, 0, 0, 0, 0}); // 1-bit grayscale, not interlaced
     append_chunk(png, "IHDR", header);
-    append_chunk(png, "IDAT", {0x78, 0x01, 0, 0, 0, 0xFF, 0xFF}); // zlib's header, an empty stored block
+    const std::size_t row = 1 + ((std::size_t{width} + 7) / 8); // the filter (0, none), then the pixels
+    append_chunk(png, "IDAT", zlib_zeros(row * height));
     append_chunk(png, "IEND", {});
     return png;
 }
@@ -92,8 +149,8 @@ std::vector<std::uint8_t> jpeg_file(int orientation) {
 } // namespace
 
 TEST_CASE("images with too many pixels are refused before decoding", "[image]") {
-    // 1 GB of pixels in 64 bytes: under stb's own limit (2^30 bytes), over Elegance's (2^27 pixels).
-    const std::vector<std::uint8_t> huge = png_header(16000, 16000);
+    // A row more than Elegance allows (2^27 pixels), in 106 KB; under stb's own limit (2^30 bytes).
+    const std::vector<std::uint8_t> huge = black_png(16384, 8193);
     CHECK_THROWS_WITH(detail::decode_image(huge), ContainsSubstring("pixels"));
 }
 
