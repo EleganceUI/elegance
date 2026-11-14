@@ -1560,6 +1560,9 @@ int App::run() {
                 }
             }
         }
+        // What this frame's flushes changed is laid out: the next flush starts a new update, so
+        // implicit animations that fired in this one stop applying.
+        end_update();
         // The pointer's shape follows what's under it, here after layout: content that moved,
         // appeared, or went away under a still pointer changes it too. A popup over its window
         // comes later in the list, and wins.
@@ -1582,6 +1585,7 @@ int App::run() {
                     post_frame(*live);
                 }
             }
+            end_update();
         }
         for (const auto& live : windows) {
             if (live->animating) {

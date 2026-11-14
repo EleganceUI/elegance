@@ -45,7 +45,8 @@ std::optional<std::thread::id> g_ui_thread;
 std::shared_ptr<const Animation> g_transaction;      // with_animation in progress
 const Animation* g_running_animation = nullptr;      // the transaction of the effect running now
 std::shared_ptr<const Animation> g_flush_animation;  // latest transaction run in a flush
-std::uint64_t g_flush = 0;
+// Updates: every flush up to the next layout pass belongs to one (ELGSPEC-0003.R15).
+std::uint64_t g_update = 1;
 
 // Effect runs within one flush; beyond this, effects are almost certainly re-triggering each
 // other in a cycle.
@@ -281,7 +282,6 @@ void flush_effects() {
         ~Done() { g_flushing = false; }
     };
     const Done done;
-    ++g_flush;
     for (int runs = 0; !g_pending.empty(); ++runs) {
         if (runs >= kMaxEffectRuns) {
             for (ReactiveNode* node : g_pending) {
@@ -332,8 +332,12 @@ const Animation* current_animation() noexcept {
     return g_running_animation;
 }
 
-std::uint64_t current_flush() noexcept {
-    return g_flush;
+std::uint64_t current_update() noexcept {
+    return g_update;
+}
+
+void end_update() noexcept {
+    ++g_update;
 }
 
 std::shared_ptr<const Animation> take_flush_animation() noexcept {

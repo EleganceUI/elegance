@@ -196,8 +196,10 @@ ELG_API void start_effect(std::shared_ptr<EffectNode> effect, bool priority = fa
 ELG_API std::shared_ptr<const Animation> begin_transaction(std::shared_ptr<const Animation> animation);
 ELG_API void end_transaction(std::shared_ptr<const Animation> previous) noexcept;
 ELG_API const Animation* current_animation() noexcept;
-// Counts flushes; a flush's number lasts until the next flush starts (through layout).
-ELG_API std::uint64_t current_flush() noexcept;
+// Numbers updates. An update is every flush since the last layout pass, and the layout pass that
+// animates what they changed; end_update() starts the next one after it.
+ELG_API std::uint64_t current_update() noexcept;
+ELG_API void end_update() noexcept;
 // The animation of the latest animated transaction that ran in a flush since the last call.
 ELG_API std::shared_ptr<const Animation> take_flush_animation() noexcept;
 // Throws UsageError when called off the UI thread of a running App.
