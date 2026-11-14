@@ -5,6 +5,7 @@
 #include "core/ui_tasks.h"
 
 #include <cstdint>
+#include <iterator>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -101,8 +102,15 @@ bool run_ui_tasks() {
         const std::lock_guard lock(g_mutex);
         tasks.swap(g_tasks);
     }
-    for (Task& task : tasks) {
-        task.work();
+    for (auto task = tasks.begin(); task != tasks.end(); ++task) {
+        try {
+            task->work();
+        } catch (...) {
+            // The tasks after it run later, still first and in order.
+            const std::lock_guard lock(g_mutex);
+            g_tasks.insert(g_tasks.begin(), std::make_move_iterator(task + 1), std::make_move_iterator(tasks.end()));
+            throw;
+        }
     }
     return !tasks.empty();
 }

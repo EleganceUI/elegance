@@ -20,7 +20,7 @@ void post_ui_task(std::function<void()> task);
 void post_app_task(std::function<void()> task);
 
 // App side: what wakes the event loop (nullptr while no App runs), and running what's queued in
-// the order posted (true if anything ran).
+// the order posted (true if anything ran). When a task throws, the ones after it stay queued.
 // begin_ui_tasks() starts a run, dropping Elegance's tasks from earlier ones; end_ui_tasks()
 // drops this run's.
 void set_ui_task_waker(std::function<void()> wake);
