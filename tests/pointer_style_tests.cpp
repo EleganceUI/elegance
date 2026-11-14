@@ -34,8 +34,8 @@ struct Window {
     }
 
     void layout() const {
-        root->size_that_fits({100, 100});
-        root->place({}, {100, 100});
+        root->size_that_fits({100.f, 100.f});
+        root->place({}, {100.f, 100.f});
     }
 };
 
@@ -65,8 +65,8 @@ TEST_CASE("automatic leaves the style to the views around, and the arrow is the 
     detail::Scope scope;
     const detail::Scope::Use use(scope);
     auto root = detail::lower(Rectangle().fill(Color::white).pointer_style(PointerStyle::automatic), {});
-    root->size_that_fits({100, 100});
-    root->place({}, {100, 100});
+    root->size_that_fits({100.f, 100.f});
+    root->place({}, {100.f, 100.f});
     detail::FocusManager focus;
     detail::EventDispatcher events(*root, focus);
     events.pointer_moved({50, 50});

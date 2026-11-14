@@ -55,8 +55,8 @@ struct Window {
     // As the app does each frame: effects (bindings changing), then layout.
     void layout() {
         detail::flush_effects();
-        root->size_that_fits({400, 300});
-        root->place({}, {400, 300});
+        root->size_that_fits({400.f, 300.f});
+        root->place({}, {400.f, 300.f});
         if (events && std::exchange(tree_changed, false)) {
             events->revalidate();
         }

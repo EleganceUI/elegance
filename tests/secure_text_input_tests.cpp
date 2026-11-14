@@ -57,8 +57,8 @@ struct Window {
     explicit Window(const View& view) {
         root = detail::lower(view.frame(200, 60, Alignment::top_leading),
                              {.text = &text_system(), .focus = &focus, .services = &services});
-        root->size_that_fits({200, 60});
-        root->place({}, {200, 60});
+        root->size_that_fits({200.f, 60.f});
+        root->place({}, {200.f, 60.f});
         events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
     void click(Point at) const {
