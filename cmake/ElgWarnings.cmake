@@ -76,7 +76,12 @@ function(elegance_warnings target)
         else ()
             list(APPEND warnings
                 -Wshadow
-                -Wnull-dereference
+                # Not -Wnull-dereference, nor -Wall's -Wmaybe-uninitialized: GCC 14 checks them in
+                # its optimizer, after inlining, and reports them inside libstdc++ and Boost
+                # (stream iterators, a shared_ptr or vector in a variant, Asio's executors), where
+                # -isystem doesn't hide them. Clang's warnings and the sanitizer builds still check
+                # Elegance's own code for both.
+                -Wno-maybe-uninitialized
                 -Wduplicated-cond
                 -Wduplicated-branches
                 -Wlogical-op
