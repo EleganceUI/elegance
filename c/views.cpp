@@ -118,10 +118,12 @@ ELG_EXPORT View* elg_empty_view() {
 /// @param container The space the child goes in.
 /// @param content The child's size.
 /// @param a How the child lines up in `container`.
-/// @return The child's top-leading corner, in `container`'s coordinates.
+/// @return The child's top-leading corner, in `container`'s coordinates. Zero on failure.
 ELG_EXPORT ElgPoint elg_aligned_position(ElgRect container, ElgSize content, ElgAlignment a) {
+    ELG_TRY
     const Point p = aligned_position(rect(container), size(content), alignment(a));
     return {p.x, p.y};
+    ELG_CATCH({})
 }
 
 /// Wraps `size_that_fits()` of `VStackLayout`, `HStackLayout` or `ZStackLayout`, for custom layouts that
@@ -612,15 +614,19 @@ ELG_EXPORT ScrollPosition* elg_scroll_position_new() {
 /// Copies a ScrollPosition: copies refer to the same scroll view.
 ///
 /// @param position The position to copy (borrowed).
-/// @return The copy, owned by the caller.
+/// @return The copy, owned by the caller. Null on failure.
 ELG_EXPORT ScrollPosition* elg_scroll_position_clone(const ScrollPosition* position) {
+    ELG_TRY
     return new ScrollPosition(*position);
+    ELG_CATCH(nullptr)
 }
 /// Frees a ScrollPosition. The scroll view keeps its own copy.
 ///
 /// @param position The position (consumed); may be null.
 ELG_EXPORT void elg_scroll_position_free(ScrollPosition* position) {
+    ELG_TRY
     delete position;
+    ELG_CATCH_VOID
 }
 /// Wraps `ScrollPosition::scroll_to_top()`: scrolls the scroll view to its top.
 ///
@@ -947,7 +953,9 @@ ELG_EXPORT View* elg_navigation_stack(View* take_root, ElgClosure pages, ElgClos
 /// @param target The closure's `ret`.
 /// @param value The string (copied).
 ELG_EXPORT void elg_strings_push(std::vector<std::string>* target, ElgStr value) {
+    ELG_TRY
     target->push_back(str(value));
+    ELG_CATCH_VOID
 }
 
 // --- Text ---
@@ -965,22 +973,28 @@ ELG_EXPORT Text* elg_text(ElgProp content) {
 /// Copies a Text.
 ///
 /// @param text The text to copy (borrowed).
-/// @return The copy, owned by the caller.
+/// @return The copy, owned by the caller. Null on failure.
 ELG_EXPORT Text* elg_text_clone(const Text* text) {
+    ELG_TRY
     return new Text(*text);
+    ELG_CATCH(nullptr)
 }
 /// Frees a Text.
 ///
 /// @param text The text (consumed); may be null.
 ELG_EXPORT void elg_text_free(Text* text) {
+    ELG_TRY
     delete text;
+    ELG_CATCH_VOID
 }
 /// A Text as a View, for containers and view modifiers.
 ///
 /// @param text The text (borrowed).
-/// @return The view, owned by the caller.
+/// @return The view, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_text_to_view(const Text* text) {
+    ELG_TRY
     return new View(*text);
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Text::font()`.
 ///
@@ -1092,28 +1106,36 @@ ELG_EXPORT View* elg_styled_text(const ElgTextRun* runs, size_t count) {
 /// Copies a Shape.
 ///
 /// @param shape The shape to copy (borrowed).
-/// @return The copy, owned by the caller.
+/// @return The copy, owned by the caller. Null on failure.
 ELG_EXPORT Shape* elg_shape_clone(const Shape* shape) {
+    ELG_TRY
     return new Shape(*shape);
+    ELG_CATCH(nullptr)
 }
 /// Frees a Shape.
 ///
 /// @param shape The shape (consumed); may be null.
 ELG_EXPORT void elg_shape_free(Shape* shape) {
+    ELG_TRY
     delete shape;
+    ELG_CATCH_VOID
 }
 /// A Shape as a View, for containers and view modifiers.
 ///
 /// @param shape The shape (borrowed).
-/// @return The view, owned by the caller.
+/// @return The view, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_shape_to_view(const Shape* shape) {
+    ELG_TRY
     return new View(*shape);
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Rectangle()`: a shape filling its frame.
 ///
-/// @return The shape, owned by the caller (free it with elg_shape_free()).
+/// @return The shape, owned by the caller (free it with elg_shape_free()). Null on failure.
 ELG_EXPORT Shape* elg_rectangle() {
+    ELG_TRY
     return new Shape(Rectangle());
+    ELG_CATCH(nullptr)
 }
 /// Wraps `RoundedRectangle()` with a radius per corner (`CornerRadii`). Radii are in points.
 ///
@@ -1129,15 +1151,19 @@ ELG_EXPORT Shape* elg_rounded_rectangle(float top_left, float top_right, float b
 }
 /// Wraps `Capsule()`: fully rounded ends along the shorter side.
 ///
-/// @return The shape, owned by the caller.
+/// @return The shape, owned by the caller. Null on failure.
 ELG_EXPORT Shape* elg_capsule() {
+    ELG_TRY
     return new Shape(Capsule());
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Circle()`: the largest circle that fits, centered.
 ///
-/// @return The shape, owned by the caller.
+/// @return The shape, owned by the caller. Null on failure.
 ELG_EXPORT Shape* elg_circle() {
+    ELG_TRY
     return new Shape(Circle());
+    ELG_CATCH(nullptr)
 }
 /// Wraps `PathShape()`: a vector path as a shape.
 ///
@@ -1217,51 +1243,65 @@ ELG_EXPORT Shape* elg_shape_stroke_border(const Shape* shape, ElgProp color, flo
 
 /// Wraps `Path()`: an empty path, to build with the elg_path_* functions.
 ///
-/// @return The path, owned by the caller (free it with elg_path_free()).
+/// @return The path, owned by the caller (free it with elg_path_free()). Null on failure.
 ELG_EXPORT Path* elg_path_new() {
+    ELG_TRY
     return new Path();
+    ELG_CATCH(nullptr)
 }
 /// Copies a Path.
 ///
 /// @param path The path to copy (borrowed).
-/// @return The copy, owned by the caller.
+/// @return The copy, owned by the caller. Null on failure.
 ELG_EXPORT Path* elg_path_clone(const Path* path) {
+    ELG_TRY
     return new Path(*path);
+    ELG_CATCH(nullptr)
 }
 /// Frees a Path.
 ///
 /// @param path The path (consumed); may be null.
 ELG_EXPORT void elg_path_free(Path* path) {
+    ELG_TRY
     delete path;
+    ELG_CATCH_VOID
 }
 /// Copies `source` into `target`, e.g. into the Path result of elg_custom_shape()'s closure.
 ///
 /// @param target The path to overwrite.
 /// @param source The path to copy (borrowed).
 ELG_EXPORT void elg_path_assign(Path* target, const Path* source) {
+    ELG_TRY
     *target = *source;
+    ELG_CATCH_VOID
 }
 /// Wraps Path's `operator==`.
 ///
 /// @param a A path (borrowed).
 /// @param b Another path (borrowed).
-/// @return Whether the two are the same path, segment for segment.
+/// @return Whether the two are the same path, segment for segment. False on failure.
 ELG_EXPORT bool elg_path_eq(const Path* a, const Path* b) {
+    ELG_TRY
     return *a == *b;
+    ELG_CATCH(false)
 }
 /// Wraps `Path::move_to()`: starts a new subpath at `p`.
 ///
 /// @param path The path to add to.
 /// @param p Where the subpath starts.
 ELG_EXPORT void elg_path_move_to(Path* path, ElgPoint p) {
+    ELG_TRY
     path->move_to(point(p));
+    ELG_CATCH_VOID
 }
 /// Wraps `Path::line_to()`: a straight line to `p`.
 ///
 /// @param path The path to add to.
 /// @param p Where the line ends.
 ELG_EXPORT void elg_path_line_to(Path* path, ElgPoint p) {
+    ELG_TRY
     path->line_to(point(p));
+    ELG_CATCH_VOID
 }
 /// Wraps `Path::quad_to()`: a quadratic Bézier curve to `end`.
 ///
@@ -1269,7 +1309,9 @@ ELG_EXPORT void elg_path_line_to(Path* path, ElgPoint p) {
 /// @param control The control point.
 /// @param end Where the curve ends.
 ELG_EXPORT void elg_path_quad_to(Path* path, ElgPoint control, ElgPoint end) {
+    ELG_TRY
     path->quad_to(point(control), point(end));
+    ELG_CATCH_VOID
 }
 /// Wraps `Path::cubic_to()`: a cubic Bézier curve to `end`.
 ///
@@ -1278,7 +1320,9 @@ ELG_EXPORT void elg_path_quad_to(Path* path, ElgPoint control, ElgPoint end) {
 /// @param control2 The second control point.
 /// @param end Where the curve ends.
 ELG_EXPORT void elg_path_cubic_to(Path* path, ElgPoint control1, ElgPoint control2, ElgPoint end) {
+    ELG_TRY
     path->cubic_to(point(control1), point(control2), point(end));
+    ELG_CATCH_VOID
 }
 /// Wraps `Path::arc_to()`: an elliptical arc to `end`, as in SVG.
 ///
@@ -1290,20 +1334,26 @@ ELG_EXPORT void elg_path_cubic_to(Path* path, ElgPoint control1, ElgPoint contro
 /// @param sweep Go clockwise.
 /// @param end Where the arc ends.
 ELG_EXPORT void elg_path_arc_to(Path* path, float rx, float ry, float rotation, bool large_arc, bool sweep, ElgPoint end) {
+    ELG_TRY
     path->arc_to(rx, ry, rotation, large_arc, sweep, point(end));
+    ELG_CATCH_VOID
 }
 /// Wraps `Path::close()`: closes the current subpath with a line back to its start.
 ///
 /// @param path The path to add to.
 ELG_EXPORT void elg_path_close(Path* path) {
+    ELG_TRY
     path->close();
+    ELG_CATCH_VOID
 }
 /// Wraps `Path::add_rect()`: a rectangle as a closed subpath.
 ///
 /// @param path The path to add to.
 /// @param r The rectangle.
 ELG_EXPORT void elg_path_add_rect(Path* path, ElgRect r) {
+    ELG_TRY
     path->add_rect(rect(r));
+    ELG_CATCH_VOID
 }
 /// Wraps `Path::add_rounded_rect()`: a rounded rectangle as a closed subpath.
 ///
@@ -1311,14 +1361,18 @@ ELG_EXPORT void elg_path_add_rect(Path* path, ElgRect r) {
 /// @param r The rectangle.
 /// @param radius The corners' radius.
 ELG_EXPORT void elg_path_add_rounded_rect(Path* path, ElgRect r, float radius) {
+    ELG_TRY
     path->add_rounded_rect(rect(r), radius);
+    ELG_CATCH_VOID
 }
 /// Wraps `Path::add_ellipse()`: the ellipse inside `r` as a closed subpath.
 ///
 /// @param path The path to add to.
 /// @param r The rectangle the ellipse fills.
 ELG_EXPORT void elg_path_add_ellipse(Path* path, ElgRect r) {
+    ELG_TRY
     path->add_ellipse(rect(r));
+    ELG_CATCH_VOID
 }
 /// Wraps `Path::add_circle()`: a circle as a closed subpath.
 ///
@@ -1326,14 +1380,18 @@ ELG_EXPORT void elg_path_add_ellipse(Path* path, ElgRect r) {
 /// @param center The circle's center.
 /// @param radius The circle's radius.
 ELG_EXPORT void elg_path_add_circle(Path* path, ElgPoint center, float radius) {
+    ELG_TRY
     path->add_circle(point(center), radius);
+    ELG_CATCH_VOID
 }
 /// Wraps `Path::add_path()`: appends another path's subpaths.
 ///
 /// @param path The path to add to.
 /// @param other The path to append (borrowed).
 ELG_EXPORT void elg_path_add_path(Path* path, const Path* other) {
+    ELG_TRY
     path->add_path(*other);
+    ELG_CATCH_VOID
 }
 /// Wraps `Path::svg()`: parses SVG path data ("M10 10 L20 20 Z", all commands, relative and absolute).
 ///
@@ -1348,25 +1406,31 @@ ELG_EXPORT Path* elg_path_svg(ElgStr data) {
 /// Wraps `Path::empty()`.
 ///
 /// @param path The path (borrowed).
-/// @return Whether the path has nothing in it.
+/// @return Whether the path has nothing in it. False on failure.
 ELG_EXPORT bool elg_path_empty(const Path* path) {
+    ELG_TRY
     return path->empty();
+    ELG_CATCH(false)
 }
 /// Wraps `Path::bounds()`.
 ///
 /// @param path The path (borrowed).
-/// @return The smallest rect around the path's outline (curves included, not their control points).
+/// @return The smallest rect around the path's outline (curves included, not their control points). Zero on failure.
 ELG_EXPORT ElgRect elg_path_bounds(const Path* path) {
+    ELG_TRY
     return c_rect(path->bounds());
+    ELG_CATCH({})
 }
 /// Wraps `Path::contains()`.
 ///
 /// @param path The path (borrowed).
 /// @param p The point to test.
 /// @param rule `FillRule`: 0 non-zero, 1 even-odd.
-/// @return Whether the path's outline encloses `p`.
+/// @return Whether the path's outline encloses `p`. False on failure.
 ELG_EXPORT bool elg_path_contains(const Path* path, ElgPoint p, int32_t rule) {
+    ELG_TRY
     return path->contains(point(p), static_cast<FillRule>(rule));
+    ELG_CATCH(false)
 }
 /// Wraps `Path::transformed()`: the path scaled, then moved: (x * sx + dx, y * sy + dy).
 ///
@@ -1375,9 +1439,11 @@ ELG_EXPORT bool elg_path_contains(const Path* path, ElgPoint p, int32_t rule) {
 /// @param sy The vertical scale.
 /// @param dx The horizontal move, after scaling.
 /// @param dy The vertical move, after scaling.
-/// @return The new path, owned by the caller.
+/// @return The new path, owned by the caller. Null on failure.
 ELG_EXPORT Path* elg_path_transformed(const Path* path, float sx, float sy, float dx, float dy) {
+    ELG_TRY
     return new Path(path->transformed(sx, sy, dx, dy));
+    ELG_CATCH(nullptr)
 }
 /// One flattened subpath (`Path::Polyline`): points joined by straight lines. What elg_path_flatten()'s
 /// `polyline` gets.
@@ -1432,31 +1498,39 @@ ELG_EXPORT View* elg_canvas(ElgClosure draw) {
 /// Wraps `GraphicsContext::size()`.
 ///
 /// @param gc The context a Canvas's `draw` got.
-/// @return The drawable area, in points.
+/// @return The drawable area, in points. Zero on failure.
 ELG_EXPORT ElgSize elg_gc_size(const GraphicsContext* gc) {
+    ELG_TRY
     const Size s = gc->size();
     return {s.width, s.height};
+    ELG_CATCH({})
 }
 /// Wraps `GraphicsContext::scale()`.
 ///
 /// @param gc The context a Canvas's `draw` got.
-/// @return Pixels per point.
+/// @return Pixels per point. 0 on failure.
 ELG_EXPORT float elg_gc_scale(const GraphicsContext* gc) {
+    ELG_TRY
     return gc->scale();
+    ELG_CATCH(0)
 }
 /// Wraps `GraphicsContext::time()`: the frame clock, the same instant for everything drawn in a frame.
 ///
 /// @param gc The context a Canvas's `draw` got.
-/// @return The frame clock's time, in seconds.
+/// @return The frame clock's time, in seconds. 0 on failure.
 ELG_EXPORT double elg_gc_time(const GraphicsContext* gc) {
+    ELG_TRY
     return gc->time();
+    ELG_CATCH(0)
 }
 /// Wraps `GraphicsContext::request_frame()`: draws the canvas again next frame. Call it on every draw while the
 /// drawing should keep moving; the window goes back to idle once nothing asks.
 ///
 /// @param gc The context a Canvas's `draw` got.
 ELG_EXPORT void elg_gc_request_frame(GraphicsContext* gc) {
+    ELG_TRY
     gc->request_frame();
+    ELG_CATCH_VOID
 }
 /// Wraps `GraphicsContext::fill_rect()`.
 ///
@@ -1758,7 +1832,9 @@ ELG_EXPORT void elg_register_emoji_font(ElgStr file) {
 /// @param target The closure's `ret`.
 /// @param value The font (borrowed).
 ELG_EXPORT void elg_font_assign(Font* target, const ElgFont* value) {
+    ELG_TRY
     *target = font(*value);
+    ELG_CATCH_VOID
 }
 
 /// Writes a color or gradient into a closure's ShapeStyle result (the `ret` of a reactive ShapeStyle prop's
@@ -1767,7 +1843,9 @@ ELG_EXPORT void elg_font_assign(Font* target, const ElgFont* value) {
 /// @param target The closure's `ret`.
 /// @param value The color or gradient (borrowed).
 ELG_EXPORT void elg_shape_style_assign(ShapeStyle* target, const ElgShapeStyle* value) {
+    ELG_TRY
     *target = shape_style(*value);
+    ELG_CATCH_VOID
 }
 
 // --- View modifiers ---
@@ -2424,9 +2502,9 @@ ELG_EXPORT View* elg_mod_on_pointer(const View* v, ElgClosure on_pointer) {
     const SharedFn f = required(on_pointer, "on_pointer");
     return out(v->on_pointer([f](const PointerEvent& event) {
         ElgPointerEvent arg = c_pointer_event(event);
-        bool consumed = false;
-        f->call(&arg, &consumed);
-        return consumed;
+        bool handled = false;
+        f->call(&arg, &handled);
+        return handled;
     }));
     ELG_CATCH(nullptr)
 }
@@ -2442,9 +2520,9 @@ ELG_EXPORT View* elg_mod_on_scroll(const View* v, ElgClosure on_scroll) {
     const SharedFn f = required(on_scroll, "on_scroll");
     return out(v->on_scroll([f](const ScrollEvent& event) {
         ElgScrollEvent arg = c_scroll_event(event);
-        bool consumed = false;
-        f->call(&arg, &consumed);
-        return consumed;
+        bool handled = false;
+        f->call(&arg, &handled);
+        return handled;
     }));
     ELG_CATCH(nullptr)
 }
@@ -2461,9 +2539,9 @@ ELG_EXPORT View* elg_mod_on_text_input(const View* v, ElgClosure on_text_input) 
     const SharedFn f = required(on_text_input, "on_text_input");
     return out(v->on_text_input([f](const TextInputEvent& event) {
         ElgTextInputEvent arg{static_cast<int32_t>(event.kind), c_str(event.text), event.cursor};
-        bool consumed = false;
-        f->call(&arg, &consumed);
-        return consumed;
+        bool handled = false;
+        f->call(&arg, &handled);
+        return handled;
     }));
     ELG_CATCH(nullptr)
 }
@@ -2788,7 +2866,9 @@ struct ElgItemKeys {
 /// @param target The closure's `ret`.
 /// @param key The key (its string is copied).
 ELG_EXPORT void elg_item_keys_push(std::vector<ItemKey>* target, ElgItemKey key) {
+    ELG_TRY
     target->push_back(key.is_string ? ItemKey(str(key.string_key)) : ItemKey(key.int_key));
+    ELG_CATCH_VOID
 }
 
 namespace {
@@ -3297,6 +3377,7 @@ ELG_EXPORT View* elg_mod_grid_column_alignment(const View* v, int32_t a) {
 /// @param out Called once per struct with a "name size align" line.
 /// @param ctx Passed to `out`.
 ELG_EXPORT void elg_layouts_views(ElgStrSink out, void* ctx) {
+    ELG_TRY
     ELG_LAYOUT(ElgTextFieldOptions);
     ELG_LAYOUT(ElgNumberInputOptions);
     ELG_LAYOUT(ElgOptNumber);
@@ -3325,4 +3406,5 @@ ELG_EXPORT void elg_layouts_views(ElgStrSink out, void* ctx) {
     ELG_LAYOUT(ElgGridItem);
     ELG_LAYOUT(ElgGridTrack);
     ELG_LAYOUT(ElgGridDesc);
+    ELG_CATCH_VOID
 }

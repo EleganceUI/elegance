@@ -43,18 +43,6 @@
       "dependencies": [
         "catch2"
       ]
-    },
-    "profiling": {
-      "description": "Tracy profiler integration",
-      "dependencies": [
-        "tracy"
-      ]
-    },
-    "crash-reports": {
-      "description": "Out-of-process crash capture via crashpad",
-      "dependencies": [
-        "crashpad"
-      ]
     }
   }
 }

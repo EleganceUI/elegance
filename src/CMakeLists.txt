@@ -355,10 +355,28 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     endif ()
 endif ()
 
-set_target_properties(elegance PROPERTIES
-        CXX_VISIBILITY_PRESET hidden
-        VISIBILITY_INLINES_HIDDEN ON
-)
+# libc++ 19's std::jthread needs -fexperimental-library (the top-level CMakeLists.txt finds out), in
+# what links Elegance too.
+if (ELG_LIBCXX_EXPERIMENTAL)
+    target_compile_options(elegance INTERFACE $<$<COMPILE_LANGUAGE:CXX>:-fexperimental-library>)
+    target_link_options(elegance INTERFACE -fexperimental-library)
+endif ()
+
+# A shared library exports only the API (ELG_API), except in a build with the unit tests, which
+# test the internals (elg::detail) against a shared library too (ELGSPEC-0006.R4). Shipped builds
+# don't build the tests.
+if (ELG_BUILD_SHARED AND ELG_BUILD_TESTS)
+    set_target_properties(elegance PROPERTIES
+            CXX_VISIBILITY_PRESET default
+            VISIBILITY_INLINES_HIDDEN OFF
+            WINDOWS_EXPORT_ALL_SYMBOLS ON
+    )
+else ()
+    set_target_properties(elegance PROPERTIES
+            CXX_VISIBILITY_PRESET hidden
+            VISIBILITY_INLINES_HIDDEN ON
+    )
+endif ()
 
 elegance_warnings(elegance)
 if (MSVC)

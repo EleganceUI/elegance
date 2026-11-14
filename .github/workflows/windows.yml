@@ -1,0 +1,134 @@
+# Builds Elegance on Windows x64 with MSVC and runs the unit tests (ELGSPEC-0006.R5): a shared
+# debug and a static release build, with warnings as errors (R6), then the GPU tests and the smoke
+# tests on the runner's software adapter (WARP), through Dawn's D3D12 backend (R9).
+name: Windows
+
+on:
+    push:
+        branches: [main]
+        paths-ignore: [design/**, "**.md"]
+    pull_request:
+        paths-ignore: [design/**, "**.md"]
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+# One run at a time per branch, so each starts from the previous one's cache (pull requests:
+# replace the older run).
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+    build:
+        name: msvc-x64
+        permissions:
+            contents: read
+            actions: write # deleting superseded caches
+        runs-on: windows-2025
+        env:
+            VCPKG_ROOT: ${{ github.workspace }}/../vcpkg
+            # Inside the workspace: actions/cache rejects paths with "..".
+            VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+        defaults:
+            run:
+                shell: bash
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            - uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+              with:
+                  arch: amd64
+
+            # The developer environment points VCPKG_ROOT at Visual Studio's bundled vcpkg, overriding
+            # the job's: point it back at ours. Elegance needs CMake 4.3.
+            - name: Install tools
+              run: |
+                  pipx install 'cmake>=4.3' ninja
+                  echo "VCPKG_ROOT=${{ github.workspace }}/../vcpkg" >> "$GITHUB_ENV"
+                  cmake --version
+
+            - name: Set up vcpkg
+              run: |
+                  git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+                  baseline=$(python3 -c 'import json; print(json.load(open("vcpkg.json"))["builtin-baseline"])')
+                  git -C "$VCPKG_ROOT" checkout "$baseline"
+                  "$VCPKG_ROOT/bootstrap-vcpkg.bat" -disableMetrics
+                  mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+
+            # Unique save keys allow ABI changes to refresh the binary cache.
+            - name: Restore vcpkg binaries
+              id: vcpkg-cache
+              uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ${{ github.workspace }}/.vcpkg-cache
+                  key: vcpkg-v2-windows-2025-msvc-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  restore-keys: |
+                      vcpkg-v2-windows-2025-msvc-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-
+                      vcpkg-v2-windows-2025-msvc-
+
+            # Configure both presets before saving their dependencies, including test packages.
+            - name: Configure (build or restore dependencies)
+              id: configure
+              run: |
+                  cmake --preset windows-debug -DELG_WARNINGS_AS_ERRORS=ON
+                  cmake --preset windows-release -DELG_WARNINGS_AS_ERRORS=ON
+
+            # Keep only the archives this build installed (each is named after the SHA-256 of its
+            # package's vcpkg_abi_info.txt), so superseded builds don't fill the cache.
+            - name: Prune vcpkg binaries
+              if: ${{ steps.configure.outcome == 'success' }}
+              run: |
+                  keep=$(for f in build/*/vcpkg_installed/*/share/*/vcpkg_abi_info.txt; do sha256sum "$f" | cut -c1-64; done)
+                  [ -n "$keep" ] || { echo "No installed packages found: not pruning"; exit 0; }
+                  find "$VCPKG_DEFAULT_BINARY_CACHE" -name '*.zip' | while read -r zip; do
+                    grep -qx "$(basename "$zip" .zip)" <<< "$keep" || rm -f "$zip"
+                  done
+                  du -sh "$VCPKG_DEFAULT_BINARY_CACHE"
+
+            # Preserve completed packages even if configuration or a later build/test fails.
+            - name: Save vcpkg binaries
+              id: save
+              if: ${{ !cancelled() && steps.vcpkg-cache.outputs.cache-primary-key != '' }}
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ${{ github.workspace }}/.vcpkg-cache
+                  key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+            # Each run saves under a new key: drop the older ones, so main keeps one.
+            - name: Delete superseded vcpkg caches
+              if: ${{ steps.save.outcome == 'success' && github.ref == 'refs/heads/main' }}
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  CURRENT: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+              run: |
+                  gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "vcpkg-v2-windows-2025-msvc-" \
+                    --limit 100 --json id,key --jq ".[] | select(.key != \"$CURRENT\") | .id" |
+                    while read -r id; do gh cache delete "$id" --repo "$GITHUB_REPOSITORY"; done
+
+            # The library, the sandbox, the preview host (the shared build) and the tests.
+            - name: Build
+              run: |
+                  status=0
+                  cmake --build build/windows-debug -- -k 0 || status=1
+                  cmake --build build/windows-release -- -k 0 || status=1
+                  exit $status
+
+            # Also when a build failed: the presets that built are still tested.
+            - name: Test
+              if: ${{ !cancelled() && steps.configure.outcome == 'success' }}
+              run: |
+                  status=0
+                  ctest --test-dir build/windows-debug --output-on-failure || status=1
+                  ctest --test-dir build/windows-release --output-on-failure || status=1
+                  exit $status
+
+            - name: GPU tests and smoke tests
+              if: ${{ !cancelled() && steps.configure.outcome == 'success' }}
+              env:
+                  ELG_GPU_BACKEND: d3d12
+              run: |
+                  build/windows-release/bin/elegance_tests "[.gpu]"
+                  build/windows-debug/bin/sandbox --smoke-test
+                  build/windows-debug/bin/elegance-preview --smoke-test

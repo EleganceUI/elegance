@@ -35,8 +35,8 @@ struct Window {
 
     explicit Window(const View& view) {
         root = detail::lower(ZStack(Rectangle().fill(Color::white), view.frame(50, 50)), {});
-        root->size_that_fits({100, 100});
-        root->place({}, {100, 100});
+        root->size_that_fits({100.f, 100.f});
+        root->place({}, {100.f, 100.f});
         events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 

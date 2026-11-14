@@ -94,12 +94,14 @@ ELG_EXPORT View* elg_rust_layout_view(ElgClosure layout, View** children, size_t
 ///
 /// @param cache An ElgLayoutCall's `cache` (borrowed).
 /// @return The `data` of the closure elg_layout_cache_set() stored, owned by the cache; null if
-///   none is stored.
+///   none is stored. Null on failure.
 ELG_EXPORT void* elg_layout_cache_get(const LayoutCache* cache) {
+    ELG_TRY
     if (!cache->value) {
         return nullptr;
     }
     return static_cast<const RustFn*>(cache->value.get())->data();
+    ELG_CATCH(nullptr)
 }
 /// Stores a Rust cache in `cache` (LayoutCache::value), replacing (and dropping) the one before.
 ///
@@ -115,16 +117,20 @@ ELG_EXPORT void elg_layout_cache_set(LayoutCache* cache, ElgClosure owner) {
 /// Reads LayoutCache::stale: set when the children change or one of them may have a new size.
 ///
 /// @param cache An ElgLayoutCall's `cache` (borrowed).
-/// @return true if the cache needs refreshing.
+/// @return true if the cache needs refreshing. False on failure.
 ELG_EXPORT bool elg_layout_cache_stale(const LayoutCache* cache) {
+    ELG_TRY
     return cache->stale;
+    ELG_CATCH(false)
 }
 /// Sets LayoutCache::stale; clear it once the cache is refreshed.
 ///
 /// @param cache An ElgLayoutCall's `cache` (borrowed).
 /// @param stale Whether the cache needs refreshing.
 ELG_EXPORT void elg_layout_cache_set_stale(LayoutCache* cache, bool stale) {
+    ELG_TRY
     cache->stale = stale;
+    ELG_CATCH_VOID
 }
 
 /// Wraps `LayoutChild::size_that_fits()`: measures a child for a proposal.
@@ -154,16 +160,20 @@ ELG_EXPORT void elg_layout_child_place(const LayoutChild* child, ElgPoint positi
 /// Wraps `LayoutChild::layout_priority()`.
 ///
 /// @param child A child (borrowed).
-/// @return The child's layout priority.
+/// @return The child's layout priority. 0 on failure.
 ELG_EXPORT float elg_layout_child_priority(const LayoutChild* child) {
+    ELG_TRY
     return child->layout_priority();
+    ELG_CATCH(0)
 }
 /// Wraps `LayoutChild::is_spacer()`.
 ///
 /// @param child A child (borrowed).
-/// @return true if the child is a Spacer.
+/// @return true if the child is a Spacer. False on failure.
 ELG_EXPORT bool elg_layout_child_is_spacer(const LayoutChild* child) {
+    ELG_TRY
     return child->is_spacer();
+    ELG_CATCH(false)
 }
 
 // --- Layout values set from Rust ---
@@ -417,11 +427,13 @@ ELG_EXPORT View* elg_mod_rust_effect_modifier(const View* v, ElgClosure apply) {
 /// @param e The effects (borrowed).
 /// @param shape The shape (borrowed; copied); null: no clip.
 ELG_EXPORT void elg_effects_set_clip_shape(Effects* e, const Shape* shape) {
+    ELG_TRY
     if (shape) {
         e->clip_shape = *shape;
     } else {
         e->clip_shape.reset();
     }
+    ELG_CATCH_VOID
 }
 /// Sets Effects::opacity.
 ///
@@ -438,11 +450,13 @@ ELG_EXPORT void elg_effects_set_opacity(Effects* e, ElgProp opacity) {
 /// @param e The effects (borrowed).
 /// @param s The shadow (borrowed); null: none.
 ELG_EXPORT void elg_effects_set_shadow(Effects* e, const ElgShadow* s) {
+    ELG_TRY
     if (s) {
         e->shadow = shadow(*s);
     } else {
         e->shadow.reset();
     }
+    ELG_CATCH_VOID
 }
 /// Sets Effects::offset_x and offset_y: moves the drawn content (and where it's hit) without
 /// affecting layout.
@@ -478,22 +492,26 @@ ELG_EXPORT void elg_effects_set_z_index(Effects* e, const ElgProp* z) {
 /// @param e The effects (borrowed).
 /// @param shape The shape (borrowed; copied); null: where the content draws.
 ELG_EXPORT void elg_effects_set_content_shape(Effects* e, const Shape* shape) {
+    ELG_TRY
     if (shape) {
         e->content_shape = *shape;
     } else {
         e->content_shape.reset();
     }
+    ELG_CATCH_VOID
 }
 /// Sets Effects::inner_shadow, a shadow inside the content's edges.
 ///
 /// @param e The effects (borrowed).
 /// @param s The shadow (borrowed); null: none.
 ELG_EXPORT void elg_effects_set_inner_shadow(Effects* e, const ElgShadow* s) {
+    ELG_TRY
     if (s) {
         e->inner_shadow = shadow(*s);
     } else {
         e->inner_shadow.reset();
     }
+    ELG_CATCH_VOID
 }
 /// Sets Effects::blur and blur_opaque.
 ///
@@ -540,9 +558,11 @@ ELG_EXPORT void elg_effects_set_color_filter(Effects* e, int32_t kind, ElgProp a
 /// Reads Effects::blend_mode.
 ///
 /// @param e The effects (borrowed).
-/// @return The elg::BlendMode (0 normal; see elg_effects_set_blend_mode()).
+/// @return The elg::BlendMode (0 normal; see elg_effects_set_blend_mode()). 0 on failure.
 ELG_EXPORT int32_t elg_effects_blend_mode(const Effects* e) {
+    ELG_TRY
     return static_cast<int32_t>(e->blend_mode);
+    ELG_CATCH(0)
 }
 /// Sets Effects::blend_mode: how the view's pixels combine with what's behind them, as CSS's
 /// mix-blend-mode.
@@ -552,21 +572,27 @@ ELG_EXPORT int32_t elg_effects_blend_mode(const Effects* e) {
 ///   5 screen, 6 lighten, 7 color_dodge, 8 plus_lighter, 9 overlay, 10 soft_light, 11 hard_light,
 ///   12 difference, 13 exclusion, 14 hue, 15 saturation, 16 color, 17 luminosity.
 ELG_EXPORT void elg_effects_set_blend_mode(Effects* e, int32_t mode) {
+    ELG_TRY
     e->blend_mode = static_cast<BlendMode>(mode);
+    ELG_CATCH_VOID
 }
 /// Reads Effects::compositing_group.
 ///
 /// @param e The effects (borrowed).
-/// @return true if the content is drawn offscreen even when nothing else needs it.
+/// @return true if the content is drawn offscreen even when nothing else needs it. False on failure.
 ELG_EXPORT bool elg_effects_compositing_group(const Effects* e) {
+    ELG_TRY
     return e->compositing_group;
+    ELG_CATCH(false)
 }
 /// Sets Effects::compositing_group.
 ///
 /// @param e The effects (borrowed).
 /// @param group Whether to draw the content offscreen even when nothing else needs it.
 ELG_EXPORT void elg_effects_set_compositing_group(Effects* e, bool group) {
+    ELG_TRY
     e->compositing_group = group;
+    ELG_CATCH_VOID
 }
 /// Sets Effects::rotation: the drawn content turns about the anchor (elg_effects_set_anchor()).
 ///
@@ -609,30 +635,38 @@ ELG_EXPORT void elg_effects_set_scale(Effects* e, const ElgProp* x, const ElgPro
 /// Reads Effects::anchor.
 ///
 /// @param e The effects (borrowed).
-/// @return The unit point rotation and scale are about; (0.5, 0.5) is the middle.
+/// @return The unit point rotation and scale are about; (0.5, 0.5) is the middle. Zero on failure.
 ELG_EXPORT ElgPoint elg_effects_anchor(const Effects* e) {
+    ELG_TRY
     return {e->anchor.x, e->anchor.y};
+    ELG_CATCH({})
 }
 /// Sets Effects::anchor: what rotation and scale are about.
 ///
 /// @param e The effects (borrowed).
 /// @param anchor A unit point of the view's bounds: (0, 0) top-leading, (1, 1) bottom-trailing.
 ELG_EXPORT void elg_effects_set_anchor(Effects* e, ElgPoint anchor) {
+    ELG_TRY
     e->anchor = unit_point(anchor);
+    ELG_CATCH_VOID
 }
 /// Reads Effects::allows_hit_testing.
 ///
 /// @param e The effects (borrowed).
-/// @return false if the view lets clicks through.
+/// @return false if the view lets clicks through. False on failure.
 ELG_EXPORT bool elg_effects_allows_hit_testing(const Effects* e) {
+    ELG_TRY
     return e->allows_hit_testing;
+    ELG_CATCH(false)
 }
 /// Sets Effects::allows_hit_testing.
 ///
 /// @param e The effects (borrowed).
 /// @param enabled false: the view isn't hit, and clicks go to what's behind it.
 ELG_EXPORT void elg_effects_set_allows_hit_testing(Effects* e, bool enabled) {
+    ELG_TRY
     e->allows_hit_testing = enabled;
+    ELG_CATCH_VOID
 }
 
 // --- Event handlers ---
@@ -663,10 +697,6 @@ struct ElgOptHoverDelay {
 };
 
 namespace {
-
-uint32_t mods(KeyModifiers m) {
-    return static_cast<uint32_t>(m);
-}
 
 class RustEventHandler final : public EventHandler {
 public:
@@ -807,8 +837,10 @@ ELG_EXPORT View* elg_mod_rust_event_modifier(const View* v, ElgClosure make_hand
 /// @param out Receives each line.
 /// @param ctx Passed to `out`.
 ELG_EXPORT void elg_layouts_ext(ElgStrSink out, void* ctx) {
+    ELG_TRY
     ELG_LAYOUT(ElgLayoutCall);
     ELG_LAYOUT(ElgLayoutModifierCall);
     ELG_LAYOUT(ElgEventCall);
     ELG_LAYOUT(ElgOptHoverDelay);
+    ELG_CATCH_VOID
 }

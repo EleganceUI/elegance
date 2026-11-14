@@ -30,8 +30,8 @@ detail::Element* hit(detail::Element& root, Point point) {
 
 void layout(detail::Element& root) {
     detail::flush_effects();
-    root.size_that_fits({20, 100});
-    root.place({}, {20, 100});
+    root.size_that_fits({20.f, 100.f});
+    root.place({}, {20.f, 100.f});
 }
 
 } // namespace

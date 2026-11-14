@@ -51,8 +51,8 @@ View View::padding(Prop<float> length) const {
 }
 
 View View::padding(Edges edges, Prop<float> length) const {
-    const auto insets = [edges](float length) {
-        const auto on = [&](Edges edge) { return contains(edges, edge) ? length : 0.f; };
+    const auto insets = [edges](float inset) {
+        const auto on = [&](Edges edge) { return contains(edges, edge) ? inset : 0.f; };
         return EdgeInsets{on(Edges::top), on(Edges::leading), on(Edges::bottom), on(Edges::trailing)};
     };
     if (const float* value = length.static_value()) {

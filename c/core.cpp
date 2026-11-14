@@ -73,21 +73,25 @@ void elg_shim::capture_error() noexcept {
 /// @param ctx Passed to `out`.
 /// @return The error's kind: 0 none, 1 a Rust callback panicked, 2 elg::UsageError,
 ///   3 elg::ResourceError, 4 elg::GpuError, 5 elg::PlatformError, 6 another elg::Error, 7 any other
-///   C++ exception.
+///   C++ exception. 0 on failure.
 ELG_EXPORT int32_t elg_take_error(ElgStrSink out, void* ctx) {
+    ELG_TRY
     const int32_t kind = std::exchange(g_error_kind, no_error);
     if (kind != no_error) {
         sink(out, ctx, g_error_message);
         g_error_message.clear();
     }
     return kind;
+    ELG_CATCH(0)
 }
 
 /// Whether this thread has an error that elg_take_error() hasn't taken yet.
 ///
-/// @return true if an error is pending.
+/// @return true if an error is pending. False on failure.
 ELG_EXPORT bool elg_error_pending() {
+    ELG_TRY
     return g_error_kind != no_error;
+    ELG_CATCH(false)
 }
 
 /// Sets a C++ std::string: how a closure returns a string (ret: `std::string*`), as a
@@ -96,39 +100,49 @@ ELG_EXPORT bool elg_error_pending() {
 /// @param target The string to set (borrowed).
 /// @param value The new contents, copied.
 ELG_EXPORT void elg_string_assign(std::string* target, ElgStr value) {
+    ELG_TRY
     target->assign(view(value));
+    ELG_CATCH_VOID
 }
 
 /// The contents of a C++ std::string, such as a closure's `std::string*` argument.
 ///
 /// @param s The string (borrowed).
-/// @return Its bytes, valid while `s` lives and doesn't change.
+/// @return Its bytes, valid while `s` lives and doesn't change. Empty on failure.
 ELG_EXPORT ElgStr elg_string_view(const std::string* s) {
+    ELG_TRY
     return c_str(*s);
+    ELG_CATCH({})
 }
 
 // --- Views ---
 
 /// Wraps `View()`: an empty view, which takes no space and draws nothing.
 ///
-/// @return The new view, owned by the caller.
+/// @return The new view, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_view_empty() {
+    ELG_TRY
     return new View();
+    ELG_CATCH(nullptr)
 }
 
 /// Copies a view (an immutable value, cheap to copy).
 ///
 /// @param view The view (borrowed).
-/// @return The copy, owned by the caller.
+/// @return The copy, owned by the caller. Null on failure.
 ELG_EXPORT View* elg_view_clone(const View* view) {
+    ELG_TRY
     return new View(*view);
+    ELG_CATCH(nullptr)
 }
 
 /// Frees a view.
 ///
 /// @param view The view (consumed); may be null.
 ELG_EXPORT void elg_view_free(View* view) {
+    ELG_TRY
     delete view;
+    ELG_CATCH_VOID
 }
 
 /// Moves `take_view` into `*target` (a closure's View result).
@@ -146,9 +160,11 @@ ELG_EXPORT void elg_view_move_into(View* target, View* take_view) {
 /// label for a control made without one.
 ///
 /// @param view The view (borrowed).
-/// @return true if it's empty.
+/// @return true if it's empty. False on failure.
 ELG_EXPORT bool elg_view_is_empty(const View* view) {
+    ELG_TRY
     return view->is_empty();
+    ELG_CATCH(false)
 }
 
 /// A Rust component: `body` (ret: View*) runs each time the view is mounted. The C++ side of a
@@ -400,7 +416,9 @@ ELG_EXPORT Binding<double>* elg_binding_f64(ElgClosure get, ElgClosure set) {
 /// @param target The closure's `ret` (borrowed).
 /// @param value The value; `has` false: nullopt.
 ELG_EXPORT void elg_opt_float_assign(std::optional<float>* target, ElgOptLen value) {
+    ELG_TRY
     *target = value.has ? std::optional<float>(value.value) : std::nullopt;
+    ELG_CATCH_VOID
 }
 static_assert(sizeof(EdgeInsets) == sizeof(ElgEdgeInsets), "Rust writes EdgeInsets results as ElgEdgeInsets");
 
@@ -427,31 +445,41 @@ ELG_EXPORT void elg_binding_f32_set(const Binding<float>* binding, float value) 
 ///
 /// @param binding The binding (consumed); may be null.
 ELG_EXPORT void elg_binding_f32_free(Binding<float>* binding) {
+    ELG_TRY
     delete binding;
+    ELG_CATCH_VOID
 }
 /// Frees a `Binding<bool>` the caller owns, from elg_binding_bool().
 ///
 /// @param binding The binding (consumed); may be null.
 ELG_EXPORT void elg_binding_bool_free(Binding<bool>* binding) {
+    ELG_TRY
     delete binding;
+    ELG_CATCH_VOID
 }
 /// Frees a `Binding<int>` the caller owns, from elg_binding_i32().
 ///
 /// @param binding The binding (consumed); may be null.
 ELG_EXPORT void elg_binding_i32_free(Binding<int>* binding) {
+    ELG_TRY
     delete binding;
+    ELG_CATCH_VOID
 }
 /// Frees a `Binding<std::string>` the caller owns, from elg_binding_string().
 ///
 /// @param binding The binding (consumed); may be null.
 ELG_EXPORT void elg_binding_string_free(Binding<std::string>* binding) {
+    ELG_TRY
     delete binding;
+    ELG_CATCH_VOID
 }
 /// Frees a `Binding<double>` the caller owns, from elg_binding_f64().
 ///
 /// @param binding The binding (consumed); may be null.
 ELG_EXPORT void elg_binding_f64_free(Binding<double>* binding) {
+    ELG_TRY
     delete binding;
+    ELG_CATCH_VOID
 }
 
 // --- Environment ---
@@ -486,16 +514,20 @@ ELG_EXPORT EnvironmentValues* elg_env_current() {
 /// Copies an environment (cheap: copies share their entries).
 ///
 /// @param environment The environment (borrowed).
-/// @return The copy, owned by the caller.
+/// @return The copy, owned by the caller. Null on failure.
 ELG_EXPORT EnvironmentValues* elg_env_clone(const EnvironmentValues* environment) {
+    ELG_TRY
     return new EnvironmentValues(*environment);
+    ELG_CATCH(nullptr)
 }
 
 /// Frees an environment.
 ///
 /// @param environment The environment (consumed); may be null.
 ELG_EXPORT void elg_env_free(EnvironmentValues* environment) {
+    ELG_TRY
     delete environment;
+    ELG_CATCH_VOID
 }
 
 /// Wraps `EnvironmentValues::color()`: a semantic color in this environment's theme and color
@@ -791,23 +823,29 @@ ELG_EXPORT void elg_env_set_rust_values(EnvironmentValues* environment, ElgClosu
 /// Copies a window handle; the copy refers to the same window.
 ///
 /// @param window The handle (borrowed).
-/// @return The copy, owned by the caller.
+/// @return The copy, owned by the caller. Null on failure.
 ELG_EXPORT WindowHandle* elg_window_clone(const WindowHandle* window) {
+    ELG_TRY
     return new WindowHandle(*window);
+    ELG_CATCH(nullptr)
 }
 /// Frees a window handle (not the window).
 ///
 /// @param window The handle (consumed); may be null.
 ELG_EXPORT void elg_window_free(WindowHandle* window) {
+    ELG_TRY
     delete window;
+    ELG_CATCH_VOID
 }
 /// Whether two handles refer to the same window (`WindowHandle`'s operator==).
 ///
 /// @param a A handle (borrowed).
 /// @param b Another handle (borrowed).
-/// @return true for the same window, or for two handles outside any window.
+/// @return true for the same window, or for two handles outside any window. False on failure.
 ELG_EXPORT bool elg_window_eq(const WindowHandle* a, const WindowHandle* b) {
+    ELG_TRY
     return *a == *b;
+    ELG_CATCH(false)
 }
 /// Wraps `WindowHandle::close()`: like the system close button, the window closes (the app quits
 /// with its last window).
@@ -1007,9 +1045,11 @@ ELG_EXPORT void elg_post_to_ui_thread(ElgClosure task) {
 
 /// Wraps `version()`: the library's version string, e.g. "0.1.0".
 ///
-/// @return A static, NUL-terminated string; don't free it.
+/// @return A static, NUL-terminated string; don't free it. Null on failure.
 ELG_EXPORT const char* elg_version() {
+    ELG_TRY
     return version();
+    ELG_CATCH(nullptr)
 }
 
 // --- Animation ---
@@ -1017,30 +1057,38 @@ ELG_EXPORT const char* elg_version() {
 /// Wraps `Animation::linear()`: constant speed.
 ///
 /// @param duration Seconds (the C++ default is 0.25); negative counts as 0.
-/// @return The animation, owned by the caller (elg_animation_free()).
+/// @return The animation, owned by the caller (elg_animation_free()). Null on failure.
 ELG_EXPORT Animation* elg_animation_linear(double duration) {
+    ELG_TRY
     return new Animation(Animation::linear(duration));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Animation::ease_in()`: starts slowly.
 ///
 /// @param duration Seconds (the C++ default is 0.25); negative counts as 0.
-/// @return The animation, owned by the caller (elg_animation_free()).
+/// @return The animation, owned by the caller (elg_animation_free()). Null on failure.
 ELG_EXPORT Animation* elg_animation_ease_in(double duration) {
+    ELG_TRY
     return new Animation(Animation::ease_in(duration));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Animation::ease_out()`: ends slowly.
 ///
 /// @param duration Seconds (the C++ default is 0.25); negative counts as 0.
-/// @return The animation, owned by the caller (elg_animation_free()).
+/// @return The animation, owned by the caller (elg_animation_free()). Null on failure.
 ELG_EXPORT Animation* elg_animation_ease_out(double duration) {
+    ELG_TRY
     return new Animation(Animation::ease_out(duration));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Animation::ease_in_out()`: starts and ends slowly.
 ///
 /// @param duration Seconds (the C++ default is 0.35); negative counts as 0.
-/// @return The animation, owned by the caller (elg_animation_free()).
+/// @return The animation, owned by the caller (elg_animation_free()). Null on failure.
 ELG_EXPORT Animation* elg_animation_ease_in_out(double duration) {
+    ELG_TRY
     return new Animation(Animation::ease_in_out(duration));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Animation::spring()`: a spring settling at the target, like SwiftUI's
 /// .spring(response:dampingFraction:).
@@ -1048,16 +1096,20 @@ ELG_EXPORT Animation* elg_animation_ease_in_out(double duration) {
 /// @param response Roughly the time to get there, in seconds (the C++ default is 0.5).
 /// @param damping_fraction 1 settles without overshoot; lower values bounce (the C++ default is
 ///   0.825).
-/// @return The animation, owned by the caller (elg_animation_free()).
+/// @return The animation, owned by the caller (elg_animation_free()). Null on failure.
 ELG_EXPORT Animation* elg_animation_spring(double response, double damping_fraction) {
+    ELG_TRY
     return new Animation(Animation::spring(response, damping_fraction));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Animation::smooth()`: a gentle spring without overshoot.
 ///
 /// @param duration Roughly the time to get there, in seconds (the C++ default is 0.4).
-/// @return The animation, owned by the caller (elg_animation_free()).
+/// @return The animation, owned by the caller (elg_animation_free()). Null on failure.
 ELG_EXPORT Animation* elg_animation_smooth(double duration) {
+    ELG_TRY
     return new Animation(Animation::smooth(duration));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Animation::custom()`: `curve` (args: double* t, ret: double*) maps progress 0...1 to
 /// eased progress. It may go past 0 or 1 to overshoot; the animation lands on the target once
@@ -1087,9 +1139,11 @@ ELG_EXPORT Animation* elg_animation_custom(ElgClosure curve, double duration) {
 /// @param animation The animation (borrowed).
 /// @param seconds How long to wait, added to any delay it has. Negative starts partway in, like
 ///   CSS: -0.1 begins where it would be 0.1 s in.
-/// @return The new animation, owned by the caller (elg_animation_free()).
+/// @return The new animation, owned by the caller (elg_animation_free()). Null on failure.
 ELG_EXPORT Animation* elg_animation_delay(const Animation* animation, double seconds) {
+    ELG_TRY
     return new Animation(animation->delay(seconds));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Animation::progress()`.
 ///
@@ -1114,15 +1168,19 @@ ELG_EXPORT bool elg_animation_finished(const Animation* animation, double second
 /// Copies an animation.
 ///
 /// @param animation The animation (borrowed).
-/// @return The copy, owned by the caller (elg_animation_free()).
+/// @return The copy, owned by the caller (elg_animation_free()). Null on failure.
 ELG_EXPORT Animation* elg_animation_clone(const Animation* animation) {
+    ELG_TRY
     return new Animation(*animation);
+    ELG_CATCH(nullptr)
 }
 /// Frees an animation.
 ///
 /// @param animation The animation (consumed); may be null.
 ELG_EXPORT void elg_animation_free(Animation* animation) {
+    ELG_TRY
     delete animation;
+    ELG_CATCH_VOID
 }
 
 // --- Transition ---
@@ -1134,61 +1192,77 @@ struct ElgPose {
 
 /// Wraps `Transition::opacity()`: the view fades in and out.
 ///
-/// @return The transition, owned by the caller (elg_transition_free()).
+/// @return The transition, owned by the caller (elg_transition_free()). Null on failure.
 ELG_EXPORT Transition* elg_transition_opacity() {
+    ELG_TRY
     return new Transition(Transition::opacity());
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Transition::identity()`: the view appears and disappears at once.
 ///
-/// @return The transition, owned by the caller (elg_transition_free()).
+/// @return The transition, owned by the caller (elg_transition_free()). Null on failure.
 ELG_EXPORT Transition* elg_transition_identity() {
+    ELG_TRY
     return new Transition(Transition::identity());
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Transition::scale()`: the view grows from (and shrinks to) `from` times its size.
 ///
 /// @param from The scale it starts and ends at (the C++ default is 0).
 /// @param anchor The point of its frame it scales around.
-/// @return The transition, owned by the caller (elg_transition_free()).
+/// @return The transition, owned by the caller (elg_transition_free()). Null on failure.
 ELG_EXPORT Transition* elg_transition_scale(float from, ElgAlignment anchor) {
+    ELG_TRY
     return new Transition(Transition::scale(from, alignment(anchor)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Transition::offset()`: the view moves in from (and out to) an offset.
 ///
 /// @param x Horizontal offset in points.
 /// @param y Vertical offset in points.
-/// @return The transition, owned by the caller (elg_transition_free()).
+/// @return The transition, owned by the caller (elg_transition_free()). Null on failure.
 ELG_EXPORT Transition* elg_transition_offset(float x, float y) {
+    ELG_TRY
     return new Transition(Transition::offset(x, y));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Transition::move()`: the view slides in from (and out to) beyond an edge of its frame.
 ///
 /// @param edge elg::Edges bits: 1 top, 2 leading, 4 bottom, 8 trailing.
-/// @return The transition, owned by the caller (elg_transition_free()).
+/// @return The transition, owned by the caller (elg_transition_free()). Null on failure.
 ELG_EXPORT Transition* elg_transition_move(uint32_t edge) {
+    ELG_TRY
     return new Transition(Transition::move(static_cast<Edges>(edge)));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Transition::slide()`: the view moves in from the leading edge and out to the trailing
 /// edge.
 ///
-/// @return The transition, owned by the caller (elg_transition_free()).
+/// @return The transition, owned by the caller (elg_transition_free()). Null on failure.
 ELG_EXPORT Transition* elg_transition_slide() {
+    ELG_TRY
     return new Transition(Transition::slide());
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Transition::asymmetric()`: different transitions for insertion and removal.
 ///
 /// @param insertion How the view enters (borrowed).
 /// @param removal How the view leaves (borrowed).
-/// @return The transition, owned by the caller (elg_transition_free()).
+/// @return The transition, owned by the caller (elg_transition_free()). Null on failure.
 ELG_EXPORT Transition* elg_transition_asymmetric(const Transition* insertion, const Transition* removal) {
+    ELG_TRY
     return new Transition(Transition::asymmetric(*insertion, *removal));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Transition::combined()`: both transitions at once.
 ///
 /// @param a A transition (borrowed).
 /// @param b Another transition (borrowed).
-/// @return The transition, owned by the caller (elg_transition_free()).
+/// @return The transition, owned by the caller (elg_transition_free()). Null on failure.
 ELG_EXPORT Transition* elg_transition_combined(const Transition* a, const Transition* b) {
+    ELG_TRY
     return new Transition(a->combined(*b));
+    ELG_CATCH(nullptr)
 }
 /// Wraps `Transition::pose()`: how the view looks at `progress`.
 ///
@@ -1196,23 +1270,29 @@ ELG_EXPORT Transition* elg_transition_combined(const Transition* a, const Transi
 /// @param progress 0: fully out, 1: in place.
 /// @param removal true for the view leaving, false for it entering.
 /// @param view_size The view's size in points, for transitions that move it beyond an edge.
-/// @return The pose.
+/// @return The pose. Zero on failure.
 ELG_EXPORT ElgPose elg_transition_pose(const Transition* transition, float progress, bool removal, ElgSize view_size) {
+    ELG_TRY
     const Transition::Pose pose = transition->pose(progress, removal, size(view_size));
     return {pose.opacity, pose.scale, pose.x, pose.y};
+    ELG_CATCH({})
 }
 /// Copies a transition.
 ///
 /// @param transition The transition (borrowed).
-/// @return The copy, owned by the caller (elg_transition_free()).
+/// @return The copy, owned by the caller (elg_transition_free()). Null on failure.
 ELG_EXPORT Transition* elg_transition_clone(const Transition* transition) {
+    ELG_TRY
     return new Transition(*transition);
+    ELG_CATCH(nullptr)
 }
 /// Frees a transition.
 ///
 /// @param transition The transition (consumed); may be null.
 ELG_EXPORT void elg_transition_free(Transition* transition) {
+    ELG_TRY
     delete transition;
+    ELG_CATCH_VOID
 }
 
 // --- ABI layout (shim.h's structs and this file's) ---
@@ -1223,6 +1303,7 @@ ELG_EXPORT void elg_transition_free(Transition* transition) {
 /// @param out Receives each line.
 /// @param ctx Passed to `out`.
 ELG_EXPORT void elg_layouts_core(ElgStrSink out, void* ctx) {
+    ELG_TRY
     ELG_LAYOUT(ElgStr);
     ELG_LAYOUT(ElgBytes);
     ELG_LAYOUT(ElgClosure);
@@ -1257,4 +1338,5 @@ ELG_EXPORT void elg_layouts_core(ElgStrSink out, void* ctx) {
     ELG_LAYOUT(ElgImageSource);
     ELG_LAYOUT(ElgWindowDesc);
     ELG_LAYOUT(ElgPose);
+    ELG_CATCH_VOID
 }

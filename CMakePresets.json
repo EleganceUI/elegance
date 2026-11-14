@@ -47,8 +47,7 @@
                 "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/triplets",
                 "VCPKG_TARGET_TRIPLET": "arm64-osx",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": true,
-                "ELG_BUILD_TESTS": false,
-                "ELG_BUILD_SANDBOX": false,
+                "VCPKG_MANIFEST_FEATURES": "tests",
                 "ELG_ACCESSIBILITY": true,
                 "ELG_ACCESSKIT_SHARED": true
             }
@@ -93,6 +92,52 @@
             "cacheVariables": {
                 "CMAKE_EXPORT_COMPILE_COMMANDS": true,
                 "VCPKG_MANIFEST_FEATURES": "tests"
+            }
+        },
+        {
+            "name": "linux-clang-libcxx-base",
+            "hidden": true,
+            "inherits": "linux-base",
+            "description": "Clang and libc++; the build adds what libc++ needs and builds the dependencies against it. Pick a Clang 19 or later with -DCMAKE_CXX_COMPILER=clang++-19 -DCMAKE_C_COMPILER=clang-19 where clang++ is older.",
+            "cacheVariables": {
+                "CMAKE_C_COMPILER": "clang",
+                "CMAKE_CXX_COMPILER": "clang++",
+                "CMAKE_CXX_FLAGS": "-stdlib=libc++"
+            }
+        },
+        {
+            "name": "linux-clang-libcxx-debug",
+            "displayName": "Linux Debug, Clang and libc++ (shared)",
+            "inherits": "linux-clang-libcxx-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "ELG_BUILD_SHARED": true
+            }
+        },
+        {
+            "name": "linux-clang-libcxx-release",
+            "displayName": "Linux Release, Clang and libc++ (static)",
+            "inherits": "linux-clang-libcxx-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "ELG_BUILD_SHARED": false
+            }
+        },
+        {
+            "name": "linux-clang-libcxx-asan",
+            "displayName": "Linux, Clang and libc++, AddressSanitizer and UBSan (static)",
+            "inherits": "linux-clang-libcxx-release",
+            "cacheVariables": {
+                "ELG_SANITIZER": "address"
+            }
+        },
+        {
+            "name": "linux-clang-libcxx-tsan",
+            "displayName": "Linux x64, Clang and libc++, ThreadSanitizer (static)",
+            "inherits": "linux-clang-libcxx-release",
+            "cacheVariables": {
+                "ELG_SANITIZER": "thread",
+                "VCPKG_TARGET_TRIPLET": "x64-linux-libcxx-tsan"
             }
         },
         {
@@ -151,23 +196,29 @@
             }
         },
         {
+            "name": "macos-asan",
+            "displayName": "macOS, AddressSanitizer and UBSan (static, Apple Silicon)",
+            "inherits": "macos-release",
+            "cacheVariables": {
+                "ELG_SANITIZER": "address"
+            }
+        },
+        {
+            "name": "macos-tsan",
+            "displayName": "macOS, ThreadSanitizer (static, Apple Silicon)",
+            "inherits": "macos-release",
+            "cacheVariables": {
+                "ELG_SANITIZER": "thread",
+                "VCPKG_TARGET_TRIPLET": "arm64-osx-tsan"
+            }
+        },
+        {
             "name": "macos-release-static",
             "displayName": "macOS Release, static (Apple Silicon)",
             "inherits": [
                 "static",
                 "macos-release"
             ]
-        },
-        {
-            "name": "local-offline-static",
-            "displayName": "macOS Release, existing offline dependencies (Apple Silicon)",
-            "description": "Reuse the local-offline-static dependency installation and AccessKit sources; requires that build to have been populated already.",
-            "inherits": "macos-release-static",
-            "cacheVariables": {
-                "VCPKG_INSTALLED_DIR": "${sourceDir}/build/local-offline-static/vcpkg_installed",
-                "VCPKG_MANIFEST_INSTALL": false,
-                "FETCHCONTENT_SOURCE_DIR_ACCESSKIT_C": "${sourceDir}/build/local-offline-static/_deps/accesskit_c-src"
-            }
         }
     ]
 }

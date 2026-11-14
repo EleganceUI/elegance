@@ -55,8 +55,19 @@ target_link_libraries(elegance_tests PRIVATE Elegance::Elegance Catch2::Catch2Wi
 target_include_directories(elegance_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
 target_include_directories(elegance_tests SYSTEM PRIVATE
         $<TARGET_PROPERTY:dawn::webgpu_dawn,INTERFACE_INCLUDE_DIRECTORIES>)
+# The GPU tests call Dawn too. A static Dawn is linked into Elegance, which exports it in a shared
+# build on Linux and macOS (linking it again would make a second copy); a shared one (vcpkg's on
+# Windows) is a DLL the tests link themselves, since a shared Elegance doesn't pass it on.
+get_target_property(elg_dawn_type dawn::webgpu_dawn TYPE)
+if (elg_dawn_type STREQUAL "SHARED_LIBRARY")
+    target_link_libraries(elegance_tests PRIVATE dawn::webgpu_dawn)
+endif ()
 
 elegance_warnings(elegance_tests)
+# gpu_image_tests.cpp makes IOSurfaces itself; a static Elegance brought the frameworks along.
+if (APPLE)
+    target_link_libraries(elegance_tests PRIVATE "-framework CoreFoundation" "-framework IOSurface")
+endif ()
 
 # The C API's contract with bindings, tested against its objects (only in builds that compile it).
 if (TARGET elegance_c_api)

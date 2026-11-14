@@ -128,13 +128,18 @@ every build option and how to use Elegance from your own CMake project.
 
 ### Tests
 
-The unit tests use [Catch2](https://github.com/catchorg/Catch2) 3 and need a static build.
-Enable vcpkg's `tests` feature, or point `Catch2_DIR` at an existing installation, then:
+The unit tests use [Catch2](https://github.com/catchorg/Catch2) 3, with a static or a shared
+Elegance; a shared one built with the tests exports its internals for them. Enable vcpkg's `tests`
+feature, or point `Catch2_DIR` at an existing installation, then:
 
 ```sh
-cmake --build build/local-offline-static
-ctest --test-dir build/local-offline-static --output-on-failure
+cmake --preset linux-release      # or macos-release, windows-release
+cmake --build build/linux-release
+ctest --test-dir build/linux-release --output-on-failure
 ```
+
+Presets that only work on your machine (an offline dependency installation, say) belong in an
+untracked `CMakeUserPresets.json`.
 
 The checked-in [`.clangd`](.clangd) reads `build/local-offline-static/compile_commands.json`.
 If you use another build directory, configure it with
