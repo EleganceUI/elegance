@@ -50,6 +50,7 @@ add_executable(elegance_tests
         text_input_tests.cpp
         toggle_tests.cpp
         video_tests.cpp
+        test_setup.cpp
 )
 target_link_libraries(elegance_tests PRIVATE Elegance::Elegance Catch2::Catch2WithMain Boost::beast OpenSSL::SSL)
 target_include_directories(elegance_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
@@ -80,7 +81,8 @@ if (MSVC)
 endif ()
 
 # Under LeakSanitizer: fontconfig (loaded from the system on Linux) keeps its caches until exit.
-catch_discover_tests(elegance_tests PROPERTIES ENVIRONMENT_MODIFICATION
+# A test that hangs fails after two minutes, by name, instead of holding the run until CI gives up.
+catch_discover_tests(elegance_tests PROPERTIES TIMEOUT 120 ENVIRONMENT_MODIFICATION
                      "LSAN_OPTIONS=string_append::suppressions=${CMAKE_CURRENT_SOURCE_DIR}/lsan_suppressions.txt")
 
 # Compile the public FFI surface as real C, not merely as C++ with extern "C" declarations.
