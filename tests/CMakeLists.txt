@@ -50,6 +50,7 @@ add_executable(elegance_tests
         text_input_tests.cpp
         toggle_tests.cpp
         ui_release_tests.cpp
+        ui_task_tests.cpp
         video_tests.cpp
 )
 target_link_libraries(elegance_tests PRIVATE Elegance::Elegance Catch2::Catch2WithMain Boost::beast OpenSSL::SSL)

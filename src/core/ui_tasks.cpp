@@ -4,6 +4,7 @@
 
 #include "core/ui_tasks.h"
 
+#include <cstdint>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -13,9 +14,45 @@ namespace elg::detail {
 
 namespace {
 
+// A posted task: the app's (post_to_ui_thread) waits for an App to run it; Elegance's belongs to
+// the App::run that was running, or last ran, when it was posted.
+struct Task {
+    std::function<void()> work;
+    bool app = false;
+    std::uint64_t run = 0;
+};
+
 std::mutex g_mutex;
-std::vector<std::function<void()>> g_tasks;
+std::vector<Task> g_tasks;
 std::function<void()> g_wake;
+std::uint64_t g_run = 0; // the App::run going on, or the last one
+
+// Takes Elegance's tasks that belong to another run than `run`, to destroy outside the lock.
+std::vector<Task> take_stale(std::uint64_t run) {
+    const std::lock_guard lock(g_mutex);
+    std::vector<Task> stale;
+    std::erase_if(g_tasks, [&](Task& task) {
+        if (task.app || task.run == run) {
+            return false;
+        }
+        stale.push_back(std::move(task));
+        return true;
+    });
+    return stale;
+}
+
+void post(Task task) {
+    std::function<void()> wake;
+    {
+        const std::lock_guard lock(g_mutex);
+        task.run = g_run;
+        g_tasks.push_back(std::move(task));
+        wake = g_wake;
+    }
+    if (wake) {
+        wake();
+    }
+}
 
 struct Release {
     void* object;
@@ -33,15 +70,11 @@ std::vector<Release> take_releases() {
 } // namespace
 
 void post_ui_task(std::function<void()> task) {
-    std::function<void()> wake;
-    {
-        const std::lock_guard lock(g_mutex);
-        g_tasks.push_back(std::move(task));
-        wake = g_wake;
-    }
-    if (wake) {
-        wake();
-    }
+    post(Task{.work = std::move(task)});
+}
+
+void post_app_task(std::function<void()> task) {
+    post(Task{.work = std::move(task), .app = true});
 }
 
 void set_ui_task_waker(std::function<void()> wake) {
@@ -49,14 +82,27 @@ void set_ui_task_waker(std::function<void()> wake) {
     g_wake = std::move(wake);
 }
 
+void begin_ui_tasks() {
+    std::uint64_t run = 0;
+    {
+        const std::lock_guard lock(g_mutex);
+        run = ++g_run;
+    }
+    take_stale(run); // Elegance's tasks from earlier runs: destroyed, not run
+}
+
+void end_ui_tasks() {
+    take_stale(0); // all of Elegance's: they refer to this run
+}
+
 bool run_ui_tasks() {
-    std::vector<std::function<void()>> tasks;
+    std::vector<Task> tasks;
     {
         const std::lock_guard lock(g_mutex);
         tasks.swap(g_tasks);
     }
-    for (auto& task : tasks) {
-        task();
+    for (Task& task : tasks) {
+        task.work();
     }
     return !tasks.empty();
 }

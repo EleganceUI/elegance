@@ -454,9 +454,14 @@ int App::run() {
     // the atlas's workers wake the event loop to draw them.
     TextSystem text;
     text.atlas.set_on_ready([&platform] { platform.wake(); });
-    // Work other threads hand to this one (hot-reload builds) wakes the loop.
+    // Work other threads hand to this one (hot-reload builds) wakes the loop. What Elegance posted
+    // for this run and didn't run refers to it (menu commands, accessibility requests): it goes.
     set_ui_task_waker([&platform] { platform.wake(); });
-    const ScopeExit stop_task_wakes([] { set_ui_task_waker({}); });
+    begin_ui_tasks();
+    const ScopeExit stop_task_wakes([] {
+        set_ui_task_waker({});
+        end_ui_tasks();
+    });
     text.atlas.set_disk_cache(GlyphDiskCache::default_directory());
     const ScopeExit stop_glyph_wakes([&text] { text.atlas.set_on_ready({}); });
 
@@ -1612,7 +1617,7 @@ void post_to_ui_thread(std::function<void()> task) {
     if (!task) {
         throw UsageError("post_to_ui_thread() needs a task");
     }
-    detail::post_ui_task(std::move(task));
+    detail::post_app_task(std::move(task));
 }
 
 std::optional<Color> system_accent_color() {

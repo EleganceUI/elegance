@@ -1,0 +1,30 @@
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file, You can obtain one at
+// https://mozilla.org/MPL/2.0/.
+
+// Tasks posted to the UI thread: the run they belong to.
+
+#include "core/ui_tasks.h"
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <vector>
+
+using namespace elg;
+
+TEST_CASE("Elegance's tasks for one run never run in the next; the app's wait for it", "[tasks]") {
+    bool elegance_ran = false;
+    bool app_ran = false;
+    detail::begin_ui_tasks();
+    detail::post_ui_task([&] { elegance_ran = true; });
+    detail::post_app_task([&] { app_ran = true; });
+    detail::end_ui_tasks(); // the run ends with both waiting
+    detail::post_ui_task([&] { elegance_ran = true; }); // late, for the run that ended
+
+    detail::begin_ui_tasks(); // the next run
+    CHECK(detail::run_ui_tasks());
+    CHECK(app_ran);
+    CHECK_FALSE(elegance_ran);
+    CHECK_FALSE(detail::run_ui_tasks());
+    detail::end_ui_tasks();
+}

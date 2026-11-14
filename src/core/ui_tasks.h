@@ -13,12 +13,19 @@ namespace elg::detail {
 
 // Work handed to the UI thread from other threads (e.g. a finished hot-reload build). The App
 // runs posted tasks between events, where state may be written; posting wakes its event loop.
+// Elegance's own tasks belong to the App::run going on (or that last ran): they never run in
+// another one. post_app_task() is post_to_ui_thread()'s: such a task waits for the next run.
 // Thread-safe.
 void post_ui_task(std::function<void()> task);
+void post_app_task(std::function<void()> task);
 
-// App side: what wakes the event loop (nullptr while no App runs), and running what's queued.
-// Returns true if anything ran.
+// App side: what wakes the event loop (nullptr while no App runs), and running what's queued in
+// the order posted (true if anything ran).
+// begin_ui_tasks() starts a run, dropping Elegance's tasks from earlier ones; end_ui_tasks()
+// drops this run's.
 void set_ui_task_waker(std::function<void()> wake);
+void begin_ui_tasks();
+void end_ui_tasks();
 bool run_ui_tasks();
 
 // Objects that must be destroyed on the UI thread: those that own reactive state or a platform
