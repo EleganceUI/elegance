@@ -68,6 +68,7 @@ set(C_API_SOURCES
 if (ELG_C_STATIC)
     add_library(elegance_c_api STATIC ${C_API_SOURCES})
     target_link_libraries(elegance_c_api PRIVATE elegance)
+    elegance_c_api_warnings(elegance_c_api)
     if (MSVC)
         target_compile_definitions(elegance_c_api PRIVATE NOMINMAX)
         target_compile_options(elegance_c_api PRIVATE /EHsc /permissive- /utf-8 /Zc:__cplusplus)
@@ -104,6 +105,7 @@ if (ELG_C_STATIC)
 endif ()
 
 add_library(elegance_c SHARED ${C_API_SOURCES})
+elegance_c_api_warnings(elegance_c)
 # The whole archive, so ELG_API functions the C API doesn't call (elg_gpu_image_*) are exported too.
 target_link_libraries(elegance_c PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,elegance>")
 target_compile_definitions(elegance_c PRIVATE ELG_SHIM_SHARED)

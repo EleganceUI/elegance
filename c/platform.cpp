@@ -189,7 +189,7 @@ ELG_EXPORT double elg_audio_player_value(const AudioPlayer* player, int32_t whic
     switch (which) {
     case 0: return player->time();
     case 1: return player->duration();
-    default: return player->volume();
+    default: return static_cast<double>(player->volume());
     }
     ELG_CATCH(0.0)
 }
@@ -727,7 +727,7 @@ ELG_EXPORT double elg_video_player_value(const VideoPlayer* player, int32_t whic
     switch (which) {
     case 0: return player->time();
     case 1: return player->duration();
-    default: return player->volume();
+    default: return static_cast<double>(player->volume());
     }
     ELG_CATCH(0.0)
 }

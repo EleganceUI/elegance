@@ -95,3 +95,13 @@ function(elegance_warnings target)
     endif ()
     target_compile_options(${target} PRIVATE ${warnings})
 endfunction()
+
+# The warning set for the C API (c/), whose exported functions have no declaration here: the
+# bindings (elegance-sys) declare them, until a C header ships (ELGSPEC-0007.R14).
+function(elegance_c_api_warnings target)
+    elegance_warnings(${target})
+    if (NOT MSVC)
+        target_compile_options(${target} PRIVATE -Wno-missing-declarations
+                               $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-missing-prototypes>)
+    endif ()
+endfunction()

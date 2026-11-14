@@ -664,10 +664,6 @@ struct ElgOptHoverDelay {
 
 namespace {
 
-uint32_t mods(KeyModifiers m) {
-    return static_cast<uint32_t>(m);
-}
-
 class RustEventHandler final : public EventHandler {
 public:
     explicit RustEventHandler(SharedFn f) : f_(std::move(f)) {}
