@@ -1,4 +1,7 @@
-# Builds Elegance on Linux (GCC 14, libstdc++, WebGPU on Vulkan) and runs the unit tests.
+# Builds Elegance on Linux and runs the unit tests (ELGSPEC-0006.R5): with GCC 14 and libstdc++ on
+# x64 and arm64, with Clang 19 and libc++, under AddressSanitizer and UBSan and under
+# ThreadSanitizer (R7), and the GPU tests and smoke tests under a virtual display with a software
+# Vulkan driver (R9). Every configuration builds with warnings as errors (R6).
 name: Linux
 
 on:
@@ -11,7 +14,6 @@ on:
 
 permissions:
     contents: read
-    actions: write # deleting superseded caches
 
 # One run at a time per branch, so each starts from the previous one's cache (pull requests:
 # replace the older run).
@@ -21,32 +23,61 @@ concurrency:
 
 jobs:
     build:
+        name: ${{ matrix.name }}
+        permissions:
+            contents: read
+            actions: write # deleting superseded caches
         strategy:
             fail-fast: false
             matrix:
-                runner: [ubuntu-24.04, ubuntu-24.04-arm]
+                include:
+                    # Shared debug and static release, between them every test configuration (R4)
+                    # with libstdc++, and the static checks once.
+                    - { name: gcc-x64, runner: ubuntu-24.04, toolchain: gcc, cache: gcc-14, presets: linux-debug linux-release, checks: true }
+                    - { name: gcc-arm64, runner: ubuntu-24.04-arm, toolchain: gcc, cache: gcc-14, presets: linux-debug linux-release }
+                    - { name: libcxx, runner: ubuntu-24.04, toolchain: libcxx, cache: libcxx-19, presets: linux-clang-libcxx-debug linux-clang-libcxx-release }
+                    - { name: asan, runner: ubuntu-24.04, toolchain: libcxx, cache: libcxx-19, presets: linux-clang-libcxx-asan }
+                    # Its dependencies are built with TSan too (the x64-linux-libcxx-tsan triplet).
+                    - { name: tsan, runner: ubuntu-24.04, toolchain: libcxx, cache: libcxx-19-tsan, presets: linux-clang-libcxx-tsan }
+                    # The tests that need a GPU, a display or the internet run in a job of their own (R10).
+                    - { name: gpu, runner: ubuntu-24.04, toolchain: gcc, cache: gcc-14, presets: linux-debug linux-release, gpu: true }
         runs-on: ${{ matrix.runner }}
         env:
-            CC: gcc-14
-            CXX: g++-14
             VCPKG_ROOT: ${{ github.workspace }}/../vcpkg
             # Inside the workspace: actions/cache rejects paths with "..", and saved nothing.
             VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+            PRESETS: ${{ matrix.presets }}
+            UBSAN_OPTIONS: print_stacktrace=1
+            TSAN_OPTIONS: second_deadlock_stack=1
         steps:
-            - uses: actions/checkout@v7
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             # SDL3 and Dawn need the X11/Wayland headers (they load the libraries at run time); HTTP uses
             # the system libcurl; vcpkg's libxcrypt (under SDL3's dbus) needs libltdl. Elegance needs
-            # CMake 4.3, newer than Ubuntu's.
+            # CMake 4.3, newer than Ubuntu's. Clang 19 and libc++ 19 come from LLVM's apt repository.
             - name: Install tools
               run: |
                   sudo apt-get update
                   sudo apt-get install -y --no-install-recommends \
-                    gcc-14 g++-14 ninja-build pkg-config autoconf autoconf-archive automake libtool libltdl-dev python3-jinja2 \
+                    ninja-build pkg-config autoconf autoconf-archive automake libtool libltdl-dev python3-jinja2 \
                     libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \
                     libxinerama-dev libx11-xcb-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev \
                     libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev libdrm-dev libgbm-dev \
                     libasound2-dev libpulse-dev libdbus-1-dev libibus-1.0-dev libudev-dev libcurl4-openssl-dev
+                  if [ "${{ matrix.toolchain }}" = gcc ]; then
+                    sudo apt-get install -y --no-install-recommends gcc-14 g++-14
+                    echo "CC=gcc-14" >> "$GITHUB_ENV"
+                    echo "CXX=g++-14" >> "$GITHUB_ENV"
+                  else
+                    wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+                    sudo bash llvm.sh 19
+                    sudo apt-get install -y --no-install-recommends libc++-19-dev libc++abi-19-dev
+                    echo "CC=clang-19" >> "$GITHUB_ENV"
+                    echo "CXX=clang++-19" >> "$GITHUB_ENV"
+                  fi
+                  if [ "${{ matrix.gpu }}" = true ]; then
+                    sudo apt-get install -y --no-install-recommends xvfb mesa-vulkan-drivers libvulkan1
+                  fi
                   pipx install 'cmake>=4.3'
                   cmake --version
 
@@ -61,20 +92,21 @@ jobs:
             # Unique save keys allow ABI changes to refresh the binary cache.
             - name: Restore vcpkg binaries
               id: vcpkg-cache
-              uses: actions/cache/restore@v6
+              uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.vcpkg-cache
-                  key: vcpkg-v2-${{ matrix.runner }}-gcc-14-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  key: vcpkg-v2-${{ matrix.runner }}-${{ matrix.cache }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-${{ github.run_id }}-${{ github.run_attempt }}
                   restore-keys: |
-                      vcpkg-v2-${{ matrix.runner }}-gcc-14-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-
-                      vcpkg-v2-${{ matrix.runner }}-gcc-14-
+                      vcpkg-v2-${{ matrix.runner }}-${{ matrix.cache }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-
+                      vcpkg-v2-${{ matrix.runner }}-${{ matrix.cache }}-
 
-            # Configure both presets before saving their dependencies, including test packages.
+            # Configure every preset before saving their dependencies, including test packages.
             - name: Configure (build or restore dependencies)
               id: configure
               run: |
-                  cmake --preset linux-debug
-                  cmake --preset linux-release
+                  for preset in $PRESETS; do
+                    cmake --preset "$preset" -DCMAKE_C_COMPILER="$CC" -DCMAKE_CXX_COMPILER="$CXX" -DELG_WARNINGS_AS_ERRORS=ON
+                  done
 
             # Keep only the archives this build installed (each is named after the SHA-256 of its
             # package's vcpkg_abi_info.txt). Otherwise every superseded build stays in the cache, which
@@ -93,36 +125,57 @@ jobs:
             - name: Save vcpkg binaries
               id: save
               if: ${{ !cancelled() && steps.vcpkg-cache.outputs.cache-primary-key != '' }}
-              uses: actions/cache/save@v6
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.vcpkg-cache
                   key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
 
-            # Each run saves under a new key: drop the older ones, so main keeps one per runner.
+            # Each run saves under a new key: drop the older ones, so main keeps one per configuration.
             - name: Delete superseded vcpkg caches
               if: ${{ steps.save.outcome == 'success' && github.ref == 'refs/heads/main' }}
               env:
                   GH_TOKEN: ${{ github.token }}
                   CURRENT: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
               run: |
-                  gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "vcpkg-v2-${{ matrix.runner }}-gcc-14-" \
+                  gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "vcpkg-v2-${{ matrix.runner }}-${{ matrix.cache }}-" \
                     --limit 100 --json id,key --jq ".[] | select(.key != \"$CURRENT\") | .id" |
                     while read -r id; do gh cache delete "$id" --repo "$GITHUB_REPOSITORY"; done
 
-            # The shared library (what hot reload uses) and the static one, which the tests link.
-            - name: Build (shared)
-              run: cmake --build build/linux-debug
+            # The library, the sandbox, the preview host (shared builds) and the tests.
+            - name: Build
+              run: |
+                  for preset in $PRESETS; do
+                    cmake --build "build/$preset"
+                  done
 
-            - name: Build (static, with tests)
-              run: cmake --build build/linux-release
+            # GitHub's kernels randomize addresses more than ThreadSanitizer allows.
+            - name: Allow ThreadSanitizer
+              if: matrix.name == 'tsan'
+              run: sudo sysctl vm.mmap_rnd_bits=28
 
             - name: Test
-              run: ctest --test-dir build/linux-release --output-on-failure
+              if: matrix.gpu != true
+              run: |
+                  for preset in $PRESETS; do
+                    ctest --test-dir "build/$preset" --output-on-failure
+                  done
+
+            # Under Xvfb, on Mesa's software Vulkan driver (lavapipe); then the tests that need the
+            # internet.
+            - name: GPU, smoke and network tests
+              if: matrix.gpu == true
+              env:
+                  ELG_GPU_BACKEND: vulkan
+              run: |
+                  xvfb-run -a -s "-screen 0 1280x1024x24" build/linux-release/bin/elegance_tests "[.gpu]"
+                  xvfb-run -a -s "-screen 0 1280x1024x24" build/linux-release/bin/sandbox --smoke-test
+                  xvfb-run -a -s "-screen 0 1280x1024x24" build/linux-debug/bin/elegance-preview --smoke-test
+                  build/linux-release/bin/elegance_tests "[.network]"
 
             # The checks in .clang-tidy, on the static build's compile commands (once: they're the
             # same sources on both architectures). clang-tidy 19 comes from LLVM's apt repository.
             - name: clang-tidy
-              if: matrix.runner == 'ubuntu-24.04'
+              if: matrix.checks == true
               run: |
                   wget -qO llvm.sh https://apt.llvm.org/llvm.sh
                   sudo bash llvm.sh 19
@@ -132,5 +185,10 @@ jobs:
             # Every public declaration (include/elg, the C API) has a /// comment with its @params
             # and @return. Uses libclang 19, installed in the step above.
             - name: API docs
-              if: matrix.runner == 'ubuntu-24.04'
+              if: matrix.checks == true
               run: python3 tools/doc-check.py build/linux-release
+
+            # Every function the C API exports catches C++ exceptions (R11).
+            - name: C API exceptions
+              if: matrix.checks == true
+              run: python3 tools/c-api-check.py
