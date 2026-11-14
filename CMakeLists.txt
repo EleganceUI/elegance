@@ -49,6 +49,25 @@ if (NOT ELG_HAVE_JTHREAD)
         "On macOS, select Xcode 26 or later with xcode-select (Xcode 16's libc++ is insufficient).")
 endif ()
 
+# Sanitizers, on Linux and macOS (ELGSPEC-0006.R7): AddressSanitizer with UndefinedBehaviorSanitizer,
+# or ThreadSanitizer. Both apply to everything this project builds; a TSan build also needs its
+# dependencies instrumented, which the *-tsan triplets the tsan presets pick do. A UBSan report
+# stops the program, so it fails the test that triggered it.
+set(ELG_SANITIZER "" CACHE STRING "Build with a sanitizer: address (with undefined behavior), thread, or empty")
+set_property(CACHE ELG_SANITIZER PROPERTY STRINGS "" address thread)
+if (ELG_SANITIZER AND MSVC)
+    message(FATAL_ERROR "ELG_SANITIZER is for Linux and macOS builds")
+endif ()
+if (ELG_SANITIZER STREQUAL "address")
+    add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+elseif (ELG_SANITIZER STREQUAL "thread")
+    add_compile_options(-fsanitize=thread)
+    add_link_options(-fsanitize=thread)
+elseif (ELG_SANITIZER)
+    message(FATAL_ERROR "ELG_SANITIZER is \"${ELG_SANITIZER}\"; use address, thread, or leave it empty")
+endif ()
+
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(ElgWarnings)
 include(EleganceViewExtensions)

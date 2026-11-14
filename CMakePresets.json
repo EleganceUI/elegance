@@ -125,6 +125,23 @@
             }
         },
         {
+            "name": "linux-clang-libcxx-asan",
+            "displayName": "Linux, Clang and libc++, AddressSanitizer and UBSan (static)",
+            "inherits": "linux-clang-libcxx-release",
+            "cacheVariables": {
+                "ELG_SANITIZER": "address"
+            }
+        },
+        {
+            "name": "linux-clang-libcxx-tsan",
+            "displayName": "Linux x64, Clang and libc++, ThreadSanitizer (static)",
+            "inherits": "linux-clang-libcxx-release",
+            "cacheVariables": {
+                "ELG_SANITIZER": "thread",
+                "VCPKG_TARGET_TRIPLET": "x64-linux-libcxx-tsan"
+            }
+        },
+        {
             "name": "linux-debug",
             "displayName": "Linux Debug (shared)",
             "inherits": "linux-base",
@@ -177,6 +194,23 @@
             ],
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release"
+            }
+        },
+        {
+            "name": "macos-asan",
+            "displayName": "macOS, AddressSanitizer and UBSan (static, Apple Silicon)",
+            "inherits": "macos-release",
+            "cacheVariables": {
+                "ELG_SANITIZER": "address"
+            }
+        },
+        {
+            "name": "macos-tsan",
+            "displayName": "macOS, ThreadSanitizer (static, Apple Silicon)",
+            "inherits": "macos-release",
+            "cacheVariables": {
+                "ELG_SANITIZER": "thread",
+                "VCPKG_TARGET_TRIPLET": "arm64-osx-tsan"
             }
         },
         {
