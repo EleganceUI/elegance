@@ -493,7 +493,7 @@ ElgGpuImage* elg_gpu_image_create(uint32_t width, uint32_t height, uint32_t orig
         return nullptr;
     }
     try {
-        return new ElgGpuImage{std::make_shared<elg::detail::ExternalImageSource>(
+        return new ElgGpuImage{elg::detail::make_ui_shared<elg::detail::ExternalImageSource>(
             width, height, origin == ELG_GPU_IMAGE_BOTTOM_LEFT)};
     } catch (...) { return nullptr; }
 }

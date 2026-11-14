@@ -320,7 +320,7 @@ private:
 
 namespace elg {
 
-AudioPlayer::AudioPlayer(const std::filesystem::path& file) : state_(std::make_shared<detail::AudioPlayerState>()) {
+AudioPlayer::AudioPlayer(const std::filesystem::path& file) : state_(detail::make_ui_shared<detail::AudioPlayerState>()) {
     state_->name = file.filename().string();
     if (!std::filesystem::exists(file)) {
         throw ResourceError(std::format("can't open \"{}\"", file.string()));

@@ -490,7 +490,7 @@ STDMETHODIMP EngineNotify::EventNotify(DWORD event, DWORD_PTR param1, DWORD) {
 } // namespace
 
 std::shared_ptr<VideoSource> create_platform_video_source(const std::string& url) {
-    return std::make_shared<MediaEngineSource>(url);
+    return detail::make_ui_shared<MediaEngineSource>(url);
 }
 
 } // namespace elg::detail

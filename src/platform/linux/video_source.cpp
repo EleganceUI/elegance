@@ -342,7 +342,7 @@ private:
 } // namespace
 
 std::shared_ptr<VideoSource> create_platform_video_source(const std::string& url) {
-    auto source = std::make_shared<GStreamerSource>(url);
+    auto source = detail::make_ui_shared<GStreamerSource>(url);
     source->open();
     return source;
 }

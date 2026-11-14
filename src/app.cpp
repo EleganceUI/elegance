@@ -434,6 +434,10 @@ int App::run() {
     // Reactive state belongs to this thread while the app runs (design.md §6).
     set_ui_thread(std::this_thread::get_id());
     const ScopeExit release_ui_thread([] { set_ui_thread(std::nullopt); });
+    // Media objects that other threads let go of come back to this one to be destroyed. Last of
+    // all, once every thread of this run has stopped, what's left is destroyed too.
+    begin_ui_releases();
+    const ScopeExit end_releases([] { end_ui_releases(); });
     // After the windows are gone: their views' timers and on_disappear actions end with the app.
     const ScopeExit stop_timers([] {
         cancel_all_timers();
@@ -652,6 +656,9 @@ int App::run() {
     }
 
     FrameMailbox mailbox;
+    // The render thread lets go of the video sources it drew: once it's stopped, they go before
+    // the windows and the platform.
+    const ScopeExit release_rendered([] { run_ui_releases(); });
     const RenderThread renderer(mailbox, [&platform] { platform.wake(); });
     for (const auto& live : windows) {
         mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), platform::see_through(live->entry->desc),
@@ -1489,7 +1496,8 @@ int App::run() {
             }
         }
         flush_effects(); // what hover changes wrote
-        run_ui_tasks(); // e.g. a hot reload
+        run_ui_releases(); // what other threads let go of
+        run_ui_tasks();    // e.g. a hot reload
         flush_effects();
         run_due_timers(seconds_now());
         flush_effects(); // hover and other effects may ask for popups

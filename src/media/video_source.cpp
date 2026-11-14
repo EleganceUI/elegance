@@ -8,6 +8,8 @@
 
 #include "media/video_source.h"
 
+#include "core/ui_tasks.h"
+
 #include <atomic>
 #include <mutex>
 
@@ -72,7 +74,7 @@ std::shared_ptr<VideoSource> VideoSource::create(const std::string& url) {
 }
 
 std::shared_ptr<VideoSource> VideoSource::unsupported(std::string message) {
-    return std::make_shared<UnsupportedVideoSource>(std::move(message));
+    return detail::make_ui_shared<UnsupportedVideoSource>(std::move(message));
 }
 
 } // namespace elg::detail
