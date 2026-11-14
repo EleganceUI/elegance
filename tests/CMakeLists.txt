@@ -57,6 +57,10 @@ target_include_directories(elegance_tests SYSTEM PRIVATE
         $<TARGET_PROPERTY:dawn::webgpu_dawn,INTERFACE_INCLUDE_DIRECTORIES>)
 
 elegance_warnings(elegance_tests)
+# gpu_image_tests.cpp makes IOSurfaces itself; a static Elegance brought the frameworks along.
+if (APPLE)
+    target_link_libraries(elegance_tests PRIVATE "-framework CoreFoundation" "-framework IOSurface")
+endif ()
 
 # The C API's contract with bindings, tested against its objects (only in builds that compile it).
 if (TARGET elegance_c_api)
