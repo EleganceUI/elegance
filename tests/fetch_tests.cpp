@@ -133,7 +133,10 @@ private:
             co_await bhttp::async_read(stream, buffer, request, use_awaitable);
             auto response = respond(request);
             co_await serve_slowly(request);
-            co_await bhttp::async_write(stream, response, use_awaitable);
+            // Through a serializer: the overload that takes the message has a default argument GCC
+            // reports as a zero null pointer at each call (-Wzero-as-null-pointer-constant).
+            bhttp::response_serializer<bhttp::string_body> serializer{response};
+            co_await bhttp::async_write(stream, serializer, use_awaitable);
             if (drop_ || !response.keep_alive()) {
                 co_return;
             }
@@ -285,7 +288,8 @@ private:
             if (!expected.empty() && request[bhttp::field::proxy_authorization] != expected) {
                 bhttp::response<bhttp::empty_body> refusal{bhttp::status::proxy_authentication_required, 11};
                 refusal.keep_alive(false);
-                co_await bhttp::async_write(*client, refusal, use_awaitable);
+                bhttp::response_serializer<bhttp::empty_body> serializer{refusal}; // as in serve()
+                co_await bhttp::async_write(*client, serializer, use_awaitable);
                 co_return;
             }
             if (request.method() != bhttp::verb::connect) {
@@ -293,7 +297,8 @@ private:
                 response.body() = "via proxy " + std::string(request.target());
                 response.keep_alive(false);
                 response.prepare_payload();
-                co_await bhttp::async_write(*client, response, use_awaitable);
+                bhttp::response_serializer<bhttp::string_body> serializer{response};
+                co_await bhttp::async_write(*client, serializer, use_awaitable);
                 co_return;
             }
             const std::string authority(request.target());

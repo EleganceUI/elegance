@@ -334,7 +334,10 @@ awaitable<Reply> exchange(Stream& stream, beast::flat_buffer& buffer, const Targ
             request.set(bhttp::field::if_modified_since, validators->last_modified);
         }
     }
-    co_await bhttp::async_write(stream, request, use_awaitable);
+    // Through a serializer: the overload that takes the message has a default argument GCC reports as
+    // a zero null pointer at each call (-Wzero-as-null-pointer-constant).
+    bhttp::request_serializer<bhttp::empty_body> serializer{request};
+    co_await bhttp::async_write(stream, serializer, use_awaitable);
 
     bhttp::response_parser<bhttp::vector_body<std::uint8_t>> parser;
     parser.header_limit(64 * 1024);
@@ -367,7 +370,8 @@ awaitable<void> tunnel(beast::tcp_stream& tcp, const Target& target, const Proxy
     if (!proxy.authorization.empty()) {
         request.set(bhttp::field::proxy_authorization, proxy.authorization);
     }
-    co_await bhttp::async_write(tcp, request, use_awaitable);
+    bhttp::request_serializer<bhttp::empty_body> serializer{request}; // as in exchange()
+    co_await bhttp::async_write(tcp, serializer, use_awaitable);
     beast::flat_buffer buffer;
     bhttp::response_parser<bhttp::empty_body> parser;
     parser.header_limit(16 * 1024);
@@ -410,7 +414,9 @@ awaitable<std::unique_ptr<Connection>> connect(const Target& target, const std::
     auto connection = std::make_unique<Connection>(std::move(tcp), tls);
     auto& stream = std::get<1>(connection->stream);
     if (target.host_is_name) {
-        SSL_set_tlsext_host_name(stream.native_handle(), target.host.c_str()); // SNI
+        // SNI. What SSL_set_tlsext_host_name() expands to, without its C cast (OpenSSL only reads the name).
+        SSL_ctrl(stream.native_handle(), SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_host_name,
+                 const_cast<char*>(target.host.c_str()));
     }
     stream.set_verify_mode(ssl::verify_peer);
     stream.set_verify_callback(ssl::host_name_verification(target.host));

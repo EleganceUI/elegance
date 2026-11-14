@@ -270,12 +270,12 @@ private:
                  std::string(reinterpret_cast<const char*>(&pixel_format), 4)); // the FourCC
 
         while (!stop.stop_requested()) {
-            pollfd ready{fd.get(), POLLIN, 0};
-            const int polled = poll(&ready, 1, 100); // wakes to check `stop`
+            pollfd readable{fd.get(), POLLIN, 0};
+            const int polled = poll(&readable, 1, 100); // wakes to check `stop`
             if (polled == 0 || (polled == -1 && errno == EINTR)) {
                 continue;
             }
-            if (polled == -1 || (ready.revents & (POLLERR | POLLHUP))) {
+            if (polled == -1 || (readable.revents & (POLLERR | POLLHUP))) {
                 fail(weak, std::format("the camera {} stopped (disconnected?)", path));
                 break;
             }
@@ -343,17 +343,17 @@ private:
             if (format_rank(description.pixelformat) < 0) {
                 continue;
             }
-            v4l2_frmsizeenum size{};
-            size.pixel_format = description.pixelformat;
-            if (xioctl(fd, VIDIOC_ENUM_FRAMESIZES, &size) == 0 && size.type != V4L2_FRMSIZE_TYPE_DISCRETE) {
+            v4l2_frmsizeenum sizes{};
+            sizes.pixel_format = description.pixelformat;
+            if (xioctl(fd, VIDIOC_ENUM_FRAMESIZES, &sizes) == 0 && sizes.type != V4L2_FRMSIZE_TYPE_DISCRETE) {
                 // Stepwise or continuous: the requested size, clamped to the range.
                 consider(description.pixelformat,
-                         std::clamp(options_.width, size.stepwise.min_width, size.stepwise.max_width),
-                         std::clamp(options_.height, size.stepwise.min_height, size.stepwise.max_height));
+                         std::clamp(options_.width, sizes.stepwise.min_width, sizes.stepwise.max_width),
+                         std::clamp(options_.height, sizes.stepwise.min_height, sizes.stepwise.max_height));
                 continue;
             }
-            for (size.index = 0; xioctl(fd, VIDIOC_ENUM_FRAMESIZES, &size) == 0; ++size.index) {
-                consider(description.pixelformat, size.discrete.width, size.discrete.height);
+            for (sizes.index = 0; xioctl(fd, VIDIOC_ENUM_FRAMESIZES, &sizes) == 0; ++sizes.index) {
+                consider(description.pixelformat, sizes.discrete.width, sizes.discrete.height);
             }
         }
         if (best.pixel_format == 0) {
@@ -400,12 +400,12 @@ private:
             frame.format = pixel_format == V4L2_PIX_FMT_NV12   ? VideoFrame::Format::nv12
                            : pixel_format == V4L2_PIX_FMT_YUYV ? VideoFrame::Format::yuy2
                                                                : VideoFrame::Format::i420;
-            const std::size_t size = packed_size(frame.format, width, height);
+            const std::size_t packed = packed_size(frame.format, width, height);
             const std::size_t row_bytes = frame.format == VideoFrame::Format::yuy2 ? width * 2 : width;
-            if (stride == row_bytes && data.size() >= size) {
-                frame.pixels = std::make_shared<std::vector<std::uint8_t>>(data.begin(), data.begin() + static_cast<std::ptrdiff_t>(size));
+            if (stride == row_bytes && data.size() >= packed) {
+                frame.pixels = std::make_shared<std::vector<std::uint8_t>>(data.begin(), data.begin() + static_cast<std::ptrdiff_t>(packed));
             } else {
-                auto pixels = std::make_shared<std::vector<std::uint8_t>>(size);
+                auto pixels = std::make_shared<std::vector<std::uint8_t>>(packed);
                 if (!repack(frame.format, data, width, height, stride, *pixels)) {
                     return;
                 }

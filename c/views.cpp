@@ -2502,9 +2502,9 @@ ELG_EXPORT View* elg_mod_on_pointer(const View* v, ElgClosure on_pointer) {
     const SharedFn f = required(on_pointer, "on_pointer");
     return out(v->on_pointer([f](const PointerEvent& event) {
         ElgPointerEvent arg = c_pointer_event(event);
-        bool consumed = false;
-        f->call(&arg, &consumed);
-        return consumed;
+        bool handled = false;
+        f->call(&arg, &handled);
+        return handled;
     }));
     ELG_CATCH(nullptr)
 }
@@ -2520,9 +2520,9 @@ ELG_EXPORT View* elg_mod_on_scroll(const View* v, ElgClosure on_scroll) {
     const SharedFn f = required(on_scroll, "on_scroll");
     return out(v->on_scroll([f](const ScrollEvent& event) {
         ElgScrollEvent arg = c_scroll_event(event);
-        bool consumed = false;
-        f->call(&arg, &consumed);
-        return consumed;
+        bool handled = false;
+        f->call(&arg, &handled);
+        return handled;
     }));
     ELG_CATCH(nullptr)
 }
@@ -2539,9 +2539,9 @@ ELG_EXPORT View* elg_mod_on_text_input(const View* v, ElgClosure on_text_input) 
     const SharedFn f = required(on_text_input, "on_text_input");
     return out(v->on_text_input([f](const TextInputEvent& event) {
         ElgTextInputEvent arg{static_cast<int32_t>(event.kind), c_str(event.text), event.cursor};
-        bool consumed = false;
-        f->call(&arg, &consumed);
-        return consumed;
+        bool handled = false;
+        f->call(&arg, &handled);
+        return handled;
     }));
     ELG_CATCH(nullptr)
 }
