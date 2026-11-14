@@ -43,7 +43,9 @@ TEMPLATE_PARAMETERS = {K.TEMPLATE_TYPE_PARAMETER, K.TEMPLATE_NON_TYPE_PARAMETER,
 PARAM = re.compile(r"[@\\]param(?:\[[a-z,]+\])?\s+(\w+)")
 TPARAM = re.compile(r"[@\\]tparam\s+(\w+)")
 RETURN = re.compile(r"[@\\]returns?\b")
-DOC_WARNINGS = ["-Wdocumentation", "-Wdocumentation-unknown-command", "-Wno-unknown-warning-option"]
+# Without the function bodies (skipped in the public headers), every private field looks unused.
+DOC_WARNINGS = ["-Wdocumentation", "-Wdocumentation-unknown-command", "-Wno-unknown-warning-option",
+                "-Wno-unused-private-field"]
 
 
 def load_libclang():
@@ -58,7 +60,8 @@ def load_libclang():
 
 
 def compile_commands(build):
-    """Each source's compiler arguments without the compiler, the source, and the output."""
+    """Each source's compiler arguments without the compiler, the source, the output, and -Werror:
+    this check decides what fails (documentation warnings and errors), not the build's warnings."""
     commands = {}
     for entry in json.loads((build / "compile_commands.json").read_text()):
         source = pathlib.Path(entry["directory"], entry["file"]).resolve()
@@ -69,6 +72,8 @@ def compile_commands(build):
                 skip = False
             elif arg in ("-o", "-c", "-MF", "-MT", "-MQ"):
                 skip = arg != "-c"
+            elif arg == "-Werror" or arg.startswith("-Werror="):
+                continue
             elif pathlib.Path(entry["directory"], arg).resolve() != source:
                 kept.append(arg)
         commands[source] = (kept, entry["directory"])
