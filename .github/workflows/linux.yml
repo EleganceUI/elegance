@@ -100,6 +100,12 @@ jobs:
                       vcpkg-v2-${{ matrix.runner }}-${{ matrix.cache }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-
                       vcpkg-v2-${{ matrix.runner }}-${{ matrix.cache }}-
 
+            # GitHub's kernels randomize addresses more than ThreadSanitizer allows. Before the
+            # dependencies build: some builds (meson's) run what they compile, with TSan too.
+            - name: Allow ThreadSanitizer
+              if: matrix.name == 'tsan'
+              run: sudo sysctl vm.mmap_rnd_bits=28
+
             # Configure every preset before saving their dependencies, including test packages.
             - name: Configure (build or restore dependencies)
               id: configure
@@ -147,11 +153,6 @@ jobs:
                   for preset in $PRESETS; do
                     cmake --build "build/$preset"
                   done
-
-            # GitHub's kernels randomize addresses more than ThreadSanitizer allows.
-            - name: Allow ThreadSanitizer
-              if: matrix.name == 'tsan'
-              run: sudo sysctl vm.mmap_rnd_bits=28
 
             - name: Test
               if: matrix.gpu != true
