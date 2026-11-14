@@ -128,8 +128,9 @@ every build option and how to use Elegance from your own CMake project.
 
 ### Tests
 
-The unit tests use [Catch2](https://github.com/catchorg/Catch2) 3 and need a static build.
-Enable vcpkg's `tests` feature, or point `Catch2_DIR` at an existing installation, then:
+The unit tests use [Catch2](https://github.com/catchorg/Catch2) 3, with a static or a shared
+Elegance; a shared one built with the tests exports its internals for them. Enable vcpkg's `tests`
+feature, or point `Catch2_DIR` at an existing installation, then:
 
 ```sh
 cmake --preset linux-release      # or macos-release, windows-release

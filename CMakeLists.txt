@@ -144,10 +144,7 @@ if (ELG_BUILD_SANDBOX)
     endif ()
 endif ()
 
-if (ELG_BUILD_TESTS AND ELG_BUILD_SHARED)
-    # A shared library hides the internals they test (elg::detail).
-    message(STATUS "Elegance: skipping the unit tests, which need a static build (ELG_BUILD_SHARED=OFF)")
-elseif (ELG_BUILD_TESTS)
+if (ELG_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif ()
