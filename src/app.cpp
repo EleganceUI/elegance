@@ -740,6 +740,7 @@ int App::run() {
         if (!live.fit) {
             return;
         }
+        const DeferEffects measuring; // what layout writes waits for the next flush
         const auto opener = find_window(live.fit->opener);
         if (opener == windows.end()) {
             return;
@@ -762,6 +763,7 @@ int App::run() {
 
     // Builds and posts a window's frame. Glyphs it used for the first time go to the atlas first.
     const auto post_frame = [&](LiveWindow& live) {
+        const DeferEffects drawing; // what layout and paint write waits for the next flush
         // Cleared first: layout may ask for another frame (lazy stacks measuring new items,
         // ScrollPosition requests settling), and that request must survive.
         live.dirty = false;
@@ -1430,12 +1432,22 @@ int App::run() {
         }
     };
 
+    // Each event's handlers run first; then their effects, so the next event sees what they changed.
+    const auto deliver = [&](const platform::Event& event) {
+        {
+            const DeferEffects dispatching;
+            handle(event);
+        }
+        flush_effects();
+        forget_removed();
+    };
+
     set_frame_time(seconds_now());
     while (!self.quit_requested) {
         // Idle: block until something happens. Animating: keep drawing, picking up events as
         // they come.
         const bool animating = std::ranges::any_of(windows, [](const auto& live) { return live->animating; });
-        if (!animating && !pending.any() && !has_lifecycle_actions()) {
+        if (!animating && !pending.any() && !has_lifecycle_actions() && !has_scheduled_effects()) {
             // Wake for the next timer or pending hover change (hover delays), else sleep until an
             // event.
             std::optional<double> deadline = next_timer_due();
@@ -1451,10 +1463,10 @@ int App::run() {
                     }
                 }
             }
-            handle(deadline ? platform.wait_event(*deadline - seconds_now()) : platform.wait_event());
+            deliver(deadline ? platform.wait_event(*deadline - seconds_now()) : platform.wait_event());
         }
         while (auto event = platform.poll_event()) {
-            handle(*event);
+            deliver(*event);
         }
         if (text.atlas.has_uploads()) {
             for (const auto& live : windows) {
@@ -1476,7 +1488,9 @@ int App::run() {
                 live->accessibility->update();
             }
         }
-        run_ui_tasks(); // e.g. a hot reload: state written here takes effect below
+        flush_effects(); // what hover changes wrote
+        run_ui_tasks(); // e.g. a hot reload
+        flush_effects();
         run_due_timers(seconds_now());
         flush_effects(); // hover and other effects may ask for popups
         forget_removed();

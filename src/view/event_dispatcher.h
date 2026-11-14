@@ -10,6 +10,7 @@
 #include "view/gestures.h"
 
 #include <elg/events.h>
+#include <elg/reactive.h>
 
 #include <optional>
 #include <vector>
@@ -27,6 +28,8 @@ namespace elg::detail {
 // - keys go to the focused element's handler, then bubble out through its ancestors until
 //   consumed; an unconsumed Tab / Shift+Tab moves focus through the focusable elements in tree
 //   order; pressing the pointer focuses the innermost focusable element under it (or clears focus).
+// Handlers run inside a DeferEffects: what they write takes effect at the next flush after the
+// method returns, so the tree doesn't change while events are being delivered.
 // Each method returns true when the window needs a new frame.
 class EventDispatcher {
 public:
@@ -44,7 +47,10 @@ public:
     // Menus: unhandled Up/Down move focus like Shift+Tab/Tab, Home/End to the first/last item.
     void set_menu_navigation(bool enabled) noexcept { menu_navigation_ = enabled; }
     // Focuses an element (no ring), e.g. a menu item under the pointer.
-    bool focus(Element* element) { return focus_->focus(element, false); }
+    bool focus(Element* element) {
+        const DeferEffects defer;
+        return focus_->focus(element, false);
+    }
     bool text_input(const TextInputEvent& event);
     bool scroll(ScrollEvent event);
     // Trackpad gestures. MagnifyEvent::scale and RotateEvent::degrees are filled in here, from the

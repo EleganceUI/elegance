@@ -12,6 +12,7 @@
 
 #include <elg/error.h>
 #include <elg/events.h>
+#include <elg/reactive.h>
 #include <elg/shapes.h>
 #include <elg/styles.h>
 #include <elg/views.h>
@@ -153,4 +154,23 @@ TEST_CASE("a disabled view doesn't activate", "[click]") {
 
 TEST_CASE("on_activate needs an action", "[click]") {
     CHECK_THROWS_AS(kSquare.on_activate({}), UsageError);
+}
+
+TEST_CASE("what a click handler writes takes effect after the click", "[click][reactive]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const State<int> clicks(0);
+    std::vector<int> seen;
+    effect([=, &seen] { seen.push_back(clicks()); });
+    std::vector<int> seen_in_handler;
+    const Window window(kSquare.on_click([=, &seen, &seen_in_handler](const ClickEvent&) {
+        batch([=] { clicks += 1; }); // outside an event, this would run the effect at once
+        seen_in_handler = seen;
+    }));
+
+    window.click({30, 40});
+    CHECK(seen_in_handler == std::vector<int>{0});
+    CHECK(seen == std::vector<int>{0}); // waiting for the flush after the event
+    detail::flush_effects();
+    CHECK(seen == std::vector<int>{0, 1});
 }
