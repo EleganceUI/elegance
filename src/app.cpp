@@ -1457,8 +1457,23 @@ int App::run() {
         }
     };
 
+    // Views that just became .disabled() lose their press, gestures, and focus; what the cancelled
+    // handlers write takes effect too. Removed elements are forgotten first, so this touches none.
+    const auto release_disabled = [&] {
+        forget_removed();
+        for (const auto& live : windows) {
+            if (live->events.release_disabled()) {
+                live->dirty = true;
+                flush_effects();
+                forget_removed();
+            }
+        }
+    };
+
     // Each event's handlers run first; then their effects, so the next event sees what they changed.
+    // What the last event, task or timer disabled lets go before this event is dispatched.
     const auto deliver = [&](const platform::Event& event) {
+        release_disabled();
         {
             const DeferEffects dispatching;
             handle(event);
@@ -1563,16 +1578,7 @@ int App::run() {
         while (run_lifecycle_actions()) {
             flush_effects();
         }
-        forget_removed();
-        // Views that just became .disabled() lose their press, gestures, and focus; what the
-        // cancelled handlers write takes effect too.
-        for (const auto& live : windows) {
-            if (live->events.release_disabled()) {
-                live->dirty = true;
-                flush_effects();
-                forget_removed();
-            }
-        }
+        release_disabled();
         const std::shared_ptr<const Animation> transaction = take_flush_animation();
         const LayoutAnimationScope layout_animation(transaction.get());
         finish_closing();

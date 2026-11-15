@@ -844,6 +844,8 @@ public:
     HoverDelay effective_hover_delay() const override { return {.enter = 0, .exit = 0}; }
 
     EventHandler* event_handler() noexcept override { return this; }
+    // Disabled: the dispatcher cancels its press and moves focus off it (release_disabled).
+    EventHandler* disabled_handler() noexcept override { return untrack(enabled_) ? nullptr : this; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
     // Written on focus changes, for styles (ButtonConfiguration::is_focused).
