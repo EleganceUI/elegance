@@ -129,3 +129,25 @@ TEST_CASE("one Tab press asks each element once, however deep the focus scopes n
     CHECK(log == std::vector<std::string>{"inner"});
     CHECK(asked <= 2); // walking the scopes one by one asked it once per scope, and per scope above
 }
+
+TEST_CASE("a press focuses the innermost focusable view under it, or clears focus", "[focus]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    std::vector<std::string> log;
+    int asked = 0;
+    const Window window(HStack({.spacing = 0}, square().modifier(Stop("a", &log, &asked)), square(),
+                               square().modifier(Stop("c", &log, &asked)).focusable(false)));
+    const auto press = [&](Point at) {
+        window.events->pointer_button(PointerEvent::Kind::down, at, MouseButton::left, 1, KeyModifiers::none);
+        window.events->pointer_button(PointerEvent::Kind::up, at, MouseButton::left, 1, KeyModifiers::none);
+    };
+    press({10, 10});
+    CHECK(log == std::vector<std::string>{"a"});
+    CHECK_FALSE(window.focus.ring_visible()); // focus from a press shows no ring
+    press({30, 10}); // nothing focusable there
+    CHECK_FALSE(window.focus.focused());
+    window.press(Key::tab);
+    CHECK(window.focus.ring_visible()); // focus from Tab does
+    press({50, 10}); // inside .focusable(false): focus stays where it is
+    CHECK(window.focus.focused());
+}

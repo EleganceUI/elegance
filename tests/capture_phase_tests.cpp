@@ -133,3 +133,21 @@ TEST_CASE("scrolling reaches capture handlers first", "[capture-phase]") {
     window.events->scroll({.location = {50, 50}, .dy = 10});
     CHECK(log == std::vector<std::string>{"outer", "inner"});
 }
+
+TEST_CASE("a scroll gesture stays with the view that took its first event", "[scroll]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    std::vector<std::string> log;
+    const Window window(HStack({.spacing = 0},
+                               Rectangle().fill(Color::black).frame(50, 100).on_scroll([&](const ScrollEvent&) {
+                                   log.emplace_back("left");
+                                   return true;
+                               }),
+                               Rectangle().fill(Color::black).frame(50, 100).on_scroll([&](const ScrollEvent&) {
+                                   log.emplace_back("right");
+                                   return true;
+                               })));
+    window.events->scroll({.location = {25, 50}, .dy = 10, .phase = GesturePhase::began});
+    window.events->scroll({.location = {75, 50}, .dy = 10, .phase = GesturePhase::changed}); // fingers moved over
+    CHECK(log == std::vector<std::string>{"left", "left"});
+}
