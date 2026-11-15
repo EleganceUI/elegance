@@ -7,6 +7,8 @@
 
 #include <elg/desktop.h>
 
+#include "platform/generic/desktop_sdl.h"
+
 #include "core/log.h"
 #include "core/ui_tasks.h"
 #include "media/image_decode.h"
@@ -22,6 +24,7 @@
 #include <fstream>
 #include <list>
 #include <mutex>
+#include <vector>
 
 
 namespace elg {
@@ -182,18 +185,33 @@ struct TrayIcon::State {
     };
     std::list<Entry> entries;
 
-    State() = default;
+    // Every State, while it lives (UI thread only), for remove_tray_icons().
+    static std::vector<State*>& all() {
+        static std::vector<State*> states;
+        return states;
+    }
+
+    State() { all().push_back(this); }
     State(const State&) = delete;
     State(State&&) = delete;
     State& operator=(const State&) = delete;
     State& operator=(State&&) = delete;
     ~State() {
+        take_down();
+        std::erase(all(), this);
+    }
+
+    // Out of the tray for good: the methods then find no tray, and do nothing.
+    void take_down() {
         if (tray) {
             SDL_DestroyTray(tray);
+            tray = nullptr;
         }
         if (icon) {
             SDL_DestroySurface(icon);
+            icon = nullptr;
         }
+        entries.clear();
     }
 
     static void SDLCALL chosen(void* userdata, SDL_TrayEntry* entry) {
@@ -291,6 +309,16 @@ struct TrayIcon::State {
         rebuild_menu();
     }
 };
+
+namespace detail::platform {
+
+void remove_tray_icons() {
+    for (TrayIcon::State* state : TrayIcon::State::all()) {
+        state->take_down();
+    }
+}
+
+} // namespace detail::platform
 
 TrayIcon::TrayIcon(TrayIconOptions options) : state_(std::make_shared<State>()) {
     require_app("TrayIcon");

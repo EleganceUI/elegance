@@ -9,6 +9,7 @@
 #include "core/log.h"
 #include "core/scope_exit.h"
 #include "core/timers.h"
+#include "platform/generic/desktop_sdl.h"
 #include "platform/generic/menu_bar.h"
 #include "platform/generic/native.h"
 #include "platform/generic/platform.h"
@@ -472,6 +473,7 @@ int App::run() {
     const ScopeExit forget_handlers([] {
         platform::native::forget_notification_handlers();
         platform::native::forget_menu_command();
+        platform::remove_tray_icons(); // before SDL quits; TrayIcons kept after the run do nothing
     });
 
     // Fonts and glyphs, shared by all windows; outlives every element tree. Glyphs finishing on
