@@ -76,7 +76,12 @@ function(elegance_warnings target)
         else ()
             list(APPEND warnings
                 -Wshadow
-                -Wnull-dereference
+                # Not -Wnull-dereference, nor -Wall's -Wmaybe-uninitialized: GCC 14 checks them in
+                # its optimizer, after inlining, and reports them inside libstdc++ and Boost
+                # (stream iterators, a shared_ptr or vector in a variant, Asio's executors), where
+                # -isystem doesn't hide them. Clang's warnings and the sanitizer builds still check
+                # Elegance's own code for both.
+                -Wno-maybe-uninitialized
                 -Wduplicated-cond
                 -Wduplicated-branches
                 -Wlogical-op
@@ -94,4 +99,14 @@ function(elegance_warnings target)
         endif ()
     endif ()
     target_compile_options(${target} PRIVATE ${warnings})
+endfunction()
+
+# The warning set for the C API (c/), whose exported functions have no declaration here: the
+# bindings (elegance-sys) declare them, until a C header ships (ELGSPEC-0007.R14).
+function(elegance_c_api_warnings target)
+    elegance_warnings(${target})
+    if (NOT MSVC)
+        target_compile_options(${target} PRIVATE -Wno-missing-declarations
+                               $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-missing-prototypes>)
+    endif ()
 endfunction()

@@ -250,8 +250,8 @@ TEST_CASE("a view started spinning in on_appear keeps turning", "[lifecycle][ani
     // The angle drawn at `seconds`, and whether the frame asks for another.
     const auto angle_at = [&](double seconds, bool* animating = nullptr) {
         detail::set_frame_time(seconds);
-        root->size_that_fits({12, 12});
-        root->place({}, {12, 12});
+        root->size_that_fits({12.f, 12.f});
+        root->place({}, {12.f, 12.f});
         detail::DisplayList list;
         root->paint(list);
         if (animating) {

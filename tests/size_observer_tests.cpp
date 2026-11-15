@@ -23,10 +23,10 @@ TEST_CASE("size observers report mount, resize and DPI without relayout",
 
     root->notify_render_size(2);
     CHECK(sizes.empty()); // No speculative measurements before placement.
-    root->size_that_fits({500, 500});
-    root->size_that_fits({10, 10});
+    root->size_that_fits({500.f, 500.f});
+    root->size_that_fits({10.f, 10.f});
     CHECK(sizes.empty());
-    root->place({}, {100, 50});
+    root->place({}, {100.f, 50.f});
     needs_frame = false; // Mounting reactive effects requests the initial frame.
     CHECK(sizes.empty()); // Delivered only after the full layout pass.
     root->notify_render_size(2);
@@ -34,7 +34,7 @@ TEST_CASE("size observers report mount, resize and DPI without relayout",
     CHECK(sizes.back() == PixelSize{200, 100});
     CHECK_FALSE(needs_frame); // Observation alone doesn't request another frame.
 
-    root->place({}, {100, 50}); // Cached layout.
+    root->place({}, {100.f, 50.f}); // Cached layout.
     root->notify_render_size(2);
     CHECK(sizes.size() == 1);
     root->notify_render_size(1.5f); // Same logical frame; a different display.
@@ -75,11 +75,11 @@ TEST_CASE("size observation sees nested layout bounds and zero sizes without "
                     .on_size_change([&](PixelSize size) { sizes.push_back(size); })
                     .padding(10);
     auto root = detail::lower(view, {});
-    root->place({}, {100, 80});
+    root->place({}, {100.f, 80.f});
     root->notify_render_size(2);
     REQUIRE(sizes.size() == 1);
     CHECK(sizes.back() == PixelSize{160, 120});
-    root->place({}, {20, 20});
+    root->place({}, {20.f, 20.f});
     root->notify_render_size(2);
     REQUIRE(sizes.size() == 2);
     CHECK(sizes.back() == PixelSize{0, 0});
@@ -97,7 +97,7 @@ TEST_CASE(
     auto root = detail::lower(Rectangle().on_size_change(
                                                                 [&](PixelSize size) { sizes.push_back(size); }),
                                                         {});
-    root->place({}, {100, 50});
+    root->place({}, {100.f, 50.f});
     root->notify_render_size(0);
     root->notify_render_size(std::numeric_limits<float>::quiet_NaN());
     CHECK(sizes.empty());

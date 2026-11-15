@@ -106,6 +106,51 @@ if (elg_vcpkg_root)
     set(CMAKE_TOOLCHAIN_FILE "${elg_vcpkg_root}/${elg_vcpkg_toolchain_suffix}" CACHE FILEPATH "" FORCE)
 endif ()
 
+# --- libc++ on Linux --------------------------------------------------------------------------------------
+
+# Clang with -stdlib=libc++ (in CMAKE_CXX_FLAGS or CXXFLAGS) is all a build needs to choose: the vcpkg
+# dependencies are then built against libc++ too, with the same compilers (ELGSPEC-0006.R14).
+cmake_host_system_information(RESULT elg_host_os QUERY OS_NAME)
+cmake_host_system_information(RESULT elg_host_arch QUERY OS_PLATFORM)
+if (elg_host_os STREQUAL "Linux")
+    if (NOT DEFINED VCPKG_TARGET_TRIPLET AND "${CMAKE_CXX_FLAGS} $ENV{CXXFLAGS}" MATCHES "-stdlib=libc\\+\\+")
+        if (elg_host_arch MATCHES "^(aarch64|arm64)$")
+            set(VCPKG_TARGET_TRIPLET arm64-linux-libcxx CACHE STRING "")
+        else ()
+            set(VCPKG_TARGET_TRIPLET x64-linux-libcxx CACHE STRING "")
+        endif ()
+    endif ()
+    if (VCPKG_TARGET_TRIPLET MATCHES "-linux-libcxx")
+        if (NOT "${CMAKE_CURRENT_LIST_DIR}/triplets" IN_LIST VCPKG_OVERLAY_TRIPLETS)
+            list(APPEND VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_LIST_DIR}/triplets")
+            set(VCPKG_OVERLAY_TRIPLETS "${VCPKG_OVERLAY_TRIPLETS}" CACHE STRING "" FORCE)
+        endif ()
+        # The triplets' toolchain reads the compilers from the environment, which vcpkg passes through.
+        if (CMAKE_CXX_COMPILER)
+            set(elg_cxx "${CMAKE_CXX_COMPILER}")
+        elseif (DEFINED ENV{CXX})
+            set(elg_cxx "$ENV{CXX}")
+        else ()
+            set(elg_cxx clang++)
+        endif ()
+        if (CMAKE_C_COMPILER)
+            set(elg_cc "${CMAKE_C_COMPILER}")
+        elseif (DEFINED ENV{CC})
+            set(elg_cc "$ENV{CC}")
+        else ()
+            string(REGEX REPLACE "clang\\+\\+" "clang" elg_cc "${elg_cxx}")
+        endif ()
+        find_program(elg_cxx_path NAMES "${elg_cxx}" NO_CACHE)
+        find_program(elg_cc_path NAMES "${elg_cc}" NO_CACHE)
+        if (NOT elg_cxx_path OR NOT elg_cc_path)
+            message(FATAL_ERROR "Elegance: the libc++ build needs Clang, but \"${elg_cxx}\" or \"${elg_cc}\" wasn't "
+                                "found. Pick it with -DCMAKE_CXX_COMPILER=clang++-19 -DCMAKE_C_COMPILER=clang-19, say.")
+        endif ()
+        set(ENV{ELG_LIBCXX_CXX} "${elg_cxx_path}")
+        set(ENV{ELG_LIBCXX_CC} "${elg_cc_path}")
+    endif ()
+endif ()
+
 # --- Ninja -------------------------------------------------------------------------------------------------
 
 if (CMAKE_GENERATOR MATCHES "Ninja" AND NOT CMAKE_MAKE_PROGRAM)
