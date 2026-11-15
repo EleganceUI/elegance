@@ -522,7 +522,9 @@ private:
 
 class CanvasElement final : public Element {
 public:
-    explicit CanvasElement(std::function<void(GraphicsContext&)> draw) : draw_(std::move(draw)) {}
+    // `reads` becomes what the drawing reads each time it paints.
+    CanvasElement(std::function<void(GraphicsContext&)> draw, std::shared_ptr<ReactiveNode> reads)
+        : draw_(std::move(draw)), reads_(std::move(reads)) {}
     bool cullable() const override { return false; } // it may draw outside its frame
 
 protected:
@@ -533,6 +535,7 @@ protected:
 
 private:
     std::function<void(GraphicsContext&)> draw_;
+    std::shared_ptr<ReactiveNode> reads_;
 };
 
 // `.transition(...)`, and the wrapper If/ForEach put around each child: animates the child in

@@ -10,6 +10,8 @@
 
 #include "reactive/runtime.h"
 
+#include "core/scope_exit.h"
+
 #include <elg/error.h>
 
 #include <algorithm>
@@ -248,6 +250,13 @@ void check_ui_thread() {
         throw UsageError("reactive state was used off the UI thread; state belongs to the UI thread "
                          "(design.md §6)");
     }
+}
+
+void track_reads(ReactiveNode& observer, const std::function<void()>& function) {
+    Runtime::unlink_sources(&observer);
+    ReactiveNode* const previous = std::exchange(g_observer, &observer);
+    const ScopeExit restore([previous] { g_observer = previous; });
+    function();
 }
 
 void begin_batch() noexcept {

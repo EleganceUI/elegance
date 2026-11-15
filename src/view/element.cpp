@@ -4,6 +4,8 @@
 
 #include "view/element.h"
 
+#include "reactive/runtime.h"
+
 #include "view/focus.h"
 #include "view/view_node.h"
 
@@ -496,7 +498,11 @@ void CanvasElement::paint_impl(DisplayList& list) const {
         return;
     }
     GraphicsContext context(list, frame(), list.scale);
-    draw_(context);
+    if (reads_) {
+        track_reads(*reads_, [&] { draw_(context); });
+    } else {
+        draw_(context);
+    }
 }
 
 // --- LayoutElement ---

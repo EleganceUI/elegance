@@ -13,6 +13,7 @@ add_executable(elegance_tests
         animation_tests.cpp
         audio_tests.cpp
         backdrop_tests.cpp
+        canvas_tests.cpp
         capture_tests.cpp
         desktop_tests.cpp
         environment_tests.cpp
