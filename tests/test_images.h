@@ -118,6 +118,27 @@ inline std::vector<std::uint8_t> black_png(std::uint32_t width, std::uint32_t he
     return png;
 }
 
+// EXIF data with only an orientation (1-8): a little-endian TIFF header, then one IFD of one entry.
+inline std::vector<std::uint8_t> exif_orientation(int orientation) {
+    std::vector<std::uint8_t> exif;
+    append(exif, {'I', 'I', 42, 0, 8, 0, 0, 0}); // its first IFD at 8
+    append(exif, {1, 0, 0x12, 0x01, 3, 0, 1, 0, 0, 0, orientation, 0, 0, 0, 0, 0, 0, 0});
+    return exif;
+}
+
+// `png` (a whole PNG file) with an eXIf chunk of `exif` after its IHDR chunk.
+inline std::vector<std::uint8_t> with_png_exif(const std::vector<std::uint8_t>& png, const std::vector<std::uint8_t>& exif) {
+    constexpr std::size_t kAfterHeader = 8 + 25; // the signature, then IHDR: length, type, 13 bytes, CRC
+    std::vector<std::uint8_t> out(png.begin(), png.begin() + kAfterHeader);
+    append_chunk(out, "eXIf", exif);
+    out.insert(out.end(), png.begin() + kAfterHeader, png.end());
+    return out;
+}
+
+inline std::vector<std::uint8_t> with_png_orientation(const std::vector<std::uint8_t>& png, int orientation) {
+    return with_png_exif(png, exif_orientation(orientation));
+}
+
 // A whole JPEG file (ImageIO doesn't read the size of one cut short): an EXIF orientation, then a
 // 3 x 2 gray baseline image. Its one block is mid-gray: each Huffman table has one code, 1 bit long,
 // for "no change" (DC) and "end of block" (AC).
