@@ -31,6 +31,7 @@ add_executable(elegance_tests
         floating_tests.cpp
         modifier_shorthand_tests.cpp
         picker_slider_style_tests.cpp
+        menu_bar_tests.cpp
         menu_style_tests.cpp
         selection_tests.cpp
         secure_text_input_tests.cpp

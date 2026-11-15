@@ -583,17 +583,24 @@ int App::run() {
     // The menu bar (design.md §13.4): the system's (macOS, Windows), or drawn at the top of each
     // window (Linux). Chosen items come here, from the menus or their shortcuts.
     const bool macos_menus = current_platform() == Platform::macos;
-    State<std::vector<menus::Item>> shown_menus(menus::resolve(self.menus, macos_menus));
+    // A chosen item's id is looked up in the menus that were shown when it was chosen, which its
+    // command carries along: never in menus given since, where the id may be another item.
+    menus::Source shown_source = std::make_shared<const std::vector<MenuBarItem>>(self.menus);
+    State<std::vector<menus::Item>> shown_menus(menus::resolve(shown_source, macos_menus));
     State<std::map<std::uint32_t, bool>> shown_checks;
-    const auto run_menu_command = [&](std::uint32_t id) {
-        const MenuBarItem* found = menus::find(self.menus, id);
+    const auto run_menu_command = [&](const menus::Source& source, std::uint32_t id) {
+        const MenuBarItem* found = source ? menus::find(*source, id) : nullptr;
         if (!found || !found->enabled) {
             return;
         }
-        // Copied: its callbacks may replace the menu bar (App::menu_bar), destroying the item
-        // and the function that's running.
+        // Copied: its callbacks may replace the menu bar (App::menu_bar).
         const MenuBarItem item = *found;
-        if (item.checked) {
+        if (item.checked && source != shown_source) {
+            // Chosen from menus replaced since: its own callback, with nothing shown to update.
+            if (item.toggled) {
+                item.toggled(!*item.checked);
+            }
+        } else if (item.checked) {
             const auto known = self.menu_checks.find(id);
             const bool now = !(known != self.menu_checks.end() ? known->second : *item.checked);
             self.menu_checks[id] = now;
@@ -630,12 +637,14 @@ int App::run() {
         }
     };
     self.show_menus = [&] {
-        shown_menus = menus::resolve(self.menus, macos_menus);
+        shown_source = std::make_shared<const std::vector<MenuBarItem>>(self.menus);
+        shown_menus = menus::resolve(shown_source, macos_menus);
         shown_checks = self.menu_checks;
         if (!platform::native::draws_menu_bar_in_content()) {
-            // Commands from the system's menus run between events, like other UI tasks.
-            platform::native::set_menu_bar(shown_menus.peek(), [&run_menu_command](std::uint32_t id) {
-                post_ui_task([&run_menu_command, id] { run_menu_command(id); });
+            // Commands from the system's menus run between events, like other UI tasks, on the
+            // menus these are.
+            platform::native::set_menu_bar(shown_menus.peek(), [&run_menu_command, source = shown_source](std::uint32_t id) {
+                post_ui_task([&run_menu_command, source, id] { run_menu_command(source, id); });
             });
         }
     };
@@ -647,7 +656,9 @@ int App::run() {
         for (WindowEntry& entry : self.windows) {
             entry.wrap = [&shown_menus, &shown_checks, &run_menu_command](const View& content) {
                 View bar = menus::menu_bar_view([&shown_menus] { return shown_menus(); },
-                                                [&run_menu_command](std::uint32_t id) { run_menu_command(id); },
+                                                [&run_menu_command](const menus::Source& source, std::uint32_t id) {
+                                                    run_menu_command(source, id);
+                                                },
                                                 [&shown_checks, &shown_menus](std::uint32_t id) {
                                                     const auto& checks = shown_checks();
                                                     if (const auto found = checks.find(id); found != checks.end()) {
@@ -1409,7 +1420,7 @@ int App::run() {
                     // A menu item's shortcut, once no view wanted the key.
                     if (const std::uint32_t id =
                             menus::match_shortcut(shown_menus.peek(), KeyboardShortcut{key.key, key.modifiers})) {
-                        run_menu_command(id);
+                        run_menu_command(shown_source, id);
                     }
                 }
             }
