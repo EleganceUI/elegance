@@ -13,6 +13,8 @@
 #include "gpu/video_textures.h"
 #include "render/frame_plan.h"
 #include "render/intermediate_images.h"
+#include "render/path_cache.h"
+#include "view/view_node.h"
 
 #include <elg/elegance.h>
 
@@ -29,6 +31,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 using namespace elg;
@@ -331,6 +334,82 @@ TEST_CASE("a path's fan triangles are built from its plan, in mask pixels", "[gp
     CHECK(vertices[1] == std::array<float, 2>{10 * path.scale + dx, dy});
     CHECK(vertices[3] == vertices[0]);
     CHECK(vertices[5] == std::array<float, 2>{dx, 10 * path.scale + dy});
+}
+
+namespace {
+
+// The polygon sets of the paths in `list`, in order.
+std::vector<std::shared_ptr<const detail::Polygons>> polygons_in(const detail::DisplayList& list) {
+    std::vector<std::shared_ptr<const detail::Polygons>> found;
+    for (const detail::DrawCommand& command : list.commands) {
+        if (const auto* path = std::get_if<detail::PathCommand>(&command)) {
+            found.push_back(path->polygons);
+        }
+    }
+    return found;
+}
+
+} // namespace
+
+TEST_CASE("a path a canvas draws again unchanged is not flattened again", "[gpu-memory]") {
+    detail::PathCache cache;
+    const Path circle = Path().add_circle({50, 50}, 40);
+    // A frame of a canvas that fills and strokes the circle, then fills `other`, at `scale`.
+    const auto frame = [&](const Path& other, float scale) {
+        detail::DisplayList list;
+        {
+            const detail::PathCache::Use use(cache);
+            GraphicsContext g(list, {10, 10, 100, 100}, scale);
+            g.fill_path(circle, ShapeStyle(Color::black));
+            g.stroke_path(circle, Color::white, {.width = 2});
+            g.fill_path(other, ShapeStyle(Color::black));
+        }
+        cache.end_frame();
+        return polygons_in(list);
+    };
+    const Path square = Path().add_rect({0, 0, 10, 10});
+    const auto first = frame(square, 2);
+    REQUIRE(first.size() == 3);
+    CHECK(cache.flattened() == 3);
+
+    // The same paths at the same scale: the same polygon sets, nothing flattened.
+    CHECK(frame(Path().add_rect({0, 0, 10, 10}), 2) == first);
+    CHECK(cache.flattened() == 3);
+    // Another square: only it is flattened.
+    const auto other = frame(Path().add_rect({0, 0, 20, 10}), 2);
+    CHECK(cache.flattened() == 4);
+    CHECK(other[0] == first[0]);
+    CHECK(other[1] == first[1]);
+    CHECK(other[2] != first[2]);
+    // At another scale (finer flattening), all of them again.
+    frame(square, 3);
+    CHECK(cache.flattened() == 7);
+    // The scale-2 paths weren't drawn in the frame before: forgotten.
+    frame(square, 2);
+    CHECK(cache.flattened() == 10);
+}
+
+TEST_CASE("a Canvas view's paths are flattened once while they stay the same", "[gpu-memory]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    detail::PathCache cache;
+    const detail::PathCache::Use paths(cache);
+    const auto root = detail::lower(Canvas([](GraphicsContext& g) {
+                                        g.fill_path(Path().add_circle({20, 20}, 10), ShapeStyle(Color::black));
+                                    }),
+                                    {});
+    // Lowering runs the drawing to see what it reads: no path is flattened for that.
+    CHECK(cache.flattened() == 0);
+    root->size_that_fits({100.f, 50.f});
+    root->place({}, {100.f, 50.f});
+    for (int i = 0; i < 3; ++i) {
+        detail::DisplayList list;
+        list.scale = 2;
+        root->paint(list);
+        cache.end_frame();
+        CHECK(polygons_in(list).size() == 1);
+    }
+    CHECK(cache.flattened() == 1);
 }
 
 TEST_CASE("offscreen images are no larger than the device's textures", "[gpu-memory]") {

@@ -14,6 +14,7 @@
 #include "platform/generic/platform.h"
 #include "reactive/runtime.h"
 #include "render/frame_mailbox.h"
+#include "render/path_cache.h"
 #include "render/render_thread.h"
 #include "text/text_system.h"
 #include "view/animated.h"
@@ -297,6 +298,7 @@ struct LiveWindow {
     FocusManager focus{&services}; // outlives the tree (elements let go of it when destroyed)
     std::unique_ptr<Scope> scope = std::make_unique<Scope>();
     std::unique_ptr<Element> root;
+    PathCache paths; // what its canvases flattened, from one frame to the next
     EventDispatcher events{*root, focus};
     // Screen readers (design.md §12); made by App::run, dormant until one asks.
     std::unique_ptr<AccessibilityAdapter> accessibility;
@@ -339,7 +341,11 @@ WindowFrame build_frame(LiveWindow& live) {
     const Size fitted = live.root->size_that_fits(proposal);
     live.root->place(aligned_position({0, 0, size.width, size.height}, fitted, Alignment::center), proposal);
     live.root->notify_render_size(frame.scale);
-    live.root->paint(frame.list);
+    {
+        const PathCache::Use paths(live.paths);
+        live.root->paint(frame.list);
+    }
+    live.paths.end_frame();
     return frame;
 }
 

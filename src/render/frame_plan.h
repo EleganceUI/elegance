@@ -41,8 +41,6 @@ struct PlanSegment {
     int backdrop = -1;
 };
 
-using Polygons = std::vector<std::vector<Point>>;
-
 // A path's coverage mask to render before the passes that use it (gpu::PathRenderer), unless a
 // mask with the same key is kept from an earlier frame.
 struct PlanPath {

@@ -21,6 +21,10 @@
 
 namespace elg {
 
+namespace detail {
+struct PathAccess;
+}
+
 /// Which points a path's outline encloses where it overlaps itself.
 enum class FillRule {
     non_zero, ///< inside if the outline winds around the point at all (overlaps stay filled)
@@ -189,6 +193,7 @@ public:
     friend bool operator==(const Path&, const Path&) = default;
 
 private:
+    friend struct detail::PathAccess;
     enum class Verb : std::uint8_t { move, line, quad, cubic, close };
 
     ELG_PRIVATE_MEMBERS_BEGIN

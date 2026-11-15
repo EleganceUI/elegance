@@ -51,6 +51,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         render/display_list.cpp
         render/frame_mailbox.cpp
         render/frame_plan.cpp
+        render/path_cache.cpp
         render/render_thread.cpp
         render/window_target.cpp
         text/font_library.cpp

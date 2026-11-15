@@ -1368,6 +1368,7 @@ std::unique_ptr<Element> CanvasNode::lower(const LowerContext& context) const {
             return;
         }
         DisplayList scratch;
+        scratch.probe = true;
         GraphicsContext graphics(scratch, target->frame(), 1);
         draw(graphics);
         if (!std::exchange(*first, false) && needs_frame) {
