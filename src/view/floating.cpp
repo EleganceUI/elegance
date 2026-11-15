@@ -446,7 +446,13 @@ private:
         };
     }
 
+    // Untracked: what the content reads while it mounts (its bodies, its first values) doesn't
+    // subscribe the effect that follows the binding.
     void open() {
+        untrack([this] { open_untracked(); });
+    }
+
+    void open_untracked() {
         if (presence_->open) {
             return;
         }

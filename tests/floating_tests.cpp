@@ -566,3 +566,28 @@ TEST_CASE("Esc closes floating content even when its binding ignores the write",
     CHECK(content_clicks == 1); // closed: no longer on screen to click
 }
 
+TEST_CASE("what floating content reads while it mounts doesn't re-run its binding", "[floating]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const State<bool> shown(true);
+    const State<int> label(0);
+    int reads = 0;
+    const Binding<bool> counted([shown, &reads] {
+        ++reads;
+        return shown();
+    }, [shown](bool value) { shown = value; });
+    Window window(Rectangle()
+                      .fill(Color::black)
+                      .frame(50, 20)
+                      .floating(counted,
+                                [label] {
+                                    return Rectangle().fill(Color::black).frame(80, 40).opacity(label() > 0 ? 0.5f : 1.f);
+                                },
+                                {.boundary = FloatingBoundary::window})
+                      .offset(100, 100));
+    window.layout();
+    const int before = reads;
+    label = 1; // read by the content's body when it mounted
+    window.layout();
+    CHECK(reads == before);
+}
