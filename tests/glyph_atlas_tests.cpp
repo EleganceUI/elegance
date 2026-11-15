@@ -209,6 +209,44 @@ TEST_CASE("faces with the same glyphs share one disk cache file", "[text]") {
     CHECK(disk.find(a, kField, 2, 2, 3) == two); // the same glyphs
 }
 
+TEST_CASE("writing a font's cache file deletes its files of the earlier naming", "[text]") {
+    detail::TextSystem text;
+    const detail::FontFace& face = text.fonts.resolve(Font::system(12));
+    std::uint32_t glyph = 0;
+    const detail::GlyphUpload generated = first_glyph(face, glyph);
+    const TemporaryDirectory directory;
+    const auto store = [&] {
+        detail::GlyphDiskCache disk(directory.path);
+        disk.store(face, detail::DistanceField::multi_channel, glyph, generated.width, generated.height,
+                   generated.rgba);
+    };
+    store();
+    // The font's file: its name starts with the hash of the font's bytes.
+    std::vector<std::filesystem::path> files;
+    for (const auto& entry : std::filesystem::directory_iterator(directory.path)) {
+        files.push_back(entry.path());
+    }
+    REQUIRE(files.size() == 1);
+    const std::string name = files[0].filename().string();
+    const std::string hash = name.substr(0, name.find('-'));
+    REQUIRE(hash.size() == 16);
+
+    // Written again, after files named as before turned up for it and for another font.
+    std::filesystem::remove(files[0]);
+    const std::string other = std::string(16, '0') == hash ? std::string(16, '1') : std::string(16, '0');
+    for (const std::string& old : {hash + ".glyphs", hash + "-wght400.glyphs", hash + "-wght700.glyphs",
+                                   other + ".glyphs", other + "-wght400.glyphs"}) {
+        std::ofstream(directory.path / old) << "old";
+    }
+    store();
+    CHECK(std::filesystem::exists(directory.path / name));
+    CHECK_FALSE(std::filesystem::exists(directory.path / (hash + ".glyphs")));
+    CHECK_FALSE(std::filesystem::exists(directory.path / (hash + "-wght400.glyphs")));
+    CHECK_FALSE(std::filesystem::exists(directory.path / (hash + "-wght700.glyphs")));
+    CHECK(std::filesystem::exists(directory.path / (other + ".glyphs")));
+    CHECK(std::filesystem::exists(directory.path / (other + "-wght400.glyphs")));
+}
+
 #if defined(__linux__)
 TEST_CASE("the system font for each weight is a file that exists", "[text][linux]") {
     const auto regular = detail::system_font_candidates(Weight::regular, false);

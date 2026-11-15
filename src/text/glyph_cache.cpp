@@ -8,10 +8,12 @@
 #include "platform/generic/platform.h"
 #include "text/atlas.h"
 
+#include <algorithm>
 #include <cstring>
 #include <format>
 #include <span>
 #include <string>
+#include <string_view>
 
 namespace elg::detail {
 
@@ -59,6 +61,37 @@ std::uint64_t hash_font(const std::vector<unsigned char>& bytes) {
         hash ^= hash >> 29;
     }
     return fnv1a(bytes.data() + words * 8, bytes.size() - words * 8, hash);
+}
+
+// Deletes the files that cache versions before 6 kept for the font whose bytes hash to `hash`
+// (hexadecimal): "<hash>.glyphs" and "<hash>-wght<weight>.glyphs".
+void remove_old_files(const std::filesystem::path& directory, const std::string& hash) {
+    constexpr std::string_view kExtension = ".glyphs";
+    constexpr std::string_view kWeight = "-wght";
+    std::vector<std::filesystem::path> old;
+    std::error_code error;
+    std::filesystem::directory_iterator it(directory, error);
+    for (; !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
+        const std::string name = it->path().filename().string();
+        if (!name.starts_with(hash) || !name.ends_with(kExtension)) {
+            continue;
+        }
+        // Between the hash and the extension: nothing, or "-wght" and digits.
+        std::string_view rest = name;
+        rest = rest.substr(hash.size(), rest.size() - hash.size() - kExtension.size());
+        if (!rest.empty()) {
+            if (!rest.starts_with(kWeight) || rest.size() == kWeight.size()) {
+                continue;
+            }
+            rest.remove_prefix(kWeight.size());
+        }
+        if (std::ranges::all_of(rest, [](char c) { return c >= '0' && c <= '9'; })) {
+            old.push_back(it->path());
+        }
+    }
+    for (const std::filesystem::path& file : old) {
+        std::filesystem::remove(file, error);
+    }
 }
 
 FileHeader expected_header() {
@@ -175,6 +208,7 @@ GlyphDiskCache::FontCache& GlyphDiskCache::font(const FontFace& face, DistanceFi
         const FileHeader header = expected_header();
         cache.out.write(reinterpret_cast<const char*>(&header), sizeof(header));
         cache.bytes = sizeof(header);
+        remove_old_files(directory, hash); // a new file replaces them
     } else {
         if (valid_end < cache.contents.size()) {
             std::filesystem::resize_file(cache.file, valid_end, error);
