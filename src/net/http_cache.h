@@ -73,7 +73,8 @@ std::optional<CacheEntry> make_cache_entry(std::string url, unsigned status, std
 // file can't hold), the others stay, and freshness is computed again from the result, as for a
 // response received `now`.
 void refresh_cache_entry(CacheEntry& entry, const CacheHeaders& headers, std::int64_t now);
-// Whether these fields' Cache-Control has `no-store`.
+// Whether these fields say not to store the response: `no-store` in Cache-Control, or a `*`
+// member in Vary.
 bool forbids_storing(const CacheHeaders& headers);
 // The entry a cache file's contents hold for `url`, or nullopt if they're damaged, cut short, of
 // another version of the format, or another URL's.

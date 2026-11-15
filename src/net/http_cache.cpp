@@ -295,8 +295,25 @@ bool is_redirect_status(unsigned status) {
     return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
 }
 
+namespace {
+
+// Whether a Vary value (every field's, joined with commas) has a `*` member: the response varies
+// on more than the request's fields.
+bool varies_on_everything(std::string_view vary) {
+    while (!vary.empty()) {
+        const std::size_t comma = vary.find(',');
+        if (trim(vary.substr(0, comma)) == "*") {
+            return true;
+        }
+        vary = comma == std::string_view::npos ? std::string_view() : vary.substr(comma + 1);
+    }
+    return false;
+}
+
+} // namespace
+
 bool forbids_storing(const CacheHeaders& headers) {
-    return parse_cache_control(headers.cache_control).no_store;
+    return parse_cache_control(headers.cache_control).no_store || varies_on_everything(headers.vary);
 }
 
 std::optional<CacheEntry> make_cache_entry(std::string url, unsigned status, std::string location,
@@ -304,8 +321,7 @@ std::optional<CacheEntry> make_cache_entry(std::string url, unsigned status, std
                                            std::int64_t now) {
     const Directives directives = parse_cache_control(headers.cache_control);
     const bool redirect = is_redirect_status(status);
-    if ((status != 200 && !redirect) || (redirect && location.empty()) || directives.no_store ||
-        trim(headers.vary) == "*") {
+    if ((status != 200 && !redirect) || (redirect && location.empty()) || forbids_storing(headers)) {
         return std::nullopt;
     }
     if (redirect && !explicit_freshness(headers, directives) && status != 301 && status != 308) {

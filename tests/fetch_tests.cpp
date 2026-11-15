@@ -810,6 +810,16 @@ TEST_CASE("a 304 updates the stored fields it carries, and freshness comes from 
 
     CHECK(net::forbids_storing({.cache_control = "max-age=60, no-store"}));
     CHECK_FALSE(net::forbids_storing({.cache_control = "no-cache"}));
+    // A `*` anywhere in Vary, also in a list or a second field (joined with ", ").
+    CHECK(net::forbids_storing({.vary = "*"}));
+    CHECK(net::forbids_storing({.vary = "Accept-Encoding, *"}));
+    CHECK(net::forbids_storing({.vary = "Accept,* "}));
+    CHECK_FALSE(net::forbids_storing({.vary = "Accept, Accept-Encoding"}));
+    CHECK_FALSE(net::make_cache_entry("https://example.com/a.png", 200, {},
+                                      {.cache_control = "max-age=60", .vary = "Accept-Encoding, *"}, {1}, now));
+    CHECK_FALSE(net::make_cache_entry("https://example.com/b", 301, "/c", {.vary = "Origin, *"}, {}, now));
+    CHECK(net::make_cache_entry("https://example.com/a.png", 200, {},
+                                {.cache_control = "max-age=60", .vary = "Accept-Encoding"}, {1}, now));
 }
 
 TEST_CASE("redirects make cache entries with a lifetime of their own, or permanent ones", "[cache]") {
