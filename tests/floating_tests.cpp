@@ -544,3 +544,25 @@ TEST_CASE("container-bound content leaves the window's layer with its container"
     CHECK(sibling_clicks == 1);
     CHECK(content_clicks == 0);
 }
+
+TEST_CASE("Esc closes floating content even when its binding ignores the write", "[floating]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    int content_clicks = 0;
+    const Binding<bool> stubborn([] { return true; }, [](bool) {}); // says true whatever is set
+    Window window(Rectangle()
+                      .fill(Color::black)
+                      .frame(50, 20)
+                      .floating(stubborn,
+                                [&] { return Rectangle().fill(Color::black).frame(80, 40).on_click([&] { ++content_clicks; }); },
+                                {.boundary = FloatingBoundary::window})
+                      .offset(100, 100));
+    window.layout();
+    window.click({110, 130});
+    REQUIRE(content_clicks == 1);
+    window.events->key({.kind = KeyEvent::Kind::down, .key = Key::escape});
+    window.layout();
+    window.click({110, 130});
+    CHECK(content_clicks == 1); // closed: no longer on screen to click
+}
+
