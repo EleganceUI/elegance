@@ -74,6 +74,22 @@ RetirementWorker& retirement_worker() {
     return worker;
 }
 
+// A popped validation scope's outcome, which the device reports later: wait() for it with no
+// lock held. Empty (no scope was pushed): valid.
+class PendingValidation {
+public:
+    PendingValidation() = default;
+    PendingValidation(wgpu::Instance instance, wgpu::Future future, std::shared_ptr<bool> valid)
+        : instance_(std::move(instance)), future_(future), valid_(std::move(valid)) {}
+    [[nodiscard]] bool wait() const {
+        return !valid_ || (instance_.WaitAny(future_, kRetirementWaitNs) == wgpu::WaitStatus::Success && *valid_);
+    }
+private:
+    wgpu::Instance instance_;
+    wgpu::Future future_{};
+    std::shared_ptr<bool> valid_;
+};
+
 // Native import validation is a caller error, not an uncaptured renderer error. Keep the
 // instance alive with the device so retirement can also capture errors after views disappear.
 class ValidationScope {
@@ -91,16 +107,17 @@ public:
                 [](wgpu::PopErrorScopeStatus, wgpu::ErrorType, wgpu::StringView) {});
         }
     }
-    bool finish() {
+    // Pops the scope without waiting for its outcome.
+    PendingValidation pop() {
         auto valid = std::make_shared<bool>(false);
         const auto future = renderer_.device.PopErrorScope(wgpu::CallbackMode::WaitAnyOnly,
             [valid](wgpu::PopErrorScopeStatus status, wgpu::ErrorType error, wgpu::StringView) {
                 *valid = status == wgpu::PopErrorScopeStatus::Success && error == wgpu::ErrorType::NoError;
             });
         popped_ = true;
-        return renderer_.instance.WaitAny(future, kRetirementWaitNs) ==
-                   wgpu::WaitStatus::Success && *valid;
+        return {renderer_.instance, future, std::move(valid)};
     }
+    bool finish() { return pop().wait(); }
 private:
     const gpu::RenderDevice& renderer_;
     bool popped_ = false;
@@ -250,7 +267,9 @@ public:
         }
     }
 
-    std::uint32_t import(const ElgGpuImageFrame& frame) {
+    // Imports `frame` and begins access to it. The validation of what it did is left in
+    // `validation`, for the caller to wait for once it holds no lock.
+    std::uint32_t import(const ElgGpuImageFrame& frame, PendingValidation& validation) {
         const auto& dev = renderer_->device;
         if (!dev.HasFeature(memory_feature(frame.transport)) || !dev.HasFeature(fence_feature(frame.transport))) {
             return ELG_GPU_IMAGE_UNSUPPORTED;
@@ -340,8 +359,8 @@ public:
             begun_ = memory_.BeginAccess(texture, &access) == wgpu::Status::Success;
             ok = begun_;
         }
-        const bool valid = scope.finish();
-        return ok && valid ? ELG_GPU_IMAGE_OK : ELG_GPU_IMAGE_IMPORT_FAILED;
+        validation = scope.pop();
+        return ok ? ELG_GPU_IMAGE_OK : ELG_GPU_IMAGE_IMPORT_FAILED;
     }
     void accept() noexcept { accepted_ = true; }
     wgpu::Texture texture;
@@ -399,12 +418,18 @@ public:
         }
         auto external = std::make_shared<ExternalFrame>(input, renderer);
         std::uint32_t status = ELG_GPU_IMAGE_INTERNAL_ERROR;
+        PendingValidation validation;
         {
             const std::lock_guard lock(renderer->mutex);
             if (!renderer->active) {
                 return ELG_GPU_IMAGE_DEVICE_UNAVAILABLE;
             }
-            status = external->import(input);
+            status = external->import(input, validation);
+        }
+        // The device reports validation errors asynchronously: waited for with the renderer
+        // mutex released, since the render and UI threads take it.
+        if (!validation.wait() && status == ELG_GPU_IMAGE_OK) {
+            status = ELG_GPU_IMAGE_IMPORT_FAILED;
         }
         // Destruction may EndAccess, so it must happen OUTSIDE the renderer mutex, including
         // on failed imports that successfully began access before reporting a validation error.
