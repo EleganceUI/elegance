@@ -66,22 +66,6 @@ std::string base64(std::string_view data) {
     return out;
 }
 
-// `pattern` with * wildcards against `text`, both lowercase.
-bool wildcard_match(std::string_view pattern, std::string_view text) {
-    if (pattern.empty()) {
-        return text.empty();
-    }
-    if (pattern.front() == '*') {
-        for (std::size_t skip = 0; skip <= text.size(); ++skip) {
-            if (wildcard_match(pattern.substr(1), text.substr(skip))) {
-                return true;
-            }
-        }
-        return false;
-    }
-    return !text.empty() && pattern.front() == text.front() && wildcard_match(pattern.substr(1), text.substr(1));
-}
-
 std::string strip_brackets(std::string_view host) {
     if (host.size() >= 2 && host.front() == '[' && host.back() == ']') {
         host = host.substr(1, host.size() - 2);
@@ -90,6 +74,34 @@ std::string strip_brackets(std::string_view host) {
 }
 
 } // namespace
+
+// Greedy, remembering only the last `*`: when a later part fails to match, that `*` takes one more
+// character and the rest is tried again from there. Each retry moves the resume point forward, so
+// this takes at most (pattern size + 1) * (text size + 1) steps, without recursion.
+bool wildcard_match(std::string_view pattern, std::string_view text) {
+    std::size_t p = 0;
+    std::size_t t = 0;
+    std::size_t star = std::string_view::npos; // the last `*` seen in `pattern`
+    std::size_t resume = 0;                    // where in `text` that `*` stops matching
+    while (t < text.size()) {
+        if (p < pattern.size() && pattern[p] == '*') {
+            star = p++;
+            resume = t;
+        } else if (p < pattern.size() && pattern[p] == text[t]) {
+            ++p;
+            ++t;
+        } else if (star != std::string_view::npos) {
+            p = star + 1;
+            t = ++resume;
+        } else {
+            return false;
+        }
+    }
+    while (p < pattern.size() && pattern[p] == '*') {
+        ++p;
+    }
+    return p == pattern.size();
+}
 
 ProxyChoice parse_proxy_url(std::string_view text) {
     text = trim(text);

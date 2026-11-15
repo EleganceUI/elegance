@@ -560,6 +560,34 @@ TEST_CASE("proxy settings: URLs, NO_PROXY, the environment, Windows' lists", "[p
     CHECK_FALSE(local->has_value());
 }
 
+TEST_CASE("bypass patterns match in time proportional to pattern times host", "[proxy]") {
+    CHECK(net::wildcard_match("", ""));
+    CHECK(net::wildcard_match("*", ""));
+    CHECK(net::wildcard_match("**", "a"));
+    CHECK(net::wildcard_match("*.corp", "wiki.corp"));
+    CHECK(net::wildcard_match("w*i*.corp", "wiki.corp"));
+    CHECK(net::wildcard_match("*a*b", "aXbYab"));
+    CHECK(net::wildcard_match("a*", "a"));
+    CHECK_FALSE(net::wildcard_match("", "a"));
+    CHECK_FALSE(net::wildcard_match("*.corp", "corp"));
+    CHECK_FALSE(net::wildcard_match("a*b", "aXbY"));
+    CHECK_FALSE(net::wildcard_match("wiki", "wiki.corp"));
+
+    // A backtracking matcher tries the ways to split the host among the stars: about 10^23 here.
+    std::string pattern;
+    for (int i = 0; i < 16; ++i) {
+        pattern += "*a";
+    }
+    pattern += "*b";
+    const std::string host(200, 'a');
+    CHECK_FALSE(net::wildcard_match(pattern, host));
+    CHECK(net::wildcard_match(pattern, host + "b"));
+    // Through Windows' bypass list, which is where such patterns come from.
+    const net::ProxyChoice choice = net::proxy_from_windows_settings("proxy:8080", pattern, "https", host + ".com");
+    REQUIRE(choice);
+    CHECK(choice->has_value());
+}
+
 TEST_CASE("HTTP dates and freshness", "[cache]") {
     constexpr std::int64_t kNov6 = 784111777; // Sun, 06 Nov 1994 08:49:37 GMT
     CHECK(net::parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT") == kNov6);
