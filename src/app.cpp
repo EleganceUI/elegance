@@ -727,7 +727,9 @@ int App::run() {
     };
 
     // Screen readers (design.md §12): the window's tree, built when asked for, and their requests.
+    // Carried out between events, like an event: what it writes takes effect after it.
     const auto perform_access_request = [&](std::uint32_t window_id, const AccessRequest& request) {
+        const DeferEffects defer;
         auto it = std::ranges::find_if(windows, [&](const auto& live) { return live->window.id() == window_id; });
         if (it == windows.end()) {
             return;
@@ -755,6 +757,9 @@ int App::run() {
             }
             break;
         case AccessibilityAction::Kind::click:
+            if (target->second.disabled) {
+                break; // a disabled view isn't activated
+            }
             if (target->second.action) {
                 target->second.action();
                 break;

@@ -89,6 +89,7 @@ struct AccessTree {
     struct Target {
         Element* element = nullptr;
         std::function<void()> action; // a custom default action
+        bool disabled = false;        // a disabled control, or a custom action in a disabled view
     };
     std::unordered_map<std::uint64_t, Target> targets;
 };
