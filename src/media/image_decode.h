@@ -47,12 +47,18 @@ inline ImageLimits image_limits(std::uint64_t max_pixels, std::uint32_t max_side
             max_side != 0 ? max_side : ImageLimits::kDefaultMaxSide};
 }
 
+// The longest side a texture may have on the GPU in use: 8192, which every WebGPU device allows,
+// until device creation sets the device's own (gpu/device.cpp). Decoding never goes past it,
+// whatever ImageLimits::max_side says. Any thread.
+std::uint32_t max_texture_side() noexcept;
+void set_max_texture_side(std::uint32_t side) noexcept;
+
 // Throws elg::ResourceError if the data isn't an image the platform can decode (PNG, JPEG, GIF,
 // BMP, TIFF, ICO everywhere; WebP, HEIF, AVIF where the OS has the codecs), or if it has more
 // pixels than `limits` allow (the message names the limit).
 ImageInfo probe_image(std::span<const std::uint8_t> data, const ImageLimits& limits = {});
-// Decodes, applying the EXIF orientation, within `limits`; throws as probe_image does.
-// Thread-safe.
+// Decodes, applying the EXIF orientation, within `limits` and max_texture_side(); throws as
+// probe_image does. Thread-safe.
 std::shared_ptr<const DecodedImage> decode_image(std::span<const std::uint8_t> data, const ImageLimits& limits = {});
 
 // --- Each OS's codecs (platform/<os>/image_codec.*) ---

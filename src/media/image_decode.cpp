@@ -20,6 +20,7 @@ namespace elg::detail {
 namespace {
 
 std::atomic<std::uint64_t> g_next_id{1};
+std::atomic<std::uint32_t> g_max_texture_side{ImageLimits::kDefaultMaxSide};
 
 // EXIF orientation 1-8: whether the stored pixels are turned a quarter (the upright size swaps).
 bool swaps_axes(int orientation) {
@@ -77,6 +78,14 @@ StoredImageInfo probe_within(std::span<const std::uint8_t> data, const ImageLimi
 
 } // namespace
 
+std::uint32_t max_texture_side() noexcept {
+    return g_max_texture_side.load();
+}
+
+void set_max_texture_side(std::uint32_t side) noexcept {
+    g_max_texture_side = std::max(side, 1u);
+}
+
 ImageInfo probe_image(std::span<const std::uint8_t> data, const ImageLimits& limits) {
     const StoredImageInfo info = probe_within(data, limits);
     return swaps_axes(info.orientation) ? ImageInfo{info.height, info.width} : ImageInfo{info.width, info.height};
@@ -86,7 +95,7 @@ std::shared_ptr<const DecodedImage> decode_image(std::span<const std::uint8_t> d
     probe_within(data, limits);
     auto image = std::make_shared<DecodedImage>();
     image->id = g_next_id.fetch_add(1);
-    const int orientation = platform_decode_image(data, limits.max_side, *image);
+    const int orientation = platform_decode_image(data, std::min(limits.max_side, max_texture_side()), *image);
     orient(*image, orientation);
     return image;
 }

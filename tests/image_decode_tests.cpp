@@ -98,6 +98,20 @@ TEST_CASE("an Image's limits apply to it, and to no other", "[image]") {
     CHECK(drawn->height == 8);
 }
 
+TEST_CASE("images decode no larger than the GPU's largest texture, whatever the limit asks", "[image]") {
+    CHECK(detail::max_texture_side() >= 8192); // what every WebGPU device allows
+    const std::vector<std::uint8_t> pixels(std::size_t{64} * 32 * 4, 0x80);
+    const auto png = detail::encode_png(pixels, 64, 32);
+    REQUIRE(png);
+    const std::uint32_t device = detail::max_texture_side();
+    detail::set_max_texture_side(16); // a device with small textures
+    // NOLINTNEXTLINE(bugprone-unchecked-optional-access): REQUIREd above
+    const auto image = detail::decode_image(*png, detail::image_limits(0, 100000));
+    detail::set_max_texture_side(device);
+    CHECK(image->width == 16);
+    CHECK(image->height == 8);
+}
+
 TEST_CASE("decoded images are scaled down to the size asked for", "[image]") {
     const std::vector<std::uint8_t> pixels(std::size_t{64} * 32 * 4, 0x80);
     const auto png = detail::encode_png(pixels, 64, 32);

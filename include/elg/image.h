@@ -54,7 +54,7 @@ struct ImageSource {
     /// Raster images: the longest side the image is decoded at, 8192 pixels by default. A larger
     /// image is scaled down while decoding, keeping its aspect ratio, so both sides fit; its size in
     /// points doesn't change. A larger value is still bounded by the largest texture the GPU can
-    /// hold. 0 counts as the default.
+    /// hold (at least 8192). 0 counts as the default.
     std::uint32_t max_side = 8192;
 };
 
@@ -101,7 +101,8 @@ struct AsyncImageOptions {
     /// the view in its failure phase. 0 counts as the default.
     std::uint64_t max_pixels = std::uint64_t{1} << 27;
     /// The longest side the image is decoded at, 8192 pixels by default; a larger one is scaled down
-    /// to fit, as with ImageSource::max_side. 0 counts as the default.
+    /// to fit, as with ImageSource::max_side, and so is one larger than the GPU's largest texture. 0
+    /// counts as the default.
     std::uint32_t max_side = 8192;
 };
 

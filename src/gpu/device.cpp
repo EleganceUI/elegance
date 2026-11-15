@@ -8,6 +8,7 @@
 #include "core/crash.h"
 #endif
 #include "core/log.h"
+#include "media/image_decode.h"
 #include "platform/generic/platform.h"
 
 #include <elg/error.h>
@@ -270,6 +271,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
         throw GpuError(std::format("the GPU \"{}\" could not create a WebGPU device: {}", name_, device_error));
     }
     queue_ = device_.GetQueue();
+    set_max_texture_side(limits.maxTextureDimension2D); // images decode to fit this device's textures
 
     device_.SetLoggingCallback([](wgpu::LoggingType type, wgpu::StringView message) {
         try {
