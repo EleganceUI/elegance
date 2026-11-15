@@ -4,6 +4,7 @@
 
 // View, its modifier sugar, the protocol base classes, and lowering.
 
+#include "core/app_errors.h"
 #include "view/view_node.h"
 
 #include "core/crash.h"
@@ -1375,8 +1376,44 @@ std::unique_ptr<Element> CanvasNode::lower(const LowerContext& context) const {
     return element;
 }
 
+namespace {
+
+// What a view whose body threw is mounted as: in builds without NDEBUG a visible placeholder with
+// the exception's message, otherwise an empty view.
+View body_failed([[maybe_unused]] const std::exception_ptr& error) {
+#ifdef NDEBUG
+    return EmptyView();
+#else
+    return Text("A view's body threw: " + exception_message(error))
+        .font(Font::caption)
+        .foreground_style(Color::white)
+        .padding(6)
+        .background(Color::rgb(190, 30, 45));
+#endif
+}
+
+} // namespace
+
 std::unique_ptr<Element> DeferredNode::lower(const LowerContext& context) const {
-    return detail::lower(body_(), context);
+    Scope* const outer = current_scope();
+    if (!outer) {
+        return detail::lower(body_(), context);
+    }
+    // What the body creates (effects, state, timers) belongs to a scope of its own, which ends
+    // with the one it's mounted in: a body that throws takes all of it with it.
+    auto scope = std::make_shared<Scope>();
+    std::unique_ptr<Element> element;
+    try {
+        const Scope::Use use(*scope);
+        element = detail::lower(body_(), context);
+    } catch (...) {
+        const std::exception_ptr error = std::current_exception();
+        scope.reset();
+        report_app_exception(error, AppCode::body); // outside a run, this throws it on
+        return detail::lower(body_failed(error), context);
+    }
+    outer->on_end([scope] {});
+    return element;
 }
 
 } // namespace elg::detail

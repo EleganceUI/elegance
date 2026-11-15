@@ -9,12 +9,16 @@
 #include "core/timers.h"
 #include "core/ui_tasks.h"
 #include "reactive/runtime.h"
+#include "render/display_list.h"
+#include "text/text_system.h"
+#include "view/view_node.h"
 
 #include <elg/elegance.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <new>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -138,4 +142,89 @@ TEST_CASE("running out of memory in app code ends the run, without the handler",
 TEST_CASE("outside a run, what escapes app code goes on to the caller", "[app-errors]") {
     detail::post_ui_task([] { throw std::runtime_error("no run"); });
     CHECK_THROWS_AS(detail::run_ui_tasks(), std::runtime_error);
+}
+
+namespace {
+
+detail::TextSystem& text_system() {
+    static detail::TextSystem system;
+    return system;
+}
+
+// A component whose body starts an effect, then throws.
+struct Thrower {
+    State<int> watched;
+    int* effect_runs;
+    [[nodiscard]] View body() const {
+        effect([watched = watched, runs = effect_runs] {
+            watched();
+            ++*runs;
+        });
+        throw std::runtime_error("body");
+    }
+};
+
+// A Layout that throws while it measures.
+struct ThrowingLayout final : Layout {
+    [[nodiscard]] Size size_that_fits(ProposedSize, std::span<const LayoutChild>) const override {
+        throw std::runtime_error("layout");
+    }
+    void place_children(Rect, ProposedSize, std::span<const LayoutChild>) const override {}
+};
+
+} // namespace
+
+TEST_CASE("while an App runs, a body that throws is mounted in its place, and what it made goes", "[app-errors]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const Run run;
+    const State<int> watched(0);
+    int effect_runs = 0;
+    const auto root = detail::lower(VStack(Rectangle().frame(10, 10), Thrower{watched, &effect_runs},
+                                           Rectangle().frame(10, 10)),
+                                    {.text = &text_system()});
+    REQUIRE(root);
+    const int runs = effect_runs;
+    watched = 1;
+    detail::flush_effects();
+    CHECK(effect_runs == runs); // the effect the body started ended with it
+    Heard heard;
+    detail::handle_app_errors(recorder(heard));
+    CHECK(heard.codes == std::vector<AppCode>{AppCode::body});
+    const Size size = root->size_that_fits({100.f, 100.f});
+#ifdef NDEBUG
+    CHECK(size.width == 10);  // an empty view in its place; the views around it are there
+    CHECK(size.height == 28); // the two squares and the stack's spacing around the empty one
+#else
+    CHECK(size.width > 10); // a placeholder with the message in its place
+#endif
+}
+
+TEST_CASE("outside a run, a body that throws throws on", "[app-errors]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const State<int> watched(0);
+    int effect_runs = 0;
+    CHECK_THROWS_AS(detail::lower(VStack(Thrower{watched, &effect_runs}), {}), std::runtime_error);
+}
+
+TEST_CASE("while an App runs, a layout that throws has no size, and a canvas that throws draws nothing", "[app-errors]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const Run run;
+    const auto root = detail::lower(VStack({.spacing = 0}, ThrowingLayout()(Rectangle().frame(30, 30)),
+                                           Canvas([](GraphicsContext& graphics) {
+                                               graphics.fill_rect({0, 0, 5, 5}, Color::black);
+                                               throw std::runtime_error("drawing");
+                                           }).frame(20, 20)),
+                                    {});
+    const Size size = root->size_that_fits({100.f, 100.f});
+    CHECK(size.height == 20); // the layout's 30 x 30 child got no space
+    root->place({}, {100.f, 100.f});
+    detail::DisplayList list;
+    root->paint(list);
+    CHECK(list.commands.empty()); // nor did the canvas's half-drawn rectangle stay
+    Heard heard;
+    detail::handle_app_errors(recorder(heard));
+    CHECK(heard.codes == std::vector<AppCode>{AppCode::layout, AppCode::drawing});
 }
