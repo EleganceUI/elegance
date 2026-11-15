@@ -50,13 +50,25 @@ add_executable(elegance_tests
         text_input_tests.cpp
         toggle_tests.cpp
         video_tests.cpp
+        test_setup.cpp
 )
 target_link_libraries(elegance_tests PRIVATE Elegance::Elegance Catch2::Catch2WithMain Boost::beast OpenSSL::SSL)
-target_include_directories(elegance_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(elegance_tests PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/apps/common)
 target_include_directories(elegance_tests SYSTEM PRIVATE
         $<TARGET_PROPERTY:dawn::webgpu_dawn,INTERFACE_INCLUDE_DIRECTORIES>)
+# The GPU tests call Dawn too. A static Dawn is linked into Elegance, which exports it in a shared
+# build on Linux and macOS (linking it again would make a second copy); a shared one (vcpkg's on
+# Windows) is a DLL the tests link themselves, since a shared Elegance doesn't pass it on.
+get_target_property(elg_dawn_type dawn::webgpu_dawn TYPE)
+if (elg_dawn_type STREQUAL "SHARED_LIBRARY")
+    target_link_libraries(elegance_tests PRIVATE dawn::webgpu_dawn)
+endif ()
 
 elegance_warnings(elegance_tests)
+# gpu_image_tests.cpp makes IOSurfaces itself; a static Elegance brought the frameworks along.
+if (APPLE)
+    target_link_libraries(elegance_tests PRIVATE "-framework CoreFoundation" "-framework IOSurface")
+endif ()
 
 # The C API's contract with bindings, tested against its objects (only in builds that compile it).
 if (TARGET elegance_c_api)
@@ -69,7 +81,8 @@ if (MSVC)
 endif ()
 
 # Under LeakSanitizer: fontconfig (loaded from the system on Linux) keeps its caches until exit.
-catch_discover_tests(elegance_tests PROPERTIES ENVIRONMENT_MODIFICATION
+# A test that hangs fails after two minutes, by name, instead of holding the run until CI gives up.
+catch_discover_tests(elegance_tests PROPERTIES TIMEOUT 120 ENVIRONMENT_MODIFICATION
                      "LSAN_OPTIONS=string_append::suppressions=${CMAKE_CURRENT_SOURCE_DIR}/lsan_suppressions.txt")
 
 # Compile the public FFI surface as real C, not merely as C++ with extern "C" declarations.

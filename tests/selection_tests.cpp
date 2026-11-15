@@ -48,8 +48,8 @@ View Block() {
 }
 
 struct Window {
+    detail::FocusManager focus; // outlives the tree: its elements let go of it when destroyed
     std::unique_ptr<detail::Element> root;
-    detail::FocusManager focus;
     std::unique_ptr<detail::EventDispatcher> events;
     Size size;
 

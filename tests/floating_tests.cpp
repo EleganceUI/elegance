@@ -39,8 +39,8 @@ bool same(Point a, Point b) {
 
 // A 400 x 300 window whose root is a floating layer, as the app makes it.
 struct Window {
+    detail::FocusManager focus; // outlives the tree: its elements let go of it when destroyed
     std::unique_ptr<detail::Element> root;
-    detail::FocusManager focus;
     std::unique_ptr<detail::EventDispatcher> events;
     bool tree_changed = false;
 
@@ -55,8 +55,8 @@ struct Window {
     // As the app does each frame: effects (bindings changing), then layout.
     void layout() {
         detail::flush_effects();
-        root->size_that_fits({400, 300});
-        root->place({}, {400, 300});
+        root->size_that_fits({400.f, 300.f});
+        root->place({}, {400.f, 300.f});
         if (events && std::exchange(tree_changed, false)) {
             events->revalidate();
         }

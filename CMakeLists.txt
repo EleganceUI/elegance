@@ -8,7 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # C++23 mode alone does not guarantee the standard library provides these APIs (Xcode 16).
 include(CheckCXXSourceCompiles)
-check_cxx_source_compiles([=[
+set(elg_jthread_check [=[
     #include <condition_variable>
     #include <mutex>
     #include <stop_token>
@@ -22,11 +22,50 @@ check_cxx_source_compiles([=[
         });
         worker.request_stop();
     }
-]=] ELG_HAVE_JTHREAD)
+]=])
+check_cxx_source_compiles("${elg_jthread_check}" ELG_HAVE_JTHREAD)
+# libc++ 19 has them only under -fexperimental-library, which the build then adds itself, also to
+# what links Elegance (ELGSPEC-0006.R14).
+set(ELG_LIBCXX_EXPERIMENTAL OFF)
+if (NOT ELG_HAVE_JTHREAD)
+    check_cxx_source_compiles("#include <version>\n#ifndef _LIBCPP_VERSION\n#error\n#endif\nint main() {}" ELG_LIBCXX)
+    if (ELG_LIBCXX)
+        set(CMAKE_REQUIRED_FLAGS -fexperimental-library)
+        set(CMAKE_REQUIRED_LINK_OPTIONS -fexperimental-library)
+        check_cxx_source_compiles("${elg_jthread_check}" ELG_HAVE_JTHREAD_EXPERIMENTAL)
+        unset(CMAKE_REQUIRED_FLAGS)
+        unset(CMAKE_REQUIRED_LINK_OPTIONS)
+        if (ELG_HAVE_JTHREAD_EXPERIMENTAL)
+            set(ELG_LIBCXX_EXPERIMENTAL ON)
+            set(ELG_HAVE_JTHREAD ON)
+            add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-fexperimental-library>)
+            add_link_options(-fexperimental-library)
+        endif ()
+    endif ()
+endif ()
 if (NOT ELG_HAVE_JTHREAD)
     message(FATAL_ERROR
         "Elegance requires std::jthread, std::stop_token, and stop-aware condition variables. "
         "On macOS, select Xcode 26 or later with xcode-select (Xcode 16's libc++ is insufficient).")
+endif ()
+
+# Sanitizers, on Linux and macOS (ELGSPEC-0006.R7): AddressSanitizer with UndefinedBehaviorSanitizer,
+# or ThreadSanitizer. Both apply to everything this project builds; a TSan build also needs its
+# dependencies instrumented, which the *-tsan triplets the tsan presets pick do. A UBSan report
+# stops the program, so it fails the test that triggered it.
+set(ELG_SANITIZER "" CACHE STRING "Build with a sanitizer: address (with undefined behavior), thread, or empty")
+set_property(CACHE ELG_SANITIZER PROPERTY STRINGS "" address thread)
+if (ELG_SANITIZER AND MSVC)
+    message(FATAL_ERROR "ELG_SANITIZER is for Linux and macOS builds")
+endif ()
+if (ELG_SANITIZER STREQUAL "address")
+    add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+elseif (ELG_SANITIZER STREQUAL "thread")
+    add_compile_options(-fsanitize=thread)
+    add_link_options(-fsanitize=thread)
+elseif (ELG_SANITIZER)
+    message(FATAL_ERROR "ELG_SANITIZER is \"${ELG_SANITIZER}\"; use address, thread, or leave it empty")
 endif ()
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
@@ -92,6 +131,7 @@ add_subdirectory(src)
 if (ELG_C_API)
     add_library(elegance_c_api OBJECT c/core.cpp c/views.cpp c/ext.cpp c/platform.cpp c/styles.cpp)
     target_link_libraries(elegance_c_api PRIVATE elegance)
+    elegance_c_api_warnings(elegance_c_api)
     if (MSVC)
         target_compile_definitions(elegance_c_api PRIVATE NOMINMAX)
         target_compile_options(elegance_c_api PRIVATE /EHsc /permissive- /utf-8 /Zc:__cplusplus /bigobj)
@@ -105,10 +145,7 @@ if (ELG_BUILD_SANDBOX)
     endif ()
 endif ()
 
-if (ELG_BUILD_TESTS AND ELG_BUILD_SHARED)
-    # A shared library hides the internals they test (elg::detail).
-    message(STATUS "Elegance: skipping the unit tests, which need a static build (ELG_BUILD_SHARED=OFF)")
-elseif (ELG_BUILD_TESTS)
+if (ELG_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
 endif ()
