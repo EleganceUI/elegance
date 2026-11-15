@@ -10,12 +10,12 @@
 #include "gpu/atlas_texture.h"
 #include "gpu/blur_renderer.h"
 #include "gpu/quad_renderer.h"
+#include "render/frame_sources.h"
 #include "render/window_target.h"
 
 #include <elg/error.h>
 
 #include <format>
-#include <algorithm>
 #include <array>
 #include <memory>
 #include <new>
@@ -88,51 +88,18 @@ void RenderThread::run(std::promise<void> ready) noexcept {
         if (const auto luid = device.luid()) {
             set_render_adapter({*luid, device.has_feature(wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle)});
         }
-        // The last frame of each window showing a video: redrawn when the video has a new frame.
-        std::unordered_map<std::uint32_t, WindowFrame> video_frames;
-        const auto shows_video = [](const WindowFrame& frame) {
-            return std::ranges::any_of(frame.list.commands, [](const DrawCommand& command) {
-                const auto* video = std::get_if<VideoCommand>(&command);
-                return video && video->source;
-            });
-        };
+        // The last frame of each window showing a frame source: drawn again when one of them has
+        // a new frame.
+        FrameSources sources;
         std::unordered_map<std::uint32_t, std::unique_ptr<WindowTarget>> windows;
 
         ready.set_value();
         started = true;
 
         RenderBatch batch;
-        const auto any_playing = [&] {
-            for (const auto& [id, frame] : video_frames) {
-                for (const DrawCommand& command : frame.list.commands) {
-                    if (const auto* video = std::get_if<VideoCommand>(&command); video && video->source->is_playing_now()) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        };
         // While videos play, wake every few milliseconds to check for their next frame; otherwise
         // sleep until the UI thread posts work.
-        while (any_playing() ? mailbox_.take_for(batch, std::chrono::milliseconds(4)) : mailbox_.take(batch)) {
-            if (batch.commands.empty() && batch.frames.empty()) {
-                for (auto& [id, frame] : video_frames) {
-                    auto window = windows.find(id);
-                    if (window == windows.end()) {
-                        continue;
-                    }
-                    bool fresh = false;
-                    for (const DrawCommand& command : frame.list.commands) {
-                        if (const auto* video = std::get_if<VideoCommand>(&command)) {
-                            fresh |= video->source->update();
-                        }
-                    }
-                    if (fresh) {
-                        window->second->render(frame, resources);
-                    }
-                }
-                continue;
-            }
+        while (sources.polling() ? mailbox_.take_for(batch, std::chrono::milliseconds(4)) : mailbox_.take(batch)) {
             for (RenderCommand& command : batch.commands) {
                 std::visit(Overloaded{
                                [&](const AddWindowCommand& add) {
@@ -143,21 +110,26 @@ void RenderThread::run(std::promise<void> ready) noexcept {
                                },
                                [&](const RemoveWindowCommand& remove) {
                                    windows.erase(remove.window_id);
-                                   video_frames.erase(remove.window_id);
+                                   sources.remove(remove.window_id);
                                },
                                [&](const AtlasUploadCommand& upload) { atlas.upload(upload.uploads); },
                            },
                            command);
             }
+            // New frames of the sources shown, taken once for all windows; then the new frames
+            // from the UI thread, and every other window showing a source that has a new frame.
+            sources.update(batch.frames);
             for (const WindowFrame& frame : batch.frames) {
                 // Frames for windows removed in the meantime are dropped.
                 if (auto it = windows.find(frame.window_id); it != windows.end()) {
                     it->second->render(frame, resources);
-                    if (shows_video(frame)) {
-                        video_frames.insert_or_assign(frame.window_id, frame);
-                    } else {
-                        video_frames.erase(frame.window_id);
-                    }
+                    sources.drew(frame);
+                }
+            }
+            for (const std::uint32_t id : sources.stale()) {
+                if (auto it = windows.find(id); it != windows.end()) {
+                    it->second->render(*sources.frame(id), resources);
+                    sources.redrew(id);
                 }
             }
             mailbox_.mark_done(batch.sequence);

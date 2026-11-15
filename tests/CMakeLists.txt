@@ -28,6 +28,7 @@ add_executable(elegance_tests
         disabled_tests.cpp
         dynamic_children_tests.cpp
         floating_tests.cpp
+        frame_source_tests.cpp
         modifier_shorthand_tests.cpp
         picker_slider_style_tests.cpp
         menu_style_tests.cpp

@@ -437,7 +437,6 @@ private:
         if (index < 0) {
             index = static_cast<int>(plan_.videos.size());
             plan_.videos.push_back(command.source);
-            command.source->update();
             plan_.video_frames.push_back(command.source->current());
         }
         const auto& frame = plan_.video_frames[static_cast<std::size_t>(index)];

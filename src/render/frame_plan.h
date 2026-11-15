@@ -136,7 +136,8 @@ struct FramePlan {
 
 // Converts logical points to pixels, resolves the clip stack per instance (culling instances
 // that are fully clipped), splits layers into their own passes, and collects gradient stops.
-// Updates and snapshots each video source once, on the render thread.
+// Snapshots each video source once, on the render thread (FrameSources::update() takes their new
+// frames before).
 // `width` x `height` is the window in pixels. `paths` is the window's, kept across its frames;
 // null forgets the paths after this frame. Layers and path masks are at most 8192 pixels, and
 // `max_texture_side` (the device's), on a side.
