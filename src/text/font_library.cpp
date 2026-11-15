@@ -169,6 +169,7 @@ FontFace::FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigne
                 }
             }
         }
+        variation_coordinates_.assign(coordinates.begin(), coordinates.end());
         if (variation_weight_ > 0) {
             FT_Set_Var_Design_Coordinates(ft_face_, axes->num_axis, coordinates.data());
             const hb_variation_t variation{HB_TAG('w', 'g', 'h', 't'), static_cast<float>(variation_weight_)};

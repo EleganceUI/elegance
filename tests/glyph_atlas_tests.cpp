@@ -56,6 +56,26 @@ detail::GlyphUpload first_glyph(const detail::FontFace& face, std::uint32_t& gly
     return std::move(uploads[0]);
 }
 
+// The pixels `atlas` uploads for `glyph`, its first.
+std::vector<std::uint8_t> uploaded(detail::GlyphAtlas& atlas, const detail::FontFace& face, std::uint32_t glyph) {
+    REQUIRE(atlas.find_or_add(face, glyph) != nullptr);
+    REQUIRE(atlas.wait_idle(10s));
+    std::vector<detail::GlyphUpload> uploads = atlas.take_uploads();
+    REQUIRE(uploads.size() == 1);
+    return std::move(uploads[0].rgba);
+}
+
+// The file the system font comes from.
+std::filesystem::path system_font_file() {
+    for (const std::filesystem::path& file : detail::system_font_candidates(Weight::regular, false)) {
+        if (std::filesystem::is_regular_file(file)) {
+            return file;
+        }
+    }
+    FAIL("no system font");
+    return {};
+}
+
 } // namespace
 
 TEST_CASE("the disk cache's files are read by the glyph workers, not on the UI thread", "[text]") {
@@ -69,7 +89,7 @@ TEST_CASE("the disk cache's files are read by the glyph workers, not on the UI t
     const std::vector<std::uint8_t> marked(generated.rgba.size(), 7);
     {
         detail::GlyphDiskCache disk(directory.path);
-        disk.store(face, glyph, generated.width, generated.height, marked);
+        disk.store(face, detail::DistanceField::multi_channel, glyph, generated.width, generated.height, marked);
     }
 
     detail::GlyphAtlas atlas;
@@ -117,20 +137,28 @@ TEST_CASE("a full glyph atlas starts over after the frame instead of dropping gl
     // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
-namespace {
+TEST_CASE("a glyph from the disk cache has the kind of distance field asked for", "[text]") {
+    // One font file, as an icon font (single-channel fields) and as a text font (multi-channel).
+    const std::filesystem::path file = system_font_file();
+    register_font("elg.test.fields.text", file);
+    detail::mark_icon_font_family("elg.test.fields.icon");
+    register_font("elg.test.fields.icon", file);
+    detail::FontLibrary fonts;
+    const detail::FontFace& text = fonts.resolve(Font::custom("elg.test.fields.text", 12));
+    const detail::FontFace& icon = fonts.resolve(Font::custom("elg.test.fields.icon", 12));
+    std::uint32_t glyph = 0;
+    const std::vector<std::uint8_t> generated = first_glyph(text, glyph).rgba;
 
-// The file the system font comes from.
-std::filesystem::path system_font_file() {
-    for (const std::filesystem::path& file : detail::system_font_candidates(Weight::regular, false)) {
-        if (std::filesystem::is_regular_file(file)) {
-            return file;
-        }
+    const TemporaryDirectory directory;
+    {
+        detail::GlyphAtlas atlas; // stores the icon's glyph
+        atlas.set_disk_cache(directory.path);
+        REQUIRE(uploaded(atlas, icon, glyph) != generated);
     }
-    FAIL("no system font");
-    return {};
+    detail::GlyphAtlas atlas;
+    atlas.set_disk_cache(directory.path);
+    CHECK(uploaded(atlas, text, glyph) == generated);
 }
-
-} // namespace
 
 TEST_CASE("a font file registered for icons and for text is drawn as each use was registered", "[text]") {
     const std::filesystem::path file = system_font_file();

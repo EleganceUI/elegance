@@ -303,7 +303,7 @@ struct GlyphJob {
     std::uint32_t height = 0;
     double scale = 1;
     msdfgen::Vector2 translate;
-    bool icon = false;
+    DistanceField field = DistanceField::multi_channel;
     std::uint64_t generation = 0; // the atlas's when placed
 };
 
@@ -314,7 +314,7 @@ GlyphUpload generate(const GlyphJob& job) {
     const msdfgen::Projection projection(msdfgen::Vector2(job.scale), job.translate);
     const msdfgen::SDFTransformation transformation(projection,
                                                     msdfgen::DistanceMapping(msdfgen::Range(static_cast<double>(kDistanceRange) / job.scale)));
-    if (job.icon) {
+    if (job.field == DistanceField::single_channel) {
         // Icon fonts build glyphs from overlapping outlines (strokes, rings, teeth), which a
         // multi-channel field turns into speckles and streaks. A true single-channel distance
         // handles overlaps cleanly; its slightly rounder corners don't show at icon sizes. Every
@@ -409,7 +409,7 @@ void GlyphAtlas::work(const std::stop_token& stop) {
         // are read and written here, never on the UI thread.
         std::optional<std::vector<std::uint8_t>> cached;
         if (disk_) {
-            cached = disk_->find(*job->face, job->glyph, job->width, job->height);
+            cached = disk_->find(*job->face, job->field, job->glyph, job->width, job->height);
         }
         GlyphUpload upload;
         if (cached) {
@@ -417,7 +417,7 @@ void GlyphAtlas::work(const std::stop_token& stop) {
         } else {
             upload = generate(*job);
             if (disk_) {
-                disk_->store(*job->face, job->glyph, upload.width, upload.height, upload.rgba);
+                disk_->store(*job->face, job->field, job->glyph, upload.width, upload.height, upload.rgba);
             }
         }
         std::function<void()> on_ready;
@@ -595,7 +595,8 @@ std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_
     job->height = height;
     job->scale = scale;
     job->translate = msdfgen::Vector2(-bounds.l + pad / scale, -bounds.b + pad / scale);
-    job->icon = face.icon() || face.has_color(); // icon and color-layer glyphs overlap themselves
+    // Icon and color-layer glyphs overlap themselves.
+    job->field = face.icon() || face.has_color() ? DistanceField::single_channel : DistanceField::multi_channel;
     job->shape = std::move(shape);
     job->face = &face;
     job->glyph = glyph_id;
