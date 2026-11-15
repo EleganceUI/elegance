@@ -508,10 +508,6 @@ awaitable<Reply> request(const urls::url& url, const FetchOptions& options, ssl:
     }
 }
 
-bool is_redirect(unsigned status) {
-    return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
-}
-
 struct Outcome {
     Reply reply;
     bool redirected = false;
@@ -533,7 +529,7 @@ awaitable<std::expected<Outcome, std::string>> follow(const std::string& text, c
                 co_return std::unexpected("not an http(s) URL");
             }
             Reply reply = co_await request(url, options, tls, redirects == 0 ? validators : nullptr);
-            if (is_redirect(reply.status) && !reply.location.empty()) {
+            if (is_redirect_status(reply.status) && !reply.location.empty()) {
                 if (redirects == options.max_redirects) {
                     co_return std::unexpected(std::format("too many redirects (more than {})", options.max_redirects));
                 }
@@ -568,11 +564,14 @@ awaitable<FetchResult> run(std::string url, FetchOptions options, std::shared_pt
     std::optional<CacheEntry> cached;
     if (cache) {
         cached = co_await off_network_thread([cache, url] { return cache->find(url); });
+        if (cached && cached->redirect()) {
+            cached.reset(); // not stored by this version
+        }
         if (cached && cached->fresh(unix_now())) {
             co_return std::move(cached->body);
         }
     }
-    const Validators validators = cached ? Validators{cached->etag, cached->last_modified} : Validators{};
+    const Validators validators = cached ? Validators{cached->headers.etag, cached->headers.last_modified} : Validators{};
     const bool revalidating = cached && cached->revalidates();
 
     asio::steady_timer timer(co_await asio::this_coro::executor, options.timeout);
@@ -595,15 +594,19 @@ awaitable<FetchResult> run(std::string url, FetchOptions options, std::shared_pt
         });
     };
     if (reply.status == 304 && revalidating) {
-        refresh_cache_entry(*cached, reply.cache, unix_now());
-        keep(*cached);
+        if (forbids_storing(reply.cache)) {
+            asio::post(Network::instance().blocking(), [cache, url] { cache->remove(url); }); // answered, then gone
+        } else {
+            refresh_cache_entry(*cached, reply.cache, unix_now());
+            keep(*cached);
+        }
         co_return std::move(cached->body);
     }
     if (reply.status < 200 || reply.status >= 300) {
         co_return std::unexpected(std::format("HTTP {}", reply.status));
     }
-    if (cache && reply.status == 200) {
-        if (auto entry = make_cache_entry(url, result->redirected, reply.cache, reply.body, unix_now())) {
+    if (cache && reply.status == 200 && !result->redirected) { // only under the URL that returned it
+        if (auto entry = make_cache_entry(url, reply.status, {}, reply.cache, reply.body, unix_now())) {
             keep(std::move(*entry));
         }
     }

@@ -101,6 +101,8 @@ wmZAujteSAEKpmLCsCEVJ8Z884hfe+U0WYC9HPiHLcu3n1AfGNHyekNG
 //   /header-60k 200 with a header section of about 60 KiB
 //   /header-70k 200 with a header section of about 70 KiB
 //   /huge.png   200 with a PNG file of 16384 x 8193 pixels (in 106 KB)
+//   /aged       200, fresh for 600 s but already 600 s old, with an ETag; its 304 says Age: 0
+//   /gone-on-304 200 "kept", revalidated every time, with an ETag; its 304 says no-store
 // Connections stay open for more requests, unless `drop` (closed after each response, without
 // saying so).
 class TestServer {
@@ -216,6 +218,27 @@ private:
                 response.insert(std::format("X-Padding-{}", i), std::string(std::size_t{10} * 1024, 'p'));
             }
             response.body() = "padded";
+        } else if (target == "/aged") {
+            response.set(bhttp::field::etag, "\"a\"");
+            if (request[bhttp::field::if_none_match] == "\"a\"") {
+                response.result(bhttp::status::not_modified);
+                response.set(bhttp::field::age, "0"); // and no Cache-Control: the stored one stays
+                ++not_modified_;
+            } else {
+                response.set(bhttp::field::cache_control, "max-age=600");
+                response.set(bhttp::field::age, "600");
+                response.body() = "aged";
+            }
+        } else if (target == "/gone-on-304") {
+            response.set(bhttp::field::etag, "\"g\"");
+            if (request[bhttp::field::if_none_match] == "\"g\"") {
+                response.result(bhttp::status::not_modified);
+                response.set(bhttp::field::cache_control, "no-store");
+                ++not_modified_;
+            } else {
+                response.set(bhttp::field::cache_control, "no-cache");
+                response.body() = "kept";
+            }
         } else if (target == "/huge.png") {
             const std::vector<std::uint8_t> png = test::black_png(16384, 8193);
             response.body().assign(png.begin(), png.end());
@@ -693,7 +716,7 @@ TEST_CASE("HTTP dates and freshness", "[cache]") {
 
     const std::int64_t now = kNov6;
     const auto entry = [&](const net::CacheHeaders& headers) {
-        return net::make_cache_entry("https://example.com/a.png", false, headers, {1, 2, 3}, now);
+        return net::make_cache_entry("https://example.com/a.png", 200, {}, headers, {1, 2, 3}, now);
     };
     // NOLINTBEGIN(bugprone-unchecked-optional-access): each entry is REQUIREd before it's read
     const auto max_age = entry({.cache_control = "public, max-age=60"});
@@ -732,9 +755,135 @@ TEST_CASE("HTTP dates and freshness", "[cache]") {
     // A 304 renews it.
     net::CacheEntry renewed = *aged;
     // NOLINTEND(bugprone-unchecked-optional-access)
-    net::refresh_cache_entry(renewed, {.cache_control = "max-age=60"}, now + 100);
+    net::refresh_cache_entry(renewed, {.cache_control = "max-age=60", .age = "0"}, now + 100);
     CHECK(renewed.fresh(now + 159));
-    CHECK(renewed.etag == "\"e\"");
+    CHECK(renewed.headers.etag == "\"e\"");
+}
+
+TEST_CASE("a 304 updates the stored fields it carries, and freshness comes from the result", "[cache]") {
+    constexpr std::int64_t now = 784111777; // Sun, 06 Nov 1994 08:49:37 GMT
+    auto stored = net::make_cache_entry("https://example.com/a.png", 200, {},
+                                        {.cache_control = "max-age=600", .date = "Sun, 06 Nov 1994 08:49:37 GMT",
+                                         .etag = "\"e\"", .last_modified = "Sat, 05 Nov 1994 08:49:37 GMT"},
+                                        {1, 2, 3}, now);
+    REQUIRE(stored);
+    net::CacheEntry entry = *stored; // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
+    CHECK_FALSE(entry.fresh(now + 600));
+
+    // A 304 an hour later with only a Date: max-age stays, and counts from the new Date.
+    net::refresh_cache_entry(entry, {.date = "Sun, 06 Nov 1994 09:49:37 GMT"}, now + 3600);
+    CHECK(entry.headers.cache_control == "max-age=600");
+    CHECK(entry.headers.etag == "\"e\"");
+    CHECK(entry.headers.last_modified == "Sat, 05 Nov 1994 08:49:37 GMT");
+    CHECK(entry.fresh(now + 3600 + 599));
+    CHECK_FALSE(entry.fresh(now + 3600 + 600));
+
+    // One that changes Cache-Control and the ETag replaces them.
+    net::refresh_cache_entry(entry, {.cache_control = "no-cache", .etag = "\"f\""}, now + 4000);
+    CHECK(entry.no_cache);
+    CHECK_FALSE(entry.fresh(now + 4000));
+    CHECK(entry.headers.etag == "\"f\"");
+    CHECK(entry.body == std::vector<std::uint8_t>{1, 2, 3});
+
+    CHECK(net::forbids_storing({.cache_control = "max-age=60, no-store"}));
+    CHECK_FALSE(net::forbids_storing({.cache_control = "no-cache"}));
+}
+
+TEST_CASE("redirects make cache entries with a lifetime of their own, or permanent ones", "[cache]") {
+    constexpr std::int64_t now = 784111777;
+    const auto redirect = [&](unsigned status, const net::CacheHeaders& headers) {
+        return net::make_cache_entry("https://example.com/latest", status, "/v2.png", headers, {}, now);
+    };
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): each entry is REQUIREd before it's read
+    const auto timed = redirect(302, {.cache_control = "max-age=60"});
+    REQUIRE(timed);
+    CHECK(timed->redirect());
+    CHECK(timed->location == "/v2.png");
+    CHECK(timed->fresh(now + 59));
+    CHECK_FALSE(timed->fresh(now + 60));
+    const auto until = redirect(307, {.expires = "Sun, 06 Nov 1994 08:59:37 GMT", .date = "Sun, 06 Nov 1994 08:49:37 GMT"});
+    REQUIRE(until);
+    CHECK(until->lifetime == 600);
+    const auto stale = redirect(303, {.cache_control = "max-age=0"}); // kept: offline, it's still the way
+    REQUIRE(stale);
+    CHECK_FALSE(stale->fresh(now));
+    // Temporary ones without max-age or Expires aren't kept, not even with a Last-Modified.
+    CHECK_FALSE(redirect(302, {}));
+    CHECK_FALSE(redirect(307, {.date = "Sun, 06 Nov 1994 08:49:37 GMT", .last_modified = "Sat, 05 Nov 1994 08:49:37 GMT"}));
+    // Permanent ones are fresh until they're evicted...
+    for (const unsigned status : {301u, 308u}) {
+        const auto permanent = redirect(status, {});
+        REQUIRE(permanent);
+        CHECK(permanent->permanent);
+        CHECK(permanent->fresh(now + std::int64_t{100} * 365 * 24 * 3600));
+    }
+    // ...unless they say otherwise.
+    const auto short_lived = redirect(301, {.cache_control = "max-age=10"});
+    REQUIRE(short_lived);
+    CHECK_FALSE(short_lived->fresh(now + 10));
+    const auto revalidated = redirect(308, {.cache_control = "no-cache"});
+    REQUIRE(revalidated);
+    CHECK_FALSE(revalidated->fresh(now));
+    // NOLINTEND(bugprone-unchecked-optional-access)
+    CHECK_FALSE(redirect(301, {.cache_control = "no-store"}));
+    CHECK_FALSE(redirect(308, {.vary = "*"}));
+    CHECK_FALSE(net::make_cache_entry("https://example.com/latest", 301, "", {}, {}, now)); // nowhere to go
+    CHECK_FALSE(net::make_cache_entry("https://example.com/a", 404, "", {.cache_control = "max-age=60"}, {}, now));
+}
+
+TEST_CASE("cache files keep a response's fields and status, and older files are a miss", "[cache]") {
+    const TemporaryDirectory directory;
+    net::HttpCache cache(directory.path, std::uint64_t{1} << 20);
+    const std::int64_t now = net::unix_now();
+    auto redirect = net::make_cache_entry("https://example.com/latest", 308, "https://example.com/v2.png",
+                                          {.cache_control = "public", .etag = "\"r\""}, {}, now);
+    auto image = net::make_cache_entry("https://example.com/v2.png", 200, {},
+                                       {.cache_control = "max-age=600", .age = "5", .etag = "\"i\"", .vary = "Accept"},
+                                       {4, 5, 6}, now);
+    REQUIRE((redirect && image));
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): REQUIREd above
+    cache.store(*redirect, cache.generation());
+    cache.store(*image, cache.generation());
+    // NOLINTEND(bugprone-unchecked-optional-access)
+    const auto found_redirect = cache.find("https://example.com/latest");
+    REQUIRE(found_redirect);
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): both are REQUIREd before they're read
+    CHECK(found_redirect->status == 308);
+    CHECK(found_redirect->location == "https://example.com/v2.png");
+    CHECK(found_redirect->permanent);
+    CHECK(found_redirect->headers.etag == "\"r\"");
+    const auto found_image = cache.find("https://example.com/v2.png");
+    REQUIRE(found_image);
+    CHECK(found_image->status == 200);
+    CHECK(found_image->headers.cache_control == "max-age=600");
+    CHECK(found_image->headers.vary == "Accept");
+    CHECK(found_image->initial_age == 5);
+    CHECK(found_image->fresh(now + 594));
+    CHECK_FALSE(found_image->fresh(now + 595));
+    CHECK(found_image->body == std::vector<std::uint8_t>{4, 5, 6});
+    // NOLINTEND(bugprone-unchecked-optional-access)
+
+    // A file of the previous format, as it would have been written: a miss, and removed.
+    std::filesystem::path stored;
+    for (const auto& item : std::filesystem::recursive_directory_iterator(directory.path)) {
+        std::ifstream in(item.path(), std::ios::binary);
+        std::string magic;
+        std::string url_line;
+        if (item.is_regular_file() && std::getline(in, magic) && std::getline(in, url_line) &&
+            url_line == "url https://example.com/v2.png") {
+            stored = item.path();
+        }
+    }
+    REQUIRE_FALSE(stored.empty());
+    std::ofstream(stored, std::ios::binary | std::ios::trunc)
+        << "ELGCACHE 2\nurl https://example.com/v2.png\nredirected 0\nreceived " << now
+        << "\ninitial-age 0\nlifetime 600\nno-cache 0\nmust-revalidate 0\netag \nlast-modified \nsize 1\n\nx";
+    CHECK_FALSE(cache.find("https://example.com/v2.png"));
+    CHECK_FALSE(std::filesystem::exists(stored));
+
+    cache.remove("https://example.com/latest");
+    CHECK_FALSE(cache.find("https://example.com/latest"));
+    CHECK(directory.files() == 0);
 }
 
 TEST_CASE("the disk cache answers while fresh and revalidates after", "[fetch][cache]") {
@@ -753,6 +902,31 @@ TEST_CASE("the disk cache answers while fresh and revalidates after", "[fetch][c
     CHECK(text(fetch(server.url("/revalidate"), options)) == "fresh"); // the stored body, after a 304
     CHECK(server.hits("/revalidate") == 2);
     CHECK(server.not_modified() == 1);
+
+    // A 304 without Cache-Control keeps the stored max-age; its Age of 0 makes the entry fresh.
+    CHECK(text(fetch(server.url("/aged"), options)) == "aged"); // stored, but stale at once
+    REQUIRE(wait_until_cached(*cache, server.url("/aged")));
+    CHECK(text(fetch(server.url("/aged"), options)) == "aged"); // revalidated: a 304
+    CHECK(server.hits("/aged") == 2);
+    const auto fresh_in_cache = [&] {
+        const std::optional<net::CacheEntry> entry = cache->find(server.url("/aged"));
+        return entry && entry->fresh(net::unix_now());
+    };
+    for (int i = 0; i < 200 && !fresh_in_cache(); ++i) {
+        std::this_thread::sleep_for(10ms); // until the update is stored
+    }
+    CHECK(text(fetch(server.url("/aged"), options)) == "aged");
+    CHECK(server.hits("/aged") == 2); // fresh now: from the cache
+
+    // no-store in a 304: answered with the stored body, which is then removed.
+    CHECK(text(fetch(server.url("/gone-on-304"), options)) == "kept");
+    REQUIRE(wait_until_cached(*cache, server.url("/gone-on-304")));
+    CHECK(text(fetch(server.url("/gone-on-304"), options)) == "kept");
+    for (int i = 0; i < 200 && cache->find(server.url("/gone-on-304")); ++i) {
+        std::this_thread::sleep_for(10ms);
+    }
+    CHECK_FALSE(cache->find(server.url("/gone-on-304")));
+    CHECK(server.hits("/gone-on-304") == 2);
 
     const std::size_t before = directory.files();
     CHECK(text(fetch(server.url("/nostore"), options)) == "secret");
@@ -791,7 +965,7 @@ TEST_CASE("the disk cache keeps to its limit and clears only its own files", "[c
 
     net::HttpCache cache(directory.path, std::uint64_t{16} * 1024);
     const auto store = [&](int i) {
-        auto entry = net::make_cache_entry(std::format("https://example.com/{}.png", i), false,
+        auto entry = net::make_cache_entry(std::format("https://example.com/{}.png", i), 200, {},
                                            {.cache_control = "max-age=600"}, std::vector<std::uint8_t>(1500, 7),
                                            net::unix_now());
         REQUIRE(entry);
@@ -807,7 +981,7 @@ TEST_CASE("the disk cache keeps to its limit and clears only its own files", "[c
     // Stores begun before a clear are dropped.
     const std::uint64_t before = cache.generation();
     cache.clear();
-    auto late = net::make_cache_entry("https://example.com/late.png", false, {.cache_control = "max-age=600"}, {1},
+    auto late = net::make_cache_entry("https://example.com/late.png", 200, {}, {.cache_control = "max-age=600"}, {1},
                                       net::unix_now());
     REQUIRE(late);
     cache.store(*late, before); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
@@ -825,7 +999,7 @@ TEST_CASE("the disk cache keeps to its limit and clears only its own files", "[c
 TEST_CASE("values that would break a cache file's lines aren't written to it", "[cache]") {
     const std::int64_t now = net::unix_now();
     const auto entry = [&](std::string etag) {
-        return net::make_cache_entry("https://example.com/a.png", false,
+        return net::make_cache_entry("https://example.com/a.png", 200, {},
                                      {.cache_control = "max-age=600", .etag = std::move(etag)}, {1}, now);
     };
     CHECK_FALSE(entry("\"e\"\r\nlifetime 999999999"));
@@ -834,7 +1008,7 @@ TEST_CASE("values that would break a cache file's lines aren't written to it", "
     REQUIRE(kept);
     // NOLINTBEGIN(bugprone-unchecked-optional-access): REQUIREd above
     net::refresh_cache_entry(*kept, {.cache_control = "max-age=600", .etag = "\"f\"\nlifetime 9"}, now);
-    CHECK(kept->etag == "\"e\""); // the 304's can't be written: the old one stays
+    CHECK(kept->headers.etag == "\"e\""); // the 304's can't be written: the old one stays
     // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
@@ -851,7 +1025,7 @@ TEST_CASE("a damaged or truncated cache file is a miss, and goes", "[cache]") {
     };
     for (const bool truncate : {true, false}) {
         net::HttpCache cache(directory.path, std::uint64_t{1} << 20);
-        auto entry = net::make_cache_entry(url, false, {.cache_control = "max-age=600"}, {1, 2, 3, 4}, net::unix_now());
+        auto entry = net::make_cache_entry(url, 200, {}, {.cache_control = "max-age=600"}, {1, 2, 3, 4}, net::unix_now());
         REQUIRE(entry);
         cache.store(*entry, cache.generation()); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
         const std::filesystem::path stored = file();
