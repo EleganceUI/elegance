@@ -17,11 +17,6 @@ constexpr char kMipmapWgsl[] =
     ;
 
 constexpr wgpu::TextureFormat kFormat = wgpu::TextureFormat::RGBA8UnormSrgb; // sampling yields linear color
-// Dropped when unused for this many frames (of any window), or sooner when over the budget.
-constexpr std::uint64_t kIdleFrames = 600;
-// Over the budget, textures used this recently are kept anyway (they're on screen).
-constexpr std::uint64_t kRecentFrames = 16;
-constexpr std::size_t kBudgetBytes = 512ull << 20;
 
 } // namespace
 
@@ -52,14 +47,9 @@ TextureCache::TextureCache(const Device& device, wgpu::BindGroupLayout  image_la
     mip_pipeline_ = dev.CreateRenderPipeline(&descriptor);
 }
 
-void TextureCache::destroy(Texture& texture) noexcept {
-    bytes_ -= texture.bytes;
-    texture = {};
-}
-
 wgpu::BindGroup TextureCache::acquire(const wgpu::CommandEncoder& encoder, const DecodedImage& image) {
     if (const auto it = textures_.find(image.id); it != textures_.end()) {
-        it->second.last_used = frame_;
+        frame_.mark(it->second.use);
         return it->second.group;
     }
     const auto levels = static_cast<std::uint32_t>(std::bit_width(std::max(image.width, image.height)));
@@ -87,9 +77,8 @@ wgpu::BindGroup TextureCache::acquire(const wgpu::CommandEncoder& encoder, const
     device_.queue().WriteTexture(&destination, image.rgba.data(), image.rgba.size(), &layout, &size);
     generate_mips(encoder, texture.texture, levels);
 
-    texture.bytes = image.rgba.size() * 4 / 3; // with mips
-    texture.last_used = frame_;
-    bytes_ += texture.bytes;
+    texture.use.bytes = decoded_texture_bytes(image.width, image.height);
+    frame_.mark(texture.use);
     return textures_.emplace(image.id, std::move(texture)).first->second.group;
 }
 
@@ -119,30 +108,8 @@ void TextureCache::generate_mips(const wgpu::CommandEncoder& encoder, const wgpu
     }
 }
 
-void TextureCache::end_frame() noexcept {
-    ++frame_;
-    std::erase_if(textures_, [&](auto& entry) {
-        Texture& texture = entry.second;
-        if (frame_ - texture.last_used > kIdleFrames) {
-            destroy(texture);
-            return true;
-        }
-        return false;
-    });
-    // Over budget: the least recently used first, but not what recent frames drew.
-    while (bytes_ > kBudgetBytes) {
-        auto oldest = textures_.end();
-        for (auto it = textures_.begin(); it != textures_.end(); ++it) {
-            if (oldest == textures_.end() || it->second.last_used < oldest->second.last_used) {
-                oldest = it;
-            }
-        }
-        if (oldest == textures_.end() || frame_ - oldest->second.last_used <= kRecentFrames) {
-            break;
-        }
-        destroy(oldest->second);
-        textures_.erase(oldest);
-    }
+void TextureCache::end_frame() {
+    evict(textures_, frame_, kDecodedImagePolicy);
 }
 
 } // namespace elg::detail::gpu

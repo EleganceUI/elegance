@@ -6,13 +6,19 @@
 // given, not read from a clock.
 
 #include "gpu/eviction.h"
+#include "gpu/texture_cache.h"
 #include "render/intermediate_images.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <initializer_list>
 #include <map>
+#include <string>
+#include <utility>
 
 using namespace elg;
 using namespace std::chrono_literals;
@@ -183,4 +189,58 @@ TEST_CASE("GPU caches release entries by idle time and by the bytes the frame do
     CHECK(detail::gpu::evict(entries, frame, policy, pinned) == 0);
     CHECK(entries.size() == 1);
     CHECK(entries.contains(3));
+}
+
+namespace {
+
+// Entries of a GPU cache under `policy`, by name.
+struct FakeCache {
+    struct Entry {
+        detail::gpu::CacheUse use;
+    };
+    detail::gpu::CachePolicy policy;
+    std::map<std::string, Entry, std::less<>> entries;
+    detail::gpu::CacheFrame frame;
+
+    // A frame at `now` that draws `used` (names and bytes).
+    void draw(detail::gpu::CacheClock::time_point now,
+              std::initializer_list<std::pair<const char*, std::size_t>> used) {
+        frame.begin(now);
+        for (const auto& [name, bytes] : used) {
+            Entry& entry = entries[name];
+            entry.use.bytes = bytes;
+            frame.mark(entry.use);
+        }
+        detail::gpu::evict(entries, frame, policy);
+    }
+};
+
+constexpr std::size_t kMB = std::size_t{1} << 20;
+
+} // namespace
+
+TEST_CASE("a decoded image's texture counts its mipmaps", "[gpu-memory]") {
+    // 4 x 2, then 2 x 1, then 1 x 1, four bytes a pixel.
+    CHECK(detail::gpu::decoded_texture_bytes(4, 2) == 32 + 8 + 4);
+    CHECK(detail::gpu::decoded_texture_bytes(1, 1) == 4);
+}
+
+TEST_CASE("decoded images' textures go once undrawn for 10 s, or past 512 MB beyond the frame's", "[gpu-memory]") {
+    FakeCache cache{detail::gpu::kDecodedImagePolicy, {}, {}};
+    cache.draw(t0, {{"photo", 300 * kMB}, {"banner", 300 * kMB}, {"icon", kMB}});
+    CHECK(cache.entries.size() == 3); // the frame draws them all
+
+    cache.draw(t0 + 1s, {{"icon", kMB}});
+    // 600 MB undrawn: the photo or the banner goes.
+    CHECK(cache.entries.size() == 2);
+    CHECK(cache.entries.contains("icon"));
+
+    // The other one was drawn last at t0, the icon at t0 + 1 s.
+    cache.draw(t0 + 9999ms, {});
+    CHECK(cache.entries.size() == 2);
+    cache.draw(t0 + 10s, {});
+    CHECK(cache.entries.size() == 1);
+    CHECK(cache.entries.contains("icon"));
+    cache.draw(t0 + 11s, {});
+    CHECK(cache.entries.empty());
 }

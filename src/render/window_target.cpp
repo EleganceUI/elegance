@@ -320,7 +320,8 @@ void WindowTarget::draw_pass(const wgpu::CommandEncoder& encoder, const PassTarg
 wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowFrame& frame,
                                          const RenderResources& resources,
                                          std::vector<std::uint64_t>& acquired_videos) {
-    images_.begin_frame(gpu::CacheClock::now());
+    const gpu::CacheClock::time_point now = gpu::CacheClock::now();
+    images_.begin_frame(now);
     const FramePlan plan = plan_frame(frame.list, target.width, target.height);
     instances_.write(std::as_bytes(std::span(plan.instances)));
     stops_.write(std::as_bytes(std::span(plan.stops)));
@@ -360,6 +361,7 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
     }
 
     // Images: uploaded (with their mips) the first time a frame draws them.
+    resources.textures.begin_frame(now);
     groups.images.reserve(plan.images.size());
     for (const auto& image : plan.images) {
         groups.images.push_back(resources.textures.acquire(encoder, *image));
