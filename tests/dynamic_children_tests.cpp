@@ -93,3 +93,28 @@ TEST_CASE("only elements with a handler take focus whoever asks", "[focus]") {
     CHECK_FALSE(focus.focus(root.get(), true));
     CHECK(focus.focused() == nullptr);
 }
+
+TEST_CASE("a ForEach whose content takes a Signal keeps each key's view, which follows its item", "[for-each]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    struct Item {
+        int id = 0;
+        int value = 0;
+        bool operator==(const Item&) const = default;
+    };
+    const State<std::vector<Item>> items(std::vector<Item>{{1, 10}, {2, 20}});
+    int mounts = 0;
+    std::vector<Signal<Item>> signals;
+    const auto root = detail::lower(VStack(ForEach(items, &Item::id, [&](Signal<Item> item) {
+                                        ++mounts;
+                                        signals.push_back(item);
+                                        return Rectangle().frame(10, 10);
+                                    })),
+                                    {});
+    REQUIRE(mounts == 2);
+    items = std::vector<Item>{{2, 21}, {1, 10}, {3, 30}}; // 2 changed and moved, 3 is new
+    detail::flush_effects();
+    CHECK(mounts == 3); // only the new key mounted
+    CHECK(signals[1]().value == 21);
+    CHECK(signals[0]().value == 10);
+}

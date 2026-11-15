@@ -31,6 +31,8 @@
 #include <type_traits>
 #include <utility>
 #include <variant>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace elg {
@@ -574,12 +576,19 @@ ELG_API View ScrollView(const ScrollViewOptions& options, View content);
 ///
 /// When `items` changes, items whose key and value are unchanged keep their views (and state);
 /// changed items are rebuilt, removed ones are removed. Items without == count as unchanged.
+///
+/// A content function that takes a Signal<T> instead keeps each key's view for as long as the key
+/// is there: the view reads the item through the signal, which follows the item's new values.
+///
+/// @code
+/// ForEach(todos, &Todo::id, [](Signal<Todo> t) { return Text([t] { return t().title; }); })
+/// @endcode
 /// Inside a stack, the items are direct children of the stack; elsewhere they stack vertically.
 ///
 /// @param items A std::vector, or a State / Computed / closure producing one.
 /// @param key Returns an item's key: an integer, enum, or string. A member pointer
 ///   (`&Todo::id`) works too.
-/// @param content Builds an item's view.
+/// @param content Builds an item's view, from the item (`const T&`) or from a Signal<T> of it.
 /// @return The items' views.
 /// @throws UsageError if `items`, `key` or `content` is an empty std::function or a null pointer.
 template <class Source, class KeyFunction, class ContentFunction>
@@ -588,8 +597,15 @@ View ForEach(Source items, KeyFunction key, ContentFunction content) {
     using Items = typename detail::ItemsOf<Source>::type;
     using T = typename Items::value_type;
     static_assert(std::is_invocable_v<const KeyFunction&, const T&>, "the key function takes an item");
-    static_assert(std::is_convertible_v<std::invoke_result_t<const ContentFunction&, const T&>, View>,
-                  "the content function takes an item and returns a view");
+    constexpr bool takes_signal = std::is_invocable_v<const ContentFunction&, Signal<T>> &&
+                                  !std::is_invocable_v<const ContentFunction&, const T&>;
+    if constexpr (takes_signal) {
+        static_assert(std::is_convertible_v<std::invoke_result_t<const ContentFunction&, Signal<T>>, View>,
+                      "the content function takes an item and returns a view");
+    } else {
+        static_assert(std::is_convertible_v<std::invoke_result_t<const ContentFunction&, const T&>, View>,
+                      "the content function takes an item and returns a view");
+    }
     if (detail::is_empty_function(items)) {
         throw UsageError("ForEach() needs an items function");
     }
@@ -608,18 +624,50 @@ View ForEach(Source items, KeyFunction key, ContentFunction content) {
         }
     };
     Prop<Items> source(std::move(items));
-    return detail::make_for_each([source = std::move(source), key = std::move(key), content = std::move(content),
-                                  equals] {
-        std::vector<detail::ForEachItem> result;
-        const Items values = source.get(); // a tracked read: the ForEach updates when it changes
-        result.reserve(values.size());
-        for (const T& value : values) {
-            auto shared = std::make_shared<const T>(value);
-            result.push_back({detail::to_item_key(std::invoke(key, value)), shared, equals,
-                              [shared, content] { return View(content(*shared)); }});
-        }
-        return result;
-    });
+    if constexpr (takes_signal) {
+        // Each key's item is a State its view reads, and the view stays while the key does: a
+        // new value is written to the State. A repeated key gets a State of its own each time.
+        auto states = std::make_shared<std::unordered_map<ItemKey, State<T>>>();
+        const auto kept = std::make_shared<const int>(0); // the same "value" each time: kept
+        return detail::make_for_each([source = std::move(source), key = std::move(key), content = std::move(content),
+                                      states, kept] {
+            std::vector<detail::ForEachItem> result;
+            const Items values = source.get(); // a tracked read: the ForEach updates when it changes
+            result.reserve(values.size());
+            std::unordered_set<ItemKey> seen;
+            for (const T& value : values) {
+                const ItemKey item_key = detail::to_item_key(std::invoke(key, value));
+                std::optional<State<T>> state;
+                if (seen.insert(item_key).second) {
+                    if (auto found = states->find(item_key); found != states->end()) {
+                        found->second.set(value);
+                        state = found->second;
+                    } else {
+                        state = states->emplace(item_key, State<T>(value)).first->second;
+                    }
+                } else {
+                    state.emplace(value);
+                }
+                result.push_back({item_key, kept, [](const void*, const void*) { return true; },
+                                  [state = *state, content] { return View(content(Signal<T>(state))); }});
+            }
+            std::erase_if(*states, [&](const auto& entry) { return !seen.contains(entry.first); });
+            return result;
+        });
+    } else {
+        return detail::make_for_each([source = std::move(source), key = std::move(key), content = std::move(content),
+                                      equals] {
+            std::vector<detail::ForEachItem> result;
+            const Items values = source.get(); // a tracked read: the ForEach updates when it changes
+            result.reserve(values.size());
+            for (const T& value : values) {
+                auto shared = std::make_shared<const T>(value);
+                result.push_back({detail::to_item_key(std::invoke(key, value)), shared, equals,
+                                  [shared, content] { return View(content(*shared)); }});
+            }
+            return result;
+        });
+    }
 }
 
 /// ForEach over integers or strings, keyed by the values themselves.

@@ -101,14 +101,12 @@ void FragmentElement::set_items(const std::vector<ForEachItem>& items) {
     next.reserve(items.size());
     std::vector<bool> kept(children_.size(), false);
     std::unordered_set<ItemKey> seen;
-    bool reported_duplicate = false;
     bool changed = items.size() != children_.size();
 
     for (const ForEachItem& item : items) {
         if (!seen.insert(item.key).second) {
-            if (!reported_duplicate) {
+            if (!std::exchange(reported_duplicate_, true)) { // once per ForEach
                 log_warning("ForEach has duplicate keys; items with a repeated key are rebuilt on every change");
-                reported_duplicate = true;
             }
         } else if (auto it = existing.find(item.key); it != existing.end() && !kept[it->second] &&
                                                     same_value(children_[it->second].value, item)) {
