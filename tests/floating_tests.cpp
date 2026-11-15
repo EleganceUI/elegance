@@ -39,8 +39,8 @@ bool same(Point a, Point b) {
 
 // A 400 x 300 window whose root is a floating layer, as the app makes it.
 struct Window {
+    detail::FocusManager focus; // outlives the tree: its elements let go of it when destroyed
     std::unique_ptr<detail::Element> root;
-    detail::FocusManager focus;
     std::unique_ptr<detail::EventDispatcher> events;
     bool tree_changed = false;
 

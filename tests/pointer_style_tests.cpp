@@ -19,8 +19,8 @@ struct Window {
     detail::Scope scope;
     detail::Scope::Use use{scope};
     State<bool> shown{true};
+    detail::FocusManager focus; // outlives the tree: its elements let go of it when destroyed
     std::unique_ptr<detail::Element> root;
-    detail::FocusManager focus;
     std::unique_ptr<detail::EventDispatcher> events;
 
     Window() {
@@ -64,10 +64,10 @@ TEST_CASE("a view going away under a still pointer takes its style with it", "[p
 TEST_CASE("automatic leaves the style to the views around, and the arrow is the default", "[pointer-style]") {
     detail::Scope scope;
     const detail::Scope::Use use(scope);
+    detail::FocusManager focus; // outlives the tree
     auto root = detail::lower(Rectangle().fill(Color::white).pointer_style(PointerStyle::automatic), {});
     root->size_that_fits({100.f, 100.f});
     root->place({}, {100.f, 100.f});
-    detail::FocusManager focus;
     detail::EventDispatcher events(*root, focus);
     events.pointer_moved({50, 50});
     CHECK(events.pointer_style() == PointerStyle::arrow);

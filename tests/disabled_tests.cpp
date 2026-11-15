@@ -34,8 +34,8 @@ detail::TextSystem& text_system() {
 
 // A 100 x 100 window with `view` at (25, 25), 50 x 50.
 struct Window {
+    detail::FocusManager focus; // outlives the tree: its elements let go of it when destroyed
     std::unique_ptr<detail::Element> root;
-    detail::FocusManager focus;
     std::unique_ptr<detail::EventDispatcher> events;
 
     explicit Window(const View& view) {
