@@ -258,7 +258,10 @@ struct TrayIcon::State {
                 bytes.assign(options.icon.data.begin(), options.icon.data.end());
             }
             if (!bytes.empty()) {
-                pixels = detail::decode_image(bytes, {.max_side = 256});
+                // At most 256 pixels a side (a tray icon's), and within the source's pixel limit.
+                const detail::ImageLimits asked = detail::image_limits(options.icon.max_pixels, options.icon.max_side);
+                pixels = detail::decode_image(bytes, {.max_pixels = asked.max_pixels,
+                                                      .max_side = std::min(asked.max_side, 256u)});
             }
         } catch (const std::exception& failure) {
             log_warning("TrayIcon: {}", failure.what());

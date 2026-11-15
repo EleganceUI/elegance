@@ -5,6 +5,8 @@
 #ifndef ELG_VIEW_RASTER_IMAGE_H
 #define ELG_VIEW_RASTER_IMAGE_H
 
+#include "media/image_decode.h"
+
 #include <elg/image.h>
 #include <elg/view.h>
 
@@ -17,7 +19,7 @@ namespace elg::detail {
 // Image({.file}) / Image({.data}): a raster image view (design.md §13.3).
 View raster_image(const ImageSource& source);
 // From encoded bytes already in memory (shared, not copied).
-View raster_image(std::shared_ptr<const std::vector<std::uint8_t>> data, float scale);
+View raster_image(std::shared_ptr<const std::vector<std::uint8_t>> data, float scale, ImageLimits limits);
 
 } // namespace elg::detail
 

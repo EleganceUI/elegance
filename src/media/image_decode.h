@@ -41,6 +41,12 @@ struct ImageLimits {
     std::uint32_t max_side = kDefaultMaxSide;
 };
 
+// The limits an app gave (ImageSource, AsyncImageOptions), where 0 means the default.
+inline ImageLimits image_limits(std::uint64_t max_pixels, std::uint32_t max_side) {
+    return {max_pixels != 0 ? max_pixels : ImageLimits::kDefaultMaxPixels,
+            max_side != 0 ? max_side : ImageLimits::kDefaultMaxSide};
+}
+
 // Throws elg::ResourceError if the data isn't an image the platform can decode (PNG, JPEG, GIF,
 // BMP, TIFF, ICO everywhere; WebP, HEIF, AVIF where the OS has the codecs), or if it has more
 // pixels than `limits` allow (the message names the limit).

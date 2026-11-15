@@ -121,16 +121,18 @@ std::uint64_t hash_bytes(std::span<const std::uint8_t> bytes) {
 }
 
 // Loads (or finds) the asset for a source: reads and probes it now, decodes in the background.
-std::shared_ptr<ImageAsset> load_asset(const fs::path& file, const std::shared_ptr<const Bytes>& data) {
+// Sources shown with other limits are other assets.
+std::shared_ptr<ImageAsset> load_asset(const fs::path& file, const std::shared_ptr<const Bytes>& data,
+                                       const ImageLimits& limits) {
     static std::map<std::string, std::weak_ptr<ImageAsset>> cache;
-    std::string key;
+    std::string key = std::format("{}x{}:", limits.max_pixels, limits.max_side);
     std::error_code error;
     if (data) {
-        key = std::format("data:{:016x}", hash_bytes(*data));
+        key += std::format("data:{:016x}", hash_bytes(*data));
     } else {
         const auto time = fs::last_write_time(file, error);
-        key = std::format("file:{}:{}", fs::absolute(file, error).string(),
-                          error ? 0 : time.time_since_epoch().count());
+        key += std::format("file:{}:{}", fs::absolute(file, error).string(),
+                           error ? 0 : time.time_since_epoch().count());
     }
     if (auto found = cache[key].lock()) {
         return found;
@@ -150,7 +152,7 @@ std::shared_ptr<ImageAsset> load_asset(const fs::path& file, const std::shared_p
         bytes = std::make_shared<const Bytes>(std::move(*read));
     }
     try {
-        asset->info = probe_image(*bytes);
+        asset->info = probe_image(*bytes, limits);
     } catch (const std::exception& failure) {
         log_warning("Image: {}: {}", asset->name, failure.what());
         asset->failed = true;
@@ -158,13 +160,13 @@ std::shared_ptr<ImageAsset> load_asset(const fs::path& file, const std::shared_p
     }
     cache[key] = asset;
 
-    DecodeQueue::instance().post([weak = std::weak_ptr(asset), bytes, name = asset->name] {
+    DecodeQueue::instance().post([weak = std::weak_ptr(asset), bytes, limits, name = asset->name] {
         if (weak.expired()) {
             return; // nobody shows it anymore
         }
         std::shared_ptr<const DecodedImage> decoded;
         try {
-            decoded = decode_image(*bytes);
+            decoded = decode_image(*bytes, limits);
         } catch (const std::exception& failure) {
             log_warning("Image: {}: {}", name, failure.what());
             return;
@@ -226,11 +228,11 @@ private:
 
 class RasterImageNode final : public ViewNode {
 public:
-    RasterImageNode(fs::path file, std::shared_ptr<const Bytes> data, float scale, bool resizable)
-        : file_(std::move(file)), data_(std::move(data)), scale_(scale), resizable_(resizable) {}
+    RasterImageNode(fs::path file, std::shared_ptr<const Bytes> data, float scale, ImageLimits limits, bool resizable)
+        : file_(std::move(file)), data_(std::move(data)), scale_(scale), limits_(limits), resizable_(resizable) {}
 
     [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
-        const std::shared_ptr<ImageAsset> asset = load_asset(file_, data_);
+        const std::shared_ptr<ImageAsset> asset = load_asset(file_, data_, limits_);
         auto element = std::make_unique<RasterImageElement>(asset, scale_, resizable_);
         RasterImageElement* const target = element.get();
         // Pixels arrive (or change) later: draw them then.
@@ -244,13 +246,14 @@ public:
     }
 
     [[nodiscard]] std::shared_ptr<const RasterImageNode> resized() const {
-        return std::make_shared<const RasterImageNode>(file_, data_, scale_, true);
+        return std::make_shared<const RasterImageNode>(file_, data_, scale_, limits_, true);
     }
 
 private:
     fs::path file_;
     std::shared_ptr<const Bytes> data_;
     float scale_;
+    ImageLimits limits_;
     bool resizable_;
 };
 
@@ -259,11 +262,12 @@ View raster_image(const ImageSource& source) {
     if (!source.data.empty()) {
         data = std::make_shared<const Bytes>(source.data.begin(), source.data.end()); // copied (design.md §9.6)
     }
-    return ViewAccess::make(std::make_shared<const RasterImageNode>(source.file, std::move(data), source.scale, false));
+    return ViewAccess::make(std::make_shared<const RasterImageNode>(
+        source.file, std::move(data), source.scale, image_limits(source.max_pixels, source.max_side), false));
 }
 
-View raster_image(std::shared_ptr<const Bytes> data, float scale) {
-    return ViewAccess::make(std::make_shared<const RasterImageNode>(fs::path(), std::move(data), scale, false));
+View raster_image(std::shared_ptr<const Bytes> data, float scale, ImageLimits limits) {
+    return ViewAccess::make(std::make_shared<const RasterImageNode>(fs::path(), std::move(data), scale, limits, false));
 }
 
 } // namespace elg::detail

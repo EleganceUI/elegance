@@ -1058,7 +1058,7 @@ ELG_EXPORT const char* elg_version() {
 
 // The C API's ABI version. It goes up by one whenever an exported function's signature, a struct
 // passed across the API, or the value of a documented constant changes.
-constexpr std::uint32_t kAbiVersion = 1;
+constexpr std::uint32_t kAbiVersion = 2;
 
 /// The C API's ABI version: a binding checks it when it loads the library, and refuses to run
 /// with a version it wasn't built for. It changes whenever an exported function's signature, a

@@ -1633,27 +1633,34 @@ ELG_EXPORT View* elg_image_named(ElgStr system_name) {
 }
 
 // content_mode < 0: none.
-static AsyncImageOptions async_image_options(float scale, int32_t content_mode, bool disk_cache) {
+static AsyncImageOptions async_image_options(float scale, int32_t content_mode, bool disk_cache, uint64_t max_pixels,
+                                             uint32_t max_side) {
     AsyncImageOptions options;
     options.scale = scale;
     if (content_mode >= 0) {
         options.content_mode = static_cast<ContentMode>(content_mode);
     }
     options.disk_cache = disk_cache;
+    options.max_pixels = max_pixels;
+    options.max_side = max_side;
     return options;
 }
 
 /// Wraps `AsyncImage()`: loads an image over HTTP(S) when first shown: a spinner while loading, the image once
 /// it's here, a placeholder icon if it fails. Downloads are cached in memory and on disk (elg_set_image_cache).
+/// A download fails, naming the limit, past a 64 KiB header section, a 64 MiB body, 5 redirects or 30 seconds.
 ///
 /// @param url The image's URL (copied).
 /// @param scale Pixels per point.
 /// @param content_mode Resizable, keeping its aspect ratio this way (`ContentMode`: 0 fit, 1 fill); negative:
 ///   at its own size.
 /// @param disk_cache false: kept in memory only, never in the disk cache.
+/// @param max_pixels The most pixels the image may have (more: the failure phase); 0: the default, 2^27.
+/// @param max_side The longest side it's decoded at (longer: scaled down to fit); 0: the default, 8192.
 /// @return The image, owned by the caller, or null on failure.
-ELG_EXPORT View* elg_async_image(ElgStr url, float scale, int32_t content_mode, bool disk_cache) {
-    VIEW_TRY(AsyncImage(str(url), async_image_options(scale, content_mode, disk_cache)))
+ELG_EXPORT View* elg_async_image(ElgStr url, float scale, int32_t content_mode, bool disk_cache, uint64_t max_pixels,
+                                 uint32_t max_side) {
+    VIEW_TRY(AsyncImage(str(url), async_image_options(scale, content_mode, disk_cache, max_pixels, max_side)))
 }
 
 /// Wraps `set_image_cache()`: AsyncImage's disk cache. Downloads already under way use the cache they started
@@ -1691,8 +1698,11 @@ struct ElgAsyncImagePhase {
 ///   usage error.
 /// @param scale Pixels per point.
 /// @param disk_cache false: kept in memory only, never in the disk cache.
+/// @param max_pixels The most pixels the image may have (more: the failure phase); 0: the default, 2^27.
+/// @param max_side The longest side it's decoded at (longer: scaled down to fit); 0: the default, 8192.
 /// @return The image, owned by the caller, or null on failure.
-ELG_EXPORT View* elg_async_image_content(ElgStr url, ElgClosure content, float scale, bool disk_cache) {
+ELG_EXPORT View* elg_async_image_content(ElgStr url, ElgClosure content, float scale, bool disk_cache,
+                                         uint64_t max_pixels, uint32_t max_side) {
     ELG_TRY
     const Consumed consumed(content);
     const SharedFn f = required(content, "content");
@@ -1704,7 +1714,7 @@ ELG_EXPORT View* elg_async_image_content(ElgStr url, ElgClosure content, float s
             f->call(&arg, &result);
             return result;
         },
-        async_image_options(scale, -1, disk_cache)));
+        async_image_options(scale, -1, disk_cache, max_pixels, max_side)));
     ELG_CATCH(nullptr)
 }
 

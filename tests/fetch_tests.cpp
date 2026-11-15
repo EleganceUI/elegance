@@ -101,6 +101,7 @@ wmZAujteSAEKpmLCsCEVJ8Z884hfe+U0WYC9HPiHLcu3n1AfGNHyekNG
 //   /header-60k 200 with a header section of about 60 KiB
 //   /header-70k 200 with a header section of about 70 KiB
 //   /huge.png   200 with a PNG file of 16384 x 8193 pixels (in 106 KB)
+//   /small.png  200 with a PNG file of 64 x 32 pixels
 //   /aged       200, fresh for 600 s but already 600 s old, with an ETag; its 304 says Age: 0
 //   /gone-on-304 200 "kept", revalidated every time, with an ETag; its 304 says no-store
 //   /latest     302 to /v123.png, with no lifetime of its own
@@ -258,6 +259,9 @@ private:
         } else if (target == "/v123.png") {
             response.set(bhttp::field::cache_control, "max-age=31536000");
             response.body() = "v123";
+        } else if (target == "/small.png") {
+            const std::vector<std::uint8_t> png = test::black_png(64, 32);
+            response.body().assign(png.begin(), png.end());
         } else if (target == "/huge.png") {
             const std::vector<std::uint8_t> png = test::black_png(16384, 8193);
             response.body().assign(png.begin(), png.end());
@@ -442,7 +446,7 @@ net::FetchResult fetch(std::string url, net::FetchOptions options = {}) {
 
 // Shows an AsyncImage of `url` (memory cache only), and runs the UI thread's tasks until it leaves
 // the loading phase.
-AsyncImagePhase load_async_image(const std::string& url) {
+AsyncImagePhase load_async_image(const std::string& url, AsyncImageOptions options = {.disk_cache = false}) {
     detail::Scope scope;
     const detail::Scope::Use use(scope);
     AsyncImagePhase last;
@@ -452,7 +456,7 @@ AsyncImagePhase load_async_image(const std::string& url) {
             last = phase;
             return View();
         },
-        {.disk_cache = false});
+        options);
     const std::unique_ptr<detail::Element> root = detail::lower(view, {});
     for (int i = 0; i < 1000 && last.kind == AsyncImagePhase::Kind::loading; ++i) {
         std::this_thread::sleep_for(10ms);
@@ -1130,6 +1134,18 @@ TEST_CASE("AsyncImage fails on an image with too many pixels, and logs why", "[f
     CHECK(phase.kind == AsyncImagePhase::Kind::failure);
     CHECK_THAT(phase.error, ContainsSubstring("more than the 134217728"));
     CHECK(logged(std::format("AsyncImage: {}: {}", server.url("/huge.png"), phase.error)));
+}
+
+TEST_CASE("an AsyncImage's limits can be lowered or raised for it", "[fetch][image]") {
+    const TestServer server;
+    const AsyncImagePhase lowered = load_async_image(server.url("/small.png"), {.disk_cache = false, .max_pixels = 2047});
+    CHECK(lowered.kind == AsyncImagePhase::Kind::failure);
+    CHECK_THAT(lowered.error, ContainsSubstring("64 x 32 pixels, more than the 2047"));
+    CHECK(load_async_image(server.url("/small.png")).kind == AsyncImagePhase::Kind::success);
+    // Raised: no longer a failure (it isn't decoded until its image is shown).
+    const AsyncImagePhase raised =
+        load_async_image(server.url("/huge.png"), {.disk_cache = false, .max_pixels = std::uint64_t{1} << 28});
+    CHECK(raised.kind == AsyncImagePhase::Kind::success);
 }
 
 TEST_CASE("AsyncImage logs the limit a download exceeded", "[fetch][image]") {

@@ -7,16 +7,26 @@
 
 #include "media/image_decode.h"
 
+#include "core/log.h"
+#include "core/ui_tasks.h"
 #include "test_images.h"
+#include "view/view_node.h"
 
 #include <elg/error.h>
+#include <elg/image.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <string>
+#include <thread>
+#include <variant>
 #include <vector>
 
 using namespace elg;
@@ -30,6 +40,61 @@ TEST_CASE("images with too many pixels are refused before decoding", "[image]") 
     // Already when only the size is read.
     CHECK_THROWS_AS(detail::probe_image(huge), ResourceError);
     CHECK_THROWS_WITH(detail::probe_image(huge), ContainsSubstring("16384 x 8193 pixels"));
+}
+
+TEST_CASE("an app's image limits replace the defaults, and 0 keeps them", "[image]") {
+    const std::vector<std::uint8_t> huge = black_png(16384, 8193);
+    // Raised: probed (decoding it would take 512 MiB).
+    CHECK(detail::probe_image(huge, detail::image_limits(std::uint64_t{1} << 28, 0)).width == 16384);
+    CHECK_THROWS_AS(detail::probe_image(huge, detail::image_limits(0, 0)), ResourceError);
+    const detail::ImageLimits defaults = detail::image_limits(0, 0);
+    CHECK(defaults.max_pixels == std::uint64_t{1} << 27);
+    CHECK(defaults.max_side == 8192);
+    // Lowered.
+    CHECK_THROWS_WITH(detail::probe_image(black_png(64, 32), detail::image_limits(2047, 0)),
+                      ContainsSubstring("more than the 2047"));
+}
+
+TEST_CASE("an Image's limits apply to it, and to no other", "[image]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const std::vector<std::uint8_t> pixels(std::size_t{64} * 32 * 4, 0x80);
+    const auto png = detail::encode_png(pixels, 64, 32);
+    REQUIRE(png);
+    const std::span<const unsigned char> data(*png); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
+
+    // Over its pixel limit: refused (nothing to show, so no size), and logged.
+    const std::unique_ptr<detail::Element> refused = detail::lower(Image({.data = data, .max_pixels = 2047}), {});
+    CHECK(refused->size_that_fits({}).width == 0);
+    CHECK(std::ranges::any_of(detail::recent_log_lines(), [](const std::string& line) {
+        return line.contains("Image: image data: the image is 64 x 32 pixels, more than the 2047");
+    }));
+    // The same data with the default limit.
+    const std::unique_ptr<detail::Element> shown = detail::lower(Image({.data = data}), {});
+    CHECK(shown->size_that_fits({}).width == 64);
+
+    // A lower longest side: decoded smaller, shown at the same size.
+    const std::unique_ptr<detail::Element> small = detail::lower(Image({.data = data, .max_side = 16}), {});
+    const Size size = small->size_that_fits({});
+    CHECK(size.width == 64);
+    CHECK(size.height == 32);
+    small->place({}, {});
+    std::shared_ptr<const detail::DecodedImage> drawn;
+    for (int i = 0; i < 500 && !drawn; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10)); // decoded in the background
+        detail::run_ui_tasks();
+        detail::flush_effects();
+        detail::DisplayList list;
+        small->paint(list);
+        for (const auto& command : list.commands) {
+            if (const auto* image = std::get_if<detail::ImageCommand>(&command)) {
+                drawn = image->image;
+            }
+        }
+    }
+    REQUIRE(drawn);
+    CHECK(drawn->width == 16);
+    CHECK(drawn->height == 8);
 }
 
 TEST_CASE("decoded images are scaled down to the size asked for", "[image]") {

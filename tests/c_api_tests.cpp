@@ -8,13 +8,16 @@
 
 #include "shim.h"
 
+#include "test_images.h"
 #include "text/text_system.h"
 #include "view/view_node.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <vector>
 
 using elg::Animation;
 using elg::Binding;
@@ -47,6 +50,7 @@ Text* elg_text(ElgProp content);
 View* elg_text_to_view(const Text* text);
 void elg_text_free(Text* text);
 void elg_string_assign(std::string* target, ElgStr value);
+View* elg_image(const ElgImageSource* source);
 }
 
 namespace {
@@ -212,6 +216,24 @@ TEST_CASE("strings with malformed UTF-8 show as U+FFFD", "[c-api][utf8]") {
                                     },
                                     nullptr};
     CHECK(label({.kind = 1, .theme = 0, .value = nullptr, .fn = returns_bad}) == "\xEF\xBF\xBDok");
+}
+
+TEST_CASE("an image source's pixel limit comes through the C API, and 0 is the default", "[c-api][image]") {
+    elg::detail::Scope scope;
+    const elg::detail::Scope::Use use(scope);
+    const std::vector<std::uint8_t> png = elg::test::black_png(64, 32);
+    const auto width = [](const ElgImageSource& source) {
+        View* view = elg_image(&source);
+        REQUIRE(view != nullptr);
+        const std::unique_ptr<elg::detail::Element> element = elg::detail::lower(*view, {});
+        elg_view_free(view);
+        return element->size_that_fits({}).width; // 0: refused
+    };
+    ElgImageSource source{.system_name = {}, .file = {}, .data = {png.data(), png.size()}, .scale = 1,
+                          .max_pixels = 2047, .max_side = 0};
+    CHECK(width(source) == 0);
+    source.max_pixels = 0;
+    CHECK(width(source) == 64);
 }
 
 TEST_CASE("the C API reports its ABI version", "[c-api]") {

@@ -140,6 +140,7 @@ private:
 struct Loader {
     std::string url;
     bool disk_cache = true;
+    ImageLimits limits;
     std::uint64_t generation = 0; // the memory cache's, when it started
     net::FetchTask task;
     State<int> phase{0}; // AsyncImagePhase::Kind
@@ -179,7 +180,7 @@ struct Loader {
         }
         auto data = std::make_shared<const Bytes>(*result);
         try {
-            probe_image(*data); // an error page or HTML isn't an image; nor is one with too many pixels
+            probe_image(*data, loader->limits); // an error page or HTML isn't an image; nor is one too large
         } catch (const std::exception& failure) {
             loader->fail(failure.what());
             return;
@@ -200,20 +201,22 @@ struct Loader {
 
 class AsyncImageNode final : public ViewNode {
 public:
-    AsyncImageNode(std::string url, std::function<View(const AsyncImagePhase&)> content, float scale, bool disk_cache)
-        : url_(std::move(url)), content_(std::move(content)), scale_(scale), disk_cache_(disk_cache) {}
+    AsyncImageNode(std::string url, std::function<View(const AsyncImagePhase&)> content, float scale, bool disk_cache,
+                   ImageLimits limits)
+        : url_(std::move(url)), content_(std::move(content)), scale_(scale), disk_cache_(disk_cache), limits_(limits) {}
 
     [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto loader = std::make_shared<Loader>();
         loader->url = url_;
         loader->disk_cache = disk_cache_;
+        loader->limits = limits_;
         loader->start(loader);
         const View view = ForEach([loader] { return std::vector<int>{loader->phase()}; },
                                   [loader, content = content_, scale = scale_](int kind) {
                                       AsyncImagePhase phase;
                                       phase.kind = static_cast<AsyncImagePhase::Kind>(kind);
                                       if (phase.kind == AsyncImagePhase::Kind::success && loader->bytes) {
-                                          phase.image = raster_image(loader->bytes, scale);
+                                          phase.image = raster_image(loader->bytes, scale, loader->limits);
                                       }
                                       phase.error = loader->error;
                                       return content(phase);
@@ -226,6 +229,7 @@ private:
     std::function<View(const AsyncImagePhase&)> content_;
     float scale_;
     bool disk_cache_;
+    ImageLimits limits_;
 };
 
 } // namespace
@@ -238,8 +242,9 @@ View AsyncImage(std::string url, std::function<View(const AsyncImagePhase&)> con
     if (!content) {
         throw UsageError("AsyncImage: the content function is empty");
     }
-    return detail::ViewAccess::make(std::make_shared<const detail::AsyncImageNode>(std::move(url), std::move(content),
-                                                                                   options.scale, options.disk_cache));
+    return detail::ViewAccess::make(std::make_shared<const detail::AsyncImageNode>(
+        std::move(url), std::move(content), options.scale, options.disk_cache,
+        detail::image_limits(options.max_pixels, options.max_side)));
 }
 
 void set_image_cache(ImageCacheOptions options) {
