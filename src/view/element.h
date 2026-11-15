@@ -775,6 +775,7 @@ public:
     EventResult focus(bool focused) override { return handler_->focus(focused); }
     [[nodiscard]] std::optional<HoverDelay> hover_delay() const override { return handler_->hover_delay(); }
     [[nodiscard]] bool covers_frame() const override { return handler_->covers_frame(); }
+    [[nodiscard]] EventPhase phase() const override { return handler_->phase(); }
 
 private:
     EventHandler* handler_;

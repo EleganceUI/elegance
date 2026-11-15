@@ -15,6 +15,7 @@ add_executable(elegance_tests
         audio_tests.cpp
         backdrop_tests.cpp
         canvas_tests.cpp
+        capture_phase_tests.cpp
         capture_tests.cpp
         desktop_tests.cpp
         environment_tests.cpp

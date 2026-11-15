@@ -299,6 +299,16 @@ struct EventResult {
   bool cancellable = false;
 };
 
+/// When a handler hears the events that travel in two phases: pointer `down`,
+/// `up` and `hover`, scrolling, keys and text input. They go first through the
+/// `capture` handlers along their route, outermost view first, then through the
+/// `bubble` handlers, innermost first. The first handler that consumes an event,
+/// in either phase, ends it there.
+enum class EventPhase {
+  capture, ///< on the way in, outermost first
+  bubble,  ///< on the way out, innermost first
+};
+
 /// Receives events for one mounted view. Created by an EventModifier when the
 /// view mounts. Every event method's default ignores the event and returns
 /// `{}` (not consumed, no redraw). UI thread only.
@@ -372,6 +382,10 @@ public:
   ///
   /// @return true if it can. The default is false.
   [[nodiscard]] virtual bool focusable() const { return false; }
+  /// The phase in which it hears the events that have two (EventPhase).
+  ///
+  /// @return The phase. The default is EventPhase::bubble.
+  [[nodiscard]] virtual EventPhase phase() const { return EventPhase::bubble; }
   /// The view gained (true) or lost (false) keyboard focus.
   ///
   /// @param focused true when it gained focus, false when it lost it.

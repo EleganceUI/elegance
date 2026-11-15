@@ -226,7 +226,9 @@ public:
     /// Calls `action` with key events.
     ///
     /// @param action Called with each key event; returns whether it handled it. May be empty.
-    explicit KeyEventModifier(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
+    /// @param phase When it hears events: EventPhase::capture or EventPhase::bubble.
+    explicit KeyEventModifier(std::function<bool(const KeyEvent&)> action, EventPhase phase = EventPhase::bubble)
+        : action_(std::move(action)), phase_(phase) {}
     /// Called once per mounted view.
     ///
     /// @return A handler that calls the action with key events.
@@ -235,6 +237,7 @@ public:
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
     std::function<bool(const KeyEvent&)> action_;
+    EventPhase phase_;
     ELG_PRIVATE_MEMBERS_END
 };
 
@@ -245,7 +248,9 @@ public:
     /// Calls `action` with pointer events.
     ///
     /// @param action Called with each event; returns whether it consumed it. May be empty.
-    explicit PointerModifier(std::function<bool(const PointerEvent&)> action) : action_(std::move(action)) {}
+    /// @param phase When it hears events: EventPhase::capture or EventPhase::bubble.
+    explicit PointerModifier(std::function<bool(const PointerEvent&)> action, EventPhase phase = EventPhase::bubble)
+        : action_(std::move(action)), phase_(phase) {}
     /// Called once per mounted view.
     ///
     /// @return A handler that calls the action with pointer events.
@@ -254,6 +259,7 @@ public:
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
     std::function<bool(const PointerEvent&)> action_;
+    EventPhase phase_;
     ELG_PRIVATE_MEMBERS_END
 };
 
@@ -264,7 +270,9 @@ public:
     /// Calls `action` with scrolling.
     ///
     /// @param action Called with each scroll event; returns whether it consumed it. May be empty.
-    explicit ScrollModifier(std::function<bool(const ScrollEvent&)> action) : action_(std::move(action)) {}
+    /// @param phase When it hears events: EventPhase::capture or EventPhase::bubble.
+    explicit ScrollModifier(std::function<bool(const ScrollEvent&)> action, EventPhase phase = EventPhase::bubble)
+        : action_(std::move(action)), phase_(phase) {}
     /// Called once per mounted view.
     ///
     /// @return A handler that calls the action with scroll events.
@@ -273,26 +281,31 @@ public:
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
     std::function<bool(const ScrollEvent&)> action_;
+    EventPhase phase_;
     ELG_PRIVATE_MEMBERS_END
 };
 
-/// Makes the view focusable and calls `action` with the text typed (and IME compositions) while it
-/// has focus. Returning true consumes it.
+/// Calls `action` with the text typed (and IME compositions) while the view has focus, making it
+/// focusable; in the capture phase, with the text typed into a focused view inside it, without
+/// making it focusable. Returning true consumes it.
 class ELG_API TextInputModifier final : public EventModifier {
 public:
     /// Calls `action` with text input.
     ///
     /// @param action Called with each text input event; returns whether it consumed it. May be
     ///   empty.
-    explicit TextInputModifier(std::function<bool(const TextInputEvent&)> action) : action_(std::move(action)) {}
+    /// @param phase When it hears events: EventPhase::capture or EventPhase::bubble.
+    explicit TextInputModifier(std::function<bool(const TextInputEvent&)> action, EventPhase phase = EventPhase::bubble)
+        : action_(std::move(action)), phase_(phase) {}
     /// Called once per mounted view.
     ///
-    /// @return A focusable handler that calls the action with text input.
+    /// @return A handler that calls the action with text input, focusable in the bubble phase.
     [[nodiscard]] std::unique_ptr<EventHandler> make_handler() const override;
 
 private:
     ELG_PRIVATE_MEMBERS_BEGIN
     std::function<bool(const TextInputEvent&)> action_;
+    EventPhase phase_;
     ELG_PRIVATE_MEMBERS_END
 };
 

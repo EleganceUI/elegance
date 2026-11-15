@@ -548,8 +548,11 @@ View View::focused(Binding<bool> is_focused) const {
     return View(std::make_shared<const detail::FocusedNode>(*this, std::move(is_focused)));
 }
 
-View View::on_key_press(Key key, std::function<void()> action) const {
-    return on_key([key, action = std::move(action)](const KeyEvent& event) {
+namespace {
+
+// on_key_press()'s handling: `action` on each press of `key`, which it takes.
+std::function<bool(const KeyEvent&)> key_press(Key key, std::function<void()> action) {
+    return [key, action = std::move(action)](const KeyEvent& event) {
         if (event.kind != KeyEvent::Kind::down || event.key != key) {
             return false;
         }
@@ -557,7 +560,33 @@ View View::on_key_press(Key key, std::function<void()> action) const {
             action();
         }
         return true;
-    });
+    };
+}
+
+} // namespace
+
+View View::on_key_press(Key key, std::function<void()> action) const {
+    return on_key(key_press(key, std::move(action)));
+}
+
+View View::on_key_press_capture(Key key, std::function<void()> action) const {
+    return on_key_capture(key_press(key, std::move(action)));
+}
+
+View View::on_key_capture(std::function<bool(const KeyEvent&)> action) const {
+    return modifier(KeyEventModifier(std::move(action), EventPhase::capture));
+}
+
+View View::on_text_input_capture(std::function<bool(const TextInputEvent&)> action) const {
+    return modifier(TextInputModifier(std::move(action), EventPhase::capture));
+}
+
+View View::on_pointer_capture(std::function<bool(const PointerEvent&)> action) const {
+    return modifier(PointerModifier(std::move(action), EventPhase::capture));
+}
+
+View View::on_scroll_capture(std::function<bool(const ScrollEvent&)> action) const {
+    return modifier(ScrollModifier(std::move(action), EventPhase::capture));
 }
 
 View View::on_key(std::function<bool(const KeyEvent&)> action) const {
