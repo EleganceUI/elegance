@@ -4,6 +4,8 @@
 
 #include "view/element.h"
 
+#include "view/event_dispatcher.h"
+
 #include "reactive/runtime.h"
 
 #include "view/focus.h"
@@ -14,6 +16,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <unordered_map>
 
 namespace elg::detail {
 
@@ -32,11 +35,26 @@ bool drawable(const Rect& r) {
 
 } // namespace
 
+namespace {
+
+// The elements that have been given an accessibility id, by it: ids are never reused, so a
+// screen reader's request finds its element, or nothing once that element is gone. UI thread.
+std::unordered_map<std::uint64_t, Element*>& elements_by_accessibility_id() {
+    static std::unordered_map<std::uint64_t, Element*> elements;
+    return elements;
+}
+
+} // namespace
+
 // --- Element ---
 
 Element::~Element() {
     if (focus_manager_) {
         focus_manager_->forget(this); // also ends a .focused watch on this element
+    }
+    element_destroyed(this); // event dispatch lets go of it
+    if (accessibility_id_ != 0) {
+        elements_by_accessibility_id().erase(accessibility_id_);
     }
 }
 
@@ -69,8 +87,19 @@ std::uint64_t Element::accessibility_id() const noexcept {
     static std::atomic<std::uint64_t> next{2}; // 1 is each window's root
     if (accessibility_id_ == 0) {
         accessibility_id_ = next.fetch_add(1, std::memory_order_relaxed);
+        try {
+            elements_by_accessibility_id().emplace(accessibility_id_, const_cast<Element*>(this));
+        } catch (...) {
+            // Swallowed: out of memory; a screen reader then can't name this element.
+        }
     }
     return accessibility_id_;
+}
+
+Element* element_with_accessibility_id(std::uint64_t id) noexcept {
+    const auto& elements = elements_by_accessibility_id();
+    const auto found = elements.find(id);
+    return found != elements.end() ? found->second : nullptr;
 }
 
 namespace {

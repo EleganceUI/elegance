@@ -6,6 +6,8 @@
 
 #include "view/floating.h"
 
+#include "view/event_dispatcher.h"
+
 #include "view/view_node.h"
 #include "view/window_services.h"
 
@@ -187,6 +189,9 @@ void FloatingLayerElement::remove(std::uint64_t token) {
     // Out of the list before it's destroyed: floating content inside it removes itself too.
     Panel panel = std::move(*it);
     panels_.erase(it);
+    if (panel.element) {
+        element_leaving(*panel.element); // its interactions end first
+    }
     invalidate_layout();
     TransitionElement* transition = panel.element ? panel.element->as_transition() : nullptr;
     if (transition && panel.motion && transition->remove(panel.motion->animation())) {

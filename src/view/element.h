@@ -333,6 +333,10 @@ private:
     mutable std::uint64_t accessibility_id_ = 0;
 };
 
+// The element with this accessibility id (Element::accessibility_id), if it still exists: a
+// screen reader's request names elements by it. UI thread.
+Element* element_with_accessibility_id(std::uint64_t id) noexcept;
+
 class EmptyElement final : public Element {
 public:
     // Takes no place (and no spacing) in a parent layout.

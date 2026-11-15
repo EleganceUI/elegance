@@ -175,7 +175,7 @@ private:
             element.for_each_child([&](Element& child) { visit(child, node.children, {}); });
         }
         node.info = std::move(info);
-        tree_.targets[node.id] = {&element, pending.action, pending.action_disabled || node.info.disabled};
+        tree_.targets[node.id] = {pending.action, pending.action_disabled || node.info.disabled};
         out.push_back(node.id);
         tree_.nodes.push_back(std::move(node));
     }

@@ -740,10 +740,10 @@ int App::run() {
             live.accessibility->update();
         }
         const auto target = live.accessibility_tree.targets.find(request.target);
-        if (target == live.accessibility_tree.targets.end() || !target->second.element) {
+        Element* element = element_with_accessibility_id(request.target); // nothing once it's gone
+        if (target == live.accessibility_tree.targets.end() || !element) {
             return;
         }
-        Element* element = target->second.element;
         switch (request.action.kind) {
         case AccessibilityAction::Kind::focus:
             // A screen reader can name any element; only focusable ones take focus.

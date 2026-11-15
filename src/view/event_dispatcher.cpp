@@ -714,26 +714,109 @@ bool EventDispatcher::refresh_hover() {
 
 bool EventDispatcher::revalidate() {
     const DeferEffects defer;
-    std::unordered_set<const Element*> alive;
-    std::function<void(Element&)> walk = [&](Element& element) {
-        alive.insert(&element);
-        element.for_each_child(walk);
-    };
-    walk(*root_);
+    return pointer_inside_ ? update_hover(path_at(last_location_)) : false;
+}
 
-    // Pointers to removed elements are compared, never dereferenced.
-    std::erase_if(hovers_, [&](const Hover& hover) { return !alive.contains(hover.element); });
-    if (captured_ && !alive.contains(captured_)) {
+namespace {
+
+// The dispatchers of the windows open now (UI thread).
+std::vector<EventDispatcher*>& dispatchers() {
+    static std::vector<EventDispatcher*> all;
+    return all;
+}
+
+bool inside(const Element* element, const Element& subtree) {
+    for (; element; element = element->parent()) {
+        if (element == &subtree) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+EventDispatcher::EventDispatcher(Element& root, FocusManager& focus) : root_(&root), focus_(&focus) {
+    dispatchers().push_back(this);
+}
+
+EventDispatcher::~EventDispatcher() {
+    std::erase(dispatchers(), this);
+}
+
+void EventDispatcher::leaving(Element& subtree) {
+    const DeferEffects defer;
+    const auto in = [&](const Element* element) { return element && inside(element, subtree); };
+    const PointerEvent cancel{.kind = PointerEvent::Kind::cancel, .location = last_location_,
+                              .window_location = last_location_};
+    if (in(captured_)) {
+        deliver(cancel, *std::exchange(captured_, nullptr));
+    }
+    std::erase_if(watchers_, [&](const Watcher& watcher) {
+        if (!in(watcher.element)) {
+            return false;
+        }
+        watcher.recognizer->reset();
+        return true;
+    });
+    std::erase_if(companions_, [&](const Companion& companion) {
+        if (!in(companion.element)) {
+            return false;
+        }
+        if (companion.active) {
+            deliver(cancel, *companion.element);
+        } else {
+            companion.recognizer->reset();
+        }
+        return true;
+    });
+    if (in(magnify_latched_)) {
+        std::exchange(magnify_latched_, nullptr)->event_handler()->magnify({.phase = GesturePhase::cancelled});
+    }
+    if (in(rotate_latched_)) {
+        std::exchange(rotate_latched_, nullptr)->event_handler()->rotate({.phase = GesturePhase::cancelled});
+    }
+    if (in(wheel_latched_)) {
+        wheel_latched_ = nullptr;
+    }
+    std::erase_if(hovers_, [&](const Hover& hover) {
+        if (!in(hover.element)) {
+            return false;
+        }
+        if (hover.reported) {
+            hover.element->event_handler()->hover(false);
+        }
+        return true;
+    });
+    if (in(focus_->focused())) {
+        focus_->focus(nullptr, false);
+    }
+}
+
+void EventDispatcher::forget(const Element* element) noexcept {
+    std::erase_if(hovers_, [&](const Hover& hover) { return hover.element == element; });
+    if (captured_ == element) {
         captured_ = nullptr;
     }
-    std::erase_if(watchers_, [&](const Watcher& watcher) { return !alive.contains(watcher.element); });
-    std::erase_if(companions_, [&](const Companion& companion) { return !alive.contains(companion.element); });
+    std::erase_if(watchers_, [&](const Watcher& watcher) { return watcher.element == element; });
+    std::erase_if(companions_, [&](const Companion& companion) { return companion.element == element; });
     for (Element** latched : {&wheel_latched_, &magnify_latched_, &rotate_latched_}) {
-        if (*latched && !alive.contains(*latched)) {
+        if (*latched == element) {
             *latched = nullptr;
         }
     }
-    return pointer_inside_ ? update_hover(path_at(last_location_)) : false;
+}
+
+void element_leaving(Element& subtree) {
+    for (EventDispatcher* dispatcher : std::vector(dispatchers())) {
+        dispatcher->leaving(subtree);
+    }
+}
+
+void element_destroyed(const Element* element) noexcept {
+    for (EventDispatcher* dispatcher : dispatchers()) {
+        dispatcher->forget(element);
+    }
 }
 
 bool EventDispatcher::release_disabled() {
