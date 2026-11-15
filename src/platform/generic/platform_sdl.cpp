@@ -9,6 +9,7 @@
 
 #include "core/crash.h"
 #include "core/numeric.h"
+#include "core/utf8.h"
 #include "platform/generic/native.h"
 
 #include <elg/error.h>
@@ -137,6 +138,9 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
         result.x = event.drop.x;
         result.y = event.drop.y;
         result.text = event.drop.data ? event.drop.data : "";
+        if (type == EventType::drop_text) { // not a file's path, which needn't be UTF-8
+            make_valid_utf8(result.text);
+        }
         return result;
     }
     case SDL_EVENT_WINDOW_MOUSE_LEAVE:
@@ -180,12 +184,12 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
     }
     case SDL_EVENT_TEXT_INPUT: {
         Event result{EventType::text_input, event.text.windowID};
-        result.text = event.text.text ? event.text.text : "";
+        result.text = valid_utf8(event.text.text ? event.text.text : "");
         return result;
     }
     case SDL_EVENT_TEXT_EDITING: {
         Event result{EventType::text_editing, event.edit.windowID};
-        result.text = event.edit.text ? event.edit.text : "";
+        result.text = valid_utf8(event.edit.text ? event.edit.text : "");
         // `start` counts characters; we want bytes.
         std::size_t byte = 0;
         for (Sint32 chars = std::max(event.edit.start, 0); chars > 0 && byte < result.text.size(); --chars) {
@@ -514,7 +518,7 @@ void Window::set_text_input_area(Rect area, float cursor) {
 
 std::string clipboard_text() {
     char* text = SDL_GetClipboardText();
-    std::string result = text ? text : "";
+    std::string result = valid_utf8(text ? text : "");
     SDL_free(text);
     return result;
 }

@@ -53,6 +53,7 @@ add_executable(elegance_tests
         toggle_tests.cpp
         ui_release_tests.cpp
         ui_task_tests.cpp
+        utf8_tests.cpp
         video_tests.cpp
         test_setup.cpp
 )

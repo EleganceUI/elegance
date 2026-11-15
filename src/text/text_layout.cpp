@@ -5,6 +5,7 @@
 #include "text/text_layout.h"
 
 #include "core/numeric.h"
+#include "core/utf8.h"
 
 #include <hb.h>
 
@@ -18,23 +19,6 @@ namespace {
 
 // Absorbs float error so text measured at width W also fits when laid out at exactly W.
 constexpr float kFitTolerance = 0.01f;
-
-// Decodes the UTF-8 character at `at` (advancing it). Invalid bytes decode as U+FFFD.
-char32_t decode(std::string_view text, std::size_t& at) {
-    const auto byte = [&](std::size_t i) { return static_cast<unsigned char>(text[i]); };
-    const unsigned char lead = byte(at);
-    const int extra = lead < 0x80 ? 0 : lead >= 0xF0 ? 3 : lead >= 0xE0 ? 2 : lead >= 0xC0 ? 1 : -1;
-    if (extra < 0 || at + static_cast<std::size_t>(extra) >= text.size() + (extra == 0 ? 1 : 0)) {
-        ++at;
-        return 0xFFFD;
-    }
-    char32_t code = extra == 0 ? lead : lead & (0x3F >> extra);
-    for (int i = 1; i <= extra; ++i) {
-        code = (code << 6) | (byte(at + static_cast<std::size_t>(i)) & 0x3F);
-    }
-    at += static_cast<std::size_t>(extra) + 1;
-    return code;
-}
 
 // Characters that join the one before them rather than choosing a font of their own.
 bool is_joiner(char32_t c) {
@@ -67,7 +51,7 @@ bool emoji_by_default(char32_t c) {
 bool wants_emoji(std::string_view text, char32_t c, std::size_t next) {
     if (next < text.size()) {
         std::size_t peek = next;
-        const char32_t selector = decode(text, peek);
+        const char32_t selector = decode_utf8(text, peek);
         if (selector == 0xFE0F) {
             return true;
         }
@@ -106,7 +90,7 @@ ShapedParagraph shape_paragraph(const FontFace& face, std::string_view text) {
         const char c = infos[i].cluster < text.size() ? text[infos[i].cluster] : '\0';
         const bool space = c == ' ' || c == '\t';
         std::size_t at = infos[i].cluster;
-        const char32_t code = at < text.size() ? decode(text, at) : 0;
+        const char32_t code = at < text.size() ? decode_utf8(text, at) : 0;
         paragraph.glyphs.push_back({
             .id = infos[i].codepoint, // after shaping, this is the glyph index
             .cluster = infos[i].cluster,
@@ -186,7 +170,7 @@ ShapedParagraph shape_with_fallback(const FontFace& face, std::string_view text,
         missing[g] = glyphs[g].id == 0;
         if (!missing[g] && !face.has_color() && glyphs[g].cluster < text.size()) {
             std::size_t next = glyphs[g].cluster;
-            const char32_t c = decode(text, next);
+            const char32_t c = decode_utf8(text, next);
             missing[g] = wants_emoji(text, c, next);
         }
     }
@@ -218,10 +202,11 @@ ShapedParagraph shape_with_fallback(const FontFace& face, std::string_view text,
         }
         // Split it into pieces by the first fallback font that has each character, and shape each
         // piece with its font. Characters nobody has stay as the primary font's missing glyph.
+        const std::string_view covered = text.substr(0, end); // characters are decoded within the run
         std::size_t at = begin;
         while (at < end) {
             std::size_t next = at;
-            const char32_t first = decode(text, next);
+            const char32_t first = decode_utf8(covered, next);
             const FontFace* chosen = fonts.fallback_for(first, wants_emoji(text, first, next));
             if (!chosen && is_joiner(first)) {
                 at = next; // a variation selector or joiner no font draws: it has no look of its own
@@ -230,7 +215,7 @@ ShapedParagraph shape_with_fallback(const FontFace& face, std::string_view text,
             std::size_t piece_end = next;
             while (piece_end < end) {
                 std::size_t peek = piece_end;
-                const char32_t c = decode(text, peek);
+                const char32_t c = decode_utf8(covered, peek);
                 if (!is_joiner(c) && fonts.fallback_for(c, wants_emoji(text, c, peek)) != chosen) {
                     break;
                 }

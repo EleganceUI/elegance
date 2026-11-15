@@ -6,6 +6,8 @@
 
 #include "view/accessibility.h"
 
+#include "core/utf8.h"
+
 #include "text/font_library.h"
 #include "view/view_node.h"
 
@@ -226,6 +228,12 @@ AccessTree build_accessibility_tree(Element& root, const std::string& window_tit
     std::vector<std::uint64_t> children;
     Builder(tree).visit(root, children, {});
     tree.nodes.front().children = std::move(children);
+    for (AccessNode& node : tree.nodes) { // labels from modifiers, and the window's title
+        make_valid_utf8(node.info.label);
+        make_valid_utf8(node.info.value);
+        make_valid_utf8(node.info.hint);
+        make_valid_utf8(node.info.placeholder);
+    }
     // Focus: the focused element's node, or the nearest one around it.
     for (const Element* e = focused; e; e = e->parent()) {
         if (tree.targets.contains(e->accessibility_id())) {
