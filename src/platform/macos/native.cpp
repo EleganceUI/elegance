@@ -16,6 +16,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_metal.h>
 
+#include <pthread.h>
 #include <sys/sysctl.h>
 #include <unistd.h>
 
@@ -25,6 +26,10 @@
 namespace elg::detail::platform {
 
 namespace native {
+
+bool on_main_thread() {
+    return pthread_main_np() != 0;
+}
 
 std::uint64_t gpu_window_flags() {
     return SDL_WINDOW_METAL;

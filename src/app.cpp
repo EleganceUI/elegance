@@ -33,6 +33,7 @@
 #include <elg/reactive.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <exception>
 #include <map>
@@ -47,6 +48,9 @@ using namespace detail;
 using namespace std::chrono_literals;
 
 namespace {
+
+// Whether an App is running, on whichever thread (App::run).
+std::atomic<bool> g_app_running{false};
 
 // How long the UI thread waits for a frame to be presented when it must be on screen before
 // continuing (first frame, live resize). Bounded so a stuck driver can't freeze the app.
@@ -427,9 +431,17 @@ int App::run() {
     if (self.running) {
         throw UsageError("App::run() is already running");
     }
+    if (!platform::native::on_main_thread()) {
+        throw UsageError("App::run() must be called on the main thread, the one that ran main()");
+    }
     if (self.windows.empty()) {
         throw UsageError("App::run(): no windows; call App::window() first");
     }
+    // One App runs at a time, so the UI thread can't change while one runs.
+    if (g_app_running.exchange(true)) {
+        throw UsageError("App::run(): another App is running; only one App runs at a time");
+    }
+    const ScopeExit app_done([] { g_app_running = false; });
     self.running = true;
     self.quit_requested = false;
     const ScopeExit reset([&] {

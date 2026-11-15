@@ -169,13 +169,15 @@ public:
     App& menu_bar(std::vector<MenuBarItem> menus);
 
     /// Opens the windows and runs the event loop until the last window closes or quit() is
-    /// called. The calling thread becomes the UI thread until it returns.
+    /// called. Call it on the main thread, which is the UI thread until it returns. One App runs
+    /// at a time.
     /// elg::Error and exceptions thrown by app callbacks propagate out of run() after a clean
     /// shutdown (design.md §3.2).
     ///
     /// @return The process exit code: 0.
-    /// @throws UsageError When the app is already running, has no windows, or a window's
-    ///   WindowDesc is invalid (a size that isn't positive).
+    /// @throws UsageError When the app is already running, another App is running, it's called
+    ///   on a thread other than the main thread, the app has no windows, or a window's WindowDesc
+    ///   is invalid (a size that isn't positive).
     int run();
 
     /// Makes run() return after the current event. Call from the UI thread. Before run(), it has
