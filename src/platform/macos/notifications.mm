@@ -116,4 +116,13 @@ void show_notification(const Notification& notification) {
                           }];
 }
 
+void forget_notification_handlers() {
+    std::map<std::string, std::function<void()>> forgotten;
+    {
+        std::lock_guard lock(g_clicks_mutex);
+        forgotten.swap(g_clicks);
+    }
+    // Destroyed here, on the UI thread, outside the lock.
+}
+
 } // namespace elg::detail::platform::native

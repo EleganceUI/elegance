@@ -54,6 +54,9 @@ public:
         }
     }
 
+    // A click on the notification after this does nothing.
+    void forget_click() { on_click_ = {}; }
+
     ~Notifier() {
         remove();
         if (window_) {
@@ -143,6 +146,10 @@ private:
 
 void show_notification(const Notification& notification) {
     Notifier::instance().show(notification);
+}
+
+void forget_notification_handlers() {
+    Notifier::instance().forget_click();
 }
 
 } // namespace elg::detail::platform::native

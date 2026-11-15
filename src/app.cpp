@@ -185,9 +185,9 @@ EnvironmentValues with_window(EnvironmentValues environment, const std::shared_p
     return environment;
 }
 
-// A window while the app runs. Member order matters:
-// - `dirty` and `scope` exist before mounting (the tree refers to them) and the scope outlives
-//   the tree, so effects are disposed after the elements they update are gone.
+// A window while the app runs. Member order matters: `dirty` and `scope` exist before mounting
+// (the tree refers to them). The scope ends first, in the destructor: effects and timers are
+// disposed before the elements they update are destroyed.
 struct LiveWindow {
     LiveWindow(WindowEntry& window_entry, TextSystem& text, EnvironmentValues base,
                const PopupSink* popups, const platform::PopupSpec* popup = nullptr, int menu_level = -1)
@@ -209,7 +209,10 @@ struct LiveWindow {
     LiveWindow(LiveWindow&&) = delete;
     LiveWindow& operator=(const LiveWindow&) = delete;
     LiveWindow& operator=(LiveWindow&&) = delete;
-    ~LiveWindow() { state->window = nullptr; } // handles kept by the app now do nothing
+    ~LiveWindow() {
+        state->window = nullptr; // handles kept by the app now do nothing
+        scope.reset();
+    }
 
     // Undecorated windows: resize at the edges, move from .window_drag_area() views.
     platform::HitArea hit_area(Point point) {
@@ -251,7 +254,7 @@ struct LiveWindow {
     // Builds the element tree. The body runs once (design.md §6); effects it creates belong to
     // this window's scope.
     std::unique_ptr<Element> mount(TextSystem& text) {
-        const Scope::Use use(scope);
+        const Scope::Use use(*scope);
         const EnvironmentScope environment_scope(environment); // Environment<K>() in the content function
         View content = entry->content();
         if (entry->wrap) {
@@ -292,7 +295,7 @@ struct LiveWindow {
     EnvironmentValues environment; // the root environment (system color scheme)
     LiveWindowServices services;
     FocusManager focus{&services}; // outlives the tree (elements let go of it when destroyed)
-    Scope scope;
+    std::unique_ptr<Scope> scope = std::make_unique<Scope>();
     std::unique_ptr<Element> root;
     EventDispatcher events{*root, focus};
     // Screen readers (design.md §12); made by App::run, dormant until one asks.
@@ -452,6 +455,12 @@ int App::run() {
     const CrashHandlerScope crash_handlers;
     platform::Platform platform;
     self.platform = &platform;
+    // What this run handed the system to call back goes with it: notification click handlers and
+    // the native menu bar's command (which refers to this function's locals).
+    const ScopeExit forget_handlers([] {
+        platform::native::forget_notification_handlers();
+        platform::native::forget_menu_command();
+    });
 
     // Fonts and glyphs, shared by all windows; outlives every element tree. Glyphs finishing on
     // the atlas's workers wake the event loop to draw them.

@@ -1056,6 +1056,21 @@ ELG_EXPORT const char* elg_version() {
     ELG_CATCH(nullptr)
 }
 
+// The C API's ABI version. It goes up by one whenever an exported function's signature, a struct
+// passed across the API, or the value of a documented constant changes.
+constexpr std::uint32_t kAbiVersion = 1;
+
+/// The C API's ABI version: a binding checks it when it loads the library, and refuses to run
+/// with a version it wasn't built for. It changes whenever an exported function's signature, a
+/// struct's layout, or a documented constant's value does.
+///
+/// @return The version, 1 or more; 0 on failure.
+ELG_EXPORT uint32_t elg_abi_version() {
+    ELG_TRY
+    return kAbiVersion;
+    ELG_CATCH(0)
+}
+
 // --- Animation ---
 
 /// Wraps `Animation::linear()`: constant speed.

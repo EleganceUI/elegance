@@ -22,6 +22,9 @@
 #include <chrono>
 #include <format>
 #include <fstream>
+#include <optional>
+#include <string_view>
+#include <utility>
 
 namespace elg::detail::net {
 
@@ -29,7 +32,8 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr std::string_view kMagic = "ELGCACHE 1";
+// 2: files record their body's size, so a truncated one is noticed.
+constexpr std::string_view kMagic = "ELGCACHE 2";
 constexpr std::int64_t kHeuristicCap = std::int64_t{24} * 60 * 60; // a Last-Modified guess stays fresh at most a day
 // Delta-seconds (max-age, Age) larger than this count as this (RFC 9111 §1.2.2), so ages and
 // lifetimes add up without overflowing.
@@ -142,8 +146,9 @@ void apply_freshness(CacheEntry& entry, const CacheHeaders& headers, const Direc
     entry.must_revalidate = directives.must_revalidate;
 }
 
-bool has_line_break(std::string_view text) {
-    return text.find_first_of("\r\n") != std::string_view::npos;
+// Whether `text` can be a value in a cache file, whose lines end with LF: no CR, LF or NUL.
+bool writable(std::string_view text) {
+    return text.find_first_of(std::string_view("\r\n\0", 3)) == std::string_view::npos;
 }
 
 std::string hex_digest(std::string_view text) {
@@ -263,8 +268,8 @@ std::optional<std::int64_t> parse_http_date(std::string_view text) {
 std::optional<CacheEntry> make_cache_entry(std::string url, bool redirected, const CacheHeaders& headers,
                                            std::vector<std::uint8_t> body, std::int64_t now) {
     const Directives directives = parse_cache_control(headers.cache_control);
-    if (directives.no_store || trim(headers.vary) == "*" || has_line_break(url) || has_line_break(headers.etag) ||
-        has_line_break(headers.last_modified)) {
+    if (directives.no_store || trim(headers.vary) == "*" || !writable(url) || !writable(headers.etag) ||
+        !writable(headers.last_modified)) {
         return std::nullopt;
     }
     CacheEntry entry;
@@ -281,12 +286,13 @@ std::optional<CacheEntry> make_cache_entry(std::string url, bool redirected, con
 }
 
 void refresh_cache_entry(CacheEntry& entry, const CacheHeaders& headers, std::int64_t now) {
-    // A 304 may leave out headers it doesn't change (RFC 9111 §4.3.4).
+    // A 304 may leave out headers it doesn't change (RFC 9111 §4.3.4). Values that can't be
+    // written to the cache file don't replace the ones it has.
     CacheHeaders merged = headers;
-    if (merged.etag.empty()) {
+    if (merged.etag.empty() || !writable(merged.etag)) {
         merged.etag = entry.etag;
     }
-    if (merged.last_modified.empty()) {
+    if (merged.last_modified.empty() || !writable(merged.last_modified)) {
         merged.last_modified = entry.last_modified;
     }
     entry.etag = std::string(trim(merged.etag));
@@ -355,9 +361,15 @@ std::optional<CacheEntry> HttpCache::find(const std::string& url) {
         return std::nullopt;
     }
     CacheEntry entry;
+    std::optional<std::int64_t> size;
     std::string line;
-    if (!std::getline(in, line) || line != kMagic) {
+    const auto damaged = [&] {
+        in.close();
+        discard(path); // a miss, and gone
         return std::nullopt;
+    };
+    if (!std::getline(in, line) || line != kMagic) {
+        return damaged();
     }
     while (std::getline(in, line) && !line.empty()) {
         const std::size_t space = line.find(' ');
@@ -382,12 +394,17 @@ std::optional<CacheEntry> HttpCache::find(const std::string& url) {
             entry.etag = value;
         } else if (key == "last-modified") {
             entry.last_modified = value;
+        } else if (key == "size") {
+            size = parse_number(value);
         }
     }
-    if (entry.url != url) {
-        return std::nullopt; // damaged, or another URL's (a hash collision)
+    if (entry.url != url || !size) {
+        return damaged(); // or another URL's: a SHA-256 collision
     }
     entry.body.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    if (std::cmp_not_equal(entry.body.size(), *size)) {
+        return damaged(); // truncated
+    }
     std::error_code error;
     const auto now = fs::file_time_type::clock::now();
     fs::last_write_time(path, now, error); // recently used
@@ -399,7 +416,8 @@ std::optional<CacheEntry> HttpCache::find(const std::string& url) {
 
 void HttpCache::store(const CacheEntry& entry, std::uint64_t generation) {
     const std::lock_guard lock(mutex_);
-    if (retired_ || generation != generation_.load() || entry.body.size() > limit_ / 8) {
+    if (retired_ || generation != generation_.load() || entry.body.size() > limit_ / 8 || !writable(entry.url) ||
+        !writable(entry.etag) || !writable(entry.last_modified)) {
         return;
     }
     load_index();
@@ -424,6 +442,7 @@ void HttpCache::store(const CacheEntry& entry, std::uint64_t generation) {
             << "must-revalidate " << (entry.must_revalidate ? 1 : 0) << '\n'
             << "etag " << entry.etag << '\n'
             << "last-modified " << entry.last_modified << '\n'
+            << "size " << entry.body.size() << '\n'
             << '\n';
         out.write(reinterpret_cast<const char*>(entry.body.data()), static_cast<std::streamsize>(entry.body.size()));
         if (!out) {
@@ -444,6 +463,15 @@ void HttpCache::store(const CacheEntry& entry, std::uint64_t generation) {
     files_[path] = {size, fs::file_time_type::clock::now()};
     total_ += size;
     trim();
+}
+
+void HttpCache::discard(const fs::path& path) {
+    std::error_code error;
+    fs::remove(path, error);
+    if (const auto it = files_.find(path); it != files_.end()) {
+        total_ -= it->second.size;
+        files_.erase(it);
+    }
 }
 
 void HttpCache::trim() {

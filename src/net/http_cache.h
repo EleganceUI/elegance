@@ -87,6 +87,8 @@ private:
     };
     [[nodiscard]] std::filesystem::path path_for(const std::string& url) const;
     void load_index();
+    // With the mutex held: removes a file, and forgets it.
+    void discard(const std::filesystem::path& path);
     void trim();
 
     std::filesystem::path directory_;

@@ -24,7 +24,9 @@ struct Task {
 };
 
 std::mutex g_mutex;
-std::vector<Task> g_tasks;
+// Leaked: tasks the app posted that no App ran are never destroyed during static destruction,
+// when what their closures need (a binding's runtime) may be gone.
+std::vector<Task>& g_tasks = *new std::vector<Task>();
 std::function<void()> g_wake;
 std::uint64_t g_run = 0; // the App::run going on, or the last one
 

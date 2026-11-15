@@ -699,6 +699,50 @@ TEST_CASE("the disk cache keeps to its limit and clears only its own files", "[c
     CHECK_FALSE(cache.find("https://example.com/late.png"));
 }
 
+TEST_CASE("values that would break a cache file's lines aren't written to it", "[cache]") {
+    const std::int64_t now = net::unix_now();
+    const auto entry = [&](std::string etag) {
+        return net::make_cache_entry("https://example.com/a.png", false,
+                                     {.cache_control = "max-age=600", .etag = std::move(etag)}, {1}, now);
+    };
+    CHECK_FALSE(entry("\"e\"\r\nlifetime 999999999"));
+    CHECK_FALSE(entry(std::string("\"e\0\"", 4)));
+    auto kept = entry("\"e\"");
+    REQUIRE(kept);
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): REQUIREd above
+    net::refresh_cache_entry(*kept, {.cache_control = "max-age=600", .etag = "\"f\"\nlifetime 9"}, now);
+    CHECK(kept->etag == "\"e\""); // the 304's can't be written: the old one stays
+    // NOLINTEND(bugprone-unchecked-optional-access)
+}
+
+TEST_CASE("a damaged or truncated cache file is a miss, and goes", "[cache]") {
+    const TemporaryDirectory directory;
+    const std::string url = "https://example.com/a.png";
+    const auto file = [&] {
+        for (const auto& item : std::filesystem::recursive_directory_iterator(directory.path)) {
+            if (item.is_regular_file()) {
+                return item.path();
+            }
+        }
+        return std::filesystem::path();
+    };
+    for (const bool truncate : {true, false}) {
+        net::HttpCache cache(directory.path, std::uint64_t{1} << 20);
+        auto entry = net::make_cache_entry(url, false, {.cache_control = "max-age=600"}, {1, 2, 3, 4}, net::unix_now());
+        REQUIRE(entry);
+        cache.store(*entry, cache.generation()); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
+        const std::filesystem::path stored = file();
+        REQUIRE_FALSE(stored.empty());
+        if (truncate) {
+            std::filesystem::resize_file(stored, std::filesystem::file_size(stored) - 1); // a body byte short
+        } else {
+            std::ofstream(stored, std::ios::binary | std::ios::trunc) << "not a cache file";
+        }
+        CHECK_FALSE(cache.find(url));
+        CHECK_FALSE(std::filesystem::exists(stored));
+    }
+}
+
 TEST_CASE("AsyncImage builds", "[fetch][image]") {
     CHECK_NOTHROW(AsyncImage("https://example.com/a.png"));
     CHECK_NOTHROW(AsyncImage("https://example.com/a.png", {.scale = 2, .content_mode = ContentMode::fill}).frame(40, 40));

@@ -129,6 +129,10 @@ void set_menu_bar(const std::vector<menus::Item>& menus, const MenuCommand& comm
     }
 }
 
+void forget_menu_command() {
+    g_command = {}; // the window procedure calls nothing then
+}
+
 void set_menu_checked(std::uint32_t id, bool checked) {
     for (const auto& [window, menu] : g_windows) {
         if (menu) {
