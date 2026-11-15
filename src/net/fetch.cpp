@@ -508,44 +508,12 @@ awaitable<Reply> request(const urls::url& url, const FetchOptions& options, ssl:
     }
 }
 
-struct Outcome {
-    Reply reply;
-    bool redirected = false;
-};
-
-// The request and its redirects, up to the final response. Doesn't throw (the timeout's || would
-// wait out its timer). Validators go with the first request only: they're the first URL's.
-awaitable<std::expected<Outcome, std::string>> follow(const std::string& text, const FetchOptions& options,
-                                                      ssl::context& tls, const Validators* validators) {
+// One request, without following a redirect. Doesn't throw: the timeout's || would wait out its
+// timer for an exception.
+awaitable<std::expected<Reply, std::string>> attempt(const urls::url& url, const FetchOptions& options,
+                                                     ssl::context& tls, const Validators* validators) {
     try {
-        const auto parsed = urls::parse_uri(text);
-        if (!parsed) {
-            co_return std::unexpected("not an http(s) URL");
-        }
-        urls::url url = *parsed;
-        for (int redirects = 0;; ++redirects) {
-            if ((url.scheme_id() != urls::scheme::http && url.scheme_id() != urls::scheme::https) ||
-                url.host_address().empty()) {
-                co_return std::unexpected("not an http(s) URL");
-            }
-            Reply reply = co_await request(url, options, tls, redirects == 0 ? validators : nullptr);
-            if (is_redirect_status(reply.status) && !reply.location.empty()) {
-                if (redirects == options.max_redirects) {
-                    co_return std::unexpected(std::format("too many redirects (more than {})", options.max_redirects));
-                }
-                const auto reference = urls::parse_uri_reference(reply.location);
-                urls::url next;
-                if (!reference || !urls::resolve(url, *reference, next)) {
-                    co_return std::unexpected("the server redirected to an invalid URL");
-                }
-                if (url.scheme_id() == urls::scheme::https && next.scheme_id() != urls::scheme::https) {
-                    co_return std::unexpected("the server redirected from https to http");
-                }
-                url = std::move(next);
-                continue;
-            }
-            co_return Outcome{std::move(reply), redirects > 0};
-        }
+        co_return co_await request(url, options, tls, validators);
     } catch (const FetchFailure& failure) {
         co_return std::unexpected(failure.what());
     } catch (const boost::system::system_error& failure) {
@@ -557,60 +525,119 @@ awaitable<std::expected<Outcome, std::string>> follow(const std::string& text, c
 }
 // NOLINTEND(cppcoreguidelines-avoid-reference-coroutine-parameters)
 
-awaitable<FetchResult> run(std::string url, FetchOptions options, std::shared_ptr<ssl::context> tls) {
+// Where `location`, a redirect's Location from `from`, leads, or why it can't be followed.
+std::expected<urls::url, std::string> redirect_target(const urls::url& from, std::string_view location) {
+    const auto reference = urls::parse_uri_reference(location);
+    urls::url next;
+    if (!reference || !urls::resolve(from, *reference, next)) {
+        return std::unexpected("the server redirected to an invalid URL");
+    }
+    if (from.scheme_id() == urls::scheme::https && next.scheme_id() != urls::scheme::https) {
+        return std::unexpected("the server redirected from https to http");
+    }
+    return next;
+}
+
+// The request and its redirects, up to the final response. At each URL, a stored response answers
+// while it's fresh (a stored redirect leads on from there), and is revalidated once it's stale; if
+// the server can't be reached then, a stale one still answers unless it must be revalidated. Each
+// response is stored under the URL that returned it.
+awaitable<FetchResult> run(std::string text, FetchOptions options, std::shared_ptr<ssl::context> tls) {
     using namespace asio::experimental::awaitable_operators;
     const std::shared_ptr<HttpCache> cache = options.cache;
     const std::uint64_t generation = cache ? cache->generation() : 0;
-    std::optional<CacheEntry> cached;
-    if (cache) {
-        cached = co_await off_network_thread([cache, url] { return cache->find(url); });
-        if (cached && cached->redirect()) {
-            cached.reset(); // not stored by this version
-        }
-        if (cached && cached->fresh(unix_now())) {
-            co_return std::move(cached->body);
-        }
-    }
-    const Validators validators = cached ? Validators{cached->headers.etag, cached->headers.last_modified} : Validators{};
-    const bool revalidating = cached && cached->revalidates();
-
-    asio::steady_timer timer(co_await asio::this_coro::executor, options.timeout);
-    auto outcome = co_await (follow(url, options, *tls, revalidating ? &validators : nullptr) ||
-                             timer.async_wait(use_awaitable));
-    std::expected<Outcome, std::string> result =
-        outcome.index() == 1
-            ? std::unexpected(std::format("the request timed out (after {})", describe_duration(options.timeout)))
-            : std::move(std::get<0>(outcome));
-    if (!result) {
-        if (cached && cached->usable_stale()) {
-            co_return std::move(cached->body); // offline: what we had
-        }
-        co_return std::unexpected(std::move(result.error()));
-    }
-    Reply& reply = result->reply;
-    const auto keep = [cache, generation](CacheEntry entry) { // in the background: the caller needn't wait
+    // In the background: the caller needn't wait.
+    const auto keep = [cache, generation](CacheEntry entry) {
         asio::post(Network::instance().blocking(), [cache, generation, entry = std::move(entry)] {
             cache->store(entry, generation);
         });
     };
-    if (reply.status == 304 && revalidating) {
-        if (forbids_storing(reply.cache)) {
-            asio::post(Network::instance().blocking(), [cache, url] { cache->remove(url); }); // answered, then gone
+    const auto forget = [cache](std::string key) {
+        asio::post(Network::instance().blocking(), [cache, key = std::move(key)] { cache->remove(key); });
+    };
+    const auto parsed = urls::parse_uri(text);
+    if (!parsed) {
+        co_return std::unexpected("not an http(s) URL");
+    }
+    urls::url url = *parsed;
+    // One deadline for the whole request, redirects included.
+    asio::steady_timer timer(co_await asio::this_coro::executor, options.timeout);
+    for (int redirects = 0;; ++redirects) {
+        if ((co_await asio::this_coro::cancellation_state).cancelled() != asio::cancellation_type::none) {
+            co_return std::unexpected("cancelled");
+        }
+        if ((url.scheme_id() != urls::scheme::http && url.scheme_id() != urls::scheme::https) ||
+            url.host_address().empty()) {
+            co_return std::unexpected("not an http(s) URL");
+        }
+        const std::string key(url.buffer());
+        std::optional<CacheEntry> cached;
+        if (cache) {
+            cached = co_await off_network_thread([cache, key] { return cache->find(key); });
+        }
+        std::string location; // where this URL redirects to
+        if (cached && cached->fresh(unix_now())) {
+            if (!cached->redirect()) {
+                co_return std::move(cached->body);
+            }
+            location = cached->location;
         } else {
-            refresh_cache_entry(*cached, reply.cache, unix_now());
-            keep(*cached);
+            const Validators validators = cached ? Validators{cached->headers.etag, cached->headers.last_modified}
+                                                 : Validators{};
+            const bool revalidating = cached && cached->revalidates();
+            auto outcome = co_await (attempt(url, options, *tls, revalidating ? &validators : nullptr) ||
+                                     timer.async_wait(use_awaitable));
+            std::expected<Reply, std::string> result =
+                outcome.index() == 1
+                    ? std::unexpected(std::format("the request timed out (after {})", describe_duration(options.timeout)))
+                    : std::move(std::get<0>(outcome));
+            if (!result) {
+                if (!cached || !cached->usable_stale()) {
+                    co_return std::unexpected(std::move(result.error()));
+                }
+                // Offline: what we had, a stale redirect included.
+                if (!cached->redirect()) {
+                    co_return std::move(cached->body);
+                }
+                location = cached->location;
+            } else if (Reply& reply = *result; reply.status == 304 && revalidating) {
+                if (forbids_storing(reply.cache)) {
+                    forget(key); // after it has answered
+                } else {
+                    refresh_cache_entry(*cached, reply.cache, unix_now());
+                    keep(*cached);
+                }
+                if (!cached->redirect()) {
+                    co_return std::move(cached->body);
+                }
+                location = cached->location;
+            } else if (is_redirect_status(reply.status) && !reply.location.empty()) {
+                if (cache) {
+                    if (auto entry = make_cache_entry(key, reply.status, reply.location, reply.cache, {}, unix_now())) {
+                        keep(std::move(*entry));
+                    }
+                }
+                location = std::move(reply.location);
+            } else if (reply.status < 200 || reply.status >= 300) {
+                co_return std::unexpected(std::format("HTTP {}", reply.status));
+            } else {
+                if (cache && reply.status == 200) {
+                    if (auto entry = make_cache_entry(key, reply.status, {}, reply.cache, reply.body, unix_now())) {
+                        keep(std::move(*entry));
+                    }
+                }
+                co_return std::move(reply.body);
+            }
         }
-        co_return std::move(cached->body);
-    }
-    if (reply.status < 200 || reply.status >= 300) {
-        co_return std::unexpected(std::format("HTTP {}", reply.status));
-    }
-    if (cache && reply.status == 200 && !result->redirected) { // only under the URL that returned it
-        if (auto entry = make_cache_entry(url, reply.status, {}, reply.cache, reply.body, unix_now())) {
-            keep(std::move(*entry));
+        if (redirects == options.max_redirects) {
+            co_return std::unexpected(std::format("too many redirects (more than {})", options.max_redirects));
         }
+        std::expected<urls::url, std::string> next = redirect_target(url, location);
+        if (!next) {
+            co_return std::unexpected(std::move(next.error()));
+        }
+        url = std::move(*next);
     }
-    co_return std::move(reply.body);
 }
 
 } // namespace

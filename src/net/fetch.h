@@ -59,9 +59,10 @@ private:
 };
 
 // GETs an http(s) URL, following redirects (never from https to http). TLS checks the
-// certificate against the system's roots and the host name. With a cache, a stale copy answers
-// when the server can't be reached (unless it must be revalidated). `done` runs once, on the
-// network thread, unless cancelled first. Any thread.
+// certificate against the system's roots and the host name. With a cache, each response (a
+// redirect too) is kept under the URL that returned it, and a stale copy answers when the server
+// can't be reached (unless it must be revalidated); a stored redirect is followed then. `done`
+// runs once, on the network thread, unless cancelled first. Any thread.
 FetchTask fetch(std::string url, std::function<void(FetchResult)> done, FetchOptions options = {});
 
 } // namespace elg::detail::net

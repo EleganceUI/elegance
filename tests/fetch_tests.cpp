@@ -103,6 +103,11 @@ wmZAujteSAEKpmLCsCEVJ8Z884hfe+U0WYC9HPiHLcu3n1AfGNHyekNG
 //   /huge.png   200 with a PNG file of 16384 x 8193 pixels (in 106 KB)
 //   /aged       200, fresh for 600 s but already 600 s old, with an ETag; its 304 says Age: 0
 //   /gone-on-304 200 "kept", revalidated every time, with an ETag; its 304 says no-store
+//   /latest     302 to /v123.png, with no lifetime of its own
+//   /v123.png   200 "v123", fresh for a year
+//   /moved      302 to /hello, fresh for a minute
+//   /permanent  301 to /hello, with no lifetime of its own
+//   /stale-redirect 302 to /stale, stale at once
 // Connections stay open for more requests, unless `drop` (closed after each response, without
 // saying so).
 class TestServer {
@@ -239,6 +244,20 @@ private:
                 response.set(bhttp::field::cache_control, "no-cache");
                 response.body() = "kept";
             }
+        } else if (target == "/latest" || target == "/moved" || target == "/permanent" ||
+                   target == "/stale-redirect") {
+            response.result(target == "/permanent" ? bhttp::status::moved_permanently : bhttp::status::found);
+            response.set(bhttp::field::location, target == "/latest"           ? "/v123.png"
+                                                 : target == "/stale-redirect" ? "/stale"
+                                                                               : "/hello");
+            if (target == "/moved") {
+                response.set(bhttp::field::cache_control, "max-age=60");
+            } else if (target == "/stale-redirect") {
+                response.set(bhttp::field::cache_control, "max-age=0");
+            }
+        } else if (target == "/v123.png") {
+            response.set(bhttp::field::cache_control, "max-age=31536000");
+            response.body() = "v123";
         } else if (target == "/huge.png") {
             const std::vector<std::uint8_t> png = test::black_png(16384, 8193);
             response.body().assign(png.begin(), png.end());
@@ -941,6 +960,71 @@ TEST_CASE("the disk cache answers while fresh and revalidates after", "[fetch][c
         std::this_thread::sleep_for(10ms);
     }
     CHECK_FALSE(cache->find(server.url("/two-fields")));
+}
+
+TEST_CASE("a response reached through a redirect is stored under its own URL", "[fetch][cache]") {
+    const TestServer server;
+    const TemporaryDirectory directory;
+    const auto cache = std::make_shared<net::HttpCache>(directory.path, 1 << 20);
+    const net::FetchOptions options{.cache = cache};
+    CHECK(text(fetch(server.url("/latest"), options)) == "v123");
+    REQUIRE(wait_until_cached(*cache, server.url("/v123.png")));
+    const std::optional<net::CacheEntry> image = cache->find(server.url("/v123.png"));
+    REQUIRE(image);
+    CHECK(image->lifetime == 31536000); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
+    CHECK_FALSE(cache->find(server.url("/latest"))); // neither the image nor the redirect, which has no lifetime
+    // So /latest is asked again, and leads to the stored image.
+    CHECK(text(fetch(server.url("/latest"), options)) == "v123");
+    CHECK(server.hits("/latest") == 2);
+    CHECK(server.hits("/v123.png") == 1);
+}
+
+TEST_CASE("redirects are stored under their own URL and followed from the cache while fresh", "[fetch][cache]") {
+    const TestServer server;
+    const TemporaryDirectory directory;
+    const auto cache = std::make_shared<net::HttpCache>(directory.path, 1 << 20);
+    const net::FetchOptions options{.cache = cache};
+
+    // A temporary redirect with a lifetime.
+    CHECK(text(fetch(server.url("/moved"), options)) == "hello");
+    REQUIRE(wait_until_cached(*cache, server.url("/moved")));
+    const std::optional<net::CacheEntry> moved = cache->find(server.url("/moved"));
+    REQUIRE(moved);
+    CHECK(moved->status == 302); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
+    CHECK(text(fetch(server.url("/moved"), options)) == "hello");
+    CHECK(server.hits("/moved") == 1);
+    CHECK(server.hits("/hello") == 2); // not cacheable itself
+
+    // A permanent one without: fresh until it's evicted.
+    CHECK(text(fetch(server.url("/permanent"), options)) == "hello");
+    REQUIRE(wait_until_cached(*cache, server.url("/permanent")));
+    CHECK(text(fetch(server.url("/permanent"), options)) == "hello");
+    CHECK(server.hits("/permanent") == 1);
+
+    // A stale one goes to the server again.
+    CHECK(text(fetch(server.url("/stale-redirect"), options)) == "stale");
+    REQUIRE(wait_until_cached(*cache, server.url("/stale-redirect")));
+    CHECK(text(fetch(server.url("/stale-redirect"), options)) == "stale");
+    CHECK(server.hits("/stale-redirect") == 2);
+
+    // Redirects from the cache count toward the limit too.
+    CHECK(fetch(server.url("/moved"), {.max_redirects = 0, .cache = cache}).error() == "too many redirects (more than 0)");
+}
+
+TEST_CASE("a stale stored redirect is followed when the server is gone", "[fetch][cache]") {
+    const TemporaryDirectory directory;
+    const auto cache = std::make_shared<net::HttpCache>(directory.path, 1 << 20);
+    std::string url;
+    {
+        const TestServer server;
+        url = server.url("/stale-redirect");
+        CHECK(text(fetch(url, {.cache = cache})) == "stale");
+        REQUIRE(wait_until_cached(*cache, url));
+        REQUIRE(wait_until_cached(*cache, server.url("/stale")));
+    }
+    // The stale redirect, then the stale copy it leads to.
+    CHECK(text(fetch(url, {.cache = cache})) == "stale");
+    CHECK_FALSE(fetch(url).has_value());
 }
 
 TEST_CASE("the disk cache answers with a stale copy when the server is gone", "[fetch][cache]") {
