@@ -53,8 +53,10 @@ constexpr std::size_t image_bytes(wgpu::TextureFormat format, std::uint32_t widt
                                   std::uint32_t samples) {
     std::size_t texel = 16; // formats not listed: at most this
     switch (format) {
-    case wgpu::TextureFormat::R8Unorm:
-    case wgpu::TextureFormat::Stencil8: texel = 1; break;
+    case wgpu::TextureFormat::R8Unorm: texel = 1; break;
+    // Backends may keep stencil in a 32-bit depth-stencil format (D24S8 on Direct3D, and on
+    // Vulkan without separate 8-bit stencil): counted that large everywhere.
+    case wgpu::TextureFormat::Stencil8:
     case wgpu::TextureFormat::RGBA8Unorm:
     case wgpu::TextureFormat::RGBA8UnormSrgb:
     case wgpu::TextureFormat::BGRA8Unorm:

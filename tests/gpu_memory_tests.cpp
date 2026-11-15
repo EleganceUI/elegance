@@ -66,7 +66,8 @@ const detail::gpu::CacheClock::time_point t0{};
 TEST_CASE("an image's GPU size counts every sample", "[gpu-memory]") {
     CHECK(detail::image_bytes(wgpu::TextureFormat::R8Unorm, 100, 50, 1) == 5'000);
     CHECK(detail::image_bytes(wgpu::TextureFormat::R8Unorm, 100, 50, 4) == 20'000);
-    CHECK(detail::image_bytes(wgpu::TextureFormat::Stencil8, 100, 50, 4) == 20'000);
+    // Stencil as backends may store it: 32 bits.
+    CHECK(detail::image_bytes(wgpu::TextureFormat::Stencil8, 100, 50, 4) == 80'000);
     CHECK(detail::image_bytes(wgpu::TextureFormat::BGRA8Unorm, 100, 50, 1) == 20'000);
 }
 
