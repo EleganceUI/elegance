@@ -1,0 +1,103 @@
+# Builds the libFuzzer targets in fuzz/ (ELGSPEC-0005.R16) with Clang 19 and libc++, under
+# AddressSanitizer and UBSan, and runs each one from its seed inputs (ELGSPEC-0006.R12): for 30
+# seconds on every pull request, and for 10 minutes once a day on main. A target that finds a crash,
+# a leak or a hang fails the job, and its input is uploaded.
+name: Fuzz
+
+on:
+    pull_request:
+    # Scheduled runs use the default branch, main.
+    schedule:
+        - cron: "23 4 * * *"
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+    fuzz:
+        runs-on: ubuntu-24.04
+        timeout-minutes: 240 # building the dependencies, if the cache has none, takes the longest
+        env:
+            VCPKG_ROOT: ${{ github.workspace }}/../vcpkg
+            VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+            PRESET: linux-clang-libcxx-fuzz
+            # Seconds each target runs: at least 30 on a pull request, at least 600 on the daily run.
+            SECONDS_EACH: ${{ github.event_name == 'pull_request' && '30' || '600' }}
+            UBSAN_OPTIONS: print_stacktrace=1
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            # As linux.yml's libc++ jobs, plus compiler-rt (libFuzzer and the sanitizers' runtimes).
+            - name: Install tools
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends \
+                    ninja-build pkg-config autoconf autoconf-archive automake libtool libltdl-dev python3-jinja2 \
+                    libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \
+                    libxinerama-dev libx11-xcb-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev \
+                    libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev libdrm-dev libgbm-dev \
+                    libasound2-dev libpulse-dev libdbus-1-dev libibus-1.0-dev libudev-dev libcurl4-openssl-dev
+                  wget -qO llvm.sh https://apt.llvm.org/llvm.sh
+                  sudo bash llvm.sh 19
+                  sudo apt-get install -y --no-install-recommends libc++-19-dev libc++abi-19-dev libclang-rt-19-dev
+                  pipx install 'cmake>=4.3'
+                  cmake --version
+
+            - name: Set up vcpkg
+              run: |
+                  git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+                  baseline=$(python3 -c 'import json; print(json.load(open("vcpkg.json"))["builtin-baseline"])')
+                  git -C "$VCPKG_ROOT" checkout "$baseline"
+                  "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+                  mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+
+            # The dependencies linux.yml's libc++ jobs build: the same triplet and flags. Restored
+            # only; those jobs keep the cache up to date.
+            - name: Restore vcpkg binaries
+              uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ${{ github.workspace }}/.vcpkg-cache
+                  key: vcpkg-v2-ubuntu-24.04-libcxx-19-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-
+                  restore-keys: |
+                      vcpkg-v2-ubuntu-24.04-libcxx-19-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake') }}-
+                      vcpkg-v2-ubuntu-24.04-libcxx-19-
+
+            - name: Configure
+              run: cmake --preset "$PRESET" -DCMAKE_C_COMPILER=clang-19 -DCMAKE_CXX_COMPILER=clang++-19 -DELG_WARNINGS_AS_ERRORS=ON
+
+            - name: Build
+              run: cmake --build "build/$PRESET" --target fuzz
+
+            # Every target the build made, in turn, all of them even when one fails. New inputs go to
+            # a scratch corpus; the seeds in fuzz/corpus/<target> stay as they are.
+            - name: Fuzz
+              run: |
+                  status=0
+                  mkdir -p findings
+                  for binary in "build/$PRESET/bin/"fuzz_*; do
+                    target=$(basename "$binary")
+                    corpora=("corpus/$target")
+                    if [ -d "fuzz/corpus/$target" ]; then corpora+=("fuzz/corpus/$target"); fi
+                    mkdir -p "corpus/$target"
+                    echo "::group::$target ($SECONDS_EACH s)"
+                    if ! "$binary" -max_total_time="$SECONDS_EACH" -timeout=25 -rss_limit_mb=2560 -print_final_stats=1 \
+                           -artifact_prefix="findings/$target-" "${corpora[@]}"; then
+                      echo "::error::$target failed; the input is in the fuzz-findings artifact"
+                      status=1
+                    fi
+                    echo "::endgroup::"
+                  done
+                  exit $status
+
+            - name: Upload findings
+              if: ${{ failure() }}
+              uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: fuzz-findings
+                  path: findings/
+                  if-no-files-found: ignore
