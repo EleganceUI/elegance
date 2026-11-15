@@ -556,7 +556,7 @@ int App::run() {
             return drop;
         });
         for (auto& on_close : dropped) {
-            on_close();
+            run_app_code(AppCode::callback, on_close); // a binding going back to false
         }
     };
     const PopupSink popup_sink{
@@ -615,7 +615,7 @@ int App::run() {
         if (item.checked && source != shown_source) {
             // Chosen from menus replaced since: its own callback, with nothing shown to update.
             if (item.toggled) {
-                item.toggled(!*item.checked);
+                run_app_code(AppCode::event_handler, [&] { item.toggled(!*item.checked); });
             }
         } else if (item.checked) {
             const auto known = self.menu_checks.find(id);
@@ -624,11 +624,11 @@ int App::run() {
             shown_checks = self.menu_checks;
             platform::native::set_menu_checked(id, now);
             if (item.toggled) {
-                item.toggled(now);
+                run_app_code(AppCode::event_handler, [&] { item.toggled(now); });
             }
         }
         if (item.action) {
-            item.action();
+            run_app_code(AppCode::event_handler, item.action);
             return;
         }
         const std::uint32_t focused = platform::focused_window_id();
@@ -776,7 +776,7 @@ int App::run() {
                 break; // a disabled view isn't activated
             }
             if (target->second.action) {
-                target->second.action();
+                run_app_code(AppCode::event_handler, target->second.action);
                 break;
             }
             [[fallthrough]];
@@ -945,7 +945,7 @@ int App::run() {
             floats.erase(it);
             destroy_window(popup.id);
             if (popup.on_close) {
-                popup.on_close();
+                run_app_code(AppCode::callback, popup.on_close); // a binding going back to false
             }
         }
         if (auto it = find_window(id); it != windows.end()) {
@@ -979,6 +979,16 @@ int App::run() {
         inspector_entry->content = [model = inspector] { return InspectorView(model); };
         auto live = std::make_unique<LiveWindow>(*inspector_entry, text, base, &popup_sink);
         mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), false, live->window.native_handle()});
+        // Interrupted from here on (an exception), the render thread lets go of the window first.
+        bool opened = false;
+        const ScopeExit withdraw([&, id = live->window.id()] {
+            if (!opened) {
+                try {
+                    mailbox.wait_until_done(mailbox.post(RemoveWindowCommand{id}), kRenderWorkTimeout);
+                } catch (...) { // NOLINT(bugprone-empty-catch): unwinding already; the window goes anyway
+                }
+            }
+        });
         const bool show_first = live->window.shows_before_first_frame();
         if (show_first) {
             live->window.show();
@@ -992,6 +1002,7 @@ int App::run() {
         }
         inspector_window = live->window.id();
         windows.push_back(std::move(live));
+        opened = true;
         target.dirty = true;
     };
 
@@ -1043,7 +1054,7 @@ int App::run() {
             const std::function<void()> on_close = std::move(popup.on_close);
             retire(std::move(popup));
             if (on_close) {
-                on_close(); // e.g. a popover's binding goes back to false
+                run_app_code(AppCode::callback, on_close); // e.g. a popover's binding goes back to false
             }
         }
     };
@@ -1094,6 +1105,16 @@ int App::run() {
         fit_popup(*live);
 
         mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), true, live->window.native_handle()});
+        // Interrupted from here on (an exception), the render thread lets go of the window first.
+        bool opened = false;
+        const ScopeExit withdraw([&, id = live->window.id()] {
+            if (!opened) {
+                try {
+                    mailbox.wait_until_done(mailbox.post(RemoveWindowCommand{id}), kRenderWorkTimeout);
+                } catch (...) { // NOLINT(bugprone-empty-catch): unwinding already; the window goes anyway
+                }
+            }
+        });
         const bool show_first = live->window.shows_before_first_frame();
         if (show_first) {
             live->window.show();
@@ -1106,6 +1127,7 @@ int App::run() {
         }
         const std::uint32_t id = live->window.id();
         windows.push_back(std::move(live));
+        opened = true;
         OpenPopup popup{std::move(entry), id,     request.level, std::move(request.on_close), request.token,
                         opener_id,        motion, exit};
         if (is_tooltip) {
@@ -1128,7 +1150,7 @@ int App::run() {
                 close_tooltip_now();
             }
             for (auto& action : std::exchange(pending.after_close, {})) {
-                action();
+                run_app_code(AppCode::event_handler, action); // a chosen menu item's
             }
             for (const std::uint64_t token : std::exchange(pending.close_tokens, {})) {
                 if (auto it = std::ranges::find(floats, token, &OpenPopup::token); it != floats.end()) {
@@ -1137,7 +1159,7 @@ int App::run() {
                     const std::function<void()> on_close = std::move(popup.on_close);
                     retire(std::move(popup));
                     if (on_close) {
-                        on_close();
+                        run_app_code(AppCode::callback, on_close);
                     }
                 }
             }
@@ -1230,11 +1252,13 @@ int App::run() {
                     const Point local{session.location.x - frame.x, session.location.y - frame.y};
                     const DropOptions options = target->options(); // the handler may rebuild the tree
                     set_drop_target(live, session, std::nullopt);
-                    if (files) {
-                        options.files(session.files, local);
-                    } else {
-                        options.text(session.text, local);
-                    }
+                    run_app_code(AppCode::event_handler, [&] {
+                        if (files) {
+                            options.files(session.files, local);
+                        } else {
+                            options.text(session.text, local);
+                        }
+                    });
                 }
             }
             set_drop_target(live, session, std::nullopt);
