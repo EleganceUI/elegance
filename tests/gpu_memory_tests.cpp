@@ -7,6 +7,7 @@
 
 #include "gpu/eviction.h"
 #include "gpu/texture_cache.h"
+#include "gpu/video_textures.h"
 #include "render/intermediate_images.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -243,4 +244,25 @@ TEST_CASE("decoded images' textures go once undrawn for 10 s, or past 512 MB bey
     CHECK(cache.entries.contains("icon"));
     cache.draw(t0 + 11s, {});
     CHECK(cache.entries.empty());
+}
+
+TEST_CASE("video textures go once undrawn for 5 s, or past 128 MB beyond the frame's", "[gpu-memory]") {
+    FakeCache cache{detail::gpu::kVideoTexturePolicy, {}, {}};
+    // Four 4K videos (32 MB a frame) and a small one.
+    cache.draw(t0, {{"a", 32 * kMB}, {"b", 32 * kMB}, {"c", 32 * kMB}, {"d", 32 * kMB}, {"small", kMB}});
+    cache.draw(t0 + 1s, {{"small", kMB}});
+    CHECK(cache.entries.size() == 5); // 128 MB undrawn: kept
+    cache.draw(t0 + 2s, {{"e", 32 * kMB}});
+    // 129 MB undrawn: one of the four drawn at t0 goes.
+    CHECK(cache.entries.size() == 5);
+    CHECK(cache.entries.contains("small"));
+    CHECK(cache.entries.contains("e"));
+
+    cache.draw(t0 + 4999ms, {{"e", 32 * kMB}});
+    CHECK(cache.entries.size() == 5);
+    cache.draw(t0 + 5s, {{"e", 32 * kMB}});
+    CHECK(cache.entries.size() == 2); // the rest of what t0 drew went
+    cache.draw(t0 + 6s, {{"e", 32 * kMB}});
+    CHECK(cache.entries.size() == 1);
+    CHECK(cache.entries.contains("e"));
 }

@@ -7,15 +7,22 @@
 
 #include "gpu/buffer.h"
 #include "gpu/device.h"
+#include "gpu/eviction.h"
 #include "gpu/webgpu.h"
 #include "media/video_source.h"
 
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
 #include <vector>
 
 namespace elg::detail::gpu {
+
+// What VideoTextures keeps of the textures it made that frames don't draw: the images frames in
+// memory are converted into, and Direct3D 11's copies of decoder textures.
+inline constexpr CachePolicy kVideoTexturePolicy{std::chrono::seconds(5), std::size_t{128} << 20};
 
 // Video frames' textures (design.md §13.3). Render thread only.
 // - Shared textures (VideoFrame::Kind::d3d11_shared): imported into WebGPU once each (shared
@@ -42,6 +49,9 @@ public:
     // memory, recording the upload and conversion into `encoder`. Null if it can't be shown.
     wgpu::BindGroup acquire(const wgpu::CommandEncoder& encoder, const VideoFrame& frame,
                             std::vector<std::uint64_t>& acquired);
+    // Starts a window's frame, drawn at `now`: the frames it acquires are the ones it needs.
+    void begin_frame(CacheClock::time_point now) noexcept { frame_.begin(now); }
+
     // Hands `acquired` back to the decoder/producer. Call only after ALL commands recorded
     // using this batch were submitted; release each batch exactly once. Distinct outstanding
     // batches independently pin a texture, even if they sample the same frame. External leases
@@ -50,9 +60,9 @@ public:
     // recording afterwards.
     void release(const std::vector<std::uint64_t>& acquired);
 
-    // Once per rendered frame: drops textures no frame has used for a while (a video that
-    // changed size, or stopped being shown).
-    void end_frame() noexcept;
+    // Ends the frame: releases textures as kVideoTexturePolicy says (a video that changed size,
+    // or stopped being shown), except external images a recording still holds.
+    void end_frame();
 
 private:
     struct Texture {
@@ -64,7 +74,7 @@ private:
         std::shared_ptr<void> lease; // external allocation: through submission
         bool external = false; // EndAccess belongs to the last allocation/snapshot owner
         std::size_t pending_batches = 0; // distinct acquire/release batches, not draw count
-        std::uint64_t last_used = 0;
+        CacheUse use;                    // bytes: `copy`'s
     };
     bool import(const VideoFrame& frame, Texture& texture);
     // The frame's shared fence to wait on, imported once.
@@ -82,7 +92,7 @@ private:
         WGPUBuffer bound = nullptr;  // the buffer frame_group points at
         std::uint64_t frame_id = 0;
         bool converted = false;
-        std::uint64_t last_used = 0;
+        CacheUse use; // bytes: `texture`'s
     };
     wgpu::BindGroup convert(const wgpu::CommandEncoder& encoder, const VideoFrame& frame);
     void create_target(CpuTarget& target, std::uint32_t width, std::uint32_t height);
@@ -93,13 +103,13 @@ private:
     std::unordered_map<std::uint64_t, Texture> textures_; // by VideoFrame::texture_id
     struct Fence {
         wgpu::SharedFence fence;
-        std::uint64_t last_used = 0;
+        std::uint64_t last_used = 0; // CacheFrame::number()
     };
     std::unordered_map<std::uint64_t, Fence> fences_; // by VideoFrame::wait_fence_id
     std::unordered_map<std::uint64_t, CpuTarget> targets_; // by VideoFrame::source_id
     wgpu::BindGroupLayout frame_layout_; // one storage buffer
     wgpu::RenderPipeline convert_pipeline_;
-    std::uint64_t frame_ = 0;
+    CacheFrame frame_;
     bool warned_ = false;
 };
 

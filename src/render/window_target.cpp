@@ -369,6 +369,7 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
     resources.textures.end_frame();
 
     // Sample the same snapshots that determined the picture geometry.
+    resources.videos.begin_frame(now);
     for (const auto& video_frame : plan.video_frames) {
         groups.videos.push_back(video_frame ? resources.videos.acquire(encoder, *video_frame, acquired_videos)
                                             : wgpu::BindGroup());
