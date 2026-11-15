@@ -244,6 +244,14 @@ bool EventDispatcher::bubble(const std::vector<Element*>& path, const PointerEve
         redraw |= result.redraw;
         if (result.consumed) {
             if (event.kind == PointerEvent::Kind::down) {
+                // A second press taken while another view holds the pointer: that view hears
+                // that its press is over first.
+                if (Element* previous = std::exchange(captured_, nullptr); previous && previous != element) {
+                    redraw |= deliver(PointerEvent{.kind = PointerEvent::Kind::cancel, .location = event.location,
+                                                   .window_location = event.window_location},
+                                      *previous)
+                                  .redraw;
+                }
                 captured_ = element;
                 captured_cancellable_ = result.cancellable;
             }
