@@ -49,15 +49,15 @@ struct RecordingMenuStyle final : MenuStyle {
 };
 
 struct Window {
+    detail::FocusManager focus; // outlives the tree: its elements let go of it when destroyed
     std::unique_ptr<detail::Element> root;
-    detail::FocusManager focus;
     std::unique_ptr<detail::EventDispatcher> events;
 
     explicit Window(const View& view) {
         root = detail::lower(ZStack({.alignment = Alignment::top_leading}, Rectangle().fill(Color::white), view),
                              {.text = &text_system(), .focus = &focus});
-        root->size_that_fits({200, 200});
-        root->place({}, {200, 200});
+        root->size_that_fits({200.f, 200.f});
+        root->place({}, {200.f, 200.f});
         events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 };

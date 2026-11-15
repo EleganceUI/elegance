@@ -10,6 +10,7 @@
 //   elegance-preview --module <file> [--build "<command>"] [--watch <folder>]...
 
 #include "elegance-preview_hot_reload.h"
+#include "no_error_dialogs.h"
 
 #include <elg/elegance.h>
 
@@ -45,6 +46,9 @@ int main(int argc, char** argv) {
     bool smoke_test = false;
     for (int i = 1; i < argc; ++i) {
         smoke_test |= std::string_view(argv[i]) == "--smoke-test";
+    }
+    if (smoke_test) {
+        elegance_apps::no_error_dialogs(); // run unattended: a failed check fails the run, on stderr
     }
 
     try {

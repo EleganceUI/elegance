@@ -4,6 +4,7 @@ elegance_views_module(gallery_views gallery/gallery.cpp)
 
 add_executable(elegance-preview main.cpp)
 target_link_libraries(elegance-preview PRIVATE Elegance::Elegance)
+target_include_directories(elegance-preview PRIVATE ${PROJECT_SOURCE_DIR}/apps/common) # no_error_dialogs.h
 elegance_hot_reload(elegance-preview MODULE gallery_views WATCH gallery)
 
 elegance_warnings(elegance-preview) # elegance_views_module() applies them to the module

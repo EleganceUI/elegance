@@ -118,15 +118,18 @@ int platform_decode_image(std::span<const std::uint8_t> data, std::uint32_t max_
 
 std::optional<std::vector<unsigned char>> encode_png(std::span<const std::uint8_t> bgra, std::uint32_t width,
                                                      std::uint32_t height) {
-    ComPtr<IWICImagingFactory> factory;
-    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)))) {
+    // The decoders' factory, which initializes COM on this thread first (as nothing may have).
+    IWICImagingFactory* wic = nullptr;
+    try {
+        wic = factory();
+    } catch (const ResourceError&) {
         return std::nullopt;
     }
     ComPtr<IStream> stream;
     CreateStreamOnHGlobal(nullptr, TRUE, &stream);
     ComPtr<IWICBitmapEncoder> encoder;
     ComPtr<IWICBitmapFrameEncode> frame;
-    if (FAILED(factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) ||
+    if (FAILED(wic->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) ||
         FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)) ||
         FAILED(encoder->CreateNewFrame(&frame, nullptr)) || FAILED(frame->Initialize(nullptr)) ||
         FAILED(frame->SetSize(width, height))) {

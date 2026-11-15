@@ -53,7 +53,7 @@ def main():
     # A GCC build's compile commands have GCC-only warning flags, which clang doesn't know.
     command = [run, "-p", str(build), "-j", str(args.jobs), "-quiet", "-clang-tidy-binary", tidy,
                "-clang-apply-replacements-binary", replacements, "-extra-arg=-Wno-unknown-warning-option",
-               f"^({files})/"]
+               f"^({files})(/|$)"]
     result = subprocess.run(command, cwd=ROOT, capture_output=True, text=True)
 
     # Each diagnostic and the source lines clang-tidy prints after it, for those in our sources.

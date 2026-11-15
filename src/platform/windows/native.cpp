@@ -62,11 +62,9 @@ WindowParts window_created(SDL_Window* window, const WindowDesc& desc, bool popu
     }
     // Windows 11 rounds the corners of decorated windows; ask the same for undecorated opaque
     // ones (transparent windows draw their own shape). Ignored on Windows 10.
-    if (desc.title_bar == TitleBar::hidden && !desc.transparent) {
-        if (HWND hwnd = hwnd_of(window)) {
-            const DWORD round = 2; // DWMWCP_ROUND
-            DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &round, sizeof(round));
-        }
+    if (hwnd && desc.title_bar == TitleBar::hidden && !desc.transparent) {
+        const DWORD round = 2; // DWMWCP_ROUND
+        DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &round, sizeof(round));
     }
     return {};
 }
