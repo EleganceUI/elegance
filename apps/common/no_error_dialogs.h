@@ -11,6 +11,9 @@
 // process with a failure instead. Elsewhere it does nothing.
 
 #if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX // else <windows.h>'s min and max macros break std::min and std::max in the includer
+#endif
 #include <windows.h>
 
 #include <crtdbg.h>
