@@ -6,6 +6,7 @@
 
 #include "core/log.h"
 
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <new>
@@ -29,6 +30,15 @@ struct Report {
 std::vector<Report> g_reports;
 std::exception_ptr g_fatal; // a std::bad_alloc: the run ends with it
 std::exception_ptr g_quit;  // what the handler ended the run with
+// The last exception logged, to log a repeat in the next frames once (app_frame_ended()).
+struct Streak {
+    AppCode code = AppCode::callback;
+    std::string message;
+    std::uint64_t frame = 0; // the last frame it came in
+    std::uint64_t times = 0; // 0: none yet
+};
+Streak g_streak;
+std::uint64_t g_frame = 0;
 
 const char* describe(AppCode code) {
     switch (code) {
@@ -87,6 +97,14 @@ bool is_bad_alloc(const std::exception_ptr& error) {
     }
 }
 
+// Logs how many times the streak's exception came, if more than once, and ends the streak.
+void end_streak() {
+    if (g_streak.times > 1) {
+        log_error("{} threw \"{}\" {} times in a row", describe(g_streak.code), g_streak.message, g_streak.times);
+    }
+    g_streak = {};
+}
+
 } // namespace
 
 std::string exception_message(const std::exception_ptr& error) {
@@ -103,7 +121,16 @@ void report_app_exception(const std::exception_ptr& error, AppCode code) {
     if (!g_reporting) {
         std::rethrow_exception(error);
     }
-    log_error("{} threw {}: {}", describe(code), type_of(error), exception_message(error));
+    std::string message = exception_message(error);
+    // Again, in this frame or the one after: only counted, and the handler isn't called again.
+    if (g_streak.times > 0 && g_streak.code == code && g_streak.message == message && g_frame - g_streak.frame <= 1) {
+        ++g_streak.times;
+        g_streak.frame = g_frame;
+        return;
+    }
+    end_streak();
+    log_error("{} threw {}: {}", describe(code), type_of(error), message);
+    g_streak = {.code = code, .message = std::move(message), .frame = g_frame, .times = 1};
     if (is_bad_alloc(error)) {
         if (!g_fatal) {
             g_fatal = error; // out of memory: the run ends with it, whatever the handler says
@@ -119,8 +146,20 @@ void report_app_exception(const std::exception_ptr& error, AppCode code) {
     }
 }
 
+void app_frame_ended() noexcept {
+    ++g_frame;
+    if (g_streak.times > 0 && g_frame - g_streak.frame > 1) {
+        try {
+            end_streak();
+        } catch (...) {
+            g_streak = {}; // Swallowed: out of memory, so the count isn't logged
+        }
+    }
+}
+
 void begin_app_errors() {
     g_reporting = true;
+    g_streak = {};
     g_stopped = false;
     g_reports.clear();
     g_fatal = nullptr;
@@ -128,6 +167,11 @@ void begin_app_errors() {
 }
 
 void end_app_errors() noexcept {
+    try {
+        end_streak();
+    } catch (...) {
+        g_streak = {}; // Swallowed: out of memory, so the count isn't logged
+    }
     g_reporting = false;
     g_reports.clear();
 }

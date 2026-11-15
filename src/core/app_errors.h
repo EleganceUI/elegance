@@ -39,6 +39,10 @@ bool run_app_code(AppCode code, F&& function) {
 // An exception's what(), or that its type is unknown.
 std::string exception_message(const std::exception_ptr& error);
 
+// App side: a frame was drawn. The same exception from the same kind of app code in consecutive
+// frames is logged once, then how many times it came once the streak ends.
+void app_frame_ended() noexcept;
+
 // App side. begin_app_errors() starts reporting for a run, end_app_errors() stops.
 void begin_app_errors();
 void end_app_errors() noexcept;

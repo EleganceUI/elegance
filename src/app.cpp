@@ -1674,6 +1674,7 @@ int App::run() {
         // What this frame's flushes changed is laid out: the next flush starts a new update, so
         // implicit animations that fired in this one stop applying.
         end_update();
+        app_frame_ended(); // the same exception in the next frame isn't logged again
         // The pointer's shape follows what's under it, here after layout: content that moved,
         // appeared, or went away under a still pointer changes it too. A popup over its window
         // comes later in the list, and wins.

@@ -281,7 +281,10 @@ TEST_CASE("while an App runs, a press a handler throws in goes no further", "[ap
     Heard heard;
     detail::handle_app_errors(recorder(heard));
     CHECK(heard.codes == std::vector<AppCode>{AppCode::event_handler});
-    // The next press is a press like any other.
+    // The next press is a press like any other. Frames come between (the pressed state), or it
+    // would be the same exception again, only counted.
+    detail::app_frame_ended();
+    detail::app_frame_ended();
     window.button(PointerEvent::Kind::down);
     window.button(PointerEvent::Kind::up);
     detail::handle_app_errors(recorder(heard));
@@ -314,4 +317,26 @@ TEST_CASE("what a foreign callback throws reaches the UI thread as an app except
     detail::handle_app_errors(recorder(heard));
     CHECK(heard.messages == std::vector<std::string>{"foreign"});
     CHECK(heard.codes == std::vector<AppCode>{AppCode::callback});
+}
+
+TEST_CASE("the same exception in consecutive frames is reported once, and again after a quiet frame",
+          "[app-errors]") {
+    const Run run;
+    Heard heard;
+    const auto report = [](const char* message, AppCode code = AppCode::body) {
+        detail::report_app_exception(std::make_exception_ptr(std::runtime_error(message)), code);
+    };
+    report("broken");
+    report("broken"); // the same frame
+    detail::app_frame_ended();
+    report("broken"); // the next frame
+    detail::app_frame_ended();
+    report("broken", AppCode::effect); // other code
+    report("other"); // another message
+    detail::app_frame_ended();
+    detail::app_frame_ended(); // a frame without it ends the streak
+    report("other");
+    CHECK_FALSE(detail::handle_app_errors(recorder(heard)));
+    CHECK(heard.messages == std::vector<std::string>{"broken", "broken", "other", "other"});
+    CHECK(heard.codes == std::vector<AppCode>{AppCode::body, AppCode::effect, AppCode::body, AppCode::body});
 }
