@@ -6,7 +6,7 @@
 
 #include <elg/error.h>
 
-#include <limits>
+#include <cstdint>
 #include <span>
 #include <string>
 #include <string_view>
@@ -44,7 +44,12 @@ Instance::Instance() {
 }
 
 void Instance::wait(wgpu::Future future) const {
-    if (instance_.WaitAny(future, std::numeric_limits<std::uint64_t>::max()) != wgpu::WaitStatus::Success) {
+    constexpr std::uint64_t kTimeout = 5'000'000'000; // nanoseconds
+    const wgpu::WaitStatus status = instance_.WaitAny(future, kTimeout);
+    if (status == wgpu::WaitStatus::TimedOut) {
+        throw GpuError("the GPU didn't answer for 5 seconds: the device is treated as lost");
+    }
+    if (status != wgpu::WaitStatus::Success) {
         throw_gpu_error("wait for the GPU");
     }
 }

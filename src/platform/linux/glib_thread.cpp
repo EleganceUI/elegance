@@ -34,12 +34,22 @@ public:
     GLibThread& operator=(const GLibThread&) = delete;
     GLibThread& operator=(GLibThread&&) = delete;
     ~GLibThread() {
-        g_main_loop_quit(loop_);
+        g_cancellable_cancel(cancellable_); // a slow session bus isn't waited for
+        // Quit from inside the loop: a quit before it starts running would be lost, and the join
+        // would wait for ever.
+        g_main_context_invoke(
+            context_,
+            [](gpointer loop) -> gboolean {
+                g_main_loop_quit(static_cast<GMainLoop*>(loop));
+                return G_SOURCE_REMOVE;
+            },
+            loop_);
         if (thread_.joinable()) {
             thread_.join();
         }
         g_main_loop_unref(loop_);
         g_main_context_unref(context_);
+        g_object_unref(cancellable_);
     }
 
 private:
@@ -48,14 +58,17 @@ private:
         std::function<void(GDBusConnection*)> work;
     };
 
-    GLibThread() : context_(g_main_context_new()), loop_(g_main_loop_new(context_, FALSE)) {
+    GLibThread()
+        : context_(g_main_context_new()), loop_(g_main_loop_new(context_, FALSE)), cancellable_(g_cancellable_new()) {
         thread_ = std::thread([this] {
             // Signals subscribed to on this thread arrive in its context.
             g_main_context_push_thread_default(context_);
             GError* error = nullptr;
-            bus_ = g_bus_get_sync(G_BUS_TYPE_SESSION, nullptr, &error);
+            bus_ = g_bus_get_sync(G_BUS_TYPE_SESSION, cancellable_, &error);
             if (!bus_) {
-                log_warning("linux: no session bus: {}", error ? error->message : "unknown error");
+                if (!g_cancellable_is_cancelled(cancellable_)) {
+                    log_warning("linux: no session bus: {}", error ? error->message : "unknown error");
+                }
                 g_clear_error(&error);
             }
             g_main_loop_run(loop_);
@@ -75,6 +88,7 @@ private:
 
     GMainContext* context_;
     GMainLoop* loop_;
+    GCancellable* cancellable_; // connecting to the session bus, until the thread stops
     std::thread thread_;
     GDBusConnection* bus_ = nullptr; // GLib thread
 };

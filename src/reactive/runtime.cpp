@@ -13,6 +13,7 @@
 #include <elg/error.h>
 
 #include <algorithm>
+#include <atomic>
 #include <deque>
 #include <optional>
 #include <ranges>
@@ -39,7 +40,8 @@ bool g_flushing = false;
 // a dangling pointer, even when running one effect disposes others (e.g. If unmounting a
 // branch).
 std::deque<ReactiveNode*> g_pending;
-std::optional<std::thread::id> g_ui_thread;
+// The running App's UI thread; none (a default id) while no App runs. Other threads read it.
+std::atomic<std::thread::id> g_ui_thread;
 
 // Animated transactions (design.md §9.5).
 std::shared_ptr<const Animation> g_transaction;      // with_animation in progress
@@ -137,6 +139,9 @@ ReactiveNode::~ReactiveNode() {
 }
 
 void ReactiveNode::track() {
+#ifndef NDEBUG
+    check_ui_thread(); // reads, too, belong to the UI thread: checked in debug builds
+#endif
     if (kind_ != Kind::signal) {
         update();
     }
@@ -238,7 +243,8 @@ void start_effect(std::shared_ptr<EffectNode> effect, bool priority) {
 }
 
 void check_ui_thread() {
-    if (g_ui_thread && *g_ui_thread != std::this_thread::get_id()) {
+    const std::thread::id ui = g_ui_thread.load(std::memory_order_relaxed);
+    if (ui != std::thread::id() && ui != std::this_thread::get_id()) {
         throw UsageError("reactive state was used off the UI thread; state belongs to the UI thread "
                          "(design.md §6)");
     }
@@ -345,7 +351,7 @@ std::shared_ptr<const Animation> take_flush_animation() noexcept {
 }
 
 void set_ui_thread(std::optional<std::thread::id> thread) noexcept {
-    g_ui_thread = thread;
+    g_ui_thread.store(thread.value_or(std::thread::id()), std::memory_order_relaxed);
 }
 
 } // namespace elg::detail

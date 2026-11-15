@@ -8,20 +8,26 @@
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
+#include "media/sample_ring.h"
 
 #include <elg/error.h>
 
 #include <miniaudio.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstring>
 #include <exception>
 #include <format>
 #include <fstream>
+#include <memory>
 #include <mutex>
+#include <stop_token>
+#include <thread>
 
 namespace elg::detail {
 
@@ -60,13 +66,17 @@ struct RecorderState {
     bool context_ready = false;
     bool device_ready = false;
 
-    std::mutex mutex;
+    // What the audio thread records goes into `captured` without locking (when samples are kept);
+    // the recorder's thread, or a read on the UI thread, moves it into `samples`.
+    std::unique_ptr<SampleRing> captured;
+    std::mutex mutex; // `samples`, and reading `captured`
     std::vector<float> samples; // interleaved
 
-    std::atomic<float> peak{0};
-    std::atomic<double> last_post{0};
+    std::atomic<float> peak{0}; // the loudest since the recorder's thread last looked
     std::atomic<bool> samples_failed{false}; // on_samples threw: it isn't called again
     std::weak_ptr<RecorderState> self;
+    // While recording: the meter and the duration for the UI thread, about 15 times a second.
+    std::jthread updates;
 
     State<bool> recording{false};
     State<double> duration{0.0};
@@ -79,6 +89,7 @@ struct RecorderState {
     RecorderState& operator=(const RecorderState&) = delete;
     RecorderState& operator=(RecorderState&&) = delete;
     ~RecorderState() {
+        stop_updates();
         if (device_ready) {
             ma_device_uninit(&device);
         }
@@ -87,9 +98,53 @@ struct RecorderState {
         }
     }
 
+    // With `mutex` held: moves what the audio thread recorded into `samples`.
+    void take_captured() {
+        if (!captured) {
+            return;
+        }
+        std::array<float, 4096> chunk{}; // whole frames, for 1 or 2 channels
+        for (std::size_t taken = 0; (taken = captured->read(chunk)) > 0;) {
+            samples.insert(samples.end(), chunk.begin(), chunk.begin() + static_cast<std::ptrdiff_t>(taken));
+        }
+    }
+
     double seconds() {
         const std::lock_guard lock(mutex);
+        take_captured();
         return static_cast<double>(samples.size()) / options.channels / options.sample_rate;
+    }
+
+    void start_updates() {
+        updates = std::jthread([weak = self](const std::stop_token& stop) {
+            std::mutex waiting;
+            std::condition_variable_any wake;
+            std::unique_lock lock(waiting);
+            while (!wake.wait_for(lock, stop, std::chrono::milliseconds(66), [] { return false; }) &&
+                   !stop.stop_requested()) {
+                const auto state = weak.lock();
+                if (!state) {
+                    return;
+                }
+                const float level = state->peak.exchange(0);
+                const double seconds = state->seconds();
+                post_ui_task([weak, level, seconds] {
+                    if (const auto recorder = weak.lock()) {
+                        recorder->level = std::min(level, 1.f);
+                        recorder->duration = seconds;
+                    }
+                });
+            }
+        });
+    }
+
+    void stop_updates() {
+        if (updates.get_id() == std::this_thread::get_id()) {
+            // Its last reference went on it (no App runs): it returns without touching this.
+            updates.detach();
+        } else {
+            updates = std::jthread(); // stops it, and waits for it
+        }
     }
 
     // The audio thread.
@@ -104,9 +159,8 @@ struct RecorderState {
         for (std::size_t i = 0; i < count; ++i) {
             peak = std::max(peak, std::abs(data[i]));
         }
-        if (self->options.keeps_samples) {
-            const std::lock_guard lock(self->mutex);
-            self->samples.insert(self->samples.end(), data, data + count);
+        if (self->captured) {
+            self->captured->write(std::span(data, count));
         }
         if (self->options.on_samples && !self->samples_failed.load(std::memory_order_relaxed)) {
             try {
@@ -118,18 +172,8 @@ struct RecorderState {
                 post_ui_task([error = std::current_exception()] { std::rethrow_exception(error); });
             }
         }
-        // The meter and the duration, about 15 times a second.
-        self->peak = std::max(self->peak.load(), peak);
-        const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
-        if (now - self->last_post.load() >= 0.066) {
-            self->last_post = now;
-            const float level = self->peak.exchange(0);
-            post_ui_task([weak = self->self, level] {
-                if (const auto state = weak.lock()) {
-                    state->level = std::min(level, 1.f);
-                    state->duration = state->seconds();
-                }
-            });
+        float loudest = self->peak.load(std::memory_order_relaxed);
+        while (peak > loudest && !self->peak.compare_exchange_weak(loudest, peak, std::memory_order_relaxed)) {
         }
     }
 
@@ -224,10 +268,15 @@ std::vector<AudioDevice> audio_input_devices() {
     return devices;
 }
 
-AudioRecorder::AudioRecorder(AudioRecorderOptions options) : state_(std::make_shared<detail::RecorderState>()) {
+AudioRecorder::AudioRecorder(AudioRecorderOptions options) : state_(detail::make_ui_shared<detail::RecorderState>()) {
     options.sample_rate = std::clamp<std::uint32_t>(options.sample_rate, 8000, 192000);
     options.channels = std::clamp<std::uint32_t>(options.channels, 1, 2);
     state_->options = std::move(options);
+    if (state_->options.keeps_samples) {
+        // A second: the recorder's thread empties it 15 times as often.
+        state_->captured = std::make_unique<detail::SampleRing>(static_cast<std::size_t>(state_->options.sample_rate) *
+                                                                state_->options.channels);
+    }
     state_->self = state_;
 }
 
@@ -241,6 +290,7 @@ void AudioRecorder::start() const {
     }
     state_->error = std::string();
     state_->recording = true;
+    state_->start_updates();
 }
 
 void AudioRecorder::stop() const {
@@ -248,6 +298,7 @@ void AudioRecorder::stop() const {
         return;
     }
     ma_device_stop(&state_->device);
+    state_->stop_updates();
     state_->recording = false;
     state_->level = 0.f;
     state_->duration = state_->seconds();
@@ -260,6 +311,7 @@ void AudioRecorder::toggle() const {
 void AudioRecorder::clear() const {
     {
         const std::lock_guard lock(state_->mutex);
+        state_->take_captured();
         state_->samples.clear();
     }
     state_->duration = 0.0;
@@ -291,6 +343,7 @@ std::uint32_t AudioRecorder::channels() const noexcept {
 
 std::vector<float> AudioRecorder::samples() const {
     const std::lock_guard lock(state_->mutex);
+    state_->take_captured();
     return state_->samples;
 }
 

@@ -292,6 +292,7 @@ public:
     /// Reads the value, subscribing the running computed/effect/reactive argument.
     ///
     /// @return The current value.
+    /// @throws UsageError In debug builds, off the UI thread of a running App.
     const T& operator()() const {
         node_->track();
         return node_->value;
@@ -300,11 +301,18 @@ public:
     /// argument.
     ///
     /// @return The current value.
+    /// @throws UsageError In debug builds, off the UI thread of a running App.
     [[nodiscard]] const T& get() const { return (*this)(); }
     /// Reads without subscribing.
     ///
     /// @return The current value.
-    [[nodiscard]] const T& peek() const noexcept { return node_->value; }
+    /// @throws UsageError In debug builds, off the UI thread of a running App.
+    [[nodiscard]] const T& peek() const {
+#ifndef NDEBUG
+        detail::check_ui_thread();
+#endif
+        return node_->value;
+    }
 
     /// Writes the value. What read it runs again (effects after the current event, before the
     /// next frame). For an equality-comparable T, writing a value equal to the current one does
@@ -534,11 +542,13 @@ public:
     /// `function` threw, reads rethrow that until something it read before throwing changes.
     ///
     /// @return The value.
+    /// @throws UsageError In debug builds, off the UI thread of a running App.
     const T& operator()() const { return node_->get(); }
     /// Like operator()(): reads the value, recomputing it first if needed. A tracked read, which
     /// rethrows what `function` threw as operator()() does.
     ///
     /// @return The value.
+    /// @throws UsageError In debug builds, off the UI thread of a running App.
     [[nodiscard]] const T& get() const { return node_->get(); }
 
 private:

@@ -213,10 +213,11 @@ void adopt(std::shared_ptr<detail::ReactiveNode> node) {
 ///
 /// @param owner Consumed closure that's never called; its `drop` runs when the node ends.
 /// @return The node, for elg_node_track() and elg_node_notify(). Its scope owns it, not the caller.
-///   nullptr on failure.
+///   nullptr on failure, and off the UI thread of a running App (a UsageError).
 ELG_EXPORT void* elg_signal_new(ElgClosure owner) {
     ELG_TRY
     const Consumed consumed(owner);
+    detail::check_ui_thread(); // it joins the current scope
     auto node = std::make_shared<OwnerNode>(hold(owner));
     void* raw = static_cast<detail::ReactiveNode*>(node.get());
     adopt(std::move(node));
@@ -231,10 +232,12 @@ ELG_EXPORT void* elg_signal_new(ElgClosure owner) {
 /// @param compute Consumed closure, run when the node is read and may have changed; args: null,
 ///   ret: `uint64_t*`. When the version stays the same, the node's dependents don't rerun.
 ///   Required: none is a usage error.
-/// @return The node, for elg_node_track(). Its scope owns it, not the caller. nullptr on failure.
+/// @return The node, for elg_node_track(). Its scope owns it, not the caller. nullptr on failure,
+///   and off the UI thread of a running App (a UsageError).
 ELG_EXPORT void* elg_computed_new(ElgClosure compute) {
     ELG_TRY
     const Consumed consumed(compute);
+    detail::check_ui_thread(); // as in elg_signal_new()
     const SharedFn f = required(compute, "compute");
     auto node = std::make_shared<detail::ComputedNode<std::uint64_t>>([f] {
         std::uint64_t version = 0;
@@ -248,7 +251,8 @@ ELG_EXPORT void* elg_computed_new(ElgClosure compute) {
 }
 
 /// A read (`ReactiveNode::track()`): subscribes the running computed/effect, bringing a computed
-/// up to date first.
+/// up to date first. In debug builds, off the UI thread of a running App, records a UsageError
+/// instead.
 ///
 /// @param node A node from elg_signal_new() or elg_computed_new() (borrowed).
 ELG_EXPORT void elg_node_track(void* node) {

@@ -264,14 +264,14 @@ private:
 // `.animation(animation, value)`: the subtree's changes animate when the value changed.
 class AnimationNode final : public ViewNode {
 public:
-    AnimationNode(View content, Animation animation, std::function<bool()> changed)
-        : content_(std::move(content)), animation_(std::move(animation)), changed_(std::move(changed)) {}
+    AnimationNode(View content, Animation animation, std::function<std::function<bool()>()> watchers)
+        : content_(std::move(content)), animation_(std::move(animation)), watchers_(std::move(watchers)) {}
     [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override;
 
 private:
     View content_;
     Animation animation_;
-    std::function<bool()> changed_;
+    std::function<std::function<bool()>()> watchers_; // makes one per mount
 };
 
 class LayoutAnimationNode final : public ViewNode {

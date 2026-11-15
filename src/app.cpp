@@ -52,6 +52,9 @@ namespace {
 // continuing (first frame, live resize). Bounded so a stuck driver can't freeze the app.
 constexpr auto kPresentTimeout = 100ms;
 constexpr auto kFirstFrameTimeout = 1000ms;
+// How long the UI thread waits for other work of the render thread (a window's removal). The
+// render thread itself waits at most 5 s for the GPU (gpu::Instance::wait()), so this is enough.
+constexpr auto kRenderWorkTimeout = 5000ms;
 // How long a new window (or popup) waits for its glyphs before showing anyway.
 constexpr auto kGlyphWarmup = 1500ms;
 constexpr auto kPopupGlyphWarmup = 150ms;
@@ -454,9 +457,14 @@ int App::run() {
     // the atlas's workers wake the event loop to draw them.
     TextSystem text;
     text.atlas.set_on_ready([&platform] { platform.wake(); });
-    // Work other threads hand to this one (hot-reload builds) wakes the loop.
+    // Work other threads hand to this one (hot-reload builds) wakes the loop. What Elegance posted
+    // for this run and didn't run refers to it (menu commands, accessibility requests): it goes.
     set_ui_task_waker([&platform] { platform.wake(); });
-    const ScopeExit stop_task_wakes([] { set_ui_task_waker({}); });
+    begin_ui_tasks();
+    const ScopeExit stop_task_wakes([] {
+        set_ui_task_waker({});
+        end_ui_tasks();
+    });
     text.atlas.set_disk_cache(GlyphDiskCache::default_directory());
     const ScopeExit stop_glyph_wakes([&text] { text.atlas.set_on_ready({}); });
 
@@ -888,7 +896,9 @@ int App::run() {
         }
         if (auto it = find_window(id); it != windows.end()) {
             // The render thread must release the window's surface before the window goes.
-            mailbox.wait_until_done(mailbox.post(RemoveWindowCommand{id}));
+            if (!mailbox.wait_until_done(mailbox.post(RemoveWindowCommand{id}), kRenderWorkTimeout)) {
+                log_warning("the renderer didn't release window {} in time", id);
+            }
             windows.erase(it);
         }
     };
@@ -1611,7 +1621,7 @@ void post_to_ui_thread(std::function<void()> task) {
     if (!task) {
         throw UsageError("post_to_ui_thread() needs a task");
     }
-    detail::post_ui_task(std::move(task));
+    detail::post_app_task(std::move(task));
 }
 
 std::optional<Color> system_accent_color() {

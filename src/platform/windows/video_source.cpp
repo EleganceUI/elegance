@@ -134,6 +134,7 @@ public:
     void set_volume(float value) override {
         std::lock_guard lock(mutex_);
         value = std::clamp(value, 0.f, 1.f);
+        want_volume_ = value;
         if (ensure_engine()) {
             engine_->SetVolume(value);
         }
@@ -142,6 +143,7 @@ public:
 
     void set_muted(bool value) override {
         std::lock_guard lock(mutex_);
+        want_muted_ = value;
         if (ensure_engine()) {
             engine_->SetMuted(value);
         }
@@ -150,6 +152,7 @@ public:
 
     void set_looping(bool value) override {
         std::lock_guard lock(mutex_);
+        want_looping_ = value;
         if (ensure_engine()) {
             engine_->SetLoop(value);
         }
@@ -320,10 +323,11 @@ private:
             });
             return false;
         }
-        // Apply what was asked for before the engine existed.
-        engine_->SetVolume(volume.peek());
-        engine_->SetMuted(muted.peek());
-        engine_->SetLoop(looping.peek());
+        // Apply what was asked for before the engine existed: from copies, since this may run on
+        // the render thread, and the states belong to the UI thread.
+        engine_->SetVolume(want_volume_);
+        engine_->SetMuted(want_muted_);
+        engine_->SetLoop(want_looping_);
         if (pending_seek_) {
             engine_->SetCurrentTime(*pending_seek_);
             pending_seek_.reset();
@@ -468,6 +472,9 @@ private:
     std::atomic<IMFMediaEngine*> engine_raw_{nullptr}; // set once; for the event callback
     bool failed_ = false;
     bool want_playing_ = false;
+    float want_volume_ = 1.f;
+    bool want_muted_ = false;
+    bool want_looping_ = false;
     std::optional<double> pending_seek_;
     std::array<Slot, kRing> ring_{};
     std::uint32_t ring_width_ = 0;

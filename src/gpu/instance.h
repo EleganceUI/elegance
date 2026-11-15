@@ -24,7 +24,8 @@ public:
 
     [[nodiscard]] const wgpu::Instance& handle() const noexcept { return instance_; }
 
-    // Blocks until `future` (from a WaitAnyOnly callback) has completed.
+    // Blocks until `future` (from a WaitAnyOnly callback) has completed, for at most 5 seconds:
+    // after that, throws GpuError, as for a lost device.
     void wait(wgpu::Future future) const;
 
     // A surface for a window. The window must outlive it.

@@ -68,6 +68,16 @@ TEST_CASE("an AudioStream asked for an output that isn't connected doesn't play"
     }
 }
 
+TEST_CASE("an AudioStream queues about a second, dropping the oldest frames", "[audio]") {
+    const AudioStream stream({.device_id = "no-such-output", .sample_rate = 8000, .channels = 2});
+    stream.write(std::vector<float>(std::size_t{2} * 3000, 0.5f));
+    CHECK(stream.queued_frames() == 3000);
+    stream.write(std::vector<float>(std::size_t{2} * 7000, 0.5f));
+    CHECK(stream.queued_frames() == 8000); // a second at 8000 frames a second
+    stream.clear();
+    CHECK(stream.queued_frames() == 0);
+}
+
 TEST_CASE("audio errors", "[audio]") {
     CHECK_THROWS_AS(Sound::load("no-such-file.wav"), ResourceError);
     const std::vector<unsigned char> garbage(100, 7);

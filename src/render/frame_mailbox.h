@@ -63,7 +63,6 @@ public:
     // Waits until the render thread finished everything up to `sequence`.
     // Returns false on timeout.
     bool wait_until_done(std::uint64_t sequence, std::chrono::milliseconds timeout);
-    void wait_until_done(std::uint64_t sequence);
     void request_stop();
 
     // --- Render thread ---

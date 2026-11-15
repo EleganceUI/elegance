@@ -140,7 +140,11 @@ class ModuleHost : public std::enable_shared_from_this<ModuleHost> {
 public:
     explicit ModuleHost(HotReloadOptions options) : options_(std::move(options)) {
         std::error_code error;
-        copies_ = fs::temp_directory_path(error) / "elegance-reload" / std::to_string(elg_getpid());
+        // A folder of its own: <pid>-<host>, so no other host, in this process or another, loads
+        // (or deletes) its copies. A folder left by an earlier process with this pid goes.
+        static std::atomic<unsigned> hosts{0};
+        copies_ = fs::temp_directory_path(error) / "elegance-reload" /
+                  std::format("{}-{}", elg_getpid(), hosts.fetch_add(1) + 1);
         fs::remove_all(copies_, error);
         fs::create_directories(copies_, error);
     }
@@ -189,6 +193,10 @@ public:
                 copies_ / std::format("{}-{}{}", options_.module.stem().string(), ++copies_made_,
                                       options_.module.extension().string());
             fs::copy_file(options_.module, copy, fs::copy_options::overwrite_existing);
+            // Its debug information too, where it's a file of its own (Windows' PDB).
+            if (const fs::path pdb = fs::path(options_.module).replace_extension(".pdb"); fs::exists(pdb)) {
+                fs::copy_file(pdb, fs::path(copy).replace_extension(".pdb"), fs::copy_options::overwrite_existing);
+            }
             auto library = std::make_unique<platform::DynamicLibrary>(copy);
             using EntryFunction = const ModuleEntry* (*)();
             const auto entry_function = reinterpret_cast<EntryFunction>(library->symbol("elg_module_entry"));
