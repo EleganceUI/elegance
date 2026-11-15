@@ -53,8 +53,16 @@ using asio::awaitable;
 using asio::use_awaitable;
 
 struct FetchTask::State {
-    std::atomic<bool> cancelled{false};
+    // Pending until cancelled or until its callback starts, whichever comes first.
+    enum class Stage { pending, cancelled, called };
+    std::atomic<Stage> stage{Stage::pending};
     asio::cancellation_signal signal; // network thread only
+
+    // Whether the callback may start now; if so, cancelling comes too late from here on.
+    bool start_callback() {
+        Stage expected = Stage::pending;
+        return stage.compare_exchange_strong(expected, Stage::called);
+    }
 };
 
 namespace {
@@ -605,8 +613,12 @@ awaitable<FetchResult> run(std::string url, FetchOptions options, std::shared_pt
 } // namespace
 
 void FetchTask::cancel() const {
-    if (!state_ || state_->cancelled.exchange(true)) {
+    if (!state_) {
         return;
+    }
+    State::Stage expected = State::Stage::pending;
+    if (!state_->stage.compare_exchange_strong(expected, State::Stage::cancelled)) {
+        return; // cancelled already, or its callback has started
     }
     asio::post(Network::instance().io(), [state = state_] { state->signal.emit(asio::cancellation_type::terminal); });
 }
@@ -614,28 +626,35 @@ void FetchTask::cancel() const {
 FetchTask fetch(std::string url, std::function<void(FetchResult)> done, FetchOptions options) {
     auto state = std::make_shared<FetchTask::State>();
     asio::io_context& io = Network::instance().io();
-    asio::post(io, [&io, state, url = std::move(url), done = std::move(done), options = std::move(options)]() mutable {
-        if (state->cancelled) {
-            return;
+    // Every way the download ends goes through here, so its callback starts at most once, and
+    // never once cancel() has returned.
+    auto finish = [state, done = std::move(done), before = options.before_callback](FetchResult result) {
+        if (before) {
+            before();
+        }
+        if (state->start_callback()) {
+            done(std::move(result));
+        }
+    };
+    asio::post(io, [&io, state, url = std::move(url), finish = std::move(finish), options = std::move(options)]() mutable {
+        if (state->stage != FetchTask::State::Stage::pending) {
+            return; // cancelled before it began
         }
         std::shared_ptr<ssl::context> tls;
         try {
             tls = context_for(options.root_certificates);
         } catch (const boost::system::system_error& failure) {
-            done(std::unexpected(std::format("the secure connection failed: {}", failure.code().message())));
+            finish(std::unexpected(std::format("the secure connection failed: {}", failure.code().message())));
             return;
         }
         asio::co_spawn(io, run(std::move(url), std::move(options), std::move(tls)),
                        asio::bind_cancellation_slot(state->signal.slot(),
-                                                    [state, done = std::move(done)](const std::exception_ptr& failure,
-                                                                                    FetchResult result) {
-                                                        if (state->cancelled) {
-                                                            return;
-                                                        }
+                                                    [finish = std::move(finish)](const std::exception_ptr& failure,
+                                                                                 FetchResult result) {
                                                         if (failure) {
                                                             result = std::unexpected("the download failed");
                                                         }
-                                                        done(std::move(result));
+                                                        finish(std::move(result));
                                                     }));
     });
     return FetchTask(state);

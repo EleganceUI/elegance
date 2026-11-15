@@ -481,6 +481,39 @@ TEST_CASE("cancelled downloads don't call back", "[fetch]") {
     CHECK_FALSE(called);
 }
 
+TEST_CASE("a download cancelled just as it ends doesn't call back", "[fetch]") {
+    const TestServer server;
+    std::promise<net::FetchTask> task;
+    std::promise<void> cancelled;
+    std::atomic<bool> called = false;
+    // The download is over and its callback is next when the hook cancels it: cancel() returns
+    // before the callback could start, so it mustn't.
+    net::FetchOptions options;
+    options.before_callback = [&, shared = task.get_future().share()] {
+        shared.get().cancel();
+        cancelled.set_value();
+    };
+    task.set_value(net::fetch(server.url("/hello"), [&](net::FetchResult) { called = true; }, std::move(options)));
+    REQUIRE(cancelled.get_future().wait_for(10s) == std::future_status::ready);
+    CHECK(text(fetch(server.url("/hello"))) == "hello"); // after the network thread is done with it
+    CHECK_FALSE(called);
+}
+
+TEST_CASE("cancelling doesn't wait for a callback that has started", "[fetch]") {
+    const TestServer server;
+    std::promise<void> started;
+    std::promise<void> release;
+    const std::shared_future<void> released = release.get_future().share();
+    const net::FetchTask task = net::fetch(server.url("/hello"), [&, released](net::FetchResult) {
+        started.set_value();
+        released.wait();
+    });
+    REQUIRE(started.get_future().wait_for(10s) == std::future_status::ready);
+    task.cancel(); // returns while the callback waits for it
+    release.set_value();
+    CHECK(text(fetch(server.url("/hello"))) == "hello");
+}
+
 TEST_CASE("https checks the certificate and the host name", "[fetch]") {
     const TestServer server(true);
     // Signed by an authority the system doesn't trust.

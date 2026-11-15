@@ -34,6 +34,9 @@ struct FetchOptions {
     std::optional<std::string> proxy;
     // Answers from this cache while fresh, revalidates with it, and stores in it (nullptr: none).
     std::shared_ptr<HttpCache> cache;
+    // Runs on the network thread when the download is over, just before its callback would start
+    // (tests: a cancel() from here comes before the callback).
+    std::function<void()> before_callback;
 };
 
 // The body of a 2xx response, or why there isn't one, in words ("HTTP 404", "the request timed
@@ -44,7 +47,8 @@ using FetchResult = std::expected<std::vector<std::uint8_t>, std::string>;
 class FetchTask {
 public:
     FetchTask() = default;
-    // Stops it; its callback won't run. Any thread.
+    // Stops it: once this returns, its callback won't start. A callback that has already started
+    // isn't waited for (cancel() may be called from it). Any thread.
     void cancel() const;
 
     struct State;
