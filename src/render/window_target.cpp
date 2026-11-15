@@ -54,10 +54,8 @@ static_assert(kLayerFormat == gpu::BlurRenderer::kColorFormat);
 // Layers can be copied from, for backdrops read inside them.
 constexpr wgpu::TextureUsage kLayerUsage =
     wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc;
-
-std::uint32_t round_up(std::uint32_t value, std::uint32_t multiple) {
-    return (value + multiple - 1) / multiple * multiple;
-}
+// The color blur images backdrops share (blurred layers use their layer's index).
+constexpr std::uint64_t kBackdropBlurSlot = ~std::uint64_t{0};
 
 // Clears the target first, or with no `clear` continues on what it holds.
 wgpu::RenderPassEncoder begin_pass(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& view,
@@ -181,65 +179,16 @@ void WindowTarget::render_composition([[maybe_unused]] const WindowFrame& frame,
 #endif
 }
 
-const WindowTarget::CachedMask* WindowTarget::cached_mask(std::uint64_t key) {
-    const auto it = masks_.find(key);
-    if (it == masks_.end()) {
-        return nullptr;
-    }
-    it->second.last_used = frame_number_;
-    return &it->second;
-}
-
-// Drops masks nobody drew lately: past the budget the least recently used go first, otherwise
-// masks unused for a few seconds' worth of frames. (WebGPU keeps a mask alive for frames still
-// on the GPU, so dropping one is always safe.)
-void WindowTarget::evict_masks() {
-    constexpr std::size_t kBudget = 32u << 20; // bytes of R8 coverage
-    constexpr std::uint64_t kIdleFrames = 240; // frames drawn without the mask
-    for (auto it = masks_.begin(); it != masks_.end();) {
-        if (it->second.last_used + kIdleFrames < frame_number_) {
-            mask_bytes_ -= std::size_t{it->second.mask.width()} * it->second.mask.height();
-            it = masks_.erase(it);
-        } else {
-            ++it;
-        }
-    }
-    while (mask_bytes_ > kBudget) {
-        auto oldest = masks_.end();
-        for (auto it = masks_.begin(); it != masks_.end(); ++it) {
-            if (it->second.last_used < frame_number_ &&
-                (oldest == masks_.end() || it->second.last_used < oldest->second.last_used)) {
-                oldest = it;
-            }
-        }
-        if (oldest == masks_.end()) {
-            break; // everything is in use by this frame
-        }
-        mask_bytes_ -= std::size_t{oldest->second.mask.width()} * oldest->second.mask.height();
-        masks_.erase(oldest);
-    }
-}
-
 wgpu::BindGroup WindowTarget::image_group(const RenderResources& resources, const wgpu::TextureView& view) const {
     return gpu::create_image_group(device_.handle(), resources.image_layout, view, sampler_);
 }
 
-gpu::RenderImage& WindowTarget::pooled_image(std::vector<gpu::RenderImage>& pool, std::size_t index,
-                                             wgpu::TextureFormat format, std::uint32_t width, std::uint32_t height,
-                                             std::uint32_t samples, wgpu::TextureUsage usage) {
-    // Sizes are rounded up so small changes (animations, resizes) reuse the same image.
-    if (index < pool.size() && pool[index].width() >= width && pool[index].height() >= height) {
-        return pool[index];
-    }
-    std::uint32_t capacity_width = round_up(width, 256);
-    std::uint32_t capacity_height = round_up(height, 256);
-    if (index < pool.size()) {
-        capacity_width = std::max(capacity_width, pool[index].width());
-        capacity_height = std::max(capacity_height, pool[index].height());
-        pool[index] = gpu::RenderImage(device_.handle(), format, capacity_width, capacity_height, samples, usage);
-        return pool[index];
-    }
-    return pool.emplace_back(device_.handle(), format, capacity_width, capacity_height, samples, usage);
+gpu::RenderImage& WindowTarget::pooled_image(ImageRole role, std::uint64_t index, wgpu::TextureFormat format,
+                                             std::uint32_t width, std::uint32_t height, std::uint32_t samples,
+                                             wgpu::TextureUsage usage) {
+    return images_.acquire({role, index}, format, width, height, samples, [&](std::uint32_t w, std::uint32_t h) {
+        return gpu::RenderImage(device_.handle(), format, w, h, samples, usage);
+    });
 }
 
 const wgpu::BindGroup& WindowTarget::empty_group(const RenderResources& resources) {
@@ -252,24 +201,24 @@ const wgpu::BindGroup& WindowTarget::empty_group(const RenderResources& resource
 
 wgpu::BindGroup WindowTarget::blur_color(const wgpu::CommandEncoder& encoder, const wgpu::BindGroup& source,
                                          std::uint32_t width, std::uint32_t height, float sigma, std::uint32_t factor,
-                                         bool clamp_edges, std::size_t slot, const RenderResources& resources) {
+                                         bool clamp_edges, std::uint64_t slot, const RenderResources& resources) {
     wgpu::BindGroup input = source;
     if (factor > 1) {
         width = (width + factor - 1) / factor;
         height = (height + factor - 1) / factor;
-        const gpu::RenderImage& down = pooled_image(color_down_, slot, kLayerFormat, width, height);
+        const gpu::RenderImage& down = pooled_image(ImageRole::color_down, slot, kLayerFormat, width, height);
         render_offscreen(encoder, down, "downsample", [&](const wgpu::RenderPassEncoder& pass) {
             resources.blur.downsample(pass, source, width * factor, height * factor, factor, clamp_edges);
         });
         input = image_group(resources, down.view());
         sigma /= static_cast<float>(factor);
     }
-    const gpu::RenderImage& horizontal = pooled_image(color_horizontal_, slot, kLayerFormat, width, height);
+    const gpu::RenderImage& horizontal = pooled_image(ImageRole::color_horizontal, slot, kLayerFormat, width, height);
     render_offscreen(encoder, horizontal, "blur", [&](const wgpu::RenderPassEncoder& pass) {
         resources.blur.blur(pass, input, width, height, true, sigma, gpu::BlurRenderer::Channel::color, clamp_edges);
     });
     const wgpu::BindGroup horizontal_group = image_group(resources, horizontal.view());
-    const gpu::RenderImage& vertical = pooled_image(color_vertical_, slot, kLayerFormat, width, height);
+    const gpu::RenderImage& vertical = pooled_image(ImageRole::color_blurred, slot, kLayerFormat, width, height);
     render_offscreen(encoder, vertical, "blur", [&](const wgpu::RenderPassEncoder& pass) {
         resources.blur.blur(pass, horizontal_group, width, height, false, sigma, gpu::BlurRenderer::Channel::color,
                             clamp_edges);
@@ -278,15 +227,15 @@ wgpu::BindGroup WindowTarget::blur_color(const wgpu::CommandEncoder& encoder, co
 }
 
 wgpu::BindGroup WindowTarget::take_backdrop(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture,
-                                            const PlanBackdrop& backdrop, std::size_t slot,
-                                            const RenderResources& resources) {
+                                            const PlanBackdrop& backdrop, const RenderResources& resources) {
     // One set of images serves every backdrop: each is read by the pass right after it, before
     // the next is taken (WebGPU keeps the order). A copy's format must match the source's, up
     // to sRGB: layers are kLayerFormat, the window's surface image may differ (e.g. BGRA).
     const wgpu::TextureFormat format = gpu::srgb_variant(texture.GetFormat());
     const gpu::RenderImage& copy =
-        pooled_image(format == kLayerFormat ? backdrop_copies_ : window_copies_, 0, format, backdrop.width,
-                     backdrop.height, 1, wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst);
+        pooled_image(format == kLayerFormat ? ImageRole::backdrop_copy : ImageRole::window_copy, 0, format,
+                     backdrop.width, backdrop.height, 1,
+                     wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst);
     wgpu::TexelCopyTextureInfo source;
     source.texture = texture;
     source.origin = {backdrop.x, backdrop.y, 0};
@@ -298,7 +247,7 @@ wgpu::BindGroup WindowTarget::take_backdrop(const wgpu::CommandEncoder& encoder,
         return image_group(resources, copy.view());
     }
     return blur_color(encoder, image_group(resources, copy.view()), backdrop.width, backdrop.height, backdrop.sigma,
-                      backdrop.downsample, true, slot, resources);
+                      backdrop.downsample, true, kBackdropBlurSlot, resources);
 }
 
 void WindowTarget::draw_pass(const wgpu::CommandEncoder& encoder, const PassTarget& target, const PlanPass& plan_pass,
@@ -316,9 +265,9 @@ void WindowTarget::draw_pass(const wgpu::CommandEncoder& encoder, const PassTarg
         if (segment.backdrop >= 0 && target.texture) {
             // What's been drawn so far, copied out between two passes.
             pass.End();
-            // Its blur uses the pooled images after the blurred layers' (which live until composited).
+            // Its blur has pooled images of its own: the blurred layers' live until composited.
             second = take_backdrop(encoder, target.texture, plan.backdrops[static_cast<std::size_t>(segment.backdrop)],
-                                   plan.layers.size(), resources);
+                                   resources);
             begin(false);
         }
 
@@ -371,6 +320,7 @@ void WindowTarget::draw_pass(const wgpu::CommandEncoder& encoder, const PassTarg
 wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowFrame& frame,
                                          const RenderResources& resources,
                                          std::vector<std::uint64_t>& acquired_videos) {
+    images_.begin_frame(gpu::CacheClock::now());
     const FramePlan plan = plan_frame(frame.list, target.width, target.height);
     instances_.write(std::as_bytes(std::span(plan.instances)));
     stops_.write(std::as_bytes(std::span(plan.stops)));
@@ -384,33 +334,30 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
     groups.stops = resources.quads.stops_group(stops_.handle());
 
     // Path coverage masks first: any pass may fill through them. Masks with the same content as
-    // in an earlier frame are reused; new ones render into the cache.
-    ++frame_number_;
+    // in an earlier frame are reused; new ones render into the pool. One set of multisampled
+    // scratch serves every mask: each is resolved before the next is drawn (WebGPU keeps the
+    // order).
     groups.paths.resize(plan.paths.size());
-    std::size_t rendered = 0;
     for (std::size_t i = 0; i < plan.paths.size(); ++i) {
         const PlanPath& path = plan.paths[i];
-        const CachedMask* mask = cached_mask(path.key);
+        const auto* mask = images_.find({ImageRole::path_mask, path.key});
         if (!mask) {
             gpu::PathRenderer& paths = resources.paths;
-            const gpu::RenderImage& samples =
-                pooled_image(path_samples_, rendered, gpu::PathRenderer::kMaskFormat, path.width, path.height,
-                             gpu::PathRenderer::kSamples);
+            const gpu::RenderImage& samples = pooled_image(ImageRole::path_samples, 0, gpu::PathRenderer::kMaskFormat,
+                                                           path.width, path.height, gpu::PathRenderer::kSamples);
             const gpu::RenderImage& stencil =
-                pooled_image(path_stencils_, rendered, gpu::PathRenderer::kStencilFormat, path.width, path.height,
+                pooled_image(ImageRole::path_stencil, 0, gpu::PathRenderer::kStencilFormat, path.width, path.height,
                              gpu::PathRenderer::kSamples, wgpu::TextureUsage::RenderAttachment);
-            ++rendered;
             gpu::RenderImage image(device_.handle(), gpu::PathRenderer::kMaskFormat, path.width, path.height);
             paths.render(encoder, samples, stencil, image, path.width, path.height, path_vertices_.handle(),
                          path.first_vertex, path.vertex_count, path.even_odd);
             wgpu::BindGroup group = image_group(resources, image.view());
-            mask = &masks_.insert_or_assign(path.key, CachedMask{std::move(image), std::move(group), frame_number_})
-                        .first->second;
-            mask_bytes_ += std::size_t{path.width} * path.height;
+            mask = &images_.store({ImageRole::path_mask, path.key}, std::move(image),
+                                  image_bytes(gpu::PathRenderer::kMaskFormat, path.width, path.height, 1),
+                                  std::move(group));
         }
         groups.paths[i] = mask->group;
     }
-    evict_masks();
 
     // Images: uploaded (with their mips) the first time a frame draws them.
     groups.images.reserve(plan.images.size());
@@ -436,7 +383,7 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
         LayerGroups& layer_groups = groups.layers[i];
 
         const gpu::RenderImage& content =
-            pooled_image(layers_, i, kLayerFormat, layer.width, layer.height, 1, kLayerUsage);
+            pooled_image(ImageRole::layer, i, kLayerFormat, layer.width, layer.height, 1, kLayerUsage);
         draw_pass(encoder, {content.texture(), content.view(), kLayerFormat, layer.width, layer.height, {0, 0, 0, 0}},
                   layer, plan, groups, resources);
         layer_groups.raw = image_group(resources, content.view());
@@ -445,7 +392,8 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
         if (layer.shadow_sigma) {
             const float sigma = *layer.shadow_sigma;
             const gpu::RenderImage& horizontal =
-                pooled_image(blur_horizontal_, shadows, gpu::BlurRenderer::kFormat, layer.width, layer.height);
+                pooled_image(ImageRole::shadow_horizontal, shadows, gpu::BlurRenderer::kFormat, layer.width,
+                             layer.height);
             render_offscreen(encoder, horizontal, "layer shadow", [&](const wgpu::RenderPassEncoder& pass) {
                 resources.blur.blur(pass, layer_groups.raw, layer.width, layer.height, true, sigma,
                                     gpu::BlurRenderer::Channel::alpha);
@@ -453,7 +401,7 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
             const wgpu::BindGroup horizontal_group = image_group(resources, horizontal.view());
 
             const gpu::RenderImage& vertical =
-                pooled_image(blur_vertical_, shadows, gpu::BlurRenderer::kFormat, layer.width, layer.height);
+                pooled_image(ImageRole::shadow, shadows, gpu::BlurRenderer::kFormat, layer.width, layer.height);
             render_offscreen(encoder, vertical, "layer shadow", [&](const wgpu::RenderPassEncoder& pass) {
                 resources.blur.blur(pass, horizontal_group, layer.width, layer.height, false, sigma,
                                     gpu::BlurRenderer::Channel::red);
@@ -465,14 +413,16 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
             // The blurred inverse of the alpha: full outside the content, fading in from its edges.
             const float sigma = *layer.inner_shadow_sigma;
             const gpu::RenderImage& horizontal =
-                pooled_image(inner_horizontal_, inner_shadows, gpu::BlurRenderer::kFormat, layer.width, layer.height);
+                pooled_image(ImageRole::inner_horizontal, inner_shadows, gpu::BlurRenderer::kFormat, layer.width,
+                             layer.height);
             render_offscreen(encoder, horizontal, "inner shadow", [&](const wgpu::RenderPassEncoder& pass) {
                 resources.blur.blur(pass, layer_groups.raw, layer.width, layer.height, true, sigma,
                                     gpu::BlurRenderer::Channel::inverse_alpha);
             });
             const wgpu::BindGroup horizontal_group = image_group(resources, horizontal.view());
             const gpu::RenderImage& vertical =
-                pooled_image(inner_vertical_, inner_shadows, gpu::BlurRenderer::kFormat, layer.width, layer.height);
+                pooled_image(ImageRole::inner_shadow, inner_shadows, gpu::BlurRenderer::kFormat, layer.width,
+                             layer.height);
             render_offscreen(encoder, vertical, "inner shadow", [&](const wgpu::RenderPassEncoder& pass) {
                 resources.blur.blur(pass, horizontal_group, layer.width, layer.height, false, sigma,
                                     gpu::BlurRenderer::Channel::red, true);
@@ -494,7 +444,7 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
     window_reads_backdrops_ = plan.blit_instance.has_value();
     if (plan.blit_instance && !target.texture) {
         const gpu::RenderImage& image =
-            pooled_image(frame_images_, 0, kLayerFormat, target.width, target.height, 1, kLayerUsage);
+            pooled_image(ImageRole::window, 0, kLayerFormat, target.width, target.height, 1, kLayerUsage);
         draw_pass(encoder, {image.texture(), image.view(), kLayerFormat, target.width, target.height, clear_color},
                   plan.main, plan, groups, resources);
         const wgpu::RenderPassEncoder pass = begin_pass(encoder, target.view, clear_color, "window");
@@ -504,11 +454,14 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
         pass.End();
     } else {
         if (target.texture) {
-            frame_images_.clear(); // drawn directly from now on
+            images_.release({ImageRole::window, 0}); // drawn directly from now on
         }
         draw_pass(encoder, {target.texture, target.view, target.format, target.width, target.height, clear_color},
                   plan.main, plan, groups, resources);
     }
+    // Releases what this frame didn't use, as kIntermediateImagePolicy says. (WebGPU keeps an
+    // image alive for frames still on the GPU, so releasing one is always safe.)
+    images_.end_frame();
     return encoder.Finish();
 }
 

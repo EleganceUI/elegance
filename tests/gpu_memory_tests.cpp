@@ -6,6 +6,7 @@
 // given, not read from a clock.
 
 #include "gpu/eviction.h"
+#include "render/intermediate_images.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -18,9 +19,131 @@ using namespace std::chrono_literals;
 
 namespace {
 
+// Stands in for gpu::RenderImage.
+struct FakeImage {
+    int id = 0;
+    wgpu::TextureFormat format_ = wgpu::TextureFormat::RGBA8UnormSrgb;
+    std::uint32_t width_ = 0;
+    std::uint32_t height_ = 0;
+    [[nodiscard]] wgpu::TextureFormat format() const { return format_; }
+    [[nodiscard]] std::uint32_t width() const { return width_; }
+    [[nodiscard]] std::uint32_t height() const { return height_; }
+};
+
+struct Pool {
+    detail::IntermediateImages<FakeImage> images;
+    int made = 0;
+
+    FakeImage& acquire(detail::ImageRole role, std::uint64_t index, std::uint32_t width, std::uint32_t height,
+                       wgpu::TextureFormat format = wgpu::TextureFormat::RGBA8UnormSrgb, std::uint32_t samples = 1) {
+        return images.acquire({role, index}, format, width, height, samples, [&](std::uint32_t w, std::uint32_t h) {
+            return FakeImage{++made, format, w, h};
+        });
+    }
+};
+
 const detail::gpu::CacheClock::time_point t0{};
 
 } // namespace
+
+TEST_CASE("an image's GPU size counts every sample", "[gpu-memory]") {
+    CHECK(detail::image_bytes(wgpu::TextureFormat::R8Unorm, 100, 50, 1) == 5'000);
+    CHECK(detail::image_bytes(wgpu::TextureFormat::R8Unorm, 100, 50, 4) == 20'000);
+    CHECK(detail::image_bytes(wgpu::TextureFormat::Stencil8, 100, 50, 4) == 20'000);
+    CHECK(detail::image_bytes(wgpu::TextureFormat::BGRA8Unorm, 100, 50, 1) == 20'000);
+}
+
+TEST_CASE("a window's offscreen images are kept by slot, whichever slot comes first", "[gpu-memory]") {
+    Pool pool;
+    pool.images.begin_frame(t0);
+    const int fifth = pool.acquire(detail::ImageRole::layer, 5, 300, 200).id;
+    const int first = pool.acquire(detail::ImageRole::layer, 0, 300, 200).id;
+    CHECK(fifth != first);
+    pool.images.end_frame();
+
+    pool.images.begin_frame(t0 + 16ms);
+    // Smaller: the same images. Rounded up, so a little larger fits too.
+    CHECK(pool.acquire(detail::ImageRole::layer, 5, 100, 100).id == fifth);
+    CHECK(pool.acquire(detail::ImageRole::layer, 0, 310, 250).id == first);
+    // Larger than the image: a new one in its place, never smaller than the old one.
+    const FakeImage& grown = pool.acquire(detail::ImageRole::layer, 5, 600, 10);
+    CHECK(grown.id != fifth);
+    CHECK(grown.width() >= 600);
+    CHECK(grown.height() >= 200);
+    // Another format: a new image.
+    CHECK(pool.acquire(detail::ImageRole::layer, 0, 10, 10, wgpu::TextureFormat::BGRA8UnormSrgb).id != first);
+    pool.images.end_frame();
+    CHECK(pool.images.size() == 2);
+}
+
+TEST_CASE("an offscreen image unused for 5 seconds is released by the window's next frame", "[gpu-memory]") {
+    Pool pool;
+    pool.images.begin_frame(t0);
+    pool.acquire(detail::ImageRole::layer, 0, 100, 100);
+    pool.acquire(detail::ImageRole::path_samples, 0, 100, 100, wgpu::TextureFormat::R8Unorm, 4);
+    pool.images.end_frame();
+
+    // Frames that use only the layer.
+    pool.images.begin_frame(t0 + 4s);
+    pool.acquire(detail::ImageRole::layer, 0, 100, 100);
+    pool.images.end_frame();
+    pool.images.begin_frame(t0 + 4999ms);
+    pool.acquire(detail::ImageRole::layer, 0, 100, 100);
+    pool.images.end_frame();
+    CHECK(pool.images.contains({detail::ImageRole::path_samples, 0}));
+
+    pool.images.begin_frame(t0 + 5s);
+    pool.acquire(detail::ImageRole::layer, 0, 100, 100);
+    pool.images.end_frame();
+    CHECK_FALSE(pool.images.contains({detail::ImageRole::path_samples, 0}));
+    CHECK(pool.images.contains({detail::ImageRole::layer, 0}));
+
+    // No frame for a long time: the next one releases what it doesn't use.
+    pool.images.begin_frame(t0 + 60s);
+    pool.images.end_frame();
+    CHECK(pool.images.size() == 0);
+}
+
+TEST_CASE("a window keeps at most 64 MB of offscreen images beyond what its frame uses", "[gpu-memory]") {
+    // 2048 x 2048, 4 samples of one byte: 16 MB each.
+    constexpr std::uint32_t kSide = 2048;
+    Pool pool;
+    for (std::uint64_t i = 0; i < 5; ++i) {
+        pool.images.begin_frame(t0 + i * 10ms);
+        pool.acquire(detail::ImageRole::path_samples, i, kSide, kSide, wgpu::TextureFormat::R8Unorm, 4);
+        pool.images.end_frame();
+    }
+    // Each frame used one: the other four, 64 MB, stayed.
+    CHECK(pool.images.size() == 5);
+
+    // A frame that uses all of them keeps them all, over the budget.
+    pool.images.begin_frame(t0 + 100ms);
+    for (std::uint64_t i = 0; i < 5; ++i) {
+        pool.acquire(detail::ImageRole::path_samples, i, kSide, kSide, wgpu::TextureFormat::R8Unorm, 4);
+    }
+    pool.images.end_frame();
+    CHECK(pool.images.size() == 5);
+
+    // Then frames that use one each, the second a path mask too: the least recently used go first.
+    pool.images.begin_frame(t0 + 200ms);
+    pool.acquire(detail::ImageRole::path_samples, 3, kSide, kSide, wgpu::TextureFormat::R8Unorm, 4);
+    pool.images.end_frame();
+    pool.images.begin_frame(t0 + 300ms);
+    pool.acquire(detail::ImageRole::path_samples, 4, kSide, kSide, wgpu::TextureFormat::R8Unorm, 4);
+    pool.images.store({detail::ImageRole::path_mask, 42}, FakeImage{100, wgpu::TextureFormat::R8Unorm, 4096, 4096},
+                      detail::image_bytes(wgpu::TextureFormat::R8Unorm, 4096, 4096, 1));
+    pool.images.end_frame();
+    // Unused now: 0, 1, 2 (16 MB each, used at 100 ms) and 3 (used at 200 ms): 64 MB, kept.
+    CHECK(pool.images.size() == 6);
+
+    pool.images.begin_frame(t0 + 400ms);
+    pool.images.find({detail::ImageRole::path_mask, 42});
+    pool.images.end_frame();
+    // Now 4 too: 80 MB unused, one of the oldest goes.
+    CHECK(pool.images.size() == 5);
+    CHECK(pool.images.contains({detail::ImageRole::path_samples, 3}));
+    CHECK(pool.images.contains({detail::ImageRole::path_samples, 4}));
+}
 
 TEST_CASE("GPU caches release entries by idle time and by the bytes the frame doesn't use", "[gpu-memory]") {
     struct Entry {
