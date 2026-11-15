@@ -30,8 +30,10 @@ bool run_ui_tasks();
 
 // Objects that must be destroyed on the UI thread: those that own reactive state or a platform
 // media, capture or audio engine. While an App runs, a thread that drops the last reference hands
-// the object to the UI thread, which destroys it between events (waking its loop); otherwise
-// it's destroyed at once. Thread-safe.
+// the object to the UI thread, which destroys it between events (waking its loop). Outside a run
+// the main thread takes the UI thread's place: other threads hand it the object, and it destroys
+// what it was handed the next time it releases one itself, or when the next run starts releasing.
+// Thread-safe.
 void release_on_ui_thread(void* object, void (*destroy)(void*) noexcept) noexcept;
 
 template <class T>
