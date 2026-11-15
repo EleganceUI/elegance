@@ -12,6 +12,7 @@
 #include "platform/generic/menu_bar.h"
 #include "platform/generic/native.h"
 #include "platform/generic/platform.h"
+#include "platform/generic/system_text.h"
 #include "reactive/runtime.h"
 #include "render/frame_mailbox.h"
 #include "render/render_thread.h"
@@ -396,6 +397,7 @@ Rect WindowHandle::system_controls_frame() const {
 App::~App() = default;
 
 App& App::window(WindowDesc desc, ContentFunction content) {
+    detail::make_valid_utf8(desc);
     if (impl_->running) {
         throw UsageError("App::window(): adding windows while the app runs isn't supported yet");
     }
@@ -407,6 +409,7 @@ App& App::window(WindowDesc desc, ContentFunction content) {
 }
 
 App& App::menu_bar(std::vector<MenuBarItem> menus) {
+    detail::make_valid_utf8(menus);
     impl_->menus = std::move(menus);
     impl_->menu_checks.clear();
     if (impl_->show_menus) {

@@ -7,6 +7,7 @@
 // pasting), and the accessibility tree.
 
 #include "core/utf8.h"
+#include "platform/generic/system_text.h"
 #include "text/text_system.h"
 #include "view/accessibility.h"
 #include "view/text_field.h"
@@ -129,6 +130,38 @@ TEST_CASE("text fields edit the replaced text", "[utf8][text-input]") {
     CHECK(detail::is_valid_utf8(editor.accessible_text()));
     editor.replace_all("\xC1\x81x");
     CHECK(editor.accessible_text() == replaced("##x"));
+}
+
+TEST_CASE("text for the system's windows, menus, notifications, tray and dialogs is replaced", "[utf8]") {
+    // What App::window, App::menu_bar, notify(), TrayIcon and the file dialogs pass on.
+    WindowDesc window{.title = "Notes \xFF"};
+    detail::make_valid_utf8(window);
+    CHECK(window.title == replaced("Notes #"));
+
+    std::vector<MenuBarItem> menus{{.title = "File\xC3", .submenu = {{.title = "Open \xE2\x82"}, {.title = "Ok"}}}};
+    detail::make_valid_utf8(menus);
+    CHECK(menus[0].title == replaced("File#"));
+    CHECK(menus[0].submenu[0].title == replaced("Open #"));
+    CHECK(menus[0].submenu[1].title == "Ok");
+
+    Notification notification{.title = "\xED\xA0\x80", .body = "from \xF0\x9F\x98"};
+    detail::make_valid_utf8(notification);
+    CHECK(notification.title == replaced("###"));
+    CHECK(notification.body == replaced("from #"));
+
+    TrayIconOptions tray{.tooltip = "\xC0\xAF", .menu = {{.title = "Quit", .submenu = {{.title = "\x80"}}}}};
+    detail::make_valid_utf8(tray);
+    CHECK(tray.tooltip == replaced("##"));
+    CHECK(tray.menu[0].title == "Quit");
+    CHECK(tray.menu[0].submenu[0].title == replaced("#"));
+    std::vector<TrayMenuItem> menu{{.title = "\xFE"}};
+    detail::make_valid_utf8(menu);
+    CHECK(menu[0].title == replaced("#"));
+
+    std::vector<FileFilter> filters{{.name = "Images \xFF", .extensions = {"png", "j\xC3pg"}}};
+    detail::make_valid_utf8(filters);
+    CHECK(filters[0].name == replaced("Images #"));
+    CHECK(filters[0].extensions == std::vector<std::string>{"png", replaced("j#pg")});
 }
 
 TEST_CASE("the accessibility tree gets the replaced text", "[utf8][accessibility]") {

@@ -48,6 +48,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         platform/generic/dynamic_library.cpp
         platform/generic/menu_bar.cpp
         platform/generic/platform_sdl.cpp
+        platform/generic/system_text.cpp
         reactive/runtime.cpp
         render/display_list.cpp
         render/frame_mailbox.cpp

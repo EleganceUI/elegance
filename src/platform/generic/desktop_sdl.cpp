@@ -9,8 +9,10 @@
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
+#include "core/utf8.h"
 #include "media/image_decode.h"
 #include "platform/generic/native.h"
+#include "platform/generic/system_text.h"
 
 #include <elg/error.h>
 
@@ -56,7 +58,8 @@ struct DialogRequest {
     std::string location;
     std::function<void(std::vector<fs::path>)> done;
 
-    void set_filters(const std::vector<FileFilter>& source) {
+    void set_filters(std::vector<FileFilter> source) {
+        detail::make_valid_utf8(source);
         for (const FileFilter& filter : source) {
             std::string pattern;
             for (const std::string& extension : filter.extensions) {
@@ -111,7 +114,8 @@ void choose_save_file(const SaveFileOptions& options, std::function<void(std::op
     require_app("choose_save_file");
     auto request = std::make_unique<DialogRequest>();
     request->set_filters(options.filters);
-    request->location = utf8(options.name.empty() ? options.directory : options.directory / from_utf8(options.name.c_str()));
+    request->location = utf8(options.name.empty() ? options.directory
+                                                  : options.directory / from_utf8(detail::valid_utf8(options.name).c_str()));
     request->done = [done = std::move(done)](std::vector<fs::path> files) {
         if (done) {
             done(files.empty() ? std::nullopt : std::optional(files.front()));
@@ -136,14 +140,16 @@ void choose_folders(const ChooseFolderOptions& options, std::function<void(std::
 
 void notify(const Notification& notification) {
     require_app("notify");
-    detail::platform::native::show_notification(notification);
+    Notification valid = notification;
+    detail::make_valid_utf8(valid);
+    detail::platform::native::show_notification(valid);
 }
 
 // --- Dock and taskbar ---
 
 void set_badge(const std::optional<std::string>& text) {
     require_app("set_badge");
-    detail::platform::native::set_badge(text);
+    detail::platform::native::set_badge(text ? std::optional(detail::valid_utf8(*text)) : std::nullopt);
 }
 
 void set_progress(std::optional<double> fraction, ProgressState state) {
@@ -297,18 +303,20 @@ struct TrayIcon::State {
 
 TrayIcon::TrayIcon(TrayIconOptions options) : state_(std::make_shared<State>()) {
     require_app("TrayIcon");
+    detail::make_valid_utf8(options);
     state_->options = std::move(options);
     state_->create();
 }
 
 void TrayIcon::set_tooltip(const std::string& tooltip) const {
-    state_->options.tooltip = tooltip;
+    state_->options.tooltip = detail::valid_utf8(tooltip);
     if (state_->tray) {
-        SDL_SetTrayTooltip(state_->tray, tooltip.c_str());
+        SDL_SetTrayTooltip(state_->tray, state_->options.tooltip.c_str());
     }
 }
 
 void TrayIcon::set_menu(std::vector<TrayMenuItem> menu) const {
+    detail::make_valid_utf8(menu);
     state_->options.menu = std::move(menu);
     if (state_->tray) {
         state_->rebuild_menu();
