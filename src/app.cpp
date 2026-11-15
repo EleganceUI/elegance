@@ -5,6 +5,7 @@
 #include <elg/app.h>
 #include <elg/window.h>
 
+#include "core/app_errors.h"
 #include "core/crash.h"
 #include "core/log.h"
 #include "core/scope_exit.h"
@@ -360,6 +361,7 @@ struct App::Impl {
     std::vector<MenuBarItem> menus;
     std::map<std::uint32_t, bool> menu_checks;
     std::function<void()> show_menus;
+    std::function<ErrorAction(const AppError&)> error_handler;
 };
 
 App::App() : impl_(std::make_unique<Impl>()) {}
@@ -427,8 +429,18 @@ void App::quit() {
     }
 }
 
+std::string AppError::message() const {
+    return exception_message(exception);
+}
+
+App& App::on_error(std::function<ErrorAction(const AppError&)> handler) {
+    impl_->error_handler = std::move(handler);
+    return *this;
+}
+
 int App::run() {
     Impl& self = *impl_;
+    std::exception_ptr exit_error; // what run() throws once the run has ended
     if (self.running) {
         throw UsageError("App::run() is already running");
     }
@@ -457,6 +469,9 @@ int App::run() {
     // all, once every thread of this run has stopped, what's left is destroyed too.
     begin_ui_releases();
     const ScopeExit end_releases([] { end_ui_releases(); });
+    // From here on, what escapes app code is reported and the app goes on (core/app_errors.h).
+    begin_app_errors();
+    const ScopeExit end_errors([] { end_app_errors(); });
     // After the windows are gone: their views' timers and on_disappear actions end with the app.
     const ScopeExit stop_timers([] {
         cancel_all_timers();
@@ -1562,6 +1577,16 @@ int App::run() {
         run_ui_releases(); // what other threads let go of
         run_ui_tasks();    // e.g. a hot reload
         flush_effects();
+        // What escaped app code goes to the error handler, between events (App::on_error). It
+        // may end the run, and so does running out of memory in app code.
+        const AppErrorHandler handler = [&self](const std::exception_ptr& error, AppCode code) {
+            return self.error_handler ? self.error_handler(AppError{error, code}) : ErrorAction::resume;
+        };
+        if (const std::exception_ptr end = handle_app_errors(handler); end && !exit_error) {
+            exit_error = end;
+            self.quit_requested = true;
+        }
+        flush_effects(); // what the handler wrote
         run_due_timers(seconds_now());
         flush_effects(); // hover and other effects may ask for popups
         forget_removed();
@@ -1654,6 +1679,9 @@ int App::run() {
                 mailbox.wait_until_done(live->last_frame, kAnimationFrameTimeout);
             }
         }
+    }
+    if (exit_error) {
+        std::rethrow_exception(exit_error); // the scope exits above end the run first
     }
     return 0;
 }

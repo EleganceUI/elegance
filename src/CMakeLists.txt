@@ -14,6 +14,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         error.cpp
         graphics_context.cpp
         geometry/path.cpp
+        core/app_errors.cpp
         core/crash.cpp
         core/log.cpp
         core/timers.cpp

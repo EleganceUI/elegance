@@ -4,6 +4,8 @@
 
 #include "core/ui_tasks.h"
 
+#include "core/app_errors.h"
+
 #include <cstdint>
 #include <iterator>
 #include <mutex>
@@ -113,6 +115,10 @@ bool run_ui_tasks() {
         try {
             task->work();
         } catch (...) {
+            if (reporting_app_errors()) { // while an App runs: reported, and the others run on
+                report_app_exception(std::current_exception(), AppCode::task);
+                continue;
+            }
             // The tasks after it run later, still first and in order.
             const std::lock_guard lock(g_mutex);
             g_tasks.insert(g_tasks.begin(), std::make_move_iterator(task + 1), std::make_move_iterator(tasks.end()));

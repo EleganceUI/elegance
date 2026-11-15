@@ -7,10 +7,12 @@
 
 #include <elg/color.h>
 #include <elg/events.h>
+#include <elg/error.h>
 #include <elg/export.h>
 #include <elg/move_only_function.h>
 #include <elg/view.h>
 
+#include <exception>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -127,6 +129,15 @@ struct MenuBarItem {
 /// Builds a window's root view. Called once, on the UI thread, when the window opens.
 using ContentFunction = MoveOnlyFunction<View()>;
 
+/// An exception that escaped the app's code while the app ran (App::on_error).
+struct AppError {
+    std::exception_ptr exception;     ///< what was thrown
+    AppCode code = AppCode::callback; ///< the kind of app code it escaped
+
+    /// @return The exception's what(), or a note that its type is unknown.
+    [[nodiscard]] ELG_API std::string message() const;
+};
+
 /// Owns the application lifetime: windows, the event loop, and the render thread.
 ///
 /// @code
@@ -168,11 +179,22 @@ public:
     /// @return This app, for chaining.
     App& menu_bar(std::vector<MenuBarItem> menus);
 
+    /// Sets the error handler. It hears each exception that escapes the app's code while the app
+    /// runs (bodies, effects, handlers, tasks, timers), on the UI thread between events, after the
+    /// exception was written to the log. Without a handler the app goes on. A std::bad_alloc ends
+    /// the run without reaching it. Callable before or during run().
+    ///
+    /// @param handler Returns ErrorAction::resume to go on, or ErrorAction::quit to end the run,
+    ///   which makes run() throw the exception. What it throws itself is only logged.
+    /// @return This app, for chaining.
+    App& on_error(std::function<ErrorAction(const AppError&)> handler);
+
     /// Opens the windows and runs the event loop until the last window closes or quit() is
     /// called. Call it on the main thread, which is the UI thread until it returns. One App runs
     /// at a time.
-    /// elg::Error and exceptions thrown by app callbacks propagate out of run() after a clean
-    /// shutdown (design.md §3.2).
+    /// An exception that escapes the app's code is written to the log and goes to on_error(); the
+    /// app goes on, unless the handler ends the run or the exception is a std::bad_alloc. Then,
+    /// and for Elegance's own errors, run() throws it after a clean shutdown.
     ///
     /// @return The process exit code: 0.
     /// @throws UsageError When the app is already running, another App is running, it's called
