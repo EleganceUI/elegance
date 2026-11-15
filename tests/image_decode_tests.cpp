@@ -23,6 +23,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <thread>
@@ -122,6 +123,70 @@ TEST_CASE("a JPEG's EXIF orientation turns its upright size", "[image]") {
 // Linux reads the EXIF orientation itself (from JPEG and PNG files); the other platforms' codecs
 // are tested there.
 #if defined(__linux__)
+
+TEST_CASE("scaling down averages each share of the image, colors weighted by alpha", "[image]") {
+    // 4 x 2: a red square, then a square with one blue pixel and three transparent green ones.
+    std::vector<std::uint8_t> bgra;
+    for (int y = 0; y < 2; ++y) {
+        append(bgra, {0, 0, 255, 255, 0, 0, 255, 255}); // red, red
+        append(bgra, y == 0 ? std::initializer_list<int>{255, 0, 0, 255, 0, 255, 0, 0} : std::initializer_list<int>{0, 255, 0, 0, 0, 255, 0, 0});
+    }
+    const auto png = detail::encode_png(bgra, 4, 2);
+    REQUIRE(png);
+    const auto image = detail::decode_image(*png, {.max_side = 2}); // NOLINT(bugprone-unchecked-optional-access)
+    REQUIRE(image->width == 2);
+    REQUIRE(image->height == 1);
+    CHECK(std::vector<std::uint8_t>(image->rgba.begin(), image->rgba.begin() + 4) == std::vector<std::uint8_t>{255, 0, 0, 255});
+    // Blue, a quarter opaque: the transparent pixels' green doesn't count.
+    CHECK(std::vector<std::uint8_t>(image->rgba.begin() + 4, image->rgba.end()) == std::vector<std::uint8_t>{0, 0, 255, 64});
+
+    // Sizes that don't divide: every output pixel gets a share, so a flat color stays flat.
+    const std::vector<std::uint8_t> flat(std::size_t{1501} * 3 * 4, 0x40);
+    const auto wide = detail::encode_png(flat, 1501, 3);
+    REQUIRE(wide);
+    const auto scaled = detail::decode_image(*wide, {.max_side = 1000}); // NOLINT(bugprone-unchecked-optional-access)
+    CHECK(scaled->width == 1000);
+    CHECK(scaled->height == 2);
+    CHECK(std::ranges::all_of(scaled->rgba, [](std::uint8_t byte) { return byte == 0x40; }));
+}
+
+TEST_CASE("an image of no pixels is refused", "[image]") {
+    // A BMP header for 3000 x 0 pixels, 24 bits each, and no pixel data.
+    std::vector<std::uint8_t> bmp{'B', 'M'};
+    const auto le32 = [&](std::uint32_t value) {
+        for (const int shift : {0, 8, 16, 24}) {
+            bmp.push_back(static_cast<std::uint8_t>(value >> shift));
+        }
+    };
+    le32(54); // the file's size
+    le32(0);
+    le32(54); // where the pixels start
+    le32(40); // BITMAPINFOHEADER
+    le32(3000);
+    le32(0);
+    append(bmp, {1, 0, 24, 0}); // one plane, 24 bits
+    for (int i = 0; i < 6; ++i) {
+        le32(0);
+    }
+    CHECK_THROWS_AS(detail::probe_image(bmp), ResourceError);
+    CHECK_THROWS_AS(detail::decode_image(bmp), ResourceError);
+    CHECK_THROWS_AS(detail::decode_image(bmp, {.max_side = 1024}), ResourceError); // nothing to scale
+}
+
+TEST_CASE("a PNG whose first IDAT chunk is empty decodes", "[image]") {
+    const std::vector<std::uint8_t> pixels(std::size_t{3} * 2 * 4, 0x80);
+    const auto png = detail::encode_png(pixels, 3, 2);
+    REQUIRE(png);
+    constexpr std::size_t kAfterHeader = 8 + 25; // the signature and IHDR
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): REQUIREd above
+    std::vector<std::uint8_t> split(png->begin(), png->begin() + kAfterHeader);
+    append_chunk(split, "IDAT", {}); // stb reads its 0 bytes into a buffer it hasn't made yet
+    split.insert(split.end(), png->begin() + kAfterHeader, png->end());
+    // NOLINTEND(bugprone-unchecked-optional-access)
+    const auto image = detail::decode_image(split);
+    CHECK(image->width == 3);
+    CHECK(image->rgba[0] == 0x80);
+}
 
 TEST_CASE("decoding turns a JPEG upright", "[image]") {
     const auto turned = detail::decode_image(jpeg_file(6));
