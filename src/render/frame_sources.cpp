@@ -118,8 +118,9 @@ bool FrameSources::polling() const {
     return std::ranges::any_of(windows_, [](const auto& entry) {
         const Window& window = entry.second;
         return window.frame &&
-               std::ranges::any_of(sources_of(*window.frame),
-                                   [](const auto& source) { return source->is_playing_now(); });
+               std::ranges::any_of(sources_of(*window.frame), [](const auto& source) {
+                   return source->is_playing_now() && !source->wakes_for_frames();
+               });
     });
 }
 
@@ -131,7 +132,9 @@ void FrameSources::refresh() {
         }
     }
     for (auto it = sources_.begin(); it != sources_.end();) {
-        if (kept.contains(it->first)) {
+        const bool shown = kept.contains(it->first);
+        it->second.source->set_shown(shown);
+        if (shown) {
             ++it;
         } else {
             it = sources_.erase(it);

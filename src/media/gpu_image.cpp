@@ -380,13 +380,11 @@ private:
 
 class ExternalImageSource final : public VideoSource {
 public:
+    // Publishing and clearing wake the render thread: it never looks for frames on its own.
     ExternalImageSource(std::uint32_t width, std::uint32_t height, bool flip)
-        : flipped(flip), natural_size_{static_cast<float>(width), static_cast<float>(height)} {
+        : VideoSource(true), flipped(flip), natural_size_{static_cast<float>(width), static_cast<float>(height)} {
         size = natural_size_;
         ready = true;
-        // Keep the render-side update polling even after clear, so a cleared last image is
-        // actually removed without requiring a UI state mutation from the producer thread.
-        playing_now_ = true;
     }
     void play() override {}
     void pause() override {}
@@ -484,15 +482,20 @@ public:
             natural_size_ = next_size;
             ++number_;
         }
+        notify_new_frame();
         return ELG_GPU_IMAGE_OK; // old callbacks run outside the source lock
     }
     void clear() {
         std::optional<VideoFrame> old;
         {
             const std::lock_guard lock(mutex_);
+            if (!frame_) {
+                return; // nothing shown: nothing changes
+            }
             old.swap(frame_);
             ++number_;
         }
+        notify_new_frame();
     }
     bool update() override {
         const std::lock_guard lock(mutex_);

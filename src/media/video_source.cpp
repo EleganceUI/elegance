@@ -20,6 +20,9 @@ namespace {
 std::atomic<std::uint64_t> g_next_id{1};
 std::mutex g_adapter_mutex;
 std::optional<RenderAdapter> g_adapter;
+// Called with the mutex held, so that it can't run once cleared.
+std::mutex g_waker_mutex;
+std::function<void()> g_waker;
 
 } // namespace
 
@@ -37,7 +40,22 @@ std::uint64_t next_media_id() {
     return g_next_id.fetch_add(1);
 }
 
-VideoSource::VideoSource() : id(next_media_id()) {}
+void set_frame_waker(std::function<void()> waker) {
+    const std::lock_guard lock(g_waker_mutex);
+    g_waker = std::move(waker);
+}
+
+VideoSource::VideoSource(bool wakes_for_frames) : id(next_media_id()), wakes_for_frames_(wakes_for_frames) {}
+
+void VideoSource::notify_new_frame() const {
+    if (!shown_) {
+        return; // the render thread updates it once a window shows it
+    }
+    const std::lock_guard lock(g_waker_mutex);
+    if (g_waker) {
+        g_waker();
+    }
+}
 
 std::size_t packed_size(VideoFrame::Format format, std::uint32_t width, std::uint32_t height) {
     const std::size_t pixels = static_cast<std::size_t>(width) * height;

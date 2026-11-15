@@ -120,7 +120,8 @@ int format_rank(std::uint32_t format) {
 // One camera, captured on its own thread; frames reach the GPU through update().
 class V4L2Camera final : public CameraSource {
 public:
-    explicit V4L2Camera(CameraOptions options) : options_(std::move(options)) {}
+    // Each captured frame wakes the render thread.
+    explicit V4L2Camera(CameraOptions options) : CameraSource(true), options_(std::move(options)) {}
 
     V4L2Camera(const V4L2Camera&) = delete;
     V4L2Camera(V4L2Camera&&) = delete;
@@ -420,6 +421,7 @@ private:
             current_ = std::move(frame);
             ++frame_number_;
         }
+        notify_new_frame();
         if (resized) {
             post_ui_task([weak, frame_size] {
                 if (const auto source = weak.lock()) {

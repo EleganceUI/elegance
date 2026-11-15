@@ -65,8 +65,13 @@ public:
     bool wait_until_done(std::uint64_t sequence, std::chrono::milliseconds timeout);
     void request_stop();
 
+    // --- Any thread ---
+    // Makes the render thread's take() (the current one, or else the next) return, with an empty
+    // batch if nothing was posted: to look for new frames of the sources shown.
+    void wake();
+
     // --- Render thread ---
-    // Blocks until there is work. Returns false once a stop was requested.
+    // Blocks until there is work, or a wake(). Returns false once a stop was requested.
     bool take(RenderBatch& batch);
     // Like take(), but gives up after `timeout`: then `batch` is empty. Returns false once a stop
     // was requested.
@@ -85,6 +90,7 @@ private:
     std::uint64_t done_ = 0;
     bool stop_ = false;
     bool closed_ = false;
+    bool woken_ = false; // since the last take
 };
 
 } // namespace elg::detail

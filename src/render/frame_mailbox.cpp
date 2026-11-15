@@ -39,6 +39,12 @@ bool FrameMailbox::wait_until_done(std::uint64_t sequence, std::chrono::millisec
     return work_done_.wait_for(lock, timeout, [&] { return closed_ || done_ >= sequence; });
 }
 
+void FrameMailbox::wake() {
+    const std::lock_guard lock(mutex_);
+    woken_ = true;
+    work_ready_.notify_one();
+}
+
 void FrameMailbox::request_stop() {
     const std::lock_guard lock(mutex_);
     stop_ = true;
@@ -50,10 +56,11 @@ bool FrameMailbox::take(RenderBatch& batch) {
     batch.commands.clear();
     batch.frames.clear();
     std::unique_lock lock(mutex_);
-    work_ready_.wait(lock, [&] { return stop_ || !commands_.empty() || !frames_.empty(); });
+    work_ready_.wait(lock, [&] { return stop_ || woken_ || !commands_.empty() || !frames_.empty(); });
     if (stop_) {
         return false;
     }
+    woken_ = false;
     batch.commands = std::exchange(commands_, {});
     batch.frames = std::exchange(frames_, {});
     batch.sequence = posted_;
@@ -64,10 +71,11 @@ bool FrameMailbox::take_for(RenderBatch& batch, std::chrono::milliseconds timeou
     batch.commands.clear(); // as in take()
     batch.frames.clear();
     std::unique_lock lock(mutex_);
-    work_ready_.wait_for(lock, timeout, [&] { return stop_ || !commands_.empty() || !frames_.empty(); });
+    work_ready_.wait_for(lock, timeout, [&] { return stop_ || woken_ || !commands_.empty() || !frames_.empty(); });
     if (stop_) {
         return false;
     }
+    woken_ = false;
     batch.commands = std::exchange(commands_, {});
     batch.frames = std::exchange(frames_, {});
     batch.sequence = posted_;

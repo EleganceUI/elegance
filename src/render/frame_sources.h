@@ -38,8 +38,8 @@ public:
     // That frame was drawn again with the sources' frames as of the last update().
     void redrew(std::uint32_t window_id);
 
-    // Whether a source in a window plays (is_playing_now()): the render thread then looks for its
-    // frames regularly.
+    // Whether a source in a window plays (is_playing_now()) without waking the render thread for
+    // its frames (wakes_for_frames()): the render thread then looks for them regularly.
     [[nodiscard]] bool polling() const;
 
 private:
@@ -53,7 +53,7 @@ private:
     };
     // Each source's frame count as of now, for the sources `frame` shows.
     std::vector<std::pair<const VideoSource*, std::uint64_t>> counts(const WindowFrame& frame);
-    // Drops sources no window shows.
+    // Drops sources no window shows, and tells the rest that one does (VideoSource::set_shown).
     void refresh();
 
     std::unordered_map<const VideoSource*, Source> sources_;

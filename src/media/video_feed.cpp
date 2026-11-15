@@ -29,8 +29,11 @@ VideoFrame::Format frame_format(VideoFeed::Format format) {
 
 } // namespace
 
+// Pushing and clearing wake the render thread: it never looks for frames on its own.
 class FeedSource final : public VideoSource {
 public:
+    FeedSource() : VideoSource(true) {}
+
     void play() override {}
     void pause() override {}
     void seek(double) override {}
@@ -55,9 +58,9 @@ public:
             height_ = height;
             full_range_ = full_range;
             ++number_;
+            playing_now_ = true;
         }
-        // The render thread checks for frames while it's set.
-        playing_now_ = true;
+        notify_new_frame();
         if (resized) {
             post_ui_task([weak = std::weak_ptr<VideoSource>(shared_from_this()), width, height] {
                 if (const auto self = weak.lock()) {
@@ -78,8 +81,9 @@ public:
             frame_.reset();
             width_ = height_ = 0;
             ++number_;
+            playing_now_ = false;
         }
-        playing_now_ = false;
+        notify_new_frame();
         post_ui_task([weak = std::weak_ptr<VideoSource>(shared_from_this())] {
             if (const auto self = weak.lock()) {
                 self->size = Size{};

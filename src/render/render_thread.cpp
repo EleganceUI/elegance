@@ -95,10 +95,12 @@ void RenderThread::run(std::promise<void> ready) noexcept {
 
         ready.set_value();
         started = true;
+        // Sources with new frames wake the render thread (when a window shows them).
+        set_frame_waker([this] { mailbox_.wake(); });
 
         RenderBatch batch;
-        // While videos play, wake every few milliseconds to check for their next frame; otherwise
-        // sleep until the UI thread posts work.
+        // While videos that don't wake the render thread play, look for their next frame every
+        // few milliseconds; otherwise sleep until the UI thread posts work or a source wakes it.
         while (sources.polling() ? mailbox_.take_for(batch, std::chrono::milliseconds(4)) : mailbox_.take(batch)) {
             for (RenderCommand& command : batch.commands) {
                 std::visit(Overloaded{
@@ -144,6 +146,7 @@ void RenderThread::run(std::promise<void> ready) noexcept {
         internal_error("exception of unknown type on the render thread");
     }
 
+    set_frame_waker({});
     mailbox_.close();
 }
 

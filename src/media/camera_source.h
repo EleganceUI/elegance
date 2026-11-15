@@ -23,6 +23,10 @@ class CameraSource : public VideoSource {
 public:
     // UI thread. The newest frame as a PNG image (not mirrored), or nullopt before the first.
     virtual std::optional<std::vector<unsigned char>> snapshot() const = 0;
+
+protected:
+    // `wakes_for_frames`: see VideoSource::wakes_for_frames().
+    explicit CameraSource(bool wakes_for_frames = false) : VideoSource(wakes_for_frames) {}
 };
 
 // The system's cameras, and one of them opened (stopped). UI thread.
