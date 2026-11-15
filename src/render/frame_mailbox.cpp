@@ -51,6 +51,9 @@ void FrameMailbox::request_stop() {
 }
 
 bool FrameMailbox::take(RenderBatch& batch) {
+    // The previous batch goes before locking: the UI thread posts under the lock.
+    batch.commands.clear();
+    batch.frames.clear();
     std::unique_lock lock(mutex_);
     work_ready_.wait(lock, [&] { return stop_ || !commands_.empty() || !frames_.empty(); });
     if (stop_) {
@@ -63,6 +66,8 @@ bool FrameMailbox::take(RenderBatch& batch) {
 }
 
 bool FrameMailbox::take_for(RenderBatch& batch, std::chrono::milliseconds timeout) {
+    batch.commands.clear(); // as in take()
+    batch.frames.clear();
     std::unique_lock lock(mutex_);
     work_ready_.wait_for(lock, timeout, [&] { return stop_ || !commands_.empty() || !frames_.empty(); });
     if (stop_) {

@@ -34,6 +34,8 @@ class Animation;
 
 namespace detail {
 
+class Scope;
+
 // A node in the dependency graph: a signal (State), a computed value, or an effect.
 // The update algorithm pushes "maybe changed" marks down the graph on writes and pulls fresh
 // values on reads, so every node recomputes at most once per change, never with half-updated
@@ -73,6 +75,7 @@ private:
     bool queued_ = false;
     bool disposed_ = false;
     bool priority_ = false; // runs before other effects in a flush
+    Scope* owner_ = nullptr; // effects: the scope that owns them, current while they run
     ELG_PRIVATE_MEMBERS_BEGIN
     std::vector<ReactiveNode*> sources_;
     std::vector<ReactiveNode*> observers_;
@@ -193,22 +196,41 @@ ELG_API void start_effect(std::shared_ptr<EffectNode> effect, bool priority = fa
 ELG_API std::shared_ptr<const Animation> begin_transaction(std::shared_ptr<const Animation> animation);
 ELG_API void end_transaction(std::shared_ptr<const Animation> previous) noexcept;
 ELG_API const Animation* current_animation() noexcept;
-// Counts flushes; a flush's number lasts until the next flush starts (through layout).
-ELG_API std::uint64_t current_flush() noexcept;
+// Numbers updates. An update is every flush since the last layout pass, and the layout pass that
+// animates what they changed; end_update() starts the next one after it.
+ELG_API std::uint64_t current_update() noexcept;
+ELG_API void end_update() noexcept;
 // The animation of the latest animated transaction that ran in a flush since the last call.
 ELG_API std::shared_ptr<const Animation> take_flush_animation() noexcept;
 // Throws UsageError when called off the UI thread of a running App.
 ELG_API void check_ui_thread();
 ELG_API void begin_batch() noexcept;
-// Ends a batch; the outermost one runs the scheduled effects when `flush` is true.
+// Ends a batch; the outermost one runs the scheduled effects when `flush` is true and a flush may
+// run now (see flush_effects()).
 ELG_API void end_batch(bool flush);
 ELG_API void begin_untracked() noexcept;
 ELG_API void end_untracked() noexcept;
-// Runs scheduled effects. The framework calls this once per frame, before layout.
+// Runs scheduled effects, until none are left. Does nothing inside a batch or a DeferEffects, while
+// a computed value or an effect runs, or inside another flush: the effects wait for the next flush.
+// The framework flushes after each event, and before each layout pass.
 ELG_API void flush_effects();
+// Whether effects are waiting for a flush.
+ELG_API bool has_scheduled_effects() noexcept;
 // Error helpers for header templates.
 [[noreturn]] ELG_API void throw_needs_environment();
 [[noreturn]] ELG_API void throw_no_environment();
+
+// While alive, no flush starts: effects scheduled meanwhile wait for the next flush after it. Event
+// dispatch, layout and paint hold one, so the element tree doesn't change under them.
+class DeferEffects {
+public:
+    DeferEffects() noexcept { begin_batch(); }
+    ~DeferEffects() { end_batch(false); }
+    DeferEffects(const DeferEffects&) = delete;
+    DeferEffects& operator=(const DeferEffects&) = delete;
+    DeferEffects(DeferEffects&&) = delete;
+    DeferEffects& operator=(DeferEffects&&) = delete;
+};
 
 template <class F>
 struct IsStdFunction : std::false_type {};
@@ -247,6 +269,10 @@ class Binding;
 /// A piece of mutable state: a cheap handle to a shared value. Copies refer to the same value,
 /// so lambdas can capture it by value and still write to it. UI thread only: other threads hand
 /// their results over with post_to_ui_thread().
+///
+/// Reads return a reference to the value itself. It stays valid until the state is next written,
+/// or its last handle is gone: copy what has to outlive a write. `for (auto& item : list())
+/// list.update(...)` goes on reading the old, freed value.
 ///
 /// @code
 /// auto count = State(0);
@@ -488,6 +514,9 @@ private:
 /// A value derived from state: recomputed lazily, at most once per change, and only when read.
 /// Copies share the value. Usually made with computed().
 ///
+/// Reads return a reference to the value itself. It stays valid until the value is next
+/// recomputed, or its last handle is gone.
+///
 /// @tparam T The value's type. When it's equality-comparable, a recomputed value equal to the
 ///   last one doesn't count as a change for what reads it.
 template <class T>
@@ -566,7 +595,9 @@ decltype(auto) untrack(F&& function) {
 }
 
 /// Groups several writes: effects run once, after the outermost batch ends. The outermost batch
-/// runs them right away, rather than before the next frame.
+/// runs them right away, rather than before the next frame, unless effects can't run at that
+/// moment: in an event handler, an effect, a computed value, or during layout, they run once it's
+/// over.
 ///
 /// @param function Runs once, now. If it throws, the effects stay scheduled and the exception
 ///   propagates.

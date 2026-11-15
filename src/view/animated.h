@@ -43,12 +43,12 @@ private:
 };
 
 // `.animation(animation, value)` on a subtree: changes inside animate when the value changed in
-// the same update.
+// the same update (any flush since the last layout pass, through the next one).
 struct ImplicitAnimation {
     Animation animation;
-    std::uint64_t fired_flush = 0;
+    std::uint64_t fired_update = 0;
 
-    [[nodiscard]] bool fired() const noexcept { return fired_flush != 0 && fired_flush == current_flush(); }
+    [[nodiscard]] bool fired() const noexcept { return fired_update != 0 && fired_update == current_update(); }
 };
 
 inline float interpolate(float a, float b, double t) {

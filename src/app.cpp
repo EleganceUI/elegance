@@ -434,6 +434,10 @@ int App::run() {
     // Reactive state belongs to this thread while the app runs (design.md §6).
     set_ui_thread(std::this_thread::get_id());
     const ScopeExit release_ui_thread([] { set_ui_thread(std::nullopt); });
+    // Media objects that other threads let go of come back to this one to be destroyed. Last of
+    // all, once every thread of this run has stopped, what's left is destroyed too.
+    begin_ui_releases();
+    const ScopeExit end_releases([] { end_ui_releases(); });
     // After the windows are gone: their views' timers and on_disappear actions end with the app.
     const ScopeExit stop_timers([] {
         cancel_all_timers();
@@ -651,6 +655,9 @@ int App::run() {
     }
 
     FrameMailbox mailbox;
+    // The render thread lets go of the video sources it drew: once it's stopped, they go before
+    // the windows and the platform.
+    const ScopeExit release_rendered([] { run_ui_releases(); });
     const RenderThread renderer(mailbox, [&platform] { platform.wake(); });
     for (const auto& live : windows) {
         mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), platform::see_through(live->entry->desc),
@@ -739,6 +746,7 @@ int App::run() {
         if (!live.fit) {
             return;
         }
+        const DeferEffects measuring; // what layout writes waits for the next flush
         const auto opener = find_window(live.fit->opener);
         if (opener == windows.end()) {
             return;
@@ -761,6 +769,7 @@ int App::run() {
 
     // Builds and posts a window's frame. Glyphs it used for the first time go to the atlas first.
     const auto post_frame = [&](LiveWindow& live) {
+        const DeferEffects drawing; // what layout and paint write waits for the next flush
         // Cleared first: layout may ask for another frame (lazy stacks measuring new items,
         // ScrollPosition requests settling), and that request must survive.
         live.dirty = false;
@@ -1429,12 +1438,22 @@ int App::run() {
         }
     };
 
+    // Each event's handlers run first; then their effects, so the next event sees what they changed.
+    const auto deliver = [&](const platform::Event& event) {
+        {
+            const DeferEffects dispatching;
+            handle(event);
+        }
+        flush_effects();
+        forget_removed();
+    };
+
     set_frame_time(seconds_now());
     while (!self.quit_requested) {
         // Idle: block until something happens. Animating: keep drawing, picking up events as
         // they come.
         const bool animating = std::ranges::any_of(windows, [](const auto& live) { return live->animating; });
-        if (!animating && !pending.any() && !has_lifecycle_actions()) {
+        if (!animating && !pending.any() && !has_lifecycle_actions() && !has_scheduled_effects()) {
             // Wake for the next timer or pending hover change (hover delays), else sleep until an
             // event.
             std::optional<double> deadline = next_timer_due();
@@ -1450,10 +1469,10 @@ int App::run() {
                     }
                 }
             }
-            handle(deadline ? platform.wait_event(*deadline - seconds_now()) : platform.wait_event());
+            deliver(deadline ? platform.wait_event(*deadline - seconds_now()) : platform.wait_event());
         }
         while (auto event = platform.poll_event()) {
-            handle(*event);
+            deliver(*event);
         }
         if (text.atlas.has_uploads()) {
             for (const auto& live : windows) {
@@ -1475,7 +1494,10 @@ int App::run() {
                 live->accessibility->update();
             }
         }
-        run_ui_tasks(); // e.g. a hot reload: state written here takes effect below
+        flush_effects(); // what hover changes wrote
+        run_ui_releases(); // what other threads let go of
+        run_ui_tasks();    // e.g. a hot reload
+        flush_effects();
         run_due_timers(seconds_now());
         flush_effects(); // hover and other effects may ask for popups
         forget_removed();
@@ -1545,6 +1567,9 @@ int App::run() {
                 }
             }
         }
+        // What this frame's flushes changed is laid out: the next flush starts a new update, so
+        // implicit animations that fired in this one stop applying.
+        end_update();
         // The pointer's shape follows what's under it, here after layout: content that moved,
         // appeared, or went away under a still pointer changes it too. A popup over its window
         // comes later in the list, and wins.
@@ -1567,6 +1592,7 @@ int App::run() {
                     post_frame(*live);
                 }
             }
+            end_update();
         }
         for (const auto& live : windows) {
             if (live->animating) {

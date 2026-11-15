@@ -30,7 +30,11 @@ ReactiveNode* g_observer = nullptr;
 // Observers hidden by untrack(); restored when it ends.
 std::vector<ReactiveNode*> g_hidden_observers;
 Scope* g_scope = nullptr;
+// Open batches and holds (DeferEffects): no flush starts until the last one ends.
 int g_batch_depth = 0;
+// Computed values and effects running now, nested; no flush starts inside them.
+int g_running = 0;
+bool g_flushing = false;
 // Effects waiting to run, in order. Disposed nodes remove themselves, so the queue never holds
 // a dangling pointer, even when running one effect disposes others (e.g. If unmounting a
 // branch).
@@ -41,7 +45,8 @@ std::optional<std::thread::id> g_ui_thread;
 std::shared_ptr<const Animation> g_transaction;      // with_animation in progress
 const Animation* g_running_animation = nullptr;      // the transaction of the effect running now
 std::shared_ptr<const Animation> g_flush_animation;  // latest transaction run in a flush
-std::uint64_t g_flush = 0;
+// Updates: every flush up to the next layout pass belongs to one (ELGSPEC-0003.R15).
+std::uint64_t g_update = 1;
 
 // Effect runs within one flush; beyond this, effects are almost certainly re-triggering each
 // other in a cycle.
@@ -96,19 +101,25 @@ struct Runtime {
         node->sources_.clear();
     }
 
+    static Scope* owner(const ReactiveNode* node) noexcept { return node->owner_; }
+    static void set_owner(ReactiveNode* node, Scope* scope) noexcept { node->owner_ = scope; }
+
     static void run(ReactiveNode* node) {
         unlink_sources(node); // dependencies are re-tracked on every run
         ReactiveNode* const previous = g_observer;
         g_observer = node;
+        ++g_running;
         bool changed = false;
         try {
             changed = node->compute();
         } catch (...) {
             g_observer = previous;
+            --g_running;
             node->status_ = clean;
             throw;
         }
         g_observer = previous;
+        --g_running;
         if (changed && node->kind_ == ReactiveNode::Kind::computed) {
             for (ReactiveNode* observer : node->observers_) {
                 observer->status_ = dirty;
@@ -130,7 +141,8 @@ void ReactiveNode::track() {
         update();
     }
     ReactiveNode* const observer = g_observer;
-    if (!observer || observer == this) {
+    // A disposed node links to nothing: an effect disposed while it runs reads on, unsubscribed.
+    if (!observer || observer == this || observer->disposed_ || disposed_) {
         return;
     }
     if (std::ranges::find(observer->sources_, this) == observer->sources_.end()) {
@@ -220,6 +232,7 @@ void start_effect(std::shared_ptr<EffectNode> effect, bool priority) {
                          "argument), so it has an owner that ends it");
     }
     EffectNode* const node = effect.get();
+    Runtime::set_owner(node, g_scope); // later runs build into it too
     g_scope->adopt(std::move(effect));
     node->update(); // first run, establishing its dependencies
 }
@@ -254,10 +267,21 @@ void end_untracked() noexcept {
 }
 
 void flush_effects() {
-    if (g_batch_depth > 0) {
+    // Not inside a batch or hold, an effect or computed value, or another flush: the effects stay
+    // scheduled for the next flush allowed (ELGSPEC-0003.R5).
+    if (g_batch_depth > 0 || g_running > 0 || g_flushing) {
         return;
     }
-    ++g_flush;
+    g_flushing = true;
+    struct Done {
+        Done() = default;
+        Done(const Done&) = delete;
+        Done(Done&&) = delete;
+        Done& operator=(const Done&) = delete;
+        Done& operator=(Done&&) = delete;
+        ~Done() { g_flushing = false; }
+    };
+    const Done done;
     for (int runs = 0; !g_pending.empty(); ++runs) {
         if (runs >= kMaxEffectRuns) {
             for (ReactiveNode* node : g_pending) {
@@ -276,6 +300,11 @@ void flush_effects() {
             g_flush_animation = transaction;
         }
         const Animation* const previous = std::exchange(g_running_animation, transaction.get());
+        // In the scope that owns it, which owns what this run creates (ELGSPEC-0003.R9).
+        std::optional<Scope::Use> in_owner;
+        if (Scope* const owner = Runtime::owner(node)) {
+            in_owner.emplace(*owner);
+        }
         try {
             node->update();
         } catch (...) {
@@ -284,6 +313,10 @@ void flush_effects() {
         }
         g_running_animation = previous;
     }
+}
+
+bool has_scheduled_effects() noexcept {
+    return !g_pending.empty();
 }
 
 std::shared_ptr<const Animation> begin_transaction(std::shared_ptr<const Animation> animation) {
@@ -299,8 +332,12 @@ const Animation* current_animation() noexcept {
     return g_running_animation;
 }
 
-std::uint64_t current_flush() noexcept {
-    return g_flush;
+std::uint64_t current_update() noexcept {
+    return g_update;
+}
+
+void end_update() noexcept {
+    ++g_update;
 }
 
 std::shared_ptr<const Animation> take_flush_animation() noexcept {

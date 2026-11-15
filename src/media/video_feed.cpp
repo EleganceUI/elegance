@@ -130,7 +130,7 @@ private:
 
 } // namespace detail
 
-VideoFeed::VideoFeed() : source_(std::make_shared<detail::FeedSource>()) {}
+VideoFeed::VideoFeed() : source_(detail::make_ui_shared<detail::FeedSource>()) {}
 
 void VideoFeed::push(Format format, std::uint32_t width, std::uint32_t height, std::vector<std::uint8_t> pixels,
                      bool full_range) const {

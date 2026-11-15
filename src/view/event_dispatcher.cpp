@@ -163,6 +163,7 @@ bool EventDispatcher::update_hover(const std::vector<Element*>& path) {
 }
 
 bool EventDispatcher::tick() {
+    const DeferEffects defer;
     const double now = now_seconds();
     bool redraw = expire_watchers();
     // Leaves innermost first, then enters outermost first, like the DOM's mouseleave/enter.
@@ -226,6 +227,7 @@ bool EventDispatcher::bubble(const std::vector<Element*>& path, const PointerEve
 }
 
 bool EventDispatcher::pointer_moved(Point location) {
+    const DeferEffects defer;
     // Moving the mouse ends a wheel gesture, so the next one goes to what's under it. Ignored
     // right after a wheel event, when a hand on the wheel jiggles the mouse.
     constexpr double kWheelMoveGrace = 0.1;
@@ -250,6 +252,7 @@ bool EventDispatcher::pointer_moved(Point location) {
 
 bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, MouseButton button,
                                      int click_count, KeyModifiers modifiers) {
+    const DeferEffects defer;
     last_location_ = location;
     pointer_inside_ = true;
     const PointerEvent event{.kind = kind,
@@ -385,6 +388,7 @@ bool EventDispatcher::take_press(const Watcher& winner) {
 }
 
 bool EventDispatcher::pointer_left() {
+    const DeferEffects defer;
     // While a button is held the platform keeps the pointer captured, so leaving only matters
     // for hover.
     pointer_inside_ = false;
@@ -392,6 +396,7 @@ bool EventDispatcher::pointer_left() {
 }
 
 bool EventDispatcher::key(const KeyEvent& event) {
+    const DeferEffects defer;
     bool redraw = false;
     // From the focused element out to the root; with nothing focused, the root alone (a window's
     // floating layer closes its floating content on Esc).
@@ -470,6 +475,7 @@ bool EventDispatcher::move_focus(bool forward) {
 }
 
 bool EventDispatcher::scroll(ScrollEvent event) {
+    const DeferEffects defer;
     // A wheel gesture ends after this long without wheel events.
     constexpr double kWheelGesturePause = 0.5;
     const Point location = event.location;
@@ -547,6 +553,7 @@ bool gesture(Element*& latched, const std::vector<Element*>& path, const Event& 
 } // namespace
 
 bool EventDispatcher::magnify(MagnifyEvent event) {
+    const DeferEffects defer;
     magnify_scale_ = event.phase == GesturePhase::began ? event.delta : magnify_scale_ * event.delta;
     event.scale = magnify_scale_;
     return gesture(magnify_latched_, path_at(event.location), event,
@@ -554,6 +561,7 @@ bool EventDispatcher::magnify(MagnifyEvent event) {
 }
 
 bool EventDispatcher::rotate(RotateEvent event) {
+    const DeferEffects defer;
     rotate_degrees_ = event.phase == GesturePhase::began ? event.delta : rotate_degrees_ + event.delta;
     event.degrees = rotate_degrees_;
     return gesture(rotate_latched_, path_at(event.location), event,
@@ -561,6 +569,7 @@ bool EventDispatcher::rotate(RotateEvent event) {
 }
 
 bool EventDispatcher::two_finger_double_tap(Point location) {
+    const DeferEffects defer;
     bool redraw = false;
     const std::vector<Element*> path = path_at(location);
     for (auto element : std::ranges::reverse_view(path)) {
@@ -576,6 +585,7 @@ bool EventDispatcher::two_finger_double_tap(Point location) {
 }
 
 bool EventDispatcher::text_input(const TextInputEvent& event) {
+    const DeferEffects defer;
     bool redraw = false;
     for (Element* element = focus_->focused(); element; element = element->parent()) {
         if (EventHandler* handler = element->event_handler()) {
@@ -620,10 +630,12 @@ PointerStyle EventDispatcher::pointer_style() {
 }
 
 bool EventDispatcher::refresh_hover() {
+    const DeferEffects defer;
     return pointer_inside_ && update_hover(path_at(last_location_));
 }
 
 bool EventDispatcher::revalidate() {
+    const DeferEffects defer;
     std::unordered_set<const Element*> alive;
     std::function<void(Element&)> walk = [&](Element& element) {
         alive.insert(&element);
@@ -647,6 +659,7 @@ bool EventDispatcher::revalidate() {
 }
 
 bool EventDispatcher::release_disabled() {
+    const DeferEffects defer;
     const auto disabled = [](Element* element) { return element->disabled_handler() != nullptr; };
     const PointerEvent cancel{.kind = PointerEvent::Kind::cancel, .location = last_location_,
                               .window_location = last_location_};

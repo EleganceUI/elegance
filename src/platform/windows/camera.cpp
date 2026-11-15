@@ -787,7 +787,7 @@ std::vector<CameraDevice> platform_camera_devices() {
 }
 
 std::shared_ptr<CameraSource> create_platform_camera(CameraOptions options) {
-    return std::make_shared<MediaFoundationCamera>(std::move(options));
+    return detail::make_ui_shared<MediaFoundationCamera>(std::move(options));
 }
 
 } // namespace elg::detail

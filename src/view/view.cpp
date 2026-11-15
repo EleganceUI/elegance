@@ -870,7 +870,7 @@ std::unique_ptr<Element> AnimationNode::lower(const LowerContext& context) const
     // fired.
     start_effect(std::make_shared<EffectNode>([implicit, changed = changed_] {
                      if (changed()) {
-                         implicit->fired_flush = current_flush();
+                         implicit->fired_update = current_update();
                      }
                  }),
                  true);

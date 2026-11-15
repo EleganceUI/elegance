@@ -2,8 +2,13 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
+#include "view/animated.h"
+#include "view/view_node.h"
+
 #include <elg/animation.h>
+#include <elg/geometry.h>
 #include <elg/reactive.h>
+#include <elg/shapes.h>
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -190,4 +195,35 @@ TEST_CASE("priority effects run first in a flush") {
     source = 1;
     detail::flush_effects();
     CHECK(order == std::vector<std::string>{"priority", "normal"});
+}
+
+TEST_CASE("an implicit animation applies to every flush before the layout pass, and ends with it", "[animation]") {
+    const Owner owner;
+    const State<float> width(10);
+    const State<float> height(10);
+    const auto root =
+        detail::lower(Rectangle()
+                          .frame(Prop<Size>([=] { return Size{width(), height()}; }))
+                          .animation(Animation::linear(1), [=] { return width(); }),
+                      {});
+    const auto lay_out = [&] {
+        root->size_that_fits({100.f, 100.f});
+        root->place({}, {100.f, 100.f});
+        detail::end_update();
+    };
+    detail::set_frame_time(10);
+    lay_out();
+
+    width = 50;
+    detail::flush_effects(); // say, after a timer
+    detail::flush_effects(); // and after an event, in the same frame
+    lay_out();
+    CHECK(root->frame().width == 10); // eases from 10, starting now
+
+    detail::set_frame_time(20); // long done
+    height = 30;                // .animation() isn't watching it
+    detail::flush_effects();
+    lay_out();
+    CHECK(root->frame().width == 50);
+    CHECK(root->frame().height == 30); // jumps there
 }

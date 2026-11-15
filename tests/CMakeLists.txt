@@ -49,6 +49,7 @@ add_executable(elegance_tests
         size_observer_tests.cpp
         text_input_tests.cpp
         toggle_tests.cpp
+        ui_release_tests.cpp
         video_tests.cpp
         test_setup.cpp
 )
