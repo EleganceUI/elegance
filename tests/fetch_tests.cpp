@@ -89,6 +89,8 @@ wmZAujteSAEKpmLCsCEVJ8Z884hfe+U0WYC9HPiHLcu3n1AfGNHyekNG
 //   /stale      200, stale at once, with an ETag
 //   /nostore    200, not to be stored
 //   /two-fields 200 with Cache-Control in two fields, together "don't store"
+//   /header-60k 200 with a header section of about 60 KiB
+//   /header-70k 200 with a header section of about 70 KiB
 // Connections stay open for more requests, unless `drop` (closed after each response, without
 // saying so).
 class TestServer {
@@ -198,6 +200,12 @@ private:
             response.insert(bhttp::field::cache_control, "max-age=600");
             response.insert(bhttp::field::cache_control, "no-store");
             response.body() = "split";
+        } else if (target == "/header-60k" || target == "/header-70k") {
+            // In fields of 10 KiB: Beast refuses to hold a single field value of 64 KiB or more.
+            for (int i = 0; i < (target == "/header-60k" ? 6 : 7); ++i) {
+                response.insert(std::format("X-Padding-{}", i), std::string(std::size_t{10} * 1024, 'p'));
+            }
+            response.body() = "padded";
         } else {
             response.result(bhttp::status::not_found);
         }
@@ -393,6 +401,14 @@ TEST_CASE("downloads follow redirects and report HTTP errors", "[fetch]") {
     CHECK(fetch(server.url("/loop")).error() == "too many redirects");
     CHECK(fetch(server.url("/big"), {.max_body = 1024}).error() == "the response is too large");
     CHECK(text(fetch(server.url("/big"))).size() == 4096);
+}
+
+TEST_CASE("downloads refuse a response whose header section is over 64 KiB", "[fetch]") {
+    const TestServer server;
+    CHECK(text(fetch(server.url("/header-60k"))) == "padded");
+    CHECK(fetch(server.url("/header-70k")).error() == "the server's response isn't valid HTTP"); // refused by the parser
+    // The connection is closed, not left with the rest of that response: the next request works.
+    CHECK(text(fetch(server.url("/hello"))) == "hello");
 }
 
 TEST_CASE("downloads refuse what isn't an http(s) URL", "[fetch]") {
