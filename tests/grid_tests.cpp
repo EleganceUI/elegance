@@ -27,6 +27,17 @@ TEST_CASE("fixed tracks take their size", "[grid]") {
     CHECK(grid_tracks_length(t) == Approx(40 + default_stack_spacing + 60));
 }
 
+TEST_CASE("an adaptive item becomes at most 10,000 tracks", "[grid]") {
+    // Far more than a size_t can count, and a gap that cancels the minimum: too many to make.
+    const auto huge = tracks({GridItem::adaptive(1)}, 1e20f);
+    CHECK(huge.size() == 10'000);
+    CHECK(huge.front().size > 1);
+    GridItem gapless = GridItem::adaptive(1);
+    gapless.spacing = -1.f;
+    CHECK(tracks({gapless}, 500.f).size() == 10'000);
+    CHECK(tracks({GridItem::adaptive(1)}, 100.f).size() < 100); // as many as fit
+}
+
 TEST_CASE("flexible tracks share what fixed ones leave", "[grid]") {
     const auto t = tracks({GridItem::fixed(100).with_spacing(10), GridItem::flexible().with_spacing(10), GridItem::flexible()},
                           420.f);

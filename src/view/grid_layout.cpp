@@ -9,6 +9,8 @@
 #include <elg/modifier.h>
 #include <elg/views.h>
 
+#include "core/numeric.h"
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -326,6 +328,9 @@ GridMetrics measure_grid(std::span<const LayoutChild> children, std::optional<fl
 
 // --- Tracks ---
 
+// The most tracks an adaptive item becomes (GridItem::adaptive).
+constexpr std::size_t kMaxAdaptiveTracks = 10'000;
+
 std::vector<GridTrack> resolve_grid_tracks(std::span<const GridItem> given, std::optional<float> length,
                                            OptionalLength spacing) {
     std::vector<GridItem> items(given.begin(), given.end());
@@ -401,7 +406,9 @@ std::vector<GridTrack> resolve_grid_tracks(std::span<const GridItem> given, std:
         std::size_t count = 1;
         float size = minimum;
         if (available) {
-            count = static_cast<std::size_t>(std::max(1.f, std::floor((share[i] + g) / (minimum + g))));
+            // A huge share (or a gap that cancels the minimum) asks for more tracks than make sense.
+            count = detail::clamped_cast<std::size_t>(std::floor((share[i] + g) / (minimum + g)), 1,
+                                                      kMaxAdaptiveTracks);
             size = std::min(std::max(0.f, item.maximum),
                             (share[i] - g * static_cast<float>(count - 1)) / static_cast<float>(count));
         }
