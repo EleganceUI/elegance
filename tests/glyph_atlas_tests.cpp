@@ -13,11 +13,74 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <format>
 #include <optional>
+#include <random>
+#include <system_error>
+#include <vector>
 
 using namespace elg;
+using namespace std::chrono_literals;
+
+namespace {
+
+// A fresh directory for a disk cache, removed afterwards.
+struct TemporaryDirectory {
+    std::filesystem::path path;
+    TemporaryDirectory() {
+        std::random_device random;
+        path = std::filesystem::temp_directory_path() / std::format("elg-glyph-test-{:x}", random());
+        std::filesystem::create_directories(path);
+    }
+    TemporaryDirectory(const TemporaryDirectory&) = delete;
+    TemporaryDirectory(TemporaryDirectory&&) = delete;
+    TemporaryDirectory& operator=(const TemporaryDirectory&) = delete;
+    TemporaryDirectory& operator=(TemporaryDirectory&&) = delete;
+    ~TemporaryDirectory() {
+        std::error_code ignored;
+        std::filesystem::remove_all(path, ignored);
+    }
+};
+
+// The first glyph of `face` with an outline, and its pixels as generated (no disk cache).
+detail::GlyphUpload first_glyph(const detail::FontFace& face, std::uint32_t& glyph) {
+    detail::GlyphAtlas atlas;
+    for (glyph = 1; glyph < 1000 && !atlas.find_or_add(face, glyph); ++glyph) {
+    }
+    REQUIRE(atlas.wait_idle(10s));
+    std::vector<detail::GlyphUpload> uploads = atlas.take_uploads();
+    REQUIRE(uploads.size() == 1);
+    return std::move(uploads[0]);
+}
+
+} // namespace
+
+TEST_CASE("the disk cache's files are read by the glyph workers, not on the UI thread", "[text]") {
+    detail::TextSystem text;
+    const detail::FontFace& face = text.fonts.resolve(Font::system(12));
+    std::uint32_t glyph = 0;
+    const detail::GlyphUpload generated = first_glyph(face, glyph);
+
+    // Pixels no generator makes, stored as an earlier run would have.
+    const TemporaryDirectory directory;
+    const std::vector<std::uint8_t> marked(generated.rgba.size(), 7);
+    {
+        detail::GlyphDiskCache disk(directory.path);
+        disk.store(face, glyph, generated.width, generated.height, marked);
+    }
+
+    detail::GlyphAtlas atlas;
+    atlas.set_disk_cache(directory.path);
+    REQUIRE(atlas.find_or_add(face, glyph) != nullptr);
+    CHECK(atlas.requested() == 1); // a worker's job, though the disk cache has it
+    REQUIRE(atlas.wait_idle(10s));
+    const std::vector<detail::GlyphUpload> uploads = atlas.take_uploads();
+    REQUIRE(uploads.size() == 1);
+    CHECK(uploads[0].rgba == marked);
+}
 
 TEST_CASE("a full glyph atlas starts over after the frame instead of dropping glyphs for good", "[text]") {
     detail::TextSystem text;

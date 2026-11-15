@@ -405,9 +405,20 @@ void GlyphAtlas::work(const std::stop_token& stop) {
             job = std::move(jobs_.front());
             jobs_.pop_front();
         }
-        GlyphUpload upload = generate(*job);
+        // Generated in an earlier run: the pixels come straight from the disk cache. Its files
+        // are read and written here, never on the UI thread.
+        std::optional<std::vector<std::uint8_t>> cached;
         if (disk_) {
-            disk_->store(*job->face, job->glyph, upload.width, upload.height, upload.rgba);
+            cached = disk_->find(*job->face, job->glyph, job->width, job->height);
+        }
+        GlyphUpload upload;
+        if (cached) {
+            upload = {job->x, job->y, job->width, job->height, std::move(*cached)};
+        } else {
+            upload = generate(*job);
+            if (disk_) {
+                disk_->store(*job->face, job->glyph, upload.width, upload.height, upload.rgba);
+            }
         }
         std::function<void()> on_ready;
         {
@@ -570,16 +581,8 @@ std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_
         return std::nullopt;
     }
 
-    // Generated in an earlier run: the pixels come straight from the disk cache. Otherwise the
-    // distance field is generated on a worker; until then the slot is empty.
-    std::optional<std::vector<std::uint8_t>> cached;
-    if (disk_) {
-        cached = disk_->find(face, glyph_id, width, height);
-    }
-    if (cached) {
-        const std::lock_guard lock(mutex_);
-        uploads_.push_back({x, y, width, height, std::move(*cached)});
-    } else {
+    // A worker takes the pixels from the disk cache or generates the distance field; until then
+    // the slot is empty.
     if (generation_ > 0) {
         // After starting over the slot may still show an older glyph: cleared until generated.
         const std::lock_guard lock(mutex_);
@@ -598,7 +601,6 @@ std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_
     job->glyph = glyph_id;
     job->generation = generation_;
     submit(std::move(job));
-    }
 
     const float em = face.units_per_em();
     const auto pad_units = static_cast<float>(pad / scale);
