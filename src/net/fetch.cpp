@@ -224,6 +224,29 @@ std::shared_ptr<ssl::context> context_for(const std::string& roots) {
     return context;
 }
 
+// The most a response's status line and header fields may take together.
+constexpr std::size_t kMaxHeader = std::size_t{64} * 1024;
+
+// "64 MiB", "16 KiB", "100 bytes".
+std::string describe_size(std::size_t bytes) {
+    constexpr std::size_t kKiB = 1024;
+    if (bytes >= kKiB * kKiB && bytes % (kKiB * kKiB) == 0) {
+        return std::format("{} MiB", bytes / (kKiB * kKiB));
+    }
+    if (bytes >= kKiB && bytes % kKiB == 0) {
+        return std::format("{} KiB", bytes / kKiB);
+    }
+    return std::format("{} bytes", bytes);
+}
+
+// "30 s", "200 ms".
+std::string describe_duration(std::chrono::milliseconds duration) {
+    if (duration.count() % 1000 == 0) {
+        return std::format("{} s", duration.count() / 1000);
+    }
+    return std::format("{} ms", duration.count());
+}
+
 std::string describe(const boost::system::error_code& error) {
     namespace e = asio::error;
     if (error == e::operation_aborted) {
@@ -239,8 +262,8 @@ std::string describe(const boost::system::error_code& error) {
     if (error.category() == e::get_ssl_category() || error.category() == ssl::error::get_stream_category()) {
         return std::format("the secure connection failed: {}", error.message());
     }
-    if (error == bhttp::error::body_limit) {
-        return "the response is too large";
+    if (error == bhttp::error::header_limit) {
+        return std::format("the response's header section is larger than {}", describe_size(kMaxHeader));
     }
     if (error == e::eof || error == e::connection_reset || error == e::connection_aborted ||
         error == bhttp::error::end_of_stream || error == bhttp::error::partial_message) {
@@ -340,7 +363,7 @@ awaitable<Reply> exchange(Stream& stream, beast::flat_buffer& buffer, const Targ
     co_await bhttp::async_write(stream, serializer, use_awaitable);
 
     bhttp::response_parser<bhttp::vector_body<std::uint8_t>> parser;
-    parser.header_limit(64 * 1024);
+    parser.header_limit(kMaxHeader);
     parser.body_limit(max_body);
     co_await bhttp::async_read(stream, buffer, parser, use_awaitable);
     auto& response = parser.get();
@@ -504,7 +527,7 @@ awaitable<std::expected<Outcome, std::string>> follow(const std::string& text, c
             Reply reply = co_await request(url, options, tls, redirects == 0 ? validators : nullptr);
             if (is_redirect(reply.status) && !reply.location.empty()) {
                 if (redirects == options.max_redirects) {
-                    co_return std::unexpected("too many redirects");
+                    co_return std::unexpected(std::format("too many redirects (more than {})", options.max_redirects));
                 }
                 const auto reference = urls::parse_uri_reference(reply.location);
                 urls::url next;
@@ -522,6 +545,9 @@ awaitable<std::expected<Outcome, std::string>> follow(const std::string& text, c
     } catch (const FetchFailure& failure) {
         co_return std::unexpected(failure.what());
     } catch (const boost::system::system_error& failure) {
+        if (failure.code() == bhttp::error::body_limit) {
+            co_return std::unexpected(std::format("the response is larger than {}", describe_size(options.max_body)));
+        }
         co_return std::unexpected(describe(failure.code()));
     }
 }
@@ -545,7 +571,9 @@ awaitable<FetchResult> run(std::string url, FetchOptions options, std::shared_pt
     auto outcome = co_await (follow(url, options, *tls, revalidating ? &validators : nullptr) ||
                              timer.async_wait(use_awaitable));
     std::expected<Outcome, std::string> result =
-        outcome.index() == 1 ? std::unexpected("the request timed out") : std::move(std::get<0>(outcome));
+        outcome.index() == 1
+            ? std::unexpected(std::format("the request timed out (after {})", describe_duration(options.timeout)))
+            : std::move(std::get<0>(outcome));
     if (!result) {
         if (cached && cached->usable_stale()) {
             co_return std::move(cached->body); // offline: what we had

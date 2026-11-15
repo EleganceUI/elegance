@@ -398,15 +398,21 @@ TEST_CASE("downloads follow redirects and report HTTP errors", "[fetch]") {
     CHECK(text(fetch(server.url("/hello"))) == "hello");
     CHECK(text(fetch(server.url("/redirect"))) == "hello");
     CHECK(fetch(server.url("/missing")).error() == "HTTP 404");
-    CHECK(fetch(server.url("/loop")).error() == "too many redirects");
-    CHECK(fetch(server.url("/big"), {.max_body = 1024}).error() == "the response is too large");
     CHECK(text(fetch(server.url("/big"))).size() == 4096);
+}
+
+TEST_CASE("downloads name the limit they exceeded", "[fetch]") {
+    const TestServer server;
+    CHECK(fetch(server.url("/loop")).error() == "too many redirects (more than 5)");
+    CHECK(fetch(server.url("/loop"), {.max_redirects = 2}).error() == "too many redirects (more than 2)");
+    CHECK(fetch(server.url("/big"), {.max_body = 1024}).error() == "the response is larger than 1 KiB");
+    CHECK(fetch(server.url("/big"), {.max_body = 1000}).error() == "the response is larger than 1000 bytes");
 }
 
 TEST_CASE("downloads refuse a response whose header section is over 64 KiB", "[fetch]") {
     const TestServer server;
     CHECK(text(fetch(server.url("/header-60k"))) == "padded");
-    CHECK(fetch(server.url("/header-70k")).error() == "the server's response isn't valid HTTP"); // refused by the parser
+    CHECK(fetch(server.url("/header-70k")).error() == "the response's header section is larger than 64 KiB");
     // The connection is closed, not left with the rest of that response: the next request works.
     CHECK(text(fetch(server.url("/hello"))) == "hello");
 }
@@ -419,7 +425,7 @@ TEST_CASE("downloads refuse what isn't an http(s) URL", "[fetch]") {
 
 TEST_CASE("downloads time out", "[fetch]") {
     const TestServer server;
-    CHECK(fetch(server.url("/slow"), {.timeout = 200ms}).error() == "the request timed out");
+    CHECK(fetch(server.url("/slow"), {.timeout = 200ms}).error() == "the request timed out (after 200 ms)");
 }
 
 TEST_CASE("cancelled downloads don't call back", "[fetch]") {
