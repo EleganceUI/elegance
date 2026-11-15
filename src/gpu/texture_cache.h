@@ -51,7 +51,8 @@ public:
     void begin_frame(CacheClock::time_point now) noexcept { frame_.begin(now); }
 
     // The bind group (texture and sampler) for `image`, uploading it and recording its mips into
-    // `encoder` if it isn't on the GPU yet.
+    // `encoder` if it isn't on the GPU yet. Null for an image with a side longer than the device's
+    // textures can have: it gets no texture.
     wgpu::BindGroup acquire(const wgpu::CommandEncoder& encoder, const DecodedImage& image);
 
     // Ends the frame: releases textures as kDecodedImagePolicy says. (WebGPU keeps a texture
@@ -73,6 +74,7 @@ private:
     wgpu::RenderPipeline mip_pipeline_;
     std::unordered_map<std::uint64_t, Texture> textures_; // by DecodedImage::id
     CacheFrame frame_;
+    bool warned_ = false; // about an image too large for a texture
 };
 
 } // namespace elg::detail::gpu

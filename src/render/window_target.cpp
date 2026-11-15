@@ -120,8 +120,8 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
         return;
     }
 #endif
-    const auto width = static_cast<std::uint32_t>(std::max(frame.pixel_width, 0));
-    const auto height = static_cast<std::uint32_t>(std::max(frame.pixel_height, 0));
+    const std::uint32_t width = window_side(frame.pixel_width);
+    const std::uint32_t height = window_side(frame.pixel_height);
     if (!swapchain_->prepare(width, height)) {
         return; // minimized
     }
@@ -155,8 +155,8 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
 void WindowTarget::render_composition([[maybe_unused]] const WindowFrame& frame,
                                       [[maybe_unused]] const RenderResources& resources) {
 #if defined(_WIN32)
-    const auto width = static_cast<std::uint32_t>(std::max(frame.pixel_width, 0));
-    const auto height = static_cast<std::uint32_t>(std::max(frame.pixel_height, 0));
+    const std::uint32_t width = window_side(frame.pixel_width);
+    const std::uint32_t height = window_side(frame.pixel_height);
     if (!composition_->prepare(width, height)) {
         return; // minimized
     }
@@ -179,6 +179,10 @@ void WindowTarget::render_composition([[maybe_unused]] const WindowFrame& frame,
 #endif
 }
 
+std::uint32_t WindowTarget::window_side(int pixels) const {
+    return std::min(static_cast<std::uint32_t>(std::max(pixels, 0)), device_.max_texture_side());
+}
+
 wgpu::BindGroup WindowTarget::image_group(const RenderResources& resources, const wgpu::TextureView& view) const {
     return gpu::create_image_group(device_.handle(), resources.image_layout, view, sampler_);
 }
@@ -186,9 +190,10 @@ wgpu::BindGroup WindowTarget::image_group(const RenderResources& resources, cons
 gpu::RenderImage& WindowTarget::pooled_image(ImageRole role, std::uint64_t index, wgpu::TextureFormat format,
                                              std::uint32_t width, std::uint32_t height, std::uint32_t samples,
                                              wgpu::TextureUsage usage) {
-    return images_.acquire({role, index}, format, width, height, samples, [&](std::uint32_t w, std::uint32_t h) {
-        return gpu::RenderImage(device_.handle(), format, w, h, samples, usage);
-    });
+    return images_.acquire({role, index}, format, width, height, samples, device_.max_texture_side(),
+                           [&](std::uint32_t w, std::uint32_t h) {
+                               return gpu::RenderImage(device_.handle(), format, w, h, samples, usage);
+                           });
 }
 
 const wgpu::BindGroup& WindowTarget::empty_group(const RenderResources& resources) {
@@ -279,6 +284,9 @@ void WindowTarget::draw_pass(const wgpu::CommandEncoder& encoder, const PassTarg
             }
         } else if (segment.image >= 0) {
             image = groups.images[static_cast<std::size_t>(segment.image)];
+            if (!image) {
+                continue; // no texture (larger than the device allows): nothing drawn
+            }
         } else if (segment.path >= 0) {
             image = groups.paths[static_cast<std::size_t>(segment.path)];
         } else if (segment.layer >= 0) {
@@ -322,7 +330,8 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
                                          std::vector<std::uint64_t>& acquired_videos) {
     const gpu::CacheClock::time_point now = gpu::CacheClock::now();
     images_.begin_frame(now);
-    const FramePlan plan = plan_frame(frame.list, target.width, target.height, &path_hashes_);
+    const FramePlan plan =
+        plan_frame(frame.list, target.width, target.height, &path_hashes_, device_.max_texture_side());
     instances_.write(std::as_bytes(std::span(plan.instances)));
     stops_.write(std::as_bytes(std::span(plan.stops)));
 

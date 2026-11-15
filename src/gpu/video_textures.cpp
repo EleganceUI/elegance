@@ -81,7 +81,8 @@ bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
         texture.group = create_image_group(device_.handle(), layout_, frame.external_view, sampler_);
         return true;
     }
-    if (!frame.shared_handle || !device_.has_feature(wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle)) {
+    if (!frame.shared_handle || !device_.has_feature(wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle) ||
+        frame.width > device_.max_texture_side() || frame.height > device_.max_texture_side()) {
         return false;
     }
     wgpu::SharedTextureMemoryDXGISharedHandleDescriptor shared;
@@ -288,6 +289,14 @@ void VideoTextures::create_target(CpuTarget& target, std::uint32_t width, std::u
 wgpu::BindGroup VideoTextures::convert(const wgpu::CommandEncoder& encoder, const VideoFrame& frame) {
     if (!frame.pixels || frame.width == 0 || frame.height == 0 ||
         frame.pixels->size() < packed_size(frame.format, frame.width, frame.height)) {
+        return nullptr;
+    }
+    if (frame.width > device_.max_texture_side() || frame.height > device_.max_texture_side()) {
+        if (!warned_) {
+            warned_ = true;
+            log_warning("video: a frame of {} x {} pixels isn't shown: the GPU's textures are at most {} pixels a side",
+                        frame.width, frame.height, device_.max_texture_side());
+        }
         return nullptr;
     }
     CpuTarget& target = targets_[frame.source_id];

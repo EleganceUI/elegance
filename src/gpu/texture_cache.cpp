@@ -4,6 +4,8 @@
 
 #include "gpu/texture_cache.h"
 
+#include "core/log.h"
+
 #include <algorithm>
 #include <bit>
 #include <utility>
@@ -51,6 +53,14 @@ wgpu::BindGroup TextureCache::acquire(const wgpu::CommandEncoder& encoder, const
     if (const auto it = textures_.find(image.id); it != textures_.end()) {
         frame_.mark(it->second.use);
         return it->second.group;
+    }
+    if (image.width > device_.max_texture_side() || image.height > device_.max_texture_side()) {
+        if (!warned_) {
+            warned_ = true;
+            log_warning("an image of {} x {} pixels isn't drawn: the GPU's textures are at most {} pixels a side",
+                        image.width, image.height, device_.max_texture_side());
+        }
+        return nullptr;
     }
     const auto levels = static_cast<std::uint32_t>(std::bit_width(std::max(image.width, image.height)));
 

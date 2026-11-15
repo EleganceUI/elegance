@@ -3,9 +3,12 @@
 // https://mozilla.org/MPL/2.0/.
 
 // What the renderer keeps on the GPU across frames: how long and how much of what frames don't
-// use, and what it doesn't prepare again. Times are given, not read from a clock.
+// use, and what it doesn't prepare again; and how large its textures get. Times are given, not
+// read from a clock.
 
+#include "gpu/device.h"
 #include "gpu/eviction.h"
+#include "gpu/instance.h"
 #include "gpu/texture_cache.h"
 #include "gpu/video_textures.h"
 #include "render/frame_plan.h"
@@ -46,13 +49,13 @@ struct FakeImage {
 
 struct Pool {
     detail::IntermediateImages<FakeImage> images;
+    std::uint32_t max_side = 8192; // the device's
     int made = 0;
 
     FakeImage& acquire(detail::ImageRole role, std::uint64_t index, std::uint32_t width, std::uint32_t height,
                        wgpu::TextureFormat format = wgpu::TextureFormat::RGBA8UnormSrgb, std::uint32_t samples = 1) {
-        return images.acquire({role, index}, format, width, height, samples, [&](std::uint32_t w, std::uint32_t h) {
-            return FakeImage{++made, format, w, h};
-        });
+        return images.acquire({role, index}, format, width, height, samples, max_side,
+                              [&](std::uint32_t w, std::uint32_t h) { return FakeImage{++made, format, w, h}; });
     }
 };
 
@@ -327,4 +330,97 @@ TEST_CASE("a path's fan triangles are built from its plan, in mask pixels", "[gp
     CHECK(vertices[1] == std::array<float, 2>{10 * path.scale + dx, dy});
     CHECK(vertices[3] == vertices[0]);
     CHECK(vertices[5] == std::array<float, 2>{dx, 10 * path.scale + dy});
+}
+
+TEST_CASE("offscreen images are no larger than the device's textures", "[gpu-memory]") {
+    Pool pool;
+    pool.max_side = 1000;
+    pool.images.begin_frame(t0);
+    const FakeImage& image = pool.acquire(detail::ImageRole::layer, 0, 900, 1000);
+    CHECK(image.width() == 1000); // rounded up only as far as the device allows
+    CHECK(image.height() == 1000);
+    CHECK(pool.acquire(detail::ImageRole::layer, 0, 990, 990).id == image.id);
+}
+
+TEST_CASE("layers and path masks are planned no larger than the device's textures", "[gpu-memory]") {
+    const auto wide = std::make_shared<const detail::Polygons>(detail::Polygons{{{0, 0}, {9000, 0}, {9000, 10}}});
+    detail::DisplayList list;
+    list.commands.emplace_back(detail::PushLayerCommand{.bounds = {0, 0, 10000, 10}, .opacity = 0.5f});
+    list.commands.emplace_back(detail::RectCommand{.rect = {0, 0, 10000, 10}, .fill = ShapeStyle(Color::black)});
+    list.commands.emplace_back(detail::PopLayerCommand{});
+    list.commands.emplace_back(detail::PathCommand{wide, {0, 0, 9000, 10}, 1, {}, {0, 0, 9000, 10},
+                                                   ShapeStyle(Color::black), FillRule::non_zero});
+
+    const detail::FramePlan limited = detail::plan_frame(list, 100, 100, nullptr, 4096);
+    REQUIRE(limited.layers.size() == 1);
+    REQUIRE(limited.paths.size() == 1);
+    CHECK(limited.layers[0].width == 4096);
+    CHECK(limited.paths[0].width == 4096);
+
+    // A device with larger textures: 8192 at most still.
+    const detail::FramePlan large = detail::plan_frame(list, 100, 100, nullptr, 16384);
+    REQUIRE(large.layers.size() == 1);
+    REQUIRE(large.paths.size() == 1);
+    CHECK(large.layers[0].width == 8192);
+    CHECK(large.paths[0].width == 8192);
+}
+
+TEST_CASE("an image larger than the device's textures gets no texture", "[.gpu][gpu-memory]") {
+    const detail::gpu::Instance instance;
+    const detail::gpu::Device device(instance);
+    const std::uint32_t side = device.max_texture_side();
+    CHECK(side >= 8192); // decode_image()'s default maximum side fits
+    detail::gpu::TextureCache textures(device, detail::gpu::create_image_layout(device.handle()));
+    const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
+    textures.begin_frame(detail::gpu::CacheClock::now());
+
+    detail::DecodedImage image;
+    image.id = 1;
+    image.width = side + 1;
+    image.height = 1;
+    image.rgba.resize(std::size_t{image.width} * 4);
+    CHECK_FALSE(textures.acquire(encoder, image));
+    image.id = 2;
+    image.width = 1;
+    image.height = side + 1;
+    CHECK_FALSE(textures.acquire(encoder, image));
+    image.id = 3;
+    image.height = 16;
+    image.rgba.resize(std::size_t{16} * 4);
+    CHECK(textures.acquire(encoder, image));
+
+    textures.end_frame();
+    device.submit(encoder.Finish());
+    device.wait_idle();
+}
+
+TEST_CASE("a video frame larger than the device's textures gets no texture", "[.gpu][gpu-memory]") {
+    const detail::gpu::Instance instance;
+    const detail::gpu::Device device(instance);
+    detail::gpu::VideoTextures videos(device, detail::gpu::create_image_layout(device.handle()));
+    const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
+    videos.begin_frame(detail::gpu::CacheClock::now());
+
+    detail::VideoFrame frame;
+    frame.kind = detail::VideoFrame::Kind::cpu;
+    frame.format = detail::VideoFrame::Format::bgra;
+    frame.source_id = 1;
+    frame.frame_id = 1;
+    frame.width = device.max_texture_side() + 1;
+    frame.height = 1;
+    frame.pixels = std::make_shared<const std::vector<std::uint8_t>>(
+        detail::packed_size(frame.format, frame.width, frame.height));
+    std::vector<std::uint64_t> acquired;
+    CHECK_FALSE(videos.acquire(encoder, frame, acquired));
+    frame.source_id = 2;
+    frame.width = 16;
+    frame.height = 16;
+    frame.pixels = std::make_shared<const std::vector<std::uint8_t>>(
+        detail::packed_size(frame.format, frame.width, frame.height));
+    CHECK(videos.acquire(encoder, frame, acquired));
+
+    videos.end_frame();
+    device.submit(encoder.Finish());
+    videos.release(acquired);
+    device.wait_idle();
 }

@@ -102,17 +102,19 @@ public:
     }
 
     // The image in `slot` when it has `format` and at least `width` x `height` pixels. Otherwise
-    // `make(width, height)` makes one in its place, rounded up so that small changes (animations,
-    // resizes) reuse it, and never smaller than the one it replaces.
+    // `make(width, height)` makes one in its place, rounded up (to `max_side` at most) so that
+    // small changes (animations, resizes) reuse it, and never smaller than the one it replaces.
     template <class Make>
     Image& acquire(const ImageSlot& slot, wgpu::TextureFormat format, std::uint32_t width, std::uint32_t height,
-                   std::uint32_t samples, const Make& make) {
+                   std::uint32_t samples, std::uint32_t max_side, const Make& make) {
         Entry* entry = find(slot);
         if (entry && entry->image.format() == format && entry->image.width() >= width &&
             entry->image.height() >= height) {
             return entry->image;
         }
-        const auto capacity = [](std::uint32_t side) { return (side + 255) / 256 * 256; };
+        const auto capacity = [&](std::uint32_t side) {
+            return std::max(side, std::min((side + 255) / 256 * 256, max_side));
+        };
         std::uint32_t capacity_width = capacity(width);
         std::uint32_t capacity_height = capacity(height);
         if (entry && entry->image.format() == format) {

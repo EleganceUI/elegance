@@ -93,8 +93,10 @@ std::uint64_t fnv1a(const void* data, std::size_t size, std::uint64_t hash = 146
 
 class Planner {
 public:
-    Planner(const DisplayList& list, FramePlan& plan, std::uint32_t width, std::uint32_t height, PathHashes& paths)
-        : list_(list), plan_(plan), paths_(paths), scale_(list.scale) {
+    Planner(const DisplayList& list, FramePlan& plan, std::uint32_t width, std::uint32_t height, PathHashes& paths,
+            std::uint32_t max_texture_side)
+        : list_(list), plan_(plan), paths_(paths), scale_(list.scale),
+          max_side_(std::max(1u, std::min(kMaxLayerSize, max_texture_side))) {
         plan_.main.width = width;
         plan_.main.height = height;
     }
@@ -343,8 +345,8 @@ private:
         const float y0 = std::floor(bounds.y) - 1;
         const float x1 = std::ceil(bounds.max_x()) + 1;
         const float y1 = std::ceil(bounds.max_y()) + 1;
-        const Rect area{x0, y0, std::min(x1 - x0, static_cast<float>(kMaxLayerSize)),
-                        std::min(y1 - y0, static_cast<float>(kMaxLayerSize))};
+        const Rect area{x0, y0, std::min(x1 - x0, static_cast<float>(max_side_)),
+                        std::min(y1 - y0, static_cast<float>(max_side_))};
         // Written so that NaN (a path with non-finite points) is skipped too.
         if (!mask_pass && (!(area.width >= 1) || !(area.height >= 1) ||
                            (clip.active && (!overlaps(area, clip.rect) || !overlaps(area, clip.scissor))))) {
@@ -352,8 +354,8 @@ private:
         }
 
         PlanPath path;
-        path.width = clamped_cast<std::uint32_t>(area.width, 1, kMaxLayerSize);
-        path.height = clamped_cast<std::uint32_t>(area.height, 1, kMaxLayerSize);
+        path.width = clamped_cast<std::uint32_t>(area.width, 1, max_side_);
+        path.height = clamped_cast<std::uint32_t>(area.height, 1, max_side_);
         path.even_odd = command.rule == FillRule::even_odd;
         const float k = command.scale * scale_;
         // Sub-pixel positions snap to a quarter pixel (at most 1/8 px off, invisible), so a moving
@@ -567,8 +569,8 @@ private:
         const float y0 = std::floor(content.y - margin);
         const float x1 = std::ceil(content.max_x() + margin);
         const float y1 = std::ceil(content.max_y() + margin);
-        const auto clamp_size = [](float v) {
-            return clamped_cast<std::uint32_t>(v, 1, kMaxLayerSize);
+        const auto clamp_size = [&](float v) {
+            return clamped_cast<std::uint32_t>(v, 1, max_side_);
         };
         PlanPass layer;
         layer.width = clamp_size(x1 - x0);
@@ -716,6 +718,7 @@ private:
     FramePlan& plan_;
     PathHashes& paths_;
     float scale_;
+    std::uint32_t max_side_; // of layers and path masks
     std::vector<std::vector<QuadInstance>> layer_instances_;
 };
 
@@ -768,11 +771,12 @@ void PathHashes::end_frame() {
     }
 }
 
-FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t height, PathHashes* paths) {
+FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t height, PathHashes* paths,
+                     std::uint32_t max_texture_side) {
     FramePlan plan;
     PathHashes once;
     PathHashes& hashes = paths ? *paths : once;
-    Planner(list, plan, width, height, hashes).run();
+    Planner(list, plan, width, height, hashes, max_texture_side).run();
     hashes.end_frame();
     return plan;
 }

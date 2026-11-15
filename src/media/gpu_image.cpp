@@ -282,6 +282,10 @@ public:
             (frame.transport == ELG_GPU_IMAGE_VULKAN_OPAQUE_FD && backend != wgpu::BackendType::Vulkan)) {
             return ELG_GPU_IMAGE_UNSUPPORTED;
         }
+        // No texture longer than the device allows.
+        if (frame.width > renderer_->max_texture_side || frame.height > renderer_->max_texture_side) {
+            return ELG_GPU_IMAGE_IMPORT_FAILED;
+        }
         ValidationScope scope(*renderer_);
         wgpu::SharedTextureMemoryIOSurfaceDescriptor io;
         io.ioSurface = frame.handle;

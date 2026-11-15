@@ -115,6 +115,9 @@ private:
                                std::uint32_t height, float sigma, std::uint32_t factor, bool clamp_edges,
                                std::uint64_t slot, const RenderResources& resources);
     const wgpu::BindGroup& empty_group(const RenderResources& resources);
+    // A side of the window's image: the window's (in pixels), up to what the device's textures
+    // allow.
+    [[nodiscard]] std::uint32_t window_side(int pixels) const;
     [[nodiscard]] wgpu::BindGroup image_group(const RenderResources& resources, const wgpu::TextureView& view) const;
     gpu::RenderImage& pooled_image(ImageRole role, std::uint64_t index, wgpu::TextureFormat format,
                                    std::uint32_t width, std::uint32_t height, std::uint32_t samples = 1,

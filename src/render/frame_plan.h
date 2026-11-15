@@ -10,6 +10,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -139,9 +140,11 @@ struct FramePlan {
 // that are fully clipped), splits layers into their own passes, and collects gradient stops.
 // Updates and snapshots each video source once, on the render thread.
 // `width` x `height` is the window in pixels. `paths` is the window's, kept across its frames;
-// null forgets the paths after this frame.
+// null forgets the paths after this frame. Layers and path masks are at most 8192 pixels, and
+// `max_texture_side` (the device's), on a side.
 FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t height,
-                     PathHashes* paths = nullptr);
+                     PathHashes* paths = nullptr,
+                     std::uint32_t max_texture_side = std::numeric_limits<std::uint32_t>::max());
 
 } // namespace elg::detail
 
