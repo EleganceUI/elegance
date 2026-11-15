@@ -10,6 +10,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <cmath>
+#include <vector>
 
 using namespace elg;
 using Catch::Approx;
@@ -149,4 +150,37 @@ TEST_CASE("strokes end, whatever the tolerance and the dash pattern", "[path]") 
     long_line.move_to({0, 0}).line_to({1e9f, 0});
     const Path dashes = long_line.stroked({.width = 2, .dash = {0.01f, 0.01f}});
     CHECK(dashes.contains({0.005f, 0}));
+}
+
+TEST_CASE("adding an empty path changes nothing", "[path]") {
+    Path path;
+    path.move_to({1, 1}).line_to({5, 1});
+    path.add_path(Path());
+    path.line_to({5, 5}); // goes on from (5, 1), in the same subpath
+    const std::vector<Path::Polyline> lines = path.flatten();
+    REQUIRE(lines.size() == 1);
+    REQUIRE(lines[0].points.size() == 3);
+    CHECK(lines[0].points[0].x == Approx(1));
+    CHECK(lines[0].points[2].y == Approx(5));
+    CHECK_FALSE(lines[0].closed);
+}
+
+TEST_CASE("a path added to itself gets a copy of what it had", "[path]") {
+    Path path;
+    path.move_to({0, 0}).line_to({4, 0}).line_to({4, 4}).close();
+    Path expected = path;
+    expected.add_path(Path(path));
+    path.add_path(path);
+    const std::vector<Path::Polyline> lines = path.flatten();
+    const std::vector<Path::Polyline> want = expected.flatten();
+    REQUIRE(lines.size() == 2);
+    REQUIRE(lines.size() == want.size());
+    for (std::size_t i = 0; i < lines.size(); ++i) {
+        REQUIRE(lines[i].points.size() == want[i].points.size());
+        CHECK(lines[i].closed == want[i].closed);
+        for (std::size_t j = 0; j < lines[i].points.size(); ++j) {
+            CHECK(lines[i].points[j].x == Approx(want[i].points[j].x));
+            CHECK(lines[i].points[j].y == Approx(want[i].points[j].y));
+        }
+    }
 }
