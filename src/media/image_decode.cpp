@@ -21,10 +21,6 @@ namespace {
 
 std::atomic<std::uint64_t> g_next_id{1};
 
-// Images with more pixels are refused before decoding: a few bytes of header can ask for
-// gigabytes. 2^27 RGBA pixels are 512 MiB.
-constexpr std::uint64_t kMaxPixels = std::uint64_t{1} << 27;
-
 // EXIF orientation 1-8: whether the stored pixels are turned a quarter (the upright size swaps).
 bool swaps_axes(int orientation) {
     return orientation >= 5 && orientation <= 8;
@@ -69,22 +65,28 @@ void orient(DecodedImage& image, int orientation) {
     image.height = out_h;
 }
 
+// The size and orientation of an image within `limits`.
+StoredImageInfo probe_within(std::span<const std::uint8_t> data, const ImageLimits& limits) {
+    const StoredImageInfo info = platform_probe_image(data);
+    if (std::uint64_t{info.width} * info.height > limits.max_pixels) {
+        throw ResourceError(std::format("the image is {} x {} pixels, more than the {} an image may have", info.width,
+                                        info.height, limits.max_pixels));
+    }
+    return info;
+}
+
 } // namespace
 
-ImageInfo probe_image(std::span<const std::uint8_t> data) {
-    const StoredImageInfo info = platform_probe_image(data);
+ImageInfo probe_image(std::span<const std::uint8_t> data, const ImageLimits& limits) {
+    const StoredImageInfo info = probe_within(data, limits);
     return swaps_axes(info.orientation) ? ImageInfo{info.height, info.width} : ImageInfo{info.width, info.height};
 }
 
-std::shared_ptr<const DecodedImage> decode_image(std::span<const std::uint8_t> data, std::uint32_t max_size) {
-    const StoredImageInfo info = platform_probe_image(data);
-    if (std::uint64_t{info.width} * info.height > kMaxPixels) {
-        throw ResourceError(std::format("the image is {} x {} pixels, more than the {} an image may have", info.width,
-                                        info.height, kMaxPixels));
-    }
+std::shared_ptr<const DecodedImage> decode_image(std::span<const std::uint8_t> data, const ImageLimits& limits) {
+    probe_within(data, limits);
     auto image = std::make_shared<DecodedImage>();
     image->id = g_next_id.fetch_add(1);
-    const int orientation = platform_decode_image(data, max_size, *image);
+    const int orientation = platform_decode_image(data, limits.max_side, *image);
     orient(*image, orientation);
     return image;
 }

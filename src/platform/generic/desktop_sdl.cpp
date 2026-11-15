@@ -258,7 +258,7 @@ struct TrayIcon::State {
                 bytes.assign(options.icon.data.begin(), options.icon.data.end());
             }
             if (!bytes.empty()) {
-                pixels = detail::decode_image(bytes, 256);
+                pixels = detail::decode_image(bytes, {.max_side = 256});
             }
         } catch (const std::exception& failure) {
             log_warning("TrayIcon: {}", failure.what());

@@ -9,6 +9,11 @@
 #include "net/http_cache.h"
 #include "net/proxy.h"
 
+#include "core/log.h"
+#include "core/ui_tasks.h"
+#include "test_images.h"
+#include "view/view_node.h"
+
 #include <elg/elegance.h>
 
 #include <boost/asio.hpp>
@@ -18,7 +23,9 @@
 #include <boost/beast/ssl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <array>
 #include <filesystem>
@@ -28,10 +35,12 @@
 #include <mutex>
 #include <random>
 #include <string>
+#include <string_view>
 #include <thread>
 
 using namespace elg;
 using namespace std::chrono_literals;
+using Catch::Matchers::ContainsSubstring;
 
 namespace {
 
@@ -91,6 +100,7 @@ wmZAujteSAEKpmLCsCEVJ8Z884hfe+U0WYC9HPiHLcu3n1AfGNHyekNG
 //   /two-fields 200 with Cache-Control in two fields, together "don't store"
 //   /header-60k 200 with a header section of about 60 KiB
 //   /header-70k 200 with a header section of about 70 KiB
+//   /huge.png   200 with a PNG file of 16384 x 8193 pixels (in 106 KB)
 // Connections stay open for more requests, unless `drop` (closed after each response, without
 // saying so).
 class TestServer {
@@ -206,6 +216,9 @@ private:
                 response.insert(std::format("X-Padding-{}", i), std::string(std::size_t{10} * 1024, 'p'));
             }
             response.body() = "padded";
+        } else if (target == "/huge.png") {
+            const std::vector<std::uint8_t> png = test::black_png(16384, 8193);
+            response.body().assign(png.begin(), png.end());
         } else {
             response.result(bhttp::status::not_found);
         }
@@ -383,6 +396,33 @@ net::FetchResult fetch(std::string url, net::FetchOptions options = {}) {
     net::fetch(std::move(url), [&](net::FetchResult result) { promise.set_value(std::move(result)); }, std::move(options));
     REQUIRE(future.wait_for(10s) == std::future_status::ready);
     return future.get();
+}
+
+// Shows an AsyncImage of `url` (memory cache only), and runs the UI thread's tasks until it leaves
+// the loading phase.
+AsyncImagePhase load_async_image(const std::string& url) {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    AsyncImagePhase last;
+    const View view = AsyncImage(
+        url,
+        [&](const AsyncImagePhase& phase) {
+            last = phase;
+            return View();
+        },
+        {.disk_cache = false});
+    const std::unique_ptr<detail::Element> root = detail::lower(view, {});
+    for (int i = 0; i < 1000 && last.kind == AsyncImagePhase::Kind::loading; ++i) {
+        std::this_thread::sleep_for(10ms);
+        detail::run_ui_tasks();
+        detail::flush_effects();
+    }
+    return last;
+}
+
+// Whether a recent log line has `text` in it.
+bool logged(std::string_view text) {
+    return std::ranges::any_of(detail::recent_log_lines(), [&](const std::string& line) { return line.contains(text); });
 }
 
 std::string text(const net::FetchResult& result) {
@@ -791,6 +831,22 @@ TEST_CASE("a damaged or truncated cache file is a miss, and goes", "[cache]") {
         CHECK_FALSE(cache.find(url));
         CHECK_FALSE(std::filesystem::exists(stored));
     }
+}
+
+TEST_CASE("AsyncImage fails on an image with too many pixels, and logs why", "[fetch][image]") {
+    const TestServer server;
+    const AsyncImagePhase phase = load_async_image(server.url("/huge.png"));
+    CHECK(phase.kind == AsyncImagePhase::Kind::failure);
+    CHECK_THAT(phase.error, ContainsSubstring("more than the 134217728"));
+    CHECK(logged(std::format("AsyncImage: {}: {}", server.url("/huge.png"), phase.error)));
+}
+
+TEST_CASE("AsyncImage logs the limit a download exceeded", "[fetch][image]") {
+    const TestServer server;
+    const AsyncImagePhase phase = load_async_image(server.url("/header-70k"));
+    CHECK(phase.kind == AsyncImagePhase::Kind::failure);
+    CHECK(phase.error == "the response's header section is larger than 64 KiB");
+    CHECK(logged(std::format("AsyncImage: {}: {}", server.url("/header-70k"), phase.error)));
 }
 
 TEST_CASE("AsyncImage builds", "[fetch][image]") {

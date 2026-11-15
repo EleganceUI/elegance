@@ -9,6 +9,7 @@
 
 #include <elg/image.h>
 
+#include "core/log.h"
 #include "core/ui_tasks.h"
 #include "media/image_decode.h"
 #include "net/fetch.h"
@@ -178,7 +179,7 @@ struct Loader {
         }
         auto data = std::make_shared<const Bytes>(*result);
         try {
-            probe_image(*data); // an error page or HTML isn't an image
+            probe_image(*data); // an error page or HTML isn't an image; nor is one with too many pixels
         } catch (const std::exception& failure) {
             loader->fail(failure.what());
             return;
@@ -191,6 +192,7 @@ struct Loader {
     }
 
     void fail(std::string why) {
+        log_warning("AsyncImage: {}: {}", url, why);
         error = std::move(why);
         phase = static_cast<int>(AsyncImagePhase::Kind::failure);
     }
