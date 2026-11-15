@@ -112,6 +112,33 @@ std::vector<Element*> EventDispatcher::path_at(Point location) {
 
 namespace {
 
+// The focus stops in tree pre-order, appended to `order`, in one walk of the tree. A
+// `.focused(binding)` scope is a stop only when nothing inside it is focusable, which the walk
+// learns from the scope's children rather than from the scope's focusable(), which would walk them
+// again for every scope. Inside a `.focusable(false)` scope nothing is a stop, but what's focusable
+// there still counts for the scopes around it, as it does for focusable().
+// Returns whether `element` or something inside it is focusable, as a scope around it counts it.
+bool collect_focus_order(Element& element, bool blocked, std::vector<Element*>& order) {
+    blocked = blocked || blocks_focus(element);
+    EventHandler* const handler = element.event_handler();
+    const bool scope = handler && is_focus_scope(*handler);
+    const bool focusable = handler && !scope && handler->focusable();
+    if (focusable && !blocked) {
+        order.push_back(&element);
+    }
+    bool inner = false;
+    element.for_each_child([&](Element& child) {
+        if (collect_focus_order(child, blocked, order)) {
+            inner = true;
+        }
+    });
+    if (scope && !inner && !blocked) {
+        order.push_back(&element); // nothing inside was a stop, so this is its pre-order place
+    }
+    return focusable || scope || inner;
+}
+
+
 // The event as `element` sees it: in its layout's coordinates. Content inside .offset is drawn
 // (and hit) away from where it's laid out, so the pointer is moved back by those offsets.
 PointerEvent local_event(PointerEvent event, const Element& element) {
@@ -428,16 +455,7 @@ bool EventDispatcher::key(const KeyEvent& event) {
 
 bool EventDispatcher::focus_edge(bool first) {
     std::vector<Element*> order;
-    std::function<void(Element&)> walk = [&](Element& element) {
-        if (blocks_focus(element)) {
-            return;
-        }
-        if (EventHandler* handler = element.event_handler(); handler && handler->focusable()) {
-            order.push_back(&element);
-        }
-        element.for_each_child(walk);
-    };
-    walk(*root_);
+    collect_focus_order(*root_, false, order);
     if (order.empty()) {
         return false;
     }
@@ -446,16 +464,7 @@ bool EventDispatcher::focus_edge(bool first) {
 
 bool EventDispatcher::move_focus(bool forward) {
     std::vector<Element*> order;
-    std::function<void(Element&)> walk = [&](Element& element) {
-        if (blocks_focus(element)) {
-            return;
-        }
-        if (EventHandler* handler = element.event_handler(); handler && handler->focusable()) {
-            order.push_back(&element);
-        }
-        element.for_each_child(walk);
-    };
-    walk(*root_);
+    collect_focus_order(*root_, false, order);
     if (order.empty()) {
         return false;
     }

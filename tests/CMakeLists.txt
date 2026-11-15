@@ -49,6 +49,7 @@ add_executable(elegance_tests
         shape_hit_tests.cpp
         render_device_lifetime_tests.cpp
         size_observer_tests.cpp
+        tab_order_tests.cpp
         text_input_tests.cpp
         toggle_tests.cpp
         ui_release_tests.cpp

@@ -955,31 +955,6 @@ private:
     bool pressed_ = false;
 };
 
-// `.focused(binding)` around a view: focusable itself only when nothing inside is (so Tab and
-// clicks reach the field it wraps, not an invisible wrapper first).
-class FocusScopeHandler final : public EventHandler {
-public:
-    void set_scope(Element* scope) noexcept { scope_ = scope; }
-    [[nodiscard]] bool focusable() const override {
-        bool inner = false;
-        std::function<void(Element&)> walk = [&](Element& element) {
-            if (inner) {
-                return;
-            }
-            if (EventHandler* handler = element.event_handler(); handler && handler->focusable()) {
-                inner = true;
-                return;
-            }
-            element.for_each_child(walk);
-        };
-        scope_->for_each_child(walk);
-        return !inner;
-    }
-
-private:
-    Element* scope_ = nullptr;
-};
-
 } // namespace
 
 // Focusable elements draw the ring in the tint.
