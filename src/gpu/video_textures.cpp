@@ -31,8 +31,9 @@ struct ConvertImmediates {
 
 } // namespace
 
-VideoTextures::VideoTextures(const Device& device, wgpu::BindGroupLayout  image_layout)
-    : device_(device), layout_(std::move(image_layout)), sampler_(create_linear_sampler(device.handle())) {
+VideoTextures::VideoTextures(const Device& device, wgpu::BindGroupLayout image_layout, CachePolicy policy)
+    : device_(device), layout_(std::move(image_layout)), sampler_(create_linear_sampler(device.handle())),
+      policy_(policy) {
     const wgpu::Device& dev = device.handle();
     const wgpu::ShaderModule module = create_shader(dev, kConvertWgsl, "video_convert.wgsl");
 
@@ -252,12 +253,11 @@ void VideoTextures::end_frame() {
     // External images belong to their producer: dropped once no recording holds them. A pending
     // recording owns its lease until release(), regardless of age.
     std::erase_if(textures_, [](const auto& entry) { return entry.second.external && !entry.second.lease; });
-    // One budget for both maps: what the textures keep leaves the rest to the targets.
-    const std::size_t kept = evict(textures_, frame_, kVideoTexturePolicy,
-                                   [](const Texture& texture) { return bool(texture.lease); });
-    CachePolicy targets = kVideoTexturePolicy;
-    targets.spare_bytes -= std::min(kept, targets.spare_bytes);
-    evict(targets_, frame_, targets);
+    // One budget for both maps.
+    Eviction eviction(frame_, policy_);
+    eviction.collect(textures_, [](const Texture& texture) { return bool(texture.lease); });
+    eviction.collect(targets_);
+    eviction.finish();
     std::erase_if(fences_,
                   [&](const auto& entry) { return frame_.number() - entry.second.last_used > kIdleFenceFrames; });
 }

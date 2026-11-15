@@ -240,7 +240,7 @@ TEST_CASE("a decoded image's texture counts its mipmaps", "[gpu-memory]") {
     CHECK(detail::gpu::decoded_texture_bytes(1, 1) == 4);
 }
 
-TEST_CASE("decoded images' textures go once undrawn for 10 s, or past 512 MB beyond the frame's", "[gpu-memory]") {
+TEST_CASE("the decoded image policy: 10 s undrawn, or past 512 MB beyond the frame's", "[gpu-memory]") {
     FakeCache cache{detail::gpu::kDecodedImagePolicy, {}, {}};
     cache.draw(t0, {{"photo", 300 * kMB}, {"banner", 300 * kMB}, {"icon", kMB}});
     CHECK(cache.entries.size() == 3); // the frame draws them all
@@ -260,7 +260,7 @@ TEST_CASE("decoded images' textures go once undrawn for 10 s, or past 512 MB bey
     CHECK(cache.entries.empty());
 }
 
-TEST_CASE("video textures go once undrawn for 5 s, or past 128 MB beyond the frame's", "[gpu-memory]") {
+TEST_CASE("the video texture policy: 5 s undrawn, or past 128 MB beyond the frame's", "[gpu-memory]") {
     FakeCache cache{detail::gpu::kVideoTexturePolicy, {}, {}};
     // Four 4K videos (32 MB a frame) and a small one.
     cache.draw(t0, {{"a", 32 * kMB}, {"b", 32 * kMB}, {"c", 32 * kMB}, {"d", 32 * kMB}, {"small", kMB}});
@@ -502,5 +502,193 @@ TEST_CASE("a video frame larger than the device's textures gets no texture", "[.
     videos.end_frame();
     device.submit(encoder.Finish());
     videos.release(acquired);
+    device.wait_idle();
+}
+
+TEST_CASE("one eviction spans several caches: their spare bytes add up", "[gpu-memory]") {
+    struct Entry {
+        detail::gpu::CacheUse use;
+    };
+    std::map<int, Entry> textures;
+    std::map<int, Entry> targets;
+    detail::gpu::CacheFrame frame;
+    const detail::gpu::CachePolicy policy{10s, 100};
+    // Drawn one a frame, oldest first: texture 1, target 2, texture 3, target 4, 40 bytes each.
+    for (int i = 1; i <= 4; ++i) {
+        frame.begin(t0 + i * 1s);
+        Entry& entry = (i % 2 ? textures : targets)[i];
+        entry.use.bytes = 40;
+        frame.mark(entry.use);
+    }
+    frame.begin(t0 + 5s);
+    detail::gpu::Eviction eviction(frame, policy);
+    eviction.collect(textures);
+    eviction.collect(targets);
+    // 160 bytes unused, 100 allowed: the two oldest go, one from each map.
+    CHECK(eviction.finish() == 80);
+    CHECK(textures.size() == 1);
+    CHECK(textures.contains(3));
+    CHECK(targets.size() == 1);
+    CHECK(targets.contains(4));
+}
+
+namespace {
+
+// An image of `side` x `side` pixels.
+detail::DecodedImage square_image(std::uint64_t id, std::uint32_t side) {
+    detail::DecodedImage image;
+    image.id = id;
+    image.width = side;
+    image.height = side;
+    image.rgba.resize(std::size_t{side} * side * 4);
+    return image;
+}
+
+// A frame in memory of `side` x `side` pixels from video source `source`.
+detail::VideoFrame cpu_frame(std::uint64_t source, std::uint32_t side) {
+    detail::VideoFrame frame;
+    frame.kind = detail::VideoFrame::Kind::cpu;
+    frame.format = detail::VideoFrame::Format::bgra;
+    frame.source_id = source;
+    frame.frame_id = source;
+    frame.width = side;
+    frame.height = side;
+    frame.pixels = std::make_shared<const std::vector<std::uint8_t>>(detail::packed_size(frame.format, side, side));
+    return frame;
+}
+
+} // namespace
+
+TEST_CASE("TextureCache releases a texture no frame drew for 10 s", "[.gpu][gpu-memory]") {
+    const detail::gpu::Instance instance;
+    const detail::gpu::Device device(instance);
+    detail::gpu::TextureCache textures(device, detail::gpu::create_image_layout(device.handle()));
+    const detail::DecodedImage image = square_image(1, 16);
+    const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
+    const auto frame = [&](detail::gpu::CacheClock::duration at, bool draw) {
+        textures.begin_frame(t0 + at);
+        if (draw) {
+            CHECK(textures.acquire(encoder, image));
+        }
+        textures.end_frame();
+    };
+    frame(0s, true);
+    frame(9s, true); // drawn again: its 10 s start over
+    frame(18900ms, false);
+    CHECK(textures.size() == 1);
+    frame(19s, false);
+    CHECK(textures.size() == 0);
+    device.submit(encoder.Finish());
+    device.wait_idle();
+}
+
+TEST_CASE("TextureCache keeps the textures a frame didn't draw within its budget", "[.gpu][gpu-memory]") {
+    const detail::gpu::Instance instance;
+    const detail::gpu::Device device(instance);
+    // Room for two 64 x 64 images beyond the frame's.
+    detail::gpu::TextureCache textures(device, detail::gpu::create_image_layout(device.handle()),
+                                       {10s, 2 * detail::gpu::decoded_texture_bytes(64, 64)});
+    std::vector<detail::DecodedImage> images;
+    for (std::uint64_t id = 1; id <= 4; ++id) {
+        images.push_back(square_image(id, 64));
+    }
+    const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
+    std::vector<wgpu::BindGroup> groups; // held, so a new group can't take an old one's address
+    for (std::size_t i = 0; i < images.size(); ++i) {
+        textures.begin_frame(t0 + i * 1s);
+        groups.push_back(textures.acquire(encoder, images[i]));
+        textures.end_frame();
+    }
+    // Three undrawn after the last frame: the first, the least recently drawn, went.
+    CHECK(textures.size() == 3);
+    textures.begin_frame(t0 + 5s);
+    CHECK(textures.acquire(encoder, images[1]).Get() == groups[1].Get()); // kept
+    CHECK(textures.acquire(encoder, images[0]).Get() != groups[0].Get()); // uploaded again
+    textures.end_frame();
+    // A frame that draws all four keeps them, beyond the budget.
+    textures.begin_frame(t0 + 6s);
+    for (const detail::DecodedImage& image : images) {
+        textures.acquire(encoder, image);
+    }
+    textures.end_frame();
+    CHECK(textures.size() == 4);
+    device.submit(encoder.Finish());
+    device.wait_idle();
+}
+
+TEST_CASE("VideoTextures releases a frame's texture no frame drew for 5 s", "[.gpu][gpu-memory]") {
+    const detail::gpu::Instance instance;
+    const detail::gpu::Device device(instance);
+    detail::gpu::VideoTextures videos(device, detail::gpu::create_image_layout(device.handle()));
+    const detail::VideoFrame video = cpu_frame(1, 16);
+    const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
+    std::vector<std::uint64_t> acquired;
+    const auto frame = [&](detail::gpu::CacheClock::duration at, bool draw) {
+        videos.begin_frame(t0 + at);
+        if (draw) {
+            CHECK(videos.acquire(encoder, video, acquired));
+        }
+        videos.end_frame();
+    };
+    frame(0s, true);
+    frame(3s, true); // drawn again: its 5 s start over
+    frame(7900ms, false);
+    CHECK(videos.size() == 1);
+    frame(8s, false);
+    CHECK(videos.size() == 0);
+    device.submit(encoder.Finish());
+    device.wait_idle();
+}
+
+TEST_CASE("VideoTextures keeps the textures a frame didn't draw within its budget", "[.gpu][gpu-memory]") {
+    const detail::gpu::Instance instance;
+    const detail::gpu::Device device(instance);
+    // Room for two 64 x 64 frames beyond the frame's.
+    detail::gpu::VideoTextures videos(device, detail::gpu::create_image_layout(device.handle()),
+                                      {5s, std::size_t{2} * 64 * 64 * 4});
+    const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
+    std::vector<std::uint64_t> acquired;
+    for (std::uint64_t source = 1; source <= 4; ++source) {
+        videos.begin_frame(t0 + source * 100ms);
+        CHECK(videos.acquire(encoder, cpu_frame(source, 64), acquired));
+        videos.end_frame();
+    }
+    CHECK(videos.size() == 3); // the first source's went
+    device.submit(encoder.Finish());
+    device.wait_idle();
+}
+
+TEST_CASE("VideoTextures keeps an external image while a recording holds it", "[.gpu][gpu-memory]") {
+    const detail::gpu::Instance instance;
+    const detail::gpu::Device device(instance);
+    detail::gpu::VideoTextures videos(device, detail::gpu::create_image_layout(device.handle()));
+    wgpu::TextureDescriptor descriptor;
+    descriptor.size = {16, 16, 1};
+    descriptor.format = wgpu::TextureFormat::RGBA8UnormSrgb;
+    descriptor.usage = wgpu::TextureUsage::TextureBinding;
+    detail::VideoFrame frame;
+    frame.kind = detail::VideoFrame::Kind::external;
+    frame.width = 16;
+    frame.height = 16;
+    frame.texture_id = 7;
+    frame.device = device.handle();
+    frame.texture = device.handle().CreateTexture(&descriptor);
+    frame.external_view = frame.texture.CreateView();
+    frame.texture_lease = std::make_shared<int>(0);
+    const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
+
+    std::vector<std::uint64_t> acquired;
+    videos.begin_frame(t0);
+    CHECK(videos.acquire(encoder, frame, acquired));
+    videos.end_frame();
+    // Not released yet, long past 5 s undrawn: still held.
+    videos.begin_frame(t0 + 60s);
+    videos.end_frame();
+    CHECK(videos.size() == 1);
+    device.submit(encoder.Finish());
+    videos.release(acquired);
+    videos.begin_frame(t0 + 61s);
+    videos.end_frame();
+    CHECK(videos.size() == 0);
     device.wait_idle();
 }

@@ -9,6 +9,9 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <iterator>
+#include <utility>
 #include <vector>
 
 namespace elg::detail::gpu {
@@ -50,34 +53,69 @@ private:
     std::uint64_t number_ = 0;
 };
 
-// Erases from `entries` (a map whose values have a CacheUse `use`) what `policy` releases after
-// `frame`'s uses were marked. Entries for which `pinned(value)` is true are neither erased nor
-// counted. Returns the bytes the remaining entries that `frame` doesn't use take.
-template <class Map, class Pinned>
-std::size_t evict(Map& entries, const CacheFrame& frame, const CachePolicy& policy, const Pinned& pinned) {
-    std::size_t spare = 0;
-    std::vector<typename Map::iterator> unused; // erasing others leaves these valid
-    for (auto it = entries.begin(); it != entries.end();) {
-        const CacheUse& use = it->second.use;
-        if (frame.uses(use) || pinned(it->second)) {
-            ++it;
-        } else if (frame.now() - use.last_used >= policy.idle_limit) {
-            it = entries.erase(it);
-        } else {
-            spare += use.bytes;
-            unused.push_back(it);
-            ++it;
+// Releases what `policy` says to, after `frame`'s uses were marked, from one or more maps whose
+// values have a CacheUse `use`: collect() each map, then finish(). The spare bytes are those of
+// all the maps together, and the least recently used entry of any of them goes first.
+class Eviction {
+public:
+    Eviction(const CacheFrame& frame, const CachePolicy& policy) : frame_(frame), policy_(policy) {}
+
+    // Erases the entries of `entries` unused for the idle limit, and notes the others the frame
+    // doesn't use. Entries for which `pinned(value)` is true are neither erased nor counted.
+    template <class Map, class Pinned>
+    void collect(Map& entries, const Pinned& pinned) {
+        for (auto it = entries.begin(); it != entries.end();) {
+            const CacheUse& use = it->second.use;
+            if (frame_.uses(use) || pinned(it->second)) {
+                ++it;
+            } else if (frame_.now() - use.last_used >= policy_.idle_limit) {
+                it = entries.erase(it);
+            } else {
+                spare_ += use.bytes;
+                // Erasing other entries leaves `it` valid.
+                unused_.push_back({use.last_used, use.bytes, [&entries, it] { entries.erase(it); }});
+                ++it;
+            }
         }
     }
-    while (spare > policy.spare_bytes && !unused.empty()) {
-        const auto oldest =
-            std::ranges::min_element(unused, {}, [](const auto& it) { return it->second.use.last_used; });
-        spare -= (*oldest)->second.use.bytes;
-        entries.erase(*oldest);
-        *oldest = unused.back();
-        unused.pop_back();
+    template <class Map>
+    void collect(Map& entries) {
+        collect(entries, [](const auto&) { return false; });
     }
-    return spare;
+
+    // Erases the least recently used entries noted until the rest take at most the policy's
+    // spare bytes. Returns the bytes they take.
+    std::size_t finish() {
+        while (spare_ > policy_.spare_bytes && !unused_.empty()) {
+            const auto oldest = std::ranges::min_element(unused_, {}, &Unused::last_used);
+            spare_ -= oldest->bytes;
+            oldest->erase();
+            if (oldest != std::prev(unused_.end())) {
+                *oldest = std::move(unused_.back());
+            }
+            unused_.pop_back();
+        }
+        return spare_;
+    }
+
+private:
+    struct Unused {
+        CacheClock::time_point last_used;
+        std::size_t bytes = 0;
+        std::function<void()> erase;
+    };
+    const CacheFrame& frame_;
+    CachePolicy policy_;
+    std::size_t spare_ = 0;
+    std::vector<Unused> unused_;
+};
+
+// Eviction of one map. Returns the bytes its remaining entries that `frame` doesn't use take.
+template <class Map, class Pinned>
+std::size_t evict(Map& entries, const CacheFrame& frame, const CachePolicy& policy, const Pinned& pinned) {
+    Eviction eviction(frame, policy);
+    eviction.collect(entries, pinned);
+    return eviction.finish();
 }
 
 template <class Map>

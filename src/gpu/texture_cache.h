@@ -39,7 +39,9 @@ constexpr std::size_t decoded_texture_bytes(std::uint32_t width, std::uint32_t h
 // says once frames stop drawing it. Render thread only.
 class TextureCache {
 public:
-    TextureCache(const Device& device, wgpu::BindGroupLayout  image_layout);
+    // `policy`: kDecodedImagePolicy, unless tests ask for another.
+    TextureCache(const Device& device, wgpu::BindGroupLayout image_layout,
+                 CachePolicy policy = kDecodedImagePolicy);
 
     TextureCache(const TextureCache&) = delete;
     TextureCache& operator=(const TextureCache&) = delete;
@@ -59,6 +61,9 @@ public:
     // alive for frames still using it, so releasing one is always safe.)
     void end_frame();
 
+    // How many images have a texture.
+    [[nodiscard]] std::size_t size() const noexcept { return textures_.size(); }
+
 private:
     struct Texture {
         wgpu::Texture texture;
@@ -73,6 +78,7 @@ private:
     wgpu::Sampler sampler_;
     wgpu::RenderPipeline mip_pipeline_;
     std::unordered_map<std::uint64_t, Texture> textures_; // by DecodedImage::id
+    CachePolicy policy_;
     CacheFrame frame_;
     bool warned_ = false; // about an image too large for a texture
 };

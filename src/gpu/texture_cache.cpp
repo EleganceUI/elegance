@@ -22,8 +22,9 @@ constexpr wgpu::TextureFormat kFormat = wgpu::TextureFormat::RGBA8UnormSrgb; // 
 
 } // namespace
 
-TextureCache::TextureCache(const Device& device, wgpu::BindGroupLayout  image_layout)
-    : device_(device), layout_(std::move(image_layout)), sampler_(create_linear_sampler(device.handle())) {
+TextureCache::TextureCache(const Device& device, wgpu::BindGroupLayout image_layout, CachePolicy policy)
+    : device_(device), layout_(std::move(image_layout)), sampler_(create_linear_sampler(device.handle())),
+      policy_(policy) {
     const wgpu::Device& dev = device.handle();
     const wgpu::ShaderModule module = create_shader(dev, kMipmapWgsl, "mipmap.wgsl");
     wgpu::PipelineLayoutDescriptor layout_info;
@@ -119,7 +120,7 @@ void TextureCache::generate_mips(const wgpu::CommandEncoder& encoder, const wgpu
 }
 
 void TextureCache::end_frame() {
-    evict(textures_, frame_, kDecodedImagePolicy);
+    evict(textures_, frame_, policy_);
 }
 
 } // namespace elg::detail::gpu

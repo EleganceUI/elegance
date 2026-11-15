@@ -36,7 +36,9 @@ inline constexpr CachePolicy kVideoTexturePolicy{std::chrono::seconds(5), std::s
 //   way. Queue ordering keeps frames in flight intact with one image per source.
 class VideoTextures {
 public:
-    VideoTextures(const Device& device, wgpu::BindGroupLayout  image_layout);
+    // `policy`: kVideoTexturePolicy, unless tests ask for another.
+    VideoTextures(const Device& device, wgpu::BindGroupLayout image_layout,
+                  CachePolicy policy = kVideoTexturePolicy);
 
     VideoTextures(const VideoTextures&) = delete;
     VideoTextures& operator=(const VideoTextures&) = delete;
@@ -63,6 +65,9 @@ public:
     // Ends the frame: releases textures as kVideoTexturePolicy says (a video that changed size,
     // or stopped being shown), except external images a recording still holds.
     void end_frame();
+
+    // How many frame textures (imported or converted into) it holds.
+    [[nodiscard]] std::size_t size() const noexcept { return textures_.size() + targets_.size(); }
 
 private:
     struct Texture {
@@ -109,6 +114,7 @@ private:
     std::unordered_map<std::uint64_t, CpuTarget> targets_; // by VideoFrame::source_id
     wgpu::BindGroupLayout frame_layout_; // one storage buffer
     wgpu::RenderPipeline convert_pipeline_;
+    CachePolicy policy_;
     CacheFrame frame_;
     bool warned_ = false;
 };
