@@ -17,6 +17,7 @@ add_executable(elegance_tests
         desktop_tests.cpp
         environment_tests.cpp
         glyph_atlas_tests.cpp
+        gpu_memory_tests.cpp
         gpu_image_tests.cpp
         grid_tests.cpp
         hover_tests.cpp
