@@ -155,9 +155,8 @@ struct Loader {
     ~Loader() { task.cancel(); }
 
     void start(const std::shared_ptr<Loader>& self) {
-        bytes = DownloadCache::instance().find(url);
-        if (bytes) {
-            phase = static_cast<int>(AsyncImagePhase::Kind::success);
+        if (std::shared_ptr<const Bytes> cached = DownloadCache::instance().find(url)) {
+            show(std::move(cached)); // probed again: another view may have downloaded it with other limits
             return;
         }
         generation = DownloadCache::instance().generation();
@@ -179,17 +178,23 @@ struct Loader {
             return;
         }
         auto data = std::make_shared<const Bytes>(*result);
+        if (loader->show(data) && loader->generation == DownloadCache::instance().generation()) {
+            DownloadCache::instance().store(loader->url, std::move(data));
+        }
+    }
+
+    // The success phase with `data` if it's an image within this view's limits (an error page or
+    // HTML isn't an image), else the failure phase.
+    bool show(std::shared_ptr<const Bytes> data) {
         try {
-            probe_image(*data, loader->limits); // an error page or HTML isn't an image; nor is one too large
+            probe_image(*data, limits);
         } catch (const std::exception& failure) {
-            loader->fail(failure.what());
-            return;
+            fail(failure.what());
+            return false;
         }
-        if (loader->generation == DownloadCache::instance().generation()) {
-            DownloadCache::instance().store(loader->url, data);
-        }
-        loader->bytes = std::move(data);
-        loader->phase = static_cast<int>(AsyncImagePhase::Kind::success);
+        bytes = std::move(data);
+        phase = static_cast<int>(AsyncImagePhase::Kind::success);
+        return true;
     }
 
     void fail(std::string why) {

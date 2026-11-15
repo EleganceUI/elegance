@@ -1148,6 +1148,19 @@ TEST_CASE("an AsyncImage's limits can be lowered or raised for it", "[fetch][ima
     CHECK(raised.kind == AsyncImagePhase::Kind::success);
 }
 
+TEST_CASE("an AsyncImage applies its own limits to an image another view downloaded", "[fetch][image]") {
+    const TestServer server;
+    const std::string url = server.url("/huge.png");
+    // The first view's raised limit lets it in, and into the memory cache...
+    CHECK(load_async_image(url, {.disk_cache = false, .max_pixels = std::uint64_t{1} << 28}).kind ==
+          AsyncImagePhase::Kind::success);
+    // ...where the next view, with the default limit, finds it too large.
+    const AsyncImagePhase next = load_async_image(url);
+    CHECK(next.kind == AsyncImagePhase::Kind::failure);
+    CHECK_THAT(next.error, ContainsSubstring("more than the 134217728"));
+    CHECK(server.hits("/huge.png") == 1);
+}
+
 TEST_CASE("AsyncImage logs the limit a download exceeded", "[fetch][image]") {
     const TestServer server;
     const AsyncImagePhase phase = load_async_image(server.url("/header-70k"));
