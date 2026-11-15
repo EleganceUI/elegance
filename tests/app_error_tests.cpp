@@ -11,6 +11,8 @@
 #include "reactive/runtime.h"
 #include "render/display_list.h"
 #include "text/text_system.h"
+#include "view/event_dispatcher.h"
+#include "view/focus.h"
 #include "view/view_node.h"
 
 #include <elg/elegance.h>
@@ -227,4 +229,78 @@ TEST_CASE("while an App runs, a layout that throws has no size, and a canvas tha
     Heard heard;
     detail::handle_app_errors(recorder(heard));
     CHECK(heard.codes == std::vector<AppCode>{AppCode::layout, AppCode::drawing});
+}
+
+namespace {
+
+// A 100 x 100 window filled with `view`.
+struct EventWindow {
+    detail::FocusManager focus; // outlives the tree: its elements let go of it when destroyed
+    std::unique_ptr<detail::Element> root;
+    std::unique_ptr<detail::EventDispatcher> events;
+
+    explicit EventWindow(const View& view) {
+        root = detail::lower(view.frame(100, 100), {.text = &text_system(), .focus = &focus});
+        root->size_that_fits({100.f, 100.f});
+        root->place({}, {100.f, 100.f});
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
+    }
+
+    void button(PointerEvent::Kind kind) const {
+        events->pointer_button(kind, {50, 50}, MouseButton::left, 1, KeyModifiers::none);
+    }
+};
+
+} // namespace
+
+TEST_CASE("while an App runs, a press a handler throws in goes no further", "[app-errors][events]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const Run run;
+    int clicks = 0;
+    int inner_ups = 0;
+    const EventWindow window(Rectangle()
+                                 .fill(Color::black)
+                                 .on_pointer([&](const PointerEvent& event) -> bool {
+                                     if (event.kind == PointerEvent::Kind::down) {
+                                         throw std::runtime_error("down");
+                                     }
+                                     inner_ups += event.kind == PointerEvent::Kind::up ? 1 : 0;
+                                     return true;
+                                 })
+                                 .focusable()
+                                 .padding(10)
+                                 .on_click([&] { ++clicks; }));
+    window.events->pointer_moved({50, 50});
+    CHECK_NOTHROW(window.button(PointerEvent::Kind::down));
+    window.button(PointerEvent::Kind::up);
+    CHECK(clicks == 0);    // the click around it never saw the press through
+    CHECK(inner_ups == 0); // nor did the handler that threw get the rest of it
+    CHECK(window.focus.focused()); // the focus the press gave before the handler ran stays
+    Heard heard;
+    detail::handle_app_errors(recorder(heard));
+    CHECK(heard.codes == std::vector<AppCode>{AppCode::event_handler});
+    // The next press is a press like any other.
+    window.button(PointerEvent::Kind::down);
+    window.button(PointerEvent::Kind::up);
+    detail::handle_app_errors(recorder(heard));
+    CHECK(heard.codes.size() == 2);
+}
+
+TEST_CASE("while an App runs, Tab whose handler throws moves no focus", "[app-errors][events]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const Run run;
+    const EventWindow window(HStack(Rectangle().fill(Color::black).frame(20, 20).focusable().on_key([](const KeyEvent& event) -> bool {
+                                        if (event.key == Key::tab) {
+                                            throw std::runtime_error("key");
+                                        }
+                                        return false;
+                                    }),
+                                    Rectangle().fill(Color::black).frame(20, 20).focusable()));
+    window.events->key({.kind = KeyEvent::Kind::down, .key = Key::tab}); // nothing focused: to the first
+    const detail::Element* const first = window.focus.focused();
+    REQUIRE(first);
+    CHECK(window.events->key({.kind = KeyEvent::Kind::down, .key = Key::tab})); // counts as handled
+    CHECK(window.focus.focused() == first); // not moved on to the second
 }

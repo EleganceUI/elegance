@@ -6,6 +6,8 @@
 
 #include "view/window_drag.h"
 
+#include "core/app_errors.h"
+
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -189,7 +191,7 @@ bool EventDispatcher::update_hover(const std::vector<Element*>& path) {
     return tick();
 }
 
-bool EventDispatcher::tick() {
+bool EventDispatcher::tick_unguarded() {
     const DeferEffects defer;
     const double now = now_seconds();
     bool redraw = expire_watchers();
@@ -274,7 +276,7 @@ bool EventDispatcher::bubble(const std::vector<Element*>& path, const PointerEve
     return redraw;
 }
 
-bool EventDispatcher::pointer_moved(Point location) {
+bool EventDispatcher::pointer_moved_unguarded(Point location) {
     const DeferEffects defer;
     // Moving the mouse ends a wheel gesture, so the next one goes to what's under it. Ignored
     // right after a wheel event, when a hand on the wheel jiggles the mouse.
@@ -288,6 +290,9 @@ bool EventDispatcher::pointer_moved(Point location) {
     pointer_inside_ = true;
     const std::vector<Element*> path = path_at(location);
     bool redraw = update_hover(path);
+    if (press_dead_) {
+        return redraw; // a press a handler threw in: the rest of it goes to no handler
+    }
     redraw |= expire_watchers();
     const PointerEvent move{.kind = PointerEvent::Kind::move, .location = location, .window_location = location};
     if (captured_) {
@@ -298,11 +303,14 @@ bool EventDispatcher::pointer_moved(Point location) {
     return redraw | watch(move);
 }
 
-bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, MouseButton button,
+bool EventDispatcher::pointer_button_unguarded(PointerEvent::Kind kind, Point location, MouseButton button,
                                      int click_count, KeyModifiers modifiers) {
     const DeferEffects defer;
     last_location_ = location;
     pointer_inside_ = true;
+    if (kind == PointerEvent::Kind::down) {
+        press_dead_ = false; // a new press
+    }
     const PointerEvent event{.kind = kind,
                              .location = location,
                              .button = button,
@@ -311,6 +319,10 @@ bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, Mo
                              .window_location = location};
     const std::vector<Element*> path = path_at(location);
     bool redraw = update_hover(path);
+    // A press a handler threw in: the rest of it goes to no handler.
+    if (kind == PointerEvent::Kind::up && std::exchange(press_dead_, false)) {
+        return redraw;
+    }
 
     if (kind == PointerEvent::Kind::down) {
         // Clicking focuses what was clicked (without a ring) or, on nothing focusable, clears focus.
@@ -435,7 +447,7 @@ bool EventDispatcher::take_press(const Watcher& winner) {
     return true;
 }
 
-bool EventDispatcher::pointer_left() {
+bool EventDispatcher::pointer_left_unguarded() {
     const DeferEffects defer;
     // While a button is held the platform keeps the pointer captured, so leaving only matters
     // for hover.
@@ -443,7 +455,7 @@ bool EventDispatcher::pointer_left() {
     return update_hover({});
 }
 
-bool EventDispatcher::key(const KeyEvent& event) {
+bool EventDispatcher::key_unguarded(const KeyEvent& event) {
     const DeferEffects defer;
     bool redraw = false;
     // The focused element and its ancestors; with nothing focused, the root alone (a window's
@@ -525,7 +537,7 @@ bool EventDispatcher::move_focus(bool forward) {
     return redraw;
 }
 
-bool EventDispatcher::scroll(ScrollEvent event) {
+bool EventDispatcher::scroll_unguarded(ScrollEvent event) {
     const DeferEffects defer;
     // A wheel gesture ends after this long without wheel events.
     constexpr double kWheelGesturePause = 0.5;
@@ -614,7 +626,7 @@ bool gesture(Element*& latched, const std::vector<Element*>& path, const Event& 
 
 } // namespace
 
-bool EventDispatcher::magnify(MagnifyEvent event) {
+bool EventDispatcher::magnify_unguarded(MagnifyEvent event) {
     const DeferEffects defer;
     magnify_scale_ = event.phase == GesturePhase::began ? event.delta : magnify_scale_ * event.delta;
     event.scale = magnify_scale_;
@@ -622,7 +634,7 @@ bool EventDispatcher::magnify(MagnifyEvent event) {
                    [](EventHandler& handler, const MagnifyEvent& e) { return handler.magnify(e); });
 }
 
-bool EventDispatcher::rotate(RotateEvent event) {
+bool EventDispatcher::rotate_unguarded(RotateEvent event) {
     const DeferEffects defer;
     rotate_degrees_ = event.phase == GesturePhase::began ? event.delta : rotate_degrees_ + event.delta;
     event.degrees = rotate_degrees_;
@@ -630,7 +642,7 @@ bool EventDispatcher::rotate(RotateEvent event) {
                    [](EventHandler& handler, const RotateEvent& e) { return handler.rotate(e); });
 }
 
-bool EventDispatcher::two_finger_double_tap(Point location) {
+bool EventDispatcher::two_finger_double_tap_unguarded(Point location) {
     const DeferEffects defer;
     bool redraw = false;
     const std::vector<Element*> path = path_at(location);
@@ -646,7 +658,7 @@ bool EventDispatcher::two_finger_double_tap(Point location) {
     return redraw;
 }
 
-bool EventDispatcher::text_input(const TextInputEvent& event) {
+bool EventDispatcher::text_input_unguarded(const TextInputEvent& event) {
     const DeferEffects defer;
     bool redraw = false;
     // The focused element and its ancestors (none when nothing is focused): capture handlers from
@@ -707,12 +719,12 @@ PointerStyle EventDispatcher::pointer_style() {
     return PointerStyle::arrow;
 }
 
-bool EventDispatcher::refresh_hover() {
+bool EventDispatcher::refresh_hover_unguarded() {
     const DeferEffects defer;
     return pointer_inside_ && update_hover(path_at(last_location_));
 }
 
-bool EventDispatcher::revalidate() {
+bool EventDispatcher::revalidate_unguarded() {
     const DeferEffects defer;
     return pointer_inside_ ? update_hover(path_at(last_location_)) : false;
 }
@@ -744,7 +756,7 @@ EventDispatcher::~EventDispatcher() {
     std::erase(dispatchers(), this);
 }
 
-void EventDispatcher::leaving(Element& subtree) {
+void EventDispatcher::leaving_unguarded(Element& subtree) {
     const DeferEffects defer;
     const auto in = [&](const Element* element) { return element && inside(element, subtree); };
     const PointerEvent cancel{.kind = PointerEvent::Kind::cancel, .location = last_location_,
@@ -819,7 +831,7 @@ void element_destroyed(const Element* element) noexcept {
     }
 }
 
-bool EventDispatcher::release_disabled() {
+bool EventDispatcher::release_disabled_unguarded() {
     const DeferEffects defer;
     const auto disabled = [](Element* element) { return element->disabled_handler() != nullptr; };
     const PointerEvent cancel{.kind = PointerEvent::Kind::cancel, .location = last_location_,
@@ -859,6 +871,118 @@ bool EventDispatcher::release_disabled() {
         redraw |= focus_->focus(nullptr, false);
     }
     return redraw;
+}
+
+bool EventDispatcher::in_press() const noexcept {
+    return captured_ || !watchers_.empty() || !companions_.empty();
+}
+
+// Runs an entry point's work. A handler that throws ends the event there: the exception is
+// reported (outside a run, it goes on), and the event counts as handled, so Elegance takes no
+// action of its own for it (Tab, a menu shortcut). During a press, the press ends too.
+template <class F>
+bool EventDispatcher::guarded(bool press, F&& work) {
+    try {
+        return std::forward<F>(work)();
+    } catch (...) {
+        report_app_exception(std::current_exception(), AppCode::event_handler);
+        if (press) {
+            end_press();
+        }
+        return true;
+    }
+}
+
+// The rest of the press goes to no handler: its captor hears it's cancelled, its gestures reset.
+void EventDispatcher::end_press() {
+    press_dead_ = true;
+    const PointerEvent cancel{.kind = PointerEvent::Kind::cancel, .location = last_location_,
+                              .window_location = last_location_};
+    if (Element* captor = std::exchange(captured_, nullptr)) {
+        run_app_code(AppCode::event_handler, [&] { deliver(cancel, *captor); });
+    }
+    for (const Watcher& watcher : std::exchange(watchers_, {})) {
+        run_app_code(AppCode::event_handler, [&] { watcher.recognizer->reset(); });
+    }
+    for (const Companion& companion : std::exchange(companions_, {})) {
+        run_app_code(AppCode::event_handler, [&] { companion.recognizer->reset(); });
+    }
+}
+
+// --- Entry points: their work, guarded (see guarded()) ---
+
+bool EventDispatcher::tick() {
+    const DeferEffects defer;
+    return guarded(in_press(), [&] { return tick_unguarded(); });
+}
+
+bool EventDispatcher::pointer_moved(Point location) {
+    const DeferEffects defer;
+    return guarded(in_press(), [&] { return pointer_moved_unguarded(location); });
+}
+
+bool EventDispatcher::pointer_button(PointerEvent::Kind kind, Point location, MouseButton button, int click_count,
+                                     KeyModifiers modifiers) {
+    const DeferEffects defer;
+    return guarded(true, [&] { return pointer_button_unguarded(kind, location, button, click_count, modifiers); });
+}
+
+bool EventDispatcher::pointer_left() {
+    const DeferEffects defer;
+    return guarded(false, [&] { return pointer_left_unguarded(); });
+}
+
+bool EventDispatcher::key(const KeyEvent& event) {
+    const DeferEffects defer;
+    return guarded(false, [&] { return key_unguarded(event); });
+}
+
+bool EventDispatcher::scroll(ScrollEvent event) {
+    const DeferEffects defer;
+    return guarded(false, [&] { return scroll_unguarded(event); });
+}
+
+bool EventDispatcher::magnify(MagnifyEvent event) {
+    const DeferEffects defer;
+    return guarded(false, [&] { return magnify_unguarded(event); });
+}
+
+bool EventDispatcher::rotate(RotateEvent event) {
+    const DeferEffects defer;
+    return guarded(false, [&] { return rotate_unguarded(event); });
+}
+
+bool EventDispatcher::two_finger_double_tap(Point location) {
+    const DeferEffects defer;
+    return guarded(false, [&] { return two_finger_double_tap_unguarded(location); });
+}
+
+bool EventDispatcher::text_input(const TextInputEvent& event) {
+    const DeferEffects defer;
+    return guarded(false, [&] { return text_input_unguarded(event); });
+}
+
+bool EventDispatcher::refresh_hover() {
+    const DeferEffects defer;
+    return guarded(false, [&] { return refresh_hover_unguarded(); });
+}
+
+bool EventDispatcher::revalidate() {
+    const DeferEffects defer;
+    return guarded(false, [&] { return revalidate_unguarded(); });
+}
+
+void EventDispatcher::leaving(Element& subtree) {
+    const DeferEffects defer;
+    guarded(in_press(), [&] {
+        leaving_unguarded(subtree);
+        return false;
+    });
+}
+
+bool EventDispatcher::release_disabled() {
+    const DeferEffects defer;
+    return guarded(in_press(), [&] { return release_disabled_unguarded(); });
 }
 
 } // namespace elg::detail
