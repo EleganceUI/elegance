@@ -329,6 +329,10 @@ const FontFace* FontLibrary::fallback_for(char32_t codepoint, bool emoji) {
 
 const FontFace& FontLibrary::resolve(const Font& font) {
     RegisteredFont source = find_font(font);
+    // A file registered both for an icon set and for text is two faces: each draws as its role says.
+    if (source.icon) {
+        source.key += "#icon";
+    }
     auto it = faces_.find(source.key);
     if (it == faces_.end()) {
         auto data = source.data ? source.data

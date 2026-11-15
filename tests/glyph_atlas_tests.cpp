@@ -117,6 +117,36 @@ TEST_CASE("a full glyph atlas starts over after the frame instead of dropping gl
     // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
+namespace {
+
+// The file the system font comes from.
+std::filesystem::path system_font_file() {
+    for (const std::filesystem::path& file : detail::system_font_candidates(Weight::regular, false)) {
+        if (std::filesystem::is_regular_file(file)) {
+            return file;
+        }
+    }
+    FAIL("no system font");
+    return {};
+}
+
+} // namespace
+
+TEST_CASE("a font file registered for icons and for text is drawn as each use was registered", "[text]") {
+    const std::filesystem::path file = system_font_file();
+    register_font("elg.test.roles.text", file);
+    detail::mark_icon_font_family("elg.test.roles.icon");
+    register_font("elg.test.roles.icon", file);
+    for (const bool icon_first : {true, false}) {
+        detail::FontLibrary fonts;
+        const char* const order[] = {"elg.test.roles.text", "elg.test.roles.icon"};
+        const detail::FontFace& first = fonts.resolve(Font::custom(order[icon_first ? 1 : 0], 12));
+        const detail::FontFace& second = fonts.resolve(Font::custom(order[icon_first ? 0 : 1], 12));
+        CHECK(first.icon() == icon_first);
+        CHECK(second.icon() == !icon_first);
+    }
+}
+
 #if defined(__linux__)
 TEST_CASE("the system font for each weight is a file that exists", "[text][linux]") {
     const auto regular = detail::system_font_candidates(Weight::regular, false);

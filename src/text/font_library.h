@@ -141,7 +141,9 @@ private:
     const FontFace& load(const std::string& key, const std::filesystem::path& file);
 
     FT_Library library_ = nullptr;
-    std::unordered_map<std::string, std::unique_ptr<FontFace>> faces_; // by file path or memory key
+    // By file path or memory key, with "#icon" for icon fonts, then "@wght=" and the weight for a
+    // variable font's instances.
+    std::unordered_map<std::string, std::unique_ptr<FontFace>> faces_;
     // The fallback chain: loaded one font at a time, only when the fonts before it don't have a
     // character (a CJK font isn't read until CJK text appears).
     std::vector<std::filesystem::path> fallback_files_;
