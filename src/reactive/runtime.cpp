@@ -38,9 +38,10 @@ int g_batch_depth = 0;
 // Computed values and effects running now, nested; no flush starts inside them.
 int g_running = 0;
 bool g_flushing = false;
-// Effects waiting to run, in order. Disposed nodes remove themselves, so the queue never holds
-// a dangling pointer, even when running one effect disposes others (e.g. If unmounting a
-// branch).
+// Effects waiting to run, in the order they were scheduled: priority effects in a queue of their
+// own, which a flush empties first. Disposed nodes remove themselves, so the queues never hold a
+// dangling pointer, even when running one effect disposes others (e.g. If unmounting a branch).
+std::deque<ReactiveNode*> g_priority_pending;
 std::deque<ReactiveNode*> g_pending;
 // The running App's UI thread; none (a default id) while no App runs. Other threads read it.
 std::atomic<std::thread::id> g_ui_thread;
@@ -84,11 +85,7 @@ struct Runtime {
             }
             if (!node->queued_) {
                 node->queued_ = true;
-                if (node->priority_) {
-                    g_pending.push_front(node);
-                } else {
-                    g_pending.push_back(node);
-                }
+                (node->priority_ ? g_priority_pending : g_pending).push_back(node);
             }
         }
         if (was_clean) {
@@ -209,7 +206,7 @@ void ReactiveNode::dispose() noexcept {
     }
     observers_.clear();
     if (queued_) {
-        std::erase(g_pending, this);
+        std::erase(priority_ ? g_priority_pending : g_pending, this);
         queued_ = false;
     }
 }
@@ -315,17 +312,20 @@ void flush_effects() {
         ~Done() { g_flushing = false; }
     };
     const Done done;
-    for (int runs = 0; !g_pending.empty(); ++runs) {
+    for (int runs = 0; !g_priority_pending.empty() || !g_pending.empty(); ++runs) {
         if (runs >= kMaxEffectRuns) {
-            for (ReactiveNode* node : g_pending) {
-                Runtime::dequeue(node);
+            for (std::deque<ReactiveNode*>* queue : {&g_priority_pending, &g_pending}) {
+                for (ReactiveNode* node : *queue) {
+                    Runtime::dequeue(node);
+                }
+                queue->clear();
             }
-            g_pending.clear();
             throw UsageError("effects keep re-triggering each other; an effect probably writes state "
                              "it also reads");
         }
-        ReactiveNode* const node = g_pending.front();
-        g_pending.pop_front();
+        std::deque<ReactiveNode*>& queue = g_priority_pending.empty() ? g_pending : g_priority_pending;
+        ReactiveNode* const node = queue.front();
+        queue.pop_front();
         Runtime::dequeue(node);
         // Run inside the transaction that scheduled it, so animatable properties it sets animate.
         const std::shared_ptr<const Animation> transaction = Runtime::take_transaction(node);
@@ -349,7 +349,7 @@ void flush_effects() {
 }
 
 bool has_scheduled_effects() noexcept {
-    return !g_pending.empty();
+    return !g_priority_pending.empty() || !g_pending.empty();
 }
 
 std::shared_ptr<const Animation> begin_transaction(std::shared_ptr<const Animation> animation) {

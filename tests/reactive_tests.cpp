@@ -462,3 +462,23 @@ TEST_CASE("an effect whose computed value throws when checked runs again once it
     CHECK(seen == std::vector<int>{2, 8});
 }
 
+TEST_CASE("priority effects run first, in the order they were scheduled", "[reactive]") {
+    const Owner owner;
+    const State<int> trigger(0);
+    std::vector<std::string> log;
+    effect([=, &log] {
+        trigger();
+        log.emplace_back("plain");
+    });
+    for (const char* name : {"first", "second"}) {
+        detail::start_effect(std::make_shared<detail::EffectNode>([=, &log] {
+                                 trigger();
+                                 log.emplace_back(name);
+                             }),
+                             true);
+    }
+    log.clear();
+    trigger = 1;
+    detail::flush_effects();
+    CHECK(log == std::vector<std::string>{"first", "second", "plain"});
+}
