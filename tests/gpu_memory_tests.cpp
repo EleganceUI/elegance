@@ -2,24 +2,31 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// How long the renderer keeps GPU memory that frames don't use, and how much of it. Times are
-// given, not read from a clock.
+// What the renderer keeps on the GPU across frames: how long and how much of what frames don't
+// use, and what it doesn't prepare again. Times are given, not read from a clock.
 
 #include "gpu/eviction.h"
 #include "gpu/texture_cache.h"
 #include "gpu/video_textures.h"
+#include "render/frame_plan.h"
 #include "render/intermediate_images.h"
+
+#include <elg/elegance.h>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <initializer_list>
 #include <map>
+#include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 using namespace elg;
 using namespace std::chrono_literals;
@@ -265,4 +272,59 @@ TEST_CASE("video textures go once undrawn for 5 s, or past 128 MB beyond the fra
     cache.draw(t0 + 6s, {{"e", 32 * kMB}});
     CHECK(cache.entries.size() == 1);
     CHECK(cache.entries.contains("e"));
+}
+
+namespace {
+
+// A display list that fills `polygons` (in a 10 x 10 box) at `x`, 5.
+detail::DisplayList path_at(const std::shared_ptr<const detail::Polygons>& polygons, float x) {
+    detail::DisplayList list;
+    list.commands.emplace_back(detail::PathCommand{polygons, {0, 0, 10, 10}, 1, {x, 5}, {x, 5, 10, 10},
+                                                   ShapeStyle(Color::black), FillRule::non_zero});
+    return list;
+}
+
+} // namespace
+
+TEST_CASE("a path drawn again unchanged is not hashed again", "[gpu-memory]") {
+    const auto square = std::make_shared<const detail::Polygons>(detail::Polygons{{{0, 0}, {10, 0}, {10, 10}, {0, 10}}});
+    detail::PathHashes hashes;
+    const detail::FramePlan first = detail::plan_frame(path_at(square, 5), 100, 100, &hashes);
+    REQUIRE(first.paths.size() == 1);
+    CHECK(hashes.hashed() == 1);
+
+    // Moved by whole pixels in the next frame: the same mask, from what the first frame hashed.
+    const detail::FramePlan moved = detail::plan_frame(path_at(square, 7), 100, 100, &hashes);
+    REQUIRE(moved.paths.size() == 1);
+    CHECK(hashes.hashed() == 1);
+    CHECK(moved.paths[0].key == first.paths[0].key);
+    // Half a pixel further: another mask.
+    CHECK(detail::plan_frame(path_at(square, 7.5f), 100, 100, &hashes).paths.at(0).key != first.paths[0].key);
+    CHECK(hashes.hashed() == 1);
+
+    // The same points in a set of their own: hashed, the same mask.
+    const auto copy = std::make_shared<const detail::Polygons>(*square);
+    CHECK(detail::plan_frame(path_at(copy, 5), 100, 100, &hashes).paths.at(0).key == first.paths[0].key);
+    CHECK(hashes.hashed() == 2);
+
+    // That frame didn't draw the square: it is hashed again.
+    detail::plan_frame(path_at(square, 5), 100, 100, &hashes);
+    CHECK(hashes.hashed() == 3);
+}
+
+TEST_CASE("a path's fan triangles are built from its plan, in mask pixels", "[gpu-memory]") {
+    const auto square = std::make_shared<const detail::Polygons>(detail::Polygons{{{0, 0}, {10, 0}, {10, 10}, {0, 10}}});
+    const detail::FramePlan plan = detail::plan_frame(path_at(square, 5.25f), 100, 100);
+    REQUIRE(plan.paths.size() == 1);
+    const detail::PlanPath& path = plan.paths[0];
+    std::vector<std::array<float, 2>> vertices;
+    detail::append_path_fan(path, vertices);
+    // Two triangles from the first point.
+    REQUIRE(vertices.size() == 6);
+    const auto [dx, dy] = path.offset;
+    CHECK(dx - std::floor(dx) == 0.25f); // the quarter pixel stays in the mask
+    CHECK(vertices[0] == std::array<float, 2>{dx, dy});
+    CHECK(vertices[1] == std::array<float, 2>{10 * path.scale + dx, dy});
+    CHECK(vertices[3] == vertices[0]);
+    CHECK(vertices[5] == std::array<float, 2>{dx, 10 * path.scale + dy});
 }

@@ -322,12 +322,9 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
                                          std::vector<std::uint64_t>& acquired_videos) {
     const gpu::CacheClock::time_point now = gpu::CacheClock::now();
     images_.begin_frame(now);
-    const FramePlan plan = plan_frame(frame.list, target.width, target.height);
+    const FramePlan plan = plan_frame(frame.list, target.width, target.height, &path_hashes_);
     instances_.write(std::as_bytes(std::span(plan.instances)));
     stops_.write(std::as_bytes(std::span(plan.stops)));
-    if (!plan.path_vertices.empty()) {
-        path_vertices_.write(std::as_bytes(std::span(plan.path_vertices)));
-    }
 
     const wgpu::CommandEncoder encoder = device_.handle().CreateCommandEncoder();
     FrameGroups groups;
@@ -335,29 +332,46 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
     groups.stops = resources.quads.stops_group(stops_.handle());
 
     // Path coverage masks first: any pass may fill through them. Masks with the same content as
-    // in an earlier frame are reused; new ones render into the pool. One set of multisampled
-    // scratch serves every mask: each is resolved before the next is drawn (WebGPU keeps the
-    // order).
+    // in an earlier frame are reused, so only new ones are triangulated and uploaded, then
+    // rendered into the pool. One set of multisampled scratch serves every mask: each is resolved
+    // before the next is drawn (WebGPU keeps the order).
+    struct NewMask {
+        std::size_t path;
+        std::uint32_t first_vertex;
+        std::uint32_t vertex_count;
+    };
+    std::vector<NewMask> new_masks;
+    path_fans_.clear();
+    for (std::size_t i = 0; i < plan.paths.size(); ++i) {
+        if (!images_.contains({ImageRole::path_mask, plan.paths[i].key})) {
+            const auto first = static_cast<std::uint32_t>(path_fans_.size());
+            append_path_fan(plan.paths[i], path_fans_);
+            new_masks.push_back({i, first, static_cast<std::uint32_t>(path_fans_.size()) - first});
+        }
+    }
+    if (!new_masks.empty()) {
+        path_vertices_.write(std::as_bytes(std::span(path_fans_)));
+    }
+    for (const NewMask& new_mask : new_masks) {
+        const PlanPath& path = plan.paths[new_mask.path];
+        if (images_.contains({ImageRole::path_mask, path.key})) {
+            continue; // the same path twice in this frame
+        }
+        const gpu::RenderImage& samples = pooled_image(ImageRole::path_samples, 0, gpu::PathRenderer::kMaskFormat,
+                                                       path.width, path.height, gpu::PathRenderer::kSamples);
+        const gpu::RenderImage& stencil =
+            pooled_image(ImageRole::path_stencil, 0, gpu::PathRenderer::kStencilFormat, path.width, path.height,
+                         gpu::PathRenderer::kSamples, wgpu::TextureUsage::RenderAttachment);
+        gpu::RenderImage image(device_.handle(), gpu::PathRenderer::kMaskFormat, path.width, path.height);
+        resources.paths.render(encoder, samples, stencil, image, path.width, path.height, path_vertices_.handle(),
+                               new_mask.first_vertex, new_mask.vertex_count, path.even_odd);
+        wgpu::BindGroup group = image_group(resources, image.view());
+        images_.store({ImageRole::path_mask, path.key}, std::move(image),
+                      image_bytes(gpu::PathRenderer::kMaskFormat, path.width, path.height, 1), std::move(group));
+    }
     groups.paths.resize(plan.paths.size());
     for (std::size_t i = 0; i < plan.paths.size(); ++i) {
-        const PlanPath& path = plan.paths[i];
-        const auto* mask = images_.find({ImageRole::path_mask, path.key});
-        if (!mask) {
-            gpu::PathRenderer& paths = resources.paths;
-            const gpu::RenderImage& samples = pooled_image(ImageRole::path_samples, 0, gpu::PathRenderer::kMaskFormat,
-                                                           path.width, path.height, gpu::PathRenderer::kSamples);
-            const gpu::RenderImage& stencil =
-                pooled_image(ImageRole::path_stencil, 0, gpu::PathRenderer::kStencilFormat, path.width, path.height,
-                             gpu::PathRenderer::kSamples, wgpu::TextureUsage::RenderAttachment);
-            gpu::RenderImage image(device_.handle(), gpu::PathRenderer::kMaskFormat, path.width, path.height);
-            paths.render(encoder, samples, stencil, image, path.width, path.height, path_vertices_.handle(),
-                         path.first_vertex, path.vertex_count, path.even_odd);
-            wgpu::BindGroup group = image_group(resources, image.view());
-            mask = &images_.store({ImageRole::path_mask, path.key}, std::move(image),
-                                  image_bytes(gpu::PathRenderer::kMaskFormat, path.width, path.height, 1),
-                                  std::move(group));
-        }
-        groups.paths[i] = mask->group;
+        groups.paths[i] = images_.find({ImageRole::path_mask, plan.paths[i].key})->group;
     }
 
     // Images: uploaded (with their mips) the first time a frame draws them.

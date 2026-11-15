@@ -125,6 +125,8 @@ private:
     // Every offscreen image, path coverage masks included: masks are kept by content
     // (PlanPath::key), so unchanged paths are only composited, not rendered again.
     IntermediateImages<gpu::RenderImage> images_;
+    PathHashes path_hashes_;
+    std::vector<std::array<float, 2>> path_fans_; // of the masks a frame renders
     std::unique_ptr<gpu::Swapchain> swapchain_; // unless the window presents through composition
 #if defined(_WIN32)
     std::unique_ptr<gpu::CompositionTarget> composition_;
