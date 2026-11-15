@@ -454,6 +454,9 @@ bool EventDispatcher::key(const KeyEvent& event) {
 }
 
 bool EventDispatcher::focus_edge(bool first) {
+    if (!root_) {
+        return false;
+    }
     std::vector<Element*> order;
     collect_focus_order(*root_, false, order);
     if (order.empty()) {
@@ -463,6 +466,9 @@ bool EventDispatcher::focus_edge(bool first) {
 }
 
 bool EventDispatcher::move_focus(bool forward) {
+    if (!root_) {
+        return false;
+    }
     std::vector<Element*> order;
     collect_focus_order(*root_, false, order);
     if (order.empty()) {

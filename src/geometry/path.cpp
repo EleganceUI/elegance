@@ -243,6 +243,7 @@ Path& Path::add_path(const Path& other) {
         return *this; // nothing to append: the current point and the open subpath stay
     }
     if (&other == this) {
+        // NOLINTNEXTLINE(performance-unnecessary-copy-initialization): `other` is this path, which grows
         const Path copy = other; // a vector can't insert a range of its own elements
         return add_path(copy);
     }
