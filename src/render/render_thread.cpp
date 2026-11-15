@@ -115,6 +115,9 @@ void RenderThread::run(std::promise<void> ready) noexcept {
                                    sources.remove(remove.window_id);
                                },
                                [&](const AtlasUploadCommand& upload) { atlas.upload(upload.uploads); },
+                               [&](const WindowVisibilityCommand& visibility) {
+                                   sources.set_visible(visibility.window_id, visibility.visible);
+                               },
                            },
                            command);
             }

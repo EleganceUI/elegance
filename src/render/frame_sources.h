@@ -23,23 +23,27 @@ namespace elg::detail {
 // once per source per round, not per window. Render thread.
 class FrameSources {
 public:
-    // Takes the new frames of the sources that `incoming` frames and the windows' last frames
-    // show: update() once each.
+    // Takes the new frames of the sources that `incoming` frames and the visible windows' last
+    // frames show: update() once each.
     void update(std::span<const WindowFrame> incoming = {});
     // `frame` was drawn: what it shows is each source's frame as of the last update(). It's kept
     // while it shows a source, to draw again.
     void drew(const WindowFrame& frame);
     void remove(std::uint32_t window_id);
+    // Hidden or minimized windows (`visible` false) neither draw again nor have their sources
+    // updated, polled or woken for. Windows are visible until told otherwise.
+    void set_visible(std::uint32_t window_id, bool visible);
 
-    // The windows whose last frame shows a source with a frame newer than the one drawn.
+    // The visible windows whose last frame shows a source with a frame newer than the one drawn.
     [[nodiscard]] std::vector<std::uint32_t> stale() const;
     // A window's last frame (kept since it shows a source), to draw again.
     [[nodiscard]] const WindowFrame* frame(std::uint32_t window_id) const;
     // That frame was drawn again with the sources' frames as of the last update().
     void redrew(std::uint32_t window_id);
 
-    // Whether a source in a window plays (is_playing_now()) without waking the render thread for
-    // its frames (wakes_for_frames()): the render thread then looks for them regularly.
+    // Whether a source in a visible window plays (is_playing_now()) without waking the render
+    // thread for its frames (wakes_for_frames()): the render thread then looks for them
+    // regularly.
     [[nodiscard]] bool polling() const;
 
 private:
@@ -49,11 +53,13 @@ private:
     };
     struct Window {
         std::optional<WindowFrame> frame; // while it shows a source
+        bool visible = true;
         std::vector<std::pair<const VideoSource*, std::uint64_t>> drawn; // Source::frames then
     };
     // Each source's frame count as of now, for the sources `frame` shows.
     std::vector<std::pair<const VideoSource*, std::uint64_t>> counts(const WindowFrame& frame);
-    // Drops sources no window shows, and tells the rest that one does (VideoSource::set_shown).
+    // Drops sources no window shows, and tells the rest whether a visible window shows them
+    // (VideoSource::set_shown).
     void refresh();
 
     std::unordered_map<const VideoSource*, Source> sources_;

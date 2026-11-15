@@ -58,6 +58,7 @@ enum class EventType {
     key_up,
     window_maximized,
     window_restored,
+    window_visibility_changed, // shown, hidden or minimized (Window::visible())
     window_focus_gained,
     window_focus_lost,
     window_moved,
@@ -179,6 +180,8 @@ public:
     void minimize();
     void toggle_maximized();
     [[nodiscard]] bool maximized() const;
+    // Neither hidden nor minimized.
+    [[nodiscard]] bool visible() const;
     // Asks to close, like the system close button (arrives as window_close_requested).
     void request_close() const;
     // Where the system draws its window controls over the content (TitleBar::integrated on

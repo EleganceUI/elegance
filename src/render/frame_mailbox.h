@@ -43,7 +43,13 @@ struct AtlasUploadCommand {
     std::vector<GlyphUpload> uploads;
 };
 
-using RenderCommand = std::variant<AddWindowCommand, RemoveWindowCommand, AtlasUploadCommand>;
+// A window was hidden or minimized (`visible` false), or shown again. Windows start visible.
+struct WindowVisibilityCommand {
+    std::uint32_t window_id = 0;
+    bool visible = true;
+};
+
+using RenderCommand = std::variant<AddWindowCommand, RemoveWindowCommand, AtlasUploadCommand, WindowVisibilityCommand>;
 
 // Everything posted since the render thread last took work. Commands run before frames.
 struct RenderBatch {

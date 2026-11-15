@@ -292,6 +292,7 @@ struct LiveWindow {
     bool dirty = true;
     bool tree_changed = false; // If/ForEach added or removed elements
     bool animating = false;    // the last frame had animations in progress
+    bool visible = true;       // as the render thread was last told
     std::uint64_t last_frame = 0;
     EnvironmentValues environment; // the root environment (system color scheme)
     LiveWindowServices services;
@@ -842,6 +843,15 @@ int App::run() {
         }
         live.last_frame = mailbox.post(std::move(frame));
         return live.last_frame;
+    };
+    // Hidden and minimized windows don't draw new frames of videos; shown again, a new frame
+    // shows each video's newest.
+    const auto sync_visibility = [&mailbox](LiveWindow& live) {
+        if (const bool visible = live.window.visible(); visible != live.visible) {
+            live.visible = visible;
+            mailbox.post(WindowVisibilityCommand{live.window.id(), visible});
+            live.dirty = live.dirty || visible;
+        }
     };
 
     // Draw before showing, so windows never appear blank: lay out once (which requests the
@@ -1409,11 +1419,19 @@ int App::run() {
             }
             break;
         }
+        case platform::EventType::window_visibility_changed:
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                sync_visibility(**it);
+            }
+            break;
         case platform::EventType::window_maximized:
         case platform::EventType::window_restored:
         case platform::EventType::window_focus_gained:
         case platform::EventType::window_focus_lost:
             if (auto it = find_window(event.window_id); it != windows.end()) {
+                if (event.type == platform::EventType::window_restored) {
+                    sync_visibility(**it); // perhaps no longer minimized
+                }
                 const WindowState& state = *(*it)->state;
                 switch (event.type) {
                 case platform::EventType::window_maximized: state.maximized = true; break;

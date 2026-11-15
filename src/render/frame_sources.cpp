@@ -44,7 +44,7 @@ void FrameSources::update(std::span<const WindowFrame> incoming) {
         }
     }
     for (const auto& [id, window] : windows_) {
-        if (window.frame) {
+        if (window.visible && window.frame) {
             for (const auto& source : sources_of(*window.frame)) {
                 take(source);
             }
@@ -88,10 +88,15 @@ void FrameSources::remove(std::uint32_t window_id) {
     refresh();
 }
 
+void FrameSources::set_visible(std::uint32_t window_id, bool visible) {
+    windows_[window_id].visible = visible;
+    refresh();
+}
+
 std::vector<std::uint32_t> FrameSources::stale() const {
     std::vector<std::uint32_t> result;
     for (const auto& [id, window] : windows_) {
-        if (!window.frame) {
+        if (!window.visible || !window.frame) {
             continue;
         }
         const bool newer = std::ranges::any_of(window.drawn, [&](const auto& drawn) {
@@ -117,7 +122,7 @@ const WindowFrame* FrameSources::frame(std::uint32_t window_id) const {
 bool FrameSources::polling() const {
     return std::ranges::any_of(windows_, [](const auto& entry) {
         const Window& window = entry.second;
-        return window.frame &&
+        return window.visible && window.frame &&
                std::ranges::any_of(sources_of(*window.frame), [](const auto& source) {
                    return source->is_playing_now() && !source->wakes_for_frames();
                });
@@ -126,15 +131,18 @@ bool FrameSources::polling() const {
 
 void FrameSources::refresh() {
     std::unordered_set<const VideoSource*> kept;
+    std::unordered_set<const VideoSource*> shown; // in a visible window
     for (const auto& [id, window] : windows_) {
         for (const auto& [source, count] : window.drawn) {
             kept.insert(source);
+            if (window.visible) {
+                shown.insert(source);
+            }
         }
     }
     for (auto it = sources_.begin(); it != sources_.end();) {
-        const bool shown = kept.contains(it->first);
-        it->second.source->set_shown(shown);
-        if (shown) {
+        it->second.source->set_shown(shown.contains(it->first));
+        if (kept.contains(it->first)) {
             ++it;
         } else {
             it = sources_.erase(it);

@@ -342,3 +342,48 @@ TEST_CASE("a push that comes between a clear and its views' update wins", "[vide
     CHECK(feed.size().width == 3);
     CHECK(feed.size().height == 3);
 }
+
+TEST_CASE("sources shown only in hidden windows don't wake the render thread, and show their newest frame again",
+          "[video][frames]") {
+    const WakeCounter counter;
+    const VideoFeed feed;
+    const auto video = std::make_shared<FakeSource>();
+    video->play(); // asked for frames regularly while a visible window shows it
+    detail::FrameSources sources;
+    sources.drew(frame_of(1, {feed.source()}));
+    sources.drew(frame_of(2, {video, feed.source()}));
+    CHECK(sources.polling());
+
+    // Both windows hidden or minimized.
+    sources.set_visible(1, false);
+    sources.set_visible(2, false);
+    CHECK_FALSE(sources.polling());
+    feed.push(VideoFeed::Format::bgra, 2, 2, bgra(2, 2, 1));
+    feed.push(VideoFeed::Format::bgra, 5, 2, bgra(5, 2, 1));
+    CHECK(counter.wakes() == 0);
+    video->decode();
+    video->updates = 0;
+    sources.update();
+    CHECK(video->updates == 0);
+    CHECK(sources.stale().empty());
+
+    // Window 2 shown again: it draws the sources' newest frames, and they wake the render thread.
+    sources.set_visible(2, true);
+    CHECK(sources.polling());
+    sources.update();
+    CHECK(video->updates == 1);
+    CHECK(sources.stale() == std::vector<std::uint32_t>{2});
+    const std::optional<detail::VideoFrame> newest = feed.source()->current();
+    CHECK(newest.value_or(detail::VideoFrame{}).width == 5);
+    sources.redrew(2);
+    feed.clear();
+    CHECK(counter.wakes() == 1);
+
+    // Window 1, still hidden, draws nothing; shown, it catches up too.
+    sources.update();
+    CHECK(sources.stale() == std::vector<std::uint32_t>{2});
+    sources.redrew(2);
+    sources.set_visible(1, true);
+    sources.update();
+    CHECK(sources.stale() == std::vector<std::uint32_t>{1});
+}
