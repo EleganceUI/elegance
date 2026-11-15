@@ -1,0 +1,15 @@
+ELGCACHE 3
+url https://example.com/a.png
+status 200
+location 
+received 784111777
+cache-control max-age=600
+expires 
+date Sun, 06 Nov 1994 08:49:37 GMT
+age 5
+etag "a"
+last-modified 
+vary Accept
+size 3
+
+abc

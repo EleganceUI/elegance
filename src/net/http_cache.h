@@ -15,6 +15,7 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <istream>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -74,6 +75,9 @@ std::optional<CacheEntry> make_cache_entry(std::string url, unsigned status, std
 void refresh_cache_entry(CacheEntry& entry, const CacheHeaders& headers, std::int64_t now);
 // Whether these fields' Cache-Control has `no-store`.
 bool forbids_storing(const CacheHeaders& headers);
+// The entry a cache file's contents hold for `url`, or nullopt if they're damaged, cut short, of
+// another version of the format, or another URL's.
+std::optional<CacheEntry> read_cache_entry(std::istream& in, const std::string& url);
 // An HTTP date ("Sun, 06 Nov 1994 08:49:37 GMT", or the RFC 850 and asctime forms) in Unix
 // seconds.
 std::optional<std::int64_t> parse_http_date(std::string_view text);

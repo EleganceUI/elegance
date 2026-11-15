@@ -401,24 +401,12 @@ void HttpCache::load_index() {
     }
 }
 
-std::optional<CacheEntry> HttpCache::find(const std::string& url) {
-    const std::lock_guard lock(mutex_);
-    load_index();
-    const fs::path path = path_for(url);
-    std::ifstream in(path, std::ios::binary);
-    if (!in) {
-        return std::nullopt;
-    }
+std::optional<CacheEntry> read_cache_entry(std::istream& in, const std::string& url) {
     CacheEntry entry;
     std::optional<std::int64_t> size;
     std::string line;
-    const auto damaged = [&] {
-        in.close();
-        discard(path); // a miss, and gone
-        return std::nullopt;
-    };
     if (!std::getline(in, line) || line != kMagic) {
-        return damaged();
+        return std::nullopt;
     }
     std::optional<std::int64_t> status;
     std::optional<std::int64_t> received;
@@ -453,18 +441,35 @@ std::optional<CacheEntry> HttpCache::find(const std::string& url) {
         }
     }
     if (entry.url != url || !size || !status || !received) {
-        return damaged(); // or another URL's: a SHA-256 collision
+        return std::nullopt; // or another URL's: a SHA-256 collision
     }
     entry.status = static_cast<unsigned>(std::min<std::int64_t>(*status, 999));
     if ((entry.status != 200 && !is_redirect_status(entry.status)) || (entry.redirect() && entry.location.empty()) ||
         *received > kMaxReceived) {
-        return damaged();
+        return std::nullopt;
     }
     entry.received = *received;
     apply_freshness(entry);
     entry.body.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
     if (std::cmp_not_equal(entry.body.size(), *size)) {
-        return damaged(); // truncated
+        return std::nullopt; // truncated
+    }
+    return entry;
+}
+
+std::optional<CacheEntry> HttpCache::find(const std::string& url) {
+    const std::lock_guard lock(mutex_);
+    load_index();
+    const fs::path path = path_for(url);
+    std::ifstream in(path, std::ios::binary);
+    if (!in) {
+        return std::nullopt;
+    }
+    std::optional<CacheEntry> entry = read_cache_entry(in, url);
+    if (!entry) {
+        in.close();
+        discard(path); // a miss, and gone
+        return std::nullopt;
     }
     std::error_code error;
     const auto now = fs::file_time_type::clock::now();

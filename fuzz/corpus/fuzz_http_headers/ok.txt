@@ -1,0 +1,12 @@
+HTTP/1.1 200 OK
+Cache-Control: max-age=60, must-revalidate
+Cache-Control: no-cache="x"
+Date: Sun, 06 Nov 1994 08:49:37 GMT
+Expires: Sunday, 06-Nov-94 08:59:37 GMT
+Age: 5
+ETag: "a"
+Last-Modified: Sun Nov  6 07:49:37 1994
+Vary: Accept
+Content-Length: 2
+
+hi
