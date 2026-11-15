@@ -98,6 +98,18 @@ struct Runtime {
         }
     }
 
+    // Makes `source` a dependency of `observer`, the node running now (none: nothing to link).
+    static void link(ReactiveNode* observer, ReactiveNode* source) {
+        // A disposed node links to nothing: an effect disposed while it runs reads on, unsubscribed.
+        if (!observer || observer == source || observer->disposed_ || source->disposed_) {
+            return;
+        }
+        if (std::ranges::find(observer->sources_, source) == observer->sources_.end()) {
+            observer->sources_.push_back(source);
+            source->observers_.push_back(observer);
+        }
+    }
+
     static void unlink_sources(ReactiveNode* node) {
         for (ReactiveNode* source : node->sources_) {
             remove_one(source->observers_, node);
@@ -144,18 +156,18 @@ void ReactiveNode::track() {
 #ifndef NDEBUG
     check_ui_thread(); // reads, too, belong to the UI thread: checked in debug builds
 #endif
-    if (kind_ != Kind::signal) {
-        update();
-    }
+    // The reader depends on this node even when bringing it up to date throws (a computed value
+    // that throws): it runs again once the computed value can recover.
     ReactiveNode* const observer = g_observer;
-    // A disposed node links to nothing: an effect disposed while it runs reads on, unsubscribed.
-    if (!observer || observer == this || observer->disposed_ || disposed_) {
-        return;
+    if (kind_ != Kind::signal) {
+        try {
+            update();
+        } catch (...) {
+            Runtime::link(observer, this);
+            throw;
+        }
     }
-    if (std::ranges::find(observer->sources_, this) == observer->sources_.end()) {
-        observer->sources_.push_back(this);
-        observers_.push_back(observer);
-    }
+    Runtime::link(observer, this);
 }
 
 void ReactiveNode::notify_changed() {
@@ -169,9 +181,15 @@ void ReactiveNode::update() {
         return;
     }
     if (status_ == check) {
-        // Bring sources up to date; one that changed marks this node dirty.
+        // Bring sources up to date; one that changed marks this node dirty. One that throws does
+        // too: this node then runs and meets the exception when it reads that source, instead of
+        // staying unscheduled at `check`.
         for (std::size_t i = 0; i < sources_.size() && status_ != dirty; ++i) {
-            sources_[i]->update();
+            try {
+                sources_[i]->update();
+            } catch (...) {
+                status_ = dirty;
+            }
         }
     }
     if (status_ == dirty) {
