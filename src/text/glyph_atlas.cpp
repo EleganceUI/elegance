@@ -555,8 +555,9 @@ std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_
     const msdfgen::Shape::Bounds bounds = shape.getBounds();
     const auto scale = static_cast<double>(kGlyphEmPixels / face.units_per_em()); // pixels per font unit
     const double pad = static_cast<double>(kDistanceRange) / 2.0 + 1.0;             // pixels
-    const auto width = clamped_cast<std::uint32_t>(std::ceil((bounds.r - bounds.l) * scale + 2 * pad));
-    const auto height = clamped_cast<std::uint32_t>(std::ceil((bounds.t - bounds.b) * scale + 2 * pad));
+    // At most the atlas's size, which allocate() refuses as too large (its sums can't wrap then).
+    const auto width = clamped_cast<std::uint32_t>(std::ceil((bounds.r - bounds.l) * scale + 2 * pad), 0, kAtlasSize);
+    const auto height = clamped_cast<std::uint32_t>(std::ceil((bounds.t - bounds.b) * scale + 2 * pad), 0, kAtlasSize);
 
     std::uint32_t x = 0;
     std::uint32_t y = 0;
