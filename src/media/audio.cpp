@@ -33,8 +33,16 @@ namespace {
 class AudioEngine {
 public:
     static AudioEngine& instance() {
+#if defined(_WIN32) && !defined(ELG_STATIC_DEFINE)
+        // Never destroyed when Elegance is in a DLL: at exit Windows ends the process's other
+        // threads before it unloads the DLL, and ma_engine_uninit() then waits for ever for the
+        // device's thread. The process ending closes the device anyway.
+        static AudioEngine* const engine = new AudioEngine();
+        return *engine;
+#else
         static AudioEngine engine;
         return engine;
+#endif
     }
 
     ma_engine* get() {
