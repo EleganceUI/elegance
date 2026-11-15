@@ -8,6 +8,7 @@
 #include "platform/generic/platform.h"
 
 #include "core/crash.h"
+#include "core/numeric.h"
 #include "platform/generic/native.h"
 
 #include <elg/error.h>
@@ -238,6 +239,12 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
 
 namespace {
 
+// A length or position in window coordinates, rounded to the nearest: NaN is 0, and values past
+// int's range clamp to it (layout geometry can be either).
+int window_pixels(float value) {
+    return clamped_cast<int>(std::round(value));
+}
+
 // How many windows hold Secure Event Input (macOS): on while any does.
 int secure_input_holders = 0;
 
@@ -282,8 +289,8 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
         flags |= SDL_WINDOW_FULLSCREEN; // borderless at the desktop's mode (no mode was set)
     }
 
-    const int width = static_cast<int>(std::lround(static_cast<float>(desc.width) * content_scale));
-    const int height = static_cast<int>(std::lround(static_cast<float>(desc.height) * content_scale));
+    const int width = window_pixels(static_cast<float>(desc.width) * content_scale);
+    const int height = window_pixels(static_cast<float>(desc.height) * content_scale);
     if (popup) {
         // Menus and tooltips: always transparent and undecorated (they draw their own panel).
         flags = kGpuFlags | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN | SDL_WINDOW_TRANSPARENT |
@@ -300,8 +307,8 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
     native_ = native::window_created(window_, desc, popup != nullptr);
 
     if (desc.min_size) {
-        SDL_SetWindowMinimumSize(window_, static_cast<int>(std::lround(desc.min_size->width * content_scale)),
-                                 static_cast<int>(std::lround(desc.min_size->height * content_scale)));
+        SDL_SetWindowMinimumSize(window_, window_pixels(desc.min_size->width * content_scale),
+                                 window_pixels(desc.min_size->height * content_scale));
     }
     if (desc.opacity < 1) {
         SDL_SetWindowOpacity(window_, std::clamp(desc.opacity, 0.f, 1.f));
@@ -317,10 +324,9 @@ void Window::set_popup_frame(Rect frame) {
     }
     const float factor = scale() / density;
     // Rounded up: a window a fraction narrower than its content would cut it off (text ellipsized).
-    SDL_SetWindowSize(window_, std::max(1, static_cast<int>(std::ceil(frame.width * factor - 0.01f))),
-                      std::max(1, static_cast<int>(std::ceil(frame.height * factor - 0.01f))));
-    SDL_SetWindowPosition(window_, static_cast<int>(std::lround(frame.x * factor)),
-                          static_cast<int>(std::lround(frame.y * factor)));
+    SDL_SetWindowSize(window_, std::max(1, clamped_cast<int>(std::ceil(frame.width * factor - 0.01f))),
+                      std::max(1, clamped_cast<int>(std::ceil(frame.height * factor - 0.01f))));
+    SDL_SetWindowPosition(window_, window_pixels(frame.x * factor), window_pixels(frame.y * factor));
 }
 
 Rect Window::usable_area() const {
@@ -501,10 +507,9 @@ void Window::set_text_input_area(Rect area, float cursor) {
         density = 1;
     }
     const float factor = scale() / density;
-    const SDL_Rect rect{static_cast<int>(std::lround(area.x * factor)), static_cast<int>(std::lround(area.y * factor)),
-                        static_cast<int>(std::lround(area.width * factor)),
-                        static_cast<int>(std::lround(area.height * factor))};
-    SDL_SetTextInputArea(window_, &rect, static_cast<int>(std::lround(cursor * factor)));
+    const SDL_Rect rect{window_pixels(area.x * factor), window_pixels(area.y * factor),
+                        window_pixels(area.width * factor), window_pixels(area.height * factor)};
+    SDL_SetTextInputArea(window_, &rect, window_pixels(cursor * factor));
 }
 
 std::string clipboard_text() {

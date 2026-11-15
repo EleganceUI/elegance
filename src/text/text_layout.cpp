@@ -4,6 +4,8 @@
 
 #include "text/text_layout.h"
 
+#include "core/numeric.h"
+
 #include <hb.h>
 
 #include <algorithm>
@@ -283,7 +285,7 @@ TextLayoutResult layout_text(const std::vector<ShapedParagraph>& paragraphs, con
     std::size_t max_lines = params.line_limit > 0 ? static_cast<std::size_t>(params.line_limit)
                                                   : std::numeric_limits<std::size_t>::max();
     if (params.max_height && std::isfinite(*params.max_height) && params.line_height > 0) {
-        const auto fit = static_cast<std::size_t>(std::floor((*params.max_height + kFitTolerance) / params.line_height));
+        const auto fit = clamped_cast<std::size_t>(std::floor((*params.max_height + kFitTolerance) / params.line_height));
         max_lines = std::min(max_lines, std::max<std::size_t>(fit, 1));
     }
 

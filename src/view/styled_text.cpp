@@ -5,6 +5,7 @@
 // StyledText: text in runs of different weights, colors, and highlights, with clickable runs.
 
 #include "core/crash.h"
+#include "core/numeric.h"
 #include "text/styled_layout.h"
 #include "text/text_system.h"
 #include "view/accessibility.h"
@@ -144,7 +145,7 @@ private:
         if (shape_.line_height <= 0 || point.y < bounds.y) {
             return std::nullopt;
         }
-        const auto li = static_cast<std::size_t>((point.y - bounds.y) / shape_.line_height);
+        const auto li = clamped_cast<std::size_t>((point.y - bounds.y) / shape_.line_height);
         if (li >= arranged_.lines.size()) {
             return std::nullopt;
         }

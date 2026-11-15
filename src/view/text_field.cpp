@@ -4,6 +4,7 @@
 
 #include "view/text_field.h"
 
+#include "core/numeric.h"
 #include "text/glyph_draw.h"
 #include "text/styled_layout.h"
 
@@ -362,8 +363,7 @@ std::size_t TextEditor::byte_on_line(std::size_t line, float x) const {
 std::size_t TextEditor::byte_at(Point local) const {
     const float line_height = shape_.line_height > 0 ? shape_.line_height : line_height_;
     const std::size_t lines = std::max<std::size_t>(layout_.lines.size(), 1);
-    const auto line = static_cast<std::size_t>(std::clamp(std::floor(local.y / line_height), 0.f,
-                                                           static_cast<float>(lines - 1)));
+    const auto line = clamped_cast<std::size_t>(std::floor(local.y / line_height), 0, lines - 1);
     return byte_on_line(line, local.x);
 }
 

@@ -9,21 +9,34 @@
 #ifndef ELG_CORE_NUMERIC_H
 #define ELG_CORE_NUMERIC_H
 
-#include <algorithm>
 #include <concepts>
+#include <limits>
 
 namespace elg::detail {
 
-// `value` as an I in [lo, hi]: NaN becomes 0, then the value is clamped before the conversion.
-// Clamped as a double, where every value of I is exact (a float can't hold UINT32_MAX).
+// `value` as an I in [lo, hi], truncated toward zero: NaN becomes 0, then the value is clamped
+// before the conversion. Compared as a double: a value at or past a bound that a double can't hold
+// exactly (as INT64_MAX) still converts to that bound, and every value strictly between the two
+// truncates to an I within them.
 template <std::integral I, std::floating_point F>
-    requires(sizeof(I) <= 4)
 I clamped_cast(F value, I lo, I hi) noexcept {
     auto v = static_cast<double>(value);
     if (v != v) { // NaN
         v = 0;
     }
-    return static_cast<I>(std::clamp(v, static_cast<double>(lo), static_cast<double>(hi)));
+    if (v <= static_cast<double>(lo)) {
+        return lo;
+    }
+    if (v >= static_cast<double>(hi)) {
+        return hi;
+    }
+    return static_cast<I>(v);
+}
+
+// `value` as an I, clamped to I's whole range (NaN becomes 0).
+template <std::integral I, std::floating_point F>
+I clamped_cast(F value) noexcept {
+    return clamped_cast<I>(value, std::numeric_limits<I>::min(), std::numeric_limits<I>::max());
 }
 
 } // namespace elg::detail
