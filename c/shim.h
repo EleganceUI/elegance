@@ -46,9 +46,10 @@
 extern "C" {
 
 /// UTF-8 text: `len` bytes at `ptr`, not NUL-terminated. A null `ptr` is the empty string.
-/// Passed to Elegance, it's read during the call (Elegance copies what it keeps). Passed to a
-/// callback or returned, it points into Elegance's memory: valid during the callback, or as long
-/// as the function says.
+/// Malformed UTF-8 in text that Elegance shows, edits or exposes to assistive technology reads as
+/// U+FFFD, as it does through the C++ API. Passed to Elegance, it's read during the call
+/// (Elegance copies what it keeps). Passed to a callback or returned, it points into Elegance's
+/// memory: valid during the callback, or as long as the function says.
 struct ElgStr {
     const char* ptr; ///< The first byte, or null.
     size_t len;      ///< Length in bytes.

@@ -8,6 +8,9 @@
 
 #include "shim.h"
 
+#include "text/text_system.h"
+#include "view/view_node.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
@@ -15,6 +18,7 @@
 
 using elg::Animation;
 using elg::Binding;
+using elg::Text;
 using elg::View;
 
 extern "C" {
@@ -39,6 +43,10 @@ void elg_binding_bool_free(Binding<bool>* binding);
 void elg_binding_i32_free(Binding<int>* binding);
 void elg_binding_string_free(Binding<std::string>* binding);
 void elg_binding_f64_free(Binding<double>* binding);
+Text* elg_text(ElgProp content);
+View* elg_text_to_view(const Text* text);
+void elg_text_free(Text* text);
+void elg_string_assign(std::string* target, ElgStr value);
 }
 
 namespace {
@@ -175,6 +183,35 @@ TEST_CASE("bindings of every type can be freed, which drops their closures", "[c
     CHECK(get.drops == 4);
     CHECK(set.drops == 4);
     CHECK(take_error() == 0);
+}
+
+TEST_CASE("strings with malformed UTF-8 show as U+FFFD", "[c-api][utf8]") {
+    elg::detail::Scope scope;
+    const elg::detail::Scope::Use use(scope);
+    static elg::detail::TextSystem text_system;
+    const auto label = [](ElgProp content) {
+        Text* text = elg_text(content);
+        REQUIRE(text != nullptr);
+        View* view = elg_text_to_view(text);
+        elg_text_free(text);
+        REQUIRE(view != nullptr);
+        const std::unique_ptr<elg::detail::Element> element = elg::detail::lower(*view, {.text = &text_system});
+        elg_view_free(view);
+        elg::detail::AccessibilityInfo info;
+        element->accessibility(info);
+        return info.label;
+    };
+    // A static string, cut short in the middle of a character.
+    const ElgStr cut{"ab\xE2\x82", 4};
+    CHECK(label({.kind = 0, .theme = 0, .value = &cut, .fn = {}}) == "ab\xEF\xBF\xBD");
+    // One a closure returns (through elg_string_assign), with a byte that never occurs in UTF-8.
+    const ElgClosure returns_bad = {nullptr,
+                                    [](void*, void*, void* ret) {
+                                        elg_string_assign(static_cast<std::string*>(ret), {"\xFFok", 3});
+                                        return true;
+                                    },
+                                    nullptr};
+    CHECK(label({.kind = 1, .theme = 0, .value = nullptr, .fn = returns_bad}) == "\xEF\xBF\xBDok");
 }
 
 TEST_CASE("the C API reports its ABI version", "[c-api]") {
