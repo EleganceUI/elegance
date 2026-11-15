@@ -321,7 +321,6 @@ View menu_bar_view(const Prop<std::vector<Item>>& menus, const std::function<voi
         }
         return result;
     };
-    const float infinity = std::numeric_limits<float>::infinity();
     return HStack({.spacing = 0},
                   ForEach(indexed, [](const std::pair<std::size_t, Item>& entry) { return entry.first; },
                           [command, checked](const std::pair<std::size_t, Item>& entry) {

@@ -11,6 +11,7 @@
 //   sandbox --only-main      open only the main window
 
 #include "contacts.h"
+#include "no_error_dialogs.h"
 #include "palette.h"
 #include "todos.h"
 
@@ -1099,6 +1100,9 @@ int main(int argc, char** argv) {
         smoke_test |= std::string_view(argv[i]) == "--smoke-test";
         light |= std::string_view(argv[i]) == "--light";
         only_main |= std::string_view(argv[i]) == "--only-main";
+    }
+    if (smoke_test) {
+        elegance_apps::no_error_dialogs(); // run unattended: a failed check fails the run, on stderr
     }
 
     try {

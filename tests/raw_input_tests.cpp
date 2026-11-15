@@ -28,14 +28,14 @@ namespace {
 
 // A 100 x 100 window with `view` at (25, 25), 50 x 50.
 struct Window {
+    detail::FocusManager focus; // outlives the tree: its elements let go of it when destroyed
     std::unique_ptr<detail::Element> root;
-    detail::FocusManager focus;
     std::unique_ptr<detail::EventDispatcher> events;
 
     explicit Window(const View& view) {
         root = detail::lower(ZStack(Rectangle().fill(Color::white), view.frame(50, 50)), {});
-        root->size_that_fits({100, 100});
-        root->place({}, {100, 100});
+        root->size_that_fits({100.f, 100.f});
+        root->place({}, {100.f, 100.f});
         events = std::make_unique<detail::EventDispatcher>(*root, focus);
     }
 
