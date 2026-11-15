@@ -119,8 +119,10 @@ jobs:
                   exit $status
 
             # On the runner's Metal device (ELGSPEC-0006.R9).
+            # Bounded: a smoke test that never exits fails here instead of holding the job for hours.
             - name: GPU tests and smoke tests
               if: ${{ !cancelled() && steps.configure.outcome == 'success' }}
+              timeout-minutes: 20
               run: |
                   build/macos-release/bin/elegance_tests "[.gpu]"
                   build/macos-debug/bin/sandbox --smoke-test

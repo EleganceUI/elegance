@@ -124,8 +124,10 @@ jobs:
                   ctest --test-dir build/windows-release --output-on-failure || status=1
                   exit $status
 
+            # Bounded: a smoke test that never exits fails here instead of holding the job for hours.
             - name: GPU tests and smoke tests
               if: ${{ !cancelled() && steps.configure.outcome == 'success' }}
+              timeout-minutes: 20
               env:
                   ELG_GPU_BACKEND: d3d12
               run: |

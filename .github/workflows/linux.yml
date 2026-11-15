@@ -171,6 +171,7 @@ jobs:
             # internet.
             - name: GPU, smoke and network tests
               if: ${{ matrix.gpu == true && !cancelled() && steps.configure.outcome == 'success' }}
+              timeout-minutes: 20 # a smoke test that never exits fails here, not hours later
               env:
                   ELG_GPU_BACKEND: vulkan
               run: |
