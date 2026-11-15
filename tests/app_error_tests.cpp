@@ -23,6 +23,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace elg;
@@ -303,4 +304,14 @@ TEST_CASE("while an App runs, Tab whose handler throws moves no focus", "[app-er
     REQUIRE(first);
     CHECK(window.events->key({.kind = KeyEvent::Kind::down, .key = Key::tab})); // counts as handled
     CHECK(window.focus.focused() == first); // not moved on to the second
+}
+
+TEST_CASE("what a foreign callback throws reaches the UI thread as an app exception", "[app-errors]") {
+    const Run run;
+    std::thread([] { detail::run_foreign_callback([] { throw std::runtime_error("foreign"); }); }).join();
+    CHECK_NOTHROW(detail::run_ui_tasks());
+    Heard heard;
+    detail::handle_app_errors(recorder(heard));
+    CHECK(heard.messages == std::vector<std::string>{"foreign"});
+    CHECK(heard.codes == std::vector<AppCode>{AppCode::callback});
 }

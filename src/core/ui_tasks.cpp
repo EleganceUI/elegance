@@ -128,6 +128,14 @@ bool run_ui_tasks() {
     return !tasks.empty();
 }
 
+void deliver_foreign_exception(const std::exception_ptr& error) noexcept {
+    try {
+        post_ui_task([error] { report_app_exception(error, AppCode::callback); });
+    } catch (...) {
+        // Swallowed: out of memory, so this one is lost; nothing may leave a foreign callback.
+    }
+}
+
 void release_on_ui_thread(void* object, void (*destroy)(void*) noexcept) noexcept {
     bool handed_over = false;
     bool collect = false;
