@@ -6,6 +6,7 @@
 // wakes the render thread for them. No GPU: the render thread's bookkeeping, with stand-in
 // sources.
 
+#include "core/ui_tasks.h"
 #include "render/frame_sources.h"
 
 #include <elg/elegance.h>
@@ -18,8 +19,11 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
+#include <thread>
+#include <utility>
 #include <vector>
 
 using namespace elg;
@@ -221,4 +225,120 @@ TEST_CASE("waking the render thread ends its wait for work, even before it waits
     CHECK(batch.commands.empty());
     // One wake ends one wait.
     CHECK(mailbox.take_for(batch, std::chrono::milliseconds(0)));
+}
+
+TEST_CASE("each push and clear of a video feed wakes the render thread once its result shows", "[video][frames]") {
+    const VideoFeed feed;
+    detail::FrameSources sources;
+    sources.drew(frame_of(1, {feed.source()}));
+    // What the render thread would find when woken: the width of the feed's frame.
+    std::vector<std::optional<std::uint32_t>> found;
+    detail::set_frame_waker([&] {
+        const std::optional<detail::VideoFrame> frame = feed.source()->current();
+        found.push_back(frame ? std::optional(frame->width) : std::nullopt);
+    });
+    feed.push(VideoFeed::Format::bgra, 2, 2, bgra(2, 2, 1));
+    feed.push(VideoFeed::Format::bgra, 4, 2, bgra(4, 2, 1));
+    feed.clear();
+    feed.push(VideoFeed::Format::bgra, 3, 3, bgra(3, 3, 1));
+    detail::set_frame_waker({});
+    CHECK(found == std::vector<std::optional<std::uint32_t>>{2, 4, std::nullopt, 3});
+}
+
+TEST_CASE("after pushes and clears from several threads, a feed's windows and views agree", "[video][frames]") {
+    // Many rounds: some interleavings are rare.
+    for (int round = 0; round < 10; ++round) {
+        const VideoFeed feed;
+        detail::run_ui_tasks(); // from earlier tests
+        detail::FrameSources sources;
+        sources.drew(frame_of(1, {feed.source()}));
+        const WakeCounter counter;
+        {
+            std::vector<std::jthread> threads;
+            threads.reserve(4);
+            for (std::uint32_t t = 0; t < 4; ++t) {
+                threads.emplace_back([&feed, t] {
+                    for (std::uint32_t i = 0; i < 300; ++i) {
+                        if ((i + t) % 3 == 0) {
+                            feed.clear();
+                        } else {
+                            const std::uint32_t width = 1 + t;
+                            const std::uint32_t height = 1 + i % 5;
+                            feed.push(VideoFeed::Format::bgra, width, height, bgra(width, height, 0));
+                        }
+                    }
+                });
+            }
+        }
+        // Every call has returned: the render thread was woken after the last, and finds its
+        // result.
+        REQUIRE(counter.wakes() > 0);
+        sources.update();
+        REQUIRE(sources.stale() == std::vector<std::uint32_t>{1});
+        const std::optional<detail::VideoFrame> frame = feed.source()->current();
+        // The views' size and flags come to the same result.
+        detail::run_ui_tasks();
+        REQUIRE(feed.has_frame() == frame.has_value());
+        const Size size = feed.size();
+        REQUIRE(size.width == (frame ? static_cast<float>(frame->width) : 0.f));
+        REQUIRE(size.height == (frame ? static_cast<float>(frame->height) : 0.f));
+    }
+}
+
+namespace {
+
+// Runs `call` once, the first time the render thread is woken: inside another call to the feed,
+// after it changed the frame and before it told the views. As if `call` came from another thread
+// just then.
+class CallWhenWoken {
+public:
+    explicit CallWhenWoken(std::function<void()> call) : call_(std::move(call)) {
+        detail::set_frame_waker([this] {
+            if (call_) {
+                std::exchange(call_, nullptr)();
+            }
+        });
+    }
+    CallWhenWoken(const CallWhenWoken&) = delete;
+    CallWhenWoken& operator=(const CallWhenWoken&) = delete;
+    CallWhenWoken(CallWhenWoken&&) = delete;
+    CallWhenWoken& operator=(CallWhenWoken&&) = delete;
+    ~CallWhenWoken() { detail::set_frame_waker({}); }
+
+private:
+    std::function<void()> call_;
+};
+
+} // namespace
+
+TEST_CASE("a clear that comes between a push and its views' update wins", "[video][frames]") {
+    const VideoFeed feed;
+    detail::run_ui_tasks(); // from earlier tests
+    detail::FrameSources sources;
+    sources.drew(frame_of(1, {feed.source()}));
+    {
+        const CallWhenWoken clear([&feed] { feed.clear(); });
+        feed.push(VideoFeed::Format::bgra, 4, 2, bgra(4, 2, 1));
+    }
+    detail::run_ui_tasks();
+    CHECK_FALSE(feed.source()->current());
+    CHECK_FALSE(feed.has_frame());
+    CHECK(feed.size().width == 0);
+}
+
+TEST_CASE("a push that comes between a clear and its views' update wins", "[video][frames]") {
+    const VideoFeed feed;
+    feed.push(VideoFeed::Format::bgra, 4, 2, bgra(4, 2, 1));
+    detail::run_ui_tasks();
+    detail::FrameSources sources;
+    sources.drew(frame_of(1, {feed.source()}));
+    {
+        const CallWhenWoken push([&feed] { feed.push(VideoFeed::Format::bgra, 3, 3, bgra(3, 3, 1)); });
+        feed.clear();
+    }
+    detail::run_ui_tasks();
+    REQUIRE(feed.source()->current());
+    CHECK(feed.has_frame());
+    CHECK(feed.size().width == 3);
+    CHECK(feed.size().height == 3);
 }

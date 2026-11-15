@@ -20,8 +20,9 @@ namespace {
 std::atomic<std::uint64_t> g_next_id{1};
 std::mutex g_adapter_mutex;
 std::optional<RenderAdapter> g_adapter;
-// Called with the mutex held, so that it can't run once cleared.
-std::mutex g_waker_mutex;
+// Called with the mutex held, so that it can't run once cleared. Recursive: what a waker does may
+// wake it again.
+std::recursive_mutex g_waker_mutex;
 std::function<void()> g_waker;
 
 } // namespace

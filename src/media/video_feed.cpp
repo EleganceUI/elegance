@@ -11,6 +11,7 @@
 #include "media/video_source.h"
 
 #include <mutex>
+#include <utility>
 
 namespace elg {
 
@@ -48,10 +49,10 @@ public:
         if (width == 0 || height == 0 || pixels.size() < packed_size(f, width, height)) {
             return;
         }
-        bool resized = false;
+        bool post = false;
         {
             const std::lock_guard lock(mutex_);
-            resized = width != width_ || height != height_ || !frame_;
+            const bool resized = width != width_ || height != height_ || !frame_;
             frame_ = std::make_shared<const std::vector<std::uint8_t>>(std::move(pixels));
             format_ = f;
             width_ = width;
@@ -59,20 +60,16 @@ public:
             full_range_ = full_range;
             ++number_;
             playing_now_ = true;
+            post = resized && !std::exchange(sync_pending_, true);
         }
         notify_new_frame();
-        if (resized) {
-            post_ui_task([weak = std::weak_ptr<VideoSource>(shared_from_this()), width, height] {
-                if (const auto self = weak.lock()) {
-                    self->size = Size{static_cast<float>(width), static_cast<float>(height)};
-                    self->ready = true;
-                    self->playing = true;
-                }
-            });
+        if (post) {
+            post_sync();
         }
     }
 
     void clear() {
+        bool post = false;
         {
             const std::lock_guard lock(mutex_);
             if (!frame_) {
@@ -82,15 +79,12 @@ public:
             width_ = height_ = 0;
             ++number_;
             playing_now_ = false;
+            post = !std::exchange(sync_pending_, true);
         }
         notify_new_frame();
-        post_ui_task([weak = std::weak_ptr<VideoSource>(shared_from_this())] {
-            if (const auto self = weak.lock()) {
-                self->size = Size{};
-                self->ready = false;
-                self->playing = false;
-            }
-        });
+        if (post) {
+            post_sync();
+        }
     }
 
     // Render thread.
@@ -122,7 +116,39 @@ public:
     }
 
 private:
+    // The calls that ran last under the lock decide what windows show, whatever the threads:
+    // - The render thread: each call changes the frame under the lock, then wakes the render
+    //   thread, which then takes the frame under the lock. A wake that comes while the render
+    //   thread is busy isn't lost (FrameMailbox keeps it), so after the last call's wake the
+    //   render thread draws what the last call left, or something newer.
+    // - The views' size and flags (UI thread): a call that changes the size or whether there's
+    //   a frame posts a sync() unless one is pending. sync() clears `sync_pending_` and reads the
+    //   state under the lock, so the pending one reads every change made before it runs. UI
+    //   tasks run in order, so the last one to run reads the final state.
+    void post_sync() {
+        post_ui_task([weak = std::weak_ptr<FeedSource>(std::static_pointer_cast<FeedSource>(shared_from_this()))] {
+            if (const auto self = weak.lock()) {
+                self->sync();
+            }
+        });
+    }
+    // UI thread: the views' size and flags, as the feed is now.
+    void sync() {
+        Size frame_size;
+        bool has_frame = false;
+        {
+            const std::lock_guard lock(mutex_);
+            sync_pending_ = false;
+            has_frame = frame_ != nullptr;
+            frame_size = Size{static_cast<float>(width_), static_cast<float>(height_)};
+        }
+        size = frame_size;
+        ready = has_frame;
+        playing = has_frame;
+    }
+
     mutable std::mutex mutex_;
+    bool sync_pending_ = false; // a sync() is posted and hasn't read the state yet
     std::shared_ptr<const std::vector<std::uint8_t>> frame_;
     VideoFrame::Format format_ = VideoFrame::Format::bgra;
     std::uint32_t width_ = 0;
