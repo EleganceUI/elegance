@@ -242,8 +242,8 @@ std::string describe(const boost::system::error_code& error) {
     if (error == bhttp::error::body_limit) {
         return "the response is too large";
     }
-    if (error == e::eof || error == e::connection_reset || error == bhttp::error::end_of_stream ||
-        error == bhttp::error::partial_message) {
+    if (error == e::eof || error == e::connection_reset || error == e::connection_aborted ||
+        error == bhttp::error::end_of_stream || error == bhttp::error::partial_message) {
         return "the connection was closed early";
     }
     if (error.category() == make_error_code(bhttp::error::bad_version).category()) { // Beast's parser
@@ -424,9 +424,11 @@ awaitable<std::unique_ptr<Connection>> connect(const Target& target, const std::
     co_return connection;
 }
 
-// A kept-open connection the server closed meanwhile fails like this on its next request.
+// A kept-open connection the server closed meanwhile fails like this on its next request. Windows
+// reports it as aborted (WSAECONNABORTED) or not connected (WSAENOTCONN) too.
 bool closed_while_idle(const boost::system::error_code& error) {
     return error == asio::error::eof || error == asio::error::connection_reset || error == asio::error::broken_pipe ||
+           error == asio::error::connection_aborted || error == asio::error::not_connected ||
            error == bhttp::error::end_of_stream || error == ssl::error::stream_truncated;
 }
 

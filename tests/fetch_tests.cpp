@@ -378,6 +378,7 @@ net::FetchResult fetch(std::string url, net::FetchOptions options = {}) {
 }
 
 std::string text(const net::FetchResult& result) {
+    INFO((result.has_value() ? std::string() : result.error())); // why it failed, if it did
     REQUIRE(result.has_value());
     return {result->begin(), result->end()};
 }
