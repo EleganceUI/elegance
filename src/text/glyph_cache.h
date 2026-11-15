@@ -14,6 +14,7 @@
 #include <mutex>
 #include <optional>
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -73,7 +74,9 @@ private:
 
     std::optional<std::filesystem::path> directory_;
     std::mutex mutex_;
-    std::unordered_map<std::uint64_t, std::unique_ptr<FontCache>> fonts_; // by face id and field
+    // One per file: faces with the same bytes, variation and kind of field share it.
+    std::unordered_map<std::string, std::unique_ptr<FontCache>> files_; // by file name
+    std::unordered_map<std::uint64_t, FontCache*> fonts_;                // by face id and field
 };
 
 } // namespace elg::detail

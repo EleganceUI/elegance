@@ -17,8 +17,12 @@
 #include <cstdint>
 #include <filesystem>
 #include <format>
+#include <fstream>
+#include <iterator>
 #include <optional>
 #include <random>
+#include <span>
+#include <string>
 #include <system_error>
 #include <vector>
 
@@ -173,6 +177,36 @@ TEST_CASE("a font file registered for icons and for text is drawn as each use wa
         CHECK(first.icon() == icon_first);
         CHECK(second.icon() == !icon_first);
     }
+}
+
+TEST_CASE("faces with the same glyphs share one disk cache file", "[text]") {
+    // One font's bytes, registered from memory as two families: two faces, one cache file.
+    const std::filesystem::path file = system_font_file();
+    std::ifstream in(file, std::ios::binary);
+    const std::vector<unsigned char> bytes{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    register_font("elg.test.shared.a", std::span(bytes));
+    register_font("elg.test.shared.b", std::span(bytes));
+    detail::FontLibrary fonts;
+    const detail::FontFace& a = fonts.resolve(Font::custom("elg.test.shared.a", 12));
+    const detail::FontFace& b = fonts.resolve(Font::custom("elg.test.shared.b", 12));
+    REQUIRE(&a != &b);
+
+    const TemporaryDirectory directory;
+    constexpr auto kField = detail::DistanceField::multi_channel;
+    const std::vector<std::uint8_t> one(std::size_t{2} * 2 * 4, 1);
+    const std::vector<std::uint8_t> two(std::size_t{2} * 3 * 4, 2);
+    {
+        detail::GlyphDiskCache disk(directory.path);
+        // Both open the file before either stores a glyph.
+        CHECK_FALSE(disk.find(a, kField, 1, 2, 2));
+        CHECK_FALSE(disk.find(b, kField, 2, 2, 3));
+        disk.store(a, kField, 1, 2, 2, one);
+        disk.store(b, kField, 2, 2, 3, two);
+    }
+    detail::GlyphDiskCache disk(directory.path);
+    CHECK(disk.find(a, kField, 1, 2, 2) == one);
+    CHECK(disk.find(b, kField, 2, 2, 3) == two);
+    CHECK(disk.find(a, kField, 2, 2, 3) == two); // the same glyphs
 }
 
 #if defined(__linux__)

@@ -113,21 +113,29 @@ GlyphDiskCache::GlyphDiskCache(std::optional<std::filesystem::path> directory) :
 GlyphDiskCache::~GlyphDiskCache() = default;
 
 GlyphDiskCache::FontCache& GlyphDiskCache::font(const FontFace& face, DistanceField field) {
-    auto& slot = fonts_[(std::uint64_t{face.id()} << 1) | (field == DistanceField::single_channel ? 1u : 0u)];
+    FontCache*& slot = fonts_[(std::uint64_t{face.id()} << 1) | (field == DistanceField::single_channel ? 1u : 0u)];
     if (slot) {
         return *slot;
     }
-    slot = std::make_unique<FontCache>();
-    FontCache& cache = *slot;
     // A variable font's instances are different glyphs from the same file, and each kind of
     // distance field is a file of its own.
-    std::string name = std::format("{:016x}", hash_font(face.bytes()));
+    const std::string hash = std::format("{:016x}", hash_font(face.bytes()));
+    std::string name = hash;
     if (const std::span<const std::int64_t> coordinates = face.variation_coordinates(); !coordinates.empty()) {
         name += std::format("-v{:016x}", fnv1a(coordinates.data(), coordinates.size_bytes()));
     }
     name += field == DistanceField::single_channel ? "-sdf.glyphs" : "-mtsdf.glyphs";
+    std::unique_ptr<FontCache>& file = files_[name];
+    if (file) {
+        slot = file.get();
+        return *slot; // another face with the same glyphs opened it
+    }
+    file = std::make_unique<FontCache>();
+    slot = file.get();
+    FontCache& cache = *file;
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access): find() and store() return before this without directory_
-    cache.file = *directory_ / name;
+    const std::filesystem::path& directory = *directory_;
+    cache.file = directory / name;
 
     // Load what's there; anything unreadable from some point on is ignored (and overwritten).
     std::ifstream in(cache.file, std::ios::binary | std::ios::ate);
