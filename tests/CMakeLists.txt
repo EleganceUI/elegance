@@ -53,7 +53,7 @@ add_executable(elegance_tests
         test_setup.cpp
 )
 target_link_libraries(elegance_tests PRIVATE Elegance::Elegance Catch2::Catch2WithMain Boost::beast OpenSSL::SSL)
-target_include_directories(elegance_tests PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_include_directories(elegance_tests PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/apps/common)
 target_include_directories(elegance_tests SYSTEM PRIVATE
         $<TARGET_PROPERTY:dawn::webgpu_dawn,INTERFACE_INCLUDE_DIRECTORIES>)
 # The GPU tests call Dawn too. A static Dawn is linked into Elegance, which exports it in a shared

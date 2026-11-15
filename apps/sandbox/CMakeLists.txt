@@ -9,6 +9,7 @@ add_executable(sandbox
 elegance_view_extensions(sandbox view_extensions.h)
 
 target_link_libraries(sandbox PRIVATE Elegance::Elegance)
+target_include_directories(sandbox PRIVATE ${PROJECT_SOURCE_DIR}/apps/common) # no_error_dialogs.h
 # Sample images (generated; see assets/).
 target_compile_definitions(sandbox PRIVATE "ELG_SANDBOX_ASSETS=\"${CMAKE_CURRENT_SOURCE_DIR}/assets\"")
 
