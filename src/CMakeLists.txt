@@ -229,13 +229,13 @@ if (APPLE)
     enable_language(OBJCXX)
     # Integrated title bars and trackpad gestures through AppKit.
     set(elg_apple_sources
+            gpu/macos/surface_publisher.mm
             platform/macos/appearance.mm
             platform/macos/camera.mm
             platform/macos/dock.mm
             platform/macos/input.mm
             platform/macos/menu_bar.mm
             platform/macos/notifications.mm
-            platform/macos/surface_publisher.mm
             platform/macos/title_bar.mm
             platform/macos/video_source.mm)
     target_sources(elegance PRIVATE ${elg_apple_sources}

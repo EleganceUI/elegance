@@ -4,15 +4,15 @@
 
 // Video sources on macOS (design.md §13.3): AVFoundation. AVPlayer decodes, plays the sound and
 // keeps it in sync; an AVPlayerItemVideoOutput hands the render thread the frame that's due as
-// an IOSurface the renderer imports as is (surface_publisher.h), or, when it can't, as NV12 it
-// copies into a `cpu` VideoFrame (pixel_buffer.h). Compiled with ARC.
+// an IOSurface the renderer imports as is (gpu/macos/surface_publisher.h), or, when it can't, as
+// NV12 it copies into a `cpu` VideoFrame (pixel_buffer.h). Compiled with ARC.
 
 #include "media/video_source.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
+#include "gpu/macos/surface_publisher.h"
 #include "platform/macos/pixel_buffer.h"
-#include "platform/macos/surface_publisher.h"
 
 #import <AVFoundation/AVFoundation.h>
 #import <CoreVideo/CoreVideo.h>
@@ -102,9 +102,9 @@ public:
         NSDictionary* attributes = @{
             (__bridge NSString*)kCVPixelBufferPixelFormatTypeKey : @(macos::kPreferredPixelFormat),
         };
-        if (macos::SurfacePublisher::available()) {
-            publisher_ = std::make_unique<macos::SurfacePublisher>();
-            attributes = (__bridge NSDictionary*)macos::SurfacePublisher::buffer_attributes();
+        if (gpu::SurfacePublisher::available()) {
+            publisher_ = std::make_unique<gpu::SurfacePublisher>();
+            attributes = (__bridge NSDictionary*)gpu::SurfacePublisher::buffer_attributes();
         }
         output_ = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:attributes];
         item_ = [AVPlayerItem playerItemWithURL:url];
@@ -318,7 +318,7 @@ private:
     ObjcObject time_token_ = nil;
     std::vector<ObjcObject> notification_tokens_;
     // Zero-copy frames; null when copying. copies_: the publisher failed (render thread).
-    std::unique_ptr<macos::SurfacePublisher> publisher_;
+    std::unique_ptr<gpu::SurfacePublisher> publisher_;
     bool copies_ = false;
     mutable std::mutex mutex_;
     std::optional<VideoFrame> current_;

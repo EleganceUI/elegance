@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_PLATFORM_MACOS_SURFACE_PUBLISHER_H
-#define ELG_PLATFORM_MACOS_SURFACE_PUBLISHER_H
+#ifndef ELG_GPU_MACOS_SURFACE_PUBLISHER_H
+#define ELG_GPU_MACOS_SURFACE_PUBLISHER_H
 
 // Zero-copy video frames on macOS: IOSurface-backed BGRA pixel buffers imported into the
 // renderer's Metal device as they are (elg/gpu_image.h's IOSurface transport), rather than
@@ -19,12 +19,12 @@
 
 struct ElgGpuImage;
 
-namespace elg::detail::macos {
+namespace elg::detail::gpu {
 
 class SurfacePublisher {
 public:
     // Whether the renderer can import IOSurfaces now (a running Metal device with IOSurface
-    // and MTLSharedEvent sharing). If not, decode to NV12 and copy (pixel_buffer.h).
+    // and MTLSharedEvent sharing). If not, decode to NV12 and copy (platform/macos/pixel_buffer.h).
     static bool available();
     // The pixel buffer attributes to ask decoders for: BGRA, IOSurface-backed, Metal-compatible.
     static CFDictionaryRef buffer_attributes();
@@ -46,6 +46,6 @@ private:
     std::shared_ptr<VideoSource> source_;
 };
 
-} // namespace elg::detail::macos
+} // namespace elg::detail::gpu
 
-#endif // ELG_PLATFORM_MACOS_SURFACE_PUBLISHER_H
+#endif // ELG_GPU_MACOS_SURFACE_PUBLISHER_H

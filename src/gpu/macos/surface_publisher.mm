@@ -4,7 +4,7 @@
 
 // Compiled with ARC.
 
-#include "platform/macos/surface_publisher.h"
+#include "gpu/macos/surface_publisher.h"
 
 #include "core/log.h"
 #include "gpu/device.h"
@@ -17,7 +17,7 @@
 
 #include <atomic>
 
-namespace elg::detail::macos {
+namespace elg::detail::gpu {
 
 namespace {
 
@@ -142,4 +142,4 @@ std::optional<VideoFrame> SurfacePublisher::current() const {
     return source_ ? source_->current() : std::nullopt;
 }
 
-} // namespace elg::detail::macos
+} // namespace elg::detail::gpu
