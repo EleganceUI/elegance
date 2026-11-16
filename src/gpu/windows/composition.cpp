@@ -7,6 +7,7 @@
 #include "gpu/windows/composition.h"
 
 #include "core/log.h"
+#include "gpu/swapchain.h"
 #include "platform/platform.h"
 
 #include <elg/error.h>
@@ -17,9 +18,12 @@
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 
+#include <atomic>
 #include <cstring>
+#include <exception>
 #include <format>
 #include <string>
+#include <utility>
 
 namespace elg::detail::gpu {
 
@@ -27,13 +31,62 @@ using Microsoft::WRL::ComPtr;
 
 namespace {
 
+// The longest a composition frame waits for the display to be ready (it's a hint for pacing).
+constexpr unsigned kReadyTimeoutMs = 50;
+
 void check_hr(HRESULT result, std::string_view what) {
     if (FAILED(result)) {
         throw GpuError(std::format("failed to {} (HRESULT 0x{:08x})", what, static_cast<unsigned long>(result)));
     }
 }
 
+// Whether a window presents through DirectComposition instead of its WebGPU surface.
+bool wants_composition(const Device& device, bool transparent, void* native_window) {
+    if (!native_window) {
+        return false;
+    }
+    // Before composition_allowed(), whose log line would otherwise claim DirectComposition.
+    if (!CompositionTarget::supported(device)) {
+        static std::atomic_flag logged;
+        if (!logged.test_and_set()) {
+            log_info("windows present through WebGPU surfaces (the GPU backend can't share textures with "
+                     "DirectComposition)");
+        }
+        return false;
+    }
+    if (!composition_allowed()) {
+        return false;
+    }
+    // ELG_PRESENT=surface: WebGPU surfaces for opaque windows only.
+    return transparent || platform::environment_variable("ELG_PRESENT").value_or("") != "surface";
+}
+
 } // namespace
+
+std::unique_ptr<Presenter> create_presenter(const Device& device, wgpu::Surface surface, bool transparent,
+                                            void* native_window) {
+    // Every window presents through DirectComposition (no stretched frames while resizing, and
+    // transparency), unless wants_composition() says otherwise.
+    std::unique_ptr<Presenter> composition;
+    if (wants_composition(device, transparent, native_window)) {
+        try {
+            composition = std::make_unique<CompositionTarget>(device, native_window, transparent);
+        } catch (const std::exception& error) {
+            log_warning("window falls back to a WebGPU surface: {}", error.what());
+        }
+    }
+    if (transparent && !composition) {
+        static std::atomic_flag warned;
+        if (!warned.test_and_set()) {
+            log_warning("transparent windows render opaque: they present through WebGPU surfaces, which "
+                        "can't be transparent on Windows");
+        }
+    }
+    if (composition) {
+        return composition;
+    }
+    return std::make_unique<Swapchain>(device, std::move(surface), transparent);
+}
 
 struct CompositionTarget::Impl {
     // D3D11 on the same adapter as the WebGPU device.
@@ -142,6 +195,23 @@ CompositionTarget::~CompositionTarget() {
     if (impl_->ready) {
         CloseHandle(impl_->ready);
     }
+}
+
+wgpu::TextureView CompositionTarget::begin_frame(std::uint32_t width, std::uint32_t height,
+                                                 const std::array<float, 4>& background) {
+    if (!prepare(width, height)) {
+        return nullptr; // minimized
+    }
+    wait_until_ready(kReadyTimeoutMs); // paced to the display
+    set_background(background);
+    return begin_access();
+}
+
+void CompositionTarget::end_frame(bool /*reads_backdrops*/) {
+    end_access();
+    // Direct3D copies the image next, so the rendering must be finished.
+    device_.wait_idle();
+    present();
 }
 
 void CompositionTarget::wait_until_ready(unsigned timeout_ms) {

@@ -238,6 +238,7 @@ if (APPLE)
             platform/macos/title_bar.mm
             platform/macos/video_source.mm)
     target_sources(elegance PRIVATE ${elg_apple_sources}
+            gpu/presenter.cpp
             platform/macos/fonts.cpp
             platform/macos/image_codec.cpp
             platform/macos/native.cpp
@@ -273,6 +274,7 @@ if (UNIX AND NOT APPLE)
         message(STATUS "Elegance: GIO not found (gio-2.0): notifications are only logged")
     endif ()
     target_sources(elegance PRIVATE
+            gpu/presenter.cpp
             platform/linux/appearance.cpp
             platform/linux/camera.cpp
             platform/linux/dock.cpp

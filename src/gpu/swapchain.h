@@ -6,26 +6,42 @@
 #define ELG_GPU_SWAPCHAIN_H
 
 #include "gpu/device.h"
+#include "gpu/presenter.h"
 #include "gpu/webgpu.h"
 
+#include <array>
 #include <cstdint>
 
 namespace elg::detail::gpu {
 
 // A window's surface, configured as a swapchain: 8-bit images rendered through sRGB views,
 // presented with FIFO (vsync).
-class Swapchain {
+class Swapchain final : public Presenter {
 public:
     // `transparent`: the window shows through where the image's alpha is below 1 (needs a
     // compositor that blends; otherwise it stays opaque).
     Swapchain(const Device& device, wgpu::Surface surface, bool transparent = false);
-    ~Swapchain();
+    ~Swapchain() override;
 
     Swapchain(const Swapchain&) = delete;
     Swapchain& operator=(const Swapchain&) = delete;
     Swapchain(Swapchain&&) = delete;
     Swapchain& operator=(Swapchain&&) = delete;
 
+    // The surface's images cover the window: `background` isn't shown.
+    wgpu::TextureView begin_frame(std::uint32_t width, std::uint32_t height,
+                                  const std::array<float, 4>& background) override;
+    // The acquired image when it can be copied from, else null.
+    [[nodiscard]] wgpu::Texture copy_source() const override { return copyable_ ? texture_ : wgpu::Texture(); }
+    // Once a frame read backdrops, the next ones read them straight from the window's images
+    // when the surface allows: no offscreen window, no full-window copy.
+    void end_frame(bool reads_backdrops) override;
+
+    [[nodiscard]] wgpu::TextureFormat view_format() const noexcept override { return view_format_; }
+    [[nodiscard]] std::uint32_t width() const noexcept override { return width_; }
+    [[nodiscard]] std::uint32_t height() const noexcept override { return height_; }
+
+private:
     // (Re)configures the surface if it's stale or the window's size changed. Returns false when
     // the window has no area (e.g. minimized); there is nothing to present then.
     bool prepare(std::uint32_t width, std::uint32_t height);
@@ -38,15 +54,7 @@ public:
     // instead of drawing it offscreen), from the next prepare() on, if the surface allows it.
     // Plain images stay the default: some platforms compress them only when nothing else reads them.
     void request_copy_source();
-    // The acquired image when it can be copied from, else null.
-    [[nodiscard]] wgpu::Texture copy_source() const { return copyable_ ? texture_ : wgpu::Texture(); }
 
-    // The format of the views acquire() returns (sRGB).
-    [[nodiscard]] wgpu::TextureFormat view_format() const noexcept { return view_format_; }
-    [[nodiscard]] std::uint32_t width() const noexcept { return width_; }
-    [[nodiscard]] std::uint32_t height() const noexcept { return height_; }
-
-private:
     const Device& device_;
     wgpu::Surface surface_;
     wgpu::TextureFormat format_ = wgpu::TextureFormat::Undefined;

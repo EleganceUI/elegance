@@ -9,14 +9,11 @@
 #include "gpu/buffer.h"
 #include "gpu/path_renderer.h"
 #include "gpu/device.h"
+#include "gpu/presenter.h"
 #include "gpu/quad_renderer.h"
 #include "gpu/render_image.h"
-#if defined(_WIN32)
-#include "gpu/windows/composition.h"
-#endif
 #include "gpu/texture_cache.h"
 #include "gpu/video_textures.h"
-#include "gpu/swapchain.h"
 #include "render/frame_mailbox.h"
 #include "render/frame_plan.h"
 #include "render/intermediate_images.h"
@@ -39,8 +36,8 @@ struct RenderResources {
     wgpu::BindGroup atlas;
 };
 
-// Everything the render thread needs to draw into one window: its surface (or composition
-// target), the frame's buffers, and pooled offscreen images (IntermediateImages). WebGPU orders
+// Everything the render thread needs to draw into one window: its presenter (gpu::Presenter),
+// the frame's buffers, and pooled offscreen images (IntermediateImages). WebGPU orders
 // queue writes and submissions, so one set serves every frame, even while earlier ones are still
 // on the GPU.
 class WindowTarget {
@@ -67,9 +64,9 @@ private:
         wgpu::BindGroup inner_shadow;
     };
 
-    // Where a frame goes: a surface image, or the composition target's shared image. `texture`
-    // is set when it can be copied from: backdrops are then read from it directly, instead of
-    // the window drawing offscreen and being copied over.
+    // Where a frame goes: the presenter's image. `texture` is set when it can be copied from:
+    // backdrops are then read from it directly, instead of the window drawing offscreen and
+    // being copied over.
     struct DrawTarget {
         wgpu::TextureView view;
         wgpu::TextureFormat format{};
@@ -98,7 +95,6 @@ private:
         std::vector<wgpu::BindGroup> videos;
     };
 
-    void render_composition(const WindowFrame& frame, const RenderResources& resources);
     // Records the frame. `acquired_videos` collects the shared video textures it samples, to
     // release once it's submitted.
     wgpu::CommandBuffer record(const DrawTarget& target, const WindowFrame& frame, const RenderResources& resources,
@@ -130,10 +126,7 @@ private:
     IntermediateImages<gpu::RenderImage> images_;
     PathHashes path_hashes_;
     std::vector<std::array<float, 2>> path_fans_; // of the masks a frame renders
-    std::unique_ptr<gpu::Swapchain> swapchain_; // unless the window presents through composition
-#if defined(_WIN32)
-    std::unique_ptr<gpu::CompositionTarget> composition_;
-#endif
+    std::unique_ptr<gpu::Presenter> presenter_;
     wgpu::Sampler sampler_; // for sampling layers
     gpu::Buffer instances_;
     gpu::Buffer stops_;

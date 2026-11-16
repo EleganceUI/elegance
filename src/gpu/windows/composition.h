@@ -8,6 +8,7 @@
 #if defined(_WIN32)
 
 #include "gpu/device.h"
+#include "gpu/presenter.h"
 #include "gpu/webgpu.h"
 
 #include <array>
@@ -25,14 +26,36 @@ namespace elg::detail::gpu {
 //   a window is resized faster than frames arrive, the newest frame stays put at the top-left and
 //   a background layer in the window's color fills the rest; a surface's image would be
 //   stretched to the new size instead.
-class CompositionTarget {
+class CompositionTarget final : public Presenter {
 public:
     // Throws elg::GpuError if the interop isn't available (the caller falls back to a swapchain).
     CompositionTarget(const Device& device, void* hwnd, bool transparent);
-    ~CompositionTarget();
+    ~CompositionTarget() override;
 
     CompositionTarget(const CompositionTarget&) = delete;
     CompositionTarget& operator=(const CompositionTarget&) = delete;
+    CompositionTarget(CompositionTarget&&) = delete;
+    CompositionTarget& operator=(CompositionTarget&&) = delete;
+
+    // Paced to the display: first waits until the compositor is ready for another frame.
+    // `background` shows where no frame covers the window yet (opaque windows).
+    wgpu::TextureView begin_frame(std::uint32_t width, std::uint32_t height,
+                                  const std::array<float, 4>& background) override;
+    // Waits for the GPU to finish the frame, which Direct3D then copies.
+    void end_frame(bool reads_backdrops) override;
+    // Backdrops aren't read from the shared image: windows that read them draw offscreen.
+    [[nodiscard]] wgpu::Texture copy_source() const override { return wgpu::Texture(); }
+    [[nodiscard]] wgpu::TextureFormat view_format() const noexcept override {
+        return wgpu::TextureFormat::BGRA8UnormSrgb;
+    }
+    [[nodiscard]] std::uint32_t width() const noexcept override { return width_; }
+    [[nodiscard]] std::uint32_t height() const noexcept override { return height_; }
+
+    // Whether the device can do the interop at all.
+    static bool supported(const Device& device);
+
+private:
+    struct Impl;
 
     // (Re)creates the images for `width` x `height`. False when there's no area (minimized).
     bool prepare(std::uint32_t width, std::uint32_t height);
@@ -41,9 +64,6 @@ public:
     // premultiplied alpha). end_access() once the frame's rendering is submitted.
     wgpu::TextureView begin_access();
     void end_access() noexcept;
-    wgpu::TextureFormat view_format() const noexcept { return wgpu::TextureFormat::BGRA8UnormSrgb; }
-    std::uint32_t width() const noexcept { return width_; }
-    std::uint32_t height() const noexcept { return height_; }
 
     // Waits (up to `timeout_ms`) until the compositor is ready for another frame: paces frames
     // to the display without queueing them.
@@ -53,11 +73,6 @@ public:
     // Call once the rendering into the image has finished (Device::wait_idle()): shows it.
     void present();
 
-    // Whether the device can do the interop at all.
-    static bool supported(const Device& device);
-
-private:
-    struct Impl;
     void destroy_image() noexcept;
 
     const Device& device_;

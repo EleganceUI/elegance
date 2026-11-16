@@ -14,8 +14,11 @@
 namespace wgpu {
 
 class Device;
+class Surface;
 class Texture;
 class TextureView;
+
+enum class TextureFormat : std::uint32_t;
 
 } // namespace wgpu
 

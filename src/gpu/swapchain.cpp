@@ -84,6 +84,29 @@ Swapchain::~Swapchain() {
     }
 }
 
+wgpu::TextureView Swapchain::begin_frame(std::uint32_t width, std::uint32_t height,
+                                         const std::array<float, 4>& /*background*/) {
+    if (!prepare(width, height)) {
+        return nullptr; // minimized
+    }
+    wgpu::TextureView view = acquire();
+    if (!view) {
+        // Out of date: reconfigured, then once more; still resizing if that fails too.
+        if (!prepare(width, height)) {
+            return nullptr;
+        }
+        view = acquire();
+    }
+    return view;
+}
+
+void Swapchain::end_frame(bool reads_backdrops) {
+    present();
+    if (reads_backdrops) {
+        request_copy_source();
+    }
+}
+
 bool Swapchain::prepare(std::uint32_t width, std::uint32_t height) {
     if (width == 0 || height == 0) {
         return false;

@@ -6,47 +6,14 @@
 
 #include "render/color_space.h"
 
-#if defined(_WIN32)
-#include "core/log.h"
-#include "platform/platform.h"
-
-#include <atomic>
-#endif
-
 #include <algorithm>
 #include <cstdint>
 #include <span>
+#include <utility>
 
 namespace elg::detail {
 
 namespace {
-
-#if defined(_WIN32)
-// The longest a composition frame waits for the display to be ready (it's a hint for pacing).
-constexpr unsigned kReadyTimeoutMs = 50;
-
-// Whether a window presents through DirectComposition (gpu/windows/composition.h) instead of its
-// WebGPU surface.
-bool wants_composition(const gpu::Device& device, bool transparent, void* native_window) {
-    if (!native_window) {
-        return false;
-    }
-    // Before composition_allowed(), whose log line would otherwise claim DirectComposition.
-    if (!gpu::CompositionTarget::supported(device)) {
-        static std::atomic_flag logged;
-        if (!logged.test_and_set()) {
-            log_info("windows present through WebGPU surfaces (the GPU backend can't share textures with "
-                     "DirectComposition)");
-        }
-        return false;
-    }
-    if (!gpu::composition_allowed()) {
-        return false;
-    }
-    // ELG_PRESENT=surface: WebGPU surfaces for opaque windows only.
-    return transparent || platform::environment_variable("ELG_PRESENT").value_or("") != "surface";
-}
-#endif
 
 // Layers hold premultiplied linear color; sRGB storage keeps 8-bit precision where it matters.
 constexpr wgpu::TextureFormat kLayerFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
@@ -84,99 +51,27 @@ void render_offscreen(const wgpu::CommandEncoder& encoder, const gpu::RenderImag
 } // namespace
 
 WindowTarget::WindowTarget(const gpu::Device& device, wgpu::Surface surface, bool transparent, void* native_window)
-    : device_(device), sampler_(gpu::create_linear_sampler(device.handle())),
-      instances_(device.handle(), wgpu::BufferUsage::Vertex), stops_(device.handle(), wgpu::BufferUsage::Storage),
-      path_vertices_(device.handle(), wgpu::BufferUsage::Vertex) {
-#if defined(_WIN32)
-    // Every window presents through DirectComposition (no stretched frames while resizing, and
-    // transparency), unless wants_composition() says otherwise.
-    if (wants_composition(device, transparent, native_window)) {
-        try {
-            composition_ = std::make_unique<gpu::CompositionTarget>(device, native_window, transparent);
-        } catch (const std::exception& error) {
-            log_warning("window falls back to a WebGPU surface: {}", error.what());
-        }
-    }
-    if (transparent && !composition_) {
-        static std::atomic_flag warned;
-        if (!warned.test_and_set()) {
-            log_warning("transparent windows render opaque: they present through WebGPU surfaces, which "
-                        "can't be transparent on Windows");
-        }
-    }
-    if (composition_) {
-        return;
-    }
-#else
-    (void)native_window;
-#endif
-    swapchain_ = std::make_unique<gpu::Swapchain>(device, std::move(surface), transparent);
+    : device_(device), presenter_(gpu::create_presenter(device, std::move(surface), transparent, native_window)),
+      sampler_(gpu::create_linear_sampler(device.handle())), instances_(device.handle(), wgpu::BufferUsage::Vertex),
+      stops_(device.handle(), wgpu::BufferUsage::Storage), path_vertices_(device.handle(), wgpu::BufferUsage::Vertex) {
 }
 
 void WindowTarget::render(const WindowFrame& frame, const RenderResources& resources) {
-#if defined(_WIN32)
-    if (composition_) {
-        render_composition(frame, resources);
-        return;
-    }
-#endif
-    const std::uint32_t width = window_side(frame.pixel_width);
-    const std::uint32_t height = window_side(frame.pixel_height);
-    if (!swapchain_->prepare(width, height)) {
-        return; // minimized
-    }
-    wgpu::TextureView view = swapchain_->acquire();
+    const Color clear = frame.list.clear_color;
+    const wgpu::TextureView view = presenter_->begin_frame(window_side(frame.pixel_width),
+                                                           window_side(frame.pixel_height), {clear.r, clear.g, clear.b, 1});
     if (!view) {
-        // Out of date: reconfigured, then once more; still resizing if that fails too.
-        if (!swapchain_->prepare(width, height)) {
-            return;
-        }
-        view = swapchain_->acquire();
-        if (!view) {
-            return;
-        }
+        return; // minimized, or skipped
     }
 
     std::vector<std::uint64_t> acquired_videos;
-    const wgpu::CommandBuffer commands = record({view, swapchain_->view_format(), swapchain_->width(),
-                                                 swapchain_->height(), swapchain_->copy_source()},
+    const wgpu::CommandBuffer commands = record({view, presenter_->view_format(), presenter_->width(),
+                                                 presenter_->height(), presenter_->copy_source()},
                                                 frame, resources, acquired_videos);
     device_.submit(commands);
     resources.videos.release(acquired_videos); // back to the decoder
-    swapchain_->present();
-    if (window_reads_backdrops_) {
-        // From the next frame on, backdrops come straight from the window's images (when the
-        // surface allows): no offscreen window, no full-window copy.
-        swapchain_->request_copy_source();
-    }
+    presenter_->end_frame(window_reads_backdrops_);
     device_.tick();
-}
-
-void WindowTarget::render_composition([[maybe_unused]] const WindowFrame& frame,
-                                      [[maybe_unused]] const RenderResources& resources) {
-#if defined(_WIN32)
-    const std::uint32_t width = window_side(frame.pixel_width);
-    const std::uint32_t height = window_side(frame.pixel_height);
-    if (!composition_->prepare(width, height)) {
-        return; // minimized
-    }
-    composition_->wait_until_ready(kReadyTimeoutMs); // paced to the display
-    const Color clear = frame.list.clear_color;
-    composition_->set_background({clear.r, clear.g, clear.b, 1});
-
-    const wgpu::TextureView view = composition_->begin_access();
-    std::vector<std::uint64_t> acquired_videos;
-    const wgpu::CommandBuffer commands = record({view, composition_->view_format(), composition_->width(),
-                                                 composition_->height()},
-                                                frame, resources, acquired_videos);
-    device_.submit(commands);
-    resources.videos.release(acquired_videos);
-    composition_->end_access();
-    // Direct3D copies the image next, so the rendering must be finished.
-    device_.wait_idle();
-    composition_->present();
-    device_.tick();
-#endif
 }
 
 std::uint32_t WindowTarget::window_side(int pixels) const {
