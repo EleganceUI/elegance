@@ -39,8 +39,8 @@ void Instance::wait(wgpu::Future future) const {
     }
 }
 
-wgpu::Surface Instance::create_surface(const platform::SurfaceSource& source) const {
-    using Kind = platform::SurfaceSource::Kind;
+wgpu::Surface Instance::create_surface(const SurfaceSource& source) const {
+    using Kind = SurfaceSource::Kind;
     wgpu::SurfaceSourceWindowsHWND win32;
     wgpu::SurfaceSourceMetalLayer metal;
     wgpu::SurfaceSourceXlibWindow xlib;
