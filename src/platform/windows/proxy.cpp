@@ -2,10 +2,10 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// The system's proxy settings on Windows (net/proxy.h): WinHTTP, which also finds (WPAD) and runs
-// PAC scripts.
+// The system's proxy settings on Windows (net/net_backend.h): WinHTTP, which also finds (WPAD) and
+// runs PAC scripts.
 
-#include "net/proxy.h"
+#include "net/net_backend.h"
 
 #include "core/log.h"
 
@@ -16,6 +16,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 
 namespace elg::detail::net {
 
@@ -44,15 +45,15 @@ std::string narrow(const wchar_t* text) {
 
 } // namespace
 
-ProxyChoice system_proxy(std::string_view scheme, std::string_view host, std::string_view port) {
+SystemProxy system_proxy(std::string_view scheme, std::string_view host, std::string_view port) {
     WINHTTP_CURRENT_USER_IE_PROXY_CONFIG settings{};
     if (!WinHttpGetIEProxyConfigForCurrentUser(&settings)) {
-        return std::nullopt;
+        return std::monostate{};
     }
     const std::string manual = narrow(settings.lpszProxy);
     const std::string bypass = narrow(settings.lpszProxyBypass);
     const bool automatic = settings.fAutoDetect || settings.lpszAutoConfigUrl;
-    std::optional<ProxyChoice> answer;
+    std::optional<SystemProxy> answer;
     if (automatic) {
         if (HINTERNET session = WinHttpOpen(L"Elegance", WINHTTP_ACCESS_TYPE_NO_PROXY, WINHTTP_NO_PROXY_NAME,
                                             WINHTTP_NO_PROXY_BYPASS, 0)) {
@@ -71,9 +72,9 @@ ProxyChoice system_proxy(std::string_view scheme, std::string_view host, std::st
             WINHTTP_PROXY_INFO info{};
             if (WinHttpGetProxyForUrl(session, url.c_str(), &options, &info)) {
                 if (info.dwAccessType == WINHTTP_ACCESS_TYPE_NAMED_PROXY && info.lpszProxy) {
-                    answer = proxy_from_windows_settings(narrow(info.lpszProxy), narrow(info.lpszProxyBypass), scheme, host);
+                    answer = SystemProxyList{narrow(info.lpszProxy), narrow(info.lpszProxyBypass)};
                 } else {
-                    answer = ProxyChoice(std::nullopt);
+                    answer = std::monostate{};
                 }
                 if (info.lpszProxy) {
                     GlobalFree(info.lpszProxy);
@@ -94,7 +95,7 @@ ProxyChoice system_proxy(std::string_view scheme, std::string_view host, std::st
         return *answer;
     }
     // No script, or it failed: the manual settings.
-    return manual.empty() ? ProxyChoice(std::nullopt) : proxy_from_windows_settings(manual, bypass, scheme, host);
+    return manual.empty() ? SystemProxy(std::monostate{}) : SystemProxy(SystemProxyList{manual, bypass});
 }
 
 } // namespace elg::detail::net

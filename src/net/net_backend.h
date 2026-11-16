@@ -6,13 +6,15 @@
 #define ELG_NET_NET_BACKEND_H
 
 // Net's backend interface (ELGSPEC-0001.R4): what downloads need from the operating system,
-// implemented in platform/<os>/net.cpp.
+// implemented in platform/<os>/net.cpp, and the system's proxy settings, in
+// platform/<os>/proxy.cpp.
 
 #include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 namespace elg::detail::net {
@@ -31,6 +33,32 @@ SystemRootCertificates system_root_certificates();
 // names them, from the environment variables that `get` reads. nullopt when there's none.
 std::optional<std::filesystem::path> image_cache_folder(
     std::string_view app, const std::function<std::optional<std::string>(const char*)>& get);
+
+// --- Proxies (net/proxy.h) ---
+
+// An HTTP proxy the system names for a URL.
+struct SystemProxyServer {
+    std::string host;
+    std::string port;
+};
+// Proxies as Windows lists them (WinHTTP), which find_proxy() picks from for the request's scheme
+// and host: `proxies` is "host:port" or "http=host:port;https=host:port", `bypass` is ";"
+// separated patterns with * wildcards, "<local>" meaning names without a dot.
+struct SystemProxyList {
+    std::string proxies;
+    std::string bypass;
+};
+// Why the system's proxy can't be used.
+struct SystemProxyError {
+    std::string message;
+};
+// What the system's settings say for a URL: connect directly (std::monostate), through a proxy,
+// through one of a list, or not at all.
+using SystemProxy = std::variant<std::monostate, SystemProxyServer, SystemProxyList, SystemProxyError>;
+
+// The system's proxy settings for a request to `scheme` ("http" or "https") `host` and `port`.
+// Blocks (PAC scripts, WPAD).
+SystemProxy system_proxy(std::string_view scheme, std::string_view host, std::string_view port);
 
 } // namespace elg::detail::net
 
