@@ -224,6 +224,21 @@ std::int64_t unix_now() {
     return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
 
+std::string format_http_date(std::int64_t time) {
+    namespace chrono = std::chrono;
+    static constexpr std::array<std::string_view, 7> kWeekdays{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    static constexpr std::array<std::string_view, 12> kMonths{"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                                               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    const chrono::sys_seconds point{chrono::seconds(time)};
+    const chrono::sys_days day = chrono::floor<chrono::days>(point);
+    const chrono::year_month_day date{day};
+    const chrono::hh_mm_ss<chrono::seconds> clock{point - day};
+    return std::format("{}, {:02} {} {:04} {:02}:{:02}:{:02} GMT", kWeekdays[chrono::weekday(day).c_encoding()],
+                       static_cast<unsigned>(date.day()), kMonths[static_cast<unsigned>(date.month()) - 1],
+                       static_cast<int>(date.year()), clock.hours().count(), clock.minutes().count(),
+                       clock.seconds().count());
+}
+
 std::optional<std::int64_t> parse_http_date(std::string_view text) {
     text = trim(text);
     if (text.empty()) {
@@ -356,11 +371,13 @@ void refresh_cache_entry(CacheEntry& entry, const CacheHeaders& headers, std::in
     };
     update(entry.headers.cache_control, headers.cache_control);
     update(entry.headers.expires, headers.expires);
-    update(entry.headers.date, headers.date);
-    update(entry.headers.age, headers.age);
     update(entry.headers.etag, headers.etag);
     update(entry.headers.last_modified, headers.last_modified);
     update(entry.headers.vary, headers.vary);
+    // Age and Date are the 304's own: without them it's new, and was sent when it arrived (RFC
+    // 9110 §6.6.1), so the stored response's age and date don't carry over.
+    entry.headers.age = writable(headers.age) ? headers.age : std::string();
+    entry.headers.date = !headers.date.empty() && writable(headers.date) ? headers.date : format_http_date(now);
     entry.received = now;
     apply_freshness(entry);
 }

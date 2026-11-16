@@ -70,8 +70,9 @@ std::optional<CacheEntry> make_cache_entry(std::string url, unsigned status, std
                                            const CacheHeaders& headers, std::vector<std::uint8_t> body,
                                            std::int64_t now);
 // A 304 validated `entry`: each field the 304 carries replaces the entry's (but for values a cache
-// file can't hold), the others stay, and freshness is computed again from the result, as for a
-// response received `now`.
+// file can't hold), and the others stay, except Age and Date, which describe the 304 itself: one
+// without Age removes the stored Age, and one without Date sets the stored Date to `now`.
+// Freshness is then computed again from the result, as for a response received `now`.
 void refresh_cache_entry(CacheEntry& entry, const CacheHeaders& headers, std::int64_t now);
 // Whether these fields say not to store the response: `no-store` in Cache-Control, or a `*`
 // member in Vary.
@@ -82,6 +83,8 @@ std::optional<CacheEntry> read_cache_entry(std::istream& in, const std::string& 
 // An HTTP date ("Sun, 06 Nov 1994 08:49:37 GMT", or the RFC 850 and asctime forms) in Unix
 // seconds.
 std::optional<std::int64_t> parse_http_date(std::string_view text);
+// Unix seconds as an HTTP date: "Sun, 06 Nov 1994 08:49:37 GMT".
+std::string format_http_date(std::int64_t time);
 std::int64_t unix_now();
 
 class HttpCache {

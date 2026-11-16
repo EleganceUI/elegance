@@ -102,7 +102,7 @@ wmZAujteSAEKpmLCsCEVJ8Z884hfe+U0WYC9HPiHLcu3n1AfGNHyekNG
 //   /header-70k 200 with a header section of about 70 KiB
 //   /huge.png   200 with a PNG file of 16384 x 8193 pixels (in 106 KB)
 //   /small.png  200 with a PNG file of 64 x 32 pixels
-//   /aged       200, fresh for 600 s but already 600 s old, with an ETag; its 304 says Age: 0
+//   /aged       200, fresh for 600 s but already 600 s old, with an ETag; its 304 has no Age
 //   /gone-on-304 200 "kept", revalidated every time, with an ETag; its 304 says no-store
 //   /latest     302 to /v123.png, with no lifetime of its own
 //   /v123.png   200 "v123", fresh for a year
@@ -227,8 +227,7 @@ private:
         } else if (target == "/aged") {
             response.set(bhttp::field::etag, "\"a\"");
             if (request[bhttp::field::if_none_match] == "\"a\"") {
-                response.result(bhttp::status::not_modified);
-                response.set(bhttp::field::age, "0"); // and no Cache-Control: the stored one stays
+                response.result(bhttp::status::not_modified); // no Cache-Control or Age
                 ++not_modified_;
             } else {
                 response.set(bhttp::field::cache_control, "max-age=600");
@@ -822,6 +821,45 @@ TEST_CASE("a 304 updates the stored fields it carries, and freshness comes from 
                                 {.cache_control = "max-age=60", .vary = "Accept-Encoding"}, {1}, now));
 }
 
+TEST_CASE("a 304 without Age drops the stored one, and one without Date dates it on arrival", "[cache]") {
+    constexpr std::int64_t now = 784111777; // Sun, 06 Nov 1994 08:49:37 GMT
+    const std::string url = "https://example.com/a.png";
+    CHECK(net::format_http_date(now) == "Sun, 06 Nov 1994 08:49:37 GMT");
+    const std::int64_t later = now + std::int64_t{400} * 86400 + 5;
+    CHECK(net::parse_http_date(net::format_http_date(later)) == later);
+
+    // Stored 3000 seconds old with a lifetime of 600: stale at once.
+    auto aged = net::make_cache_entry(url, 200, {}, {.cache_control = "max-age=600", .age = "3000", .etag = "\"a\""},
+                                      {1}, now);
+    REQUIRE(aged);
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): both entries are REQUIREd before they're read
+    CHECK_FALSE(aged->fresh(now));
+    net::refresh_cache_entry(*aged, {.etag = "\"a\""}, now + 10);
+    CHECK(aged->headers.age.empty());
+    CHECK(aged->fresh(now + 10 + 599));
+    CHECK_FALSE(aged->fresh(now + 10 + 600));
+    // A 304 with an Age replaces it.
+    net::refresh_cache_entry(*aged, {.age = "100"}, now + 20);
+    CHECK(aged->headers.age == "100");
+    CHECK(aged->fresh(now + 20 + 499));
+    CHECK_FALSE(aged->fresh(now + 20 + 500));
+
+    // Stored with a Date; the 304 an hour later has none, so the stored one becomes its arrival.
+    auto dated = net::make_cache_entry(url, 200, {},
+                                       {.cache_control = "max-age=600", .date = "Sun, 06 Nov 1994 08:49:37 GMT",
+                                        .etag = "\"d\""},
+                                       {1}, now);
+    REQUIRE(dated);
+    net::refresh_cache_entry(*dated, {}, now + 3600);
+    CHECK(dated->headers.date == "Sun, 06 Nov 1994 09:49:37 GMT");
+    CHECK(dated->fresh(now + 3600 + 599));
+    CHECK_FALSE(dated->fresh(now + 3600 + 600));
+    // A 304 with a Date replaces it.
+    net::refresh_cache_entry(*dated, {.date = "Sun, 06 Nov 1994 09:59:37 GMT"}, now + 4200);
+    CHECK(dated->headers.date == "Sun, 06 Nov 1994 09:59:37 GMT");
+    // NOLINTEND(bugprone-unchecked-optional-access)
+}
+
 TEST_CASE("redirects make cache entries with a lifetime of their own, or permanent ones", "[cache]") {
     constexpr std::int64_t now = 784111777;
     const auto redirect = [&](unsigned status, const net::CacheHeaders& headers) {
@@ -936,7 +974,8 @@ TEST_CASE("the disk cache answers while fresh and revalidates after", "[fetch][c
     CHECK(server.hits("/revalidate") == 2);
     CHECK(server.not_modified() == 1);
 
-    // A 304 without Cache-Control keeps the stored max-age; its Age of 0 makes the entry fresh.
+    // A 304 without Cache-Control keeps the stored max-age; without Age, the stored Age goes, so
+    // the entry is fresh again.
     CHECK(text(fetch(server.url("/aged"), options)) == "aged"); // stored, but stale at once
     REQUIRE(wait_until_cached(*cache, server.url("/aged")));
     CHECK(text(fetch(server.url("/aged"), options)) == "aged"); // revalidated: a 304
