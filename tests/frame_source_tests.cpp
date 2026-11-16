@@ -393,6 +393,27 @@ TEST_CASE("sources shown only in hidden windows don't wake the render thread, an
     CHECK(sources.stale() == std::vector<std::uint32_t>{1});
 }
 
+TEST_CASE("a window's last frame keeps a video's and a camera's frames, not their engines", "[video][frames]") {
+    detail::FrameSources sources;
+    std::shared_ptr<detail::FrameSource> video_frames;
+    std::shared_ptr<detail::FrameSource> camera_frames;
+    {
+        const std::shared_ptr<detail::VideoSource> video = detail::VideoSource::create("does-not-exist.mp4");
+        const Camera camera;
+        video_frames = video->frames();
+        camera_frames = detail::MediaAccess::source(camera)->frames();
+        sources.drew(frame_of(1, {video_frames, camera_frames}));
+    }
+    // What the engines posted finds their sources gone; the window's frame asks for frames still.
+    detail::run_ui_tasks();
+    sources.update();
+    CHECK(sources.stale().empty());
+    CHECK_FALSE(sources.polling());
+    CHECK_FALSE(video_frames->current());
+    CHECK_FALSE(camera_frames->current());
+    sources.remove(1);
+}
+
 #if defined(__linux__)
 TEST_CASE("a playing Linux video wakes the render thread for its frames instead of being polled", "[video][frames]") {
     // A short clip, made with GStreamer's own tools: 20 frames at 50 per second.

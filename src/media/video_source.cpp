@@ -53,43 +53,62 @@ NativeFrameImporter native_frame_importer() {
 
 namespace {
 
+// The frames of a source that has none.
+class NoFrames final : public FrameSource {
+public:
+    bool update() override { return false; }
+    std::optional<VideoFrame> current() const override { return std::nullopt; }
+};
+
 // Platforms without a video backend yet: an error, shown by the view.
-class UnsupportedVideoSource final : public VideoSource, public FrameSource {
+class UnsupportedVideoSource final : public VideoSource {
 public:
     explicit UnsupportedVideoSource(std::string message) { error = std::move(message); }
-    std::shared_ptr<FrameSource> frames() override { return {shared_from_this(), this}; }
+    std::shared_ptr<FrameSource> frames() override { return frames_; }
     void play() override {}
     void pause() override {}
     void seek(double) override {}
     void set_volume(float v) override { volume = v; }
     void set_muted(bool m) override { muted = m; }
     void set_looping(bool l) override { looping = l; }
-    bool update() override { return false; }
-    std::optional<VideoFrame> current() const override { return std::nullopt; }
+
+private:
+    const std::shared_ptr<NoFrames> frames_ = std::make_shared<NoFrames>();
 };
 
 // A video the OS's media engine plays (media/video_backend.h).
-class EngineVideoSource final : public VideoSource, public FrameSource {
+class EngineVideoSource final : public VideoSource {
 public:
     explicit EngineVideoSource(std::unique_ptr<VideoEngine> engine)
-        : FrameSource(engine->wakes_for_frames()), engine_(std::move(engine)) {}
-    std::shared_ptr<FrameSource> frames() override { return {shared_from_this(), this}; }
+        : frames_(std::make_shared<EngineFrames<VideoEngine>>(engine->wakes_for_frames())),
+          box_(detail::make_ui_shared<EngineBox<VideoEngine>>(*this, frames_, std::move(engine))) {
+        frames_->attach(box_);
+    }
+    EngineVideoSource(const EngineVideoSource&) = delete;
+    EngineVideoSource& operator=(const EngineVideoSource&) = delete;
+    EngineVideoSource(EngineVideoSource&&) = delete;
+    EngineVideoSource& operator=(EngineVideoSource&&) = delete;
+    // Its frames may outlive it in a display list: they get no more, and nothing the engine
+    // reports reaches the states that go now.
+    ~EngineVideoSource() override {
+        box_->host.detach();
+        frames_->set_playing_now(false);
+    }
 
-    // UI thread, right after construction: the engine holds the host weakly.
-    void open() { engine_->open(std::shared_ptr<FrameSourceHost>(shared_from_this(), &host_)); }
+    // UI thread, right after construction.
+    void open() { box_->engine->open(EngineBox<VideoEngine>::host_of(box_)); }
 
-    void play() override { engine_->play(); }
-    void pause() override { engine_->pause(); }
-    void seek(double seconds) override { engine_->seek(seconds); }
-    void set_volume(float value) override { engine_->set_volume(value); }
-    void set_muted(bool value) override { engine_->set_muted(value); }
-    void set_looping(bool value) override { engine_->set_looping(value); }
-    bool update() override { return engine_->update(); }
-    std::optional<VideoFrame> current() const override { return engine_->current(); }
+    std::shared_ptr<FrameSource> frames() override { return frames_; }
+    void play() override { box_->engine->play(); }
+    void pause() override { box_->engine->pause(); }
+    void seek(double seconds) override { box_->engine->seek(seconds); }
+    void set_volume(float value) override { box_->engine->set_volume(value); }
+    void set_muted(bool value) override { box_->engine->set_muted(value); }
+    void set_looping(bool value) override { box_->engine->set_looping(value); }
 
 private:
-    SourceHost host_{*this, *this}; // outlives the engine
-    std::unique_ptr<VideoEngine> engine_;
+    const std::shared_ptr<EngineFrames<VideoEngine>> frames_;
+    const std::shared_ptr<EngineBox<VideoEngine>> box_;
 };
 
 } // namespace
@@ -97,7 +116,7 @@ private:
 // --- SourceHost ---
 
 std::uint64_t SourceHost::source_id() const noexcept {
-    return frames_.id;
+    return frames_->id;
 }
 
 std::uint64_t SourceHost::new_id() const {
@@ -105,15 +124,15 @@ std::uint64_t SourceHost::new_id() const {
 }
 
 void SourceHost::set_playing_now(bool playing) noexcept {
-    frames_.set_playing_now(playing);
+    frames_->set_playing_now(playing);
 }
 
 bool SourceHost::is_playing_now() const noexcept {
-    return frames_.is_playing_now();
+    return frames_->is_playing_now();
 }
 
 void SourceHost::notify_new_frame() const {
-    frames_.notify_new_frame();
+    frames_->notify_new_frame();
 }
 
 std::optional<RenderAdapter> SourceHost::render_adapter() const {
@@ -135,51 +154,69 @@ std::shared_ptr<const DecodedImage> SourceHost::decode_image(std::span<const std
 }
 
 void SourceHost::set_playing(bool playing) {
-    source_.playing = playing;
+    if (source_) {
+        source_->playing = playing;
+    }
 }
 
 bool SourceHost::playing() const {
-    return source_.playing.peek();
+    return source_ && source_->playing.peek();
 }
 
 void SourceHost::set_ready() {
-    source_.ready = true;
+    if (source_) {
+        source_->ready = true;
+    }
 }
 
 void SourceHost::set_time(double seconds) {
-    source_.time = seconds;
+    if (source_) {
+        source_->time = seconds;
+    }
 }
 
 void SourceHost::set_duration(double seconds) {
-    source_.duration = seconds;
+    if (source_) {
+        source_->duration = seconds;
+    }
 }
 
 double SourceHost::duration() const {
-    return source_.duration.peek();
+    return source_ ? source_->duration.peek() : 0.0;
 }
 
 void SourceHost::set_size(float width, float height) {
-    source_.size = Size{width, height};
+    if (source_) {
+        source_->size = Size{width, height};
+    }
 }
 
 void SourceHost::set_volume(float volume) {
-    source_.volume = volume;
+    if (source_) {
+        source_->volume = volume;
+    }
 }
 
 void SourceHost::set_muted(bool muted) {
-    source_.muted = muted;
+    if (source_) {
+        source_->muted = muted;
+    }
 }
 
 void SourceHost::set_looping(bool looping) {
-    source_.looping = looping;
+    if (source_) {
+        source_->looping = looping;
+    }
 }
 
 bool SourceHost::looping() const {
-    return source_.looping.peek();
+    return source_ && source_->looping.peek();
 }
 
 void SourceHost::set_error(std::string message) {
-    source_.error = std::move(message);
+    if (source_) {
+        source_->error = std::move(message);
+    }
 }
 
 // --- VideoSource ---

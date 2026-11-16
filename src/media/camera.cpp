@@ -90,26 +90,36 @@ std::vector<std::uint8_t> frame_to_bgra(VideoFrame::Format format, VideoFrame::M
 namespace {
 
 // A camera the OS captures (media/video_backend.h).
-class EngineCamera final : public CameraSource, public FrameSource {
+class EngineCamera final : public CameraSource {
 public:
     explicit EngineCamera(std::unique_ptr<CameraEngine> engine)
-        : FrameSource(engine->wakes_for_frames()), engine_(std::move(engine)) {}
-    std::shared_ptr<FrameSource> frames() override { return {shared_from_this(), this}; }
+        : frames_(std::make_shared<EngineFrames<CameraEngine>>(engine->wakes_for_frames())),
+          box_(detail::make_ui_shared<EngineBox<CameraEngine>>(*this, frames_, std::move(engine))) {
+        frames_->attach(box_);
+    }
+    EngineCamera(const EngineCamera&) = delete;
+    EngineCamera& operator=(const EngineCamera&) = delete;
+    EngineCamera(EngineCamera&&) = delete;
+    EngineCamera& operator=(EngineCamera&&) = delete;
+    // As EngineVideoSource's (media/video_source.cpp).
+    ~EngineCamera() override {
+        box_->host.detach();
+        frames_->set_playing_now(false);
+    }
 
-    // UI thread, right after construction: the engine holds the host weakly.
-    void open() { engine_->open(std::shared_ptr<FrameSourceHost>(shared_from_this(), &host_)); }
+    // UI thread, right after construction.
+    void open() { box_->engine->open(EngineBox<CameraEngine>::host_of(box_)); }
 
-    void play() override { engine_->start(); }
-    void pause() override { engine_->stop(); }
+    std::shared_ptr<FrameSource> frames() override { return frames_; }
+    void play() override { box_->engine->start(); }
+    void pause() override { box_->engine->stop(); }
     void seek(double) override {}
     void set_volume(float) override {}
     void set_muted(bool) override {}
     void set_looping(bool) override {}
-    bool update() override { return engine_->update(); }
-    std::optional<VideoFrame> current() const override { return engine_->current(); }
 
     std::optional<std::vector<unsigned char>> snapshot() const override {
-        const std::optional<VideoFrame> frame = engine_->snapshot_frame();
+        const std::optional<VideoFrame> frame = box_->engine->snapshot_frame();
         if (!frame || !frame->pixels) {
             return std::nullopt;
         }
@@ -122,8 +132,8 @@ public:
     }
 
 private:
-    SourceHost host_{*this, *this}; // outlives the engine
-    std::unique_ptr<CameraEngine> engine_;
+    const std::shared_ptr<EngineFrames<CameraEngine>> frames_;
+    const std::shared_ptr<EngineBox<CameraEngine>> box_;
 };
 
 } // namespace
