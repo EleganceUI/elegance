@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <csignal>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <format>
@@ -66,8 +67,15 @@ void debug_break() noexcept {
 }
 
 #if !defined(__cpp_lib_stacktrace)
-std::size_t capture_stack(std::span<void*> frames) noexcept {
-    return static_cast<std::size_t>(std::max(backtrace(frames.data(), static_cast<int>(frames.size())), 0));
+// Not inlined, so that backtrace()'s first frame is always this function's own, which the caller
+// doesn't want: the trace starts at the caller, as when it called backtrace() itself.
+[[gnu::noinline]] std::size_t capture_stack(std::span<void*> frames) noexcept {
+    const auto count = static_cast<std::size_t>(std::max(backtrace(frames.data(), static_cast<int>(frames.size())), 0));
+    if (count == 0) {
+        return 0;
+    }
+    std::copy(frames.begin() + 1, frames.begin() + static_cast<std::ptrdiff_t>(count), frames.begin());
+    return count - 1;
 }
 
 std::vector<std::string> describe_stack(std::span<void* const> frames) {
