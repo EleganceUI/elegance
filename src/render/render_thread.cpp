@@ -14,8 +14,10 @@
 #include "gpu/texture_cache.h"
 #include "gpu/video_textures.h"
 #include "gpu/webgpu.h"
+#include "media/image_decode.h"
 #include "render/frame_sources.h"
 #include "render/window_target.h"
+#include "text/atlas.h"
 
 #include <elg/error.h>
 
@@ -82,8 +84,9 @@ void RenderThread::run(std::promise<void> ready) noexcept {
         // atlas, then the device and the instance.
         const gpu::Instance instance;
         const gpu::Device device(instance);
+        set_max_texture_side(device.max_texture_side()); // images decode to fit this device's textures
         const wgpu::BindGroupLayout image_layout = gpu::create_image_layout(device.handle());
-        gpu::AtlasTexture atlas(device, image_layout);
+        gpu::AtlasTexture atlas(device, image_layout, kAtlasSize);
         gpu::QuadRenderer quads(device, image_layout);
         gpu::BlurRenderer blur(device, image_layout);
         gpu::PathRenderer paths(device);
@@ -121,7 +124,11 @@ void RenderThread::run(std::promise<void> ready) noexcept {
                                    windows.erase(remove.window_id);
                                    sources.remove(remove.window_id);
                                },
-                               [&](const AtlasUploadCommand& upload) { atlas.upload(upload.uploads); },
+                               [&](const AtlasUploadCommand& upload) {
+                                   for (const GlyphUpload& glyphs : upload.uploads) {
+                                       atlas.upload(glyphs.x, glyphs.y, glyphs.width, glyphs.height, glyphs.rgba);
+                                   }
+                               },
                                [&](const WindowVisibilityCommand& visibility) {
                                    sources.set_visible(visibility.window_id, visibility.visible);
                                },

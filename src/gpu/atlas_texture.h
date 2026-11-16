@@ -6,8 +6,8 @@
 #define ELG_GPU_ATLAS_TEXTURE_H
 
 #include "gpu/webgpu_types.h"
-#include "text/atlas.h"
 
+#include <cstdint>
 #include <memory>
 #include <span>
 
@@ -19,7 +19,8 @@ class Device;
 // it through. Filled from GlyphUploads produced on the UI thread.
 class AtlasTexture {
 public:
-    AtlasTexture(const Device& device, const wgpu::BindGroupLayout& image_layout);
+    // A square RGBA8 texture `side` pixels wide.
+    AtlasTexture(const Device& device, const wgpu::BindGroupLayout& image_layout, std::uint32_t side);
     ~AtlasTexture();
 
     AtlasTexture(const AtlasTexture&) = delete;
@@ -29,7 +30,9 @@ public:
 
     // Copies new glyphs into the texture. Queue writes are ordered with frames: frames submitted
     // earlier still see the old contents, later ones the new.
-    void upload(std::span<const GlyphUpload> uploads);
+    // `rgba` is width * height * 4 bytes, top row first, for the rectangle at (x, y).
+    void upload(std::uint32_t x, std::uint32_t y, std::uint32_t width, std::uint32_t height,
+                std::span<const std::uint8_t> rgba);
 
     [[nodiscard]] const wgpu::BindGroup& group() const noexcept;
 
