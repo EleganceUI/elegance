@@ -2,10 +2,10 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Linux (and other Unix desktops) under SDL (platform/generic/native.h): WebGPU draws into the
+// Linux (and other Unix desktops) under SDL (platform/sdl/native.h): WebGPU draws into the
 // Wayland surface or the X11 window. SDL's password input type turns the IME off on Wayland.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 
 #include <SDL3/SDL.h>
 

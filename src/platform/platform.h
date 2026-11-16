@@ -2,12 +2,14 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_PLATFORM_GENERIC_PLATFORM_H
-#define ELG_PLATFORM_GENERIC_PLATFORM_H
+#ifndef ELG_PLATFORM_PLATFORM_H
+#define ELG_PLATFORM_PLATFORM_H
 
-// Internal platform layer (design.md §4). SDL3 is the only backend, but no SDL types leak out
-// of platform/, so it could be replaced without touching the rest of the framework. generic/
-// holds what's the same on every OS; windows/, macos/ and linux/ hold the rest.
+// The platform interface (design.md §4, ELGSPEC-0001.R1): what the rest of the library uses for
+// windows, input and the system. SDL3 is the only backend, and no SDL types leak out of
+// platform/, so it could be replaced without touching the rest of the framework. The headers
+// here are the interface; sdl/ implements it the same on every OS, and windows/, macos/ and
+// linux/ hold what each OS does differently.
 
 #include <elg/app.h>
 #include <elg/events.h>
@@ -126,7 +128,7 @@ enum class HitArea {
 class Window;
 
 namespace native {
-// The OS's parts of a window (platform/generic/native.h).
+// The OS's parts of a window (platform/sdl/native.h).
 struct WindowParts {
     void* metal_view = nullptr; // SDL_MetalView on macOS: the window's CAMetalLayer
     void* title_bar = nullptr;  // TitleBar::integrated on macOS (platform/macos/title_bar.h)
@@ -293,4 +295,4 @@ void show_error_box(const char* title, const char* message) noexcept;
 
 } // namespace elg::detail::platform
 
-#endif // ELG_PLATFORM_GENERIC_PLATFORM_H
+#endif // ELG_PLATFORM_PLATFORM_H

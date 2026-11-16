@@ -2,11 +2,11 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Appearance on macOS (platform/generic/native.h): window materials as vibrancy
+// Appearance on macOS (platform/sdl/native.h): window materials as vibrancy
 // (NSVisualEffectView behind the content), and the accent color the person chose in System
 // Settings > Appearance. Compiled with ARC.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 #include "platform/macos/appearance.h"
 
 #include <SDL3/SDL.h>

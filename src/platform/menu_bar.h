@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_PLATFORM_GENERIC_MENU_BAR_H
-#define ELG_PLATFORM_GENERIC_MENU_BAR_H
+#ifndef ELG_PLATFORM_MENU_BAR_H
+#define ELG_PLATFORM_MENU_BAR_H
 
 // The menu bar (App::menu_bar) as this platform shows it: roles resolved to titles and
 // shortcuts, items the platform has no use for left out. Each OS shows the result its way
@@ -70,4 +70,4 @@ View menu_bar_view(const Prop<std::vector<Item>>& menus, const Command& command,
 
 } // namespace elg::detail::menus
 
-#endif // ELG_PLATFORM_GENERIC_MENU_BAR_H
+#endif // ELG_PLATFORM_MENU_BAR_H

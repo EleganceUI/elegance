@@ -2,10 +2,10 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// macOS under SDL (platform/generic/native.h): windows present through a CAMetalLayer, integrated
+// macOS under SDL (platform/sdl/native.h): windows present through a CAMetalLayer, integrated
 // title bars and trackpad input come from AppKit (title_bar.mm, input.mm).
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 
 #include "platform/macos/appearance.h"
 #include "platform/macos/input.h"

@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_PLATFORM_GENERIC_DESKTOP_SDL_H
-#define ELG_PLATFORM_GENERIC_DESKTOP_SDL_H
+#ifndef ELG_PLATFORM_DESKTOP_H
+#define ELG_PLATFORM_DESKTOP_H
 
 namespace elg::detail::platform {
 
@@ -13,4 +13,4 @@ void remove_tray_icons();
 
 } // namespace elg::detail::platform
 
-#endif // ELG_PLATFORM_GENERIC_DESKTOP_SDL_H
+#endif // ELG_PLATFORM_DESKTOP_H

@@ -2,12 +2,12 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Windows under SDL (platform/generic/native.h): WebGPU draws into the HWND, DWM rounds
+// Windows under SDL (platform/sdl/native.h): WebGPU draws into the HWND, DWM rounds
 // undecorated windows' corners, and password fields detach the IME. Top-level windows are
 // subclassed for what SDL doesn't pass on: menu commands, the taskbar button's creation, and
 // accent color changes.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 #include "platform/windows/shell.h"
 
 #include <SDL3/SDL.h>

@@ -6,7 +6,7 @@
 // (ITaskbarList3), and the badge as an overlay icon drawn here: a red disc with the text. Buttons
 // made later (TaskbarButtonCreated) get the current state.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 #include "platform/windows/shell.h"
 
 #include "core/log.h"

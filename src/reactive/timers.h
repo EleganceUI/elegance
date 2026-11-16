@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_CORE_TIMERS_H
-#define ELG_CORE_TIMERS_H
+#ifndef ELG_REACTIVE_TIMERS_H
+#define ELG_REACTIVE_TIMERS_H
 
 // The App's side of timers (elg/timer.h) and view lifecycle actions (View::on_appear and
 // on_disappear). UI thread.
@@ -30,4 +30,4 @@ void clear_lifecycle_actions() noexcept;
 
 } // namespace elg::detail
 
-#endif // ELG_CORE_TIMERS_H
+#endif // ELG_REACTIVE_TIMERS_H

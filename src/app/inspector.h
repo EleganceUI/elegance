@@ -2,10 +2,10 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_VIEW_INSPECTOR_H
-#define ELG_VIEW_INSPECTOR_H
+#ifndef ELG_APP_INSPECTOR_H
+#define ELG_APP_INSPECTOR_H
 
-#include "render/display_list.h"
+#include "display/display_list.h"
 #include "view/element.h"
 
 #include <elg/reactive.h>
@@ -83,4 +83,4 @@ void paint_inspector_overlay(const Inspector& inspector, Element& root, DisplayL
 
 } // namespace elg::detail
 
-#endif // ELG_VIEW_INSPECTOR_H
+#endif // ELG_APP_INSPECTOR_H

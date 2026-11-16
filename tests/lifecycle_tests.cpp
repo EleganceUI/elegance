@@ -4,8 +4,8 @@
 
 // on_appear, on_disappear, timers, and repeating animations.
 
-#include "core/timers.h"
-#include "render/display_list.h"
+#include "reactive/timers.h"
+#include "display/display_list.h"
 #include "view/animated.h"
 #include "view/view_node.h"
 

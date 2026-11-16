@@ -4,7 +4,7 @@
 
 #include <elg/graphics_context.h>
 
-#include "render/display_list.h"
+#include "display/display_list.h"
 #include "render/path_cache.h"
 #include "view/animated.h"
 

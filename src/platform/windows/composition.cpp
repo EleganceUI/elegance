@@ -7,7 +7,7 @@
 #include "platform/windows/composition.h"
 
 #include "core/log.h"
-#include "platform/generic/platform.h"
+#include "platform/platform.h"
 
 #include <elg/error.h>
 

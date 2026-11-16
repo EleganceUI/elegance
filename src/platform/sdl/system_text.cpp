@@ -2,7 +2,7 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#include "platform/generic/system_text.h"
+#include "platform/system_text.h"
 
 #include "core/utf8.h"
 

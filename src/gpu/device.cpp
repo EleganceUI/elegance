@@ -9,7 +9,7 @@
 #endif
 #include "core/log.h"
 #include "media/image_decode.h"
-#include "platform/generic/platform.h"
+#include "platform/platform.h"
 
 #include <elg/error.h>
 

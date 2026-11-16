@@ -8,7 +8,7 @@
 #include "net/proxy.h"
 
 #include "core/log.h"
-#include "platform/generic/platform.h"
+#include "platform/platform.h"
 
 #include <boost/asio/ip/address.hpp>
 #include <boost/url.hpp>

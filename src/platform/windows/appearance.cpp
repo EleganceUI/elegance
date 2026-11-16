@@ -2,12 +2,12 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Appearance on Windows (platform/generic/native.h): window materials as DWM system backdrops
+// Appearance on Windows (platform/sdl/native.h): window materials as DWM system backdrops
 // (Windows 11 22H2 and later), drawn behind content extended over the whole window, with the
 // title bar's light/dark following the system so the tint matches; and the accent color from
 // Settings > Personalization > Colors.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 #include "platform/windows/shell.h"
 
 #include <SDL3/SDL.h>

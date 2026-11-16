@@ -2,15 +2,15 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_PLATFORM_GENERIC_NATIVE_H
-#define ELG_PLATFORM_GENERIC_NATIVE_H
+#ifndef ELG_PLATFORM_SDL_NATIVE_H
+#define ELG_PLATFORM_SDL_NATIVE_H
 
 // What each OS does differently under SDL. platform_sdl.cpp is the same everywhere and calls
 // these; every OS implements all of them (platform/windows/native.cpp, platform/macos/native.mm,
 // platform/linux/native.cpp), mostly as nothing.
 
-#include "platform/generic/menu_bar.h"
-#include "platform/generic/platform.h"
+#include "platform/menu_bar.h"
+#include "platform/platform.h"
 
 #include <elg/desktop.h>
 #include <elg/theme.h>
@@ -102,4 +102,4 @@ void set_menu_checked(std::uint32_t id, bool checked);
 
 } // namespace elg::detail::platform::native
 
-#endif // ELG_PLATFORM_GENERIC_NATIVE_H
+#endif // ELG_PLATFORM_SDL_NATIVE_H

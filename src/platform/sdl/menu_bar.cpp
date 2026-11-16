@@ -2,7 +2,7 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#include "platform/generic/menu_bar.h"
+#include "platform/menu_bar.h"
 
 #include <elg/platform.h>
 #include <elg/styles.h>

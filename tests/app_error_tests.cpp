@@ -6,10 +6,10 @@
 // handler hears them and may end the run. A run is stood in for with begin_app_errors().
 
 #include "core/app_errors.h"
-#include "core/timers.h"
+#include "reactive/timers.h"
 #include "core/ui_tasks.h"
 #include "reactive/runtime.h"
-#include "render/display_list.h"
+#include "display/display_list.h"
 #include "text/text_system.h"
 #include "view/event_dispatcher.h"
 #include "view/focus.h"

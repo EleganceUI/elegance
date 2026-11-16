@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_PLATFORM_GENERIC_SYSTEM_TEXT_H
-#define ELG_PLATFORM_GENERIC_SYSTEM_TEXT_H
+#ifndef ELG_PLATFORM_SYSTEM_TEXT_H
+#define ELG_PLATFORM_SYSTEM_TEXT_H
 
 // The text Elegance hands the system: window titles, the menu bar, notifications, the tray icon,
 // file dialogs and the badge. The public entry points (App::window, App::menu_bar, notify(),
@@ -26,4 +26,4 @@ void make_valid_utf8(std::vector<FileFilter>& filters);
 
 } // namespace elg::detail
 
-#endif // ELG_PLATFORM_GENERIC_SYSTEM_TEXT_H
+#endif // ELG_PLATFORM_SYSTEM_TEXT_H

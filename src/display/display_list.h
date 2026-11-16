@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_RENDER_DISPLAY_LIST_H
-#define ELG_RENDER_DISPLAY_LIST_H
+#ifndef ELG_DISPLAY_DISPLAY_LIST_H
+#define ELG_DISPLAY_DISPLAY_LIST_H
 
 #include <elg/color.h>
 #include <elg/geometry.h>
@@ -181,4 +181,4 @@ Rect transformed_bounds(const LayerTransform& transform, const Rect& rect);
 
 } // namespace elg::detail
 
-#endif // ELG_RENDER_DISPLAY_LIST_H
+#endif // ELG_DISPLAY_DISPLAY_LIST_H

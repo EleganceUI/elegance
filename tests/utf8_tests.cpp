@@ -7,7 +7,7 @@
 // pasting), and the accessibility tree.
 
 #include "core/utf8.h"
-#include "platform/generic/system_text.h"
+#include "platform/system_text.h"
 #include "text/text_system.h"
 #include "view/accessibility.h"
 #include "view/text_field.h"

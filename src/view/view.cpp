@@ -8,7 +8,7 @@
 #include "view/view_node.h"
 
 #include "core/crash.h"
-#include "core/timers.h"
+#include "reactive/timers.h"
 #include "view/accessibility.h"
 #include "view/text_field.h"
 #include "view/window_drag.h"

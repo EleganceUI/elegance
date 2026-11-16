@@ -8,7 +8,7 @@
 
 #if defined(_WIN32)
 #include "core/log.h"
-#include "platform/generic/platform.h"
+#include "platform/platform.h"
 
 #include <atomic>
 #endif

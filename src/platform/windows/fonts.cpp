@@ -8,7 +8,7 @@
 
 #include "text/font_library.h"
 
-#include "platform/generic/platform.h"
+#include "platform/platform.h"
 
 #include <filesystem>
 #include <vector>

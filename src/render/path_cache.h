@@ -5,7 +5,7 @@
 #ifndef ELG_RENDER_PATH_CACHE_H
 #define ELG_RENDER_PATH_CACHE_H
 
-#include "render/display_list.h"
+#include "display/display_list.h"
 
 #include <elg/path.h>
 

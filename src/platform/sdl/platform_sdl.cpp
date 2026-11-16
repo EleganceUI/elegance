@@ -3,14 +3,14 @@
 // https://mozilla.org/MPL/2.0/.
 
 // The platform layer on SDL, the same on every OS. What differs is in platform/<os>/native.*
-// (platform/generic/native.h).
+// (platform/sdl/native.h).
 
-#include "platform/generic/platform.h"
+#include "platform/platform.h"
 
 #include "core/crash.h"
 #include "core/numeric.h"
 #include "core/utf8.h"
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 
 #include <elg/error.h>
 

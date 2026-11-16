@@ -6,7 +6,7 @@
 // person the first time; afterwards they're in System Settings > Notifications. It needs an app
 // bundle (elg_add_application makes one); a bare executable only logs them. Compiled with ARC.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"

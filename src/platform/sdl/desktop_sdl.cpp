@@ -7,14 +7,14 @@
 
 #include <elg/desktop.h>
 
-#include "platform/generic/desktop_sdl.h"
+#include "platform/desktop.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
 #include "core/utf8.h"
 #include "media/image_decode.h"
-#include "platform/generic/native.h"
-#include "platform/generic/system_text.h"
+#include "platform/sdl/native.h"
+#include "platform/system_text.h"
 
 #include <elg/error.h>
 

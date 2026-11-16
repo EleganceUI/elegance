@@ -2,12 +2,12 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Appearance on Linux (platform/generic/native.h): no window materials (compositors don't offer
+// Appearance on Linux (platform/sdl/native.h): no window materials (compositors don't offer
 // a blurred backdrop to clients). The accent color comes from the settings portal
 // (org.freedesktop.appearance accent-color), read on the GLib thread and kept here; a change
 // reaches the app as a system theme event. Without GIO, there's none.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 
 #if defined(ELG_HAVE_GIO)
 

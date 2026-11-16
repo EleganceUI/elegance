@@ -8,7 +8,7 @@
 // The retained element tree (design.md §7): what views become when mounted. Elements hold
 // layout state and paint into a display list; app code never sees them.
 
-#include "render/display_list.h"
+#include "display/display_list.h"
 #include "text/text_layout.h"
 #include "text/text_system.h"
 #include "view/animated.h"

@@ -8,7 +8,7 @@
 
 #include "text/font_library.h"
 
-#include "platform/generic/dynamic_library.h"
+#include "platform/dynamic_library.h"
 
 #include <filesystem>
 #include <map>

@@ -10,14 +10,14 @@ endif ()
 add_library(elegance ${ELG_LIBRARY_TYPE}
         animation/animation.cpp
         animation/frame_clock.cpp
-        app.cpp
-        error.cpp
-        graphics_context.cpp
+        app/app.cpp
+        core/error.cpp
+        view/graphics_context.cpp
         geometry/path.cpp
         core/app_errors.cpp
         core/crash.cpp
         core/log.cpp
-        core/timers.cpp
+        reactive/timers.cpp
         core/ui_tasks.cpp
         core/utf8.cpp
         gpu/atlas_texture.cpp
@@ -44,14 +44,14 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         net/fetch.cpp
         net/http_cache.cpp
         net/proxy.cpp
-        platform/generic/accessibility_adapter.cpp
-        platform/generic/desktop_sdl.cpp
-        platform/generic/dynamic_library.cpp
-        platform/generic/menu_bar.cpp
-        platform/generic/platform_sdl.cpp
-        platform/generic/system_text.cpp
+        platform/sdl/accessibility_adapter.cpp
+        platform/sdl/desktop_sdl.cpp
+        platform/sdl/dynamic_library.cpp
+        platform/sdl/menu_bar.cpp
+        platform/sdl/platform_sdl.cpp
+        platform/sdl/system_text.cpp
         reactive/runtime.cpp
-        render/display_list.cpp
+        display/display_list.cpp
         render/frame_mailbox.cpp
         render/frame_plan.cpp
         render/frame_sources.cpp
@@ -73,14 +73,14 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         view/gestures.cpp
         view/fragment.cpp
         view/grid_layout.cpp
-        view/hot_reload.cpp
+        hot_reload/hot_reload.cpp
         view/image.cpp
         view/accessibility.cpp
         view/async_image.cpp
         view/raster_image.cpp
         view/video_view.cpp
         view/inspect.cpp
-        view/inspector.cpp
+        app/inspector.cpp
         view/lazy_stack.cpp
         view/menus.cpp
         view/modifiers.cpp
