@@ -127,3 +127,13 @@ add_executable(gpu_image_c_smoke gpu_image_c_smoke.c)
 set_target_properties(gpu_image_c_smoke PROPERTIES LINKER_LANGUAGE CXX C_STANDARD 11)
 target_link_libraries(gpu_image_c_smoke PRIVATE Elegance::Elegance)
 add_test(NAME gpu_image_c_smoke COMMAND gpu_image_c_smoke)
+
+# The layers' folders, dependencies, backend interfaces, OS code and includes (ELGSPEC-0001.R10):
+# fails, naming the file, what it includes and the requirement, when any include breaks
+# ELGSPEC-0001.R1 to R8. CI also runs it as a step of its own.
+find_package(Python3 COMPONENTS Interpreter)
+if (Python3_Interpreter_FOUND)
+    add_test(NAME layer_check COMMAND Python3::Interpreter "${Elegance_SOURCE_DIR}/tools/layer-check.py")
+else ()
+    message(STATUS "Elegance: Python 3 not found: the layer check (tools/layer-check.py) isn't a test")
+endif ()
