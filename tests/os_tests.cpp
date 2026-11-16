@@ -129,3 +129,9 @@ TEST_CASE("the system's root certificates are its store's, or its distribution's
         CHECK(roots.bundles.empty());
     }
 }
+
+TEST_CASE("threads end before Elegance's static objects only in a Windows DLL", "[os]") {
+    if (current_platform() != Platform::windows) {
+        CHECK_FALSE(detail::os::threads_end_before_static_destruction());
+    }
+}

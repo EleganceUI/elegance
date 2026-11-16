@@ -40,6 +40,10 @@ int close_command_pipe(std::FILE* pipe) {
     return pclose(pipe);
 }
 
+bool threads_end_before_static_destruction() noexcept {
+    return false;
+}
+
 bool debugger_present() noexcept {
     std::ifstream status("/proc/self/status");
     std::string line;

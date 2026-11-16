@@ -37,6 +37,14 @@ int close_command_pipe(std::FILE* pipe) {
     return _pclose(pipe);
 }
 
+bool threads_end_before_static_destruction() noexcept {
+#if defined(ELG_STATIC_DEFINE)
+    return false; // linked into the program: exit() destroys them while its threads still run
+#else
+    return true; // a DLL: unloaded after ExitProcess has ended the other threads
+#endif
+}
+
 bool debugger_present() noexcept {
     return IsDebuggerPresent() != 0;
 }

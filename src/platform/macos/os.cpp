@@ -47,6 +47,10 @@ int close_command_pipe(std::FILE* pipe) {
     return pclose(pipe);
 }
 
+bool threads_end_before_static_destruction() noexcept {
+    return false;
+}
+
 bool debugger_present() noexcept {
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
     kinfo_proc info{};

@@ -36,6 +36,9 @@ int process_id() noexcept;
 std::FILE* open_command_pipe(const std::string& command);
 // Closes a pipe from open_command_pipe() once the command has ended: the shell's exit status.
 int close_command_pipe(std::FILE* pipe);
+// Whether the process's other threads are already gone when Elegance's static objects are
+// destroyed at exit: for a DLL on Windows, which the process unloads after ending them.
+bool threads_end_before_static_destruction() noexcept;
 
 // --- Crash reports ---
 
