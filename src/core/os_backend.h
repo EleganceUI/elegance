@@ -1,0 +1,46 @@
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file, You can obtain one at
+// https://mozilla.org/MPL/2.0/.
+
+#ifndef ELG_CORE_OS_BACKEND_H
+#define ELG_CORE_OS_BACKEND_H
+
+// Core's backend interface (ELGSPEC-0001.R4): the operating system's utilities. What SDL offers
+// on every OS is implemented once, in platform/sdl/os.cpp; the rest in each OS's
+// platform/<os>/os.cpp.
+
+#include <cstddef>
+#include <filesystem>
+#include <optional>
+#include <span>
+#include <string>
+#include <vector>
+#include <version>
+
+namespace elg::detail::os {
+
+// An environment variable's value, or nullopt when it isn't set.
+std::optional<std::string> environment_variable(const char* name);
+
+// Per-user writable folder for Elegance's data (crash reports).
+std::filesystem::path pref_path();
+
+// --- Crash reports ---
+
+bool debugger_present() noexcept;
+// Stops in the attached debugger.
+void debug_break() noexcept;
+// Shows `message` in a dialog, and returns once it's closed.
+void show_error_box(const char* title, const char* message) noexcept;
+
+#if !defined(__cpp_lib_stacktrace)
+// Without <stacktrace> (libc++): the calling thread's return addresses, innermost first, written
+// to `frames`. Returns how many were written.
+std::size_t capture_stack(std::span<void*> frames) noexcept;
+// A line for each frame: its symbol, or its address when the system can't name it.
+std::vector<std::string> describe_stack(std::span<void* const> frames);
+#endif
+
+} // namespace elg::detail::os
+
+#endif // ELG_CORE_OS_BACKEND_H

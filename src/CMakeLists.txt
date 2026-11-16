@@ -48,6 +48,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         platform/sdl/desktop_sdl.cpp
         platform/sdl/dynamic_library.cpp
         platform/sdl/menu_bar.cpp
+        platform/sdl/os.cpp
         platform/sdl/platform_sdl.cpp
         platform/sdl/system_text.cpp
         reactive/runtime.cpp
@@ -212,6 +213,7 @@ if (WIN32)
             platform/windows/menu_bar.cpp
             platform/windows/native.cpp
             platform/windows/notifications.cpp
+            platform/windows/os.cpp
             platform/windows/proxy.cpp
             platform/windows/video_source.cpp)
     # dwmapi: rounded corners and backdrops; comctl32: window subclassing; d3d11/dxgi/dcomp: transparent windows.
@@ -236,6 +238,7 @@ if (APPLE)
             platform/macos/fonts.cpp
             platform/macos/image_codec.cpp
             platform/macos/native.cpp
+            platform/macos/os.cpp
             platform/macos/pixel_buffer.cpp
             platform/macos/proxy.cpp)
     set_source_files_properties(${elg_apple_sources} PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
@@ -275,6 +278,7 @@ if (UNIX AND NOT APPLE)
             platform/linux/menu_bar.cpp
             platform/linux/native.cpp
             platform/linux/notifications.cpp
+            platform/linux/os.cpp
             platform/linux/proxy.cpp
             platform/linux/video_source.cpp)
 endif ()

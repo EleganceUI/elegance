@@ -139,12 +139,4 @@ void wait_for_compositor() {
     DwmFlush();
 }
 
-bool debugger_present() noexcept {
-    return IsDebuggerPresent() != 0;
-}
-
-void debug_break() noexcept {
-    __debugbreak();
-}
-
 } // namespace elg::detail::platform

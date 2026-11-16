@@ -12,9 +12,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#include <csignal>
-#include <fstream>
-#include <string>
 #include <string_view>
 
 namespace elg::detail::platform {
@@ -76,20 +73,5 @@ void remove_input_monitor(void*) {}
 } // namespace native
 
 void wait_for_compositor() {}
-
-bool debugger_present() noexcept {
-    std::ifstream status("/proc/self/status");
-    std::string line;
-    while (std::getline(status, line)) {
-        if (line.starts_with("TracerPid:")) {
-            return line.find_first_not_of(" \t0", 10) != std::string::npos;
-        }
-    }
-    return false;
-}
-
-void debug_break() noexcept {
-    std::raise(SIGTRAP);
-}
 
 } // namespace elg::detail::platform

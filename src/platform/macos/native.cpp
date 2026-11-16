@@ -17,10 +17,7 @@
 #include <SDL3/SDL_metal.h>
 
 #include <pthread.h>
-#include <sys/sysctl.h>
-#include <unistd.h>
 
-#include <csignal>
 #include <format>
 
 namespace elg::detail::platform {
@@ -140,19 +137,5 @@ void remove_input_monitor(void* monitor) {
 } // namespace native
 
 void wait_for_compositor() {}
-
-bool debugger_present() noexcept {
-    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
-    kinfo_proc info{};
-    std::size_t size = sizeof(info);
-    if (sysctl(mib, 4, &info, &size, nullptr, 0) != 0) {
-        return false;
-    }
-    return (info.kp_proc.p_flag & P_TRACED) != 0;
-}
-
-void debug_break() noexcept {
-    std::raise(SIGTRAP);
-}
 
 } // namespace elg::detail::platform

@@ -703,16 +703,6 @@ void Platform::dispatch_live_resize(std::uint32_t window_id) noexcept {
 
 // --- Free functions ---
 
-std::filesystem::path pref_path() {
-    char* path = SDL_GetPrefPath("Elegance", "Elegance");
-    if (!path) {
-        return std::filesystem::temp_directory_path() / "elegance";
-    }
-    std::filesystem::path result(std::u8string_view(reinterpret_cast<const char8_t*>(path)));
-    SDL_free(path);
-    return result;
-}
-
 std::optional<std::string> environment_variable(const char* name) {
     if (const char* value = SDL_getenv(name)) {
         return std::string(value);
@@ -722,10 +712,6 @@ std::optional<std::string> environment_variable(const char* name) {
 
 bool system_prefers_dark() {
     return SDL_GetSystemTheme() == SDL_SYSTEM_THEME_DARK;
-}
-
-void show_error_box(const char* title, const char* message) noexcept {
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title, message, nullptr);
 }
 
 } // namespace elg::detail::platform
