@@ -284,7 +284,9 @@ TEST_CASE("screen readers see a list box of options", "[selection][accessibility
     // Its click selects.
     const auto target = tree.targets.find(options[2]->id);
     REQUIRE(target != tree.targets.end());
-    CHECK(target->second.element->accessibility_action({}));
+    detail::Element* const element = detail::element_with_accessibility_id(options[2]->id);
+    REQUIRE(element);
+    CHECK(element->accessibility_action({}));
     detail::flush_effects();
     CHECK(selected() == std::set<int>{30});
 }

@@ -86,9 +86,11 @@ struct AccessTree {
     std::vector<AccessNode> nodes; // the root first
     std::uint64_t focus = kRoot;
     // What carries out actions on each node (valid until the next build).
+    // What a screen reader can ask of a node; the node's id names its element
+    // (element_with_accessibility_id).
     struct Target {
-        Element* element = nullptr;
         std::function<void()> action; // a custom default action
+        bool disabled = false;        // a disabled control, or a custom action in a disabled view
     };
     std::unordered_map<std::uint64_t, Target> targets;
 };

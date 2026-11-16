@@ -5,6 +5,7 @@
 // NavigationStack (design.md §13.5): pages driven by a path, coming and going by their transition,
 // inside a NavigationStackStyle's body.
 
+#include "view/event_dispatcher.h"
 #include "view/view_node.h"
 #include "view/window_drag.h"
 
@@ -207,6 +208,9 @@ void NavigationStackElement::set_pages(const std::vector<ForEachItem>& items) {
     // The old top page may stay a little longer, to slide away; the other removed pages go now.
     std::optional<Page> removed_top;
     if (pages_.size() > kept) {
+        for (std::size_t i = kept; i < pages_.size(); ++i) {
+            element_leaving(*pages_[i].element); // its interactions end first
+        }
         removed_top = std::move(pages_.back());
         pages_.pop_back();
         pages_.erase(pages_.begin() + static_cast<std::ptrdiff_t>(kept), pages_.end());

@@ -235,19 +235,40 @@ std::optional<double> EventDispatcher::next_deadline() const {
 
 bool EventDispatcher::bubble(const std::vector<Element*>& path, const PointerEvent& event) {
     bool redraw = false;
-    for (auto element : std::ranges::reverse_view(path)) {
+    // Offers the event to `element` if its handler hears this phase; true if it consumed it.
+    const auto offer = [&](Element* element, EventPhase phase) {
         EventHandler* handler = element->event_handler();
-        if (!handler) {
-            continue;
+        if (!handler || handler->phase() != phase) {
+            return false;
         }
         const EventResult result = deliver(event, *element);
         redraw |= result.redraw;
-        if (result.consumed) {
-            if (event.kind == PointerEvent::Kind::down) {
-                captured_ = element;
-                captured_cancellable_ = result.cancellable;
+        if (!result.consumed) {
+            return false;
+        }
+        if (event.kind == PointerEvent::Kind::down) {
+            // A second press taken while another view holds the pointer: that view hears
+            // that its press is over first.
+            if (Element* previous = std::exchange(captured_, nullptr); previous && previous != element) {
+                redraw |= deliver(PointerEvent{.kind = PointerEvent::Kind::cancel, .location = event.location,
+                                               .window_location = event.window_location},
+                                  *previous)
+                              .redraw;
             }
-            break;
+            captured_ = element;
+            captured_cancellable_ = result.cancellable;
+        }
+        return true;
+    };
+    // The capture phase, outermost first, then the bubble phase, innermost first.
+    for (Element* element : path) {
+        if (offer(element, EventPhase::capture)) {
+            return redraw;
+        }
+    }
+    for (Element* element : std::ranges::reverse_view(path)) {
+        if (offer(element, EventPhase::bubble)) {
+            return redraw;
         }
     }
     return redraw;
@@ -425,15 +446,30 @@ bool EventDispatcher::pointer_left() {
 bool EventDispatcher::key(const KeyEvent& event) {
     const DeferEffects defer;
     bool redraw = false;
-    // From the focused element out to the root; with nothing focused, the root alone (a window's
-    // floating layer closes its floating content on Esc).
+    // The focused element and its ancestors; with nothing focused, the root alone (a window's
+    // floating layer closes its floating content on Esc). Capture handlers from the root in,
+    // then bubble handlers from the focused element out.
+    std::vector<Element*> route;
     for (Element* element = focus_->focused() ? focus_->focused() : root_; element; element = element->parent()) {
-        if (EventHandler* handler = element->event_handler()) {
-            const EventResult result = handler->key(event);
-            redraw |= result.redraw;
-            if (result.consumed) {
-                return redraw;
-            }
+        route.push_back(element);
+    }
+    const auto offer = [&](Element* element, EventPhase phase) {
+        EventHandler* handler = element->event_handler();
+        if (!handler || handler->phase() != phase) {
+            return false;
+        }
+        const EventResult result = handler->key(event);
+        redraw |= result.redraw;
+        return result.consumed;
+    };
+    for (Element* element : std::ranges::reverse_view(route)) {
+        if (offer(element, EventPhase::capture)) {
+            return redraw;
+        }
+    }
+    for (Element* element : route) {
+        if (offer(element, EventPhase::bubble)) {
+            return redraw;
         }
     }
     const bool plain_tab = event.kind == KeyEvent::Kind::down && event.key == Key::tab &&
@@ -520,16 +556,27 @@ bool EventDispatcher::scroll(ScrollEvent event) {
         path = path_at(location);
     }
     bool redraw = false;
-    for (auto& element : std::ranges::reverse_view(path)) {
-        if (EventHandler* handler = element->event_handler()) {
-            const EventResult result = handler->scroll(event, element->frame());
-            redraw |= result.redraw;
-            if (result.consumed) {
-                if (!wheel_latched_) {
-                    wheel_latched_ = element;
-                }
-                break;
-            }
+    // Capture handlers from the outermost in, then bubble handlers from the innermost out.
+    const auto offer = [&](Element* element, EventPhase phase) {
+        EventHandler* handler = element->event_handler();
+        if (!handler || handler->phase() != phase) {
+            return false;
+        }
+        const EventResult result = handler->scroll(event, element->frame());
+        redraw |= result.redraw;
+        if (result.consumed && !wheel_latched_) {
+            wheel_latched_ = element;
+        }
+        return result.consumed;
+    };
+    for (Element* element : path) {
+        if (offer(element, EventPhase::capture)) {
+            return redraw;
+        }
+    }
+    for (Element* element : std::ranges::reverse_view(path)) {
+        if (offer(element, EventPhase::bubble)) {
+            return redraw;
         }
     }
     return redraw;
@@ -602,13 +649,29 @@ bool EventDispatcher::two_finger_double_tap(Point location) {
 bool EventDispatcher::text_input(const TextInputEvent& event) {
     const DeferEffects defer;
     bool redraw = false;
+    // The focused element and its ancestors (none when nothing is focused): capture handlers from
+    // the root in, then bubble handlers from the focused element out.
+    std::vector<Element*> route;
     for (Element* element = focus_->focused(); element; element = element->parent()) {
-        if (EventHandler* handler = element->event_handler()) {
-            const EventResult result = handler->text_input(event);
-            redraw |= result.redraw;
-            if (result.consumed) {
-                break;
-            }
+        route.push_back(element);
+    }
+    const auto offer = [&](Element* element, EventPhase phase) {
+        EventHandler* handler = element->event_handler();
+        if (!handler || handler->phase() != phase) {
+            return false;
+        }
+        const EventResult result = handler->text_input(event);
+        redraw |= result.redraw;
+        return result.consumed;
+    };
+    for (Element* element : std::ranges::reverse_view(route)) {
+        if (offer(element, EventPhase::capture)) {
+            return redraw;
+        }
+    }
+    for (Element* element : route) {
+        if (offer(element, EventPhase::bubble)) {
+            return redraw;
         }
     }
     return redraw;
@@ -651,26 +714,109 @@ bool EventDispatcher::refresh_hover() {
 
 bool EventDispatcher::revalidate() {
     const DeferEffects defer;
-    std::unordered_set<const Element*> alive;
-    std::function<void(Element&)> walk = [&](Element& element) {
-        alive.insert(&element);
-        element.for_each_child(walk);
-    };
-    walk(*root_);
+    return pointer_inside_ ? update_hover(path_at(last_location_)) : false;
+}
 
-    // Pointers to removed elements are compared, never dereferenced.
-    std::erase_if(hovers_, [&](const Hover& hover) { return !alive.contains(hover.element); });
-    if (captured_ && !alive.contains(captured_)) {
+namespace {
+
+// The dispatchers of the windows open now (UI thread).
+std::vector<EventDispatcher*>& dispatchers() {
+    static std::vector<EventDispatcher*> all;
+    return all;
+}
+
+bool inside(const Element* element, const Element& subtree) {
+    for (; element; element = element->parent()) {
+        if (element == &subtree) {
+            return true;
+        }
+    }
+    return false;
+}
+
+} // namespace
+
+EventDispatcher::EventDispatcher(Element& root, FocusManager& focus) : root_(&root), focus_(&focus) {
+    dispatchers().push_back(this);
+}
+
+EventDispatcher::~EventDispatcher() {
+    std::erase(dispatchers(), this);
+}
+
+void EventDispatcher::leaving(Element& subtree) {
+    const DeferEffects defer;
+    const auto in = [&](const Element* element) { return element && inside(element, subtree); };
+    const PointerEvent cancel{.kind = PointerEvent::Kind::cancel, .location = last_location_,
+                              .window_location = last_location_};
+    if (in(captured_)) {
+        deliver(cancel, *std::exchange(captured_, nullptr));
+    }
+    std::erase_if(watchers_, [&](const Watcher& watcher) {
+        if (!in(watcher.element)) {
+            return false;
+        }
+        watcher.recognizer->reset();
+        return true;
+    });
+    std::erase_if(companions_, [&](const Companion& companion) {
+        if (!in(companion.element)) {
+            return false;
+        }
+        if (companion.active) {
+            deliver(cancel, *companion.element);
+        } else {
+            companion.recognizer->reset();
+        }
+        return true;
+    });
+    if (in(magnify_latched_)) {
+        std::exchange(magnify_latched_, nullptr)->event_handler()->magnify({.phase = GesturePhase::cancelled});
+    }
+    if (in(rotate_latched_)) {
+        std::exchange(rotate_latched_, nullptr)->event_handler()->rotate({.phase = GesturePhase::cancelled});
+    }
+    if (in(wheel_latched_)) {
+        wheel_latched_ = nullptr;
+    }
+    std::erase_if(hovers_, [&](const Hover& hover) {
+        if (!in(hover.element)) {
+            return false;
+        }
+        if (hover.reported) {
+            hover.element->event_handler()->hover(false);
+        }
+        return true;
+    });
+    if (in(focus_->focused())) {
+        focus_->focus(nullptr, false);
+    }
+}
+
+void EventDispatcher::forget(const Element* element) noexcept {
+    std::erase_if(hovers_, [&](const Hover& hover) { return hover.element == element; });
+    if (captured_ == element) {
         captured_ = nullptr;
     }
-    std::erase_if(watchers_, [&](const Watcher& watcher) { return !alive.contains(watcher.element); });
-    std::erase_if(companions_, [&](const Companion& companion) { return !alive.contains(companion.element); });
+    std::erase_if(watchers_, [&](const Watcher& watcher) { return watcher.element == element; });
+    std::erase_if(companions_, [&](const Companion& companion) { return companion.element == element; });
     for (Element** latched : {&wheel_latched_, &magnify_latched_, &rotate_latched_}) {
-        if (*latched && !alive.contains(*latched)) {
+        if (*latched == element) {
             *latched = nullptr;
         }
     }
-    return pointer_inside_ ? update_hover(path_at(last_location_)) : false;
+}
+
+void element_leaving(Element& subtree) {
+    for (EventDispatcher* dispatcher : std::vector(dispatchers())) {
+        dispatcher->leaving(subtree);
+    }
+}
+
+void element_destroyed(const Element* element) noexcept {
+    for (EventDispatcher* dispatcher : dispatchers()) {
+        dispatcher->forget(element);
+    }
 }
 
 bool EventDispatcher::release_disabled() {
