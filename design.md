@@ -2276,7 +2276,7 @@ Separate render thread from day one (decided).
     player with play/pause, scrubber, time, volume and loop.
   - **Tests:** a WAV built in memory decodes with the right duration; missing and garbage
     inputs throw `ResourceError`.
-- [x] Media part 3, video (`elg/video.h`, `src/media/video_source.*`, `src/gpu/video_textures.*`):
+- [x] Media part 3, video (`elg/video.h`, `src/media/video_source.*`, `src/render/video_textures.*`):
   - **`VideoPlayer(path or URL)`:**
     - `play`, `pause`, `toggle`, `stop`, `seek`, `set_volume`, `set_muted`, `set_looping`.
     - Reactive `is_playing`, `is_ready`, `time`, `duration`, `natural_size`, `volume`,
@@ -2294,7 +2294,7 @@ Separate render thread from day one (decided).
   - **Frames:**
     - `TransferVideoFrame` writes into a ring of 3 shared BGRA D3D11 textures (NT handles), so
       frames in flight keep theirs, and waits for the copy.
-    - `gpu::VideoTextures` imports each texture once (`VK_KHR_external_memory_win32`, sRGB view)
+    - `VideoTextures` imports each texture once (`VK_KHR_external_memory_win32`, sRGB view)
       and samples it in place, with no copy.
     - Each command buffer acquires the textures from `VK_QUEUE_FAMILY_EXTERNAL` and releases
       them back at its end.

@@ -11,11 +11,11 @@
 #include "gpu/external_image.h"
 #include "gpu/instance.h"
 #include "gpu/texture_cache.h"
-#include "gpu/video_textures.h"
 #include "gpu/webgpu.h"
 #include "media/decoded_image.h"
 #include "render/frame_plan.h"
 #include "render/intermediate_images.h"
+#include "render/video_textures.h"
 #include "view/path_cache.h"
 #include "view/view_node.h"
 
@@ -270,7 +270,7 @@ TEST_CASE("the decoded image policy: 10 s undrawn, or past 512 MB beyond the fra
 }
 
 TEST_CASE("the video texture policy: 5 s undrawn, or past 128 MB beyond the frame's", "[gpu-memory]") {
-    FakeCache cache{detail::gpu::kVideoTexturePolicy, {}, {}};
+    FakeCache cache{detail::kVideoTexturePolicy, {}, {}};
     // Four 4K videos (32 MB a frame) and a small one.
     cache.draw(t0, {{"a", 32 * kMB}, {"b", 32 * kMB}, {"c", 32 * kMB}, {"d", 32 * kMB}, {"small", kMB}});
     cache.draw(t0 + 1s, {{"small", kMB}});
@@ -486,7 +486,7 @@ TEST_CASE("an image larger than the device's textures gets no texture", "[.gpu][
 TEST_CASE("a video frame larger than the device's textures gets no texture", "[.gpu][gpu-memory]") {
     const detail::gpu::Instance instance;
     const detail::gpu::Device device(instance);
-    detail::gpu::VideoTextures videos(device, detail::gpu::create_image_layout(device.handle()));
+    detail::VideoTextures videos(device, detail::gpu::create_image_layout(device.handle()));
     const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
     videos.begin_frame(detail::gpu::CacheClock::now());
 
@@ -644,7 +644,7 @@ TEST_CASE("TextureCache keeps the textures a frame didn't draw within its budget
 TEST_CASE("VideoTextures releases a frame's texture no frame drew for 5 s", "[.gpu][gpu-memory]") {
     const detail::gpu::Instance instance;
     const detail::gpu::Device device(instance);
-    detail::gpu::VideoTextures videos(device, detail::gpu::create_image_layout(device.handle()));
+    detail::VideoTextures videos(device, detail::gpu::create_image_layout(device.handle()));
     const detail::VideoFrame video = cpu_frame(1, 16);
     const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
     std::vector<std::uint64_t> acquired;
@@ -669,7 +669,7 @@ TEST_CASE("VideoTextures keeps the textures a frame didn't draw within its budge
     const detail::gpu::Instance instance;
     const detail::gpu::Device device(instance);
     // Room for two 64 x 64 frames beyond the frame's.
-    detail::gpu::VideoTextures videos(device, detail::gpu::create_image_layout(device.handle()),
+    detail::VideoTextures videos(device, detail::gpu::create_image_layout(device.handle()),
                                       {5s, std::size_t{2} * 64 * 64 * 4});
     const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
     std::vector<std::uint64_t> acquired;
@@ -686,7 +686,7 @@ TEST_CASE("VideoTextures keeps the textures a frame didn't draw within its budge
 TEST_CASE("VideoTextures keeps an external image while a recording holds it", "[.gpu][gpu-memory]") {
     const detail::gpu::Instance instance;
     const detail::gpu::Device device(instance);
-    detail::gpu::VideoTextures videos(device, detail::gpu::create_image_layout(device.handle()));
+    detail::VideoTextures videos(device, detail::gpu::create_image_layout(device.handle()));
     wgpu::TextureDescriptor descriptor;
     descriptor.size = {16, 16, 1};
     descriptor.format = wgpu::TextureFormat::RGBA8UnormSrgb;

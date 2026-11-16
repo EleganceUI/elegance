@@ -13,11 +13,11 @@
 #include "gpu/quad_renderer.h"
 #include "gpu/render_image.h"
 #include "gpu/texture_cache.h"
-#include "gpu/video_textures.h"
 #include "gpu/webgpu.h"
 #include "render/color_space.h"
 #include "render/frame_plan.h"
 #include "render/intermediate_images.h"
+#include "render/video_textures.h"
 
 #include <webgpu/webgpu_cpp.h>
 

@@ -2,7 +2,7 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#include "gpu/video_textures.h"
+#include "render/video_textures.h"
 
 #include "core/log.h"
 #include "gpu/buffer.h"
@@ -16,7 +16,7 @@
 #include <unordered_map>
 #include <utility>
 
-namespace elg::detail::gpu {
+namespace elg::detail {
 
 namespace {
 
@@ -44,10 +44,10 @@ struct VideoTextures::Texture {
     wgpu::Texture copy; // Direct3D 11: sampled instead of `texture` (see import())
     wgpu::BindGroup group;
     std::weak_ptr<SharedTextureOwner> owner;
-    std::shared_ptr<const ExternalImage> lease; // external allocation: through submission
+    std::shared_ptr<const gpu::ExternalImage> lease; // external allocation: through submission
     bool external = false; // EndAccess belongs to the last allocation/snapshot owner
     std::size_t pending_batches = 0; // distinct acquire/release batches, not draw count
-    CacheUse use;                    // bytes: `copy`'s
+    gpu::CacheUse use;               // bytes: `copy`'s
 };
 
 struct VideoTextures::CpuTarget {
@@ -56,12 +56,12 @@ struct VideoTextures::CpuTarget {
     wgpu::Texture texture;
     wgpu::TextureView render_view; // UNORM: the pass writes gamma-encoded values
     wgpu::BindGroup sample_group;  // through an sRGB view: sampling linearizes them
-    std::unique_ptr<Buffer> pixels;
+    std::unique_ptr<gpu::Buffer> pixels;
     wgpu::BindGroup frame_group; // the storage buffer, for the pass
     WGPUBuffer bound = nullptr;  // the buffer frame_group points at
     std::uint64_t frame_id = 0;
     bool converted = false;
-    CacheUse use; // bytes: `texture`'s
+    gpu::CacheUse use; // bytes: `texture`'s
 };
 
 struct VideoTextures::Objects {
@@ -78,12 +78,12 @@ struct VideoTextures::Objects {
     wgpu::RenderPipeline convert_pipeline;
 };
 
-VideoTextures::VideoTextures(const Device& device, wgpu::BindGroupLayout image_layout, CachePolicy policy)
+VideoTextures::VideoTextures(const gpu::Device& device, wgpu::BindGroupLayout image_layout, gpu::CachePolicy policy)
     : device_(device), objects_(std::make_unique<Objects>()), policy_(policy) {
     objects_->layout = std::move(image_layout);
-    objects_->sampler = create_linear_sampler(device.handle());
+    objects_->sampler = gpu::create_linear_sampler(device.handle());
     const wgpu::Device& dev = device.handle();
-    const wgpu::ShaderModule module = create_shader(dev, kConvertWgsl, "video_convert.wgsl");
+    const wgpu::ShaderModule module = gpu::create_shader(dev, kConvertWgsl, "video_convert.wgsl");
 
     wgpu::BindGroupLayoutEntry frame{};
     frame.binding = 0;
@@ -127,14 +127,15 @@ std::size_t VideoTextures::size() const noexcept {
 
 bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
     if (frame.kind == VideoFrame::Kind::external) {
-        const ExternalImage* external = frame.external.get();
+        const gpu::ExternalImage* external = frame.external.get();
         if (!external || external->device().Get() != device_.handle().Get() || !external->texture() ||
             !external->view()) {
             return false;
         }
         texture.texture = external->texture();
         texture.external = true;
-        texture.group = create_image_group(device_.handle(), objects_->layout, external->view(), objects_->sampler);
+        texture.group =
+            gpu::create_image_group(device_.handle(), objects_->layout, external->view(), objects_->sampler);
         return true;
     }
     if (!frame.shared_handle || !device_.has_feature(wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle) ||
@@ -179,7 +180,7 @@ bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
     view.format = sampled_format;
     const wgpu::Texture& sampled = copies ? texture.copy : texture.texture;
     texture.group =
-        create_image_group(device_.handle(), objects_->layout, sampled.CreateView(&view), objects_->sampler);
+        gpu::create_image_group(device_.handle(), objects_->layout, sampled.CreateView(&view), objects_->sampler);
     return true;
 }
 
@@ -310,7 +311,7 @@ void VideoTextures::end_frame() {
     // recording owns its lease until release(), regardless of age.
     std::erase_if(objects_->textures, [](const auto& entry) { return entry.second.external && !entry.second.lease; });
     // One budget for both maps.
-    Eviction eviction(frame_, policy_);
+    gpu::Eviction eviction(frame_, policy_);
     eviction.collect(objects_->textures, [](const Texture& texture) { return bool(texture.lease); });
     eviction.collect(objects_->targets);
     eviction.finish();
@@ -337,10 +338,9 @@ void VideoTextures::create_target(CpuTarget& target, std::uint32_t width, std::u
     target.render_view = target.texture.CreateView();
     wgpu::TextureViewDescriptor sample_view;
     sample_view.format = kSampledFormat;
-    target.sample_group =
-        create_image_group(device_.handle(), objects_->layout, target.texture.CreateView(&sample_view),
-                           objects_->sampler);
-    target.pixels = std::make_unique<Buffer>(device_.handle(), wgpu::BufferUsage::Storage);
+    target.sample_group = gpu::create_image_group(device_.handle(), objects_->layout,
+                                                  target.texture.CreateView(&sample_view), objects_->sampler);
+    target.pixels = std::make_unique<gpu::Buffer>(device_.handle(), wgpu::BufferUsage::Storage);
 }
 
 wgpu::BindGroup VideoTextures::convert(const wgpu::CommandEncoder& encoder, const VideoFrame& frame) {
@@ -399,4 +399,4 @@ wgpu::BindGroup VideoTextures::convert(const wgpu::CommandEncoder& encoder, cons
     return target.sample_group;
 }
 
-} // namespace elg::detail::gpu
+} // namespace elg::detail

@@ -18,14 +18,15 @@ class Device;
 class PathRenderer;
 class QuadRenderer;
 class TextureCache;
-class VideoTextures;
 } // namespace gpu
+
+class VideoTextures;
 
 // Render-thread objects shared by all windows.
 struct RenderResources {
     gpu::QuadRenderer& quads;
     gpu::TextureCache& textures;
-    gpu::VideoTextures& videos;
+    VideoTextures& videos;
     gpu::BlurRenderer& blur;
     gpu::PathRenderer& paths;
     const wgpu::BindGroupLayout& image_layout; // a texture and its sampler (atlas, layers)

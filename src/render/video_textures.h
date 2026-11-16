@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_GPU_VIDEO_TEXTURES_H
-#define ELG_GPU_VIDEO_TEXTURES_H
+#ifndef ELG_RENDER_VIDEO_TEXTURES_H
+#define ELG_RENDER_VIDEO_TEXTURES_H
 
 #include "gpu/eviction.h"
 #include "gpu/webgpu_types.h"
@@ -15,13 +15,15 @@
 #include <memory>
 #include <vector>
 
-namespace elg::detail::gpu {
+namespace elg::detail {
 
+namespace gpu {
 class Device;
+} // namespace gpu
 
 // What VideoTextures keeps of the textures it made that frames don't draw: the images frames in
 // memory are converted into, and Direct3D 11's copies of decoder textures.
-inline constexpr CachePolicy kVideoTexturePolicy{std::chrono::seconds(5), std::size_t{128} << 20};
+inline constexpr gpu::CachePolicy kVideoTexturePolicy{std::chrono::seconds(5), std::size_t{128} << 20};
 
 // Video frames' textures (design.md §13.3). Render thread only.
 // - Shared textures (VideoFrame::Kind::d3d11_shared): imported into WebGPU once each (shared
@@ -36,8 +38,8 @@ inline constexpr CachePolicy kVideoTexturePolicy{std::chrono::seconds(5), std::s
 class VideoTextures {
 public:
     // `policy`: kVideoTexturePolicy, unless tests ask for another.
-    VideoTextures(const Device& device, wgpu::BindGroupLayout image_layout,
-                  CachePolicy policy = kVideoTexturePolicy);
+    VideoTextures(const gpu::Device& device, wgpu::BindGroupLayout image_layout,
+                  gpu::CachePolicy policy = kVideoTexturePolicy);
     ~VideoTextures();
 
     VideoTextures(const VideoTextures&) = delete;
@@ -51,7 +53,7 @@ public:
     wgpu::BindGroup acquire(const wgpu::CommandEncoder& encoder, const VideoFrame& frame,
                             std::vector<std::uint64_t>& acquired);
     // Starts a window's frame, drawn at `now`: the frames it acquires are the ones it needs.
-    void begin_frame(CacheClock::time_point now) noexcept { frame_.begin(now); }
+    void begin_frame(gpu::CacheClock::time_point now) noexcept { frame_.begin(now); }
 
     // Hands `acquired` back to the decoder/producer. Call only after ALL commands recorded
     // using this batch were submitted; release each batch exactly once. Distinct outstanding
@@ -82,13 +84,13 @@ private:
     wgpu::BindGroup convert(const wgpu::CommandEncoder& encoder, const VideoFrame& frame);
     void create_target(CpuTarget& target, std::uint32_t width, std::uint32_t height);
 
-    const Device& device_;
+    const gpu::Device& device_;
     std::unique_ptr<Objects> objects_;
-    CachePolicy policy_;
-    CacheFrame frame_;
+    gpu::CachePolicy policy_;
+    gpu::CacheFrame frame_;
     bool warned_ = false;
 };
 
-} // namespace elg::detail::gpu
+} // namespace elg::detail
 
-#endif // ELG_GPU_VIDEO_TEXTURES_H
+#endif // ELG_RENDER_VIDEO_TEXTURES_H

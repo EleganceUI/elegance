@@ -32,7 +32,6 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         gpu/render_image.cpp
         gpu/swapchain.cpp
         gpu/texture_cache.cpp
-        gpu/video_textures.cpp
         gpu/webgpu.cpp
         media/audio.cpp
         media/audio_stream.cpp
@@ -59,6 +58,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         render/gpu_image.cpp
         view/path_cache.cpp
         render/render_thread.cpp
+        render/video_textures.cpp
         render/window_target.cpp
         text/font_library.cpp
         text/glyph_atlas.cpp

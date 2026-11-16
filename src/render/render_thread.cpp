@@ -12,10 +12,10 @@
 #include "gpu/path_renderer.h"
 #include "gpu/quad_renderer.h"
 #include "gpu/texture_cache.h"
-#include "gpu/video_textures.h"
 #include "gpu/webgpu.h"
 #include "media/image_decode.h"
 #include "render/frame_sources.h"
+#include "render/video_textures.h"
 #include "render/window_target.h"
 #include "text/atlas.h"
 
@@ -91,7 +91,7 @@ void RenderThread::run(std::promise<void> ready) noexcept {
         gpu::BlurRenderer blur(device, image_layout);
         gpu::PathRenderer paths(device);
         gpu::TextureCache textures(device, image_layout); // outlives the windows drawing with it
-        gpu::VideoTextures videos(device, image_layout);
+        VideoTextures videos(device, image_layout);
         const RenderResources resources{quads, textures, videos, blur, paths, image_layout, atlas.group()};
         // Video decoders share frames with this device: they must run on the same GPU.
         if (const auto luid = device.luid()) {
