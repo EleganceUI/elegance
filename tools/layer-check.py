@@ -205,6 +205,11 @@ def is_backend(header):
     return header.endswith("_backend.h") and header_layer(header) not in (None, "Platform implementation")
 
 
+# The public headers of plain values (points, colors, fills, paths), which a header of Text's or
+# Media's data types may include (R3): Geometry's, in the public API.
+DATA_PUBLIC_HEADERS = {"elg/geometry.h", "elg/color.h", "elg/gradient.h", "elg/path.h", "elg/export.h"}
+
+
 def data_type_header(header, seen=None):
     """Whether a Text or Media header declares only data types (R3): it includes Core, Geometry,
     the standard library, public headers and other such headers of Text and Media, and nothing else."""
@@ -215,7 +220,8 @@ def data_type_header(header, seen=None):
     path = ROOT / "src" / header
     for _, kind, included in includes(path, without_comments(path.read_text(encoding="utf-8"))):
         if kind == "<":
-            if not (included in STANDARD or included.startswith("elg/")):
+            # Of the public headers, only the plain value types', which are Geometry's.
+            if not (included in STANDARD or included in DATA_PUBLIC_HEADERS):
                 return False
             continue
         layer = header_layer(included)
