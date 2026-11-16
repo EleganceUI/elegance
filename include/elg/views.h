@@ -616,13 +616,6 @@ View ForEach(Source items, KeyFunction key, ContentFunction content) {
         throw UsageError("ForEach() needs a content function");
     }
 
-    bool (*equals)(const void*, const void*) = []([[maybe_unused]] const void* a, [[maybe_unused]] const void* b) {
-        if constexpr (std::equality_comparable<T>) {
-            return *static_cast<const T*>(a) == *static_cast<const T*>(b);
-        } else {
-            return true; // can't tell: keep the existing view
-        }
-    };
     Prop<Items> source(std::move(items));
     if constexpr (takes_signal) {
         // Each key's item is a State its view reads, and the view stays while the key does: a
@@ -655,6 +648,13 @@ View ForEach(Source items, KeyFunction key, ContentFunction content) {
             return result;
         });
     } else {
+        bool (*equals)(const void*, const void*) = []([[maybe_unused]] const void* a, [[maybe_unused]] const void* b) {
+            if constexpr (std::equality_comparable<T>) {
+                return *static_cast<const T*>(a) == *static_cast<const T*>(b);
+            } else {
+                return true; // can't tell: keep the existing view
+            }
+        };
         return detail::make_for_each([source = std::move(source), key = std::move(key), content = std::move(content),
                                       equals] {
             std::vector<detail::ForEachItem> result;
