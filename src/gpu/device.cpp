@@ -8,6 +8,7 @@
 #include "core/crash.h"
 #endif
 #include "core/log.h"
+#include "gpu/system.h"
 #include "media/image_decode.h"
 #include "platform/platform.h"
 
@@ -15,18 +16,9 @@
 
 #include <format>
 #include <mutex>
+#include <span>
 #include <unordered_map>
 #include <vector>
-
-#if defined(_WIN32)
-#include <algorithm>
-#include <cstring>
-#include <filesystem>
-
-#include <windows.h> // the build defines WIN32_LEAN_AND_MEAN and NOMINMAX
-#include <dxgi1_4.h>
-#include <wrl/client.h>
-#endif
 
 namespace elg::detail::gpu {
 
@@ -80,54 +72,6 @@ wgpu::BackendType requested_backend() {
     return wgpu::BackendType::Undefined;
 }
 
-#if defined(_WIN32)
-// WebGPU doesn't report the adapter's LUID; DXGI does, for the adapter with the same IDs.
-std::optional<std::array<std::uint8_t, 8>> find_luid(std::uint32_t vendor, std::uint32_t device) {
-    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
-    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
-        return std::nullopt;
-    }
-    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
-    for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
-        DXGI_ADAPTER_DESC1 desc{};
-        if (SUCCEEDED(adapter->GetDesc1(&desc)) && desc.VendorId == vendor && desc.DeviceId == device) {
-            std::array<std::uint8_t, 8> luid{};
-            static_assert(sizeof(desc.AdapterLuid) == luid.size());
-            std::memcpy(luid.data(), &desc.AdapterLuid, luid.size());
-            return luid;
-        }
-    }
-    return std::nullopt;
-}
-
-// Dawn's Direct3D 12 backend compiles shaders with the DirectX shader compiler, which it loads
-// from beside the module Dawn is in (webgpu_dawn.dll, or the app itself when it links Dawn
-// statically) or from System32. If it isn't there, creating the adapter fails instead of falling
-// back to the older FXC, so ask for FXC up front.
-bool dxc_available() {
-    std::vector<std::filesystem::path> folders;
-    HMODULE dawn = nullptr;
-    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                           reinterpret_cast<LPCWSTR>(&wgpuCreateInstance), &dawn)) {
-        wchar_t path[MAX_PATH];
-        const DWORD length = GetModuleFileNameW(dawn, path, MAX_PATH);
-        if (length > 0 && length < MAX_PATH) {
-            folders.push_back(std::filesystem::path(path).parent_path());
-        }
-    }
-    wchar_t system[MAX_PATH];
-    const UINT length = GetSystemDirectoryW(system, MAX_PATH);
-    if (length > 0 && length < MAX_PATH) {
-        folders.emplace_back(system);
-    }
-    std::error_code error;
-    return std::ranges::any_of(folders, [&](const std::filesystem::path& folder) {
-        return std::filesystem::exists(folder / L"dxcompiler.dll", error) &&
-               std::filesystem::exists(folder / L"dxil.dll", error);
-    });
-}
-#endif
-
 } // namespace
 
 std::shared_ptr<RenderDevice> render_device() {
@@ -139,16 +83,13 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     wgpu::RequestAdapterOptions options;
     options.powerPreference = wgpu::PowerPreference::HighPerformance;
     options.backendType = requested_backend();
-#if defined(_WIN32)
-    const char* const no_dxc[] = {"use_dxc"};
+    const std::span<const char* const> disabled = disabled_adapter_toggles();
     wgpu::DawnTogglesDescriptor toggles;
-    if (!dxc_available()) {
-        toggles.disabledToggleCount = 1;
-        toggles.disabledToggles = no_dxc;
+    if (!disabled.empty()) {
+        toggles.disabledToggleCount = disabled.size();
+        toggles.disabledToggles = disabled.data();
         options.nextInChain = &toggles;
-        log_info("dxcompiler.dll and dxil.dll aren't beside the app: Direct3D 12 compiles shaders with FXC (slower)");
     }
-#endif
     std::string adapter_error;
     instance.wait(instance.handle().RequestAdapter(
         &options, wgpu::CallbackMode::WaitAnyOnly,
@@ -174,9 +115,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
         name_ = to_string(info.description);
     }
     backend_ = info.backendType;
-#if defined(_WIN32)
-    luid_ = find_luid(info.vendorID, info.deviceID);
-#endif
+    luid_ = adapter_luid(info.vendorID, info.deviceID);
 
     // External-image publication imports resources from producer threads. Dawn's implicit
     // synchronization keeps those operations safe alongside rendering and frame retirement.

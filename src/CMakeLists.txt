@@ -207,6 +207,7 @@ endif ()
 if (WIN32)
     target_sources(elegance PRIVATE
             gpu/windows/composition.cpp
+            gpu/windows/system.cpp
             platform/windows/appearance.cpp
             platform/windows/camera.cpp
             platform/windows/dock.cpp
@@ -239,6 +240,7 @@ if (APPLE)
             platform/macos/video_source.mm)
     target_sources(elegance PRIVATE ${elg_apple_sources}
             gpu/presenter.cpp
+            gpu/system.cpp
             platform/macos/fonts.cpp
             platform/macos/image_codec.cpp
             platform/macos/native.cpp
@@ -275,6 +277,7 @@ if (UNIX AND NOT APPLE)
     endif ()
     target_sources(elegance PRIVATE
             gpu/presenter.cpp
+            gpu/system.cpp
             platform/linux/appearance.cpp
             platform/linux/camera.cpp
             platform/linux/dock.cpp
@@ -313,7 +316,7 @@ if (WIN32 AND ELG_BUILD_SHARED)
 endif ()
 
 # Dawn's Direct3D 12 backend loads the DirectX shader compiler at run time (without it, the
-# device uses the older, much slower FXC: see dxc_available() in gpu/device.cpp), so it isn't
+# device uses the older, much slower FXC: see dxc_available() in gpu/windows/system.cpp), so it isn't
 # among the linked DLLs above. It goes next to
 # the apps: beside elegance.dll, or with a static Elegance, into the runtime output folder (set it,
 # or copy these two DLLs next to your app yourself).

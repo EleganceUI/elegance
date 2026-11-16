@@ -4,17 +4,12 @@
 
 #include "gpu/instance.h"
 
+#include "gpu/system.h"
+
 #include <elg/error.h>
 
 #include <cstdint>
-#include <span>
-#include <string>
-#include <string_view>
-
-#if defined(_WIN32)
-#include <dawn/native/DawnNative.h>
-#include <windows.h>
-#endif
+#include <iterator>
 
 namespace elg::detail::gpu {
 
@@ -24,20 +19,7 @@ Instance::Instance() {
     wgpu::InstanceDescriptor descriptor;
     descriptor.requiredFeatureCount = std::size(features);
     descriptor.requiredFeatures = features;
-#if defined(_WIN32)
-    // Dawn looks for d3dcompiler_47.dll (Direct3D 11) and vulkan-1.dll next to itself, then by
-    // bare name. That second try uses LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, which needs an absolute
-    // path, so it always fails (ERROR_INVALID_PARAMETER) and the system's copies are never found.
-    // Name System32 as a search path instead (Dawn appends the file name).
-    char system[MAX_PATH];
-    const UINT length = GetSystemDirectoryA(system, MAX_PATH);
-    std::string system_dir = length > 0 && length < MAX_PATH ? std::string(system, length) + '\\' : std::string();
-    std::string_view search_paths[] = {system_dir};
-    dawn::native::DawnInstanceDescriptor dawn_descriptor;
-    dawn_descriptor.additionalRuntimeSearchPaths = std::span(search_paths, system_dir.empty() ? 0 : 1);
-    descriptor.nextInChain = &dawn_descriptor;
-#endif
-    instance_ = wgpu::CreateInstance(&descriptor);
+    instance_ = create_instance(descriptor);
     if (!instance_) {
         throw GpuError("WebGPU is not available: the instance could not be created");
     }
