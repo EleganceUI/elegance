@@ -22,9 +22,12 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <format>
 #include <mutex>
+#include <stop_token>
+#include <thread>
 
 namespace elg::detail {
 
@@ -70,6 +73,7 @@ public:
     GStreamerSource& operator=(GStreamerSource&&) = delete;
 
     ~GStreamerSource() override {
+        stop_reporting(); // before the playbin it asks goes
         if (playbin_) {
             // Stopping joins the streaming threads, so no bus handler or appsink callback runs
             // past this; both are removed before anything is torn down.
@@ -144,9 +148,11 @@ public:
         gst_element_set_state(playbin_, GST_STATE_PLAYING);
         playing = true;
         playing_now_ = true;
+        start_reporting();
     }
 
     void pause() override {
+        stop_reporting();
         if (playbin_) {
             gst_element_set_state(playbin_, GST_STATE_PAUSED);
         }
@@ -188,7 +194,6 @@ public:
         if (!playbin_) {
             return false;
         }
-        report_time();
         GstElement* sink = nullptr;
         g_object_get(playbin_, "video-sink", &sink, nullptr);
         if (!sink) {
@@ -250,16 +255,40 @@ private:
         });
     }
 
-    // Render thread: the playback position, a few times a second.
-    void report_time() {
-        const auto now = std::chrono::steady_clock::now();
-        if (now - last_time_report_ < std::chrono::milliseconds(250)) {
-            return;
+    // UI thread: while it plays, the playback position a few times a second, from a thread of its
+    // own: the render thread only wakes for frames, which a file without video, or a stalled
+    // stream, doesn't have. The thread ends when the video pauses, ends, fails or goes.
+    void start_reporting() {
+        stop_reporting();
+        reporter_ = std::jthread([this](const std::stop_token& stop) {
+            std::mutex mutex;
+            std::condition_variable_any wake; // only for the stop request
+            std::unique_lock lock(mutex);
+            for (;;) {
+                wake.wait_for(lock, stop, std::chrono::milliseconds(250), [] { return false; });
+                if (stop.stop_requested() || !playing_now_) {
+                    return;
+                }
+                report_time();
+            }
+        });
+    }
+    void stop_reporting() {
+        if (reporter_.joinable()) {
+            reporter_.request_stop();
+            reporter_.join();
         }
-        last_time_report_ = now;
+    }
+
+    // The reporting thread: the playback position, to the UI thread.
+    void report_time() {
         gint64 position = 0;
         if (gst_element_query_position(playbin_, GST_FORMAT_TIME, &position)) {
-            post([at = seconds_of(position)](GStreamerSource& source) { source.time = at; });
+            post([at = seconds_of(position)](GStreamerSource& source) {
+                if (!source.ended_) { // a report from before the end doesn't move the time back
+                    source.time = at;
+                }
+            });
         }
     }
 
@@ -316,6 +345,7 @@ private:
             gst_element_set_state(playbin_, GST_STATE_PLAYING);
             return;
         }
+        stop_reporting();
         ended_ = true;
         playing = false;
         playing_now_ = false;
@@ -372,9 +402,9 @@ private:
     // The bus handler's reference (it outlives no source: the handler is removed first).
     std::weak_ptr<GStreamerSource>* weak_self_ = nullptr;
     bool ended_ = false; // UI thread
+    std::jthread reporter_; // the playback position, while it plays (UI thread)
     // Render thread.
     std::optional<Size> current_size_;
-    std::chrono::steady_clock::time_point last_time_report_{};
     mutable std::mutex mutex_;
     std::optional<VideoFrame> current_;
 };

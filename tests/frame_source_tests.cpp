@@ -475,3 +475,75 @@ TEST_CASE("a playing Linux video wakes the render thread for its frames instead 
     std::filesystem::remove(clip);
 }
 #endif
+
+#if defined(__linux__)
+TEST_CASE("a playing Linux video without frames reports its time, and doesn't wake the render thread",
+          "[video][frames]") {
+    // A sound alone, about a second and a half, made with GStreamer's own tools.
+    std::random_device random;
+    const std::filesystem::path clip =
+        std::filesystem::temp_directory_path() / std::format("elg-sound-{:x}.ogg", random());
+    const std::string command = std::format("gst-launch-1.0 -q audiotestsrc num-buffers=64 samplesperbuffer=1024 ! "
+                                            "vorbisenc ! oggmux ! filesink location={} > /dev/null 2>&1",
+                                            clip.string());
+    // NOLINTNEXTLINE(cert-env33-c,concurrency-mt-unsafe): a fixed command, to make the test's input
+    if (std::system(command.c_str()) != 0) {
+        SKIP("making a clip needs gst-launch-1.0 and GStreamer's base plugins");
+    }
+
+    // The UI thread, as far as this source goes: woken when a task is posted.
+    std::mutex mutex;
+    std::condition_variable posted;
+    bool pending = false;
+    detail::set_ui_task_waker([&] {
+        {
+            const std::lock_guard lock(mutex);
+            pending = true;
+        }
+        posted.notify_one();
+    });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    // Runs the UI tasks once some are posted (or 100 ms passed).
+    const auto run_tasks = [&] {
+        {
+            std::unique_lock lock(mutex);
+            posted.wait_for(lock, std::chrono::milliseconds(100), [&] { return pending; });
+            pending = false;
+        }
+        detail::run_ui_tasks();
+    };
+
+    const WakeCounter counter;
+    const std::shared_ptr<detail::VideoSource> video = detail::VideoSource::create(clip.string());
+    detail::FrameSources sources;
+    sources.drew(frame_of(1, {video})); // shown, so a frame would wake the render thread
+    while (!video->ready.peek() && video->error.peek().empty() && std::chrono::steady_clock::now() < deadline) {
+        run_tasks();
+    }
+    if (!video->error.peek().empty()) {
+        detail::set_ui_task_waker(nullptr);
+        std::filesystem::remove(clip);
+        SKIP(video->error.peek()); // e.g. no audio output plugin
+    }
+    REQUIRE(video->ready.peek());
+    const double duration = video->duration.peek();
+    REQUIRE(duration > 1);
+
+    // While it plays, its time moves on, without a frame and without the render thread.
+    video->play();
+    CHECK_FALSE(sources.polling());
+    double reported = 0; // the last time reported before the end
+    while (video->playing.peek() && std::chrono::steady_clock::now() < deadline) {
+        run_tasks();
+        if (video->playing.peek()) {
+            reported = video->time.peek();
+        }
+    }
+    detail::set_ui_task_waker(nullptr);
+    CHECK_FALSE(video->playing.peek()); // it played to its end
+    CHECK(reported > 0);
+    CHECK(reported < duration);
+    CHECK(counter.wakes() == 0);
+    std::filesystem::remove(clip);
+}
+#endif
