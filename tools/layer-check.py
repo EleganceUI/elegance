@@ -381,10 +381,23 @@ def check_statement(path, text, start, statement, scopes):
         return
     if any(kind == "detail" for kind, _ in scopes):
         return
-    if scopes and scopes[-1][0] == "class" and scopes[-1][1] != "public":
-        return
-    stripped = statement.strip()
+    # Macros without a semicolon (ELG_PRIVATE_MEMBERS_END) run into the next declaration.
+    stripped = re.sub(r"^(?:[A-Z][A-Z0-9_]+\s+)+", "", statement.strip())
     if re.match(r"^(friend|using|static_assert|template\s*<[^>]*>\s*friend)\b", stripped):
+        return
+    if scopes and scopes[-1][0] == "class" and scopes[-1][1] != "public":
+        # Private: only a data member that holds a detail type by value breaks R7 (it must be
+        # behind an opaque pointer); functions and pointers are fine.
+        if "(" in stripped:
+            return
+        for match in re.finditer(r"detail::[\w:]+", stripped):
+            before, after = stripped[:match.start()], stripped[match.end():]
+            wrapped = re.search(r"\b(shared_ptr|unique_ptr|weak_ptr)\s*<\s*(const\s+)?$", before)
+            if not wrapped and not re.match(r"^\s*(<[^;]*>)?\s*(const\s*)?[*&]", after):
+                offset = start + statement.find(match.group(0))
+                report(path, text.count("\n", 0, offset) + 1,
+                       f"holds {match.group(0)} by value instead of behind an opaque pointer", "ELGSPEC-0001.R7")
+                return
         return
     offset = start + statement.find("detail::")
     name = re.search(r"detail::[\w:]+", statement).group(0)
