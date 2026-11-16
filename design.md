@@ -1382,7 +1382,7 @@ player.play();  player.is_playing();  player.time();    // signals
   samples.
 - macOS: `AVPlayer` + `AVPlayerItemVideoOutput` → `CVPixelBuffer`. When the renderer runs on
   Metal with IOSurface sharing, the output delivers IOSurface-backed BGRA, imported into Dawn as
-  is (`gpu/macos/surface_publisher`, over the `ElgGpuImage` IOSurface transport); each
+  is (`gpu/macos/native_image`, as the `ElgGpuImage` IOSurface transport does); each
   buffer stays retained until the renderer's reads signal their MTLSharedEvent fences. Otherwise
   it delivers NV12, copied into `cpu` frames.
 - Linux: a GStreamer `playbin` with an `appsink` (DMA-BUF when available).

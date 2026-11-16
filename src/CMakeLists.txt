@@ -207,6 +207,7 @@ endif ()
 # and the GPU layer's interop with each OS's graphics APIs (gpu/<os>).
 if (WIN32)
     target_sources(elegance PRIVATE
+            gpu/native_image.cpp
             gpu/windows/composition.cpp
             gpu/windows/system.cpp
             platform/windows/appearance.cpp
@@ -230,7 +231,7 @@ if (APPLE)
     enable_language(OBJCXX)
     # Integrated title bars and trackpad gestures through AppKit.
     set(elg_apple_sources
-            gpu/macos/surface_publisher.mm
+            gpu/macos/native_image.mm
             platform/macos/appearance.mm
             platform/macos/camera.mm
             platform/macos/dock.mm
@@ -277,6 +278,7 @@ if (UNIX AND NOT APPLE)
         message(STATUS "Elegance: GIO not found (gio-2.0): notifications are only logged")
     endif ()
     target_sources(elegance PRIVATE
+            gpu/native_image.cpp
             gpu/presenter.cpp
             gpu/system.cpp
             platform/linux/appearance.cpp

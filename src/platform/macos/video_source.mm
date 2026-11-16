@@ -4,14 +4,13 @@
 
 // Videos on macOS (design.md §13.3, media/video_backend.h): AVFoundation. AVPlayer decodes, plays
 // the sound and keeps it in sync; an AVPlayerItemVideoOutput hands the render thread the frame
-// that's due as an IOSurface the renderer imports as is (gpu/macos/surface_publisher.h), or, when
-// it can't, as NV12 it copies into a `cpu` VideoFrame (pixel_buffer.h). Compiled with ARC.
+// that's due as an IOSurface-backed buffer the renderer imports as is (a `native` VideoFrame), or,
+// when it can't, as NV12 it copies into a `cpu` VideoFrame (pixel_buffer.h). Compiled with ARC.
 
 #include "media/video_backend.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
-#include "gpu/macos/surface_publisher.h"
 #include "platform/macos/pixel_buffer.h"
 
 #import <AVFoundation/AVFoundation.h>
@@ -67,6 +66,31 @@ NSURL* url_of(const std::string& url) {
     return [NSURL fileURLWithPath:text];
 }
 
+// The pixel buffers to ask the decoder for when the renderer imports them as they are: BGRA,
+// IOSurface-backed, Metal-compatible.
+NSDictionary* native_buffer_attributes() {
+    static NSDictionary* attributes = @{
+        (__bridge NSString*)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA),
+        (__bridge NSString*)kCVPixelBufferIOSurfacePropertiesKey : @{},
+        (__bridge NSString*)kCVPixelBufferMetalCompatibilityKey : @YES,
+    };
+    return attributes;
+}
+
+// A frame of the decoder's `buffer` as it is, for the renderer to import: it retains `buffer`.
+VideoFrame native_frame(CVPixelBufferRef buffer, std::uint64_t source_id) {
+    VideoFrame frame;
+    frame.kind = VideoFrame::Kind::native;
+    frame.width = static_cast<std::uint32_t>(CVPixelBufferGetWidth(buffer));
+    frame.height = static_cast<std::uint32_t>(CVPixelBufferGetHeight(buffer));
+    frame.format = VideoFrame::Format::bgra;
+    frame.source_id = source_id;
+    frame.native = std::shared_ptr<void>(CVPixelBufferRetain(buffer), [](void* retained) {
+        CVPixelBufferRelease(static_cast<CVPixelBufferRef>(retained));
+    });
+    return frame;
+}
+
 } // namespace
 
 class AVFoundationVideo final : public VideoEngine {
@@ -110,9 +134,9 @@ public:
         NSDictionary* attributes = @{
             (__bridge NSString*)kCVPixelBufferPixelFormatTypeKey : @(macos::kPreferredPixelFormat),
         };
-        if (gpu::SurfacePublisher::available()) {
-            publisher_ = std::make_unique<gpu::SurfacePublisher>();
-            attributes = (__bridge NSDictionary*)gpu::SurfacePublisher::buffer_attributes();
+        if (host_->imports_native_frames()) {
+            imports_ = true;
+            attributes = native_buffer_attributes();
         }
         output_ = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:attributes];
         item_ = [AVPlayerItem playerItemWithURL:url];
@@ -228,15 +252,20 @@ public:
         if (!buffer) {
             return false;
         }
-        if (publisher_ && !copies_) {
-            const bool published = publisher_->publish(buffer);
-            if (published) {
+        if (imports_ && !copies_) {
+            std::optional<VideoFrame> imported =
+                host_->import_native_frame(native_frame(buffer, host_->source_id()));
+            if (imported) {
                 CVPixelBufferRelease(buffer);
-                return publisher_->update();
+                std::lock_guard lock(mutex_);
+                current_ = std::move(imported);
+                return true;
             }
             // The device went away or refused it: copy from now on.
             log_warning("video: can't share frames with the renderer; copying them instead");
             copies_ = true;
+            std::lock_guard lock(mutex_);
+            current_.reset(); // until the first copy
         }
         std::optional<VideoFrame> frame = macos::pack_pixel_buffer(buffer, host_->source_id());
         CVPixelBufferRelease(buffer);
@@ -249,9 +278,6 @@ public:
     }
 
     std::optional<VideoFrame> current() const override {
-        if (publisher_ && !copies_) {
-            return publisher_->current();
-        }
         std::lock_guard lock(mutex_);
         return current_;
     }
@@ -329,8 +355,9 @@ private:
     ElgVideoObserver* observer_ = nil;
     ObjcObject time_token_ = nil;
     std::vector<ObjcObject> notification_tokens_;
-    // Zero-copy frames; null when copying. copies_: the publisher failed (render thread).
-    std::unique_ptr<gpu::SurfacePublisher> publisher_;
+    // Zero-copy frames: the renderer imports them (set by open()). copies_: an import failed, and
+    // frames are copied from then on (render thread).
+    bool imports_ = false;
     bool copies_ = false;
     mutable std::mutex mutex_;
     std::optional<VideoFrame> current_;

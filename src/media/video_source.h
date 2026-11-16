@@ -26,6 +26,14 @@ std::optional<RenderAdapter> render_adapter();
 // A new id, unique among sources and the textures decoders share (VideoFrame::texture_id).
 std::uint64_t next_media_id();
 
+// How the renderer imports frames of VideoFrame::Kind::native (FrameSourceHost's functions of
+// those names): set by the render thread before its device exists. Any thread.
+struct NativeFrameImporter {
+    bool (*imports_native_frames)() = nullptr;
+    std::optional<VideoFrame> (*import_native_frame)(const VideoFrame& frame) = nullptr;
+};
+void set_native_frame_importer(NativeFrameImporter importer);
+
 // What VideoSource::notify_new_frame() calls to wake the render thread: set by the render thread
 // while it runs, and cleared (an empty function) before it stops. Any thread.
 void set_frame_waker(std::function<void()> waker);

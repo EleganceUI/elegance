@@ -23,6 +23,7 @@ namespace {
 std::atomic<std::uint64_t> g_next_id{1};
 std::mutex g_adapter_mutex;
 std::optional<RenderAdapter> g_adapter;
+NativeFrameImporter g_importer; // with g_adapter_mutex held
 // Called with the mutex held, so that it can't run once cleared. Recursive: what a waker does may
 // wake it again.
 std::recursive_mutex g_waker_mutex;
@@ -39,6 +40,20 @@ std::optional<RenderAdapter> render_adapter() {
     const std::lock_guard lock(g_adapter_mutex);
     return g_adapter;
 }
+
+void set_native_frame_importer(NativeFrameImporter importer) {
+    const std::lock_guard lock(g_adapter_mutex);
+    g_importer = importer;
+}
+
+namespace {
+
+NativeFrameImporter native_frame_importer() {
+    const std::lock_guard lock(g_adapter_mutex);
+    return g_importer;
+}
+
+} // namespace
 
 std::uint64_t next_media_id() {
     return g_next_id.fetch_add(1);
@@ -126,6 +141,16 @@ void SourceHost::notify_new_frame() const {
 
 std::optional<RenderAdapter> SourceHost::render_adapter() const {
     return detail::render_adapter();
+}
+
+bool SourceHost::imports_native_frames() const {
+    const NativeFrameImporter importer = native_frame_importer();
+    return importer.imports_native_frames && importer.imports_native_frames();
+}
+
+std::optional<VideoFrame> SourceHost::import_native_frame(const VideoFrame& frame) {
+    const NativeFrameImporter importer = native_frame_importer();
+    return importer.import_native_frame ? importer.import_native_frame(frame) : std::nullopt;
 }
 
 void SourceHost::set_playing(bool playing) {

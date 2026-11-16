@@ -45,6 +45,11 @@ public:
     virtual void notify_new_frame() const = 0;
     // The GPU adapter of the running renderer, once its device exists.
     [[nodiscard]] virtual std::optional<RenderAdapter> render_adapter() const = 0;
+    // Whether the running renderer can import frames of VideoFrame::Kind::native now.
+    [[nodiscard]] virtual bool imports_native_frames() const = 0;
+    // Render thread: `frame` (Kind::native) imported into the renderer's device, as the frame to
+    // draw (Kind::external); nullopt if it can't be.
+    [[nodiscard]] virtual std::optional<VideoFrame> import_native_frame(const VideoFrame& frame) = 0;
 
     // --- UI thread: the state views read ---
 

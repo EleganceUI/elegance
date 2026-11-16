@@ -4,8 +4,11 @@
 
 #include <elg/gpu_image.h>
 
+#include "render/gpu_image.h"
+
 #include "core/ui_tasks.h"
 #include "gpu/external_image.h"
+#include "gpu/native_image.h"
 #include "media/video_source.h"
 
 #include <atomic>
@@ -19,6 +22,31 @@ namespace elg::detail {
 namespace {
 std::atomic<std::uint64_t> next_external_id{1ull << 61};
 } // namespace
+
+bool imports_native_frames() {
+    return gpu::imports_native_images();
+}
+
+std::optional<VideoFrame> import_native_frame(const VideoFrame& native) {
+    if (native.kind != VideoFrame::Kind::native || !native.native) {
+        return std::nullopt;
+    }
+    gpu::NativeImport imported = gpu::import_native_image(native.native.get());
+    if (!imported.image) {
+        return std::nullopt;
+    }
+    // As a GpuImage's published frame.
+    VideoFrame frame;
+    frame.kind = VideoFrame::Kind::external;
+    frame.width = imported.width;
+    frame.height = imported.height;
+    frame.source_id = native.source_id;
+    frame.texture_id = next_external_id.fetch_add(1, std::memory_order_relaxed);
+    frame.frame_id = frame.texture_id;
+    imported.image->accept(); // its release follows the last reference
+    frame.external = std::move(imported.image);
+    return frame;
+}
 
 
 class ExternalImageSource final : public VideoSource {

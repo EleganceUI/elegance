@@ -49,10 +49,12 @@ public:
 // - `cpu`: pixels in memory, in `format`, packed (no row padding), top to bottom. The renderer
 //   uploads them and converts YUV to RGB in a GPU pass, the same on every platform. Any
 //   decoder or camera can start here.
-// Later: macOS IOSurfaces and Linux DMA-BUFs, imported like the D3D11 textures (macOS decodes to
-// `cpu` NV12 for now).
+// - `native`: an image a system decoder made in GPU memory, which `native` retains (macOS: an
+//   IOSurface-backed BGRA CVPixelBuffer). FrameSourceHost::import_native_frame() makes it an
+//   `external` frame on the renderer's device; the renderer draws only that.
+// Later: Linux DMA-BUFs, imported like the D3D11 textures.
 struct VideoFrame {
-    enum class Kind { d3d11_shared, cpu, external };
+    enum class Kind { d3d11_shared, cpu, external, native };
     enum class Format : std::uint32_t { bgra = 0, nv12 = 1, yuy2 = 2, i420 = 3, rgba = 4 }; // rgba: texture storage
     enum class Matrix : std::uint32_t { bt601 = 0, bt709 = 1 };
 
@@ -70,6 +72,8 @@ struct VideoFrame {
     // one immutable imported allocation and its open Dawn access. Every snapshot and pending
     // recording must retain it until submission.
     std::shared_ptr<const gpu::ExternalImage> external;
+    // native: the system's image, released with the last copy of the frame.
+    std::shared_ptr<void> native;
     // cpu (format also describes shared/external texture storage)
     Format format = Format::bgra;
     Matrix matrix = Matrix::bt709;

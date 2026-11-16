@@ -15,6 +15,7 @@
 #include "gpu/webgpu.h"
 #include "media/image_decode.h"
 #include "render/frame_sources.h"
+#include "render/gpu_image.h"
 #include "render/video_textures.h"
 #include "render/window_target.h"
 #include "text/atlas.h"
@@ -80,6 +81,9 @@ void RenderThread::run(std::promise<void> ready) noexcept {
     };
 
     try {
+        // Decoders that make frames in GPU memory hand them to this renderer's device, once it
+        // exists and while it runs.
+        set_native_frame_importer({&imports_native_frames, &import_native_frame});
         // Declaration order is destruction order in reverse: windows, then pipelines and the
         // atlas, then the device and the instance.
         const gpu::Instance instance;

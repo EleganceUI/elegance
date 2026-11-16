@@ -31,6 +31,8 @@ public:
     [[nodiscard]] bool is_playing_now() const noexcept override;
     void notify_new_frame() const override;
     [[nodiscard]] std::optional<RenderAdapter> render_adapter() const override;
+    [[nodiscard]] bool imports_native_frames() const override;
+    [[nodiscard]] std::optional<VideoFrame> import_native_frame(const VideoFrame& frame) override;
 
     void set_playing(bool playing) override;
     void set_ready() override;
