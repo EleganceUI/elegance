@@ -10,6 +10,7 @@
 #include "core/os_backend.h"
 #include "net/http_cache.h"
 #include "net/net_backend.h"
+#include "platform/platform.h"
 #include "text/text_backend.h"
 
 #include <elg/error.h>
@@ -133,5 +134,16 @@ TEST_CASE("the system's root certificates are its store's, or its distribution's
 TEST_CASE("threads end before Elegance's static objects only in a Windows DLL", "[os]") {
     if (current_platform() != Platform::windows) {
         CHECK_FALSE(detail::os::threads_end_before_static_destruction());
+    }
+}
+
+TEST_CASE("the platform names its text editing modifiers and caption glyphs", "[os]") {
+    if (current_platform() == Platform::macos) {
+        CHECK(detail::platform::word_modifier() == KeyModifiers::alt);
+    } else {
+        CHECK(detail::platform::word_modifier() == KeyModifiers::control);
+    }
+    if (current_platform() != Platform::windows) {
+        CHECK_FALSE(detail::platform::caption_icon_font().has_value());
     }
 }

@@ -17,6 +17,9 @@
 #include <dwmapi.h>
 #include <imm.h>
 
+#include <filesystem>
+#include <system_error>
+
 namespace elg::detail::platform {
 
 namespace native {
@@ -137,6 +140,21 @@ void remove_input_monitor(void*) {}
 
 void wait_for_compositor() {
     DwmFlush();
+}
+
+std::optional<std::filesystem::path> caption_icon_font() {
+    wchar_t windows[MAX_PATH] = L"C:\\Windows";
+    GetWindowsDirectoryW(windows, MAX_PATH);
+    std::filesystem::path file = std::filesystem::path(windows) / "Fonts" / "segmdl2.ttf";
+    std::error_code error;
+    if (std::filesystem::exists(file, error)) {
+        return file;
+    }
+    return std::nullopt;
+}
+
+KeyModifiers word_modifier() noexcept {
+    return KeyModifiers::control;
 }
 
 } // namespace elg::detail::platform

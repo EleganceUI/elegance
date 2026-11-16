@@ -74,4 +74,12 @@ void remove_input_monitor(void*) {}
 
 void wait_for_compositor() {}
 
+std::optional<std::filesystem::path> caption_icon_font() {
+    return std::nullopt;
+}
+
+KeyModifiers word_modifier() noexcept {
+    return KeyModifiers::control;
+}
+
 } // namespace elg::detail::platform

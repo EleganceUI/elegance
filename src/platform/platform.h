@@ -287,6 +287,11 @@ private:
 std::optional<std::string> environment_variable(const char* name);
 // Whether the OS is set to a dark appearance.
 bool system_prefers_dark();
+// The system's font with its window caption buttons' glyphs (Segoe MDL2 Assets on Windows), or
+// nullopt where it has none.
+std::optional<std::filesystem::path> caption_icon_font();
+// What moves a text field's caret by words: Alt (Option) on macOS, Ctrl elsewhere.
+KeyModifiers word_modifier() noexcept;
 
 } // namespace elg::detail::platform
 
