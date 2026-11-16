@@ -9,7 +9,9 @@
 #include "media/video_source.h"
 
 #include <cstdint>
+#include <memory>
 #include <optional>
+#include <span>
 #include <string>
 
 namespace elg::detail {
@@ -33,8 +35,11 @@ public:
     [[nodiscard]] std::optional<RenderAdapter> render_adapter() const override;
     [[nodiscard]] bool imports_native_frames() const override;
     [[nodiscard]] std::optional<VideoFrame> import_native_frame(const VideoFrame& frame) override;
+    [[nodiscard]] std::shared_ptr<const DecodedImage> decode_image(
+        std::span<const std::uint8_t> data) const override;
 
     void set_playing(bool playing) override;
+    [[nodiscard]] bool playing() const override;
     void set_ready() override;
     void set_time(double seconds) override;
     void set_duration(double seconds) override;

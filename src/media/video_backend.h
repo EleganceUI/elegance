@@ -5,17 +5,21 @@
 #ifndef ELG_MEDIA_VIDEO_BACKEND_H
 #define ELG_MEDIA_VIDEO_BACKEND_H
 
-// Media's backend interface for videos (ELGSPEC-0001.R4): each OS's media engine plays them, in
-// platform/<os>/video_source.*. A VideoSource (media/video_source.h) owns each engine and keeps
-// the state views read; the engine reports to it through a FrameSourceHost.
+// Media's backend interface for videos and cameras (ELGSPEC-0001.R4): each OS's media engine
+// plays videos, in platform/<os>/video_source.*, and its capture API runs cameras, in
+// platform/<os>/camera.*. A VideoSource (media/video_source.h) owns each engine and keeps the
+// state views read; the engine reports to it through a FrameSourceHost.
 
+#include "media/decoded_image.h"
 #include "media/video_frame.h"
 
 #include <cstdint>
 #include <expected>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace elg::detail {
 
@@ -50,10 +54,15 @@ public:
     // Render thread: `frame` (Kind::native) imported into the renderer's device, as the frame to
     // draw (Kind::external); nullopt if it can't be.
     [[nodiscard]] virtual std::optional<VideoFrame> import_native_frame(const VideoFrame& frame) = 0;
+    // An image decoded as Media decodes them (media/image_decode.h): for cameras that send JPEG
+    // frames. Throws elg::ResourceError if it can't be.
+    [[nodiscard]] virtual std::shared_ptr<const DecodedImage> decode_image(
+        std::span<const std::uint8_t> data) const = 0;
 
     // --- UI thread: the state views read ---
 
     virtual void set_playing(bool playing) = 0;
+    [[nodiscard]] virtual bool playing() const = 0;
     // The metadata loaded: the duration and size are known.
     virtual void set_ready() = 0;
     virtual void set_time(double seconds) = 0;
@@ -105,6 +114,54 @@ public:
 // UI thread: the engine that plays `url` (a file path or an http(s) URL), or why this system
 // can't play videos.
 std::expected<std::unique_ptr<VideoEngine>, std::string> create_video_engine(const std::string& url);
+
+// --- Cameras ---
+
+// A camera the system has.
+struct CameraInfo {
+    std::string id;   // for CameraRequest::device_id
+    std::string name; // as the system shows it
+};
+
+// The camera to capture from, and the frame size asked for: the camera's closest mode is used.
+struct CameraRequest {
+    std::string device_id; // empty: the first camera
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+};
+
+// A camera as the OS captures it: each OS's camera.* implements it. Its VideoSource owns it,
+// destroys it on the UI thread, and calls it as its own functions are called.
+class CameraEngine {
+public:
+    CameraEngine() = default;
+    CameraEngine(const CameraEngine&) = delete;
+    CameraEngine& operator=(const CameraEngine&) = delete;
+    CameraEngine(CameraEngine&&) = delete;
+    CameraEngine& operator=(CameraEngine&&) = delete;
+    virtual ~CameraEngine() = default;
+
+    // As VideoEngine's.
+    [[nodiscard]] virtual bool wakes_for_frames() const noexcept = 0;
+    // UI thread, once, before anything else: it reports to `host` from now on.
+    virtual void open(const std::shared_ptr<FrameSourceHost>& host) = 0;
+
+    // --- UI thread ---
+    // Starts capturing (VideoSource::play()), and stops (VideoSource::pause()).
+    virtual void start() = 0;
+    virtual void stop() = 0;
+    // The newest frame, as a snapshot shows it: packed in memory (Kind::cpu), not mirrored.
+    // nullopt before the first.
+    [[nodiscard]] virtual std::optional<VideoFrame> snapshot_frame() const = 0;
+
+    // --- Render thread ---
+    virtual bool update() = 0;
+    [[nodiscard]] virtual std::optional<VideoFrame> current() const = 0;
+};
+
+// UI thread: the system's cameras, and one of them (stopped).
+std::vector<CameraInfo> system_cameras();
+std::unique_ptr<CameraEngine> create_camera_engine(CameraRequest request);
 
 } // namespace elg::detail
 

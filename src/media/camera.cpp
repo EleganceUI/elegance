@@ -9,10 +9,15 @@
 
 #include <elg/capture.h>
 
+#include "core/ui_tasks.h"
 #include "media/camera_source.h"
+#include "media/image_codec_backend.h"
+#include "media/source_host.h"
+#include "media/video_backend.h"
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace elg::detail {
 
@@ -82,16 +87,63 @@ std::vector<std::uint8_t> frame_to_bgra(VideoFrame::Format format, VideoFrame::M
     return out;
 }
 
+namespace {
+
+// A camera the OS captures (media/video_backend.h).
+class EngineCamera final : public CameraSource {
+public:
+    explicit EngineCamera(std::unique_ptr<CameraEngine> engine)
+        : CameraSource(engine->wakes_for_frames()), engine_(std::move(engine)) {}
+
+    // UI thread, right after construction: the engine holds the host weakly.
+    void open() { engine_->open(std::shared_ptr<FrameSourceHost>(shared_from_this(), &host_)); }
+
+    void play() override { engine_->start(); }
+    void pause() override { engine_->stop(); }
+    void seek(double) override {}
+    void set_volume(float) override {}
+    void set_muted(bool) override {}
+    void set_looping(bool) override {}
+    bool update() override { return engine_->update(); }
+    std::optional<VideoFrame> current() const override { return engine_->current(); }
+
+    std::optional<std::vector<unsigned char>> snapshot() const override {
+        const std::optional<VideoFrame> frame = engine_->snapshot_frame();
+        if (!frame || !frame->pixels) {
+            return std::nullopt;
+        }
+        const std::vector<std::uint8_t> bgra =
+            frame_to_bgra(frame->format, frame->matrix, frame->full_range, *frame->pixels, frame->width, frame->height);
+        if (bgra.empty()) {
+            return std::nullopt;
+        }
+        return encode_png(bgra, frame->width, frame->height);
+    }
+
+private:
+    SourceHost host_{*this}; // outlives the engine
+    std::unique_ptr<CameraEngine> engine_;
+};
+
+} // namespace
+
 } // namespace elg::detail
 
 namespace elg {
 
 std::vector<CameraDevice> camera_devices() {
-    return detail::platform_camera_devices();
+    std::vector<CameraDevice> devices;
+    for (detail::CameraInfo& camera : detail::system_cameras()) {
+        devices.push_back({std::move(camera.id), std::move(camera.name)});
+    }
+    return devices;
 }
 
 Camera::Camera(CameraOptions options) : mirrored_(options.mirrored) {
-    source_ = detail::create_platform_camera(std::move(options));
+    auto camera = detail::make_ui_shared<detail::EngineCamera>(
+        detail::create_camera_engine({std::move(options.device_id), options.width, options.height}));
+    camera->open();
+    source_ = std::move(camera);
 }
 
 void Camera::start() const {

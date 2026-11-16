@@ -9,6 +9,7 @@
 #include "media/video_source.h"
 
 #include "core/ui_tasks.h"
+#include "media/image_decode.h"
 #include "media/source_host.h"
 #include "media/video_backend.h"
 
@@ -153,8 +154,16 @@ std::optional<VideoFrame> SourceHost::import_native_frame(const VideoFrame& fram
     return importer.import_native_frame ? importer.import_native_frame(frame) : std::nullopt;
 }
 
+std::shared_ptr<const DecodedImage> SourceHost::decode_image(std::span<const std::uint8_t> data) const {
+    return detail::decode_image(data);
+}
+
 void SourceHost::set_playing(bool playing) {
     source_.playing = playing;
+}
+
+bool SourceHost::playing() const {
+    return source_.playing.peek();
 }
 
 void SourceHost::set_ready() {
