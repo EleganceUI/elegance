@@ -4,8 +4,9 @@
 
 // Video sources on Linux (design.md §13.3): GStreamer. A playbin decodes (in hardware where the
 // system's plugins can), plays the sound and keeps it in sync; its video goes to an appsink as
-// NV12, which the render thread packs into `cpu` frames. GStreamer is the system's (found with
-// pkg-config when building); without it, video isn't available.
+// NV12, which the render thread packs into `cpu` frames. Each frame the appsink gets wakes the
+// render thread. GStreamer is the system's (found with pkg-config when building); without it,
+// video isn't available.
 
 #include "media/video_source.h"
 
@@ -19,6 +20,7 @@
 #include <gst/video/video.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstring>
 #include <format>
@@ -60,17 +62,30 @@ double seconds_of(gint64 nanoseconds) {
 
 class GStreamerSource final : public VideoSource {
 public:
-    explicit GStreamerSource(std::string url) : url_(std::move(url)) {}
+    // The appsink's callbacks wake the render thread for each frame: it doesn't poll.
+    explicit GStreamerSource(std::string url) : VideoSource(true), url_(std::move(url)) {}
+    GStreamerSource(const GStreamerSource&) = delete;
+    GStreamerSource& operator=(const GStreamerSource&) = delete;
+    GStreamerSource(GStreamerSource&&) = delete;
+    GStreamerSource& operator=(GStreamerSource&&) = delete;
 
     ~GStreamerSource() override {
         if (playbin_) {
-            // Stopping joins the streaming threads, so no bus handler runs past this.
+            // Stopping joins the streaming threads, so no bus handler or appsink callback runs
+            // past this; both are removed before anything is torn down.
             gst_element_set_state(playbin_, GST_STATE_NULL);
+            if (sink_) {
+                GstAppSinkCallbacks none{};
+                gst_app_sink_set_callbacks(GST_APP_SINK(sink_), &none, nullptr, nullptr);
+            }
             if (GstBus* bus = gst_element_get_bus(playbin_)) {
                 gst_bus_set_sync_handler(bus, nullptr, nullptr, nullptr);
                 gst_object_unref(bus);
             }
             gst_object_unref(playbin_);
+        }
+        if (sink_) {
+            gst_object_unref(sink_);
         }
         delete weak_self_;
     }
@@ -97,6 +112,14 @@ public:
         GstCaps* caps = gst_caps_new_simple("video/x-raw", "format", G_TYPE_STRING, "NV12", nullptr);
         g_object_set(sink, "caps", caps, "sync", TRUE, "max-buffers", 1, "drop", TRUE, nullptr);
         gst_caps_unref(caps);
+        // A frame to show (the first while paused, then each while playing) wakes the render
+        // thread, which takes it in update(). The callbacks get the source itself: the destructor
+        // stops the pipeline, and so the callbacks, first.
+        GstAppSinkCallbacks callbacks{};
+        callbacks.new_preroll = &on_preroll;
+        callbacks.new_sample = &on_sample;
+        gst_app_sink_set_callbacks(GST_APP_SINK(sink), &callbacks, this, nullptr);
+        sink_ = GST_ELEMENT(gst_object_ref(sink));
         g_object_set(playbin_, "uri", uri.c_str(), "video-sink", sink, nullptr);
 
         weak_self_ = new std::weak_ptr<GStreamerSource>(std::static_pointer_cast<GStreamerSource>(shared_from_this()));
@@ -171,10 +194,10 @@ public:
         if (!sink) {
             return false;
         }
-        GstSample* sample = gst_app_sink_try_pull_sample(GST_APP_SINK(sink), 0);
-        if (!sample && !current_size_) {
-            // Paused before playing: the first frame, so the view isn't empty.
-            sample = gst_app_sink_try_pull_preroll(GST_APP_SINK(sink), 0);
+        // Paused (before playing, or after a seek): the preroll, so the view shows that frame.
+        GstSample* sample = preroll_.exchange(false) ? gst_app_sink_try_pull_preroll(GST_APP_SINK(sink), 0) : nullptr;
+        if (!sample) {
+            sample = gst_app_sink_try_pull_sample(GST_APP_SINK(sink), 0);
         }
         gst_object_unref(sink);
         if (!sample) {
@@ -191,13 +214,13 @@ public:
             current_size_ = Size{static_cast<float>(frame->width), static_cast<float>(frame->height)};
             post([size = *current_size_](GStreamerSource& source) { source.size = size; });
         }
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         current_ = std::move(frame);
         return true;
     }
 
     std::optional<VideoFrame> current() const override {
-        std::lock_guard lock(mutex_);
+        const std::lock_guard lock(mutex_);
         return current_;
     }
 
@@ -238,6 +261,21 @@ private:
         if (gst_element_query_position(playbin_, GST_FORMAT_TIME, &position)) {
             post([at = seconds_of(position)](GStreamerSource& source) { source.time = at; });
         }
+    }
+
+    // A streaming thread: the appsink has a new frame, which update() takes on the render
+    // thread. These only set a flag and wake the render thread, which is safe from any thread.
+    // A preroll (the frame shown while paused: the first, or after a seek) is pulled apart from
+    // played frames: pulling a played frame while paused drops the preroll.
+    static GstFlowReturn on_preroll(GstAppSink*, gpointer data) {
+        auto* self = static_cast<GStreamerSource*>(data);
+        self->preroll_ = true;
+        self->notify_new_frame();
+        return GST_FLOW_OK;
+    }
+    static GstFlowReturn on_sample(GstAppSink*, gpointer data) {
+        static_cast<const GStreamerSource*>(data)->notify_new_frame();
+        return GST_FLOW_OK;
     }
 
     // GStreamer's streaming threads: forwards what matters to the UI thread.
@@ -329,6 +367,8 @@ private:
 
     const std::string url_;
     GstElement* playbin_ = nullptr;
+    GstElement* sink_ = nullptr; // playbin's video sink (a reference of our own)
+    std::atomic<bool> preroll_{false}; // the appsink has a preroll that update() hasn't taken
     // The bus handler's reference (it outlives no source: the handler is removed first).
     std::weak_ptr<GStreamerSource>* weak_self_ = nullptr;
     bool ended_ = false; // UI thread

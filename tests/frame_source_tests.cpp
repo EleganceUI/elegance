@@ -17,11 +17,18 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <filesystem>
+#include <format>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <random>
+#include <string>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -387,3 +394,84 @@ TEST_CASE("sources shown only in hidden windows don't wake the render thread, an
     sources.update();
     CHECK(sources.stale() == std::vector<std::uint32_t>{1});
 }
+
+#if defined(__linux__)
+TEST_CASE("a playing Linux video wakes the render thread for its frames instead of being polled", "[video][frames]") {
+    // A short clip, made with GStreamer's own tools: 20 frames at 50 per second.
+    constexpr int kFrames = 20;
+    std::random_device random;
+    const std::filesystem::path clip =
+        std::filesystem::temp_directory_path() / std::format("elg-clip-{:x}.ogg", random());
+    const std::string command = std::format("gst-launch-1.0 -q videotestsrc num-buffers={} ! "
+                                            "video/x-raw,width=32,height=24,framerate=50/1 ! theoraenc ! oggmux ! "
+                                            "filesink location={} > /dev/null 2>&1",
+                                            kFrames, clip.string());
+    // NOLINTNEXTLINE(cert-env33-c,concurrency-mt-unsafe): a fixed command, to make the test's input
+    if (std::system(command.c_str()) != 0) {
+        SKIP("making a clip needs gst-launch-1.0 and GStreamer's base plugins");
+    }
+    const std::shared_ptr<detail::VideoSource> video = detail::VideoSource::create(clip.string());
+    if (!video->error.peek().empty()) {
+        std::filesystem::remove(clip);
+        SKIP(video->error.peek());
+    }
+
+    // The render thread, as far as this source goes: woken, it takes the new frame.
+    std::mutex mutex;
+    std::condition_variable woken;
+    int wakes = 0;
+    detail::set_frame_waker([&] {
+        {
+            const std::lock_guard lock(mutex);
+            ++wakes;
+        }
+        woken.notify_one();
+    });
+    detail::FrameSources sources;
+    sources.drew(frame_of(1, {video}));
+    int frames = 0;
+    int handled = 0; // wakes
+    // Waits (up to `limit`) for a wake, then draws if there's a new frame. False on timeout.
+    const auto next = [&](std::chrono::milliseconds limit) {
+        {
+            std::unique_lock lock(mutex);
+            if (!woken.wait_for(lock, limit, [&] { return wakes > handled; })) {
+                return false;
+            }
+            handled = wakes;
+        }
+        sources.update();
+        if (!sources.stale().empty()) {
+            ++frames;
+            sources.redrew(1);
+        }
+        return true;
+    };
+
+    // Paused, it shows its first frame, woken for it.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+    while (frames == 0 && std::chrono::steady_clock::now() < deadline) {
+        next(std::chrono::milliseconds(100));
+    }
+    CHECK(frames == 1);
+    CHECK_FALSE(sources.polling());
+
+    // Playing, it isn't polled: each frame wakes the render thread, and nothing else does.
+    video->play();
+    CHECK(video->is_playing_now());
+    CHECK_FALSE(sources.polling());
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (!next(std::chrono::milliseconds(50))) {
+            detail::run_ui_tasks(); // the end of the clip
+            if (!video->playing.peek()) {
+                break;
+            }
+        }
+    }
+    detail::set_frame_waker({});
+    CHECK_FALSE(video->playing.peek()); // it played to its end
+    CHECK(frames > 1);
+    CHECK(wakes <= kFrames + 1); // the paused first frame, and one per frame played
+    std::filesystem::remove(clip);
+}
+#endif

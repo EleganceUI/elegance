@@ -99,8 +99,9 @@ void RenderThread::run(std::promise<void> ready) noexcept {
         set_frame_waker([this] { mailbox_.wake(); });
 
         RenderBatch batch;
-        // While videos that don't wake the render thread play, look for their next frame every
-        // few milliseconds; otherwise sleep until the UI thread posts work or a source wakes it.
+        // While videos that don't wake the render thread play (the Windows and macOS players and
+        // cameras, until they do), look for their next frame every few milliseconds; otherwise
+        // sleep until the UI thread posts work or a source wakes it.
         while (sources.polling() ? mailbox_.take_for(batch, std::chrono::milliseconds(4)) : mailbox_.take(batch)) {
             for (RenderCommand& command : batch.commands) {
                 std::visit(Overloaded{

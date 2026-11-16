@@ -43,7 +43,8 @@ public:
 
     // Whether a source in a visible window plays (is_playing_now()) without waking the render
     // thread for its frames (wakes_for_frames()): the render thread then looks for them
-    // regularly.
+    // regularly. Every Linux source wakes it; the Windows and macOS video players and cameras
+    // don't yet, and this goes once they do.
     [[nodiscard]] bool polling() const;
 
 private:
