@@ -8,9 +8,9 @@
 
 #include <elg/hot_reload.h>
 
+#include "core/dynamic_library.h"
 #include "core/log.h"
 #include "core/ui_tasks.h"
-#include "platform/dynamic_library.h"
 
 #include <elg/error.h>
 #include <elg/reactive.h>
@@ -59,7 +59,7 @@ struct Status {
 };
 
 struct LoadedModule {
-    std::unique_ptr<platform::DynamicLibrary> library;
+    std::unique_ptr<DynamicLibrary> library;
     const ModuleEntry* entry = nullptr;
 };
 
@@ -197,7 +197,7 @@ public:
             if (const fs::path pdb = fs::path(options_.module).replace_extension(".pdb"); fs::exists(pdb)) {
                 fs::copy_file(pdb, fs::path(copy).replace_extension(".pdb"), fs::copy_options::overwrite_existing);
             }
-            auto library = std::make_unique<platform::DynamicLibrary>(copy);
+            auto library = std::make_unique<DynamicLibrary>(copy);
             using EntryFunction = const ModuleEntry* (*)();
             const auto entry_function = reinterpret_cast<EntryFunction>(library->symbol("elg_module_entry"));
             if (!entry_function) {

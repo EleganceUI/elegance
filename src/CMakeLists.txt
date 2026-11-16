@@ -16,6 +16,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         geometry/path.cpp
         core/app_errors.cpp
         core/crash.cpp
+        core/dynamic_library.cpp
         core/log.cpp
         reactive/timers.cpp
         core/ui_tasks.cpp
@@ -46,7 +47,6 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         net/proxy.cpp
         platform/sdl/accessibility_adapter.cpp
         platform/sdl/desktop_sdl.cpp
-        platform/sdl/dynamic_library.cpp
         platform/sdl/menu_bar.cpp
         platform/sdl/os.cpp
         platform/sdl/platform_sdl.cpp

@@ -7,7 +7,11 @@
 
 #include "core/os_backend.h"
 
+#include <elg/error.h>
+
 #include <windows.h>
+
+#include <format>
 
 namespace elg::detail::os {
 
@@ -17,6 +21,22 @@ bool debugger_present() noexcept {
 
 void debug_break() noexcept {
     __debugbreak();
+}
+
+void* open_library(const std::filesystem::path& path) {
+    void* const handle = LoadLibraryW(path.c_str());
+    if (!handle) {
+        throw ResourceError(std::format("can't load \"{}\" (error {})", path.string(), GetLastError()));
+    }
+    return handle;
+}
+
+void* library_symbol(void* library, const char* name) noexcept {
+    return reinterpret_cast<void*>(GetProcAddress(static_cast<HMODULE>(library), name));
+}
+
+void close_library(void* library) noexcept {
+    FreeLibrary(static_cast<HMODULE>(library));
 }
 
 } // namespace elg::detail::os

@@ -41,6 +41,15 @@ std::size_t capture_stack(std::span<void*> frames) noexcept;
 std::vector<std::string> describe_stack(std::span<void* const> frames);
 #endif
 
+// --- Shared libraries (core/dynamic_library.h) ---
+
+// Loads the shared library at `path`, returning its handle. Throws elg::ResourceError with the
+// system's reason if it can't be loaded.
+void* open_library(const std::filesystem::path& path);
+// The library's exported symbol `name`, or nullptr.
+void* library_symbol(void* library, const char* name) noexcept;
+void close_library(void* library) noexcept;
+
 } // namespace elg::detail::os
 
 #endif // ELG_CORE_OS_BACKEND_H

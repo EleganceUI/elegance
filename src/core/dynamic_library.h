@@ -2,15 +2,16 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_PLATFORM_DYNAMIC_LIBRARY_H
-#define ELG_PLATFORM_DYNAMIC_LIBRARY_H
+#ifndef ELG_CORE_DYNAMIC_LIBRARY_H
+#define ELG_CORE_DYNAMIC_LIBRARY_H
 
 #include <filesystem>
 #include <string>
 
-namespace elg::detail::platform {
+namespace elg::detail {
 
-// A loaded shared library (LoadLibrary / dlopen). Unloads when destroyed.
+// A loaded shared library (LoadLibrary / dlopen, through core/os_backend.h). Unloads when
+// destroyed.
 class DynamicLibrary {
 public:
     // Throws elg::ResourceError with the system's reason if it can't be loaded.
@@ -29,6 +30,6 @@ private:
     void* handle_ = nullptr;
 };
 
-} // namespace elg::detail::platform
+} // namespace elg::detail
 
-#endif // ELG_PLATFORM_DYNAMIC_LIBRARY_H
+#endif // ELG_CORE_DYNAMIC_LIBRARY_H

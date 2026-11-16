@@ -6,6 +6,10 @@
 
 #include "core/os_backend.h"
 
+#include <elg/error.h>
+
+#include <dlfcn.h>
+
 #include <algorithm>
 #include <csignal>
 #include <cstdlib>
@@ -49,5 +53,22 @@ std::vector<std::string> describe_stack(std::span<void* const> frames) {
     return lines;
 }
 #endif
+
+void* open_library(const std::filesystem::path& path) {
+    void* const handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (!handle) {
+        // glibc and macOS keep dlerror()'s message per thread.
+        throw ResourceError(std::format("can't load \"{}\": {}", path.string(), dlerror())); // NOLINT(concurrency-mt-unsafe)
+    }
+    return handle;
+}
+
+void* library_symbol(void* library, const char* name) noexcept {
+    return dlsym(library, name);
+}
+
+void close_library(void* library) noexcept {
+    dlclose(library);
+}
 
 } // namespace elg::detail::os

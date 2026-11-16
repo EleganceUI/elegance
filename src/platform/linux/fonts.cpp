@@ -8,7 +8,7 @@
 
 #include "text/font_library.h"
 
-#include "platform/dynamic_library.h"
+#include "core/dynamic_library.h"
 
 #include <filesystem>
 #include <map>
@@ -91,7 +91,7 @@ private:
 
     bool load() {
         try {
-            library_ = std::make_unique<platform::DynamicLibrary>("libfontconfig.so.1");
+            library_ = std::make_unique<DynamicLibrary>("libfontconfig.so.1");
         } catch (...) {
             return false;
         }
@@ -101,7 +101,7 @@ private:
                find(pattern_get_string_, "FcPatternGetString") && find(pattern_destroy_, "FcPatternDestroy");
     }
 
-    std::unique_ptr<platform::DynamicLibrary> library_;
+    std::unique_ptr<DynamicLibrary> library_;
     Pattern* (*name_parse_)(const unsigned char*) = nullptr;
     int (*pattern_add_integer_)(Pattern*, const char*, int) = nullptr;
     int (*pattern_add_bool_)(Pattern*, const char*, int) = nullptr;
