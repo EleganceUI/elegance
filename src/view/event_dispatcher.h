@@ -33,7 +33,12 @@ namespace elg::detail {
 // Each method returns true when the window needs a new frame.
 class EventDispatcher {
 public:
-    EventDispatcher(Element& root, FocusManager& focus) : root_(&root), focus_(&focus) {}
+    EventDispatcher(Element& root, FocusManager& focus);
+    ~EventDispatcher();
+    EventDispatcher(const EventDispatcher&) = delete;
+    EventDispatcher& operator=(const EventDispatcher&) = delete;
+    EventDispatcher(EventDispatcher&&) = delete;
+    EventDispatcher& operator=(EventDispatcher&&) = delete;
 
     bool pointer_moved(Point location);
     bool pointer_button(PointerEvent::Kind kind, Point location, MouseButton button, int click_count,
@@ -64,9 +69,15 @@ public:
     // Re-evaluates hover at the last pointer position (content may have moved under it, e.g.
     // scrolled).
     bool refresh_hover();
-    // Call after If/ForEach removed elements: forgets elements that no longer exist (without
-    // touching them) and re-evaluates hover at the last pointer position.
+    // Call after If/ForEach removed elements: re-evaluates hover at the last pointer position.
+    // (Elements tell the dispatcher themselves when they go: element_leaving() and
+    // element_destroyed().)
     bool revalidate();
+    // `subtree` is being unmounted or starts leaving: what it had going ends, as if it had ended
+    // normally (a cancel, a hover exit, a cancelled pinch or rotate), and focus leaves it.
+    void leaving(Element& subtree);
+    // `element` is being destroyed: nothing here refers to it any more.
+    void forget(const Element* element) noexcept;
     // Call each frame, after effects: cancels the press and gestures of views that became
     // .disabled(), and moves focus off a view that can't take it any more.
     bool release_disabled();
@@ -101,12 +112,33 @@ private:
     bool bubble(const std::vector<Element*>& path, const PointerEvent& event);
     bool move_focus(bool forward);
     bool focus_edge(bool first);
+    // A handler that throws ends the event (and, during a press, the press): see guarded().
+    template <class F>
+    bool guarded(bool press, F&& work);
+    void end_press();
+    [[nodiscard]] bool in_press() const noexcept;
+    // The entry points' work, which they run through guarded().
+    bool tick_unguarded();
+    bool pointer_moved_unguarded(Point location);
+    bool pointer_button_unguarded(PointerEvent::Kind kind, Point location, MouseButton button, int click_count, KeyModifiers modifiers);
+    bool pointer_left_unguarded();
+    bool key_unguarded(const KeyEvent& event);
+    bool scroll_unguarded(ScrollEvent event);
+    bool magnify_unguarded(MagnifyEvent event);
+    bool rotate_unguarded(RotateEvent event);
+    bool two_finger_double_tap_unguarded(Point location);
+    bool text_input_unguarded(const TextInputEvent& event);
+    bool refresh_hover_unguarded();
+    bool revalidate_unguarded();
+    void leaving_unguarded(Element& subtree);
+    bool release_disabled_unguarded();
 
     Element* root_;
     FocusManager* focus_;
     bool menu_navigation_ = false;
     std::vector<Hover> hovers_; // outermost first
     Element* captured_ = nullptr;
+    bool press_dead_ = false; // a handler threw during this press: the rest goes to no handler
     bool captured_cancellable_ = false; // gestures around captured_ may take its press
     std::vector<Watcher> watchers_;     // high priority, then normal; each innermost first
     // Simultaneous gestures watching the press: they never take it, and once one recognizes it
@@ -132,6 +164,13 @@ private:
     float magnify_scale_ = 1;
     float rotate_degrees_ = 0;
 };
+
+// Tells every window's dispatcher that `subtree` is being unmounted or starts leaving
+// (EventDispatcher::leaving). Dynamic containers call it before a child goes. UI thread.
+void element_leaving(Element& subtree);
+// Tells every window's dispatcher that `element` is being destroyed (EventDispatcher::forget).
+// Element's destructor calls it.
+void element_destroyed(const Element* element) noexcept;
 
 } // namespace elg::detail
 

@@ -136,7 +136,8 @@ public:
     /// @return This path.
     Path& add_circle(Point center, float radius);
     /// Appends the subpaths of `other`. Its current point and open subpath, if any, become this
-    /// path's.
+    /// path's. An empty `other` changes nothing. A path may be added to itself: it then gets a
+    /// copy of the subpaths it had.
     ///
     /// @param other The path to append.
     /// @return This path.

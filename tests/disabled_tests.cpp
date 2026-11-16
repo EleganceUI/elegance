@@ -19,6 +19,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -185,4 +186,23 @@ TEST_CASE("a disabled window drag area still moves the window", "[disabled]") {
     const detail::Scope::Use use(scope);
     Window window(kSquare.window_drag_area().disabled());
     CHECK(window.events->drags_window_at(kInside));
+}
+
+TEST_CASE("a pressed button that becomes disabled lets go of the pointer", "[disabled]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const State<bool> off(false);
+    std::vector<PointerEvent::Kind> beside;
+    const Window window(HStack({.spacing = 0},
+                               Button("OK", [] {}).frame(25, 50).disabled([off] { return off(); }),
+                               kSquare.frame(25, 50).on_pointer([&](const PointerEvent& event) {
+                                   beside.push_back(event.kind);
+                                   return false;
+                               })));
+    window.move({37, 50});
+    window.down({37, 50}); // the button captures the press
+    off = true;
+    window.frame();
+    window.move({62, 50}); // over the square beside it, which hears it once the button let go
+    CHECK(std::ranges::find(beside, PointerEvent::Kind::hover) != beside.end());
 }

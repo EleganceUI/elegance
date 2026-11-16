@@ -361,6 +361,7 @@ private:
     LowerContext context_;
     std::vector<Child> children_;
     std::vector<Child> exiting_; // removed, animating out
+    bool reported_duplicate_ = false; // warned about repeated keys, which happens once
     bool initialized_ = false;
     std::vector<Element*> laid_out_;
     std::vector<LayoutChild> handles_;

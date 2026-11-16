@@ -333,6 +333,10 @@ private:
     mutable std::uint64_t accessibility_id_ = 0;
 };
 
+// The element with this accessibility id (Element::accessibility_id), if it still exists: a
+// screen reader's request names elements by it. UI thread.
+Element* element_with_accessibility_id(std::uint64_t id) noexcept;
+
 class EmptyElement final : public Element {
 public:
     // Takes no place (and no spacing) in a parent layout.
@@ -522,7 +526,9 @@ private:
 
 class CanvasElement final : public Element {
 public:
-    explicit CanvasElement(std::function<void(GraphicsContext&)> draw) : draw_(std::move(draw)) {}
+    // `reads` becomes what the drawing reads each time it paints.
+    CanvasElement(std::function<void(GraphicsContext&)> draw, std::shared_ptr<ReactiveNode> reads)
+        : draw_(std::move(draw)), reads_(std::move(reads)) {}
     bool cullable() const override { return false; } // it may draw outside its frame
 
 protected:
@@ -533,6 +539,7 @@ protected:
 
 private:
     std::function<void(GraphicsContext&)> draw_;
+    std::shared_ptr<ReactiveNode> reads_;
 };
 
 // `.transition(...)`, and the wrapper If/ForEach put around each child: animates the child in
@@ -603,12 +610,16 @@ protected:
     void paint_impl(DisplayList& list) const override;
     bool hit_impl(Point point, std::vector<Element*>& path) override;
     void on_structure_changed() override;
-    void on_layout_invalidated() noexcept override { cache_.stale = true; }
+    void on_layout_invalidated() noexcept override {
+        cache_.stale = true;
+        failed_ = false; // laid out again: its Layout is asked again
+    }
 
 private:
     void rebuild_children();
     std::vector<Element*> paint_order() const;
 
+    bool failed_ = false; // its Layout threw in the last layout
     std::shared_ptr<const Layout> layout_;
     LayoutCache cache_; // for CachedLayout
     std::vector<std::unique_ptr<Element>> children_; // owned, as built
@@ -630,13 +641,20 @@ public:
     bool is_spacer() const noexcept override { return content_->is_spacer(); }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
+    void on_layout_invalidated() noexcept override { failed_ = false; } // laid out again: asked again
+
 protected:
     Size measure(ProposedSize proposal) override;
     void arrange(Rect bounds, ProposedSize proposal) override;
-    void paint_impl(DisplayList& list) const override { content_->paint(list); }
-    bool hit_impl(Point point, std::vector<Element*>& path) override { return content_->hit_test(point, path); }
+    void paint_impl(DisplayList& list) const override {
+        if (!failed_) { // its modifier threw: nothing to show this frame
+            content_->paint(list);
+        }
+    }
+    bool hit_impl(Point point, std::vector<Element*>& path) override { return !failed_ && content_->hit_test(point, path); }
 
 private:
+    bool failed_ = false; // its modifier threw in the last layout
     std::shared_ptr<const LayoutModifier> modifier_;
     std::unique_ptr<Element> content_;
 };
@@ -772,6 +790,7 @@ public:
     EventResult focus(bool focused) override { return handler_->focus(focused); }
     [[nodiscard]] std::optional<HoverDelay> hover_delay() const override { return handler_->hover_delay(); }
     [[nodiscard]] bool covers_frame() const override { return handler_->covers_frame(); }
+    [[nodiscard]] EventPhase phase() const override { return handler_->phase(); }
 
 private:
     EventHandler* handler_;
@@ -841,6 +860,8 @@ public:
     HoverDelay effective_hover_delay() const override { return {.enter = 0, .exit = 0}; }
 
     EventHandler* event_handler() noexcept override { return this; }
+    // Disabled: the dispatcher cancels its press and moves focus off it (release_disabled).
+    EventHandler* disabled_handler() noexcept override { return untrack(enabled_) ? nullptr : this; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
     // Written on focus changes, for styles (ButtonConfiguration::is_focused).

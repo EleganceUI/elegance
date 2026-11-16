@@ -17,6 +17,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <memory>
+#include <vector>
 
 using namespace elg;
 
@@ -97,4 +98,24 @@ TEST_CASE("Text's font and weight can be reactive", "[shorthand][text]") {
     weight = Weight::black;
     detail::flush_effects();
     CHECK(root->size_that_fits({}).width > large.width); // heavier glyphs are wider
+}
+
+TEST_CASE("apply() hands the view so far to a function, and the chain goes on from its result",
+          "[modifiers]") {
+    std::vector<int> order;
+    const auto padded = [&](View content) {
+        order.push_back(1);
+        return content.padding(5);
+    };
+    const auto framed = [&](View content) {
+        order.push_back(2);
+        return content.frame(40, 30);
+    };
+    const View view = Rectangle().fill(Color::black).apply(padded).apply(framed).padding(10);
+    CHECK(order == std::vector<int>{1, 2});
+    // Left to right: the frame holds the padded rectangle, and the last padding holds the frame.
+    const std::unique_ptr<detail::Element> root = detail::lower(view, {.text = &text_system()});
+    const Size size = root->size_that_fits({200.f, 200.f});
+    CHECK(size.width == 60);
+    CHECK(size.height == 50);
 }

@@ -168,7 +168,7 @@ include/elg/    public C++ API
 src/            implementation, by subsystem
 c/              C API for language bindings, and its packaging
 shaders/        WGSL shaders
-cmake/          build helpers: hot reload, view extensions, link manifest
+cmake/          build helpers: hot reload, link manifest
 apps/sandbox/   feature showcase
 apps/preview/   preview host for hot reload
 tests/          unit tests (Catch2)

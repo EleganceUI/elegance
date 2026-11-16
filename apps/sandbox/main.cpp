@@ -10,6 +10,7 @@
 //   sandbox --light          start in light mode
 //   sandbox --only-main      open only the main window
 
+#include "card.h"
 #include "contacts.h"
 #include "no_error_dialogs.h"
 #include "palette.h"
@@ -25,6 +26,7 @@
 #include <format>
 #include <functional>
 #include <print>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -87,11 +89,11 @@ View ShapeCards() {
                   Captioned(RoundedRectangle({.top_left = 48, .top_right = 4, .bottom_right = 48, .bottom_left = 4})
                                 .fill(palette::mauve),
                             "RoundedRectangle with per-corner radii")
-                      .card(),
-                  Captioned(RoundedRectangle(28).stroke_border(palette::green, 6), "stroke_border(green, 6)").card(),
+                      .apply(sandbox::card),
+                  Captioned(RoundedRectangle(28).stroke_border(palette::green, 6), "stroke_border(green, 6)").apply(sandbox::card),
                   Captioned(Circle().fill(palette::sky).stroke_border(Color::white.opacity(0.85f), 3),
                             "Circle: fill + stroke_border")
-                      .card())
+                      .apply(sandbox::card))
         .frame({.height = 170});
 }
 
@@ -139,7 +141,7 @@ View MenuCards() {
                                    Text([=] { return last(); }).foreground_style(ThemeColor::secondary))
                                 .frame({.width = 260}),
                             "context_menu + Submenu")
-                      .card(),
+                      .apply(sandbox::card),
                   Captioned(VStack({.alignment = HorizontalAlignment::leading, .spacing = 10},
                                    HStack({.spacing = 10}, view_menu, picker),
                                    Text([=] {
@@ -147,11 +149,11 @@ View MenuCards() {
                                                           rulers() ? "on" : "off", size());
                                    }).foreground_style(ThemeColor::secondary)),
                             "MenuButton, Picker(.menu)")
-                      .card(),
+                      .apply(sandbox::card),
                   Captioned(Button("Hover for help", say("Help button")).button_style(BorderedButtonStyle{})
                                 .tooltip("Tooltips open after a short rest"),
                             ".tooltip()")
-                      .card());
+                      .apply(sandbox::card));
 }
 
 // Vector paths (GPU stencil-then-cover): custom shapes, SVG path data, fill rules, strokes with
@@ -209,9 +211,9 @@ View PathCards() {
     };
     const View clips = HStack({.spacing = 16}, clipped(star), clipped(heart), clipped(ring));
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(shapes, "CustomShape, Path::svg, even-odd, stroke caps/joins").card(),
-                  Captioned(strokes, "Dashed strokes, Canvas paths").card(),
-                  Captioned(clips, "clip_shape(path)").card());
+                  Captioned(shapes, "CustomShape, Path::svg, even-odd, stroke caps/joins").apply(sandbox::card),
+                  Captioned(strokes, "Dashed strokes, Canvas paths").apply(sandbox::card),
+                  Captioned(clips, "clip_shape(path)").apply(sandbox::card));
 }
 
 // --emoji-font <file>: the large emoji below use this font (e.g. a COLRv1 emoji font).
@@ -238,8 +240,8 @@ View IconCards() {
                                    .button_style(BorderedButtonStyle{}),
                                Button(Label("Delete", {.system_name = "phosphor.trash"}), [] {}).tint(palette::red));
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(weights, "Image: thin, light, regular, bold, .fill, .duotone").card(),
-                  Captioned(labels, "Label + Button").card(),
+                  Captioned(weights, "Image: thin, light, regular, bold, .fill, .duotone").apply(sandbox::card),
+                  Captioned(labels, "Label + Button").apply(sandbox::card),
                   // Characters Segoe UI lacks come from the system's fallback fonts.
                   Captioned(VStack({.alignment = HorizontalAlignment::leading, .spacing = 6},
                                    Text("Symbols: ✓ ★ → ∑ ♥ ∞"),
@@ -251,7 +253,7 @@ View IconCards() {
                                        .frame({.width = 220}))
                                 .frame({.width = 240}),
                             "Font fallback")
-                      .card());
+                      .apply(sandbox::card));
 }
 
 // A custom layout (design.md §7): children flow left to right and wrap into rows, like words.
@@ -335,9 +337,9 @@ View LayoutCards() {
     };
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
                   Captioned(tags().frame({.width = 220, .alignment = Alignment::top_leading}),
-                            "FlowLayout: CachedLayout, 220 pt").card(),
+                            "FlowLayout: CachedLayout, 220 pt").apply(sandbox::card),
                   Captioned(tags().frame({.width = 380, .alignment = Alignment::top_leading}),
-                            "The same at 380 pt; layout_value<RowBreak>").card());
+                            "The same at 380 pt; layout_value<RowBreak>").apply(sandbox::card));
 }
 
 // Raster images (design.md §13.3): files decode in the background; resizable + aspect_ratio
@@ -353,17 +355,17 @@ View ImageCards() {
                                 .frame(220, 120)
                                 .clip_shape(RoundedRectangle(14)),
                             "JPEG: resizable, fill, clip_shape")
-                      .card(),
+                      .apply(sandbox::card),
                   Captioned(landscape()
                                 .aspect_ratio(ContentMode::fit)
                                 .frame(160, 120)
                                 .background(RoundedRectangle(8).fill(ThemeColor::surface_raised)),
                             "fit in 160 × 120")
-                      .card(),
+                      .apply(sandbox::card),
                   Captioned(HStack({.spacing = 16}, Image({.file = assets + "/badge.png", .scale = 2}),
                                    Image({.file = assets + "/exif_rotated.jpg"}).resizable().aspect_ratio(ContentMode::fit).frame(80, 120)),
                             "PNG alpha @2x; EXIF-rotated photo")
-                      .card());
+                      .apply(sandbox::card));
 }
 
 // Audio (design.md §13.3): a Sound plays overlapping voices; an AudioPlayer streams, with
@@ -398,8 +400,8 @@ View AudioCards() {
                       Toggle("Loop", Binding<bool>([=] { return tune.is_looping(); }, [=](bool on) { tune.set_looping(on); }))
                           .fixed_size()));
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(sounds, "Sound: overlapping voices, pitch, pan").card(),
-                  Captioned(player, "AudioPlayer: streamed, scrub, volume, loop").card());
+                  Captioned(sounds, "Sound: overlapping voices, pitch, pan").apply(sandbox::card),
+                  Captioned(player, "AudioPlayer: streamed, scrub, volume, loop").apply(sandbox::card));
 }
 
 // Video (design.md §13.3): Media Foundation decodes; frames go straight to the GPU; the render
@@ -414,8 +416,8 @@ View VideoCards() {
                            .clip_shape(RoundedRectangle(14));
     const View filled = VideoView(player, ContentMode::fill).frame(140, 140).clip_shape(Circle());
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(video, "VideoView + VideoControls (muted, looping)").card(),
-                  Captioned(filled, "The same video, fill + Circle").card());
+                  Captioned(video, "VideoView + VideoControls (muted, looping)").apply(sandbox::card),
+                  Captioned(filled, "The same video, fill + Circle").apply(sandbox::card));
 }
 
 // Remote images (design.md §13.3): AsyncImage downloads when shown (spinner, then the image, or a
@@ -428,12 +430,45 @@ View NetworkCards() {
                                 .frame(200, 120)
                                 .clip_shape(RoundedRectangle(12)),
                             "AsyncImage (HTTPS), fill")
-                      .card(),
+                      .apply(sandbox::card),
                   Captioned(HStack({.spacing = 16},
                                    AsyncImage(avatar, {.content_mode = ContentMode::fill}).frame(56, 56).clip_shape(Circle()),
                                    AsyncImage("https://example.invalid/missing.png").frame(56, 56)),
                             "Avatar; a failing URL")
-                      .card());
+                      .apply(sandbox::card));
+}
+
+// App code that throws on purpose: each exception is written to the log and passed to the app's
+// error handler (main()), and the app goes on.
+struct BrokenBody {
+    [[nodiscard]] View body() const { throw std::runtime_error("this body throws on purpose"); }
+};
+
+View ErrorCards() {
+    const State<int> presses(0);
+    const State<bool> drawing_throws(false);
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(BrokenBody{}, "A body that throws: a placeholder\n(in builds without NDEBUG)")
+                      .apply(sandbox::card),
+                  Captioned(VStack({.alignment = HorizontalAlignment::leading, .spacing = 8},
+                                   Button("Throw",
+                                          [presses] {
+                                              presses = presses.peek() + 1;
+                                              throw std::runtime_error("a button that throws on purpose");
+                                          }),
+                                   Text([presses] { return std::format("Pressed {} times; the app goes on", presses()); })),
+                            "A button whose action throws")
+                      .apply(sandbox::card),
+                  Captioned(VStack({.alignment = HorizontalAlignment::leading, .spacing = 8},
+                                   Toggle(Text("Throw while drawing"), drawing_throws.binding()),
+                                   Canvas([drawing_throws](GraphicsContext& graphics) {
+                                       graphics.fill_rect({0, 0, graphics.size().width, graphics.size().height}, Color::hex(0x5B8DEF), CornerRadii::all(8));
+                                       if (drawing_throws()) {
+                                           throw std::runtime_error("a canvas that throws on purpose");
+                                       }
+                                   }).frame(120, 40)),
+                            "A canvas that throws draws nothing")
+                      .apply(sandbox::card));
 }
 
 // The dark tile the loader sits on, as on the page it comes from.
@@ -494,7 +529,7 @@ View AnimationCards() {
         .frame({.width = 200, .alignment = Alignment::leading});
 
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(loader, "on_appear, on_disappear, after, every, repeat_forever").card());
+                  Captioned(loader, "on_appear, on_disappear, after, every, repeat_forever").apply(sandbox::card));
 }
 
 // Shows `count` on the app's icon in the Dock or taskbar (none at zero).
@@ -597,10 +632,10 @@ View DesktopCards(const State<int>& badge) {
         Button("Clear", [=] { set_badge_count(badge, 0); }).button_style(BorderedButtonStyle{}));
 
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(zone, "on_drop: files or text from other apps").card(),
-                  Captioned(dialogs, "choose_files, choose_save_file").card(),
-                  Captioned(system, "notify, TrayIcon").card(),
-                  Captioned(dock, "set_badge").card());
+                  Captioned(zone, "on_drop: files or text from other apps").apply(sandbox::card),
+                  Captioned(dialogs, "choose_files, choose_save_file").apply(sandbox::card),
+                  Captioned(system, "notify, TrayIcon").apply(sandbox::card),
+                  Captioned(dock, "set_badge").apply(sandbox::card));
 }
 
 // Capture (design.md §13.3): the microphone into memory (with a live level), and a camera's
@@ -660,8 +695,8 @@ View CaptureCards() {
             .frame({.width = 240, .alignment = Alignment::leading}));
 
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(recording, "AudioRecorder: level, play back, clear").card(),
-                  Captioned(preview, "Camera + CameraView (mirrored), snapshot").card());
+                  Captioned(recording, "AudioRecorder: level, play back, clear").apply(sandbox::card),
+                  Captioned(preview, "Camera + CameraView (mirrored), snapshot").apply(sandbox::card));
 }
 
 // ZStack: layering with alignment, z_index, and priority sizing.
@@ -681,7 +716,7 @@ View StackCards() {
 
     // Overlapping cards: tapping one raises it with z_index.
     const auto front = State(2);
-    const auto card = [=](int index, Color color, std::string name) {
+    const auto stacked = [=](int index, Color color, std::string name) {
         return RoundedRectangle(10)
             .fill(color)
             .frame(92, 62)
@@ -692,9 +727,9 @@ View StackCards() {
             .on_click([=] { front = index; });
     };
     const View layers = ZStack({.alignment = Alignment::top_leading},
-                               card(0, palette::peach, "One"),
-                               card(1, palette::green, "Two"),
-                               card(2, palette::sky, "Three"))
+                               stacked(0, palette::peach, "One"),
+                               stacked(1, palette::green, "Two"),
+                               stacked(2, palette::sky, "Three"))
                             .frame(170, 100, Alignment::top_leading);
 
     // The text has the higher priority, so it sizes the stack and the capsule fills that.
@@ -707,9 +742,9 @@ View StackCards() {
                                   .layout_priority(1));
 
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(badge.padding(8), "ZStack(top_trailing) badge").card(),
-                  Captioned(layers, "z_index: tap a card to raise it").card(),
-                  Captioned(sized.frame({.height = 100}), "ZStack + layout_priority").card());
+                  Captioned(badge.padding(8), "ZStack(top_trailing) badge").apply(sandbox::card),
+                  Captioned(layers, "z_index: tap a card to raise it").apply(sandbox::card),
+                  Captioned(sized.frame({.height = 100}), "ZStack + layout_priority").apply(sandbox::card));
 }
 
 // Wrapping, truncation, and alignment.
@@ -724,17 +759,17 @@ View TextCards() {
                          Text("Wrapping").font(Font::headline),
                          Text(story))
                       .frame({.max_width = infinity, .alignment = Alignment::top_leading})
-                      .card(),
+                      .apply(sandbox::card),
                   VStack({.alignment = HorizontalAlignment::leading, .spacing = 8},
                          Text("line_limit(2)").font(Font::headline),
                          Text(story).line_limit(2).foreground_style(ThemeColor::secondary))
                       .frame({.max_width = infinity, .alignment = Alignment::top_leading})
-                      .card(),
+                      .apply(sandbox::card),
                   VStack({.spacing = 6},
                          Text("Aa").font(Font::system(56, Weight::light)),
                          Text("Centered\nmulti-line").multiline_text_alignment(TextAlignment::center))
                       .frame({.max_width = infinity})
-                      .card());
+                      .apply(sandbox::card));
 }
 
 // Clipping, gradients, group opacity, and a layered shadow.
@@ -778,10 +813,10 @@ View EffectCards() {
                             .frame({.height = 96});
 
     return HStack({.spacing = 24},
-                  Captioned(stripes.frame({.max_width = infinity}), "clip_shape(Circle())").card(),
-                  Captioned(gradients, "Linear + radial gradients").card(),
-                  Captioned(opacity, "Group vs per-shape opacity").card(),
-                  Captioned(raised.frame({.max_width = infinity}), "shadow() on a composite").card());
+                  Captioned(stripes.frame({.max_width = infinity}), "clip_shape(Circle())").apply(sandbox::card),
+                  Captioned(gradients, "Linear + radial gradients").apply(sandbox::card),
+                  Captioned(opacity, "Group vs per-shape opacity").apply(sandbox::card),
+                  Captioned(raised.frame({.max_width = infinity}), "shadow() on a composite").apply(sandbox::card));
 }
 
 void log(const char* message) {
@@ -839,10 +874,10 @@ View StateCards(std::function<void()> quit) {
                                     [=] { with_animation(Animation::smooth(), [=] { dimmed = !dimmed(); }); }));
 
     return HStack({.spacing = 24},
-                  Captioned(buttons, "Button + tint").card(),
-                  Captioned(counter, "State + Binding").card(),
-                  Captioned(hover.frame({.max_width = infinity}), "pointer enter/leave + on_click").card(),
-                  Captioned(fade, "Reactive opacity").card());
+                  Captioned(buttons, "Button + tint").apply(sandbox::card),
+                  Captioned(counter, "State + Binding").apply(sandbox::card),
+                  Captioned(hover.frame({.max_width = infinity}), "pointer enter/leave + on_click").apply(sandbox::card),
+                  Captioned(fade, "Reactive opacity").apply(sandbox::card));
 }
 
 // Switches, check boxes (one mixed), and keyboard focus: Tab / Shift+Tab move between controls,
@@ -894,9 +929,9 @@ View ControlCards() {
                Button("Focus it", [=] { is_focused = true; }).button_style(BorderedButtonStyle{}));
 
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(switches, "Toggle (switch)").card(),
-                  Captioned(checks, "Toggle (checkbox)").card(),
-                  Captioned(keys, "focused + on_key").card());
+                  Captioned(switches, "Toggle (switch)").apply(sandbox::card),
+                  Captioned(checks, "Toggle (checkbox)").apply(sandbox::card),
+                  Captioned(keys, "focused + on_key").apply(sandbox::card));
 }
 
 // Text fields: the default rounded style, the plain style, and a disabled one.
@@ -929,9 +964,9 @@ View TextFieldCards() {
                               .frame({.width = 260});
 
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(greeter, "TextField + on_submit").card(),
-                  Captioned(styles, "Plain style, disabled").card(),
-                  Captioned(mirrored, "One State, two fields").card());
+                  Captioned(greeter, "TextField + on_submit").apply(sandbox::card),
+                  Captioned(styles, "Plain style, disabled").apply(sandbox::card),
+                  Captioned(mirrored, "One State, two fields").apply(sandbox::card));
 }
 
 enum class Accent { blue, green, peach };
@@ -972,9 +1007,9 @@ View MoreControlCards() {
                             .frame({.width = 240});
 
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
-                  Captioned(slider, "Slider + Progress").card(),
-                  Captioned(stepper, "NumberInput, indeterminate progress").card(),
-                  Captioned(picker, "Picker (segmented)").card());
+                  Captioned(slider, "Slider + Progress").apply(sandbox::card),
+                  Captioned(stepper, "NumberInput, indeterminate progress").apply(sandbox::card),
+                  Captioned(picker, "Picker (segmented)").apply(sandbox::card));
 }
 
 // The orbiting dots loader on its own, spinning from the moment the window opens.
@@ -1033,6 +1068,7 @@ View ContentView(const State<ColorScheme>& scheme, const State<int>& badge, std:
                          TextCards().fixed_size(false, true),
                          EffectCards(),
                          StateCards(std::move(quit)),
+                         ErrorCards(),
                          ControlCards(),
                          TextFieldCards(),
                          MoreControlCards())
@@ -1111,6 +1147,12 @@ int main(int argc, char** argv) {
         const State<ColorScheme> scheme(light ? ColorScheme::light : ColorScheme::dark);
         const State<int> badge(0);
         app.menu_bar(SandboxMenus(scheme, badge));
+        // What escapes the app's code (ErrorCards throws on purpose): already in the log; the
+        // app goes on.
+        app.on_error([](const AppError& error) {
+            std::println(stderr, "sandbox: on_error got \"{}\"", error.message());
+            return ErrorAction::resume;
+        });
         app.window({.title = "Elegance Sandbox", .width = 1100, .height = 860},
                    [&] {
                        if (smoke_test) {

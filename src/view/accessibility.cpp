@@ -71,6 +71,7 @@ struct Pending {
     std::optional<AccessRole> role;
     bool combine = false;
     std::function<void()> action;
+    bool action_disabled = false; // the action's view is in a .disabled() view
     std::function<std::optional<ToggleState>()> toggled;
     std::function<bool()> selected;
 
@@ -92,6 +93,7 @@ struct Pending {
         combine = combine || spec.combine;
         if (spec.action && !action) {
             action = spec.action;
+            action_disabled = untrack([&] { return element.environment().get<DisabledKey>(); });
         }
         if (spec.toggled && !toggled) {
             toggled = spec.toggled;
@@ -175,7 +177,7 @@ private:
             element.for_each_child([&](Element& child) { visit(child, node.children, {}); });
         }
         node.info = std::move(info);
-        tree_.targets[node.id] = {&element, pending.action};
+        tree_.targets[node.id] = {pending.action, pending.action_disabled || node.info.disabled};
         out.push_back(node.id);
         tree_.nodes.push_back(std::move(node));
     }

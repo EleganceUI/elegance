@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <vector>
 
 using namespace elg;
@@ -65,6 +66,17 @@ TEST_CASE("an AudioStream asked for an output that isn't connected doesn't play"
     REQUIRE_FALSE(error.empty());
     if (error != "audio output isn't available") { // no audio system here at all
         CHECK(error == "that output isn't connected");
+    }
+}
+
+TEST_CASE("an AudioRecorder asked for an input that isn't connected doesn't record", "[audio]") {
+    const AudioRecorder recorder({.device_id = "no-such-input"});
+    recorder.start();
+    CHECK_FALSE(recorder.is_recording());
+    const std::string error = recorder.error();
+    REQUIRE_FALSE(error.empty());
+    if (error != "audio input isn't available") { // no audio system here at all
+        CHECK(error == "that microphone isn't connected");
     }
 }
 

@@ -4,6 +4,7 @@
 
 // View, its modifier sugar, the protocol base classes, and lowering.
 
+#include "core/app_errors.h"
 #include "view/view_node.h"
 
 #include "core/crash.h"
@@ -548,8 +549,11 @@ View View::focused(Binding<bool> is_focused) const {
     return View(std::make_shared<const detail::FocusedNode>(*this, std::move(is_focused)));
 }
 
-View View::on_key_press(Key key, std::function<void()> action) const {
-    return on_key([key, action = std::move(action)](const KeyEvent& event) {
+namespace {
+
+// on_key_press()'s handling: `action` on each press of `key`, which it takes.
+std::function<bool(const KeyEvent&)> key_press(Key key, std::function<void()> action) {
+    return [key, action = std::move(action)](const KeyEvent& event) {
         if (event.kind != KeyEvent::Kind::down || event.key != key) {
             return false;
         }
@@ -557,7 +561,33 @@ View View::on_key_press(Key key, std::function<void()> action) const {
             action();
         }
         return true;
-    });
+    };
+}
+
+} // namespace
+
+View View::on_key_press(Key key, std::function<void()> action) const {
+    return on_key(key_press(key, std::move(action)));
+}
+
+View View::on_key_press_capture(Key key, std::function<void()> action) const {
+    return on_key_capture(key_press(key, std::move(action)));
+}
+
+View View::on_key_capture(std::function<bool(const KeyEvent&)> action) const {
+    return modifier(KeyEventModifier(std::move(action), EventPhase::capture));
+}
+
+View View::on_text_input_capture(std::function<bool(const TextInputEvent&)> action) const {
+    return modifier(TextInputModifier(std::move(action), EventPhase::capture));
+}
+
+View View::on_pointer_capture(std::function<bool(const PointerEvent&)> action) const {
+    return modifier(PointerModifier(std::move(action), EventPhase::capture));
+}
+
+View View::on_scroll_capture(std::function<bool(const ScrollEvent&)> action) const {
+    return modifier(ScrollModifier(std::move(action), EventPhase::capture));
 }
 
 View View::on_key(std::function<bool(const KeyEvent&)> action) const {
@@ -955,31 +985,6 @@ private:
     bool pressed_ = false;
 };
 
-// `.focused(binding)` around a view: focusable itself only when nothing inside is (so Tab and
-// clicks reach the field it wraps, not an invisible wrapper first).
-class FocusScopeHandler final : public EventHandler {
-public:
-    void set_scope(Element* scope) noexcept { scope_ = scope; }
-    [[nodiscard]] bool focusable() const override {
-        bool inner = false;
-        std::function<void(Element&)> walk = [&](Element& element) {
-            if (inner) {
-                return;
-            }
-            if (EventHandler* handler = element.event_handler(); handler && handler->focusable()) {
-                inner = true;
-                return;
-            }
-            element.for_each_child(walk);
-        };
-        scope_->for_each_child(walk);
-        return !inner;
-    }
-
-private:
-    Element* scope_ = nullptr;
-};
-
 } // namespace
 
 // Focusable elements draw the ring in the tint.
@@ -1359,26 +1364,56 @@ std::unique_ptr<Element> SpacerNode::lower(const LowerContext& context) const {
 }
 
 std::unique_ptr<Element> CanvasNode::lower(const LowerContext& context) const {
-    auto element = std::make_unique<CanvasElement>(draw_);
-    // The canvas redraws when state its drawing reads changes: an effect runs the drawing once
-    // (into nothing) to see what it reads, and asks for a frame whenever that changes.
-    CanvasElement* const target = element.get();
-    effect([draw = draw_, target, needs_frame = context.needs_frame, first = std::make_shared<bool>(true)] {
-        if (!draw) {
-            return;
-        }
-        DisplayList scratch;
-        GraphicsContext graphics(scratch, target->frame(), 1);
-        draw(graphics);
-        if (!std::exchange(*first, false) && needs_frame) {
+    // The canvas draws again when state its drawing read changes. The drawing reads while the
+    // canvas paints, into an effect that only asks for a frame; that frame paints and reads again.
+    auto reads = std::make_shared<EffectNode>([needs_frame = context.needs_frame] {
+        if (needs_frame) {
             *needs_frame = true;
         }
     });
+    auto element = std::make_unique<CanvasElement>(draw_, reads);
+    start_effect(std::move(reads));
     return element;
 }
 
+namespace {
+
+// What a view whose body threw is mounted as: in builds without NDEBUG a visible placeholder with
+// the exception's message, otherwise an empty view.
+View body_failed([[maybe_unused]] const std::exception_ptr& error) {
+#ifdef NDEBUG
+    return EmptyView();
+#else
+    return Text("A view's body threw: " + exception_message(error))
+        .font(Font::caption)
+        .foreground_style(Color::white)
+        .padding(6)
+        .background(Color::rgb(190, 30, 45));
+#endif
+}
+
+} // namespace
+
 std::unique_ptr<Element> DeferredNode::lower(const LowerContext& context) const {
-    return detail::lower(body_(), context);
+    Scope* const outer = current_scope();
+    if (!outer) {
+        return detail::lower(body_(), context);
+    }
+    // What the body creates (effects, state, timers) belongs to a scope of its own, which ends
+    // with the one it's mounted in: a body that throws takes all of it with it.
+    auto scope = std::make_shared<Scope>();
+    std::unique_ptr<Element> element;
+    try {
+        const Scope::Use use(*scope);
+        element = detail::lower(body_(), context);
+    } catch (...) {
+        const std::exception_ptr error = std::current_exception();
+        scope.reset();
+        report_app_exception(error, AppCode::body); // outside a run, this throws it on
+        return detail::lower(body_failed(error), context);
+    }
+    outer->on_end([scope] {});
+    return element;
 }
 
 } // namespace elg::detail
