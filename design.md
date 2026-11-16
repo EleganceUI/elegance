@@ -236,9 +236,10 @@ drag & drop, IME composition, cursors, native file dialogs, multi-window, and th
 - `src/platform/` is sorted by OS. `generic/` holds what's the same everywhere (the SDL layer,
   accessibility, dynamic libraries) and `native.h`, the hooks each OS implements. `windows/`,
   `macos/` and `linux/` (also other Unix desktops) hold each OS's own code, including the media,
-  image, font, proxy and notification backends that other folders declare: `VideoSource`'s and
-  `CameraSource`'s `create_platform_*`, `platform_decode_image`/`encode_png`,
-  `system_font_candidates`, `system_proxy`, and `native::show_notification`. Only short `#if`s
+  image, font, proxy and notification backends that other folders declare: the video and camera
+  engines (`media/video_backend.h`), `platform_decode_image`/`encode_png`
+  (`media/image_codec_backend.h`), `system_font_candidates` (`text/text_backend.h`),
+  `system_proxy` (`net/net_backend.h`), and `native::show_notification`. Only short `#if`s
   of a few lines stay inline elsewhere.
 
 ### 4.1 Window customization (implemented in M4)
@@ -2446,7 +2447,7 @@ Separate render thread from day one (decided).
     start / stop / snapshot).
   - **Tests:** device listing, recorders and cameras before starting, WAV header, option
     clamping.
-  - **Frame handoff, the same on every platform** (`media/video_source.h`): `VideoFrame` is
+  - **Frame handoff, the same on every platform** (`media/video_frame.h`): `VideoFrame` is
     tagged.
     - `d3d11_shared`: a shared BGRA texture, imported into Vulkan and sampled in place (Media
       Foundation video). macOS IOSurfaces and Linux DMA-BUFs would join as kinds imported the
