@@ -72,29 +72,7 @@ private:
 std::unique_ptr<Element> with_accessibility(std::unique_ptr<Element> element, AccessibilitySpec spec,
                                             EnvironmentValues environment = {});
 
-struct AccessNode {
-    std::uint64_t id = 0;
-    AccessibilityInfo info;
-    Rect bounds; // window points
-    std::vector<std::uint64_t> children;
-
-    friend bool operator==(const AccessNode&, const AccessNode&) = default;
-};
-
-struct AccessTree {
-    static constexpr std::uint64_t kRoot = 1;
-    std::vector<AccessNode> nodes; // the root first
-    std::uint64_t focus = kRoot;
-    // What carries out actions on each node (valid until the next build).
-    // What a screen reader can ask of a node; the node's id names its element
-    // (element_with_accessibility_id).
-    struct Target {
-        std::function<void()> action; // a custom default action
-        bool disabled = false;        // a disabled control, or a custom action in a disabled view
-    };
-    std::unordered_map<std::uint64_t, Target> targets;
-};
-
+// The tree the platform's adapter takes (platform/access_tree.h), built from `root`.
 AccessTree build_accessibility_tree(Element& root, const std::string& window_title, Size window_size,
                                     const Element* focused);
 

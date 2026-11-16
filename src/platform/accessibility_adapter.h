@@ -5,7 +5,7 @@
 #ifndef ELG_PLATFORM_ACCESSIBILITY_ADAPTER_H
 #define ELG_PLATFORM_ACCESSIBILITY_ADAPTER_H
 
-#include "view/accessibility.h"
+#include "platform/access_tree.h"
 
 #include <cstdint>
 #include <functional>
