@@ -125,5 +125,6 @@ jobs:
               timeout-minutes: 20
               run: |
                   build/macos-release/bin/elegance_tests "[.gpu]"
+                  build/macos-release/bin/elegance_gpu_tests "[.gpu]"
                   build/macos-debug/bin/sandbox --smoke-test
                   build/macos-debug/bin/elegance-preview --smoke-test

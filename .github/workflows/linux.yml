@@ -181,6 +181,7 @@ jobs:
                   ELG_GPU_BACKEND: vulkan
               run: |
                   xvfb-run -a -s "-screen 0 1280x1024x24" build/linux-release/bin/elegance_tests "[.gpu]"
+                  xvfb-run -a -s "-screen 0 1280x1024x24" build/linux-release/bin/elegance_gpu_tests "[.gpu]"
                   xvfb-run -a -s "-screen 0 1280x1024x24" build/linux-release/bin/sandbox --smoke-test
                   xvfb-run -a -s "-screen 0 1280x1024x24" build/linux-debug/bin/elegance-preview --smoke-test
                   build/linux-release/bin/elegance_tests "[.network]"
