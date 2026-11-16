@@ -23,7 +23,15 @@
 #include <string>
 #include <vector>
 
+struct SDL_Window;
+
 namespace elg::detail::platform::native {
+
+// The OS's parts of a window.
+struct WindowParts {
+    void* metal_view = nullptr; // SDL_MetalView on macOS: the window's CAMetalLayer
+    void* title_bar = nullptr;  // TitleBar::integrated on macOS (platform/macos/title_bar.h)
+};
 
 // SDL window flags the GPU surface needs (macOS: SDL_WINDOW_METAL).
 std::uint64_t gpu_window_flags();

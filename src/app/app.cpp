@@ -219,7 +219,7 @@ EnvironmentValues with_window(EnvironmentValues environment, const std::shared_p
 struct LiveWindow {
     LiveWindow(WindowEntry& window_entry, TextSystem& text, EnvironmentValues base,
                const PopupSink* popups, const platform::PopupSpec* popup = nullptr, int menu_level = -1)
-        : entry(&window_entry), window(window_entry.desc, popup), is_popup(popup != nullptr),
+        : entry(&window_entry), window_owner(platform::create_window(window_entry.desc, popup)), window(*window_owner), is_popup(popup != nullptr),
           state(std::make_shared<WindowState>(WindowState{.window = &window,
                                                           .title_bar = window_entry.desc.title_bar,
                                                           .system_controls = State<Rect>(window.system_controls_frame())})),
@@ -303,7 +303,8 @@ struct LiveWindow {
     }
 
     WindowEntry* entry;
-    platform::Window window;
+    std::unique_ptr<platform::Window> window_owner; // made by the platform (create_window())
+    platform::Window& window;
     bool is_popup;
     bool closing = false; // a popup animating out: it takes no input
     // Popups: where they go, kept by their anchor and re-fitted as their content changes size.
@@ -511,7 +512,8 @@ int App::run() {
     // Declaration order is teardown order in reverse: the render thread stops first (with the
     // GPU and the windows' surfaces), then windows go, then SDL.
     const CrashHandlerScope crash_handlers;
-    platform::Platform platform;
+    const std::unique_ptr<platform::Platform> platform_owner = platform::create_platform();
+    platform::Platform& platform = *platform_owner;
     self.platform = &platform;
     // What this run handed the system to call back goes with it: notification click handlers and
     // the native menu bar's command (which refers to this function's locals).
