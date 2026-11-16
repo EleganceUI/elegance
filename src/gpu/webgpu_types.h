@@ -26,6 +26,7 @@ class Instance;
 class Queue;
 class RenderPassEncoder;
 class RenderPipeline;
+class SharedFence;
 class Surface;
 class Texture;
 class TextureView;

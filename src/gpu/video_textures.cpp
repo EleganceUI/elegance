@@ -5,9 +5,15 @@
 #include "gpu/video_textures.h"
 
 #include "core/log.h"
+#include "gpu/buffer.h"
+#include "gpu/device.h"
 #include "gpu/external_image.h"
+#include "gpu/webgpu.h"
+
+#include <webgpu/webgpu_cpp.h>
 
 #include <algorithm>
+#include <unordered_map>
 #include <utility>
 
 namespace elg::detail::gpu {
@@ -32,9 +38,50 @@ struct ConvertImmediates {
 
 } // namespace
 
+struct VideoTextures::Texture {
+    wgpu::SharedTextureMemory memory;
+    wgpu::Texture texture;
+    wgpu::Texture copy; // Direct3D 11: sampled instead of `texture` (see import())
+    wgpu::BindGroup group;
+    std::weak_ptr<SharedTextureOwner> owner;
+    std::shared_ptr<const ExternalImage> lease; // external allocation: through submission
+    bool external = false; // EndAccess belongs to the last allocation/snapshot owner
+    std::size_t pending_batches = 0; // distinct acquire/release batches, not draw count
+    CacheUse use;                    // bytes: `copy`'s
+};
+
+struct VideoTextures::CpuTarget {
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    wgpu::Texture texture;
+    wgpu::TextureView render_view; // UNORM: the pass writes gamma-encoded values
+    wgpu::BindGroup sample_group;  // through an sRGB view: sampling linearizes them
+    std::unique_ptr<Buffer> pixels;
+    wgpu::BindGroup frame_group; // the storage buffer, for the pass
+    WGPUBuffer bound = nullptr;  // the buffer frame_group points at
+    std::uint64_t frame_id = 0;
+    bool converted = false;
+    CacheUse use; // bytes: `texture`'s
+};
+
+struct VideoTextures::Objects {
+    wgpu::BindGroupLayout layout;
+    wgpu::Sampler sampler;
+    std::unordered_map<std::uint64_t, Texture> textures; // by VideoFrame::texture_id
+    struct Fence {
+        wgpu::SharedFence fence;
+        std::uint64_t last_used = 0; // CacheFrame::number()
+    };
+    std::unordered_map<std::uint64_t, Fence> fences;      // by VideoFrame::wait_fence_id
+    std::unordered_map<std::uint64_t, CpuTarget> targets; // by VideoFrame::source_id
+    wgpu::BindGroupLayout frame_layout;                   // one storage buffer
+    wgpu::RenderPipeline convert_pipeline;
+};
+
 VideoTextures::VideoTextures(const Device& device, wgpu::BindGroupLayout image_layout, CachePolicy policy)
-    : device_(device), layout_(std::move(image_layout)), sampler_(create_linear_sampler(device.handle())),
-      policy_(policy) {
+    : device_(device), objects_(std::make_unique<Objects>()), policy_(policy) {
+    objects_->layout = std::move(image_layout);
+    objects_->sampler = create_linear_sampler(device.handle());
     const wgpu::Device& dev = device.handle();
     const wgpu::ShaderModule module = create_shader(dev, kConvertWgsl, "video_convert.wgsl");
 
@@ -46,12 +93,12 @@ VideoTextures::VideoTextures(const Device& device, wgpu::BindGroupLayout image_l
     frame_info.label = "video frame";
     frame_info.entryCount = 1;
     frame_info.entries = &frame;
-    frame_layout_ = dev.CreateBindGroupLayout(&frame_info);
+    objects_->frame_layout = dev.CreateBindGroupLayout(&frame_info);
 
     wgpu::PipelineLayoutDescriptor layout_info;
     layout_info.label = "video convert";
     layout_info.bindGroupLayoutCount = 1;
-    layout_info.bindGroupLayouts = &frame_layout_;
+    layout_info.bindGroupLayouts = &objects_->frame_layout;
     layout_info.immediateSize = sizeof(ConvertImmediates);
     const wgpu::PipelineLayout layout = dev.CreatePipelineLayout(&layout_info);
 
@@ -69,7 +116,13 @@ VideoTextures::VideoTextures(const Device& device, wgpu::BindGroupLayout image_l
     descriptor.vertex.entryPoint = "vs_main";
     descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
     descriptor.fragment = &fragment;
-    convert_pipeline_ = dev.CreateRenderPipeline(&descriptor);
+    objects_->convert_pipeline = dev.CreateRenderPipeline(&descriptor);
+}
+
+VideoTextures::~VideoTextures() = default;
+
+std::size_t VideoTextures::size() const noexcept {
+    return objects_->textures.size() + objects_->targets.size();
 }
 
 bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
@@ -81,7 +134,7 @@ bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
         }
         texture.texture = external->texture();
         texture.external = true;
-        texture.group = create_image_group(device_.handle(), layout_, external->view(), sampler_);
+        texture.group = create_image_group(device_.handle(), objects_->layout, external->view(), objects_->sampler);
         return true;
     }
     if (!frame.shared_handle || !device_.has_feature(wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle) ||
@@ -125,7 +178,8 @@ bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
     wgpu::TextureViewDescriptor view;
     view.format = sampled_format;
     const wgpu::Texture& sampled = copies ? texture.copy : texture.texture;
-    texture.group = create_image_group(device_.handle(), layout_, sampled.CreateView(&view), sampler_);
+    texture.group =
+        create_image_group(device_.handle(), objects_->layout, sampled.CreateView(&view), objects_->sampler);
     return true;
 }
 
@@ -134,8 +188,8 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
     if (frame.kind == VideoFrame::Kind::cpu) {
         return convert(encoder, frame);
     }
-    auto it = textures_.find(frame.texture_id);
-    if (it == textures_.end()) {
+    auto it = objects_->textures.find(frame.texture_id);
+    if (it == objects_->textures.end()) {
         Texture texture;
         if (!import(frame, texture)) {
             if (!warned_) {
@@ -145,7 +199,7 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
             }
             return nullptr;
         }
-        it = textures_.emplace(frame.texture_id, std::move(texture)).first;
+        it = objects_->textures.emplace(frame.texture_id, std::move(texture)).first;
     }
     Texture& texture = it->second;
     frame_.mark(texture.use);
@@ -194,7 +248,7 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
 
 void VideoTextures::release(const std::vector<std::uint64_t>& acquired) {
     for (const std::uint64_t id : acquired) {
-        if (const auto it = textures_.find(id); it != textures_.end()) {
+        if (const auto it = objects_->textures.find(id); it != objects_->textures.end()) {
             if (!it->second.memory) {
                 // All reads in this batch were submitted. External allocations stay pinned
                 // by other snapshots/current frames, then EndAccess exports completion fences.
@@ -232,7 +286,7 @@ void VideoTextures::release(const std::vector<std::uint64_t>& acquired) {
 }
 
 wgpu::SharedFence VideoTextures::fence(const VideoFrame& frame) {
-    if (const auto it = fences_.find(frame.wait_fence_id); it != fences_.end()) {
+    if (const auto it = objects_->fences.find(frame.wait_fence_id); it != objects_->fences.end()) {
         it->second.last_used = frame_.number();
         return it->second.fence;
     }
@@ -246,7 +300,7 @@ wgpu::SharedFence VideoTextures::fence(const VideoFrame& frame) {
     descriptor.label = "shared fence";
     wgpu::SharedFence imported = device_.handle().ImportSharedFence(&descriptor);
     if (imported) {
-        fences_.emplace(frame.wait_fence_id, Fence{imported, frame_.number()});
+        objects_->fences.emplace(frame.wait_fence_id, Objects::Fence{imported, frame_.number()});
     }
     return imported;
 }
@@ -254,13 +308,13 @@ wgpu::SharedFence VideoTextures::fence(const VideoFrame& frame) {
 void VideoTextures::end_frame() {
     // External images belong to their producer: dropped once no recording holds them. A pending
     // recording owns its lease until release(), regardless of age.
-    std::erase_if(textures_, [](const auto& entry) { return entry.second.external && !entry.second.lease; });
+    std::erase_if(objects_->textures, [](const auto& entry) { return entry.second.external && !entry.second.lease; });
     // One budget for both maps.
     Eviction eviction(frame_, policy_);
-    eviction.collect(textures_, [](const Texture& texture) { return bool(texture.lease); });
-    eviction.collect(targets_);
+    eviction.collect(objects_->textures, [](const Texture& texture) { return bool(texture.lease); });
+    eviction.collect(objects_->targets);
     eviction.finish();
-    std::erase_if(fences_,
+    std::erase_if(objects_->fences,
                   [&](const auto& entry) { return frame_.number() - entry.second.last_used > kIdleFenceFrames; });
 }
 
@@ -284,7 +338,8 @@ void VideoTextures::create_target(CpuTarget& target, std::uint32_t width, std::u
     wgpu::TextureViewDescriptor sample_view;
     sample_view.format = kSampledFormat;
     target.sample_group =
-        create_image_group(device_.handle(), layout_, target.texture.CreateView(&sample_view), sampler_);
+        create_image_group(device_.handle(), objects_->layout, target.texture.CreateView(&sample_view),
+                           objects_->sampler);
     target.pixels = std::make_unique<Buffer>(device_.handle(), wgpu::BufferUsage::Storage);
 }
 
@@ -301,7 +356,7 @@ wgpu::BindGroup VideoTextures::convert(const wgpu::CommandEncoder& encoder, cons
         }
         return nullptr;
     }
-    CpuTarget& target = targets_[frame.source_id];
+    CpuTarget& target = objects_->targets[frame.source_id];
     if (target.width != frame.width || target.height != frame.height) {
         create_target(target, frame.width, frame.height); // the old image lives on while in use
     }
@@ -316,7 +371,7 @@ wgpu::BindGroup VideoTextures::convert(const wgpu::CommandEncoder& encoder, cons
         entry.binding = 0;
         entry.buffer = target.pixels->handle();
         wgpu::BindGroupDescriptor group;
-        group.layout = frame_layout_;
+        group.layout = objects_->frame_layout;
         group.entryCount = 1;
         group.entries = &entry;
         target.frame_group = device_.handle().CreateBindGroup(&group);
@@ -332,7 +387,7 @@ wgpu::BindGroup VideoTextures::convert(const wgpu::CommandEncoder& encoder, cons
     descriptor.colorAttachmentCount = 1;
     descriptor.colorAttachments = &color;
     const wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
-    pass.SetPipeline(convert_pipeline_);
+    pass.SetPipeline(objects_->convert_pipeline);
     pass.SetBindGroup(0, target.frame_group);
     const ConvertImmediates immediates{static_cast<std::uint32_t>(frame.format), frame.width, frame.height,
                                        static_cast<std::uint32_t>(frame.matrix), frame.full_range ? 1u : 0u};

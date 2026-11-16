@@ -12,6 +12,7 @@
 #include "gpu/instance.h"
 #include "gpu/texture_cache.h"
 #include "gpu/video_textures.h"
+#include "gpu/webgpu.h"
 #include "render/frame_plan.h"
 #include "render/intermediate_images.h"
 #include "render/path_cache.h"
@@ -20,6 +21,7 @@
 #include <elg/elegance.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <webgpu/webgpu_cpp.h>
 
 #include <array>
 #include <chrono>
