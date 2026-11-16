@@ -7,6 +7,9 @@
 
 #include "platform/sdl/native.h"
 
+#include <elg/events.h>
+#include <elg/platform.h>
+
 #include <SDL3/SDL.h>
 
 #include <sys/syscall.h>
@@ -83,3 +86,15 @@ KeyModifiers word_modifier() noexcept {
 }
 
 } // namespace elg::detail::platform
+
+namespace elg {
+
+Platform current_platform() noexcept {
+    return Platform::linux;
+}
+
+KeyModifiers primary_modifier() noexcept {
+    return KeyModifiers::control;
+}
+
+} // namespace elg

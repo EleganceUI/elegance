@@ -12,6 +12,8 @@
 #include "platform/macos/title_bar.h"
 
 #include <elg/error.h>
+#include <elg/events.h>
+#include <elg/platform.h>
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_metal.h>
@@ -147,3 +149,15 @@ KeyModifiers word_modifier() noexcept {
 }
 
 } // namespace elg::detail::platform
+
+namespace elg {
+
+Platform current_platform() noexcept {
+    return Platform::macos;
+}
+
+KeyModifiers primary_modifier() noexcept {
+    return KeyModifiers::super;
+}
+
+} // namespace elg

@@ -10,6 +10,9 @@
 #include "platform/sdl/native.h"
 #include "platform/windows/shell.h"
 
+#include <elg/events.h>
+#include <elg/platform.h>
+
 #include <SDL3/SDL.h>
 
 #include <windows.h>
@@ -158,3 +161,15 @@ KeyModifiers word_modifier() noexcept {
 }
 
 } // namespace elg::detail::platform
+
+namespace elg {
+
+Platform current_platform() noexcept {
+    return Platform::windows;
+}
+
+KeyModifiers primary_modifier() noexcept {
+    return KeyModifiers::control;
+}
+
+} // namespace elg

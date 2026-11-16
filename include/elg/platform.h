@@ -12,6 +12,8 @@
 // For room around a window's own controls, prefer WindowHandle::system_controls_frame()
 // (elg/window.h): it also follows fullscreen and the controls' position.
 
+#include <elg/export.h>
+
 // GCC and Clang predefine `linux` as 1 on Linux in GNU modes (-std=gnu++23, CMake's default for
 // targets without CXX_EXTENSIONS OFF), which would turn Platform::linux into Platform::1. Hide it
 // here and restore it after, so including this header works in either mode. Code naming
@@ -28,18 +30,10 @@ enum class Platform {
     linux,
 };
 
-/// The platform the app was built for, known at compile time.
+/// The platform the app was built for.
 ///
 /// @return Platform::windows, Platform::macos or Platform::linux (anything else counts as Linux).
-constexpr Platform current_platform() noexcept {
-#if defined(_WIN32)
-    return Platform::windows;
-#elif defined(__APPLE__)
-    return Platform::macos;
-#else
-    return Platform::linux;
-#endif
-}
+ELG_API Platform current_platform() noexcept;
 
 } // namespace elg
 

@@ -13,7 +13,9 @@
 #include "platform/platform.h"
 #include "text/text_backend.h"
 
+#include <elg/app.h>
 #include <elg/error.h>
+#include <elg/events.h>
 #include <elg/platform.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -146,4 +148,18 @@ TEST_CASE("the platform names its text editing modifiers and caption glyphs", "[
     if (current_platform() != Platform::windows) {
         CHECK_FALSE(detail::platform::caption_icon_font().has_value());
     }
+}
+
+TEST_CASE("the platform and its shortcut modifier are those of the OS it was built for", "[os]") {
+#if defined(_WIN32)
+    CHECK(current_platform() == Platform::windows);
+    CHECK(primary_modifier() == KeyModifiers::control);
+#elif defined(__APPLE__)
+    CHECK(current_platform() == Platform::macos);
+    CHECK(primary_modifier() == KeyModifiers::super);
+#else
+    CHECK(current_platform() == Platform::linux);
+    CHECK(primary_modifier() == KeyModifiers::control);
+#endif
+    CHECK(KeyboardShortcut{Key::s}.modifiers == primary_modifier());
 }
