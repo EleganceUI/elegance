@@ -6,6 +6,7 @@
 
 #include "core/ui_tasks.h"
 #include "gpu/device.h"
+#include "gpu/external_image.h"
 #include "media/video_source.h"
 
 #include <atomic>
@@ -138,7 +139,7 @@ wgpu::FeatureName fence_feature(std::uint32_t transport) {
     }
 }
 
-class ExternalFrame {
+class ExternalFrame final : public gpu::ExternalImage {
 public:
     ExternalFrame(ElgGpuImageFrame descriptor, std::shared_ptr<gpu::RenderDevice> renderer)
         : descriptor_(descriptor), renderer_(std::move(renderer)) {
@@ -149,13 +150,13 @@ public:
     ExternalFrame(ExternalFrame&&) = delete;
     ExternalFrame& operator=(const ExternalFrame&) = delete;
     ExternalFrame& operator=(ExternalFrame&&) = delete;
-    ~ExternalFrame() {
+    ~ExternalFrame() override {
         if (!begun_) {
             return;
         }
         try {
             retirement_worker().enqueue([descriptor = descriptor_, renderer = renderer_,
-                                         memory = memory_, image = texture, view = sample_view,
+                                         memory = memory_, image = texture_, view = view_,
                                          accepted = accepted_] {
                 retire(descriptor, renderer, memory, image, accepted);
             });
@@ -321,12 +322,12 @@ public:
             desc.usage = wgpu::TextureUsage::TextureBinding;
             desc.viewFormatCount = 1;
             desc.viewFormats = &sampled;
-            texture = memory_.CreateTexture(&desc);
+            texture_ = memory_.CreateTexture(&desc);
             wgpu::TextureViewDescriptor view;
             view.format = sampled;
             view.usage = wgpu::TextureUsage::TextureBinding;
-            sample_view = texture.CreateView(&view);
-            ok = texture && sample_view;
+            view_ = texture_.CreateView(&view);
+            ok = texture_ && view_;
         }
         wgpu::SharedFence wait;
         if (ok && frame.producer_fence.type != ELG_GPU_IMAGE_FENCE_NONE) {
@@ -360,19 +361,22 @@ public:
             if (frame.transport == ELG_GPU_IMAGE_VULKAN_OPAQUE_FD) {
                 access.nextInChain = &vk;
             }
-            begun_ = memory_.BeginAccess(texture, &access) == wgpu::Status::Success;
+            begun_ = memory_.BeginAccess(texture_, &access) == wgpu::Status::Success;
             ok = begun_;
         }
         validation = scope.pop();
         return ok ? ELG_GPU_IMAGE_OK : ELG_GPU_IMAGE_IMPORT_FAILED;
     }
     void accept() noexcept { accepted_ = true; }
-    wgpu::Texture texture;
-    wgpu::TextureView sample_view;
+    [[nodiscard]] const wgpu::Device& device() const noexcept override { return renderer_->device; }
+    [[nodiscard]] const wgpu::Texture& texture() const noexcept override { return texture_; }
+    [[nodiscard]] const wgpu::TextureView& view() const noexcept override { return view_; }
 private:
     ElgGpuImageFrame descriptor_;
     std::shared_ptr<gpu::RenderDevice> renderer_;
     wgpu::SharedTextureMemory memory_;
+    wgpu::Texture texture_;
+    wgpu::TextureView view_;
     bool begun_ = false;
     bool accepted_ = false;
 };
@@ -445,10 +449,7 @@ public:
         frame.source_id = id;
         frame.texture_id = next_external_id.fetch_add(1, std::memory_order_relaxed);
         frame.frame_id = frame.texture_id;
-        frame.device = renderer->device;
-        frame.texture = external->texture;
-        frame.external_view = external->sample_view;
-        frame.texture_lease = external;
+        frame.external = external;
         std::optional<VideoFrame> old;
         {
             const std::lock_guard lock(mutex_);

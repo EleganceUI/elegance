@@ -5,6 +5,7 @@
 #include "gpu/video_textures.h"
 
 #include "core/log.h"
+#include "gpu/external_image.h"
 
 #include <algorithm>
 #include <utility>
@@ -73,13 +74,14 @@ VideoTextures::VideoTextures(const Device& device, wgpu::BindGroupLayout image_l
 
 bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
     if (frame.kind == VideoFrame::Kind::external) {
-        if (frame.device.Get() != device_.handle().Get() || !frame.texture ||
-            !frame.external_view || !frame.texture_lease) {
+        const ExternalImage* external = frame.external.get();
+        if (!external || external->device().Get() != device_.handle().Get() || !external->texture() ||
+            !external->view()) {
             return false;
         }
-        texture.texture = frame.texture;
+        texture.texture = external->texture();
         texture.external = true;
-        texture.group = create_image_group(device_.handle(), layout_, frame.external_view, sampler_);
+        texture.group = create_image_group(device_.handle(), layout_, external->view(), sampler_);
         return true;
     }
     if (!frame.shared_handle || !device_.has_feature(wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle) ||
@@ -153,7 +155,7 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
             acquired.push_back(frame.texture_id);
             ++texture.pending_batches;
         }
-        texture.lease = frame.texture_lease;
+        texture.lease = frame.external;
         return texture.group;
     }
     if (std::ranges::find(acquired, frame.texture_id) == acquired.end()) {

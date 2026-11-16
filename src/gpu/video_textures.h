@@ -76,7 +76,7 @@ private:
         wgpu::Texture copy; // Direct3D 11: sampled instead of `texture` (see import())
         wgpu::BindGroup group;
         std::weak_ptr<SharedTextureOwner> owner;
-        std::shared_ptr<void> lease; // external allocation: through submission
+        std::shared_ptr<const ExternalImage> lease; // external allocation: through submission
         bool external = false; // EndAccess belongs to the last allocation/snapshot owner
         std::size_t pending_batches = 0; // distinct acquire/release batches, not draw count
         CacheUse use;                    // bytes: `copy`'s

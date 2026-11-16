@@ -8,8 +8,6 @@
 #include <elg/geometry.h>
 #include <elg/reactive.h>
 
-#include "gpu/webgpu.h"
-
 #include <array>
 #include <atomic>
 #include <cstdint>
@@ -20,6 +18,10 @@
 #include <vector>
 
 namespace elg::detail {
+
+namespace gpu {
+class ExternalImage; // the GPU layer's (gpu/external_image.h): opaque here
+} // namespace gpu
 
 // The GPU adapter the renderer uses (Windows: its LUID), published by the render thread once its
 // device exists. Video decoders must use the same adapter to share frames with it. When the
@@ -48,8 +50,8 @@ public:
 //   sampled in place. `texture_id` changes when the texture does. With `wait_fence`, the GPU
 //   waits for that shared fence to reach `wait_value` before reading; `owner` hears about reads.
 // - `external`: an immutable imported allocation with an open Dawn access and an sRGB view.
-//   Snapshots and pending recordings retain its lease until submission; the last owner ends
-//   access and exports consumer fences before returning the allocation to its producer.
+//   Snapshots and pending recordings retain it until submission; the last owner ends access and
+//   exports consumer fences before returning the allocation to its producer.
 // - `cpu`: pixels in memory, in `format`, packed (no row padding), top to bottom. The renderer
 //   uploads them and converts YUV to RGB in a GPU pass, the same on every platform. Any
 //   decoder or camera can start here.
@@ -70,13 +72,10 @@ struct VideoFrame {
     std::uint64_t wait_fence_id = 0; // unique to the fence (handle values get reused)
     std::uint64_t wait_value = 0;
     std::weak_ptr<SharedTextureOwner> owner;
-    // external: strong references to the importing device and texture.
-    wgpu::Device device;
-    wgpu::Texture texture;
-    // external: prevalidated sRGB view; lease owns one immutable imported allocation and its
-    // open Dawn access. Every snapshot and pending recording must retain it until submission.
-    wgpu::TextureView external_view;
-    std::shared_ptr<void> texture_lease;
+    // external: the imported image, with its device, texture and prevalidated sRGB view. It owns
+    // one immutable imported allocation and its open Dawn access. Every snapshot and pending
+    // recording must retain it until submission.
+    std::shared_ptr<const gpu::ExternalImage> external;
     // cpu (format also describes shared/external texture storage)
     Format format = Format::bgra;
     Matrix matrix = Matrix::bt709;

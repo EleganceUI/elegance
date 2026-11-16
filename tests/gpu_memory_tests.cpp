@@ -8,6 +8,7 @@
 
 #include "gpu/device.h"
 #include "gpu/eviction.h"
+#include "gpu/external_image.h"
 #include "gpu/instance.h"
 #include "gpu/texture_cache.h"
 #include "gpu/video_textures.h"
@@ -544,6 +545,21 @@ detail::DecodedImage square_image(std::uint64_t id, std::uint32_t side) {
     return image;
 }
 
+// An image imported from another API, as GpuImage makes them: here, a texture of the test's.
+class TestExternalImage final : public detail::gpu::ExternalImage {
+public:
+    TestExternalImage(wgpu::Device device, wgpu::Texture texture)
+        : device_(std::move(device)), texture_(std::move(texture)), view_(texture_.CreateView()) {}
+    [[nodiscard]] const wgpu::Device& device() const noexcept override { return device_; }
+    [[nodiscard]] const wgpu::Texture& texture() const noexcept override { return texture_; }
+    [[nodiscard]] const wgpu::TextureView& view() const noexcept override { return view_; }
+
+private:
+    wgpu::Device device_;
+    wgpu::Texture texture_;
+    wgpu::TextureView view_;
+};
+
 // A frame in memory of `side` x `side` pixels from video source `source`.
 detail::VideoFrame cpu_frame(std::uint64_t source, std::uint32_t side) {
     detail::VideoFrame frame;
@@ -671,10 +687,7 @@ TEST_CASE("VideoTextures keeps an external image while a recording holds it", "[
     frame.width = 16;
     frame.height = 16;
     frame.texture_id = 7;
-    frame.device = device.handle();
-    frame.texture = device.handle().CreateTexture(&descriptor);
-    frame.external_view = frame.texture.CreateView();
-    frame.texture_lease = std::make_shared<int>(0);
+    frame.external = std::make_shared<TestExternalImage>(device.handle(), device.handle().CreateTexture(&descriptor));
     const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
 
     std::vector<std::uint64_t> acquired;
