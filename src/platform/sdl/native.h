@@ -7,10 +7,12 @@
 
 // What each OS does differently under SDL. platform_sdl.cpp is the same everywhere and calls
 // these; every OS implements all of them (platform/windows/native.cpp, platform/macos/native.mm,
-// platform/linux/native.cpp), mostly as nothing.
+// platform/linux/native.cpp), mostly as nothing. Those the app calls itself are in the platform
+// interface (platform/system.h).
 
 #include "platform/menu_bar.h"
 #include "platform/platform.h"
+#include "platform/system.h"
 
 #include <elg/desktop.h>
 #include <elg/theme.h>
@@ -41,9 +43,6 @@ Rect system_controls_frame(WindowParts& parts);
 // window edge), during which our event loop doesn't run.
 bool in_move_size_loop();
 
-// Whether this is the process's main thread, the one that ran main().
-bool on_main_thread();
-
 // Secure text input: detaches the IME from `window` (where SDL doesn't do it for the password
 // input type), and switches system-wide Secure Event Input on or off (macOS).
 void detach_ime(SDL_Window* window);
@@ -58,9 +57,6 @@ void remove_input_monitor(void* monitor);
 
 // Shows a system notification (platform/<os>/notifications.*). UI thread, while an App runs.
 void show_notification(const Notification& notification);
-// Destroys the click handlers of the notifications shown so far: a click on them after this does
-// nothing. UI thread, as an App's run ends.
-void forget_notification_handlers();
 
 // --- Dock and taskbar (platform/<os>/dock.*). UI thread, while an App runs. ---
 
@@ -74,31 +70,10 @@ void set_progress(std::optional<double> fraction, ProgressState state);
 bool supports_material(WindowMaterial material);
 // The system's light/dark setting changed (Windows: Mica's tint follows the title bar's).
 void appearance_changed(SDL_Window* window, WindowParts& parts);
-// The person's accent color, or nullopt. UI thread.
-std::optional<Color> system_accent_color();
 // Between Platform's construction and destruction: changes to the accent color arrive as
 // SDL_EVENT_SYSTEM_THEME_CHANGED, where SDL doesn't send one itself.
 void watch_appearance();
 void unwatch_appearance();
-
-// --- Menu bar (platform/<os>/menu_bar.*) ---
-
-// Whether the menu bar is drawn inside each window (menus::menu_bar_view), rather than by the
-// system.
-bool draws_menu_bar_in_content();
-// Whether the system's menus take their own shortcuts (macOS's key equivalents); elsewhere the
-// app matches them after the views turn the key down.
-bool menu_bar_handles_shortcuts();
-// Shows `menus` (replacing any before): macOS's menu bar, or every Windows window's with a system
-// title bar, now and when created. `command` gets the id of a chosen item that has an action.
-// UI thread.
-using MenuCommand = std::function<void(std::uint32_t id)>;
-void set_menu_bar(const std::vector<menus::Item>& menus, const MenuCommand& command);
-// Drops set_menu_bar()'s `command`: items chosen after this do nothing. UI thread, as an App's run
-// ends.
-void forget_menu_command();
-// A check box item's mark.
-void set_menu_checked(std::uint32_t id, bool checked);
 
 } // namespace elg::detail::platform::native
 

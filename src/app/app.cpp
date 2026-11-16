@@ -12,7 +12,7 @@
 #include "reactive/timers.h"
 #include "platform/desktop.h"
 #include "platform/menu_bar.h"
-#include "platform/sdl/native.h"
+#include "platform/system.h"
 #include "platform/platform.h"
 #include "platform/system_text.h"
 #include "reactive/runtime.h"
