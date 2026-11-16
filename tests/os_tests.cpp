@@ -117,6 +117,13 @@ TEST_CASE("the glyph cache is in the user's cache folder", "[os]") {
         CHECK(glyph_cache_folder(environment(every)) == fs::path("/xdg") / "elegance" / "glyphs");
         CHECK(glyph_cache_folder(environment({{"HOME", "/home/me"}})) ==
               fs::path("/home/me") / ".cache" / "elegance" / "glyphs");
+        // An empty or relative XDG_CACHE_HOME counts as unset, as for the image cache.
+        for (const char* xdg : {"", "relative/cache"}) {
+            CHECK(glyph_cache_folder(environment({{"HOME", "/home/me"}, {"XDG_CACHE_HOME", xdg}})) ==
+                  fs::path("/home/me") / ".cache" / "elegance" / "glyphs");
+            CHECK(detail::net::image_cache_folder("app", environment({{"HOME", "/home/me"}, {"XDG_CACHE_HOME", xdg}})) ==
+                  fs::path("/home/me") / ".cache" / "elegance" / "app" / "images");
+        }
         break;
     }
     CHECK_FALSE(glyph_cache_folder(environment({})).has_value());

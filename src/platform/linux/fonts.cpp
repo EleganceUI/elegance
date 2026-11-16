@@ -153,10 +153,11 @@ std::vector<std::filesystem::path> fallback_font_candidates() {
 
 std::optional<std::filesystem::path> glyph_cache_folder(
     const std::function<std::optional<std::string>(const char*)>& get) {
-    if (const auto xdg = get("XDG_CACHE_HOME")) {
+    // An empty or relative XDG_CACHE_HOME counts as unset (the XDG Base Directory spec).
+    if (const auto xdg = get("XDG_CACHE_HOME"); xdg && std::filesystem::path(*xdg).is_absolute()) {
         return std::filesystem::path(*xdg) / "elegance" / "glyphs";
     }
-    if (const auto home = get("HOME")) {
+    if (const auto home = get("HOME"); home && !home->empty()) {
         return std::filesystem::path(*home) / ".cache" / "elegance" / "glyphs";
     }
     return std::nullopt;
