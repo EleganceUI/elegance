@@ -4,9 +4,10 @@
 
 // Font files on Linux (text/font_library.h): the system's choice through fontconfig, loaded when
 // it's there (every desktop has it), then DejaVu, Noto or Liberation where distributions usually
-// put them.
+// put them. And the glyph cache's folder (text/text_backend.h).
 
 #include "text/font_library.h"
+#include "text/text_backend.h"
 
 #include "core/dynamic_library.h"
 
@@ -148,6 +149,17 @@ std::vector<std::filesystem::path> fallback_font_candidates() {
         files.emplace_back(file);
     }
     return files;
+}
+
+std::optional<std::filesystem::path> glyph_cache_folder(
+    const std::function<std::optional<std::string>(const char*)>& get) {
+    if (const auto xdg = get("XDG_CACHE_HOME")) {
+        return std::filesystem::path(*xdg) / "elegance" / "glyphs";
+    }
+    if (const auto home = get("HOME")) {
+        return std::filesystem::path(*home) / ".cache" / "elegance" / "glyphs";
+    }
+    return std::nullopt;
 }
 
 } // namespace elg::detail

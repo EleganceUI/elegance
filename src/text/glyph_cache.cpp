@@ -5,8 +5,9 @@
 #include "text/glyph_cache.h"
 
 #include "core/log.h"
-#include "platform/platform.h"
+#include "core/os_backend.h"
 #include "text/atlas.h"
+#include "text/text_backend.h"
 
 #include <algorithm>
 #include <cstring>
@@ -106,29 +107,13 @@ FileHeader expected_header() {
 } // namespace
 
 std::optional<std::filesystem::path> GlyphDiskCache::default_directory() {
-    if (const std::optional<std::string> setting = platform::environment_variable("ELG_GLYPH_CACHE")) {
+    if (const std::optional<std::string> setting = os::environment_variable("ELG_GLYPH_CACHE")) {
         if (*setting == "off" || setting->empty()) {
             return std::nullopt;
         }
         return std::filesystem::path(*setting);
     }
-#if defined(_WIN32)
-    if (const auto base = platform::environment_variable("LOCALAPPDATA")) {
-        return std::filesystem::path(*base) / "Elegance" / "GlyphCache";
-    }
-#elif defined(__APPLE__)
-    if (const auto home = platform::environment_variable("HOME")) {
-        return std::filesystem::path(*home) / "Library" / "Caches" / "Elegance" / "GlyphCache";
-    }
-#else
-    if (const auto xdg = platform::environment_variable("XDG_CACHE_HOME")) {
-        return std::filesystem::path(*xdg) / "elegance" / "glyphs";
-    }
-    if (const auto home = platform::environment_variable("HOME")) {
-        return std::filesystem::path(*home) / ".cache" / "elegance" / "glyphs";
-    }
-#endif
-    return std::nullopt;
+    return glyph_cache_folder(os::environment_variable);
 }
 
 GlyphDiskCache::GlyphDiskCache(std::optional<std::filesystem::path> directory) : directory_(std::move(directory)) {

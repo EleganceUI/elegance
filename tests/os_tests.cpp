@@ -3,13 +3,14 @@
 // https://mozilla.org/MPL/2.0/.
 
 // What the library asks the operating system through the backend interfaces (core/os_backend.h,
-// net/net_backend.h).
+// net/net_backend.h, text/text_backend.h).
 
 #include "core/crash.h"
 #include "core/dynamic_library.h"
 #include "core/os_backend.h"
 #include "net/http_cache.h"
 #include "net/net_backend.h"
+#include "text/text_backend.h"
 
 #include <elg/error.h>
 #include <elg/platform.h>
@@ -95,4 +96,25 @@ TEST_CASE("the image cache is in the user's cache folder, by the program's name"
         break;
     }
     CHECK_FALSE(image_cache_folder("app", environment({})).has_value());
+}
+
+TEST_CASE("the glyph cache is in the user's cache folder", "[os]") {
+    using detail::glyph_cache_folder;
+    const std::map<std::string, std::string> every{
+        {"HOME", "/home/me"}, {"XDG_CACHE_HOME", "/xdg"}, {"LOCALAPPDATA", "C:/Local"}};
+    switch (current_platform()) {
+    case Platform::windows:
+        CHECK(glyph_cache_folder(environment(every)) == fs::path("C:/Local") / "Elegance" / "GlyphCache");
+        break;
+    case Platform::macos:
+        CHECK(glyph_cache_folder(environment(every)) ==
+              fs::path("/home/me") / "Library" / "Caches" / "Elegance" / "GlyphCache");
+        break;
+    case Platform::linux:
+        CHECK(glyph_cache_folder(environment(every)) == fs::path("/xdg") / "elegance" / "glyphs");
+        CHECK(glyph_cache_folder(environment({{"HOME", "/home/me"}})) ==
+              fs::path("/home/me") / ".cache" / "elegance" / "glyphs");
+        break;
+    }
+    CHECK_FALSE(glyph_cache_folder(environment({})).has_value());
 }

@@ -3,10 +3,11 @@
 // https://mozilla.org/MPL/2.0/.
 
 // Font files on Windows (text/font_library.h): Segoe UI, and Windows' own fonts
-// for other scripts and symbols.
+// for other scripts and symbols. And the glyph cache's folder (text/text_backend.h).
 // TODO: real system font discovery (DirectWrite).
 
 #include "text/font_library.h"
+#include "text/text_backend.h"
 
 #include "platform/platform.h"
 
@@ -56,6 +57,14 @@ std::vector<std::filesystem::path> fallback_font_candidates() {
         files.push_back(dir / name);
     }
     return files;
+}
+
+std::optional<std::filesystem::path> glyph_cache_folder(
+    const std::function<std::optional<std::string>(const char*)>& get) {
+    if (const auto base = get("LOCALAPPDATA")) {
+        return std::filesystem::path(*base) / "Elegance" / "GlyphCache";
+    }
+    return std::nullopt;
 }
 
 } // namespace elg::detail
