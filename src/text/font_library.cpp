@@ -6,7 +6,7 @@
 
 #include "core/log.h"
 #include "core/scope_exit.h"
-#include "platform/platform.h"
+#include "text/text_backend.h"
 
 #include <elg/error.h>
 
@@ -111,7 +111,7 @@ RegisteredFont find_font(const Font& font) {
     if (!font.family().empty()) {
         return registered_font(font);
     }
-    for (const std::filesystem::path& file : system_font_candidates(font.weight(), font.is_italic())) {
+    for (const std::filesystem::path& file : system_font_candidates(static_cast<int>(font.weight()), font.is_italic())) {
         if (std::filesystem::is_regular_file(file)) {
             return {static_cast<int>(font.weight()), file, nullptr, file.string()};
         }
