@@ -8,6 +8,13 @@
 
 namespace elg::detail::net {
 
+SystemRootCertificates system_root_certificates() {
+    SystemRootCertificates roots;
+    roots.bundles = {"/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt", "/etc/ssl/ca-bundle.pem",
+                     "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem", "/etc/ssl/cert.pem"};
+    return roots;
+}
+
 std::optional<std::filesystem::path> image_cache_folder(
     std::string_view app, const std::function<std::optional<std::string>(const char*)>& get) {
     if (const auto xdg = get("XDG_CACHE_HOME"); xdg && !xdg->empty()) {

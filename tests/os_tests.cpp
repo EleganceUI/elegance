@@ -118,3 +118,14 @@ TEST_CASE("the glyph cache is in the user's cache folder", "[os]") {
     }
     CHECK_FALSE(glyph_cache_folder(environment({})).has_value());
 }
+
+TEST_CASE("the system's root certificates are its store's, or its distribution's bundle", "[os]") {
+    const detail::net::SystemRootCertificates roots = detail::net::system_root_certificates();
+    if (current_platform() == Platform::linux) {
+        CHECK(roots.certificates.empty());
+        CHECK(std::ranges::find(roots.bundles, fs::path("/etc/ssl/certs/ca-certificates.crt")) != roots.bundles.end());
+    } else {
+        CHECK_FALSE(roots.certificates.empty());
+        CHECK(roots.bundles.empty());
+    }
+}

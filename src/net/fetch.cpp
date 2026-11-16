@@ -10,14 +10,10 @@
 #include "net/fetch.h"
 
 #include "net/http_cache.h"
+#include "net/net_backend.h"
 #include "net/proxy.h"
 
 #include "core/log.h"
-
-#if defined(_WIN32)
-#include <windows.h>
-#include <wincrypt.h>
-#endif
 
 #include <boost/asio.hpp>
 #include <boost/asio/experimental/awaitable_operators.hpp>
@@ -28,10 +24,6 @@
 #include <boost/url.hpp>
 #include <openssl/crypto.h>
 #include <openssl/ssl.h>
-
-#if defined(__APPLE__)
-#include <Security/Security.h>
-#endif
 
 #include <atomic>
 #include <chrono>
@@ -160,53 +152,35 @@ awaitable<std::invoke_result_t<Work&>> off_network_thread(Work work) {
         use_awaitable);
 }
 
-// The system's root certificates: the certificate store on Windows, the keychain's anchors on
-// macOS, the distribution's bundle elsewhere (OpenSSL's own default path is vcpkg's, not the
-// system's). Returns how many it added.
+// The system's root certificates (net/net_backend.h): the certificate store on Windows, the
+// keychain's anchors on macOS, the distribution's bundle elsewhere (OpenSSL's own default path is
+// vcpkg's, not the system's). Returns how many it added.
 int add_system_roots(ssl::context& context) {
     X509_STORE* store = SSL_CTX_get_cert_store(context.native_handle());
+    const SystemRootCertificates roots = system_root_certificates();
     int added = 0;
-    [[maybe_unused]] const auto add_der = [&](const unsigned char* data, long size) { // not on Linux
-        if (X509* certificate = d2i_X509(nullptr, &data, size)) {
+    for (const std::vector<unsigned char>& der : roots.certificates) {
+        const unsigned char* data = der.data();
+        if (X509* certificate = d2i_X509(nullptr, &data, static_cast<long>(der.size()))) {
             added += X509_STORE_add_cert(store, certificate) == 1;
             X509_free(certificate);
         }
-    };
-#if defined(_WIN32)
-    if (HCERTSTORE system = CertOpenSystemStoreW(0, L"ROOT")) {
-        for (PCCERT_CONTEXT certificate = nullptr; (certificate = CertEnumCertificatesInStore(system, certificate));) {
-            add_der(certificate->pbCertEncoded, static_cast<long>(certificate->cbCertEncoded));
-        }
-        CertCloseStore(system, 0);
     }
-#elif defined(__APPLE__)
-    CFArrayRef anchors = nullptr;
-    if (SecTrustCopyAnchorCertificates(&anchors) == errSecSuccess && anchors) {
-        for (CFIndex i = 0; i < CFArrayGetCount(anchors); ++i) {
-            const auto certificate = static_cast<SecCertificateRef>(const_cast<void*>(CFArrayGetValueAtIndex(anchors, i)));
-            if (CFDataRef der = SecCertificateCopyData(certificate)) {
-                add_der(CFDataGetBytePtr(der), static_cast<long>(CFDataGetLength(der)));
-                CFRelease(der);
-            }
-        }
-        CFRelease(anchors);
+    if (roots.bundles.empty()) {
+        return added;
     }
-#else
     boost::system::error_code ignored;
     static_cast<void>(context.set_default_verify_paths(ignored)); // SSL_CERT_FILE and SSL_CERT_DIR, when set
-    for (const char* bundle : {"/etc/ssl/certs/ca-certificates.crt", "/etc/pki/tls/certs/ca-bundle.crt",
-                               "/etc/ssl/ca-bundle.pem", "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",
-                               "/etc/ssl/cert.pem"}) {
+    for (const std::filesystem::path& bundle : roots.bundles) {
         std::error_code missing;
         if (std::filesystem::exists(bundle, missing)) {
-            static_cast<void>(context.load_verify_file(bundle, ignored));
+            static_cast<void>(context.load_verify_file(bundle.string(), ignored));
             if (!ignored) {
                 added = sk_X509_OBJECT_num(X509_STORE_get0_objects(store));
                 break;
             }
         }
     }
-#endif
     return added;
 }
 

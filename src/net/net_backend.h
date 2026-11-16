@@ -13,8 +13,19 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace elg::detail::net {
+
+// The root certificates the system trusts, for https.
+struct SystemRootCertificates {
+    // The system's own store, each certificate DER-encoded (Windows, macOS).
+    std::vector<std::vector<unsigned char>> certificates;
+    // Or PEM bundles to look for, the first one found trusted, besides what OpenSSL's
+    // SSL_CERT_FILE and SSL_CERT_DIR name (Linux distributions, which each keep one bundle).
+    std::vector<std::filesystem::path> bundles;
+};
+SystemRootCertificates system_root_certificates();
 
 // The image cache's folder for the app named `app`, in the user's cache folder as the system
 // names them, from the environment variables that `get` reads. nullopt when there's none.
