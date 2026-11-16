@@ -109,6 +109,7 @@ wmZAujteSAEKpmLCsCEVJ8Z884hfe+U0WYC9HPiHLcu3n1AfGNHyekNG
 //   /moved      302 to /hello, fresh for a minute
 //   /permanent  301 to /hello, with no lifetime of its own
 //   /stale-redirect 302 to /stale, stale at once
+//   /strict-redirect 302 to /stale, stale at once, and never to be used stale (must-revalidate)
 // Connections stay open for more requests, unless `drop` (closed after each response, without
 // saying so).
 class TestServer {
@@ -245,15 +246,16 @@ private:
                 response.body() = "kept";
             }
         } else if (target == "/latest" || target == "/moved" || target == "/permanent" ||
-                   target == "/stale-redirect") {
+                   target == "/stale-redirect" || target == "/strict-redirect") {
             response.result(target == "/permanent" ? bhttp::status::moved_permanently : bhttp::status::found);
-            response.set(bhttp::field::location, target == "/latest"           ? "/v123.png"
-                                                 : target == "/stale-redirect" ? "/stale"
-                                                                               : "/hello");
+            const bool to_stale = target == "/stale-redirect" || target == "/strict-redirect";
+            response.set(bhttp::field::location, target == "/latest" ? "/v123.png" : to_stale ? "/stale" : "/hello");
             if (target == "/moved") {
                 response.set(bhttp::field::cache_control, "max-age=60");
             } else if (target == "/stale-redirect") {
                 response.set(bhttp::field::cache_control, "max-age=0");
+            } else if (target == "/strict-redirect") {
+                response.set(bhttp::field::cache_control, "max-age=0, must-revalidate");
             }
         } else if (target == "/v123.png") {
             response.set(bhttp::field::cache_control, "max-age=31536000");
@@ -1078,6 +1080,28 @@ TEST_CASE("a stale stored redirect is followed when the server is gone", "[fetch
     // The stale redirect, then the stale copy it leads to.
     CHECK(text(fetch(url, {.cache = cache})) == "stale");
     CHECK_FALSE(fetch(url).has_value());
+}
+
+TEST_CASE("a stale stored redirect that must be revalidated isn't followed offline", "[fetch][cache]") {
+    const TemporaryDirectory directory;
+    const auto cache = std::make_shared<net::HttpCache>(directory.path, 1 << 20);
+    std::string url;
+    {
+        const TestServer server;
+        url = server.url("/strict-redirect");
+        CHECK(text(fetch(url, {.cache = cache})) == "stale");
+        REQUIRE(wait_until_cached(*cache, url));
+        REQUIRE(wait_until_cached(*cache, server.url("/stale")));
+    }
+    // It fails as it would with nothing stored, though /stale itself could answer.
+    const net::FetchResult offline = fetch(url, {.cache = cache});
+    REQUIRE_FALSE(offline.has_value());
+    CHECK(offline.error() == fetch(url).error());
+    // Nor is one with no-cache.
+    const auto no_cache = net::make_cache_entry(url, 302, "/stale", {.cache_control = "no-cache, max-age=60"}, {},
+                                                net::unix_now());
+    REQUIRE(no_cache);
+    CHECK_FALSE(no_cache->usable_stale()); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
 }
 
 TEST_CASE("the disk cache answers with a stale copy when the server is gone", "[fetch][cache]") {
