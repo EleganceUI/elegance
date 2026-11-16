@@ -3,9 +3,10 @@
 # If a copy of the MPL was not distributed with this file, You can obtain one at
 # https://mozilla.org/MPL/2.0/.
 
-# Checks the library's layers (ELGSPEC-0001): the folders under src/ (R1), where code may test the
-# operating system (R5), which layers may include which third-party headers (R6), what the public
-# headers may include and name (R7), and what the C API may include (R8). Each finding names the
+# Checks the library's layers (ELGSPEC-0001): the folders under src/ (R1), which layers may include
+# which (R2), what the display list may include (R3), the backend interfaces (R4), where code may
+# test the operating system (R5), which layers may include which third-party headers (R6), what
+# the public headers may include and name (R7), and what the C API may include (R8). Each finding names the
 # file, the line, what it includes or names, and the requirement it breaks. Exits with 1 if there
 # is any.
 #
@@ -168,6 +169,102 @@ def effective_layer(path):
     if layer == "Render":
         return {"Render", "Render (sources)"} if path.suffix != ".h" else {"Render"}
     return {layer} if layer else set()
+
+
+# --- Allowed dependencies (ELGSPEC-0001.R2) ---
+
+ALLOWED = {
+    "Core": set(),
+    "Geometry": {"Core"},
+    "Reactive": {"Core"},
+    "Animation": {"Core", "Geometry", "Reactive"},
+    "Text": {"Core", "Geometry", "Reactive"},
+    "Media": {"Core", "Geometry", "Reactive"},
+    "Net": {"Core"},
+    "Display list": {"Core", "Geometry"},  # and Text's and Media's data types (R3), below
+    "GPU": {"Core", "Geometry"},
+    "Render": {"Core", "Geometry", "Display list", "GPU", "Text", "Media"},
+    "Platform interface": {"Core", "Geometry"},
+    "View": {"Core", "Geometry", "Reactive", "Animation", "Text", "Media", "Net", "Display list",
+             "Platform interface"},
+    "Platform implementation": {"Core", "Geometry", "Platform interface"},  # and backend interfaces (R4)
+    "Hot reload": {"Core", "Reactive", "View", "Platform interface"},
+}
+# App may include every layer but the platform implementation.
+ALLOWED["App"] = set(ALLOWED) - {"Platform implementation"}
+
+
+def header_layer(header):
+    """The layer of a quoted include ("core/log.h"), or None if it isn't in src/."""
+    path = ROOT / "src" / header
+    return layer_of(path) if path.is_file() else None
+
+
+def is_backend(header):
+    """Whether a quoted include names a backend interface (R4): <layer>/<name>_backend.h."""
+    return header.endswith("_backend.h") and header_layer(header) not in (None, "Platform implementation")
+
+
+def data_type_header(header, seen=None):
+    """Whether a Text or Media header declares only data types (R3): it includes Core, Geometry,
+    the standard library, public headers and other such headers of Text and Media, and nothing else."""
+    seen = set() if seen is None else seen
+    if header in seen:
+        return True
+    seen.add(header)
+    path = ROOT / "src" / header
+    for _, kind, included in includes(path, without_comments(path.read_text(encoding="utf-8"))):
+        if kind == "<":
+            if not (included in STANDARD or included.startswith("elg/")):
+                return False
+            continue
+        layer = header_layer(included)
+        if layer in ("Core", "Geometry"):
+            continue
+        if layer in ("Text", "Media") and data_type_header(included, seen):
+            continue
+        return False
+    return True
+
+
+def check_dependencies(path, found):
+    layer = layer_of(path) if path.is_relative_to(ROOT / "src") else None
+    if layer is None:
+        return
+    for line, kind, header in found:
+        if kind != '"':
+            continue
+        target = header_layer(header)
+        if target is None or target == layer:
+            continue
+        if is_backend(header):
+            # A backend interface: its own layer and the platform implementation, which implements
+            # it, include it (R4). Other layers may, where R2 lets them include its layer.
+            if layer == "Platform implementation" or target in ALLOWED[layer]:
+                continue
+            report(path, line, f"includes {header}, {target}'s backend interface", "ELGSPEC-0001.R4")
+            continue
+        if layer == "Display list" and target in ("Text", "Media"):
+            if not data_type_header(header):
+                report(path, line, f"includes {header}, which declares more than data types of {target}",
+                       "ELGSPEC-0001.R3")
+            continue
+        if target not in ALLOWED[layer]:
+            report(path, line, f"includes {header}: {layer} may not depend on {target}", "ELGSPEC-0001.R2")
+
+
+def check_backend_interface(path, found):
+    """A backend interface includes only Core, Geometry, its own layer and the standard library (R4)."""
+    if not path.name.endswith("_backend.h") or not path.is_relative_to(ROOT / "src"):
+        return
+    layer = layer_of(path)
+    for line, kind, header in found:
+        if kind == "<":
+            if not (header in STANDARD or header.startswith("elg/")):
+                report(path, line, f"the backend interface includes {header}", "ELGSPEC-0001.R4")
+        elif header_layer(header) not in ("Core", "Geometry", layer):
+            report(path, line, f"the backend interface includes {header}, outside Core, Geometry and {layer}",
+                   "ELGSPEC-0001.R4")
 
 
 # --- Findings ---
@@ -428,6 +525,8 @@ def main():
         check_os_code(path, text)
         check_platform_includes(path, found)
         check_third_party(path, found)
+        check_dependencies(path, found)
+        check_backend_interface(path, found)
         if path.is_relative_to(ROOT / "include" / "elg"):
             check_public_header(path, without_comments(raw, strings=True), found)
         if path.is_relative_to(ROOT / "c"):
@@ -437,7 +536,7 @@ def main():
     if problems:
         print(f"layer-check: {len(problems)} problem(s)", file=sys.stderr)
         return 1
-    print("layer-check: the layers follow ELGSPEC-0001.R1 and R5 to R8")
+    print("layer-check: the layers follow ELGSPEC-0001.R1 to R8")
     return 0
 
 
