@@ -239,6 +239,14 @@ Path& Path::add_circle(Point center, float radius) {
 }
 
 Path& Path::add_path(const Path& other) {
+    if (other.empty()) {
+        return *this; // nothing to append: the current point and the open subpath stay
+    }
+    if (&other == this) {
+        // NOLINTNEXTLINE(performance-unnecessary-copy-initialization): `other` is this path, which grows
+        const Path copy = other; // a vector can't insert a range of its own elements
+        return add_path(copy);
+    }
     verbs_.insert(verbs_.end(), other.verbs_.begin(), other.verbs_.end());
     points_.insert(points_.end(), other.points_.begin(), other.points_.end());
     current_ = other.current_;

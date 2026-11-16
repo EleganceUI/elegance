@@ -70,7 +70,6 @@ endif ()
 
 list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake")
 include(ElgWarnings)
-include(EleganceViewExtensions)
 include(EleganceHotReload)
 include(EleganceApplication)
 

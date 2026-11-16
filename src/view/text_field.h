@@ -228,6 +228,8 @@ public:
     }
 
     EventHandler* event_handler() noexcept override { return this; }
+    // Disabled: the dispatcher cancels its selection drag and moves focus off it (release_disabled).
+    EventHandler* disabled_handler() noexcept override { return untrack(enabled_) ? nullptr : this; }
     HoverDelay effective_hover_delay() const override { return {0, 0}; } // the I-beam shows at once
     // TextFieldOptions::on_key: offered each key before the editor.
     void set_key_filter(std::function<bool(const KeyEvent&)> filter) { key_filter_ = std::move(filter); }

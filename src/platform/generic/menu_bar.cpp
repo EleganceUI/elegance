@@ -160,11 +160,11 @@ std::string_view key_name(Key key) {
 
 } // namespace
 
-std::vector<Item> resolve(const std::vector<MenuBarItem>& menus, bool macos) {
+std::vector<Item> resolve(const Source& menus, bool macos) {
     std::vector<Item> result;
     std::vector<Item> app_items; // elsewhere, the app menu's items join the first menu
     std::uint32_t id = 1;
-    for (const MenuBarItem& menu : menus) {
+    for (const MenuBarItem& menu : *menus) {
         Item resolved = resolve_item(menu, id, macos);
         if (!macos && menu.role == MenuRole::app) {
             app_items.insert(app_items.end(), std::make_move_iterator(resolved.submenu.begin()),
@@ -184,6 +184,16 @@ std::vector<Item> resolve(const std::vector<MenuBarItem>& menus, bool macos) {
         first.insert(first.begin(), std::make_move_iterator(app_items.begin()), std::make_move_iterator(app_items.end()));
     }
     tidy(result);
+    // Each item knows the menus its id is in, so a command finds it there.
+    const std::function<void(std::vector<Item>&)> attach = [&](std::vector<Item>& items) {
+        for (Item& item : items) {
+            if (item.id != 0) {
+                item.source = menus;
+            }
+            attach(item.submenu);
+        }
+    };
+    attach(result);
     return result;
 }
 
@@ -280,7 +290,7 @@ std::uint32_t match_shortcut(const std::vector<Item>& menus, const KeyboardShort
 
 namespace {
 
-View menu_entries(const std::vector<Item>& items, const std::function<void(std::uint32_t)>& command,
+View menu_entries(const std::vector<Item>& items, const Command& command,
                   const std::function<bool(std::uint32_t)>& checked) {
     std::vector<View> views;
     for (const Item& item : items) {
@@ -301,7 +311,8 @@ View menu_entries(const std::vector<Item>& items, const std::function<void(std::
             if (item.checked) {
                 options.checked = Prop<bool>([checked, id = item.id] { return checked(id); });
             }
-            view = MenuItem(item.title, [command, id = item.id] { command(id); }, std::move(options));
+            view = MenuItem(item.title, [command, source = item.source, id = item.id] { command(source, id); },
+                            std::move(options));
         }
         views.push_back(item.enabled ? std::move(view) : view.disabled());
     }
@@ -310,7 +321,7 @@ View menu_entries(const std::vector<Item>& items, const std::function<void(std::
 
 } // namespace
 
-View menu_bar_view(const Prop<std::vector<Item>>& menus, const std::function<void(std::uint32_t)>& command,
+View menu_bar_view(const Prop<std::vector<Item>>& menus, const Command& command,
                    const std::function<bool(std::uint32_t)>& checked) {
     const auto indexed = [menus] {
         std::vector<std::pair<std::size_t, Item>> result;

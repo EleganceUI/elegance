@@ -345,13 +345,18 @@ public:
     struct Presence {
         bool open = false;   // opened and not closed since
         bool wanted = false; // the binding's value, as last seen
-        int generation = 0;  // +1 per open and close(), so a stale callback does nothing
+        // Closed by the user (Esc, a press outside) while the binding still said true: it stays
+        // closed until the binding says false, even if the binding ignored the write.
+        bool dismissed = false;
+        int generation = 0; // +1 per open and close(), so a stale callback does nothing
     };
 
+    // `dismissals` is written when the user closes the content; the effect that follows the
+    // binding reads it, so it runs after the event even when the binding doesn't change.
     FloatingElement(std::unique_ptr<Element> content, std::function<View()> floating, FloatingOptions options,
-                    Binding<bool> is_presented, const LowerContext& context)
+                    Binding<bool> is_presented, State<int> dismissals, const LowerContext& context)
         : content_(std::move(content)), floating_(std::move(floating)), options_(std::move(options)),
-          is_presented_(std::move(is_presented)), context_(context.nested()),
+          is_presented_(std::move(is_presented)), dismissals_(std::move(dismissals)), context_(context.nested()),
           level_(context.services ? context.services->menu_level() + 1 : 0) {
         if (!options_.motion) {
             options_.motion = PopupMotion::none();
@@ -371,6 +376,11 @@ public:
 
     // The binding's value (from an effect). Opening waits for a frame to anchor to.
     void set_presented(bool presented) {
+        if (!presented) {
+            presence_->dismissed = false; // the binding caught up: true opens it again
+        } else if (presence_->dismissed) {
+            presented = false; // closed by the user, the binding kept saying true
+        }
         presence_->wanted = presented;
         if (!presented) {
             close();
@@ -408,12 +418,15 @@ private:
     // In-window content closed by the user (Esc, an outside click): the binding goes back to
     // false, and its effect then closes the content as if the app had, after the event.
     std::function<void()> on_closed_by_user() {
-        return [presence = presence_, binding = is_presented_, generation = presence_->generation] {
+        return [presence = presence_, binding = is_presented_, dismissals = dismissals_,
+                generation = presence_->generation] {
             if (presence->generation != generation || !presence->wanted) {
                 return;
             }
             presence->wanted = false;
+            presence->dismissed = true;
             binding.set(false);
+            dismissals.set(dismissals.peek() + 1);
         };
     }
 
@@ -433,7 +446,13 @@ private:
         };
     }
 
+    // Untracked: what the content reads while it mounts (its bodies, its first values) doesn't
+    // subscribe the effect that follows the binding.
     void open() {
+        untrack([this] { open_untracked(); });
+    }
+
+    void open_untracked() {
         if (presence_->open) {
             return;
         }
@@ -521,6 +540,7 @@ private:
     std::function<View()> floating_;
     FloatingOptions options_;
     Binding<bool> is_presented_;
+    State<int> dismissals_;
     LowerContext context_;
     int level_;
     std::shared_ptr<Presence> presence_ = std::make_shared<Presence>();
@@ -543,10 +563,15 @@ public:
         if (!options.motion && default_motion_) {
             options.motion = default_motion_(context.environment);
         }
+        const State<int> dismissals(0);
         auto element = std::make_unique<FloatingElement>(detail::lower(content_, context), floating_, std::move(options),
-                                                         is_presented_, context);
+                                                         is_presented_, dismissals, context);
         FloatingElement* const target = element.get();
-        detail::bind(Prop<bool>(is_presented_), context, [target](bool presented) { target->set_presented(presented); });
+        detail::bind(Prop<bool>([is_presented = is_presented_, dismissals] {
+                         dismissals(); // a user's dismissal re-runs this, whatever the binding does
+                         return is_presented();
+                     }),
+                     context, [target](bool presented) { target->set_presented(presented); });
         return element;
     }
 

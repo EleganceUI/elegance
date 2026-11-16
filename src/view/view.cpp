@@ -955,31 +955,6 @@ private:
     bool pressed_ = false;
 };
 
-// `.focused(binding)` around a view: focusable itself only when nothing inside is (so Tab and
-// clicks reach the field it wraps, not an invisible wrapper first).
-class FocusScopeHandler final : public EventHandler {
-public:
-    void set_scope(Element* scope) noexcept { scope_ = scope; }
-    [[nodiscard]] bool focusable() const override {
-        bool inner = false;
-        std::function<void(Element&)> walk = [&](Element& element) {
-            if (inner) {
-                return;
-            }
-            if (EventHandler* handler = element.event_handler(); handler && handler->focusable()) {
-                inner = true;
-                return;
-            }
-            element.for_each_child(walk);
-        };
-        scope_->for_each_child(walk);
-        return !inner;
-    }
-
-private:
-    Element* scope_ = nullptr;
-};
-
 } // namespace
 
 // Focusable elements draw the ring in the tint.
@@ -1359,21 +1334,15 @@ std::unique_ptr<Element> SpacerNode::lower(const LowerContext& context) const {
 }
 
 std::unique_ptr<Element> CanvasNode::lower(const LowerContext& context) const {
-    auto element = std::make_unique<CanvasElement>(draw_);
-    // The canvas redraws when state its drawing reads changes: an effect runs the drawing once
-    // (into nothing) to see what it reads, and asks for a frame whenever that changes.
-    CanvasElement* const target = element.get();
-    effect([draw = draw_, target, needs_frame = context.needs_frame, first = std::make_shared<bool>(true)] {
-        if (!draw) {
-            return;
-        }
-        DisplayList scratch;
-        GraphicsContext graphics(scratch, target->frame(), 1);
-        draw(graphics);
-        if (!std::exchange(*first, false) && needs_frame) {
+    // The canvas draws again when state its drawing read changes. The drawing reads while the
+    // canvas paints, into an effect that only asks for a frame; that frame paints and reads again.
+    auto reads = std::make_shared<EffectNode>([needs_frame = context.needs_frame] {
+        if (needs_frame) {
             *needs_frame = true;
         }
     });
+    auto element = std::make_unique<CanvasElement>(draw_, reads);
+    start_effect(std::move(reads));
     return element;
 }
 

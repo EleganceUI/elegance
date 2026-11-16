@@ -63,7 +63,12 @@ struct Release {
 };
 // The running App's UI thread (none while no App runs), and what other threads handed it.
 std::thread::id g_release_thread;
-std::vector<Release> g_releases;
+// Leaked: objects handed over that no thread destroyed before the process ends stay reachable,
+// rather than being destroyed during static destruction, when the threads they use are gone.
+std::vector<Release>& g_releases = *new std::vector<Release>();
+// The process's main thread, recorded while the program loads (static initialization runs on
+// it). Outside a run it takes the UI thread's place: other threads hand it what they release.
+const std::thread::id g_main_thread = std::this_thread::get_id();
 
 std::vector<Release> take_releases() {
     const std::lock_guard lock(g_mutex);
@@ -119,10 +124,14 @@ bool run_ui_tasks() {
 
 void release_on_ui_thread(void* object, void (*destroy)(void*) noexcept) noexcept {
     bool handed_over = false;
+    bool collect = false;
     std::function<void()> wake;
     {
         const std::lock_guard lock(g_mutex);
-        if (g_release_thread != std::thread::id() && g_release_thread != std::this_thread::get_id()) {
+        // While an App runs, its UI thread destroys these; outside a run, the main thread does.
+        const bool running = g_release_thread != std::thread::id();
+        const std::thread::id ui = running ? g_release_thread : g_main_thread;
+        if (ui != std::this_thread::get_id()) {
             try {
                 g_releases.push_back({object, destroy});
                 handed_over = true;
@@ -130,12 +139,18 @@ void release_on_ui_thread(void* object, void (*destroy)(void*) noexcept) noexcep
             } catch (...) {
                 // Swallowed: out of memory, so it's destroyed here, rather than not at all.
             }
+        } else {
+            // Outside a run, what other threads handed over waits for the main thread: now.
+            collect = !running && !g_releases.empty();
         }
     }
     if (!handed_over) {
         destroy(object);
     } else if (wake) {
         wake();
+    }
+    if (collect) {
+        run_ui_releases();
     }
 }
 

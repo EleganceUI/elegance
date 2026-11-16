@@ -9,6 +9,7 @@
 #include "core/log.h"
 #include "core/scope_exit.h"
 #include "core/timers.h"
+#include "platform/generic/desktop_sdl.h"
 #include "platform/generic/menu_bar.h"
 #include "platform/generic/native.h"
 #include "platform/generic/platform.h"
@@ -33,6 +34,7 @@
 #include <elg/reactive.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <exception>
 #include <map>
@@ -47,6 +49,9 @@ using namespace detail;
 using namespace std::chrono_literals;
 
 namespace {
+
+// Whether an App is running, on whichever thread (App::run).
+std::atomic<bool> g_app_running{false};
 
 // How long the UI thread waits for a frame to be presented when it must be on screen before
 // continuing (first frame, live resize). Bounded so a stuck driver can't freeze the app.
@@ -427,9 +432,17 @@ int App::run() {
     if (self.running) {
         throw UsageError("App::run() is already running");
     }
+    if (!platform::native::on_main_thread()) {
+        throw UsageError("App::run() must be called on the main thread, the one that ran main()");
+    }
     if (self.windows.empty()) {
         throw UsageError("App::run(): no windows; call App::window() first");
     }
+    // One App runs at a time, so the UI thread can't change while one runs.
+    if (g_app_running.exchange(true)) {
+        throw UsageError("App::run(): another App is running; only one App runs at a time");
+    }
+    const ScopeExit app_done([] { g_app_running = false; });
     self.running = true;
     self.quit_requested = false;
     const ScopeExit reset([&] {
@@ -460,6 +473,7 @@ int App::run() {
     const ScopeExit forget_handlers([] {
         platform::native::forget_notification_handlers();
         platform::native::forget_menu_command();
+        platform::remove_tray_icons(); // before SDL quits; TrayIcons kept after the run do nothing
     });
 
     // Fonts and glyphs, shared by all windows; outlives every element tree. Glyphs finishing on
@@ -571,17 +585,24 @@ int App::run() {
     // The menu bar (design.md §13.4): the system's (macOS, Windows), or drawn at the top of each
     // window (Linux). Chosen items come here, from the menus or their shortcuts.
     const bool macos_menus = current_platform() == Platform::macos;
-    State<std::vector<menus::Item>> shown_menus(menus::resolve(self.menus, macos_menus));
+    // A chosen item's id is looked up in the menus that were shown when it was chosen, which its
+    // command carries along: never in menus given since, where the id may be another item.
+    menus::Source shown_source = std::make_shared<const std::vector<MenuBarItem>>(self.menus);
+    State<std::vector<menus::Item>> shown_menus(menus::resolve(shown_source, macos_menus));
     State<std::map<std::uint32_t, bool>> shown_checks;
-    const auto run_menu_command = [&](std::uint32_t id) {
-        const MenuBarItem* found = menus::find(self.menus, id);
+    const auto run_menu_command = [&](const menus::Source& source, std::uint32_t id) {
+        const MenuBarItem* found = source ? menus::find(*source, id) : nullptr;
         if (!found || !found->enabled) {
             return;
         }
-        // Copied: its callbacks may replace the menu bar (App::menu_bar), destroying the item
-        // and the function that's running.
+        // Copied: its callbacks may replace the menu bar (App::menu_bar).
         const MenuBarItem item = *found;
-        if (item.checked) {
+        if (item.checked && source != shown_source) {
+            // Chosen from menus replaced since: its own callback, with nothing shown to update.
+            if (item.toggled) {
+                item.toggled(!*item.checked);
+            }
+        } else if (item.checked) {
             const auto known = self.menu_checks.find(id);
             const bool now = !(known != self.menu_checks.end() ? known->second : *item.checked);
             self.menu_checks[id] = now;
@@ -618,12 +639,14 @@ int App::run() {
         }
     };
     self.show_menus = [&] {
-        shown_menus = menus::resolve(self.menus, macos_menus);
+        shown_source = std::make_shared<const std::vector<MenuBarItem>>(self.menus);
+        shown_menus = menus::resolve(shown_source, macos_menus);
         shown_checks = self.menu_checks;
         if (!platform::native::draws_menu_bar_in_content()) {
-            // Commands from the system's menus run between events, like other UI tasks.
-            platform::native::set_menu_bar(shown_menus.peek(), [&run_menu_command](std::uint32_t id) {
-                post_ui_task([&run_menu_command, id] { run_menu_command(id); });
+            // Commands from the system's menus run between events, like other UI tasks, on the
+            // menus these are.
+            platform::native::set_menu_bar(shown_menus.peek(), [&run_menu_command, source = shown_source](std::uint32_t id) {
+                post_ui_task([&run_menu_command, source, id] { run_menu_command(source, id); });
             });
         }
     };
@@ -635,7 +658,9 @@ int App::run() {
         for (WindowEntry& entry : self.windows) {
             entry.wrap = [&shown_menus, &shown_checks, &run_menu_command](const View& content) {
                 View bar = menus::menu_bar_view([&shown_menus] { return shown_menus(); },
-                                                [&run_menu_command](std::uint32_t id) { run_menu_command(id); },
+                                                [&run_menu_command](const menus::Source& source, std::uint32_t id) {
+                                                    run_menu_command(source, id);
+                                                },
                                                 [&shown_checks, &shown_menus](std::uint32_t id) {
                                                     const auto& checks = shown_checks();
                                                     if (const auto found = checks.find(id); found != checks.end()) {
@@ -1397,7 +1422,7 @@ int App::run() {
                     // A menu item's shortcut, once no view wanted the key.
                     if (const std::uint32_t id =
                             menus::match_shortcut(shown_menus.peek(), KeyboardShortcut{key.key, key.modifiers})) {
-                        run_menu_command(id);
+                        run_menu_command(shown_source, id);
                     }
                 }
             }
@@ -1457,8 +1482,23 @@ int App::run() {
         }
     };
 
+    // Views that just became .disabled() lose their press, gestures, and focus; what the cancelled
+    // handlers write takes effect too. Removed elements are forgotten first, so this touches none.
+    const auto release_disabled = [&] {
+        forget_removed();
+        for (const auto& live : windows) {
+            if (live->events.release_disabled()) {
+                live->dirty = true;
+                flush_effects();
+                forget_removed();
+            }
+        }
+    };
+
     // Each event's handlers run first; then their effects, so the next event sees what they changed.
+    // What the last event, task or timer disabled lets go before this event is dispatched.
     const auto deliver = [&](const platform::Event& event) {
+        release_disabled();
         {
             const DeferEffects dispatching;
             handle(event);
@@ -1563,16 +1603,7 @@ int App::run() {
         while (run_lifecycle_actions()) {
             flush_effects();
         }
-        forget_removed();
-        // Views that just became .disabled() lose their press, gestures, and focus; what the
-        // cancelled handlers write takes effect too.
-        for (const auto& live : windows) {
-            if (live->events.release_disabled()) {
-                live->dirty = true;
-                flush_effects();
-                forget_removed();
-            }
-        }
+        release_disabled();
         const std::shared_ptr<const Animation> transaction = take_flush_animation();
         const LayoutAnimationScope layout_animation(transaction.get());
         finish_closing();

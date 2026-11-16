@@ -1546,12 +1546,6 @@ public:
         return modifier(LayoutValueModifier<Key>(std::move(value)));
     }
 
-    // User extensions: a header of extra member declarations, set per target with
-    // elegance_view_extensions() in CMake (design.md §9.4).
-#ifdef ELG_VIEW_EXTENSIONS
-#include ELG_VIEW_EXTENSIONS
-#endif
-
 private:
     friend struct detail::ViewAccess;
 
@@ -1577,11 +1571,6 @@ private:
 
     std::shared_ptr<const detail::ViewNode> node_;
 };
-
-// Extensions may add member functions only; these catch the changes that would break the ABI.
-static_assert(sizeof(View) == sizeof(std::shared_ptr<const detail::ViewNode>),
-              "view extensions must not add data members");
-static_assert(!std::is_polymorphic_v<View>, "view extensions must not add virtual functions");
 
 } // namespace elg
 

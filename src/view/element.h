@@ -522,7 +522,9 @@ private:
 
 class CanvasElement final : public Element {
 public:
-    explicit CanvasElement(std::function<void(GraphicsContext&)> draw) : draw_(std::move(draw)) {}
+    // `reads` becomes what the drawing reads each time it paints.
+    CanvasElement(std::function<void(GraphicsContext&)> draw, std::shared_ptr<ReactiveNode> reads)
+        : draw_(std::move(draw)), reads_(std::move(reads)) {}
     bool cullable() const override { return false; } // it may draw outside its frame
 
 protected:
@@ -533,6 +535,7 @@ protected:
 
 private:
     std::function<void(GraphicsContext&)> draw_;
+    std::shared_ptr<ReactiveNode> reads_;
 };
 
 // `.transition(...)`, and the wrapper If/ForEach put around each child: animates the child in
@@ -841,6 +844,8 @@ public:
     HoverDelay effective_hover_delay() const override { return {.enter = 0, .exit = 0}; }
 
     EventHandler* event_handler() noexcept override { return this; }
+    // Disabled: the dispatcher cancels its press and moves focus off it (release_disabled).
+    EventHandler* disabled_handler() noexcept override { return untrack(enabled_) ? nullptr : this; }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
     // Written on focus changes, for styles (ButtonConfiguration::is_focused).

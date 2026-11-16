@@ -23,6 +23,18 @@ namespace native {
 
 namespace {
 
+// Recorded while the program loads: static initialization runs on the main thread, also when
+// Elegance is a DLL that the program links.
+const DWORD g_main_thread = GetCurrentThreadId();
+
+} // namespace
+
+bool on_main_thread() {
+    return GetCurrentThreadId() == g_main_thread;
+}
+
+namespace {
+
 HWND hwnd_of(SDL_Window* window) {
     return static_cast<HWND>(
         SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));

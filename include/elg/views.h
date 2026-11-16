@@ -156,9 +156,9 @@ ELG_API View Separator(Axis axis = Axis::horizontal, SeparatorOptions options = 
 /// @return An empty view, the same as View().
 ELG_API View EmptyView();
 
-/// Immediate-mode drawing; `draw` runs every time the view is drawn. Takes the proposed size (10
-/// points where a dimension is left open). It's drawn again when state that `draw` reads changes;
-/// to see what that is, `draw` also runs once when the view is built.
+/// Immediate-mode drawing; `draw` runs every time the view is drawn, and only then, with the
+/// view's laid-out frame and the window's scale. Takes the proposed size (10 points where a
+/// dimension is left open). It's drawn again when state that `draw` read changes.
 ///
 /// @param draw Draws the view, in a context that covers its frame. May be empty: the canvas then
 ///   draws nothing.

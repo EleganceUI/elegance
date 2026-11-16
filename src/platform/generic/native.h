@@ -41,6 +41,9 @@ Rect system_controls_frame(WindowParts& parts);
 // window edge), during which our event loop doesn't run.
 bool in_move_size_loop();
 
+// Whether this is the process's main thread, the one that ran main().
+bool on_main_thread();
+
 // Secure text input: detaches the IME from `window` (where SDL doesn't do it for the password
 // input type), and switches system-wide Secure Event Input on or off (macOS).
 void detach_ime(SDL_Window* window);
