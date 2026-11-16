@@ -126,11 +126,11 @@ struct RecorderState {
                 if (!state) {
                     return;
                 }
-                const float level = state->peak.exchange(0);
+                const float loudest = state->peak.exchange(0);
                 const double seconds = state->seconds();
-                post_ui_task([weak, level, seconds] {
+                post_ui_task([weak, loudest, seconds] {
                     if (const auto recorder = weak.lock()) {
-                        recorder->level = std::min(level, 1.f);
+                        recorder->level = std::min(loudest, 1.f);
                         recorder->duration = seconds;
                     }
                 });
