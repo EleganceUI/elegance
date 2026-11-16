@@ -105,7 +105,7 @@ TEST_CASE("a ForEach whose content takes a Signal keeps each key's view, which f
     const State<std::vector<Item>> items(std::vector<Item>{{1, 10}, {2, 20}});
     int mounts = 0;
     std::vector<Signal<Item>> signals;
-    const auto root = detail::lower(VStack(ForEach(items, &Item::id, [&](Signal<Item> item) {
+    const auto root = detail::lower(VStack(ForEach(items, &Item::id, [&](const Signal<Item>& item) {
                                         ++mounts;
                                         signals.push_back(item);
                                         return Rectangle().frame(10, 10);
