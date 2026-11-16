@@ -17,6 +17,7 @@
 #include "platform/system_text.h"
 #include "reactive/runtime.h"
 #include "render/frame_mailbox.h"
+#include "view/menu_bar_view.h"
 #include "view/path_cache.h"
 #include "render/render_thread.h"
 #include "text/text_system.h"

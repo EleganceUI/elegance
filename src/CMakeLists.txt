@@ -85,6 +85,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         view/inspect.cpp
         app/inspector.cpp
         view/lazy_stack.cpp
+        view/menu_bar_view.cpp
         view/menus.cpp
         view/modifiers.cpp
         view/navigation_stack.cpp

@@ -7,7 +7,8 @@
 
 // The menu bar (App::menu_bar) as this platform shows it: roles resolved to titles and
 // shortcuts, items the platform has no use for left out. Each OS shows the result its way
-// (platform/<os>/menu_bar.*); Linux draws it in the window with menu_bar_view().
+// (platform/<os>/menu_bar.*); on Linux the app draws it in the window
+// (view/menu_bar_view.h).
 
 #include <elg/app.h>
 
@@ -62,11 +63,6 @@ std::string shortcut_text(const KeyboardShortcut& shortcut);
 
 // The id of the enabled item whose shortcut is `shortcut`, or 0.
 std::uint32_t match_shortcut(const std::vector<Item>& menus, const KeyboardShortcut& shortcut);
-
-// Linux: the bar of menus at the top of a window. `menus` is read reactively (it changes when
-// App::menu_bar is called again); `command` runs an item; `checked` says whether a check box is.
-View menu_bar_view(const Prop<std::vector<Item>>& menus, const Command& command,
-                   const std::function<bool(std::uint32_t)>& checked);
 
 } // namespace elg::detail::menus
 
