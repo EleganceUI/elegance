@@ -12,7 +12,6 @@
 #include "core/log.h"
 #include "core/ui_tasks.h"
 #include "core/utf8.h"
-#include "media/image_decode.h"
 #include "platform/sdl/native.h"
 #include "platform/system_text.h"
 
@@ -23,7 +22,6 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
-#include <fstream>
 #include <list>
 #include <mutex>
 #include <vector>
@@ -33,15 +31,16 @@ namespace elg {
 
 using detail::log_warning;
 
-namespace {
-
-namespace fs = std::filesystem;
-
-void require_app(const char* what) {
+void detail::platform::require_app(const char* what) {
     if (!SDL_WasInit(SDL_INIT_VIDEO)) {
         throw UsageError(std::format("{}: call it while an App runs", what));
     }
 }
+using detail::platform::require_app;
+
+namespace {
+
+namespace fs = std::filesystem;
 
 std::string utf8(const fs::path& path) {
     const std::u8string text = path.u8string();
@@ -183,7 +182,7 @@ struct TrayIcon::State {
     TrayIconOptions options;
     SDL_Tray* tray = nullptr;
     SDL_Surface* icon = nullptr;
-    std::shared_ptr<const detail::DecodedImage> pixels;
+    detail::platform::TrayIconPicture picture; // the surface's pixels
     // One per menu entry with something to do, at stable addresses (SDL keeps pointers to them).
     struct Entry {
         std::function<void()> action;
@@ -271,45 +270,28 @@ struct TrayIcon::State {
         build(menu, options.menu);
     }
 
-    void create() {
-        // The icon: the given image, or a dot in a calm blue.
-        try {
-            std::vector<std::uint8_t> bytes;
-            if (!options.icon.file.empty()) {
-                std::ifstream in(options.icon.file, std::ios::binary);
-                bytes.assign(std::istreambuf_iterator<char>(in), {});
-            } else if (!options.icon.data.empty()) {
-                bytes.assign(options.icon.data.begin(), options.icon.data.end());
-            }
-            if (!bytes.empty()) {
-                // At most 256 pixels a side (a tray icon's), and within the source's pixel limit.
-                const detail::ImageLimits asked = detail::image_limits(options.icon.max_pixels, options.icon.max_side);
-                pixels = detail::decode_image(bytes, {.max_pixels = asked.max_pixels,
-                                                      .max_side = std::min(asked.max_side, 256u)});
-            }
-        } catch (const std::exception& failure) {
-            log_warning("TrayIcon: {}", failure.what());
-        }
-        if (!pixels) {
-            auto dot = std::make_shared<detail::DecodedImage>();
-            dot->width = dot->height = 32;
-            dot->rgba.resize(std::size_t{32} * 32 * 4);
+    void create(std::optional<detail::platform::TrayIconPicture> given) {
+        // The icon: the given picture, or a dot in a calm blue.
+        if (given) {
+            picture = std::move(*given);
+        } else {
+            auto dot = std::make_shared<std::vector<std::uint8_t>>(std::size_t{32} * 32 * 4);
             for (std::size_t y = 0; y < 32; ++y) {
                 for (std::size_t x = 0; x < 32; ++x) {
                     const float d = std::hypot(static_cast<float>(x) - 15.5f, static_cast<float>(y) - 15.5f);
                     const auto alpha = static_cast<std::uint8_t>(std::clamp(13.f - d, 0.f, 1.f) * 255);
-                    std::uint8_t* p = &dot->rgba[(y * 32 + x) * 4];
+                    std::uint8_t* p = &(*dot)[(y * 32 + x) * 4];
                     p[0] = 0x8A;
                     p[1] = 0xAD;
                     p[2] = 0xF4;
                     p[3] = alpha;
                 }
             }
-            pixels = dot;
+            picture = {32, 32, std::move(dot)};
         }
-        icon = SDL_CreateSurfaceFrom(static_cast<int>(pixels->width), static_cast<int>(pixels->height),
-                                     SDL_PIXELFORMAT_RGBA32, const_cast<std::uint8_t*>(pixels->rgba.data()),
-                                     static_cast<int>(pixels->width * 4));
+        icon = SDL_CreateSurfaceFrom(static_cast<int>(picture.width), static_cast<int>(picture.height),
+                                     SDL_PIXELFORMAT_RGBA32, const_cast<std::uint8_t*>(picture.rgba->data()),
+                                     static_cast<int>(picture.width * 4));
         tray = SDL_CreateTray(icon, options.tooltip.c_str());
         if (!tray) {
             log_warning("TrayIcon: {}", SDL_GetError());
@@ -327,14 +309,15 @@ void remove_tray_icons() {
     }
 }
 
-} // namespace detail::platform
-
-TrayIcon::TrayIcon(TrayIconOptions options) : state_(std::make_shared<State>()) {
-    require_app("TrayIcon");
-    detail::make_valid_utf8(options);
-    state_->options = std::move(options);
-    state_->create();
+std::shared_ptr<TrayIcon::State> create_tray_icon(TrayIconOptions options, std::optional<TrayIconPicture> picture) {
+    auto state = std::make_shared<TrayIcon::State>();
+    make_valid_utf8(options);
+    state->options = std::move(options);
+    state->create(std::move(picture));
+    return state;
 }
+
+} // namespace detail::platform
 
 void TrayIcon::set_tooltip(const std::string& tooltip) const {
     state_->options.tooltip = detail::valid_utf8(tooltip);

@@ -100,6 +100,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         view/styled_text.cpp
         view/text.cpp
         view/text_field.cpp
+        view/tray_icon.cpp
         view/view.cpp
         view/window_controls.cpp
 )
