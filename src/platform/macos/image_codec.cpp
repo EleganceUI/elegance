@@ -2,9 +2,9 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Images on macOS (media/image_decode.h): ImageIO.
+// Images on macOS (media/image_codec_backend.h): ImageIO.
 
-#include "media/image_decode.h"
+#include "media/image_codec_backend.h"
 
 #include <elg/error.h>
 

@@ -2,9 +2,9 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Images on Windows (media/image_decode.h): the Windows Imaging Component.
+// Images on Windows (media/image_codec_backend.h): the Windows Imaging Component.
 
-#include "media/image_decode.h"
+#include "media/image_codec_backend.h"
 
 #include <elg/error.h>
 

@@ -7,6 +7,8 @@
 
 #include "media/image_decode.h"
 
+#include "media/image_codec_backend.h"
+
 #include <elg/error.h>
 
 #include <algorithm>

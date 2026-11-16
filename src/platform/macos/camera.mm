@@ -12,7 +12,7 @@
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
-#include "media/image_decode.h"
+#include "media/image_codec_backend.h"
 #include "platform/macos/pixel_buffer.h"
 
 #import <AVFoundation/AVFoundation.h>

@@ -12,6 +12,7 @@
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
+#include "media/image_codec_backend.h"
 #include "media/image_decode.h"
 
 #include <linux/videodev2.h>

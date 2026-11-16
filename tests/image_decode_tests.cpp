@@ -6,6 +6,7 @@
 // asked for, and EXIF orientation.
 
 #include "media/image_decode.h"
+#include "media/image_codec_backend.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
