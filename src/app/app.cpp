@@ -1760,10 +1760,6 @@ int App::run() {
     return 0;
 }
 
-const char* version() {
-    return ELG_VERSION_STRING;
-}
-
 void post_to_ui_thread(std::function<void()> task) {
     if (!task) {
         throw UsageError("post_to_ui_thread() needs a task");

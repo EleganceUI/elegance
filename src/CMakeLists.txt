@@ -21,6 +21,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         reactive/timers.cpp
         core/ui_tasks.cpp
         core/utf8.cpp
+        core/version.cpp
         gpu/atlas_texture.cpp
         gpu/blur_renderer.cpp
         gpu/buffer.cpp
