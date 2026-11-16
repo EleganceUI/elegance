@@ -8,12 +8,12 @@
 #include "core/crash.h"
 #endif
 #include "core/log.h"
+#include "core/os_backend.h"
 #include "gpu/instance.h"
 #include "gpu/render_device.h"
 #include "gpu/system.h"
 #include "gpu/webgpu.h"
 #include "media/image_decode.h"
-#include "platform/platform.h"
 
 #include <elg/error.h>
 
@@ -67,7 +67,7 @@ std::mutex g_render_device_mutex;
 std::weak_ptr<RenderDevice> g_render_device;
 
 wgpu::BackendType requested_backend() {
-    const std::string value = platform::environment_variable("ELG_GPU_BACKEND").value_or("");
+    const std::string value = os::environment_variable("ELG_GPU_BACKEND").value_or("");
     if (value.empty()) {
         return wgpu::BackendType::Undefined;
     }
@@ -166,7 +166,7 @@ Device::Device(const Instance& instance)
     // PIX, RenderDoc) name each render pass ("blur", "layer shadow", "window", ...).
     const char* const labels[] = {"use_user_defined_labels_in_backend"};
     wgpu::DawnTogglesDescriptor device_toggles;
-    if (platform::environment_variable("ELG_GPU_LABELS").value_or("") == "1") {
+    if (os::environment_variable("ELG_GPU_LABELS").value_or("") == "1") {
         device_toggles.enabledToggleCount = 1;
         device_toggles.enabledToggles = labels;
         descriptor.nextInChain = &device_toggles;

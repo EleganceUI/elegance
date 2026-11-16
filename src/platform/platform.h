@@ -284,7 +284,6 @@ private:
     LiveResizeCallback live_resize_;
 };
 
-std::optional<std::string> environment_variable(const char* name);
 // Whether the OS is set to a dark appearance.
 bool system_prefers_dark();
 // The system's font with its window caption buttons' glyphs (Segoe MDL2 Assets on Windows), or

@@ -703,13 +703,6 @@ void Platform::dispatch_live_resize(std::uint32_t window_id) noexcept {
 
 // --- Free functions ---
 
-std::optional<std::string> environment_variable(const char* name) {
-    if (const char* value = SDL_getenv(name)) {
-        return std::string(value);
-    }
-    return std::nullopt;
-}
-
 bool system_prefers_dark() {
     return SDL_GetSystemTheme() == SDL_SYSTEM_THEME_DARK;
 }

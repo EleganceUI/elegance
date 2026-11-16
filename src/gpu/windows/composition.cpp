@@ -7,8 +7,8 @@
 #include "gpu/windows/composition.h"
 
 #include "core/log.h"
+#include "core/os_backend.h"
 #include "gpu/swapchain.h"
-#include "platform/platform.h"
 
 #include <elg/error.h>
 
@@ -58,7 +58,7 @@ bool wants_composition(const Device& device, bool transparent, void* native_wind
         return false;
     }
     // ELG_PRESENT=surface: WebGPU surfaces for opaque windows only.
-    return transparent || platform::environment_variable("ELG_PRESENT").value_or("") != "surface";
+    return transparent || os::environment_variable("ELG_PRESENT").value_or("") != "surface";
 }
 
 } // namespace
@@ -116,7 +116,7 @@ bool CompositionTarget::supported(const Device& device) {
 
 bool composition_allowed() {
     static const bool allowed = [] {
-        const std::string present = platform::environment_variable("ELG_PRESENT").value_or("");
+        const std::string present = os::environment_variable("ELG_PRESENT").value_or("");
         if (present == "swapchain") {
             log_info("windows present through WebGPU surfaces (ELG_PRESENT=swapchain)");
             return false;

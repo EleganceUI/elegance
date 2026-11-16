@@ -10,11 +10,11 @@
 #include <elg/image.h>
 
 #include "core/log.h"
+#include "core/os_backend.h"
 #include "core/ui_tasks.h"
 #include "media/image_decode.h"
 #include "net/fetch.h"
 #include "net/http_cache.h"
-#include "platform/platform.h"
 #include "view/raster_image.h"
 #include "view/view_node.h"
 
@@ -121,7 +121,7 @@ private:
             cache_->retire();
         }
         cache_.reset();
-        const std::optional<std::string> setting = platform::environment_variable("ELG_IMAGE_CACHE");
+        const std::optional<std::string> setting = os::environment_variable("ELG_IMAGE_CACHE");
         if (!options_.disk || (setting && *setting == "off")) {
             return;
         }
