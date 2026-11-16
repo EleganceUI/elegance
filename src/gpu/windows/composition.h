@@ -11,6 +11,8 @@
 #include "gpu/presenter.h"
 #include "gpu/webgpu.h"
 
+#include <webgpu/webgpu_cpp.h>
+
 #include <array>
 #include <cstdint>
 #include <memory>

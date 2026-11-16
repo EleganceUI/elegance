@@ -5,10 +5,11 @@
 #ifndef ELG_GPU_WEBGPU_H
 #define ELG_GPU_WEBGPU_H
 
-// Single include point for WebGPU (Dawn, design.md §5). Dawn runs it on Direct3D 12 or 11,
-// Vulkan, or Metal, whichever the platform has.
+// Helpers for WebGPU (Dawn, design.md §5), which Dawn runs on Direct3D 12 or 11, Vulkan, or Metal,
+// whichever the platform has. Declared with WebGPU's types incomplete (gpu/webgpu_types.h): the
+// sources that call them include <webgpu/webgpu_cpp.h>.
 
-#include <webgpu/webgpu_cpp.h> // IWYU pragma: export
+#include "gpu/webgpu_types.h"
 
 #include <string>
 #include <string_view>

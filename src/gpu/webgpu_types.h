@@ -7,7 +7,8 @@
 
 // WebGPU's types as the GPU layer's headers name them: declared, not defined, so that the headers
 // other layers include don't include WebGPU. Source files that use them include
-// <webgpu/webgpu_cpp.h> (in the GPU layer, gpu/webgpu.h), whose definitions must match these.
+// <webgpu/webgpu_cpp.h>, whose definitions must match these (the compiler checks the enums'
+// underlying types).
 
 #include <cstdint>
 
@@ -26,6 +27,8 @@ class Instance;
 class Queue;
 class RenderPassEncoder;
 class RenderPipeline;
+class Sampler;
+class ShaderModule;
 class SharedFence;
 class Surface;
 class Texture;
@@ -34,11 +37,13 @@ class TextureView;
 
 struct Future;
 struct InstanceDescriptor;
+struct StringView;
 
 enum class BackendType : std::uint32_t;
 enum class FeatureName : std::uint32_t;
 enum class TextureFormat : std::uint32_t;
 enum class BufferUsage : std::uint64_t;
+enum class TextureUsage : std::uint64_t;
 
 } // namespace wgpu
 

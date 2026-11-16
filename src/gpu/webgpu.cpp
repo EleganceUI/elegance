@@ -6,6 +6,8 @@
 
 #include <elg/error.h>
 
+#include <webgpu/webgpu_cpp.h>
+
 #include <format>
 
 namespace elg::detail::gpu {
