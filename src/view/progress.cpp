@@ -5,6 +5,7 @@
 // Progress: a fraction or activity, drawn by a ProgressStyle; the built-in bar and ring draw
 // themselves.
 
+#include "core/numeric.h"
 #include "view/animated.h"
 #include "view/view_node.h"
 
@@ -172,7 +173,7 @@ private:
         if (sweep <= 0) {
             return;
         }
-        const int segments = std::max(2, static_cast<int>(std::ceil(sweep * 64)));
+        const int segments = clamped_cast<int>(std::ceil(sweep * 64), 2, 64); // sweep is at most a turn
         Path arc;
         for (int i = 0; i <= segments; ++i) {
             const float turn = start + sweep * static_cast<float>(i) / static_cast<float>(segments);

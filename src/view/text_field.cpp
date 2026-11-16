@@ -4,6 +4,8 @@
 
 #include "view/text_field.h"
 
+#include "core/numeric.h"
+#include "core/utf8.h"
 #include "text/glyph_draw.h"
 #include "text/styled_layout.h"
 
@@ -68,6 +70,7 @@ bool TextEditor::enabled() const {
 }
 
 void TextEditor::set_placeholder(std::string placeholder) {
+    make_valid_utf8(placeholder);
     placeholder_ = single_line(std::move(placeholder));
     if (face_) {
         shape_placeholder();
@@ -114,6 +117,7 @@ void TextEditor::set_styler(std::function<std::vector<TextSpan>(std::string_view
 }
 
 std::string TextEditor::clean(std::string text) const {
+    make_valid_utf8(text);
     if (!multiline()) {
         return single_line(std::move(text));
     }
@@ -249,6 +253,7 @@ void TextEditor::reshape() {
             }
             const std::size_t shown_begin = shown_.size();
             if (span.label) {
+                make_valid_utf8(*span.label);
                 segments_.push_back({span.begin, span.end, shown_begin, shown_begin + span.label->size(), true});
                 shown_ += *span.label;
             } else {
@@ -362,8 +367,7 @@ std::size_t TextEditor::byte_on_line(std::size_t line, float x) const {
 std::size_t TextEditor::byte_at(Point local) const {
     const float line_height = shape_.line_height > 0 ? shape_.line_height : line_height_;
     const std::size_t lines = std::max<std::size_t>(layout_.lines.size(), 1);
-    const auto line = static_cast<std::size_t>(std::clamp(std::floor(local.y / line_height), 0.f,
-                                                           static_cast<float>(lines - 1)));
+    const auto line = clamped_cast<std::size_t>(std::floor(local.y / line_height), 0, lines - 1);
     return byte_on_line(line, local.x);
 }
 
@@ -857,8 +861,8 @@ EventResult TextEditor::text_input(const TextInputEvent& event) {
     if (!composing() && !event.text.empty() && caret_ != anchor_) {
         erase(selection_start(), selection_end());
     }
-    composition_ = single_line(event.text);
-    composition_cursor_ = std::min(event.cursor, composition_.size());
+    composition_ = single_line(valid_utf8(event.text));
+    composition_cursor_ = to_boundary(composition_, event.cursor);
     reshape();
     restart_blink();
     return {.consumed = true, .redraw = true};

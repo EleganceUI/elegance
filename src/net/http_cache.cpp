@@ -32,12 +32,16 @@ namespace {
 
 namespace fs = std::filesystem;
 
-// 2: files record their body's size, so a truncated one is noticed.
-constexpr std::string_view kMagic = "ELGCACHE 2";
+// 2: files record their body's size, so a truncated one is noticed. 3: files keep the response's
+// status, Location and the header fields freshness is computed from, instead of the result.
+constexpr std::string_view kMagic = "ELGCACHE 3";
 constexpr std::int64_t kHeuristicCap = std::int64_t{24} * 60 * 60; // a Last-Modified guess stays fresh at most a day
 // Delta-seconds (max-age, Age) larger than this count as this (RFC 9111 §1.2.2), so ages and
 // lifetimes add up without overflowing.
 constexpr std::int64_t kMaxDeltaSeconds = std::int64_t{1} << 31;
+// Later times received (Unix seconds, past the year 36000) mean a damaged file: ages are computed
+// from them without overflowing up to there.
+constexpr std::int64_t kMaxReceived = std::int64_t{1} << 40;
 
 std::string lower(std::string_view text) {
     std::string result(text);
@@ -125,17 +129,29 @@ int month_number(std::string_view name) {
     return 0;
 }
 
-// Fills in age and lifetime from the headers.
-void apply_freshness(CacheEntry& entry, const CacheHeaders& headers, const Directives& directives, std::int64_t now) {
-    entry.received = now;
+// Whether the fields give a lifetime themselves (max-age, Expires), rather than leaving it to a
+// heuristic.
+bool explicit_freshness(const CacheHeaders& headers, const Directives& directives) {
+    return directives.max_age.has_value() || !headers.expires.empty();
+}
+
+// Fills in age, lifetime and the directives from the entry's status, fields and time received.
+void apply_freshness(CacheEntry& entry) {
+    const CacheHeaders& headers = entry.headers;
+    const Directives directives = parse_cache_control(headers.cache_control);
+    const std::int64_t now = entry.received;
     const std::int64_t date = parse_http_date(headers.date).value_or(now);
     const std::int64_t apparent_age = std::max<std::int64_t>(0, now - date);
     entry.initial_age = std::min(std::max(apparent_age, parse_delta_seconds(headers.age).value_or(0)), kMaxDeltaSeconds);
+    entry.permanent = false;
     if (directives.max_age) {
         entry.lifetime = *directives.max_age;
     } else if (!headers.expires.empty()) {
         // An invalid Expires (often "0") means already expired.
         entry.lifetime = std::max<std::int64_t>(0, parse_http_date(headers.expires).value_or(0) - date);
+    } else if (entry.redirect()) {
+        entry.lifetime = 0; // no heuristic for redirects
+        entry.permanent = entry.status == 301 || entry.status == 308;
     } else if (const auto modified = parse_http_date(headers.last_modified); modified && *modified < date) {
         entry.lifetime = std::min((date - *modified) / 10, kHeuristicCap);
     } else {
@@ -149,6 +165,16 @@ void apply_freshness(CacheEntry& entry, const CacheHeaders& headers, const Direc
 // Whether `text` can be a value in a cache file, whose lines end with LF: no CR, LF or NUL.
 bool writable(std::string_view text) {
     return text.find_first_of(std::string_view("\r\n\0", 3)) == std::string_view::npos;
+}
+
+bool writable(const CacheHeaders& headers) {
+    return writable(headers.cache_control) && writable(headers.expires) && writable(headers.date) &&
+           writable(headers.age) && writable(headers.etag) && writable(headers.last_modified) &&
+           writable(headers.vary);
+}
+
+bool writable(const CacheEntry& entry) {
+    return writable(entry.url) && writable(entry.location) && writable(entry.headers);
 }
 
 std::string hex_digest(std::string_view text) {
@@ -196,6 +222,21 @@ std::string executable_name() {
 
 std::int64_t unix_now() {
     return std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+std::string format_http_date(std::int64_t time) {
+    namespace chrono = std::chrono;
+    static constexpr std::array<std::string_view, 7> kWeekdays{"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    static constexpr std::array<std::string_view, 12> kMonths{"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                                               "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    const chrono::sys_seconds point{chrono::seconds(time)};
+    const chrono::sys_days day = chrono::floor<chrono::days>(point);
+    const chrono::year_month_day date{day};
+    const chrono::hh_mm_ss<chrono::seconds> clock{point - day};
+    return std::format("{}, {:02} {} {:04} {:02}:{:02}:{:02} GMT", kWeekdays[chrono::weekday(day).c_encoding()],
+                       static_cast<unsigned>(date.day()), kMonths[static_cast<unsigned>(date.month()) - 1],
+                       static_cast<int>(date.year()), clock.hours().count(), clock.minutes().count(),
+                       clock.seconds().count());
 }
 
 std::optional<std::int64_t> parse_http_date(std::string_view text) {
@@ -265,39 +306,80 @@ std::optional<std::int64_t> parse_http_date(std::string_view text) {
     return days * 86400 + *hours * 3600 + *minutes * 60 + *seconds;
 }
 
-std::optional<CacheEntry> make_cache_entry(std::string url, bool redirected, const CacheHeaders& headers,
-                                           std::vector<std::uint8_t> body, std::int64_t now) {
+bool is_redirect_status(unsigned status) {
+    return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
+}
+
+namespace {
+
+// Whether a Vary value (every field's, joined with commas) has a `*` member: the response varies
+// on more than the request's fields.
+bool varies_on_everything(std::string_view vary) {
+    while (!vary.empty()) {
+        const std::size_t comma = vary.find(',');
+        if (trim(vary.substr(0, comma)) == "*") {
+            return true;
+        }
+        vary = comma == std::string_view::npos ? std::string_view() : vary.substr(comma + 1);
+    }
+    return false;
+}
+
+} // namespace
+
+bool forbids_storing(const CacheHeaders& headers) {
+    return parse_cache_control(headers.cache_control).no_store || varies_on_everything(headers.vary);
+}
+
+std::optional<CacheEntry> make_cache_entry(std::string url, unsigned status, std::string location,
+                                           const CacheHeaders& headers, std::vector<std::uint8_t> body,
+                                           std::int64_t now) {
     const Directives directives = parse_cache_control(headers.cache_control);
-    if (directives.no_store || trim(headers.vary) == "*" || !writable(url) || !writable(headers.etag) ||
-        !writable(headers.last_modified)) {
+    const bool redirect = is_redirect_status(status);
+    if ((status != 200 && !redirect) || (redirect && location.empty()) || forbids_storing(headers)) {
         return std::nullopt;
+    }
+    if (redirect && !explicit_freshness(headers, directives) && status != 301 && status != 308) {
+        return std::nullopt; // a temporary redirect with no lifetime of its own
     }
     CacheEntry entry;
     entry.url = std::move(url);
-    entry.redirected = redirected;
-    entry.etag = std::string(trim(headers.etag));
-    entry.last_modified = std::string(trim(headers.last_modified));
-    apply_freshness(entry, headers, directives, now);
-    if (!entry.fresh(now) && !entry.revalidates()) {
+    entry.status = status;
+    entry.location = std::move(location);
+    entry.headers = headers;
+    entry.received = now;
+    if (!writable(entry)) {
+        return std::nullopt;
+    }
+    apply_freshness(entry);
+    if (!redirect && !entry.fresh(now) && !entry.revalidates()) {
         return std::nullopt; // it would never be used
     }
-    entry.body = std::move(body);
+    if (!redirect) {
+        entry.body = std::move(body);
+    }
     return entry;
 }
 
 void refresh_cache_entry(CacheEntry& entry, const CacheHeaders& headers, std::int64_t now) {
-    // A 304 may leave out headers it doesn't change (RFC 9111 §4.3.4). Values that can't be
-    // written to the cache file don't replace the ones it has.
-    CacheHeaders merged = headers;
-    if (merged.etag.empty() || !writable(merged.etag)) {
-        merged.etag = entry.etag;
-    }
-    if (merged.last_modified.empty() || !writable(merged.last_modified)) {
-        merged.last_modified = entry.last_modified;
-    }
-    entry.etag = std::string(trim(merged.etag));
-    entry.last_modified = std::string(trim(merged.last_modified));
-    apply_freshness(entry, merged, parse_cache_control(merged.cache_control), now);
+    // A 304 may leave out the fields it doesn't change (RFC 9111 §4.3.4): those it has replace the
+    // stored ones, unless they can't be written to the cache file.
+    const auto update = [](std::string& stored, const std::string& value) {
+        if (!value.empty() && writable(value)) {
+            stored = value;
+        }
+    };
+    update(entry.headers.cache_control, headers.cache_control);
+    update(entry.headers.expires, headers.expires);
+    update(entry.headers.etag, headers.etag);
+    update(entry.headers.last_modified, headers.last_modified);
+    update(entry.headers.vary, headers.vary);
+    // Age and Date are the 304's own: without them it's new, and was sent when it arrived (RFC
+    // 9110 §6.6.1), so the stored response's age and date don't carry over.
+    entry.headers.age = writable(headers.age) ? headers.age : std::string();
+    entry.headers.date = !headers.date.empty() && writable(headers.date) ? headers.date : format_http_date(now);
+    entry.received = now;
+    apply_freshness(entry);
 }
 
 // --- HttpCache ---
@@ -352,6 +434,62 @@ void HttpCache::load_index() {
     }
 }
 
+std::optional<CacheEntry> read_cache_entry(std::istream& in, const std::string& url) {
+    CacheEntry entry;
+    std::optional<std::int64_t> size;
+    std::string line;
+    if (!std::getline(in, line) || line != kMagic) {
+        return std::nullopt;
+    }
+    std::optional<std::int64_t> status;
+    std::optional<std::int64_t> received;
+    while (std::getline(in, line) && !line.empty()) {
+        const std::size_t space = line.find(' ');
+        const std::string key = line.substr(0, space);
+        std::string value = space == std::string::npos ? std::string() : line.substr(space + 1);
+        if (key == "url") {
+            entry.url = std::move(value);
+        } else if (key == "status") {
+            status = parse_number(value);
+        } else if (key == "location") {
+            entry.location = std::move(value);
+        } else if (key == "received") {
+            received = parse_number(value);
+        } else if (key == "cache-control") {
+            entry.headers.cache_control = std::move(value);
+        } else if (key == "expires") {
+            entry.headers.expires = std::move(value);
+        } else if (key == "date") {
+            entry.headers.date = std::move(value);
+        } else if (key == "age") {
+            entry.headers.age = std::move(value);
+        } else if (key == "etag") {
+            entry.headers.etag = std::move(value);
+        } else if (key == "last-modified") {
+            entry.headers.last_modified = std::move(value);
+        } else if (key == "vary") {
+            entry.headers.vary = std::move(value);
+        } else if (key == "size") {
+            size = parse_number(value);
+        }
+    }
+    if (entry.url != url || !size || !status || !received) {
+        return std::nullopt; // or another URL's: a SHA-256 collision
+    }
+    entry.status = static_cast<unsigned>(std::min<std::int64_t>(*status, 999));
+    if ((entry.status != 200 && !is_redirect_status(entry.status)) || (entry.redirect() && entry.location.empty()) ||
+        *received > kMaxReceived) {
+        return std::nullopt;
+    }
+    entry.received = *received;
+    apply_freshness(entry);
+    entry.body.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    if (std::cmp_not_equal(entry.body.size(), *size)) {
+        return std::nullopt; // truncated
+    }
+    return entry;
+}
+
 std::optional<CacheEntry> HttpCache::find(const std::string& url) {
     const std::lock_guard lock(mutex_);
     load_index();
@@ -360,50 +498,11 @@ std::optional<CacheEntry> HttpCache::find(const std::string& url) {
     if (!in) {
         return std::nullopt;
     }
-    CacheEntry entry;
-    std::optional<std::int64_t> size;
-    std::string line;
-    const auto damaged = [&] {
+    std::optional<CacheEntry> entry = read_cache_entry(in, url);
+    if (!entry) {
         in.close();
         discard(path); // a miss, and gone
         return std::nullopt;
-    };
-    if (!std::getline(in, line) || line != kMagic) {
-        return damaged();
-    }
-    while (std::getline(in, line) && !line.empty()) {
-        const std::size_t space = line.find(' ');
-        const std::string key = line.substr(0, space);
-        const std::string value = space == std::string::npos ? std::string() : line.substr(space + 1);
-        const std::int64_t number = parse_number(value).value_or(0);
-        if (key == "url") {
-            entry.url = value;
-        } else if (key == "redirected") {
-            entry.redirected = number != 0;
-        } else if (key == "received") {
-            entry.received = number;
-        } else if (key == "initial-age") {
-            entry.initial_age = std::min(number, kMaxDeltaSeconds); // the file may be damaged
-        } else if (key == "lifetime") {
-            entry.lifetime = std::min(number, kMaxDeltaSeconds);
-        } else if (key == "no-cache") {
-            entry.no_cache = number != 0;
-        } else if (key == "must-revalidate") {
-            entry.must_revalidate = number != 0;
-        } else if (key == "etag") {
-            entry.etag = value;
-        } else if (key == "last-modified") {
-            entry.last_modified = value;
-        } else if (key == "size") {
-            size = parse_number(value);
-        }
-    }
-    if (entry.url != url || !size) {
-        return damaged(); // or another URL's: a SHA-256 collision
-    }
-    entry.body.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
-    if (std::cmp_not_equal(entry.body.size(), *size)) {
-        return damaged(); // truncated
     }
     std::error_code error;
     const auto now = fs::file_time_type::clock::now();
@@ -416,8 +515,7 @@ std::optional<CacheEntry> HttpCache::find(const std::string& url) {
 
 void HttpCache::store(const CacheEntry& entry, std::uint64_t generation) {
     const std::lock_guard lock(mutex_);
-    if (retired_ || generation != generation_.load() || entry.body.size() > limit_ / 8 || !writable(entry.url) ||
-        !writable(entry.etag) || !writable(entry.last_modified)) {
+    if (retired_ || generation != generation_.load() || entry.body.size() > limit_ / 8 || !writable(entry)) {
         return;
     }
     load_index();
@@ -432,16 +530,19 @@ void HttpCache::store(const CacheEntry& entry, std::uint64_t generation) {
             log_warning("net: can't write to the image cache at {}", directory_.string());
             return;
         }
+        const CacheHeaders& headers = entry.headers;
         out << kMagic << '\n'
             << "url " << entry.url << '\n'
-            << "redirected " << (entry.redirected ? 1 : 0) << '\n'
+            << "status " << entry.status << '\n'
+            << "location " << entry.location << '\n'
             << "received " << entry.received << '\n'
-            << "initial-age " << entry.initial_age << '\n'
-            << "lifetime " << entry.lifetime << '\n'
-            << "no-cache " << (entry.no_cache ? 1 : 0) << '\n'
-            << "must-revalidate " << (entry.must_revalidate ? 1 : 0) << '\n'
-            << "etag " << entry.etag << '\n'
-            << "last-modified " << entry.last_modified << '\n'
+            << "cache-control " << headers.cache_control << '\n'
+            << "expires " << headers.expires << '\n'
+            << "date " << headers.date << '\n'
+            << "age " << headers.age << '\n'
+            << "etag " << headers.etag << '\n'
+            << "last-modified " << headers.last_modified << '\n'
+            << "vary " << headers.vary << '\n'
             << "size " << entry.body.size() << '\n'
             << '\n';
         out.write(reinterpret_cast<const char*>(entry.body.data()), static_cast<std::streamsize>(entry.body.size()));
@@ -463,6 +564,12 @@ void HttpCache::store(const CacheEntry& entry, std::uint64_t generation) {
     files_[path] = {size, fs::file_time_type::clock::now()};
     total_ += size;
     trim();
+}
+
+void HttpCache::remove(const std::string& url) {
+    const std::lock_guard lock(mutex_);
+    load_index();
+    discard(path_for(url));
 }
 
 void HttpCache::discard(const fs::path& path) {

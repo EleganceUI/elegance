@@ -47,7 +47,8 @@ struct StrokeStyle {
     LineJoin join = LineJoin::miter; ///< how corners look
     float miter_limit = 4;           ///< miter joins longer than this many widths become bevels
     /// on, off, on, off... lengths; empty: solid. An odd number of lengths is used written twice, as
-    /// in SVG: {4} is {4, 4}, and {4, 2, 1} is {4, 2, 1, 4, 2, 1}.
+    /// in SVG: {4} is {4, 4}, and {4, 2, 1} is {4, 2, 1, 4, 2, 1}. A path gets at most 100,000
+    /// dashes: the rest of it isn't drawn, and a warning is logged.
     std::vector<float> dash;
     float dash_phase = 0;            ///< how far into the pattern the stroke starts
 };

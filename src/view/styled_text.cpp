@@ -5,6 +5,8 @@
 // StyledText: text in runs of different weights, colors, and highlights, with clickable runs.
 
 #include "core/crash.h"
+#include "core/numeric.h"
+#include "core/utf8.h"
 #include "text/styled_layout.h"
 #include "text/text_system.h"
 #include "view/accessibility.h"
@@ -43,7 +45,8 @@ class StyledTextElement final : public Element, private EventHandler {
 public:
     StyledTextElement(TextSystem& text, std::vector<TextRun> runs, std::vector<Attachment> attachments)
         : text_(&text), runs_(std::move(runs)), attachments_(std::move(attachments)) {
-        for (const TextRun& run : runs_) {
+        for (TextRun& run : runs_) {
+            make_valid_utf8(run.text); // run by run, so the runs' offsets stay theirs
             content_ += run.text;
             has_taps_ = has_taps_ || static_cast<bool>(run.on_tap);
         }
@@ -144,7 +147,7 @@ private:
         if (shape_.line_height <= 0 || point.y < bounds.y) {
             return std::nullopt;
         }
-        const auto li = static_cast<std::size_t>((point.y - bounds.y) / shape_.line_height);
+        const auto li = clamped_cast<std::size_t>((point.y - bounds.y) / shape_.line_height);
         if (li >= arranged_.lines.size()) {
             return std::nullopt;
         }

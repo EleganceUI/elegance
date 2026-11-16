@@ -132,6 +132,17 @@
             }
         },
         {
+            "name": "linux-clang-libcxx-fuzz",
+            "displayName": "Linux, Clang and libc++, the libFuzzer targets (AddressSanitizer and UBSan, static)",
+            "inherits": "linux-clang-libcxx-release",
+            "cacheVariables": {
+                "ELG_FUZZ": true,
+                "ELG_BUILD_TESTS": false,
+                "ELG_BUILD_SANDBOX": false,
+                "ELG_C_API": false
+            }
+        },
+        {
             "name": "linux-clang-libcxx-tsan",
             "displayName": "Linux x64, Clang and libc++, ThreadSanitizer (static)",
             "inherits": "linux-clang-libcxx-release",

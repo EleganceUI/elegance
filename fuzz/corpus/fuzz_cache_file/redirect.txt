@@ -1,0 +1,14 @@
+ELGCACHE 3
+url https://example.com/a.png
+status 308
+location /v2.png
+received 784111777
+cache-control 
+expires 
+date 
+age 
+etag 
+last-modified 
+vary 
+size 0
+

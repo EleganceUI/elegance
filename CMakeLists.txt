@@ -58,7 +58,20 @@ set_property(CACHE ELG_SANITIZER PROPERTY STRINGS "" address thread)
 if (ELG_SANITIZER AND MSVC)
     message(FATAL_ERROR "ELG_SANITIZER is for Linux and macOS builds")
 endif ()
-if (ELG_SANITIZER STREQUAL "address")
+# The libFuzzer targets in fuzz/ (ELGSPEC-0005.R16): Clang, under AddressSanitizer and UBSan, with
+# everything built instrumented for the fuzzer's coverage. Static builds only: the targets call
+# Elegance's internals.
+option(ELG_FUZZ "Build the libFuzzer targets in fuzz/ (Clang; AddressSanitizer and UBSan; a static build)" OFF)
+if (ELG_FUZZ)
+    if (NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR MSVC)
+        message(FATAL_ERROR "ELG_FUZZ needs Clang, for libFuzzer")
+    endif ()
+    if (ELG_SANITIZER STREQUAL "thread")
+        message(FATAL_ERROR "ELG_FUZZ builds with AddressSanitizer and UBSan; leave ELG_SANITIZER empty or address")
+    endif ()
+    add_compile_options(-fsanitize=fuzzer-no-link)
+endif ()
+if (ELG_SANITIZER STREQUAL "address" OR ELG_FUZZ)
     add_compile_options(-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer)
     add_link_options(-fsanitize=address,undefined)
 elseif (ELG_SANITIZER STREQUAL "thread")
@@ -115,6 +128,9 @@ option(ELG_ACCESSKIT_SHARED "Link AccessKit's shared library instead of its stat
 option(ELG_STATIC_EXPORTS "Static build only: keep ELG_API exported, for linking into a shared library that re-exports it"
        OFF)
 option(ELG_C_API "Compile the C API (c/), so a change that breaks it fails the build" ${PROJECT_IS_TOP_LEVEL})
+if (ELG_FUZZ AND ELG_BUILD_SHARED)
+    message(FATAL_ERROR "ELG_FUZZ needs a static build (ELG_BUILD_SHARED=OFF)")
+endif ()
 
 # Put the library and every executable in one folder so the apps find the DLLs on Windows.
 if (PROJECT_IS_TOP_LEVEL)
@@ -147,4 +163,8 @@ endif ()
 if (ELG_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif ()
+
+if (ELG_FUZZ)
+    add_subdirectory(fuzz)
 endif ()

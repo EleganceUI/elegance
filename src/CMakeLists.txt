@@ -19,6 +19,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         core/log.cpp
         core/timers.cpp
         core/ui_tasks.cpp
+        core/utf8.cpp
         gpu/atlas_texture.cpp
         gpu/blur_renderer.cpp
         gpu/buffer.cpp
@@ -48,6 +49,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         platform/generic/dynamic_library.cpp
         platform/generic/menu_bar.cpp
         platform/generic/platform_sdl.cpp
+        platform/generic/system_text.cpp
         reactive/runtime.cpp
         render/display_list.cpp
         render/frame_mailbox.cpp

@@ -47,9 +47,10 @@
 extern "C" {
 
 /// UTF-8 text: `len` bytes at `ptr`, not NUL-terminated. A null `ptr` is the empty string.
-/// Passed to Elegance, it's read during the call (Elegance copies what it keeps). Passed to a
-/// callback or returned, it points into Elegance's memory: valid during the callback, or as long
-/// as the function says.
+/// Malformed UTF-8 in text that Elegance shows, edits or exposes to assistive technology reads as
+/// U+FFFD, as it does through the C++ API. Passed to Elegance, it's read during the call
+/// (Elegance copies what it keeps). Passed to a callback or returned, it points into Elegance's
+/// memory: valid during the callback, or as long as the function says.
 struct ElgStr {
     const char* ptr; ///< The first byte, or null.
     size_t len;      ///< Length in bytes.
@@ -372,6 +373,12 @@ struct ElgImageSource {
     ElgStr file;        ///< A raster image file's path (PNG, JPEG, ...).
     ElgBytes data;      ///< Encoded image data in memory, in any of those formats (copied).
     float scale;        ///< Raster images: pixels per point, e.g. 2 for double-resolution artwork.
+    /// Raster images: the most pixels (width times height) the image may have; one with more isn't
+    /// shown. 0: the default, 2^27.
+    uint64_t max_pixels;
+    /// Raster images: the longest side the image is decoded at; a larger one is scaled down to fit.
+    /// 0: the default, 8192.
+    uint32_t max_side;
 };
 
 } // extern "C"
@@ -680,6 +687,8 @@ inline elg::ImageSource image_source(const ElgImageSource& s) {
     result.file = path(s.file);
     result.data = bytes(s.data);
     result.scale = s.scale;
+    result.max_pixels = s.max_pixels;
+    result.max_side = s.max_side;
     return result;
 }
 

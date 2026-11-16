@@ -49,6 +49,10 @@ std::optional<ProxyChoice> proxy_from_environment(std::string_view scheme, std::
 // `bypass` is ";" separated patterns with * wildcards, "<local>" meaning names without a dot.
 ProxyChoice proxy_from_windows_settings(std::string_view proxies, std::string_view bypass, std::string_view scheme,
                                         std::string_view host);
+// Whether `text` matches `pattern`, where each `*` stands for any run of characters (compared
+// exactly: lowercase both first). Iterative: no recursion, and no backtracking beyond the last
+// `*`.
+bool wildcard_match(std::string_view pattern, std::string_view text);
 // Whether `host` is localhost or a loopback address.
 bool is_loopback(std::string_view host);
 

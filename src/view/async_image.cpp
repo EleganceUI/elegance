@@ -9,6 +9,7 @@
 
 #include <elg/image.h>
 
+#include "core/log.h"
 #include "core/ui_tasks.h"
 #include "media/image_decode.h"
 #include "net/fetch.h"
@@ -139,6 +140,7 @@ private:
 struct Loader {
     std::string url;
     bool disk_cache = true;
+    ImageLimits limits;
     std::uint64_t generation = 0; // the memory cache's, when it started
     net::FetchTask task;
     State<int> phase{0}; // AsyncImagePhase::Kind
@@ -153,9 +155,8 @@ struct Loader {
     ~Loader() { task.cancel(); }
 
     void start(const std::shared_ptr<Loader>& self) {
-        bytes = DownloadCache::instance().find(url);
-        if (bytes) {
-            phase = static_cast<int>(AsyncImagePhase::Kind::success);
+        if (std::shared_ptr<const Bytes> cached = DownloadCache::instance().find(url)) {
+            show(std::move(cached)); // probed again: another view may have downloaded it with other limits
             return;
         }
         generation = DownloadCache::instance().generation();
@@ -177,20 +178,27 @@ struct Loader {
             return;
         }
         auto data = std::make_shared<const Bytes>(*result);
+        if (loader->show(data) && loader->generation == DownloadCache::instance().generation()) {
+            DownloadCache::instance().store(loader->url, std::move(data));
+        }
+    }
+
+    // The success phase with `data` if it's an image within this view's limits (an error page or
+    // HTML isn't an image), else the failure phase.
+    bool show(std::shared_ptr<const Bytes> data) {
         try {
-            probe_image(*data); // an error page or HTML isn't an image
+            probe_image(*data, limits);
         } catch (const std::exception& failure) {
-            loader->fail(failure.what());
-            return;
+            fail(failure.what());
+            return false;
         }
-        if (loader->generation == DownloadCache::instance().generation()) {
-            DownloadCache::instance().store(loader->url, data);
-        }
-        loader->bytes = std::move(data);
-        loader->phase = static_cast<int>(AsyncImagePhase::Kind::success);
+        bytes = std::move(data);
+        phase = static_cast<int>(AsyncImagePhase::Kind::success);
+        return true;
     }
 
     void fail(std::string why) {
+        log_warning("AsyncImage: {}: {}", url, why);
         error = std::move(why);
         phase = static_cast<int>(AsyncImagePhase::Kind::failure);
     }
@@ -198,20 +206,22 @@ struct Loader {
 
 class AsyncImageNode final : public ViewNode {
 public:
-    AsyncImageNode(std::string url, std::function<View(const AsyncImagePhase&)> content, float scale, bool disk_cache)
-        : url_(std::move(url)), content_(std::move(content)), scale_(scale), disk_cache_(disk_cache) {}
+    AsyncImageNode(std::string url, std::function<View(const AsyncImagePhase&)> content, float scale, bool disk_cache,
+                   ImageLimits limits)
+        : url_(std::move(url)), content_(std::move(content)), scale_(scale), disk_cache_(disk_cache), limits_(limits) {}
 
     [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto loader = std::make_shared<Loader>();
         loader->url = url_;
         loader->disk_cache = disk_cache_;
+        loader->limits = limits_;
         loader->start(loader);
         const View view = ForEach([loader] { return std::vector<int>{loader->phase()}; },
                                   [loader, content = content_, scale = scale_](int kind) {
                                       AsyncImagePhase phase;
                                       phase.kind = static_cast<AsyncImagePhase::Kind>(kind);
                                       if (phase.kind == AsyncImagePhase::Kind::success && loader->bytes) {
-                                          phase.image = raster_image(loader->bytes, scale);
+                                          phase.image = raster_image(loader->bytes, scale, loader->limits);
                                       }
                                       phase.error = loader->error;
                                       return content(phase);
@@ -224,6 +234,7 @@ private:
     std::function<View(const AsyncImagePhase&)> content_;
     float scale_;
     bool disk_cache_;
+    ImageLimits limits_;
 };
 
 } // namespace
@@ -236,8 +247,9 @@ View AsyncImage(std::string url, std::function<View(const AsyncImagePhase&)> con
     if (!content) {
         throw UsageError("AsyncImage: the content function is empty");
     }
-    return detail::ViewAccess::make(std::make_shared<const detail::AsyncImageNode>(std::move(url), std::move(content),
-                                                                                   options.scale, options.disk_cache));
+    return detail::ViewAccess::make(std::make_shared<const detail::AsyncImageNode>(
+        std::move(url), std::move(content), options.scale, options.disk_cache,
+        detail::image_limits(options.max_pixels, options.max_side)));
 }
 
 void set_image_cache(ImageCacheOptions options) {

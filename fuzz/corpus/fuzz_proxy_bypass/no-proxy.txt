@@ -1,0 +1,4 @@
+.example.com, [::1]:8080, other.org:443
+img.example.com
+8080
+http://user:p%40ss@proxy.corp:3128

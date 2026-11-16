@@ -32,6 +32,7 @@ add_executable(elegance_tests
         disabled_tests.cpp
         dynamic_children_tests.cpp
         floating_tests.cpp
+        float_to_int_tests.cpp
         modifier_shorthand_tests.cpp
         picker_slider_style_tests.cpp
         menu_bar_tests.cpp
@@ -59,6 +60,7 @@ add_executable(elegance_tests
         toggle_tests.cpp
         ui_release_tests.cpp
         ui_task_tests.cpp
+        utf8_tests.cpp
         video_tests.cpp
         test_setup.cpp
 )

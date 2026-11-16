@@ -159,7 +159,8 @@ Path& Path::arc_to(float rx, float ry, float rotation_degrees, bool large_arc, b
         delta += 2 * kPi;
     }
 
-    const int pieces = std::max(1, static_cast<int>(std::ceil(std::abs(delta) / (kPi / 2) - 1e-3f)));
+    // At most a full turn, so 1 to 4 quarters (NaN radii give a NaN delta: 1).
+    const int pieces = detail::clamped_cast<int>(std::ceil(std::abs(delta) / (kPi / 2) - 1e-3f), 1, 4);
     const float step = delta / static_cast<float>(pieces);
     const float handle = 4.f / 3.f * std::tan(step / 4);
     const auto on_ellipse = [&](float t) {
