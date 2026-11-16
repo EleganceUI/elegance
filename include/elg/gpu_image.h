@@ -165,12 +165,14 @@ ELG_API void elg_gpu_image_clear(ElgGpuImage* image);
 #include <elg/view.h>
 #include <memory>
 namespace elg {
-namespace detail { class VideoSource; }
+namespace detail {
+class VideoSource;
 /// Internal bridge for native view plumbing; the returned reference pins the source.
 ///
 /// @param image The image, or null.
 /// @return The image's frame source, or null for a null `image`.
-ELG_API std::shared_ptr<detail::VideoSource> gpu_image_source(const ElgGpuImage* image);
+ELG_API std::shared_ptr<VideoSource> gpu_image_source(const ElgGpuImage* image);
+} // namespace detail
 /// Internal bridge for native view plumbing.
 ///
 /// @param image The image, or null.

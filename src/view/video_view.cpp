@@ -248,7 +248,7 @@ View VideoFeedView(const VideoFeed& feed, ContentMode mode, bool mirrored) {
 }
 
 View GpuImageView(const ElgGpuImage* image, ContentMode mode) {
-    const auto source = gpu_image_source(image);
+    const auto source = detail::gpu_image_source(image);
     if (!source) {
         return View{};
     }

@@ -184,7 +184,7 @@ TEST_CASE("an idle window with a GPU image doesn't wake the render thread", "[vi
     REQUIRE(image);
     {
         detail::FrameSources sources;
-        sources.drew(frame_of(1, {gpu_image_source(image)}));
+        sources.drew(frame_of(1, {detail::gpu_image_source(image)}));
         // Nothing published: no reason to look for frames, now or later.
         CHECK_FALSE(sources.polling());
         for (int i = 0; i < 100; ++i) {

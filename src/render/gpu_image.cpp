@@ -165,7 +165,7 @@ void elg_gpu_image_clear(ElgGpuImage* image) {
 }
 
 namespace elg {
-std::shared_ptr<detail::VideoSource> gpu_image_source(const ElgGpuImage* image) {
+std::shared_ptr<detail::VideoSource> detail::gpu_image_source(const ElgGpuImage* image) {
     return image ? image->source : nullptr;
 }
 bool gpu_image_flipped(const ElgGpuImage* image) {
