@@ -71,13 +71,15 @@ std::vector<std::uint8_t> uploaded(detail::GlyphAtlas& atlas, const detail::Font
 
 // The file the system font comes from.
 std::filesystem::path system_font_file() {
+    std::filesystem::path found;
     for (const std::filesystem::path& file : detail::system_font_candidates(Weight::regular, false)) {
         if (std::filesystem::is_regular_file(file)) {
-            return file;
+            found = file;
+            break;
         }
     }
-    FAIL("no system font");
-    return {};
+    REQUIRE_FALSE(found.empty()); // no system font
+    return found;
 }
 
 } // namespace
