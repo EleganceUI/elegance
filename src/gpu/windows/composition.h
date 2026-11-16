@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_PLATFORM_WINDOWS_COMPOSITION_H
-#define ELG_PLATFORM_WINDOWS_COMPOSITION_H
+#ifndef ELG_GPU_WINDOWS_COMPOSITION_H
+#define ELG_GPU_WINDOWS_COMPOSITION_H
 
 #if defined(_WIN32)
 
@@ -79,4 +79,4 @@ bool composition_allowed();
 
 #endif // _WIN32
 
-#endif // ELG_PLATFORM_WINDOWS_COMPOSITION_H
+#endif // ELG_GPU_WINDOWS_COMPOSITION_H

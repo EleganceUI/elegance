@@ -12,7 +12,7 @@
 #include "gpu/quad_renderer.h"
 #include "gpu/render_image.h"
 #if defined(_WIN32)
-#include "platform/windows/composition.h"
+#include "gpu/windows/composition.h"
 #endif
 #include "gpu/texture_cache.h"
 #include "gpu/video_textures.h"

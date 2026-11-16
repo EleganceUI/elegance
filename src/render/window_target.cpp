@@ -25,7 +25,7 @@ namespace {
 // The longest a composition frame waits for the display to be ready (it's a hint for pacing).
 constexpr unsigned kReadyTimeoutMs = 50;
 
-// Whether a window presents through DirectComposition (platform/windows/composition.h) instead of its
+// Whether a window presents through DirectComposition (gpu/windows/composition.h) instead of its
 // WebGPU surface.
 bool wants_composition(const gpu::Device& device, bool transparent, void* native_window) {
     if (!native_window) {

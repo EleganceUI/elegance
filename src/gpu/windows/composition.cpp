@@ -4,14 +4,14 @@
 
 #if defined(_WIN32)
 
-#include "platform/windows/composition.h"
+#include "gpu/windows/composition.h"
 
 #include "core/log.h"
 #include "platform/platform.h"
 
 #include <elg/error.h>
 
-#include <windows.h> // the build defines WIN32_LEAN_AND_MEAN and NOMINMAX
+// These bring in <windows.h> (the build defines WIN32_LEAN_AND_MEAN and NOMINMAX).
 #include <d3d11_1.h>
 #include <dcomp.h>
 #include <dxgi1_4.h>

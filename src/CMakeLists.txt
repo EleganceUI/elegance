@@ -202,12 +202,13 @@ if (ELG_ICONS)
     endif ()
 endif ()
 
-# Each OS's own code: platform/windows, platform/macos, platform/linux (also other Unix desktops).
+# Each OS's own code: platform/windows, platform/macos, platform/linux (also other Unix desktops),
+# and the GPU layer's interop with each OS's graphics APIs (gpu/<os>).
 if (WIN32)
     target_sources(elegance PRIVATE
+            gpu/windows/composition.cpp
             platform/windows/appearance.cpp
             platform/windows/camera.cpp
-            platform/windows/composition.cpp
             platform/windows/dock.cpp
             platform/windows/fonts.cpp
             platform/windows/image_codec.cpp
