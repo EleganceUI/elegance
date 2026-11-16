@@ -58,18 +58,6 @@ void VideoSource::notify_new_frame() const {
     }
 }
 
-std::size_t packed_size(VideoFrame::Format format, std::uint32_t width, std::uint32_t height) {
-    const std::size_t pixels = static_cast<std::size_t>(width) * height;
-    switch (format) {
-    case VideoFrame::Format::rgba:
-    case VideoFrame::Format::bgra: return pixels * 4;
-    case VideoFrame::Format::yuy2: return pixels * 2;
-    case VideoFrame::Format::nv12:
-    case VideoFrame::Format::i420: return pixels + 2 * (static_cast<std::size_t>((width + 1) / 2) * ((height + 1) / 2));
-    }
-    return 0;
-}
-
 namespace {
 
 // Platforms without a video backend yet: an error, shown by the view.
