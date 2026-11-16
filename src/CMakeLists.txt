@@ -234,8 +234,8 @@ elg_layer(media_os
               platform/macos/video_source.mm
         LINUX platform/linux/camera.cpp platform/linux/image_codec.cpp platform/linux/video_source.cpp)
 elg_layer(media
-        SOURCES media/audio.cpp media/audio_stream.cpp media/camera.cpp media/image_decode.cpp media/miniaudio.cpp
-                media/recorder.cpp media/video_feed.cpp media/video_source.cpp
+        SOURCES media/audio.cpp media/audio_stream.cpp media/camera.cpp media/frame_source.cpp media/image_decode.cpp
+                media/miniaudio.cpp media/recorder.cpp media/video_feed.cpp media/video_source.cpp
         DEPENDS core geometry reactive media_os)
 target_include_directories(elegance_media PRIVATE "${MINIAUDIO_INCLUDE_DIR}")
 

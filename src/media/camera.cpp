@@ -90,10 +90,11 @@ std::vector<std::uint8_t> frame_to_bgra(VideoFrame::Format format, VideoFrame::M
 namespace {
 
 // A camera the OS captures (media/video_backend.h).
-class EngineCamera final : public CameraSource {
+class EngineCamera final : public CameraSource, public FrameSource {
 public:
     explicit EngineCamera(std::unique_ptr<CameraEngine> engine)
-        : CameraSource(engine->wakes_for_frames()), engine_(std::move(engine)) {}
+        : FrameSource(engine->wakes_for_frames()), engine_(std::move(engine)) {}
+    std::shared_ptr<FrameSource> frames() override { return {shared_from_this(), this}; }
 
     // UI thread, right after construction: the engine holds the host weakly.
     void open() { engine_->open(std::shared_ptr<FrameSourceHost>(shared_from_this(), &host_)); }
@@ -121,7 +122,7 @@ public:
     }
 
 private:
-    SourceHost host_{*this}; // outlives the engine
+    SourceHost host_{*this, *this}; // outlives the engine
     std::unique_ptr<CameraEngine> engine_;
 };
 

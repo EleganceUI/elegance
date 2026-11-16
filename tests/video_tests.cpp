@@ -21,14 +21,8 @@ using namespace elg;
 
 namespace {
 
-class ResizingVideoSource final : public detail::VideoSource {
+class ResizingVideoSource final : public detail::FrameSource {
 public:
-    void play() override {}
-    void pause() override {}
-    void seek(double) override {}
-    void set_volume(float) override {}
-    void set_muted(bool) override {}
-    void set_looping(bool) override {}
     bool update() override {
         ++updates;
         return true;
@@ -105,8 +99,8 @@ TEST_CASE("video players record requests before they load", "[video]") {
 
 TEST_CASE("video geometry follows the sampled snapshot without UI size updates",
                     "[video][render]") {
+    // A frame source has no size of its own: only the frames' sizes can place the picture.
     auto source = std::make_shared<ResizingVideoSource>();
-    source->size = Size{1920, 1080}; // Deliberately stale throughout both plans.
     detail::VideoFrame& frame = source->next.emplace();
     frame.width = 100;
     frame.height = 200;
@@ -144,7 +138,6 @@ TEST_CASE("video geometry follows the sampled snapshot without UI size updates",
     CHECK(portrait.video_frames[0]->frame_id == 1);
     CHECK(portrait.video_frames[0]->width == 100);
     // NOLINTEND(bugprone-unchecked-optional-access)
-    CHECK(source->size.peek().width == 1920);
 }
 
 TEST_CASE("video fill keeps destination clipping through transforms",

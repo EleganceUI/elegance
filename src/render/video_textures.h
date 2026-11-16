@@ -7,7 +7,7 @@
 
 #include "gpu/eviction.h"
 #include "gpu/webgpu_types.h"
-#include "media/video_source.h"
+#include "media/video_frame.h"
 
 #include <chrono>
 #include <cstddef>

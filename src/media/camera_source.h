@@ -7,6 +7,7 @@
 
 #include <elg/capture.h>
 
+#include "media/frame_source.h"
 #include "media/video_source.h"
 
 #include <cstdint>
@@ -26,8 +27,7 @@ public:
     virtual std::optional<std::vector<unsigned char>> snapshot() const = 0;
 
 protected:
-    // `wakes_for_frames`: see VideoSource::wakes_for_frames().
-    explicit CameraSource(bool wakes_for_frames = false) : VideoSource(wakes_for_frames) {}
+    CameraSource() = default;
 };
 
 // Converts a packed frame (VideoFrame::Format, as in VideoFrame::pixels) to opaque BGRA, BT.601 or

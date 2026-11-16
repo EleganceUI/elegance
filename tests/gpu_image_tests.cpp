@@ -31,12 +31,12 @@ TEST_CASE("GPU image C handles and view references", "[gpu-image]") {
   REQUIRE(source);
   CHECK(source->size.peek().width == 16);
   CHECK(source->size.peek().height == 16);
-  const auto source_id = source->id;
+  const auto source_id = source->frames()->id;
   auto view = elg::GpuImageView(image);
   auto another_window = elg::GpuImageView(image, elg::ContentMode::fill);
   elg_gpu_image_clear(image);
   CHECK(elg::detail::gpu_image_source(image) == source);
-  CHECK(source->id == source_id);
+  CHECK(source->frames()->id == source_id);
   CHECK(source->size.peek().width == 16);
   CHECK(source->size.peek().height == 16);
   elg_gpu_image_destroy(image);
@@ -87,7 +87,7 @@ TEST_CASE("rejected GPU image publications never transfer ownership",
   CHECK(elg_gpu_image_publish(image.get(), &frame) ==
         ELG_GPU_IMAGE_DEVICE_UNAVAILABLE);
   auto source = elg::detail::gpu_image_source(image.get());
-  const auto source_id = source->id;
+  const auto source_id = source->frames()->id;
   for (const auto dimensions :
        {elg::Size{17, 16}, elg::Size{16, 23}, elg::Size{64, 32}}) {
     frame.width = static_cast<uint32_t>(dimensions.width);
@@ -98,8 +98,8 @@ TEST_CASE("rejected GPU image publications never transfer ownership",
     CHECK(elg_gpu_image_publish(image.get(), &frame) ==
           ELG_GPU_IMAGE_DEVICE_UNAVAILABLE);
     CHECK(elg::detail::gpu_image_source(image.get()) == source);
-    CHECK(source->id == source_id);
-    CHECK_FALSE(source->current());
+    CHECK(source->frames()->id == source_id);
+    CHECK_FALSE(source->frames()->current());
     CHECK(source->size.peek().width == 16);
     CHECK(source->size.peek().height == 16);
   }
@@ -196,7 +196,7 @@ TEST_CASE("GPU image resizing coalesces UI metadata without retaining frames",
       elg_gpu_image_destroy);
   REQUIRE(image);
   auto source = elg::detail::gpu_image_source(image.get());
-  const auto source_id = source->id;
+  const auto source_id = source->frames()->id;
   auto releases = std::make_shared<std::atomic<unsigned>>(0);
   auto wakes = std::make_shared<std::atomic<unsigned>>(0);
   struct ResetWaker {
@@ -219,7 +219,7 @@ TEST_CASE("GPU image resizing coalesces UI metadata without retaining frames",
     return status;
   };
   REQUIRE(publish(32, 24) == ELG_GPU_IMAGE_OK);
-  auto first = source->current();
+  auto first = source->frames()->current();
   REQUIRE(first);
   CHECK(first->width == 32);
   CHECK(first->height == 24);
@@ -235,14 +235,14 @@ TEST_CASE("GPU image resizing coalesces UI metadata without retaining frames",
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
   CHECK(releases->load() ==
         1); // queued metadata did not retain the replaced 48x40 frame
-  CHECK(source->id == source_id);
+  CHECK(source->frames()->id == source_id);
   CHECK(elg::detail::gpu_image_source(image.get()) == source);
   CHECK(elg::gpu_image_flipped(image.get()));
-  REQUIRE(source->current());
-  CHECK(source->current()->width == 64);
-  CHECK(source->current()->height == 48);
-  CHECK(source->current()->source_id == source_id);
-  CHECK(source->current()->texture_id != first->texture_id);
+  REQUIRE(source->frames()->current());
+  CHECK(source->frames()->current()->width == 64);
+  CHECK(source->frames()->current()->height == 48);
+  CHECK(source->frames()->current()->source_id == source_id);
+  CHECK(source->frames()->current()->texture_id != first->texture_id);
   CHECK(run_ui_tasks());
   CHECK(source->size.peek().width == 64);
   CHECK(source->size.peek().height == 48);
@@ -251,9 +251,9 @@ TEST_CASE("GPU image resizing coalesces UI metadata without retaining frames",
   CHECK_FALSE(run_ui_tasks());
   REQUIRE(publish(64, 48) == ELG_GPU_IMAGE_OK);
   CHECK_FALSE(run_ui_tasks()); // same-size frames do not enqueue metadata work
-  const auto previous_texture = source->current()->texture_id;
+  const auto previous_texture = source->frames()->current()->texture_id;
   CHECK(publish(80, 56, true) == ELG_GPU_IMAGE_IMPORT_FAILED);
-  CHECK(source->current()->texture_id == previous_texture);
+  CHECK(source->frames()->current()->texture_id == previous_texture);
   CHECK_FALSE(run_ui_tasks());
   CHECK(source->size.peek().width == 64);
   REQUIRE(publish(80, 56) == ELG_GPU_IMAGE_OK);
@@ -267,7 +267,7 @@ TEST_CASE("GPU image resizing coalesces UI metadata without retaining frames",
         2); // returning to the UI size does not notify observers
   REQUIRE(publish(96, 72) == ELG_GPU_IMAGE_OK);
   elg_gpu_image_clear(image.get());
-  CHECK_FALSE(source->current());
+  CHECK_FALSE(source->frames()->current());
   CHECK(run_ui_tasks());
   CHECK(source->size.peek().width == 96);
   CHECK(source->size.peek().height ==

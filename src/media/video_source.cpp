@@ -21,14 +21,9 @@ namespace elg::detail {
 
 namespace {
 
-std::atomic<std::uint64_t> g_next_id{1};
 std::mutex g_adapter_mutex;
 std::optional<RenderAdapter> g_adapter;
 NativeFrameImporter g_importer; // with g_adapter_mutex held
-// Called with the mutex held, so that it can't run once cleared. Recursive: what a waker does may
-// wake it again.
-std::recursive_mutex g_waker_mutex;
-std::function<void()> g_waker;
 
 } // namespace
 
@@ -56,33 +51,13 @@ NativeFrameImporter native_frame_importer() {
 
 } // namespace
 
-std::uint64_t next_media_id() {
-    return g_next_id.fetch_add(1);
-}
-
-void set_frame_waker(std::function<void()> waker) {
-    const std::lock_guard lock(g_waker_mutex);
-    g_waker = std::move(waker);
-}
-
-VideoSource::VideoSource(bool wakes_for_frames) : id(next_media_id()), wakes_for_frames_(wakes_for_frames) {}
-
-void VideoSource::notify_new_frame() const {
-    if (!shown_) {
-        return; // the render thread updates it once a window shows it
-    }
-    const std::lock_guard lock(g_waker_mutex);
-    if (g_waker) {
-        g_waker();
-    }
-}
-
 namespace {
 
 // Platforms without a video backend yet: an error, shown by the view.
-class UnsupportedVideoSource final : public VideoSource {
+class UnsupportedVideoSource final : public VideoSource, public FrameSource {
 public:
     explicit UnsupportedVideoSource(std::string message) { error = std::move(message); }
+    std::shared_ptr<FrameSource> frames() override { return {shared_from_this(), this}; }
     void play() override {}
     void pause() override {}
     void seek(double) override {}
@@ -94,10 +69,11 @@ public:
 };
 
 // A video the OS's media engine plays (media/video_backend.h).
-class EngineVideoSource final : public VideoSource {
+class EngineVideoSource final : public VideoSource, public FrameSource {
 public:
     explicit EngineVideoSource(std::unique_ptr<VideoEngine> engine)
-        : VideoSource(engine->wakes_for_frames()), engine_(std::move(engine)) {}
+        : FrameSource(engine->wakes_for_frames()), engine_(std::move(engine)) {}
+    std::shared_ptr<FrameSource> frames() override { return {shared_from_this(), this}; }
 
     // UI thread, right after construction: the engine holds the host weakly.
     void open() { engine_->open(std::shared_ptr<FrameSourceHost>(shared_from_this(), &host_)); }
@@ -112,7 +88,7 @@ public:
     std::optional<VideoFrame> current() const override { return engine_->current(); }
 
 private:
-    SourceHost host_{*this}; // outlives the engine
+    SourceHost host_{*this, *this}; // outlives the engine
     std::unique_ptr<VideoEngine> engine_;
 };
 
@@ -121,7 +97,7 @@ private:
 // --- SourceHost ---
 
 std::uint64_t SourceHost::source_id() const noexcept {
-    return source_.id;
+    return frames_.id;
 }
 
 std::uint64_t SourceHost::new_id() const {
@@ -129,15 +105,15 @@ std::uint64_t SourceHost::new_id() const {
 }
 
 void SourceHost::set_playing_now(bool playing) noexcept {
-    source_.playing_now_ = playing;
+    frames_.set_playing_now(playing);
 }
 
 bool SourceHost::is_playing_now() const noexcept {
-    return source_.playing_now_;
+    return frames_.is_playing_now();
 }
 
 void SourceHost::notify_new_frame() const {
-    source_.notify_new_frame();
+    frames_.notify_new_frame();
 }
 
 std::optional<RenderAdapter> SourceHost::render_adapter() const {

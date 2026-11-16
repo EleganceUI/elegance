@@ -17,10 +17,11 @@
 namespace elg::detail {
 
 // The FrameSourceHost of a VideoSource whose frames an OS's engine makes: what the engine reports
-// goes to the source's state. A member of the source, declared before the engine it outlives.
+// goes to the source's state and its frames. A member of the source, declared before the engine it
+// outlives.
 class SourceHost final : public FrameSourceHost {
 public:
-    explicit SourceHost(VideoSource& source) noexcept : source_(source) {}
+    SourceHost(VideoSource& source, FrameSource& frames) noexcept : source_(source), frames_(frames) {}
     SourceHost(const SourceHost&) = delete;
     SourceHost& operator=(const SourceHost&) = delete;
     SourceHost(SourceHost&&) = delete;
@@ -53,6 +54,7 @@ public:
 
 private:
     VideoSource& source_;
+    FrameSource& frames_;
 };
 
 } // namespace elg::detail

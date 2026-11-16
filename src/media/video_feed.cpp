@@ -31,9 +31,10 @@ VideoFrame::Format frame_format(VideoFeed::Format format) {
 } // namespace
 
 // Pushing and clearing wake the render thread: it never looks for frames on its own.
-class FeedSource final : public VideoSource {
+class FeedSource final : public VideoSource, public FrameSource {
 public:
-    FeedSource() : VideoSource(true) {}
+    FeedSource() : FrameSource(true) {}
+    std::shared_ptr<FrameSource> frames() override { return {shared_from_this(), this}; }
 
     void play() override {}
     void pause() override {}
@@ -59,7 +60,7 @@ public:
             height_ = height;
             full_range_ = full_range;
             ++number_;
-            playing_now_ = true;
+            set_playing_now(true);
             post = resized && !std::exchange(sync_pending_, true);
         }
         notify_new_frame();
@@ -78,7 +79,7 @@ public:
             frame_.reset();
             width_ = height_ = 0;
             ++number_;
-            playing_now_ = false;
+            set_playing_now(false);
             post = !std::exchange(sync_pending_, true);
         }
         notify_new_frame();

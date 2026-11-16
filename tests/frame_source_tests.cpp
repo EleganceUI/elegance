@@ -8,6 +8,7 @@
 
 #include "core/ui_tasks.h"
 #include "media/media_access.h"
+#include "media/video_source.h"
 #include "render/frame_sources.h"
 
 #include <elg/elegance.h>
@@ -39,14 +40,10 @@ using namespace elg;
 namespace {
 
 // A decoder's output: update() takes the frames decoded since it last ran, as decoders' do.
-class FakeSource final : public detail::VideoSource {
+class FakeSource final : public detail::FrameSource {
 public:
-    void play() override { playing_now_ = true; }
-    void pause() override { playing_now_ = false; }
-    void seek(double) override {}
-    void set_volume(float) override {}
-    void set_muted(bool) override {}
-    void set_looping(bool) override {}
+    void play() { set_playing_now(true); }
+    void pause() { set_playing_now(false); }
     bool update() override {
         ++updates;
         if (decoded_ == taken_) {
@@ -71,7 +68,7 @@ private:
     std::uint64_t taken_ = 0;
 };
 
-detail::WindowFrame frame_of(std::uint32_t window_id, const std::vector<std::shared_ptr<detail::VideoSource>>& shown) {
+detail::WindowFrame frame_of(std::uint32_t window_id, const std::vector<std::shared_ptr<detail::FrameSource>>& shown) {
     detail::WindowFrame frame;
     frame.window_id = window_id;
     for (const auto& source : shown) {
@@ -184,7 +181,7 @@ TEST_CASE("an idle window with a GPU image doesn't wake the render thread", "[vi
     REQUIRE(image);
     {
         detail::FrameSources sources;
-        sources.drew(frame_of(1, {detail::gpu_image_source(image)}));
+        sources.drew(frame_of(1, {detail::gpu_image_source(image)->frames()}));
         // Nothing published: no reason to look for frames, now or later.
         CHECK_FALSE(sources.polling());
         for (int i = 0; i < 100; ++i) {
@@ -204,7 +201,7 @@ TEST_CASE("a video feed wakes the render thread for each frame while a window sh
     CHECK(counter.wakes() == 0); // no window shows it
 
     detail::FrameSources sources;
-    sources.drew(frame_of(1, {detail::MediaAccess::source(feed)}));
+    sources.drew(frame_of(1, {detail::MediaAccess::source(feed)->frames()}));
     CHECK_FALSE(sources.polling()); // it wakes the render thread instead
     feed.push(VideoFeed::Format::bgra, 2, 2, bgra(2, 2, 2));
     CHECK(counter.wakes() == 1);
@@ -238,11 +235,11 @@ TEST_CASE("waking the render thread ends its wait for work, even before it waits
 TEST_CASE("each push and clear of a video feed wakes the render thread once its result shows", "[video][frames]") {
     const VideoFeed feed;
     detail::FrameSources sources;
-    sources.drew(frame_of(1, {detail::MediaAccess::source(feed)}));
+    sources.drew(frame_of(1, {detail::MediaAccess::source(feed)->frames()}));
     // What the render thread would find when woken: the width of the feed's frame.
     std::vector<std::optional<std::uint32_t>> found;
     detail::set_frame_waker([&] {
-        const std::optional<detail::VideoFrame> frame = detail::MediaAccess::source(feed)->current();
+        const std::optional<detail::VideoFrame> frame = detail::MediaAccess::source(feed)->frames()->current();
         found.push_back(frame ? std::optional(frame->width) : std::nullopt);
     });
     feed.push(VideoFeed::Format::bgra, 2, 2, bgra(2, 2, 1));
@@ -259,7 +256,7 @@ TEST_CASE("after pushes and clears from several threads, a feed's windows and vi
         const VideoFeed feed;
         detail::run_ui_tasks(); // from earlier tests
         detail::FrameSources sources;
-        sources.drew(frame_of(1, {detail::MediaAccess::source(feed)}));
+        sources.drew(frame_of(1, {detail::MediaAccess::source(feed)->frames()}));
         const WakeCounter counter;
         {
             std::vector<std::jthread> threads;
@@ -283,7 +280,7 @@ TEST_CASE("after pushes and clears from several threads, a feed's windows and vi
         REQUIRE(counter.wakes() > 0);
         sources.update();
         REQUIRE(sources.stale() == std::vector<std::uint32_t>{1});
-        const std::optional<detail::VideoFrame> frame = detail::MediaAccess::source(feed)->current();
+        const std::optional<detail::VideoFrame> frame = detail::MediaAccess::source(feed)->frames()->current();
         // The views' size and flags come to the same result.
         detail::run_ui_tasks();
         REQUIRE(feed.has_frame() == frame.has_value());
@@ -323,13 +320,13 @@ TEST_CASE("a clear that comes between a push and its views' update wins", "[vide
     const VideoFeed feed;
     detail::run_ui_tasks(); // from earlier tests
     detail::FrameSources sources;
-    sources.drew(frame_of(1, {detail::MediaAccess::source(feed)}));
+    sources.drew(frame_of(1, {detail::MediaAccess::source(feed)->frames()}));
     {
         const CallWhenWoken clear([&feed] { feed.clear(); });
         feed.push(VideoFeed::Format::bgra, 4, 2, bgra(4, 2, 1));
     }
     detail::run_ui_tasks();
-    CHECK_FALSE(detail::MediaAccess::source(feed)->current());
+    CHECK_FALSE(detail::MediaAccess::source(feed)->frames()->current());
     CHECK_FALSE(feed.has_frame());
     CHECK(feed.size().width == 0);
 }
@@ -339,13 +336,13 @@ TEST_CASE("a push that comes between a clear and its views' update wins", "[vide
     feed.push(VideoFeed::Format::bgra, 4, 2, bgra(4, 2, 1));
     detail::run_ui_tasks();
     detail::FrameSources sources;
-    sources.drew(frame_of(1, {detail::MediaAccess::source(feed)}));
+    sources.drew(frame_of(1, {detail::MediaAccess::source(feed)->frames()}));
     {
         const CallWhenWoken push([&feed] { feed.push(VideoFeed::Format::bgra, 3, 3, bgra(3, 3, 1)); });
         feed.clear();
     }
     detail::run_ui_tasks();
-    REQUIRE(detail::MediaAccess::source(feed)->current());
+    REQUIRE(detail::MediaAccess::source(feed)->frames()->current());
     CHECK(feed.has_frame());
     CHECK(feed.size().width == 3);
     CHECK(feed.size().height == 3);
@@ -358,8 +355,8 @@ TEST_CASE("sources shown only in hidden windows don't wake the render thread, an
     const auto video = std::make_shared<FakeSource>();
     video->play(); // asked for frames regularly while a visible window shows it
     detail::FrameSources sources;
-    sources.drew(frame_of(1, {detail::MediaAccess::source(feed)}));
-    sources.drew(frame_of(2, {video, detail::MediaAccess::source(feed)}));
+    sources.drew(frame_of(1, {detail::MediaAccess::source(feed)->frames()}));
+    sources.drew(frame_of(2, {video, detail::MediaAccess::source(feed)->frames()}));
     CHECK(sources.polling());
 
     // Both windows hidden or minimized.
@@ -381,7 +378,7 @@ TEST_CASE("sources shown only in hidden windows don't wake the render thread, an
     sources.update();
     CHECK(video->updates == 1);
     CHECK(sources.stale() == std::vector<std::uint32_t>{2});
-    const std::optional<detail::VideoFrame> newest = detail::MediaAccess::source(feed)->current();
+    const std::optional<detail::VideoFrame> newest = detail::MediaAccess::source(feed)->frames()->current();
     CHECK(newest.value_or(detail::VideoFrame{}).width == 5);
     sources.redrew(2);
     feed.clear();
@@ -429,7 +426,7 @@ TEST_CASE("a playing Linux video wakes the render thread for its frames instead 
         woken.notify_one();
     });
     detail::FrameSources sources;
-    sources.drew(frame_of(1, {video}));
+    sources.drew(frame_of(1, {video->frames()}));
     int frames = 0;
     int handled = 0; // wakes
     // Waits (up to `limit`) for a wake, then draws if there's a new frame. False on timeout.
@@ -459,7 +456,7 @@ TEST_CASE("a playing Linux video wakes the render thread for its frames instead 
 
     // Playing, it isn't polled: each frame wakes the render thread, and nothing else does.
     video->play();
-    CHECK(video->is_playing_now());
+    CHECK(video->frames()->is_playing_now());
     CHECK_FALSE(sources.polling());
     while (std::chrono::steady_clock::now() < deadline) {
         if (!next(std::chrono::milliseconds(50))) {
@@ -517,7 +514,7 @@ TEST_CASE("a playing Linux video without frames reports its time, and doesn't wa
     const WakeCounter counter;
     const std::shared_ptr<detail::VideoSource> video = detail::VideoSource::create(clip.string());
     detail::FrameSources sources;
-    sources.drew(frame_of(1, {video})); // shown, so a frame would wake the render thread
+    sources.drew(frame_of(1, {video->frames()})); // shown, so a frame would wake the render thread
     while (!video->ready.peek() && video->error.peek().empty() && std::chrono::steady_clock::now() < deadline) {
         run_tasks();
     }

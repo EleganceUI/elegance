@@ -49,14 +49,15 @@ std::optional<VideoFrame> import_native_frame(const VideoFrame& native) {
 }
 
 
-class ExternalImageSource final : public VideoSource {
+class ExternalImageSource final : public VideoSource, public FrameSource {
 public:
     // Publishing and clearing wake the render thread: it never looks for frames on its own.
     ExternalImageSource(std::uint32_t width, std::uint32_t height, bool flip)
-        : VideoSource(true), flipped(flip), natural_size_{static_cast<float>(width), static_cast<float>(height)} {
+        : FrameSource(true), flipped(flip), natural_size_{static_cast<float>(width), static_cast<float>(height)} {
         size = natural_size_;
         ready = true;
     }
+    std::shared_ptr<FrameSource> frames() override { return {shared_from_this(), this}; }
     void play() override {}
     void pause() override {}
     void seek(double) override {}

@@ -14,6 +14,7 @@
 #include "gpu/texture_cache.h"
 #include "gpu/webgpu.h"
 #include "media/image_decode.h"
+#include "media/video_source.h"
 #include "render/frame_sources.h"
 #include "render/gpu_image.h"
 #include "render/video_textures.h"

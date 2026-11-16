@@ -13,8 +13,8 @@ namespace elg::detail {
 namespace {
 
 // The sources `frame` shows, each once.
-std::vector<std::shared_ptr<VideoSource>> sources_of(const WindowFrame& frame) {
-    std::vector<std::shared_ptr<VideoSource>> found;
+std::vector<std::shared_ptr<FrameSource>> sources_of(const WindowFrame& frame) {
+    std::vector<std::shared_ptr<FrameSource>> found;
     for (const DrawCommand& command : frame.list.commands) {
         const auto* video = std::get_if<VideoCommand>(&command);
         if (video && video->source && std::ranges::find(found, video->source) == found.end()) {
@@ -27,8 +27,8 @@ std::vector<std::shared_ptr<VideoSource>> sources_of(const WindowFrame& frame) {
 } // namespace
 
 void FrameSources::update(std::span<const WindowFrame> incoming) {
-    std::unordered_set<const VideoSource*> updated; // this round: once each
-    const auto take = [&](const std::shared_ptr<VideoSource>& source) {
+    std::unordered_set<const FrameSource*> updated; // this round: once each
+    const auto take = [&](const std::shared_ptr<FrameSource>& source) {
         if (!updated.insert(source.get()).second) {
             return;
         }
@@ -52,8 +52,8 @@ void FrameSources::update(std::span<const WindowFrame> incoming) {
     }
 }
 
-std::vector<std::pair<const VideoSource*, std::uint64_t>> FrameSources::counts(const WindowFrame& frame) {
-    std::vector<std::pair<const VideoSource*, std::uint64_t>> result;
+std::vector<std::pair<const FrameSource*, std::uint64_t>> FrameSources::counts(const WindowFrame& frame) {
+    std::vector<std::pair<const FrameSource*, std::uint64_t>> result;
     for (const auto& source : sources_of(frame)) {
         Source& entry = sources_[source.get()];
         entry.source = source;
@@ -130,8 +130,8 @@ bool FrameSources::polling() const {
 }
 
 void FrameSources::refresh() {
-    std::unordered_set<const VideoSource*> kept;
-    std::unordered_set<const VideoSource*> shown; // in a visible window
+    std::unordered_set<const FrameSource*> kept;
+    std::unordered_set<const FrameSource*> shown; // in a visible window
     for (const auto& [id, window] : windows_) {
         for (const auto& [source, count] : window.drawn) {
             kept.insert(source);

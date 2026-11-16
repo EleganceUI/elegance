@@ -126,7 +126,7 @@ struct FramePlan {
     // Images drawn this frame (uploaded first if they aren't on the GPU yet).
     std::vector<std::shared_ptr<const DecodedImage>> images;
     // Videos drawn this frame and the exact snapshots used for geometry and sampling.
-    std::vector<std::shared_ptr<VideoSource>> videos;
+    std::vector<std::shared_ptr<FrameSource>> videos;
     std::vector<std::optional<VideoFrame>> video_frames;
     std::vector<PlanBackdrop> backdrops;
     // When the main pass reads a backdrop it draws offscreen; this instance copies the result to
