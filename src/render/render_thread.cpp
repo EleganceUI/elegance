@@ -5,15 +5,21 @@
 #include "render/render_thread.h"
 
 #include "core/crash.h"
-#include "gpu/device.h"
-#include "gpu/instance.h"
 #include "gpu/atlas_texture.h"
 #include "gpu/blur_renderer.h"
+#include "gpu/device.h"
+#include "gpu/instance.h"
+#include "gpu/path_renderer.h"
 #include "gpu/quad_renderer.h"
+#include "gpu/texture_cache.h"
+#include "gpu/video_textures.h"
+#include "gpu/webgpu.h"
 #include "render/frame_sources.h"
 #include "render/window_target.h"
 
 #include <elg/error.h>
+
+#include <webgpu/webgpu_cpp.h>
 
 #include <format>
 #include <array>
