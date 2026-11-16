@@ -1,3 +1,5 @@
+@AGENTS.md
+
 # Elegance — notes for Claude
 
 ## Building (Windows, from the Bash tool)
