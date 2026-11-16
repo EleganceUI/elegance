@@ -40,6 +40,7 @@ namespace elg {
 namespace detail {
 struct RecorderState;
 class VideoSource;
+struct MediaAccess;
 } // namespace detail
 
 // --- Microphone ---
@@ -166,14 +167,12 @@ public:
 
     /// Internal: for CameraView.
     ///
-    /// @return The camera's frame source.
-    [[nodiscard]] const std::shared_ptr<detail::VideoSource>& source() const noexcept { return source_; }
-    /// Internal: for CameraView.
-    ///
     /// @return CameraOptions::mirrored.
     [[nodiscard]] bool mirrored() const noexcept { return mirrored_; }
 
 private:
+    friend struct detail::MediaAccess; // the views reach the frame source through it
+
     ELG_PRIVATE_MEMBERS_BEGIN
     std::shared_ptr<detail::VideoSource> source_;
     bool mirrored_ = true;

@@ -27,6 +27,7 @@ namespace elg {
 
 namespace detail {
 struct WindowState;
+struct WindowAccess;
 } // namespace detail
 
 /// The window a view is in: Environment<WindowKey>(). The readers are tracked reads, so they can
@@ -35,12 +36,9 @@ struct WindowState;
 /// equal when they refer to the same window. UI thread only.
 class ELG_API WindowHandle {
 public:
-    WindowHandle() = default;
-    /// A handle to a window's state. The framework makes these; read them with
+    /// No window. The framework makes the handles of windows; read them with
     /// Environment<WindowKey>().
-    ///
-    /// @param state The window's state, shared by its handles.
-    explicit WindowHandle(std::shared_ptr<detail::WindowState> state) noexcept : state_(std::move(state)) {}
+    WindowHandle() = default;
 
     /// Like the system close button: the window closes (the app quits with its last window).
     void close() const;
@@ -79,6 +77,9 @@ public:
     friend bool operator==(const WindowHandle& a, const WindowHandle& b) noexcept { return a.state_ == b.state_; }
 
 private:
+    friend struct detail::WindowAccess;
+    explicit WindowHandle(std::shared_ptr<detail::WindowState> state) noexcept : state_(std::move(state)) {}
+
     ELG_PRIVATE_MEMBERS_BEGIN
     std::shared_ptr<detail::WindowState> state_;
     ELG_PRIVATE_MEMBERS_END

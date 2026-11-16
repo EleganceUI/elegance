@@ -33,6 +33,7 @@ namespace elg {
 
 namespace detail {
 class VideoSource;
+struct MediaAccess;
 } // namespace detail
 
 /// A video and its playback. Copies control the same video; it stops when the last copy (and the
@@ -102,12 +103,9 @@ public:
     /// @return A binding to the volume, 0...1.
     [[nodiscard]] Binding<float> volume_binding() const;
 
-    /// Internal: the source the views draw.
-    ///
-    /// @return The player's source.
-    [[nodiscard]] const std::shared_ptr<detail::VideoSource>& source() const noexcept { return source_; }
-
 private:
+    friend struct detail::MediaAccess; // the views reach the source they draw through it
+
     ELG_PRIVATE_MEMBERS_BEGIN
     std::shared_ptr<detail::VideoSource> source_;
     ELG_PRIVATE_MEMBERS_END
@@ -179,12 +177,9 @@ public:
     /// @return Whether this and `other` share a feed.
     bool operator==(const VideoFeed& other) const noexcept { return source_ == other.source_; }
 
-    /// Internal: the source the views draw.
-    ///
-    /// @return The feed's source.
-    [[nodiscard]] const std::shared_ptr<detail::VideoSource>& source() const noexcept { return source_; }
-
 private:
+    friend struct detail::MediaAccess; // the views reach the source they draw through it
+
     ELG_PRIVATE_MEMBERS_BEGIN
     std::shared_ptr<detail::VideoSource> source_;
     ELG_PRIVATE_MEMBERS_END

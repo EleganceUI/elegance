@@ -532,7 +532,7 @@ void CanvasElement::paint_impl(DisplayList& list) const {
     const std::size_t before = list.commands.size();
     bool drew = true;
     {
-        GraphicsContext context(list, frame(), list.scale);
+        GraphicsContext context = GraphicsAccess::context(list, frame(), list.scale);
         drew = run_app_code(AppCode::drawing, [&] {
             if (reads_) {
                 track_reads(*reads_, [&] { draw_(context); });
@@ -565,7 +565,7 @@ void LayoutElement::rebuild_children() {
     handles_.clear();
     handles_.reserve(laid_out_.size());
     for (Element* child : laid_out_) {
-        handles_.emplace_back(*child);
+        handles_.push_back(LayoutAccess::child(*child));
     }
 }
 
@@ -695,14 +695,14 @@ Size LayoutModifierElement::measure(ProposedSize proposal) {
     // layout is invalidated.
     Size size;
     if (!failed_) {
-        failed_ = !run_app_code(AppCode::layout, [&] { size = modifier_->size_that_fits(proposal, LayoutChild(*content_)); });
+        failed_ = !run_app_code(AppCode::layout, [&] { size = modifier_->size_that_fits(proposal, LayoutAccess::child(*content_)); });
     }
     return failed_ ? Size{} : size;
 }
 
 void LayoutModifierElement::arrange(Rect bounds, ProposedSize proposal) {
     if (!failed_) {
-        failed_ = !run_app_code(AppCode::layout, [&] { modifier_->place(bounds, proposal, LayoutChild(*content_)); });
+        failed_ = !run_app_code(AppCode::layout, [&] { modifier_->place(bounds, proposal, LayoutAccess::child(*content_)); });
     }
 }
 

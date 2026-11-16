@@ -154,7 +154,7 @@ void FragmentElement::rebuild_children() {
     handles_.clear();
     handles_.reserve(laid_out_.size());
     for (Element* element : laid_out_) {
-        handles_.emplace_back(*element);
+        handles_.push_back(LayoutAccess::child(*element));
     }
 }
 

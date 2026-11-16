@@ -184,12 +184,17 @@ struct WindowState {
     State<bool> active{true};
     State<Rect> system_controls{Rect{}};
 };
+
+// Makes the handles of windows, whose constructor is private.
+struct WindowAccess {
+    static WindowHandle handle(std::shared_ptr<WindowState> state) noexcept { return WindowHandle(std::move(state)); }
+};
 } // namespace detail
 
 namespace {
 
 EnvironmentValues with_window(EnvironmentValues environment, const std::shared_ptr<WindowState>& state) {
-    environment.set<WindowKey>(WindowHandle(state));
+    environment.set<WindowKey>(detail::WindowAccess::handle(state));
     return environment;
 }
 

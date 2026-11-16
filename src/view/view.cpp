@@ -162,10 +162,10 @@ public:
 
 protected:
     Size measure(ProposedSize proposal) override {
-        return PaddingModifier(insets_).size_that_fits(proposal, LayoutChild(*content_));
+        return PaddingModifier(insets_).size_that_fits(proposal, detail::LayoutAccess::child(*content_));
     }
     void arrange(Rect bounds, ProposedSize proposal) override {
-        PaddingModifier(insets_).place(bounds, proposal, LayoutChild(*content_));
+        PaddingModifier(insets_).place(bounds, proposal, detail::LayoutAccess::child(*content_));
     }
     void paint_impl(detail::DisplayList& list) const override { content_->paint(list); }
     bool hit_impl(Point point, std::vector<Element*>& path) override { return content_->hit_test(point, path); }
@@ -276,10 +276,10 @@ View View::backdrop_blur(const Prop<float>& radius, const Shape& shape, const Ba
     const float* brightness = options.brightness.static_value();
     const float* noise = options.noise.static_value();
     if (blur && saturation && brightness && noise) {
-        return background(detail::BackdropFill{*blur, *saturation, *brightness, *noise}, shape);
+        return background(BackdropFill{*blur, *saturation, *brightness, *noise}, shape);
     }
     return background(Prop<ShapeStyle>([radius, options](const EnvironmentValues& environment) {
-                          return ShapeStyle(detail::BackdropFill{
+                          return ShapeStyle(BackdropFill{
                               radius.get(environment), options.saturation.get(environment),
                               options.brightness.get(environment), options.noise.get(environment)});
                       }),

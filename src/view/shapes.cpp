@@ -15,7 +15,7 @@ using detail::ShapeSpec;
 namespace {
 
 Shape make_shape(ShapeSpec spec) {
-    return Shape(std::make_shared<const ShapeNode>(std::move(spec)));
+    return detail::ViewAccess::shape(std::make_shared<const ShapeNode>(std::move(spec)));
 }
 
 ShapeSpec spec_of(const Shape& shape) {

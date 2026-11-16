@@ -1055,6 +1055,19 @@ private:
     Point drag_offset_;
 };
 
+// Makes the LayoutChild handles that layouts and layout modifiers see, whose constructor is
+// private.
+struct LayoutAccess {
+    static LayoutChild child(Element& element) noexcept { return LayoutChild(element); }
+};
+
+// Makes the GraphicsContext a Canvas draws into, whose constructor is private.
+struct GraphicsAccess {
+    static GraphicsContext context(DisplayList& list, Rect bounds, float scale) noexcept {
+        return {list, bounds, scale};
+    }
+};
+
 } // namespace elg::detail
 
 #endif // ELG_VIEW_ELEMENT_H

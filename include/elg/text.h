@@ -76,9 +76,8 @@ public:
     /// @return This text, with its lines aligned.
     [[nodiscard]] ELG_API Text multiline_text_alignment(TextAlignment alignment) const;
 
-    /// Internal.
-    ///
-    /// @param node The text's description.
+private:
+    friend struct detail::ViewAccess;
     ELG_API explicit Text(std::shared_ptr<const detail::TextNode> node);
 };
 

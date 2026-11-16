@@ -359,7 +359,7 @@ TEST_CASE("a path a canvas draws again unchanged is not flattened again", "[gpu-
         detail::DisplayList list;
         {
             const detail::PathCache::Use use(cache);
-            GraphicsContext g(list, {10, 10, 100, 100}, scale);
+            GraphicsContext g = detail::GraphicsAccess::context(list, {10, 10, 100, 100}, scale);
             g.fill_path(circle, ShapeStyle(Color::black));
             g.stroke_path(circle, Color::white, {.width = 2});
             g.fill_path(other, ShapeStyle(Color::black));
