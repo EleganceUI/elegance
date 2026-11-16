@@ -80,6 +80,9 @@ if (elg_dawn_type STREQUAL "SHARED_LIBRARY")
 endif ()
 
 elegance_warnings(elegance_tests)
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    target_sources(elegance_tests PRIVATE unwinder_tests.cpp)
+endif ()
 # gpu_image_tests.cpp makes IOSurfaces itself; a static Elegance brought the frameworks along.
 if (APPLE)
     target_link_libraries(elegance_tests PRIVATE "-framework CoreFoundation" "-framework IOSurface")

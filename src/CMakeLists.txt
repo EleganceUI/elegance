@@ -266,6 +266,14 @@ if (UNIX AND NOT APPLE)
     if (ELG_GSTREAMER_FOUND)
         target_link_libraries(elegance PRIVATE PkgConfig::ELG_GSTREAMER)
         target_compile_definitions(elegance PRIVATE ELG_HAVE_GSTREAMER)
+        # GStreamer needs libunwind.so.8, which on x86-64 defines _Unwind_RaiseException and the
+        # rest of GCC's unwinder interface too: whichever library the loader finds first supplies
+        # them to the whole process, and libstdc++ must throw with libgcc_s's. A program that
+        # links a static Elegance links GStreamer itself, so libgcc_s goes first on its link
+        # line, before anything that can bring libunwind in (tests/unwinder_tests.cpp).
+        if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU" AND NOT ELG_BUILD_SHARED)
+            target_link_options(elegance INTERFACE "LINKER:--push-state,--no-as-needed,-lgcc_s,--pop-state")
+        endif ()
     else ()
         message(STATUS "Elegance: GStreamer not found (gstreamer-1.0, -app, -video): video playback is off")
     endif ()

@@ -118,7 +118,7 @@ TEST_CASE("one Tab press asks each element once, however deep the focus scopes n
     const detail::Scope::Use use(scope);
     std::vector<std::string> log;
     int asked = 0;
-    std::vector<State<bool>> scopes(24, State<bool>(false));
+    const std::vector<State<bool>> scopes(24, State<bool>(false));
     View view = square().modifier(Stop("inner", &log, &asked));
     for (const State<bool>& focused : scopes) {
         view = view.focused(focused.binding());

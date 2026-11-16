@@ -446,7 +446,9 @@ View NetworkCards() {
 // App code that throws on purpose: each exception is written to the log and passed to the app's
 // error handler (main()), and the app goes on.
 struct BrokenBody {
-    [[nodiscard]] View body() const { throw std::runtime_error("this body throws on purpose"); }
+    std::string reason = "this body throws on purpose";
+
+    [[nodiscard]] View body() const { throw std::runtime_error(reason); }
 };
 
 View ErrorCards() {
