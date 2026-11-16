@@ -2,13 +2,17 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// What the library asks the operating system through the backend interfaces (core/os_backend.h).
+// What the library asks the operating system through the backend interfaces (core/os_backend.h,
+// net/net_backend.h).
 
 #include "core/crash.h"
 #include "core/dynamic_library.h"
 #include "core/os_backend.h"
+#include "net/http_cache.h"
+#include "net/net_backend.h"
 
 #include <elg/error.h>
+#include <elg/platform.h>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_exception.hpp>
@@ -16,9 +20,26 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <filesystem>
+#include <map>
+#include <optional>
 #include <string>
 
 using namespace elg;
+
+namespace {
+
+namespace fs = std::filesystem;
+
+// Reads environment variables from `variables` instead of the process's environment.
+auto environment(std::map<std::string, std::string> variables) {
+    return [variables = std::move(variables)](const char* name) -> std::optional<std::string> {
+        const auto it = variables.find(name);
+        return it == variables.end() ? std::nullopt : std::optional(it->second);
+    };
+}
+
+} // namespace
 
 TEST_CASE("a stack trace lists the caller's frames", "[os]") {
     const std::string text = detail::to_text(detail::StackTrace::current());
@@ -47,4 +68,31 @@ TEST_CASE("a shell command's output can be read", "[os]") {
     }
     CHECK(detail::os::close_command_pipe(pipe) == 0);
     CHECK(output.starts_with("elg"));
+}
+
+TEST_CASE("the image cache is in the user's cache folder, by the program's name", "[os]") {
+    CHECK(detail::os::executable_path().stem() == "elegance_tests");
+    if (const std::optional<fs::path> folder = detail::net::HttpCache::default_directory()) {
+        CHECK(folder->parent_path().filename() == "elegance_tests");
+    }
+
+    using detail::net::image_cache_folder;
+    const std::map<std::string, std::string> every{
+        {"HOME", "/home/me"}, {"XDG_CACHE_HOME", "/xdg"}, {"LOCALAPPDATA", "C:/Local"}};
+    switch (current_platform()) {
+    case Platform::windows:
+        CHECK(image_cache_folder("app", environment(every)) == fs::path("C:/Local") / "Elegance" / "app" / "Images");
+        break;
+    case Platform::macos:
+        CHECK(image_cache_folder("app", environment(every)) ==
+              fs::path("/home/me") / "Library" / "Caches" / "Elegance" / "app" / "Images");
+        break;
+    case Platform::linux:
+        CHECK(image_cache_folder("app", environment(every)) == fs::path("/xdg") / "elegance" / "app" / "images");
+        // An empty XDG_CACHE_HOME counts as unset.
+        CHECK(image_cache_folder("app", environment({{"HOME", "/home/me"}, {"XDG_CACHE_HOME", ""}})) ==
+              fs::path("/home/me") / ".cache" / "elegance" / "app" / "images");
+        break;
+    }
+    CHECK_FALSE(image_cache_folder("app", environment({})).has_value());
 }

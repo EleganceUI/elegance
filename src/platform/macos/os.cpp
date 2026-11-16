@@ -9,10 +9,12 @@
 #include <elg/error.h>
 
 #include <dlfcn.h>
+#include <mach-o/dyld.h>
 #include <sys/sysctl.h>
 #include <unistd.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <csignal>
 #include <cstdlib>
 #include <format>
@@ -22,6 +24,16 @@
 #endif
 
 namespace elg::detail::os {
+
+std::filesystem::path executable_path() {
+    std::uint32_t size = 0;
+    _NSGetExecutablePath(nullptr, &size);
+    std::string buffer(size, '\0');
+    if (_NSGetExecutablePath(buffer.data(), &size) == 0) {
+        return buffer.c_str();
+    }
+    return {};
+}
 
 int process_id() noexcept {
     return getpid();

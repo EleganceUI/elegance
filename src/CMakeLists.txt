@@ -212,6 +212,7 @@ if (WIN32)
             platform/windows/image_codec.cpp
             platform/windows/menu_bar.cpp
             platform/windows/native.cpp
+            platform/windows/net.cpp
             platform/windows/notifications.cpp
             platform/windows/os.cpp
             platform/windows/proxy.cpp
@@ -238,6 +239,7 @@ if (APPLE)
             platform/macos/fonts.cpp
             platform/macos/image_codec.cpp
             platform/macos/native.cpp
+            platform/macos/net.cpp
             platform/macos/os.cpp
             platform/macos/pixel_buffer.cpp
             platform/macos/proxy.cpp)
@@ -277,6 +279,7 @@ if (UNIX AND NOT APPLE)
             platform/linux/image_codec.cpp
             platform/linux/menu_bar.cpp
             platform/linux/native.cpp
+            platform/linux/net.cpp
             platform/linux/notifications.cpp
             platform/linux/os.cpp
             platform/linux/proxy.cpp

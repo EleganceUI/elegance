@@ -28,6 +28,8 @@ std::filesystem::path pref_path();
 
 // --- Processes ---
 
+// The running program's file, or an empty path if the system doesn't say.
+std::filesystem::path executable_path();
 int process_id() noexcept;
 // Starts `command` in the system's shell, its standard error joined to its standard output, and
 // returns a pipe to read that output from, or nullptr if it can't be started.

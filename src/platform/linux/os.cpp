@@ -23,6 +23,11 @@
 
 namespace elg::detail::os {
 
+std::filesystem::path executable_path() {
+    std::error_code error;
+    return std::filesystem::read_symlink("/proc/self/exe", error);
+}
+
 int process_id() noexcept {
     return getpid();
 }

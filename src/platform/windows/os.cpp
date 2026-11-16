@@ -16,6 +16,14 @@
 
 namespace elg::detail::os {
 
+std::filesystem::path executable_path() {
+    wchar_t buffer[MAX_PATH];
+    if (const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH); length > 0 && length < MAX_PATH) {
+        return std::wstring(buffer, length);
+    }
+    return {};
+}
+
 int process_id() noexcept {
     return _getpid();
 }

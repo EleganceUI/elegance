@@ -8,7 +8,7 @@
 #include "net/proxy.h"
 
 #include "core/log.h"
-#include "platform/platform.h"
+#include "core/os_backend.h"
 
 #include <boost/asio/ip/address.hpp>
 #include <boost/url.hpp>
@@ -241,7 +241,7 @@ ProxyChoice find_proxy(std::string_view scheme, std::string_view host, std::stri
         return std::nullopt;
     }
     if (std::optional<ProxyChoice> from_environment =
-            proxy_from_environment(scheme, host, port, [](const char* name) { return platform::environment_variable(name); })) {
+            proxy_from_environment(scheme, host, port, os::environment_variable)) {
         return *from_environment;
     }
     // The system's answer, remembered a while (PAC scripts and WPAD are slow).

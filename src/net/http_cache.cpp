@@ -5,15 +5,10 @@
 #include "net/http_cache.h"
 
 #include "core/log.h"
-#include "platform/platform.h"
+#include "core/os_backend.h"
+#include "net/net_backend.h"
 
 #include <openssl/evp.h>
-
-#if defined(__APPLE__)
-#include <mach-o/dyld.h>
-#elif defined(_WIN32)
-#include <windows.h>
-#endif
 
 #include <algorithm>
 #include <array>
@@ -197,24 +192,7 @@ bool is_bucket_name(const std::string& name) {
 }
 
 std::string executable_name() {
-    fs::path path;
-#if defined(__APPLE__)
-    std::uint32_t size = 0;
-    _NSGetExecutablePath(nullptr, &size);
-    std::string buffer(size, '\0');
-    if (_NSGetExecutablePath(buffer.data(), &size) == 0) {
-        path = buffer.c_str();
-    }
-#elif defined(_WIN32)
-    wchar_t buffer[MAX_PATH];
-    if (const DWORD length = GetModuleFileNameW(nullptr, buffer, MAX_PATH); length > 0 && length < MAX_PATH) {
-        path = std::wstring(buffer, length);
-    }
-#else
-    std::error_code error;
-    path = fs::read_symlink("/proc/self/exe", error);
-#endif
-    const std::string name = path.stem().string();
+    const std::string name = os::executable_path().stem().string();
     return name.empty() ? "app" : name;
 }
 
@@ -387,24 +365,7 @@ void refresh_cache_entry(CacheEntry& entry, const CacheHeaders& headers, std::in
 HttpCache::HttpCache(fs::path directory, std::uint64_t limit) : directory_(std::move(directory)), limit_(limit) {}
 
 std::optional<fs::path> HttpCache::default_directory() {
-    const std::string app = executable_name();
-#if defined(_WIN32)
-    if (const auto base = platform::environment_variable("LOCALAPPDATA")) {
-        return fs::path(*base) / "Elegance" / app / "Images";
-    }
-#elif defined(__APPLE__)
-    if (const auto home = platform::environment_variable("HOME")) {
-        return fs::path(*home) / "Library" / "Caches" / "Elegance" / app / "Images";
-    }
-#else
-    if (const auto xdg = platform::environment_variable("XDG_CACHE_HOME"); xdg && !xdg->empty()) {
-        return fs::path(*xdg) / "elegance" / app / "images";
-    }
-    if (const auto home = platform::environment_variable("HOME")) {
-        return fs::path(*home) / ".cache" / "elegance" / app / "images";
-    }
-#endif
-    return std::nullopt;
+    return image_cache_folder(executable_name(), os::environment_variable);
 }
 
 fs::path HttpCache::path_for(const std::string& url) const {
