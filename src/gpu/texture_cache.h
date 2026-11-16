@@ -7,12 +7,12 @@
 
 #include "gpu/eviction.h"
 #include "gpu/webgpu_types.h"
-#include "media/image_decode.h"
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 
 namespace elg::detail::gpu {
 
@@ -33,6 +33,15 @@ constexpr std::size_t decoded_texture_bytes(std::uint32_t width, std::uint32_t h
         height = height > 1 ? height / 2 : 1;
     }
 }
+
+// An image's pixels as TextureCache uploads them: RGBA8, sRGB, straight alpha, rows top to
+// bottom. `id` names the image, the same for every frame that draws it (a decoded image's).
+struct ImagePixels {
+    std::uint64_t id = 0;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    std::span<const std::uint8_t> rgba;
+};
 
 // Images' GPU textures (design.md §13.3), shared by every window: sRGB RGBA with a full mip
 // chain, so photos drawn small stay smooth. A texture is uploaded the first time a frame draws
@@ -56,7 +65,7 @@ public:
     // The bind group (texture and sampler) for `image`, uploading it and recording its mips into
     // `encoder` if it isn't on the GPU yet. Null for an image with a side longer than the device's
     // textures can have: it gets no texture.
-    wgpu::BindGroup acquire(const wgpu::CommandEncoder& encoder, const DecodedImage& image);
+    wgpu::BindGroup acquire(const wgpu::CommandEncoder& encoder, const ImagePixels& image);
 
     // Ends the frame: releases textures as kDecodedImagePolicy says. (WebGPU keeps a texture
     // alive for frames still using it, so releasing one is always safe.)
@@ -66,7 +75,7 @@ public:
     [[nodiscard]] std::size_t size() const noexcept;
 
 private:
-    // The image layout, the sampler, the mip pipeline, and the textures by DecodedImage::id.
+    // The image layout, the sampler, the mip pipeline, and the textures by ImagePixels::id.
     struct Objects;
 
     void generate_mips(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture, std::uint32_t levels);

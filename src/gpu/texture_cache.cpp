@@ -37,7 +37,7 @@ struct TextureCache::Objects {
     wgpu::BindGroupLayout layout;
     wgpu::Sampler sampler;
     wgpu::RenderPipeline mip_pipeline;
-    std::unordered_map<std::uint64_t, Texture> textures; // by DecodedImage::id
+    std::unordered_map<std::uint64_t, Texture> textures; // by ImagePixels::id
 };
 
 TextureCache::TextureCache(const Device& device, wgpu::BindGroupLayout image_layout, CachePolicy policy)
@@ -75,7 +75,7 @@ std::size_t TextureCache::size() const noexcept {
     return objects_->textures.size();
 }
 
-wgpu::BindGroup TextureCache::acquire(const wgpu::CommandEncoder& encoder, const DecodedImage& image) {
+wgpu::BindGroup TextureCache::acquire(const wgpu::CommandEncoder& encoder, const ImagePixels& image) {
     if (const auto it = objects_->textures.find(image.id); it != objects_->textures.end()) {
         frame_.mark(it->second.use);
         return it->second.group;

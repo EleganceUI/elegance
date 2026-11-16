@@ -13,6 +13,7 @@
 #include "gpu/texture_cache.h"
 #include "gpu/video_textures.h"
 #include "gpu/webgpu.h"
+#include "media/decoded_image.h"
 #include "render/frame_plan.h"
 #include "render/intermediate_images.h"
 #include "view/path_cache.h"
@@ -66,6 +67,11 @@ struct Pool {
 };
 
 const detail::gpu::CacheClock::time_point t0{};
+
+// A decoded image's pixels, as the renderer hands them to TextureCache.
+detail::gpu::ImagePixels pixels_of(const detail::DecodedImage& image) {
+    return {image.id, image.width, image.height, image.rgba};
+}
 
 } // namespace
 
@@ -462,15 +468,15 @@ TEST_CASE("an image larger than the device's textures gets no texture", "[.gpu][
     image.width = side + 1;
     image.height = 1;
     image.rgba.resize(std::size_t{image.width} * 4);
-    CHECK_FALSE(textures.acquire(encoder, image));
+    CHECK_FALSE(textures.acquire(encoder, pixels_of(image)));
     image.id = 2;
     image.width = 1;
     image.height = side + 1;
-    CHECK_FALSE(textures.acquire(encoder, image));
+    CHECK_FALSE(textures.acquire(encoder, pixels_of(image)));
     image.id = 3;
     image.height = 16;
     image.rgba.resize(std::size_t{16} * 4);
-    CHECK(textures.acquire(encoder, image));
+    CHECK(textures.acquire(encoder, pixels_of(image)));
 
     textures.end_frame();
     device.submit(encoder.Finish());
@@ -587,7 +593,7 @@ TEST_CASE("TextureCache releases a texture no frame drew for 10 s", "[.gpu][gpu-
     const auto frame = [&](detail::gpu::CacheClock::duration at, bool draw) {
         textures.begin_frame(t0 + at);
         if (draw) {
-            CHECK(textures.acquire(encoder, image));
+            CHECK(textures.acquire(encoder, pixels_of(image)));
         }
         textures.end_frame();
     };
@@ -615,19 +621,19 @@ TEST_CASE("TextureCache keeps the textures a frame didn't draw within its budget
     std::vector<wgpu::BindGroup> groups; // held, so a new group can't take an old one's address
     for (std::size_t i = 0; i < images.size(); ++i) {
         textures.begin_frame(t0 + i * 1s);
-        groups.push_back(textures.acquire(encoder, images[i]));
+        groups.push_back(textures.acquire(encoder, pixels_of(images[i])));
         textures.end_frame();
     }
     // Three undrawn after the last frame: the first, the least recently drawn, went.
     CHECK(textures.size() == 3);
     textures.begin_frame(t0 + 5s);
-    CHECK(textures.acquire(encoder, images[1]).Get() == groups[1].Get()); // kept
-    CHECK(textures.acquire(encoder, images[0]).Get() != groups[0].Get()); // uploaded again
+    CHECK(textures.acquire(encoder, pixels_of(images[1])).Get() == groups[1].Get()); // kept
+    CHECK(textures.acquire(encoder, pixels_of(images[0])).Get() != groups[0].Get()); // uploaded again
     textures.end_frame();
     // A frame that draws all four keeps them, beyond the budget.
     textures.begin_frame(t0 + 6s);
     for (const detail::DecodedImage& image : images) {
-        textures.acquire(encoder, image);
+        textures.acquire(encoder, pixels_of(image));
     }
     textures.end_frame();
     CHECK(textures.size() == 4);

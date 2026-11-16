@@ -430,7 +430,8 @@ wgpu::CommandBuffer WindowTarget::State::record(const DrawTarget& target, const 
     resources.textures.begin_frame(now);
     groups.images.reserve(plan.images.size());
     for (const auto& image : plan.images) {
-        groups.images.push_back(resources.textures.acquire(encoder, *image));
+        groups.images.push_back(
+            resources.textures.acquire(encoder, {image->id, image->width, image->height, image->rgba}));
     }
     resources.textures.end_frame();
 
