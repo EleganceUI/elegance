@@ -112,6 +112,8 @@ TEST_CASE("rejected GPU image publications never transfer ownership",
 
 #ifdef __APPLE__
 #include "gpu/device.h"
+#include "gpu/instance.h"
+#include "gpu/render_device.h"
 #include <IOSurface/IOSurface.h>
 #include <atomic>
 #include <chrono>

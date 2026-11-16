@@ -13,14 +13,20 @@
 
 namespace wgpu {
 
+class Adapter;
+class CommandBuffer;
 class Device;
 class Instance;
+class Queue;
 class Surface;
 class Texture;
 class TextureView;
 
+struct Future;
 struct InstanceDescriptor;
 
+enum class BackendType : std::uint32_t;
+enum class FeatureName : std::uint32_t;
 enum class TextureFormat : std::uint32_t;
 
 } // namespace wgpu

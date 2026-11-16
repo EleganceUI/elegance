@@ -3,6 +3,8 @@
 // https://mozilla.org/MPL/2.0/.
 
 #include "gpu/device.h"
+#include "gpu/instance.h"
+#include "gpu/render_device.h"
 
 #include <catch2/catch_test_macros.hpp>
 

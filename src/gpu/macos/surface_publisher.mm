@@ -7,7 +7,7 @@
 #include "gpu/macos/surface_publisher.h"
 
 #include "core/log.h"
-#include "gpu/device.h"
+#include "gpu/render_device.h"
 
 #include <elg/gpu_image.h>
 

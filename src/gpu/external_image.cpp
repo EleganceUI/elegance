@@ -4,7 +4,7 @@
 
 #include "gpu/external_image.h"
 
-#include "gpu/device.h"
+#include "gpu/render_device.h"
 
 #include <elg/gpu_image.h>
 

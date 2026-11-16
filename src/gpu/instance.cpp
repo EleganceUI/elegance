@@ -5,29 +5,32 @@
 #include "gpu/instance.h"
 
 #include "gpu/system.h"
+#include "gpu/webgpu.h"
 
 #include <elg/error.h>
+
+#include <webgpu/webgpu_cpp.h>
 
 #include <cstdint>
 #include <iterator>
 
 namespace elg::detail::gpu {
 
-Instance::Instance() {
+Instance::Instance() : instance_(std::make_unique<wgpu::Instance>()) {
     // WaitAny with a timeout: requesting the adapter and device, and waiting for the GPU.
     const wgpu::InstanceFeatureName features[] = {wgpu::InstanceFeatureName::TimedWaitAny};
     wgpu::InstanceDescriptor descriptor;
     descriptor.requiredFeatureCount = std::size(features);
     descriptor.requiredFeatures = features;
-    instance_ = create_instance(descriptor);
-    if (!instance_) {
+    *instance_ = create_instance(descriptor);
+    if (!*instance_) {
         throw GpuError("WebGPU is not available: the instance could not be created");
     }
 }
 
 void Instance::wait(wgpu::Future future) const {
     constexpr std::uint64_t kTimeout = 5'000'000'000; // nanoseconds
-    const wgpu::WaitStatus status = instance_.WaitAny(future, kTimeout);
+    const wgpu::WaitStatus status = instance_->WaitAny(future, kTimeout);
     if (status == wgpu::WaitStatus::TimedOut) {
         throw GpuError("the GPU didn't answer for 5 seconds: the device is treated as lost");
     }
@@ -65,11 +68,17 @@ wgpu::Surface Instance::create_surface(const platform::SurfaceSource& source) co
         break;
     case Kind::none: throw GpuError("the window has nothing to draw into");
     }
-    wgpu::Surface surface = instance_.CreateSurface(&descriptor);
+    wgpu::Surface surface = instance_->CreateSurface(&descriptor);
     if (!surface) {
         throw_gpu_error("create a window surface");
     }
     return surface;
+}
+
+Instance::~Instance() = default;
+
+const wgpu::Instance& Instance::handle() const noexcept {
+    return *instance_;
 }
 
 } // namespace elg::detail::gpu
