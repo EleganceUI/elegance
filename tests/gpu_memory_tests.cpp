@@ -15,7 +15,7 @@
 #include "gpu/webgpu.h"
 #include "render/frame_plan.h"
 #include "render/intermediate_images.h"
-#include "render/path_cache.h"
+#include "view/path_cache.h"
 #include "view/view_node.h"
 
 #include <elg/elegance.h>

@@ -57,7 +57,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         render/frame_plan.cpp
         render/frame_sources.cpp
         render/gpu_image.cpp
-        render/path_cache.cpp
+        view/path_cache.cpp
         render/render_thread.cpp
         render/window_target.cpp
         text/font_library.cpp
