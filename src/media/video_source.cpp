@@ -9,9 +9,12 @@
 #include "media/video_source.h"
 
 #include "core/ui_tasks.h"
+#include "media/source_host.h"
+#include "media/video_backend.h"
 
 #include <atomic>
 #include <mutex>
+#include <utility>
 
 namespace elg::detail {
 
@@ -74,10 +77,111 @@ public:
     std::optional<VideoFrame> current() const override { return std::nullopt; }
 };
 
+// A video the OS's media engine plays (media/video_backend.h).
+class EngineVideoSource final : public VideoSource {
+public:
+    explicit EngineVideoSource(std::unique_ptr<VideoEngine> engine)
+        : VideoSource(engine->wakes_for_frames()), engine_(std::move(engine)) {}
+
+    // UI thread, right after construction: the engine holds the host weakly.
+    void open() { engine_->open(std::shared_ptr<FrameSourceHost>(shared_from_this(), &host_)); }
+
+    void play() override { engine_->play(); }
+    void pause() override { engine_->pause(); }
+    void seek(double seconds) override { engine_->seek(seconds); }
+    void set_volume(float value) override { engine_->set_volume(value); }
+    void set_muted(bool value) override { engine_->set_muted(value); }
+    void set_looping(bool value) override { engine_->set_looping(value); }
+    bool update() override { return engine_->update(); }
+    std::optional<VideoFrame> current() const override { return engine_->current(); }
+
+private:
+    SourceHost host_{*this}; // outlives the engine
+    std::unique_ptr<VideoEngine> engine_;
+};
+
 } // namespace
 
+// --- SourceHost ---
+
+std::uint64_t SourceHost::source_id() const noexcept {
+    return source_.id;
+}
+
+std::uint64_t SourceHost::new_id() const {
+    return next_media_id();
+}
+
+void SourceHost::set_playing_now(bool playing) noexcept {
+    source_.playing_now_ = playing;
+}
+
+bool SourceHost::is_playing_now() const noexcept {
+    return source_.playing_now_;
+}
+
+void SourceHost::notify_new_frame() const {
+    source_.notify_new_frame();
+}
+
+std::optional<RenderAdapter> SourceHost::render_adapter() const {
+    return detail::render_adapter();
+}
+
+void SourceHost::set_playing(bool playing) {
+    source_.playing = playing;
+}
+
+void SourceHost::set_ready() {
+    source_.ready = true;
+}
+
+void SourceHost::set_time(double seconds) {
+    source_.time = seconds;
+}
+
+void SourceHost::set_duration(double seconds) {
+    source_.duration = seconds;
+}
+
+double SourceHost::duration() const {
+    return source_.duration.peek();
+}
+
+void SourceHost::set_size(float width, float height) {
+    source_.size = Size{width, height};
+}
+
+void SourceHost::set_volume(float volume) {
+    source_.volume = volume;
+}
+
+void SourceHost::set_muted(bool muted) {
+    source_.muted = muted;
+}
+
+void SourceHost::set_looping(bool looping) {
+    source_.looping = looping;
+}
+
+bool SourceHost::looping() const {
+    return source_.looping.peek();
+}
+
+void SourceHost::set_error(std::string message) {
+    source_.error = std::move(message);
+}
+
+// --- VideoSource ---
+
 std::shared_ptr<VideoSource> VideoSource::create(const std::string& url) {
-    return create_platform_video_source(url);
+    std::expected<std::unique_ptr<VideoEngine>, std::string> engine = create_video_engine(url);
+    if (!engine) {
+        return unsupported(std::move(engine.error()));
+    }
+    auto source = detail::make_ui_shared<EngineVideoSource>(std::move(*engine));
+    source->open();
+    return source;
 }
 
 std::shared_ptr<VideoSource> VideoSource::unsupported(std::string message) {

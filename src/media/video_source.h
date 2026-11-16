@@ -32,7 +32,7 @@ void set_frame_waker(std::function<void()> waker);
 
 // A video being played (design.md §13.3), shared by VideoPlayer copies, the views showing it, and
 // frames on the render thread. The platform's media engine decodes it, plays its sound, and keeps
-// them in sync.
+// them in sync (media/video_backend.h).
 class VideoSource : public std::enable_shared_from_this<VideoSource> {
 public:
     // UI thread. `url` is a file path or an http(s) URL.
@@ -85,12 +85,11 @@ protected:
     std::atomic<bool> playing_now_{false};
 
 private:
+    friend class SourceHost; // what an OS's engine reports (media/source_host.h)
+
     const bool wakes_for_frames_;
     std::atomic<bool> shown_{false};
 };
-
-// VideoSource::create's backend: each OS's media engine (platform/<os>/video_source.*). UI thread.
-std::shared_ptr<VideoSource> create_platform_video_source(const std::string& url);
 
 } // namespace elg::detail
 

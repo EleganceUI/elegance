@@ -7,7 +7,7 @@
 
 // Core Video pixel buffers (decoded video, camera frames) as renderer frames.
 
-#include "media/video_source.h"
+#include "media/video_backend.h"
 
 #include <CoreVideo/CoreVideo.h>
 
