@@ -12,7 +12,7 @@
 
 #include <elg/error.h>
 
-// These bring in <windows.h> (the build defines WIN32_LEAN_AND_MEAN and NOMINMAX).
+#include <windows.h> // the build defines WIN32_LEAN_AND_MEAN and NOMINMAX
 #include <d3d11_1.h>
 #include <dcomp.h>
 #include <dxgi1_4.h>

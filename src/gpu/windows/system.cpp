@@ -9,7 +9,7 @@
 #include <dawn/native/DawnNative.h>
 #include <webgpu/webgpu_cpp.h>
 
-// These bring in <windows.h> (the build defines WIN32_LEAN_AND_MEAN and NOMINMAX).
+#include <windows.h> // the build defines WIN32_LEAN_AND_MEAN and NOMINMAX
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 

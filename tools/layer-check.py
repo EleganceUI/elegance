@@ -82,7 +82,7 @@ def without_comments(text, strings=False):
     return re.sub(r'//[^\n]*|/\*.*?\*/|"(?:\\.|[^"\\\n])*"|\'(?:\\.|[^\'\\\n])*\'', blank, text, flags=re.S)
 
 
-INCLUDE = re.compile(r'^[ \t]*#[ \t]*include[ \t]*([<"])([^>"]+)[>"]', re.M)
+INCLUDE = re.compile(r'^[ \t]*#[ \t]*(?:include|import)[ \t]*([<"])([^>"]+)[>"]', re.M)  # #import: Objective-C
 
 
 def includes(path, text):
@@ -133,6 +133,9 @@ THIRD_PARTY = [
     (re.compile(r"^catch2/"), "Catch2", set()),
     (re.compile(r"^(d3d\w*\.h|dxgi\w*\.h|dcomp\w*\.h|wrl/|wrl\.h|Metal/|IOSurface/|CoreVideo/|QuartzCore/)"),
      "graphics APIs (Direct3D, DXGI, DirectComposition, Metal)", GPU_INTEROP),
+    # What those graphics APIs build on, which their interop code in src/gpu/<os>/ (R5) uses too.
+    (re.compile(r"^(windows\.h|Foundation/|CoreFoundation/|objc/)"),
+     "the operating system's base headers", GPU_INTEROP),
     (re.compile(r"^(windows\.h|win\w+\.h|shl\w*\.h|shobjidl\w*\.h|objbase\.h|combaseapi\.h|ole\w*\.h|"
                 r"mf\w*\.h|propvarutil\.h|wincrypt\.h|winhttp\.h|dwmapi\.h|uxtheme\.h|tlhelp32\.h|"
                 r"knownfolders\.h|psapi\.h|dbghelp\.h|dshow\.h|commctrl\.h|imm\.h|shellapi\.h|process\.h|"
