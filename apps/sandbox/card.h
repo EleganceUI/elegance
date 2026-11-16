@@ -11,7 +11,7 @@ namespace sandbox {
 
 // A padded, rounded "card" surface with a hairline border, applied in a chain with
 // View::apply(): Text("Hi").padding(8).apply(card).
-[[nodiscard]] elg::View card(elg::View content);
+[[nodiscard]] elg::View card(const elg::View& content);
 
 } // namespace sandbox
 
