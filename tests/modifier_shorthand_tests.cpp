@@ -103,11 +103,11 @@ TEST_CASE("Text's font and weight can be reactive", "[shorthand][text]") {
 TEST_CASE("apply() hands the view so far to a function, and the chain goes on from its result",
           "[modifiers]") {
     std::vector<int> order;
-    const auto padded = [&](View content) {
+    const auto padded = [&](const View& content) {
         order.push_back(1);
         return content.padding(5);
     };
-    const auto framed = [&](View content) {
+    const auto framed = [&](const View& content) {
         order.push_back(2);
         return content.frame(40, 30);
     };

@@ -143,6 +143,14 @@ if (APPLE)
 endif ()
 if (ELG_GSTREAMER_FOUND)
     target_link_libraries(elegance_settings INTERFACE PkgConfig::ELG_GSTREAMER)
+    # GStreamer needs libunwind.so.8, which on x86-64 defines _Unwind_RaiseException and the rest
+    # of GCC's unwinder interface too: whichever library the loader finds first supplies them to
+    # the whole process, and libstdc++ must throw with libgcc_s's. What links GStreamer through
+    # this (a program linking a static Elegance, each layer's tests) puts libgcc_s first on its
+    # link line, before anything that can bring libunwind in (tests/unwinder_tests.cpp).
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        target_link_options(elegance_settings INTERFACE "LINKER:--push-state,--no-as-needed,-lgcc_s,--pop-state")
+    endif ()
 endif ()
 if (ELG_GIO_FOUND)
     target_link_libraries(elegance_settings INTERFACE PkgConfig::ELG_GIO)

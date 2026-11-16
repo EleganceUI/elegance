@@ -10,7 +10,7 @@ namespace sandbox {
 
 using namespace elg;
 
-View card(View content) {
+View card(const View& content) {
     constexpr float corner_radius = 16;
     // The shadow is on the background shape alone, so it takes the analytic fast path.
     return content.padding(20)
