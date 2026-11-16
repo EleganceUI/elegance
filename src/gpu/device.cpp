@@ -271,7 +271,10 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
         throw GpuError(std::format("the GPU \"{}\" could not create a WebGPU device: {}", name_, device_error));
     }
     queue_ = device_.GetQueue();
-    set_max_texture_side(limits.maxTextureDimension2D); // images decode to fit this device's textures
+    wgpu::Limits granted;
+    device_.GetLimits(&granted);
+    max_texture_side_ = granted.maxTextureDimension2D;
+    set_max_texture_side(max_texture_side_); // images decode to fit this device's textures
 
     device_.SetLoggingCallback([](wgpu::LoggingType type, wgpu::StringView message) {
         try {
@@ -294,6 +297,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     published_->queue = queue_;
     published_->instance = instance.handle();
     published_->backend = backend_;
+    published_->max_texture_side = max_texture_side_;
     {
         auto& states = Errors::registry();
         const std::lock_guard lock(states.mutex);

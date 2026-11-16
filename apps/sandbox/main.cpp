@@ -404,12 +404,17 @@ View AudioCards() {
                   Captioned(player, "AudioPlayer: streamed, scrub, volume, loop").apply(sandbox::card));
 }
 
-// Video (design.md §13.3): Media Foundation decodes; frames go straight to the GPU; the render
-// thread redraws them without a new layout.
-View VideoCards() {
+// The clip the video cards play, also shown in a window of its own.
+VideoPlayer SandboxClip() {
     const VideoPlayer player(std::string(ELG_SANDBOX_ASSETS) + "/clip.mp4");
     player.set_looping(true);
     player.set_muted(true);
+    return player;
+}
+
+// Video (design.md §13.3): Media Foundation decodes; frames go straight to the GPU; the render
+// thread redraws them without a new layout.
+View VideoCards(const VideoPlayer& player) {
     const View video = ZStack({.alignment = Alignment::bottom}, VideoView(player).aspect_ratio(16.f / 9.f),
                               VideoControls(player).padding(10))
                            .frame({.width = 400})
@@ -1045,14 +1050,15 @@ View WidgetWindow(const State<ColorScheme>& scheme) {
         .color_scheme(scheme);
 }
 
-View ContentView(const State<ColorScheme>& scheme, const State<int>& badge, std::function<void()> quit) {
+View ContentView(const State<ColorScheme>& scheme, const State<int>& badge, const VideoPlayer& clip,
+                 std::function<void()> quit) {
     return VStack({.spacing = 0},
                   TitleBar(scheme),
                   // The title bar stays put; the cards scroll under it.
                   ScrollView(VStack({.alignment = HorizontalAlignment::leading, .spacing = 20},
                          ImageCards(),
                          AudioCards(),
-                         VideoCards(),
+                         VideoCards(clip),
                          NetworkCards(),
                          AnimationCards(),
                          DesktopCards(badge),
@@ -1147,6 +1153,7 @@ int main(int argc, char** argv) {
         const State<ColorScheme> scheme(light ? ColorScheme::light : ColorScheme::dark);
         const State<int> badge(0);
         app.menu_bar(SandboxMenus(scheme, badge));
+        const VideoPlayer clip = SandboxClip();
         // What escapes the app's code (ErrorCards throws on purpose): already in the log; the
         // app goes on.
         app.on_error([](const AppError& error) {
@@ -1158,7 +1165,7 @@ int main(int argc, char** argv) {
                        if (smoke_test) {
                            app.quit(); // still renders the first frame
                        }
-                       return ContentView(scheme, badge, [&app] { app.quit(); });
+                       return ContentView(scheme, badge, clip, [&app] { app.quit(); });
                    });
         if (only_main) {
             return app.run();
@@ -1178,6 +1185,9 @@ int main(int argc, char** argv) {
         // A 10,000-row List (lazy stacks).
         app.window({.title = "Elegance Contacts", .width = 520, .height = 640},
                    [scheme] { return ContactsWindow(scheme); });
+        // The main window's video in a second window: each new frame shows in both.
+        app.window({.title = "Elegance Video", .width = 480, .height = 270},
+                   [clip] { return VideoView(clip).background(Color::black); });
         return app.run();
     } catch (const elg::Error& e) {
         std::println(stderr, "sandbox: {}", e.what());

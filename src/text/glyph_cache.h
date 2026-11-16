@@ -14,15 +14,24 @@
 #include <mutex>
 #include <optional>
 #include <span>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace elg::detail {
 
+// What a glyph's distance field holds.
+enum class DistanceField : std::uint8_t {
+    multi_channel,  // MTSDF: text
+    single_channel, // one distance in every channel: icons and color glyphs
+};
+
 // Generated glyph pixels kept on disk between runs (design.md §11), so a warm start uploads
-// glyphs instead of generating them. One file per font, named by a hash of the font's bytes (an
-// updated font gets a new file); records are appended as glyphs are generated, each with a
-// checksum, so a torn or interleaved write only loses the records after it. Thread-safe.
+// glyphs instead of generating them. One file per font and kind of distance field, named by a
+// hash of the font's bytes and of its variation coordinates (an updated font gets a new file);
+// the file's header holds the glyph size and distance range. Records are appended as glyphs are
+// generated, each with a checksum, so a torn or interleaved write only loses the records after
+// it. Thread-safe.
 class GlyphDiskCache {
 public:
     // `directory`: where the files go (created if needed); nullopt disables the cache.
@@ -36,11 +45,12 @@ public:
 
     [[nodiscard]] bool enabled() const noexcept { return directory_.has_value(); }
 
-    // The cached pixels (RGBA) of `glyph` at `width` x `height`, if any.
-    std::optional<std::vector<std::uint8_t>> find(const FontFace& face, std::uint32_t glyph, std::uint32_t width,
-                                                  std::uint32_t height);
-    void store(const FontFace& face, std::uint32_t glyph, std::uint32_t width, std::uint32_t height,
-               std::span<const std::uint8_t> rgba);
+    // The cached pixels (RGBA) of `glyph` as a `field` distance field at `width` x `height`, if
+    // any.
+    std::optional<std::vector<std::uint8_t>> find(const FontFace& face, DistanceField field, std::uint32_t glyph,
+                                                  std::uint32_t width, std::uint32_t height);
+    void store(const FontFace& face, DistanceField field, std::uint32_t glyph, std::uint32_t width,
+               std::uint32_t height, std::span<const std::uint8_t> rgba);
 
     // Where the cache lives by default: the platform's cache folder, or ELG_GLYPH_CACHE (a path,
     // or "off").
@@ -60,11 +70,13 @@ private:
         std::uint64_t bytes = 0;
     };
 
-    FontCache& font(const FontFace& face); // with the mutex held
+    FontCache& font(const FontFace& face, DistanceField field); // with the mutex held
 
     std::optional<std::filesystem::path> directory_;
     std::mutex mutex_;
-    std::unordered_map<std::uint32_t, std::unique_ptr<FontCache>> fonts_; // by face id
+    // One per file: faces with the same bytes, variation and kind of field share it.
+    std::unordered_map<std::string, std::unique_ptr<FontCache>> files_; // by file name
+    std::unordered_map<std::uint64_t, FontCache*> fonts_;                // by face id and field
 };
 
 } // namespace elg::detail

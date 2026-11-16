@@ -13,7 +13,7 @@ namespace elg::detail::gpu {
 
 namespace {
 
-constexpr std::uint64_t kIdleFrames = 240;
+constexpr std::uint64_t kIdleFenceFrames = 240;
 constexpr wgpu::TextureFormat kConvertedFormat = wgpu::TextureFormat::BGRA8Unorm;
 constexpr wgpu::TextureFormat kSampledFormat = wgpu::TextureFormat::BGRA8UnormSrgb;
 
@@ -31,8 +31,9 @@ struct ConvertImmediates {
 
 } // namespace
 
-VideoTextures::VideoTextures(const Device& device, wgpu::BindGroupLayout  image_layout)
-    : device_(device), layout_(std::move(image_layout)), sampler_(create_linear_sampler(device.handle())) {
+VideoTextures::VideoTextures(const Device& device, wgpu::BindGroupLayout image_layout, CachePolicy policy)
+    : device_(device), layout_(std::move(image_layout)), sampler_(create_linear_sampler(device.handle())),
+      policy_(policy) {
     const wgpu::Device& dev = device.handle();
     const wgpu::ShaderModule module = create_shader(dev, kConvertWgsl, "video_convert.wgsl");
 
@@ -81,7 +82,8 @@ bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
         texture.group = create_image_group(device_.handle(), layout_, frame.external_view, sampler_);
         return true;
     }
-    if (!frame.shared_handle || !device_.has_feature(wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle)) {
+    if (!frame.shared_handle || !device_.has_feature(wgpu::FeatureName::SharedTextureMemoryDXGISharedHandle) ||
+        frame.width > device_.max_texture_side() || frame.height > device_.max_texture_side()) {
         return false;
     }
     wgpu::SharedTextureMemoryDXGISharedHandleDescriptor shared;
@@ -116,6 +118,7 @@ bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
         descriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst;
         descriptor.viewFormatCount = 1;
         texture.copy = device_.handle().CreateTexture(&descriptor);
+        texture.use.bytes = std::size_t{frame.width} * frame.height * 4;
     }
     wgpu::TextureViewDescriptor view;
     view.format = sampled_format;
@@ -143,7 +146,7 @@ wgpu::BindGroup VideoTextures::acquire(const wgpu::CommandEncoder& encoder, cons
         it = textures_.emplace(frame.texture_id, std::move(texture)).first;
     }
     Texture& texture = it->second;
-    texture.last_used = frame_;
+    frame_.mark(texture.use);
     texture.owner = frame.owner;
     if (frame.kind == VideoFrame::Kind::external) {
         if (std::ranges::find(acquired, frame.texture_id) == acquired.end()) {
@@ -228,7 +231,7 @@ void VideoTextures::release(const std::vector<std::uint64_t>& acquired) {
 
 wgpu::SharedFence VideoTextures::fence(const VideoFrame& frame) {
     if (const auto it = fences_.find(frame.wait_fence_id); it != fences_.end()) {
-        it->second.last_used = frame_;
+        it->second.last_used = frame_.number();
         return it->second.fence;
     }
     if (!device_.has_feature(wgpu::FeatureName::SharedFenceDXGISharedHandle)) {
@@ -241,21 +244,22 @@ wgpu::SharedFence VideoTextures::fence(const VideoFrame& frame) {
     descriptor.label = "shared fence";
     wgpu::SharedFence imported = device_.handle().ImportSharedFence(&descriptor);
     if (imported) {
-        fences_.emplace(frame.wait_fence_id, Fence{imported, frame_});
+        fences_.emplace(frame.wait_fence_id, Fence{imported, frame_.number()});
     }
     return imported;
 }
 
-void VideoTextures::end_frame() noexcept {
-    ++frame_;
-    std::erase_if(textures_, [&](const auto& entry) {
-        // A pending external-image recording owns its lease until release(), regardless of age.
-        return !entry.second.lease &&
-               (entry.second.external || frame_ - entry.second.last_used > kIdleFrames);
-    });
-    std::erase_if(targets_, [&](const auto& entry) { return frame_ - entry.second.last_used > kIdleFrames; });
-    std::erase_if(fences_, [&](const auto& entry) {
-    return frame_ - entry.second.last_used > kIdleFrames; });
+void VideoTextures::end_frame() {
+    // External images belong to their producer: dropped once no recording holds them. A pending
+    // recording owns its lease until release(), regardless of age.
+    std::erase_if(textures_, [](const auto& entry) { return entry.second.external && !entry.second.lease; });
+    // One budget for both maps.
+    Eviction eviction(frame_, policy_);
+    eviction.collect(textures_, [](const Texture& texture) { return bool(texture.lease); });
+    eviction.collect(targets_);
+    eviction.finish();
+    std::erase_if(fences_,
+                  [&](const auto& entry) { return frame_.number() - entry.second.last_used > kIdleFenceFrames; });
 }
 
 // --- Frames in memory ---
@@ -264,6 +268,7 @@ void VideoTextures::create_target(CpuTarget& target, std::uint32_t width, std::u
     target = {};
     target.width = width;
     target.height = height;
+    target.use.bytes = std::size_t{width} * height * 4;
     wgpu::TextureDescriptor descriptor;
     descriptor.label = "video frame";
     descriptor.dimension = wgpu::TextureDimension::e2D;
@@ -286,12 +291,19 @@ wgpu::BindGroup VideoTextures::convert(const wgpu::CommandEncoder& encoder, cons
         frame.pixels->size() < packed_size(frame.format, frame.width, frame.height)) {
         return nullptr;
     }
+    if (frame.width > device_.max_texture_side() || frame.height > device_.max_texture_side()) {
+        if (!warned_) {
+            warned_ = true;
+            log_warning("video: a frame of {} x {} pixels isn't shown: the GPU's textures are at most {} pixels a side",
+                        frame.width, frame.height, device_.max_texture_side());
+        }
+        return nullptr;
+    }
     CpuTarget& target = targets_[frame.source_id];
-    target.last_used = frame_;
     if (target.width != frame.width || target.height != frame.height) {
         create_target(target, frame.width, frame.height); // the old image lives on while in use
-        target.last_used = frame_;
     }
+    frame_.mark(target.use);
     if (target.converted && target.frame_id == frame.frame_id) {
         return target.sample_group; // converted already (another window this frame)
     }

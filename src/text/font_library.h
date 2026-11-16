@@ -90,6 +90,8 @@ public:
     bool has_weight_axis() const noexcept { return has_weight_axis_; }
     // The weight axis's setting, or 0 for the font's default instance.
     int variation_weight() const noexcept { return variation_weight_; }
+    // A variable font's design coordinates (16.16 fixed point), one per axis; empty for others.
+    std::span<const std::int64_t> variation_coordinates() const noexcept { return variation_coordinates_; }
     FT_Face ft_face() const noexcept { return ft_face_; }
     hb_font_t* hb_font() const noexcept { return hb_font_; }
     float units_per_em() const noexcept { return units_per_em_; }
@@ -102,6 +104,7 @@ private:
     bool icon_;
     bool has_weight_axis_ = false;
     int variation_weight_ = 0;
+    std::vector<std::int64_t> variation_coordinates_;
     std::vector<Color> palette_; // the default CPAL palette, sRGB
     mutable std::unordered_map<std::uint32_t, std::vector<ColorLayer>> color_layers_;
     mutable std::unordered_map<std::uint32_t, std::vector<ColorPath>> color_paths_;
@@ -141,7 +144,9 @@ private:
     const FontFace& load(const std::string& key, const std::filesystem::path& file);
 
     FT_Library library_ = nullptr;
-    std::unordered_map<std::string, std::unique_ptr<FontFace>> faces_; // by file path or memory key
+    // By file path or memory key, with "#icon" for icon fonts, then "@wght=" and the weight for a
+    // variable font's instances.
+    std::unordered_map<std::string, std::unique_ptr<FontFace>> faces_;
     // The fallback chain: loaded one font at a time, only when the fonts before it don't have a
     // character (a CJK font isn't read until CJK text appears).
     std::vector<std::filesystem::path> fallback_files_;

@@ -35,8 +35,9 @@ struct GlyphJob;
 
 // The UI-side glyph atlas (design.md §15). A new glyph's place and metrics are worked out at once
 // on the UI thread (so layout and drawing never wait), and its distance field is generated on a
-// pool of worker threads; the pixels are queued for the render thread, which owns the texture.
-// Until they arrive the glyph's slot is empty. UI thread only, except where noted.
+// pool of worker threads, or read from the disk cache there; the pixels are queued for the render
+// thread, which owns the texture. Until they arrive the glyph's slot is empty. UI thread only,
+// except where noted.
 // When the page is full, the glyphs that don't fit aren't drawn in that frame, and the atlas
 // starts over once its uploads are taken: every glyph is placed again as frames draw it (from
 // the disk cache, or generated again).
@@ -80,7 +81,7 @@ private:
     void work(const std::stop_token& stop);
 
     std::unordered_map<std::uint64_t, std::optional<AtlasGlyph>> glyphs_;
-    std::unique_ptr<GlyphDiskCache> disk_; // used by the workers too (it's thread-safe)
+    std::unique_ptr<GlyphDiskCache> disk_; // used by the workers only (it's thread-safe)
 
     // Shared with the workers.
     mutable std::mutex mutex_;

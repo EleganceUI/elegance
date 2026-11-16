@@ -10,7 +10,10 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
+#include <memory>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 namespace elg::detail {
@@ -38,16 +41,50 @@ struct PlanSegment {
     int backdrop = -1;
 };
 
-// A path's coverage mask to render before the passes that use it (gpu::PathRenderer).
+// A path's coverage mask to render before the passes that use it (gpu::PathRenderer), unless a
+// mask with the same key is kept from an earlier frame.
 struct PlanPath {
     std::uint32_t width = 0; // pixels
     std::uint32_t height = 0;
-    std::uint32_t first_vertex = 0; // fan triangles in FramePlan::path_vertices, mask pixels
-    std::uint32_t vertex_count = 0;
     bool even_odd = false;
     // Identifies the mask's content (geometry, scale, sub-pixel position, size, fill rule): equal
     // keys render identical masks, so a mask can be reused across frames.
     std::uint64_t key = 0;
+    // The geometry: a polygon point p is at p * scale + offset in mask pixels.
+    std::shared_ptr<const Polygons> polygons;
+    float scale = 1;
+    std::array<float, 2> offset{};
+};
+
+// Appends `path`'s fan triangles (mask pixels) to `vertices`: three vertices each, from each
+// polygon's first point.
+void append_path_fan(const PlanPath& path, std::vector<std::array<float, 2>>& vertices);
+
+// What planning remembers of the paths a window drew in its previous frame: by polygon set,
+// their content hash and fan size, so that a path drawn again is not hashed again. The sets
+// are recognized by identity (they're immutable and shared across display lists). Render thread.
+class PathHashes {
+public:
+    struct Hash {
+        std::uint64_t content = 0;
+        std::uint32_t vertex_count = 0; // of the fan triangles
+    };
+
+    // The hash of `polygons`, computed unless the previous frame had it.
+    Hash get(const std::shared_ptr<const Polygons>& polygons);
+    // Forgets the sets the frame didn't draw; the next frame starts.
+    void end_frame();
+    // How many polygon sets have been hashed so far.
+    [[nodiscard]] std::uint64_t hashed() const noexcept { return hashed_; }
+
+private:
+    struct Entry {
+        std::weak_ptr<const Polygons> polygons;
+        Hash hash;
+        bool used = false; // by the frame being planned
+    };
+    std::unordered_map<const Polygons*, Entry> entries_;
+    std::uint64_t hashed_ = 0;
 };
 
 // A copy of part of a pass, taken partway through it, blurred if `sigma` is set. Instances map
@@ -86,7 +123,6 @@ struct FramePlan {
     // Color matrices too, six entries each (see shaders/ui.wgsl).
     std::vector<std::array<float, 4>> stops;
     std::vector<PlanPath> paths;
-    std::vector<std::array<float, 2>> path_vertices;
     // Images drawn this frame (uploaded first if they aren't on the GPU yet).
     std::vector<std::shared_ptr<const DecodedImage>> images;
     // Videos drawn this frame and the exact snapshots used for geometry and sampling.
@@ -100,9 +136,14 @@ struct FramePlan {
 
 // Converts logical points to pixels, resolves the clip stack per instance (culling instances
 // that are fully clipped), splits layers into their own passes, and collects gradient stops.
-// Updates and snapshots each video source once, on the render thread.
-// `width` x `height` is the window in pixels.
-FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t height);
+// Snapshots each video source once, on the render thread (FrameSources::update() takes their new
+// frames before).
+// `width` x `height` is the window in pixels. `paths` is the window's, kept across its frames;
+// null forgets the paths after this frame. Layers and path masks are at most 8192 pixels, and
+// `max_texture_side` (the device's), on a side.
+FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t height,
+                     PathHashes* paths = nullptr,
+                     std::uint32_t max_texture_side = std::numeric_limits<std::uint32_t>::max());
 
 } // namespace elg::detail
 

@@ -57,6 +57,9 @@ struct InnerShadowCommand {
     float spread = 0;
 };
 
+// Flattened, closed polygons.
+using Polygons = std::vector<std::vector<Point>>;
+
 // A filled vector path (design.md §5). The polygons (flattened, closed) are shared and in local
 // points; `scale` then `offset` place them in the window, so moving or scaling a path (scrolling,
 // transitions) doesn't touch them.
@@ -153,6 +156,9 @@ public:
     // While painting: the part that can be seen (a scroll view's frame); elements entirely
     // outside it aren't painted. nullopt: everything is.
     std::optional<Rect> cull;
+    // Painted only to see what the drawing reads, then dropped: GraphicsContext skips the work
+    // of drawing paths.
+    bool probe = false;
 };
 
 // --- Helpers ---

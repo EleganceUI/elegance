@@ -29,6 +29,7 @@ struct RenderDevice {
     wgpu::Queue queue;
     wgpu::Instance instance; // external-image error scopes and Metal scheduling at retirement
     wgpu::BackendType backend = wgpu::BackendType::Undefined;
+    std::uint32_t max_texture_side = 0; // Device::max_texture_side()
 };
 std::shared_ptr<RenderDevice> render_device();
 
@@ -51,6 +52,9 @@ public:
     [[nodiscard]] const Instance& instance() const noexcept { return instance_; }
     [[nodiscard]] const std::string& name() const noexcept { return name_; }
     [[nodiscard]] wgpu::BackendType backend() const noexcept { return backend_; }
+
+    // The longest side a 2D texture can have on this device, in texels.
+    [[nodiscard]] std::uint32_t max_texture_side() const noexcept { return max_texture_side_; }
 
     // Whether the device was created with this (optional) feature.
     [[nodiscard]] bool has_feature(wgpu::FeatureName feature) const { return device_.HasFeature(feature); }
@@ -82,6 +86,7 @@ private:
     std::string name_;
     wgpu::BackendType backend_ = wgpu::BackendType::Undefined;
     std::optional<std::array<std::uint8_t, 8>> luid_;
+    std::uint32_t max_texture_side_ = 0;
 };
 
 } // namespace elg::detail::gpu

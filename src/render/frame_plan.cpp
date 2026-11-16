@@ -83,10 +83,20 @@ std::uint32_t downsample_for(float sigma) {
 
 constexpr float kDegrees = std::numbers::pi_v<float> / 180;
 
+std::uint64_t fnv1a(const void* data, std::size_t size, std::uint64_t hash = 14695981039346656037ull) {
+    const auto* bytes = static_cast<const unsigned char*>(data);
+    for (std::size_t i = 0; i < size; ++i) {
+        hash = (hash ^ bytes[i]) * 1099511628211ull;
+    }
+    return hash;
+}
+
 class Planner {
 public:
-    Planner(const DisplayList& list, FramePlan& plan, std::uint32_t width, std::uint32_t height)
-        : list_(list), plan_(plan), scale_(list.scale) {
+    Planner(const DisplayList& list, FramePlan& plan, std::uint32_t width, std::uint32_t height, PathHashes& paths,
+            std::uint32_t max_texture_side)
+        : list_(list), plan_(plan), paths_(paths), scale_(list.scale),
+          max_side_(std::max(1u, std::min(kMaxLayerSize, max_texture_side))) {
         plan_.main.width = width;
         plan_.main.height = height;
     }
@@ -335,8 +345,8 @@ private:
         const float y0 = std::floor(bounds.y) - 1;
         const float x1 = std::ceil(bounds.max_x()) + 1;
         const float y1 = std::ceil(bounds.max_y()) + 1;
-        const Rect area{x0, y0, std::min(x1 - x0, static_cast<float>(kMaxLayerSize)),
-                        std::min(y1 - y0, static_cast<float>(kMaxLayerSize))};
+        const Rect area{x0, y0, std::min(x1 - x0, static_cast<float>(max_side_)),
+                        std::min(y1 - y0, static_cast<float>(max_side_))};
         // Written so that NaN (a path with non-finite points) is skipped too.
         if (!mask_pass && (!(area.width >= 1) || !(area.height >= 1) ||
                            (clip.active && (!overlaps(area, clip.rect) || !overlaps(area, clip.scissor))))) {
@@ -344,9 +354,8 @@ private:
         }
 
         PlanPath path;
-        path.width = clamped_cast<std::uint32_t>(area.width, 1, kMaxLayerSize);
-        path.height = clamped_cast<std::uint32_t>(area.height, 1, kMaxLayerSize);
-        path.first_vertex = static_cast<std::uint32_t>(plan_.path_vertices.size());
+        path.width = clamped_cast<std::uint32_t>(area.width, 1, max_side_);
+        path.height = clamped_cast<std::uint32_t>(area.height, 1, max_side_);
         path.even_odd = command.rule == FillRule::even_odd;
         const float k = command.scale * scale_;
         // Sub-pixel positions snap to a quarter pixel (at most 1/8 px off, invisible), so a moving
@@ -355,41 +364,21 @@ private:
         const auto snap = [](float v) { return std::floor(v) + std::round((v - std::floor(v)) * 4) / 4; };
         const float dx = snap(command.offset.x * scale_ - origin.x - x0);
         const float dy = snap(command.offset.y * scale_ - origin.y - y0);
-        const auto vertex = [&](Point p) { return std::array<float, 2>{p.x * k + dx, p.y * k + dy}; };
+        path.polygons = command.polygons;
+        path.scale = k;
+        path.offset = {dx, dy};
 
-        // The content key: the polygons, then everything that changes how they rasterize. The
-        // integer part of the position doesn't (the mask moves with the quad), the fraction does.
-        std::uint64_t key = 14695981039346656037ull;
-        const auto mix = [&](const void* data, std::size_t size) {
-            const auto* bytes = static_cast<const unsigned char*>(data);
-            for (std::size_t i = 0; i < size; ++i) {
-                key = (key ^ bytes[i]) * 1099511628211ull;
-            }
-        };
-        for (const std::vector<Point>& polygon : *command.polygons) {
-            mix(polygon.data(), polygon.size() * sizeof(Point));
-            const std::size_t count = polygon.size();
-            mix(&count, sizeof(count));
-        }
+        // The content key: the polygons' hash, then everything that changes how they rasterize.
+        // The integer part of the position doesn't (the mask moves with the quad), the fraction
+        // does.
+        const PathHashes::Hash hash = paths_.get(command.polygons);
         const float subpixel_x = dx - std::floor(dx);
         const float subpixel_y = dy - std::floor(dy);
         const std::array<float, 3> placement{k, subpixel_x, subpixel_y};
-        mix(placement.data(), sizeof(placement));
         const std::array<std::uint32_t, 3> shape{path.width, path.height,
                                                   command.rule == FillRule::even_odd ? 1u : 0u};
-        mix(shape.data(), sizeof(shape));
-        path.key = key;
-        for (const std::vector<Point>& polygon : *command.polygons) {
-            // A fan from the first point: overlapping triangles cancel or add up in the stencil
-            // exactly as the polygon winds.
-            for (std::size_t i = 1; i + 1 < polygon.size(); ++i) {
-                plan_.path_vertices.push_back(vertex(polygon[0]));
-                plan_.path_vertices.push_back(vertex(polygon[i]));
-                plan_.path_vertices.push_back(vertex(polygon[i + 1]));
-            }
-        }
-        path.vertex_count = static_cast<std::uint32_t>(plan_.path_vertices.size()) - path.first_vertex;
-        if (mask_pass && (path.vertex_count == 0 || area.width < 1 || area.height < 1)) {
+        path.key = fnv1a(shape.data(), sizeof(shape), fnv1a(placement.data(), sizeof(placement), hash.content));
+        if (mask_pass && (hash.vertex_count == 0 || area.width < 1 || area.height < 1)) {
             // Nothing is covered: clear the whole pass.
             QuadInstance clear;
             clear.rect = {0, 0, mask_pass->width, mask_pass->height};
@@ -397,11 +386,11 @@ private:
             emit(pass, out, clear, clear_extent(*mask_pass), Clip{}, {.mask = true});
             return;
         }
-        if (path.vertex_count == 0) {
+        if (hash.vertex_count == 0) {
             return;
         }
         const int index = static_cast<int>(plan_.paths.size());
-        plan_.paths.push_back(path);
+        plan_.paths.push_back(std::move(path));
 
         if (mask_pass) {
             // Over the whole pass; outside the mask's own area the sampler clamps to its empty
@@ -448,7 +437,6 @@ private:
         if (index < 0) {
             index = static_cast<int>(plan_.videos.size());
             plan_.videos.push_back(command.source);
-            command.source->update();
             plan_.video_frames.push_back(command.source->current());
         }
         const auto& frame = plan_.video_frames[static_cast<std::size_t>(index)];
@@ -580,8 +568,8 @@ private:
         const float y0 = std::floor(content.y - margin);
         const float x1 = std::ceil(content.max_x() + margin);
         const float y1 = std::ceil(content.max_y() + margin);
-        const auto clamp_size = [](float v) {
-            return clamped_cast<std::uint32_t>(v, 1, kMaxLayerSize);
+        const auto clamp_size = [&](float v) {
+            return clamped_cast<std::uint32_t>(v, 1, max_side_);
         };
         PlanPass layer;
         layer.width = clamp_size(x1 - x0);
@@ -727,15 +715,68 @@ private:
 
     const DisplayList& list_;
     FramePlan& plan_;
+    PathHashes& paths_;
     float scale_;
+    std::uint32_t max_side_; // of layers and path masks
     std::vector<std::vector<QuadInstance>> layer_instances_;
 };
 
 } // namespace
 
-FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t height) {
+void append_path_fan(const PlanPath& path, std::vector<std::array<float, 2>>& vertices) {
+    const float k = path.scale;
+    const float dx = path.offset[0];
+    const float dy = path.offset[1];
+    const auto vertex = [&](Point p) { return std::array<float, 2>{p.x * k + dx, p.y * k + dy}; };
+    for (const std::vector<Point>& polygon : *path.polygons) {
+        // A fan from the first point: overlapping triangles cancel or add up in the stencil
+        // exactly as the polygon winds.
+        for (std::size_t i = 1; i + 1 < polygon.size(); ++i) {
+            vertices.push_back(vertex(polygon[0]));
+            vertices.push_back(vertex(polygon[i]));
+            vertices.push_back(vertex(polygon[i + 1]));
+        }
+    }
+}
+
+PathHashes::Hash PathHashes::get(const std::shared_ptr<const Polygons>& polygons) {
+    Entry& entry = entries_[polygons.get()];
+    // The same set, not another one made where an earlier set was.
+    const bool same = !entry.polygons.owner_before(polygons) && !polygons.owner_before(entry.polygons);
+    if (!same || entry.polygons.expired()) {
+        Hash hash;
+        std::uint64_t content = 14695981039346656037ull;
+        std::size_t vertices = 0;
+        for (const std::vector<Point>& polygon : *polygons) {
+            content = fnv1a(polygon.data(), polygon.size() * sizeof(Point), content);
+            const std::size_t count = polygon.size();
+            content = fnv1a(&count, sizeof(count), content);
+            vertices += count >= 3 ? 3 * (count - 2) : 0;
+        }
+        constexpr std::size_t kMaxVertices = std::numeric_limits<std::uint32_t>::max();
+        hash.content = content;
+        hash.vertex_count = static_cast<std::uint32_t>(std::min(vertices, kMaxVertices));
+        entry = {polygons, hash, false};
+        ++hashed_;
+    }
+    entry.used = true;
+    return entry.hash;
+}
+
+void PathHashes::end_frame() {
+    std::erase_if(entries_, [](const auto& entry) { return !entry.second.used; });
+    for (auto& [polygons, entry] : entries_) {
+        entry.used = false;
+    }
+}
+
+FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t height, PathHashes* paths,
+                     std::uint32_t max_texture_side) {
     FramePlan plan;
-    Planner(list, plan, width, height).run();
+    PathHashes once;
+    PathHashes& hashes = paths ? *paths : once;
+    Planner(list, plan, width, height, hashes, max_texture_side).run();
+    hashes.end_frame();
     return plan;
 }
 

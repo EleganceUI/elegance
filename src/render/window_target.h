@@ -19,9 +19,9 @@
 #include "gpu/swapchain.h"
 #include "render/frame_mailbox.h"
 #include "render/frame_plan.h"
+#include "render/intermediate_images.h"
 
 #include <cstddef>
-#include <unordered_map>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -40,8 +40,9 @@ struct RenderResources {
 };
 
 // Everything the render thread needs to draw into one window: its surface (or composition
-// target), the frame's buffers, and pooled offscreen images. WebGPU orders queue writes and
-// submissions, so one set serves every frame, even while earlier ones are still on the GPU.
+// target), the frame's buffers, and pooled offscreen images (IntermediateImages). WebGPU orders
+// queue writes and submissions, so one set serves every frame, even while earlier ones are still
+// on the GPU.
 class WindowTarget {
 public:
     // `native_window` (an HWND on Windows) lets windows present through the platform
@@ -107,33 +108,28 @@ private:
                    const FramePlan& plan, const FrameGroups& groups, const RenderResources& resources);
     // Copies a backdrop's region out of `texture` and blurs it as planned; returns its group.
     wgpu::BindGroup take_backdrop(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture,
-                                  const PlanBackdrop& backdrop, std::size_t slot, const RenderResources& resources);
+                                  const PlanBackdrop& backdrop, const RenderResources& resources);
     // Blurs a color image (`width` x `height` of it) into pooled images, downsampled by `factor`
-    // first; `slot` picks the pooled images. Returns the result's group.
+    // first; `slot` picks the pooled images (ImageSlot::index). Returns the result's group.
     wgpu::BindGroup blur_color(const wgpu::CommandEncoder& encoder, const wgpu::BindGroup& source, std::uint32_t width,
                                std::uint32_t height, float sigma, std::uint32_t factor, bool clamp_edges,
-                               std::size_t slot, const RenderResources& resources);
+                               std::uint64_t slot, const RenderResources& resources);
     const wgpu::BindGroup& empty_group(const RenderResources& resources);
+    // A side of the window's image: the window's (in pixels), up to what the device's textures
+    // allow.
+    [[nodiscard]] std::uint32_t window_side(int pixels) const;
     [[nodiscard]] wgpu::BindGroup image_group(const RenderResources& resources, const wgpu::TextureView& view) const;
-    gpu::RenderImage& pooled_image(std::vector<gpu::RenderImage>& pool, std::size_t index, wgpu::TextureFormat format,
+    gpu::RenderImage& pooled_image(ImageRole role, std::uint64_t index, wgpu::TextureFormat format,
                                    std::uint32_t width, std::uint32_t height, std::uint32_t samples = 1,
                                    wgpu::TextureUsage usage = wgpu::TextureUsage::RenderAttachment |
                                                               wgpu::TextureUsage::TextureBinding);
 
-    // Path coverage masks kept across frames by content (PlanPath::key): unchanged paths are only
-    // composited, not rendered again.
-    struct CachedMask {
-        gpu::RenderImage mask;
-        wgpu::BindGroup group;
-        std::uint64_t last_used = 0; // frame number
-    };
-    const CachedMask* cached_mask(std::uint64_t key);
-    void evict_masks();
-
     const gpu::Device& device_;
-    std::unordered_map<std::uint64_t, CachedMask> masks_;
-    std::size_t mask_bytes_ = 0;
-    std::uint64_t frame_number_ = 0;
+    // Every offscreen image, path coverage masks included: masks are kept by content
+    // (PlanPath::key), so unchanged paths are only composited, not rendered again.
+    IntermediateImages<gpu::RenderImage> images_;
+    PathHashes path_hashes_;
+    std::vector<std::array<float, 2>> path_fans_; // of the masks a frame renders
     std::unique_ptr<gpu::Swapchain> swapchain_; // unless the window presents through composition
 #if defined(_WIN32)
     std::unique_ptr<gpu::CompositionTarget> composition_;
@@ -142,25 +138,9 @@ private:
     gpu::Buffer instances_;
     gpu::Buffer stops_;
     gpu::Buffer path_vertices_;
-    // Offscreen images, reused across frames.
-    std::vector<gpu::RenderImage> layers_;
-    std::vector<gpu::RenderImage> blur_horizontal_;
-    std::vector<gpu::RenderImage> blur_vertical_;
-    std::vector<gpu::RenderImage> inner_horizontal_;
-    std::vector<gpu::RenderImage> inner_vertical_;
-    // Color blurs (blurred layers by layer index, then backdrops): downsampled, then two passes.
-    std::vector<gpu::RenderImage> color_down_;
-    std::vector<gpu::RenderImage> color_horizontal_;
-    std::vector<gpu::RenderImage> color_vertical_;
-    std::vector<gpu::RenderImage> backdrop_copies_;
-    std::vector<gpu::RenderImage> window_copies_; // backdrops read from the surface image (its format)
-    std::vector<gpu::RenderImage> frame_images_;  // the window, drawn offscreen when it reads backdrops
-    bool window_reads_backdrops_ = false;         // the last frame recorded did
-    std::optional<gpu::RenderImage> empty_;      // bound where no second image is
+    bool window_reads_backdrops_ = false;    // the last frame recorded did
+    std::optional<gpu::RenderImage> empty_; // bound where no second image is
     wgpu::BindGroup empty_group_;
-    // Path masks: multisampled color and stencil scratch (the masks themselves are cached).
-    std::vector<gpu::RenderImage> path_samples_;
-    std::vector<gpu::RenderImage> path_stencils_;
 };
 
 } // namespace elg::detail

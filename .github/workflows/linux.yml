@@ -55,6 +55,9 @@ jobs:
             # SDL3 and Dawn need the X11/Wayland headers (they load the libraries at run time); HTTP uses
             # the system libcurl; vcpkg's libxcrypt (under SDL3's dbus) needs libltdl. Elegance needs
             # CMake 4.3, newer than Ubuntu's. Clang 19 and libc++ 19 come from LLVM's apt repository.
+            # The GCC jobs install GStreamer, so that video playback is built and its tests run
+            # (gst-launch-1.0 makes their clips). The libc++ jobs can't: libgstreamer1.0-dev needs
+            # libunwind-dev, which conflicts with LLVM's libunwind that libc++ uses.
             - name: Install tools
               run: |
                   sudo apt-get update
@@ -66,6 +69,8 @@ jobs:
                     libasound2-dev libpulse-dev libdbus-1-dev libibus-1.0-dev libudev-dev libcurl4-openssl-dev
                   if [ "${{ matrix.toolchain }}" = gcc ]; then
                     sudo apt-get install -y --no-install-recommends gcc-14 g++-14
+                    sudo apt-get install -y --no-install-recommends \
+                      libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-tools
                     echo "CC=gcc-14" >> "$GITHUB_ENV"
                     echo "CXX=g++-14" >> "$GITHUB_ENV"
                   else

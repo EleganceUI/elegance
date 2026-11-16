@@ -17,6 +17,7 @@
 #include "platform/generic/system_text.h"
 #include "reactive/runtime.h"
 #include "render/frame_mailbox.h"
+#include "render/path_cache.h"
 #include "render/render_thread.h"
 #include "text/text_system.h"
 #include "view/animated.h"
@@ -298,12 +299,14 @@ struct LiveWindow {
     bool dirty = true;
     bool tree_changed = false; // If/ForEach added or removed elements
     bool animating = false;    // the last frame had animations in progress
+    bool visible = true;       // as the render thread was last told
     std::uint64_t last_frame = 0;
     EnvironmentValues environment; // the root environment (system color scheme)
     LiveWindowServices services;
     FocusManager focus{&services}; // outlives the tree (elements let go of it when destroyed)
     std::unique_ptr<Scope> scope = std::make_unique<Scope>();
     std::unique_ptr<Element> root;
+    PathCache paths; // what its canvases flattened, from one frame to the next
     EventDispatcher events{*root, focus};
     // Screen readers (design.md §12); made by App::run, dormant until one asks.
     std::unique_ptr<AccessibilityAdapter> accessibility;
@@ -346,7 +349,11 @@ WindowFrame build_frame(LiveWindow& live) {
     const Size fitted = live.root->size_that_fits(proposal);
     live.root->place(aligned_position({0, 0, size.width, size.height}, fitted, Alignment::center), proposal);
     live.root->notify_render_size(frame.scale);
-    live.root->paint(frame.list);
+    {
+        const PathCache::Use paths(live.paths);
+        live.root->paint(frame.list);
+    }
+    live.paths.end_frame();
     return frame;
 }
 
@@ -884,6 +891,15 @@ int App::run() {
         }
         live.last_frame = mailbox.post(std::move(frame));
         return live.last_frame;
+    };
+    // Hidden and minimized windows don't draw new frames of videos; shown again, a new frame
+    // shows each video's newest.
+    const auto sync_visibility = [&mailbox](LiveWindow& live) {
+        if (const bool visible = live.window.visible(); visible != live.visible) {
+            live.visible = visible;
+            mailbox.post(WindowVisibilityCommand{live.window.id(), visible});
+            live.dirty = live.dirty || visible;
+        }
     };
 
     // Draw before showing, so windows never appear blank: lay out once (which requests the
@@ -1475,11 +1491,19 @@ int App::run() {
             }
             break;
         }
+        case platform::EventType::window_visibility_changed:
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                sync_visibility(**it);
+            }
+            break;
         case platform::EventType::window_maximized:
         case platform::EventType::window_restored:
         case platform::EventType::window_focus_gained:
         case platform::EventType::window_focus_lost:
             if (auto it = find_window(event.window_id); it != windows.end()) {
+                if (event.type == platform::EventType::window_restored) {
+                    sync_visibility(**it); // perhaps no longer minimized
+                }
                 const WindowState& state = *(*it)->state;
                 switch (event.type) {
                 case platform::EventType::window_maximized: state.maximized = true; break;

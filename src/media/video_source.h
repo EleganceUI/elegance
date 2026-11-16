@@ -13,6 +13,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -88,6 +89,10 @@ struct VideoFrame {
 // A new id, unique among sources and the textures decoders share (VideoFrame::texture_id).
 std::uint64_t next_media_id();
 
+// What VideoSource::notify_new_frame() calls to wake the render thread: set by the render thread
+// while it runs, and cleared (an empty function) before it stops. Any thread.
+void set_frame_waker(std::function<void()> waker);
+
 // Bytes in a packed frame of `format`.
 std::size_t packed_size(VideoFrame::Format format, std::uint32_t width, std::uint32_t height);
 
@@ -125,14 +130,29 @@ public:
     // Takes a new frame from the decoder if one is due; true if the current frame changed.
     virtual bool update() = 0;
     virtual std::optional<VideoFrame> current() const = 0;
-    // Whether frames keep coming (the renderer redraws windows showing it).
+    // Whether frames keep coming.
     bool is_playing_now() const noexcept { return playing_now_.load(std::memory_order_relaxed); }
+    // Whether it calls notify_new_frame() for each new frame; otherwise the render thread looks
+    // for frames regularly while it plays.
+    [[nodiscard]] bool wakes_for_frames() const noexcept { return wakes_for_frames_; }
+    // Whether a window shows it (FrameSources): only then do its new frames wake the render
+    // thread.
+    void set_shown(bool shown) noexcept { shown_ = shown; }
 
     const std::uint64_t id;
 
 protected:
-    VideoSource();
+    // `wakes_for_frames`: see wakes_for_frames().
+    explicit VideoSource(bool wakes_for_frames = false);
+    // Any thread, after the source's state changed: wakes the render thread, when a window shows
+    // it, to draw its new frame (or the lack of one).
+    void notify_new_frame() const;
+
     std::atomic<bool> playing_now_{false};
+
+private:
+    const bool wakes_for_frames_;
+    std::atomic<bool> shown_{false};
 };
 
 // VideoSource::create's backend: each OS's media engine (platform/<os>/video_source.*). UI thread.

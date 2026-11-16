@@ -5,6 +5,7 @@
 #include <elg/graphics_context.h>
 
 #include "render/display_list.h"
+#include "render/path_cache.h"
 #include "view/animated.h"
 
 #include <algorithm>
@@ -61,46 +62,39 @@ void GraphicsContext::stroke_rect(Rect rect, Color color, float width, CornerRad
 
 namespace {
 
-std::shared_ptr<const std::vector<std::vector<Point>>> closed_polygons(const Path& path, float tolerance, Rect& bounds) {
-    auto polygons = std::make_shared<std::vector<std::vector<Point>>>();
-    bool any = false;
-    float x0 = 0;
-    float y0 = 0;
-    float x1 = 0;
-    float y1 = 0;
-    for (Path::Polyline& line : path.flatten(tolerance)) {
-        if (line.points.size() < 3) {
-            continue;
-        }
-        for (const Point p : line.points) {
-            x0 = any ? std::min(x0, p.x) : p.x;
-            y0 = any ? std::min(y0, p.y) : p.y;
-            x1 = any ? std::max(x1, p.x) : p.x;
-            y1 = any ? std::max(y1, p.y) : p.y;
-            any = true;
-        }
-        polygons->push_back(std::move(line.points));
+// `path`, or with `stroke` its stroke's outline, flattened as finely as `scale` needs: from the
+// paint's PathCache when there is one.
+detail::PathCache::Flattened flattened(const Path& path, const StrokeStyle* stroke, float scale) {
+    const float tolerance = 0.25f / std::max(scale, 0.25f);
+    detail::PathCache* const cache = detail::PathCache::current();
+    return cache ? cache->get(path, stroke, tolerance) : detail::PathCache::flatten(path, stroke, tolerance);
+}
+
+void add_path(detail::DisplayList& list, Rect frame, detail::PathCache::Flattened shape, ShapeStyle style,
+              FillRule rule) {
+    if (shape.polygons->empty()) {
+        return;
     }
-    bounds = {x0, y0, x1 - x0, y1 - y0};
-    return polygons;
+    const Rect& bounds = shape.bounds;
+    const Rect paint_frame{frame.x + bounds.x, frame.y + bounds.y, bounds.width, bounds.height};
+    list.commands.emplace_back(detail::PathCommand{std::move(shape.polygons), bounds, 1, {frame.x, frame.y},
+                                                   paint_frame, std::move(style), rule});
 }
 
 } // namespace
 
 void GraphicsContext::fill_path(const Path& path, ShapeStyle style, FillRule rule) {
-    Rect bounds;
-    auto polygons = closed_polygons(path, 0.25f / std::max(scale_, 0.25f), bounds);
-    if (polygons->empty()) {
+    if (list_->probe) {
         return;
     }
-    list_->commands.emplace_back(detail::PathCommand{std::move(polygons), bounds, 1, {bounds_.x, bounds_.y},
-                                                  {bounds_.x + bounds.x, bounds_.y + bounds.y, bounds.width, bounds.height},
-                                                  std::move(style), rule});
+    add_path(*list_, bounds_, flattened(path, nullptr, scale_), std::move(style), rule);
 }
 
 void GraphicsContext::stroke_path(const Path& path, Color color, const StrokeStyle& style) {
-    const float tolerance = 0.25f / std::max(scale_, 0.25f);
-    fill_path(path.stroked(style, tolerance), ShapeStyle(color), FillRule::non_zero);
+    if (list_->probe) {
+        return;
+    }
+    add_path(*list_, bounds_, flattened(path, &style, scale_), ShapeStyle(color), FillRule::non_zero);
 }
 
 void GraphicsContext::draw_rect(Rect rect, CornerRadii radii, Color fill, Color border, float border_width) {

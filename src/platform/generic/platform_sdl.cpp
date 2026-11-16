@@ -117,6 +117,9 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
         return {EventType::window_close_requested, event.window.windowID};
     case SDL_EVENT_WINDOW_MAXIMIZED: return {EventType::window_maximized, event.window.windowID};
     case SDL_EVENT_WINDOW_RESTORED: return {EventType::window_restored, event.window.windowID};
+    case SDL_EVENT_WINDOW_MINIMIZED:
+    case SDL_EVENT_WINDOW_HIDDEN:
+    case SDL_EVENT_WINDOW_SHOWN: return {EventType::window_visibility_changed, event.window.windowID};
     case SDL_EVENT_WINDOW_FOCUS_GAINED: return {EventType::window_focus_gained, event.window.windowID};
     case SDL_EVENT_WINDOW_FOCUS_LOST: return {EventType::window_focus_lost, event.window.windowID};
     case SDL_EVENT_WINDOW_MOVED: return {EventType::window_moved, event.window.windowID};
@@ -385,6 +388,10 @@ void Window::toggle_maximized() {
 
 bool Window::maximized() const {
     return (SDL_GetWindowFlags(window_) & SDL_WINDOW_MAXIMIZED) != 0;
+}
+
+bool Window::visible() const {
+    return (SDL_GetWindowFlags(window_) & (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED)) == 0;
 }
 
 Rect Window::system_controls_frame() {

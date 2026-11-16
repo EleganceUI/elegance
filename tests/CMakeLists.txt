@@ -21,6 +21,7 @@ add_executable(elegance_tests
         desktop_tests.cpp
         environment_tests.cpp
         glyph_atlas_tests.cpp
+        gpu_memory_tests.cpp
         gpu_image_tests.cpp
         grid_tests.cpp
         hover_tests.cpp
@@ -33,6 +34,7 @@ add_executable(elegance_tests
         dynamic_children_tests.cpp
         floating_tests.cpp
         float_to_int_tests.cpp
+        frame_source_tests.cpp
         modifier_shorthand_tests.cpp
         picker_slider_style_tests.cpp
         menu_bar_tests.cpp

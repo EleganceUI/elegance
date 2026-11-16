@@ -8,15 +8,21 @@
 #include "platform/generic/platform.h"
 #include "text/atlas.h"
 
+#include <algorithm>
 #include <cstring>
 #include <format>
+#include <span>
+#include <string>
+#include <string_view>
 
 namespace elg::detail {
 
 namespace {
 
 // Bump when generated pixels change for the same font and glyph (generator settings, fixes).
-constexpr std::uint32_t kVersion = 5; // 5: thin overlaps found; 4: overlapping contours resolved; 3: color glyphs single-channel
+// 6: files by distance field kind and every variation coordinate; 5: thin overlaps found; 4: overlapping
+// contours resolved; 3: color glyphs single-channel
+constexpr std::uint32_t kVersion = 6;
 constexpr char kFileMagic[4] = {'E', 'L', 'G', 'G'};
 constexpr std::uint32_t kRecordMagic = 0x504C5947; // "GYLP"
 constexpr std::uint64_t kMaxFileBytes = 64ull << 20;
@@ -55,6 +61,37 @@ std::uint64_t hash_font(const std::vector<unsigned char>& bytes) {
         hash ^= hash >> 29;
     }
     return fnv1a(bytes.data() + words * 8, bytes.size() - words * 8, hash);
+}
+
+// Deletes the files that cache versions before 6 kept for the font whose bytes hash to `hash`
+// (hexadecimal): "<hash>.glyphs" and "<hash>-wght<weight>.glyphs".
+void remove_old_files(const std::filesystem::path& directory, const std::string& hash) {
+    constexpr std::string_view kExtension = ".glyphs";
+    constexpr std::string_view kWeight = "-wght";
+    std::vector<std::filesystem::path> old;
+    std::error_code error;
+    std::filesystem::directory_iterator it(directory, error);
+    for (; !error && it != std::filesystem::directory_iterator(); it.increment(error)) {
+        const std::string name = it->path().filename().string();
+        if (!name.starts_with(hash) || !name.ends_with(kExtension)) {
+            continue;
+        }
+        // Between the hash and the extension: nothing, or "-wght" and digits.
+        std::string_view rest = name;
+        rest = rest.substr(hash.size(), rest.size() - hash.size() - kExtension.size());
+        if (!rest.empty()) {
+            if (!rest.starts_with(kWeight) || rest.size() == kWeight.size()) {
+                continue;
+            }
+            rest.remove_prefix(kWeight.size());
+        }
+        if (std::ranges::all_of(rest, [](char c) { return c >= '0' && c <= '9'; })) {
+            old.push_back(it->path());
+        }
+    }
+    for (const std::filesystem::path& file : old) {
+        std::filesystem::remove(file, error);
+    }
 }
 
 FileHeader expected_header() {
@@ -108,18 +145,30 @@ GlyphDiskCache::GlyphDiskCache(std::optional<std::filesystem::path> directory) :
 
 GlyphDiskCache::~GlyphDiskCache() = default;
 
-GlyphDiskCache::FontCache& GlyphDiskCache::font(const FontFace& face) {
-    auto& slot = fonts_[face.id()];
+GlyphDiskCache::FontCache& GlyphDiskCache::font(const FontFace& face, DistanceField field) {
+    FontCache*& slot = fonts_[(std::uint64_t{face.id()} << 1) | (field == DistanceField::single_channel ? 1u : 0u)];
     if (slot) {
         return *slot;
     }
-    slot = std::make_unique<FontCache>();
-    FontCache& cache = *slot;
-    // A variable font's weights are different glyphs from the same file.
+    // A variable font's instances are different glyphs from the same file, and each kind of
+    // distance field is a file of its own.
+    const std::string hash = std::format("{:016x}", hash_font(face.bytes()));
+    std::string name = hash;
+    if (const std::span<const std::int64_t> coordinates = face.variation_coordinates(); !coordinates.empty()) {
+        name += std::format("-v{:016x}", fnv1a(coordinates.data(), coordinates.size_bytes()));
+    }
+    name += field == DistanceField::single_channel ? "-sdf.glyphs" : "-mtsdf.glyphs";
+    std::unique_ptr<FontCache>& file = files_[name];
+    if (file) {
+        slot = file.get();
+        return *slot; // another face with the same glyphs opened it
+    }
+    file = std::make_unique<FontCache>();
+    slot = file.get();
+    FontCache& cache = *file;
     // NOLINTNEXTLINE(bugprone-unchecked-optional-access): find() and store() return before this without directory_
-    cache.file = *directory_ / (face.variation_weight() > 0 ? std::format("{:016x}-wght{}.glyphs", hash_font(face.bytes()),
-                                                                          face.variation_weight())
-                                                            : std::format("{:016x}.glyphs", hash_font(face.bytes())));
+    const std::filesystem::path& directory = *directory_;
+    cache.file = directory / name;
 
     // Load what's there; anything unreadable from some point on is ignored (and overwritten).
     std::ifstream in(cache.file, std::ios::binary | std::ios::ate);
@@ -159,6 +208,7 @@ GlyphDiskCache::FontCache& GlyphDiskCache::font(const FontFace& face) {
         const FileHeader header = expected_header();
         cache.out.write(reinterpret_cast<const char*>(&header), sizeof(header));
         cache.bytes = sizeof(header);
+        remove_old_files(directory, hash); // a new file replaces them
     } else {
         if (valid_end < cache.contents.size()) {
             std::filesystem::resize_file(cache.file, valid_end, error);
@@ -172,13 +222,14 @@ GlyphDiskCache::FontCache& GlyphDiskCache::font(const FontFace& face) {
     return cache;
 }
 
-std::optional<std::vector<std::uint8_t>> GlyphDiskCache::find(const FontFace& face, std::uint32_t glyph,
-                                                               std::uint32_t width, std::uint32_t height) {
+std::optional<std::vector<std::uint8_t>> GlyphDiskCache::find(const FontFace& face, DistanceField field,
+                                                               std::uint32_t glyph, std::uint32_t width,
+                                                               std::uint32_t height) {
     if (!directory_) {
         return std::nullopt;
     }
     const std::lock_guard lock(mutex_);
-    FontCache& cache = font(face);
+    FontCache& cache = font(face, field);
     if (const auto it = cache.records.find(glyph); it != cache.records.end()) {
         if (it->second.width == width && it->second.height == height) {
             const auto* begin = reinterpret_cast<const std::uint8_t*>(cache.contents.data() + it->second.offset);
@@ -188,13 +239,13 @@ std::optional<std::vector<std::uint8_t>> GlyphDiskCache::find(const FontFace& fa
     return std::nullopt;
 }
 
-void GlyphDiskCache::store(const FontFace& face, std::uint32_t glyph, std::uint32_t width, std::uint32_t height,
-                           std::span<const std::uint8_t> rgba) {
+void GlyphDiskCache::store(const FontFace& face, DistanceField field, std::uint32_t glyph, std::uint32_t width,
+                           std::uint32_t height, std::span<const std::uint8_t> rgba) {
     if (!directory_) {
         return;
     }
     const std::lock_guard lock(mutex_);
-    FontCache& cache = font(face);
+    FontCache& cache = font(face, field);
     if (!cache.out || cache.bytes + sizeof(RecordHeader) + rgba.size() > kMaxFileBytes || cache.records.contains(glyph)) {
         return;
     }

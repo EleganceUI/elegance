@@ -110,7 +110,7 @@ TEST_CASE("video geometry follows the sampled snapshot without UI size updates",
     CHECK(portrait.instances[1].rect == portrait.instances[0].rect);
     CHECK(portrait.instances[0].shape == std::array<float, 4>{1, 1, 0, 0});
     CHECK(portrait.instances[0].color[3] == 0.5f);
-    CHECK(source->updates == 1);
+    CHECK(source->updates == 0); // planning only snapshots; FrameSources takes new frames
     CHECK(source->snapshots == 1);
     REQUIRE(portrait.video_frames.size() == 1);
     REQUIRE(portrait.video_frames[0]);

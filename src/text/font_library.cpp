@@ -179,6 +179,7 @@ FontFace::FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigne
                 }
             }
         }
+        variation_coordinates_.assign(coordinates.begin(), coordinates.end());
         if (variation_weight_ > 0) {
             FT_Set_Var_Design_Coordinates(ft_face_, axes->num_axis, coordinates.data());
             const hb_variation_t variation{HB_TAG('w', 'g', 'h', 't'), static_cast<float>(variation_weight_)};
@@ -339,6 +340,10 @@ const FontFace* FontLibrary::fallback_for(char32_t codepoint, bool emoji) {
 
 const FontFace& FontLibrary::resolve(const Font& font) {
     RegisteredFont source = find_font(font);
+    // A file registered both for an icon set and for text is two faces: each draws as its role says.
+    if (source.icon) {
+        source.key += "#icon";
+    }
     auto it = faces_.find(source.key);
     if (it == faces_.end()) {
         auto data = source.data ? source.data
