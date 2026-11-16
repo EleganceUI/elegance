@@ -241,7 +241,13 @@ private:
     }
 
     // GStreamer's streaming threads: forwards what matters to the UI thread.
-    static GstBusSyncReply on_message(GstBus*, GstMessage* message, gpointer data) {
+    // Called by GStreamer on its streaming threads: what handling throws goes to the UI thread.
+    static GstBusSyncReply on_message(GstBus* bus, GstMessage* message, gpointer data) {
+        run_foreign_callback([&] { handle_message(bus, message, data); });
+        return GST_BUS_DROP;
+    }
+
+    static GstBusSyncReply handle_message(GstBus*, GstMessage* message, gpointer data) {
         const auto source = static_cast<std::weak_ptr<GStreamerSource>*>(data)->lock();
         if (!source) {
             return GST_BUS_DROP;

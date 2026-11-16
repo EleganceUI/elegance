@@ -112,12 +112,33 @@ private:
     bool bubble(const std::vector<Element*>& path, const PointerEvent& event);
     bool move_focus(bool forward);
     bool focus_edge(bool first);
+    // A handler that throws ends the event (and, during a press, the press): see guarded().
+    template <class F>
+    bool guarded(bool press, F&& work);
+    void end_press();
+    [[nodiscard]] bool in_press() const noexcept;
+    // The entry points' work, which they run through guarded().
+    bool tick_unguarded();
+    bool pointer_moved_unguarded(Point location);
+    bool pointer_button_unguarded(PointerEvent::Kind kind, Point location, MouseButton button, int click_count, KeyModifiers modifiers);
+    bool pointer_left_unguarded();
+    bool key_unguarded(const KeyEvent& event);
+    bool scroll_unguarded(ScrollEvent event);
+    bool magnify_unguarded(MagnifyEvent event);
+    bool rotate_unguarded(RotateEvent event);
+    bool two_finger_double_tap_unguarded(Point location);
+    bool text_input_unguarded(const TextInputEvent& event);
+    bool refresh_hover_unguarded();
+    bool revalidate_unguarded();
+    void leaving_unguarded(Element& subtree);
+    bool release_disabled_unguarded();
 
     Element* root_;
     FocusManager* focus_;
     bool menu_navigation_ = false;
     std::vector<Hover> hovers_; // outermost first
     Element* captured_ = nullptr;
+    bool press_dead_ = false; // a handler threw during this press: the rest goes to no handler
     bool captured_cancellable_ = false; // gestures around captured_ may take its press
     std::vector<Watcher> watchers_;     // high priority, then normal; each innermost first
     // Simultaneous gestures watching the press: they never take it, and once one recognizes it

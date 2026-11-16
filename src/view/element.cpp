@@ -6,6 +6,8 @@
 
 #include "view/event_dispatcher.h"
 
+#include "core/app_errors.h"
+
 #include "reactive/runtime.h"
 
 #include "view/focus.h"
@@ -526,11 +528,21 @@ void CanvasElement::paint_impl(DisplayList& list) const {
     if (!draw_ || !drawable(frame())) {
         return;
     }
-    GraphicsContext context(list, frame(), list.scale);
-    if (reads_) {
-        track_reads(*reads_, [&] { draw_(context); });
-    } else {
-        draw_(context);
+    // A draw function that throws: reported, and what it drew in this frame goes.
+    const std::size_t before = list.commands.size();
+    bool drew = true;
+    {
+        GraphicsContext context(list, frame(), list.scale);
+        drew = run_app_code(AppCode::drawing, [&] {
+            if (reads_) {
+                track_reads(*reads_, [&] { draw_(context); });
+            } else {
+                draw_(context);
+            }
+        });
+    }
+    if (!drew) {
+        list.commands.erase(list.commands.begin() + static_cast<std::ptrdiff_t>(before), list.commands.end());
     }
 }
 
@@ -574,7 +586,13 @@ void LayoutElement::on_structure_changed() {
 }
 
 Size LayoutElement::measure(ProposedSize proposal) {
-    return layout_->cached_size_that_fits(proposal, handles_, cache_);
+    // A Layout that throws: reported once, and the view has no size and shows nothing until its
+    // layout is invalidated.
+    Size size;
+    if (!failed_) {
+        failed_ = !run_app_code(AppCode::layout, [&] { size = layout_->cached_size_that_fits(proposal, handles_, cache_); });
+    }
+    return failed_ ? Size{} : size;
 }
 
 void LayoutElement::arrange(Rect bounds, ProposedSize proposal) {
@@ -584,7 +602,9 @@ void LayoutElement::arrange(Rect bounds, ProposedSize proposal) {
         child->collect_exiting(exiting);
     }
     move_exiting(exiting);
-    layout_->cached_place_children(bounds, proposal, handles_, cache_);
+    if (!failed_) {
+        failed_ = !run_app_code(AppCode::layout, [&] { layout_->cached_place_children(bounds, proposal, handles_, cache_); });
+    }
 }
 
 // Back to front: by z-index, then (exiting children after the rest, then) declaration order.
@@ -599,6 +619,9 @@ std::vector<Element*> LayoutElement::paint_order() const {
 }
 
 void LayoutElement::paint_impl(DisplayList& list) const {
+    if (failed_) {
+        return; // its Layout threw: nothing to show this frame
+    }
     for (const Element* child : paint_order()) {
         child->paint(list);
     }
@@ -668,11 +691,19 @@ float LayoutModifierElement::z_index() const noexcept {
 }
 
 Size LayoutModifierElement::measure(ProposedSize proposal) {
-    return modifier_->size_that_fits(proposal, LayoutChild(*content_));
+    // A modifier that throws: reported once, and the view has no size and shows nothing until its
+    // layout is invalidated.
+    Size size;
+    if (!failed_) {
+        failed_ = !run_app_code(AppCode::layout, [&] { size = modifier_->size_that_fits(proposal, LayoutChild(*content_)); });
+    }
+    return failed_ ? Size{} : size;
 }
 
 void LayoutModifierElement::arrange(Rect bounds, ProposedSize proposal) {
-    modifier_->place(bounds, proposal, LayoutChild(*content_));
+    if (!failed_) {
+        failed_ = !run_app_code(AppCode::layout, [&] { modifier_->place(bounds, proposal, LayoutChild(*content_)); });
+    }
 }
 
 // --- EffectElement ---
@@ -694,7 +725,7 @@ void EffectElement::on_render_size(float scale) {
         return;
     }
     last_render_size_ = physical;
-    effects_.on_size_change(physical);
+    run_app_code(AppCode::layout, [&] { effects_.on_size_change(physical); });
 }
 
 const ShapeFill* EffectElement::clip_path(float scale) const {

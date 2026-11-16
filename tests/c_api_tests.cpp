@@ -8,19 +8,32 @@
 
 #include "shim.h"
 
+#include "core/app_errors.h"
+#include "text/text_system.h"
+#include "view/view_node.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 using elg::Animation;
+using elg::App;
+using elg::AppCode;
 using elg::Binding;
+using elg::ErrorAction;
 using elg::View;
+namespace detail = elg::detail;
 
 extern "C" {
 int32_t elg_take_error(ElgStrSink out, void* ctx);
 uint32_t elg_abi_version();
 View* elg_empty_view();
+App* elg_app_new();
+void elg_app_free(App* app);
+void elg_app_on_error(App* app, ElgClosure handler);
+View* elg_view_component(ElgClosure body);
 void elg_view_free(View* view);
 View* elg_vstack(int32_t alignment, ElgOptLen spacing, View** children, size_t count);
 View* elg_button(View* take_label, ElgClosure on_click);
@@ -179,4 +192,39 @@ TEST_CASE("bindings of every type can be freed, which drops their closures", "[c
 
 TEST_CASE("the C API reports its ABI version", "[c-api]") {
     CHECK(elg_abi_version() >= 1);
+}
+
+TEST_CASE("the error handler's closure is dropped once: when replaced, or with the app", "[c-api]") {
+    Counts first;
+    Counts second;
+    App* const app = elg_app_new();
+    elg_app_on_error(app, closure(first));
+    elg_app_on_error(app, closure(second)); // replaces the first
+    CHECK(first.drops == 1);
+    elg_app_on_error(app, none(first)); // removes the handler, and drops what it was given
+    CHECK(second.drops == 1);
+    CHECK(first.drops == 2);
+    elg_app_free(app);
+    CHECK(take_error() == 0);
+}
+
+TEST_CASE("while an App runs, a panicking component body is reported, not the end of the run", "[c-api]") {
+    Counts counts;
+    detail::begin_app_errors();
+    View* const view = elg_view_component(panicking(counts));
+    REQUIRE(view);
+    {
+        detail::Scope scope;
+        const detail::Scope::Use use(scope);
+        static detail::TextSystem text; // what the placeholder of a debug build needs
+        CHECK_NOTHROW(detail::lower(elg::VStack(*view), {.text = &text}));
+    }
+    std::vector<int> codes;
+    CHECK_FALSE(detail::handle_app_errors([&](const std::exception_ptr&, AppCode code) {
+        codes.push_back(static_cast<int>(code));
+        return ErrorAction::resume;
+    }));
+    detail::end_app_errors();
+    CHECK(codes == std::vector<int>{static_cast<int>(AppCode::body)});
+    elg_view_free(view);
 }

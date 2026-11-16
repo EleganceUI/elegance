@@ -5,6 +5,7 @@
 #include <elg/app.h>
 #include <elg/window.h>
 
+#include "core/app_errors.h"
 #include "core/crash.h"
 #include "core/log.h"
 #include "core/scope_exit.h"
@@ -360,6 +361,7 @@ struct App::Impl {
     std::vector<MenuBarItem> menus;
     std::map<std::uint32_t, bool> menu_checks;
     std::function<void()> show_menus;
+    std::function<ErrorAction(const AppError&)> error_handler;
 };
 
 App::App() : impl_(std::make_unique<Impl>()) {}
@@ -427,8 +429,18 @@ void App::quit() {
     }
 }
 
+std::string AppError::message() const {
+    return exception_message(exception);
+}
+
+App& App::on_error(std::function<ErrorAction(const AppError&)> handler) {
+    impl_->error_handler = std::move(handler);
+    return *this;
+}
+
 int App::run() {
     Impl& self = *impl_;
+    std::exception_ptr exit_error; // what run() throws once the run has ended
     if (self.running) {
         throw UsageError("App::run() is already running");
     }
@@ -457,6 +469,9 @@ int App::run() {
     // all, once every thread of this run has stopped, what's left is destroyed too.
     begin_ui_releases();
     const ScopeExit end_releases([] { end_ui_releases(); });
+    // From here on, what escapes app code is reported and the app goes on (core/app_errors.h).
+    begin_app_errors();
+    const ScopeExit end_errors([] { end_app_errors(); });
     // After the windows are gone: their views' timers and on_disappear actions end with the app.
     const ScopeExit stop_timers([] {
         cancel_all_timers();
@@ -541,7 +556,7 @@ int App::run() {
             return drop;
         });
         for (auto& on_close : dropped) {
-            on_close();
+            run_app_code(AppCode::callback, on_close); // a binding going back to false
         }
     };
     const PopupSink popup_sink{
@@ -600,7 +615,7 @@ int App::run() {
         if (item.checked && source != shown_source) {
             // Chosen from menus replaced since: its own callback, with nothing shown to update.
             if (item.toggled) {
-                item.toggled(!*item.checked);
+                run_app_code(AppCode::event_handler, [&] { item.toggled(!*item.checked); });
             }
         } else if (item.checked) {
             const auto known = self.menu_checks.find(id);
@@ -609,11 +624,11 @@ int App::run() {
             shown_checks = self.menu_checks;
             platform::native::set_menu_checked(id, now);
             if (item.toggled) {
-                item.toggled(now);
+                run_app_code(AppCode::event_handler, [&] { item.toggled(now); });
             }
         }
         if (item.action) {
-            item.action();
+            run_app_code(AppCode::event_handler, item.action);
             return;
         }
         const std::uint32_t focused = platform::focused_window_id();
@@ -761,7 +776,7 @@ int App::run() {
                 break; // a disabled view isn't activated
             }
             if (target->second.action) {
-                target->second.action();
+                run_app_code(AppCode::event_handler, target->second.action);
                 break;
             }
             [[fallthrough]];
@@ -930,7 +945,7 @@ int App::run() {
             floats.erase(it);
             destroy_window(popup.id);
             if (popup.on_close) {
-                popup.on_close();
+                run_app_code(AppCode::callback, popup.on_close); // a binding going back to false
             }
         }
         if (auto it = find_window(id); it != windows.end()) {
@@ -964,6 +979,16 @@ int App::run() {
         inspector_entry->content = [model = inspector] { return InspectorView(model); };
         auto live = std::make_unique<LiveWindow>(*inspector_entry, text, base, &popup_sink);
         mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), false, live->window.native_handle()});
+        // Interrupted from here on (an exception), the render thread lets go of the window first.
+        bool opened = false;
+        const ScopeExit withdraw([&, id = live->window.id()] {
+            if (!opened) {
+                try {
+                    mailbox.wait_until_done(mailbox.post(RemoveWindowCommand{id}), kRenderWorkTimeout);
+                } catch (...) { // NOLINT(bugprone-empty-catch): unwinding already; the window goes anyway
+                }
+            }
+        });
         const bool show_first = live->window.shows_before_first_frame();
         if (show_first) {
             live->window.show();
@@ -977,6 +1002,7 @@ int App::run() {
         }
         inspector_window = live->window.id();
         windows.push_back(std::move(live));
+        opened = true;
         target.dirty = true;
     };
 
@@ -1028,7 +1054,7 @@ int App::run() {
             const std::function<void()> on_close = std::move(popup.on_close);
             retire(std::move(popup));
             if (on_close) {
-                on_close(); // e.g. a popover's binding goes back to false
+                run_app_code(AppCode::callback, on_close); // e.g. a popover's binding goes back to false
             }
         }
     };
@@ -1079,6 +1105,16 @@ int App::run() {
         fit_popup(*live);
 
         mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), true, live->window.native_handle()});
+        // Interrupted from here on (an exception), the render thread lets go of the window first.
+        bool opened = false;
+        const ScopeExit withdraw([&, id = live->window.id()] {
+            if (!opened) {
+                try {
+                    mailbox.wait_until_done(mailbox.post(RemoveWindowCommand{id}), kRenderWorkTimeout);
+                } catch (...) { // NOLINT(bugprone-empty-catch): unwinding already; the window goes anyway
+                }
+            }
+        });
         const bool show_first = live->window.shows_before_first_frame();
         if (show_first) {
             live->window.show();
@@ -1091,6 +1127,7 @@ int App::run() {
         }
         const std::uint32_t id = live->window.id();
         windows.push_back(std::move(live));
+        opened = true;
         OpenPopup popup{std::move(entry), id,     request.level, std::move(request.on_close), request.token,
                         opener_id,        motion, exit};
         if (is_tooltip) {
@@ -1113,7 +1150,7 @@ int App::run() {
                 close_tooltip_now();
             }
             for (auto& action : std::exchange(pending.after_close, {})) {
-                action();
+                run_app_code(AppCode::event_handler, action); // a chosen menu item's
             }
             for (const std::uint64_t token : std::exchange(pending.close_tokens, {})) {
                 if (auto it = std::ranges::find(floats, token, &OpenPopup::token); it != floats.end()) {
@@ -1122,7 +1159,7 @@ int App::run() {
                     const std::function<void()> on_close = std::move(popup.on_close);
                     retire(std::move(popup));
                     if (on_close) {
-                        on_close();
+                        run_app_code(AppCode::callback, on_close);
                     }
                 }
             }
@@ -1215,11 +1252,13 @@ int App::run() {
                     const Point local{session.location.x - frame.x, session.location.y - frame.y};
                     const DropOptions options = target->options(); // the handler may rebuild the tree
                     set_drop_target(live, session, std::nullopt);
-                    if (files) {
-                        options.files(session.files, local);
-                    } else {
-                        options.text(session.text, local);
-                    }
+                    run_app_code(AppCode::event_handler, [&] {
+                        if (files) {
+                            options.files(session.files, local);
+                        } else {
+                            options.text(session.text, local);
+                        }
+                    });
                 }
             }
             set_drop_target(live, session, std::nullopt);
@@ -1562,6 +1601,16 @@ int App::run() {
         run_ui_releases(); // what other threads let go of
         run_ui_tasks();    // e.g. a hot reload
         flush_effects();
+        // What escaped app code goes to the error handler, between events (App::on_error). It
+        // may end the run, and so does running out of memory in app code.
+        const AppErrorHandler handler = [&self](const std::exception_ptr& error, AppCode code) {
+            return self.error_handler ? self.error_handler(AppError{error, code}) : ErrorAction::resume;
+        };
+        if (const std::exception_ptr end = handle_app_errors(handler); end && !exit_error) {
+            exit_error = end;
+            self.quit_requested = true;
+        }
+        flush_effects(); // what the handler wrote
         run_due_timers(seconds_now());
         flush_effects(); // hover and other effects may ask for popups
         forget_removed();
@@ -1625,6 +1674,7 @@ int App::run() {
         // What this frame's flushes changed is laid out: the next flush starts a new update, so
         // implicit animations that fired in this one stop applying.
         end_update();
+        app_frame_ended(); // the same exception in the next frame isn't logged again
         // The pointer's shape follows what's under it, here after layout: content that moved,
         // appeared, or went away under a still pointer changes it too. A popup over its window
         // comes later in the list, and wins.
@@ -1654,6 +1704,9 @@ int App::run() {
                 mailbox.wait_until_done(live->last_frame, kAnimationFrameTimeout);
             }
         }
+    }
+    if (exit_error) {
+        std::rethrow_exception(exit_error); // the scope exits above end the run first
     }
     return 0;
 }

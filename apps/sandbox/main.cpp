@@ -26,6 +26,7 @@
 #include <format>
 #include <functional>
 #include <print>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -434,6 +435,39 @@ View NetworkCards() {
                                    AsyncImage(avatar, {.content_mode = ContentMode::fill}).frame(56, 56).clip_shape(Circle()),
                                    AsyncImage("https://example.invalid/missing.png").frame(56, 56)),
                             "Avatar; a failing URL")
+                      .apply(sandbox::card));
+}
+
+// App code that throws on purpose: each exception is written to the log and passed to the app's
+// error handler (main()), and the app goes on.
+struct BrokenBody {
+    [[nodiscard]] View body() const { throw std::runtime_error("this body throws on purpose"); }
+};
+
+View ErrorCards() {
+    const State<int> presses(0);
+    const State<bool> drawing_throws(false);
+    return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
+                  Captioned(BrokenBody{}, "A body that throws: a placeholder\n(in builds without NDEBUG)")
+                      .apply(sandbox::card),
+                  Captioned(VStack({.alignment = HorizontalAlignment::leading, .spacing = 8},
+                                   Button("Throw",
+                                          [presses] {
+                                              presses = presses.peek() + 1;
+                                              throw std::runtime_error("a button that throws on purpose");
+                                          }),
+                                   Text([presses] { return std::format("Pressed {} times; the app goes on", presses()); })),
+                            "A button whose action throws")
+                      .apply(sandbox::card),
+                  Captioned(VStack({.alignment = HorizontalAlignment::leading, .spacing = 8},
+                                   Toggle(Text("Throw while drawing"), drawing_throws.binding()),
+                                   Canvas([drawing_throws](GraphicsContext& graphics) {
+                                       graphics.fill_rect({0, 0, graphics.size().width, graphics.size().height}, Color::hex(0x5B8DEF), CornerRadii::all(8));
+                                       if (drawing_throws()) {
+                                           throw std::runtime_error("a canvas that throws on purpose");
+                                       }
+                                   }).frame(120, 40)),
+                            "A canvas that throws draws nothing")
                       .apply(sandbox::card));
 }
 
@@ -1034,6 +1068,7 @@ View ContentView(const State<ColorScheme>& scheme, const State<int>& badge, std:
                          TextCards().fixed_size(false, true),
                          EffectCards(),
                          StateCards(std::move(quit)),
+                         ErrorCards(),
                          ControlCards(),
                          TextFieldCards(),
                          MoreControlCards())
@@ -1112,6 +1147,12 @@ int main(int argc, char** argv) {
         const State<ColorScheme> scheme(light ? ColorScheme::light : ColorScheme::dark);
         const State<int> badge(0);
         app.menu_bar(SandboxMenus(scheme, badge));
+        // What escapes the app's code (ErrorCards throws on purpose): already in the log; the
+        // app goes on.
+        app.on_error([](const AppError& error) {
+            std::println(stderr, "sandbox: on_error got \"{}\"", error.message());
+            return ErrorAction::resume;
+        });
         app.window({.title = "Elegance Sandbox", .width = 1100, .height = 860},
                    [&] {
                        if (smoke_test) {

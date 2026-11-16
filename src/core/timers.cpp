@@ -4,6 +4,8 @@
 
 #include "core/timers.h"
 
+#include "core/app_errors.h"
+
 #include <elg/error.h>
 #include <elg/reactive.h>
 #include <elg/timer.h>
@@ -87,9 +89,10 @@ bool run_due_timers(double now) {
         } else {
             timer->done = true;
         }
-        // A copy: the action may cancel its own timer.
+        // A copy: the action may cancel its own timer. Rescheduled before it runs, so one that
+        // throws stays scheduled.
         const std::function<void()> action = timer->action;
-        action();
+        run_app_code(AppCode::timer, action);
     }
     return !due.empty();
 }
@@ -114,8 +117,19 @@ bool run_lifecycle_actions() {
     while (!g_lifecycle.empty()) {
         std::vector<std::function<void()>> actions;
         actions.swap(g_lifecycle);
-        for (auto& action : actions) {
-            action();
+        for (auto action = actions.begin(); action != actions.end(); ++action) {
+            try {
+                (*action)();
+            } catch (...) {
+                if (reporting_app_errors()) { // while an App runs: reported, and the others run on
+                    report_app_exception(std::current_exception(), AppCode::lifecycle_action);
+                    continue;
+                }
+                // The actions after it run later, still first and in order.
+                g_lifecycle.insert(g_lifecycle.begin(), std::make_move_iterator(action + 1),
+                                   std::make_move_iterator(actions.end()));
+                throw;
+            }
         }
         ran = true;
     }

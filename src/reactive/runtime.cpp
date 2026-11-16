@@ -10,6 +10,7 @@
 
 #include "reactive/runtime.h"
 
+#include "core/app_errors.h"
 #include "core/scope_exit.h"
 
 #include <elg/error.h>
@@ -256,7 +257,9 @@ void start_effect(std::shared_ptr<EffectNode> effect, bool priority) {
     EffectNode* const node = effect.get();
     Runtime::set_owner(node, g_scope); // later runs build into it too
     g_scope->adopt(std::move(effect));
-    node->update(); // first run, establishing its dependencies
+    // First run, establishing its dependencies. While an App runs, what it throws is reported,
+    // and what it would have set keeps its default.
+    run_app_code(AppCode::effect, [node] { node->update(); });
 }
 
 void check_ui_thread() {
@@ -342,7 +345,13 @@ void flush_effects() {
             node->update();
         } catch (...) {
             g_running_animation = previous;
-            throw;
+            // While an App runs: reported, and the effects still scheduled run on. The effect
+            // keeps what it read before it threw.
+            if (!reporting_app_errors()) {
+                throw;
+            }
+            report_app_exception(std::current_exception(), AppCode::effect);
+            continue;
         }
         g_running_animation = previous;
     }

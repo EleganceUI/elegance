@@ -610,12 +610,16 @@ protected:
     void paint_impl(DisplayList& list) const override;
     bool hit_impl(Point point, std::vector<Element*>& path) override;
     void on_structure_changed() override;
-    void on_layout_invalidated() noexcept override { cache_.stale = true; }
+    void on_layout_invalidated() noexcept override {
+        cache_.stale = true;
+        failed_ = false; // laid out again: its Layout is asked again
+    }
 
 private:
     void rebuild_children();
     std::vector<Element*> paint_order() const;
 
+    bool failed_ = false; // its Layout threw in the last layout
     std::shared_ptr<const Layout> layout_;
     LayoutCache cache_; // for CachedLayout
     std::vector<std::unique_ptr<Element>> children_; // owned, as built
@@ -637,13 +641,20 @@ public:
     bool is_spacer() const noexcept override { return content_->is_spacer(); }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
 
+    void on_layout_invalidated() noexcept override { failed_ = false; } // laid out again: asked again
+
 protected:
     Size measure(ProposedSize proposal) override;
     void arrange(Rect bounds, ProposedSize proposal) override;
-    void paint_impl(DisplayList& list) const override { content_->paint(list); }
-    bool hit_impl(Point point, std::vector<Element*>& path) override { return content_->hit_test(point, path); }
+    void paint_impl(DisplayList& list) const override {
+        if (!failed_) { // its modifier threw: nothing to show this frame
+            content_->paint(list);
+        }
+    }
+    bool hit_impl(Point point, std::vector<Element*>& path) override { return !failed_ && content_->hit_test(point, path); }
 
 private:
+    bool failed_ = false; // its modifier threw in the last layout
     std::shared_ptr<const LayoutModifier> modifier_;
     std::unique_ptr<Element> content_;
 };

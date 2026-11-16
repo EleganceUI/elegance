@@ -5,6 +5,7 @@
 #ifndef ELG_CORE_UI_TASKS_H
 #define ELG_CORE_UI_TASKS_H
 
+#include <exception>
 #include <functional>
 #include <memory>
 #include <utility>
@@ -27,6 +28,20 @@ void set_ui_task_waker(std::function<void()> wake);
 void begin_ui_tasks();
 void end_ui_tasks();
 bool run_ui_tasks();
+
+// For callbacks that a C library, the operating system or a foreign thread calls: hands `error`
+// to the UI thread, where it's reported as an exception from app code (core/app_errors.h).
+void deliver_foreign_exception(const std::exception_ptr& error) noexcept;
+// Runs such a callback's `work`; what escapes it goes to deliver_foreign_exception(), so
+// nothing escapes the callback.
+template <class F>
+void run_foreign_callback(F&& work) noexcept {
+    try {
+        std::forward<F>(work)();
+    } catch (...) {
+        deliver_foreign_exception(std::current_exception());
+    }
+}
 
 // Objects that must be destroyed on the UI thread: those that own reactive state or a platform
 // media, capture or audio engine. While an App runs, a thread that drops the last reference hands

@@ -57,6 +57,25 @@ public:
 #pragma warning(pop)
 #endif
 
+/// The kind of app code an exception escaped while the app ran (AppError).
+enum class AppCode {
+    body,             ///< a view's body, while the view was mounted
+    effect,           ///< an effect, or the value of a reactive argument
+    event_handler,    ///< an event handler, or a control's, menu's or shortcut's action
+    task,             ///< a task posted to the UI thread
+    timer,            ///< a timer's action (after(), every())
+    lifecycle_action, ///< on_appear or on_disappear
+    layout,           ///< a Layout, a layout modifier, or a size observer
+    drawing,          ///< a Canvas's draw function
+    callback,         ///< another callback, such as a language binding's
+};
+
+/// What the app's error handler decides about an exception (App::on_error).
+enum class ErrorAction {
+    resume, ///< the app goes on
+    quit,   ///< the run ends, and App::run() throws the exception
+};
+
 } // namespace elg
 
 #endif // ELG_ERROR_H
