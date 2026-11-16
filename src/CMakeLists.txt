@@ -25,6 +25,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         gpu/blur_renderer.cpp
         gpu/buffer.cpp
         gpu/device.cpp
+        gpu/external_image.cpp
         gpu/instance.cpp
         gpu/path_renderer.cpp
         gpu/quad_renderer.cpp
@@ -39,7 +40,6 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         media/image_decode.cpp
         media/miniaudio.cpp
         media/recorder.cpp
-        media/gpu_image.cpp
         media/video_feed.cpp
         media/video_source.cpp
         net/fetch.cpp
@@ -56,6 +56,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         render/frame_mailbox.cpp
         render/frame_plan.cpp
         render/frame_sources.cpp
+        render/gpu_image.cpp
         render/path_cache.cpp
         render/render_thread.cpp
         render/window_target.cpp

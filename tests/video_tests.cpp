@@ -46,6 +46,7 @@ public:
 // An image imported from another API with no GPU objects: planning only passes it on.
 class NoExternalImage final : public detail::gpu::ExternalImage {
 public:
+    void accept() noexcept override {}
     [[nodiscard]] const wgpu::Device& device() const noexcept override { return device_; }
     [[nodiscard]] const wgpu::Texture& texture() const noexcept override { return texture_; }
     [[nodiscard]] const wgpu::TextureView& view() const noexcept override { return view_; }

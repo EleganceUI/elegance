@@ -550,6 +550,7 @@ class TestExternalImage final : public detail::gpu::ExternalImage {
 public:
     TestExternalImage(wgpu::Device device, wgpu::Texture texture)
         : device_(std::move(device)), texture_(std::move(texture)), view_(texture_.CreateView()) {}
+    void accept() noexcept override {}
     [[nodiscard]] const wgpu::Device& device() const noexcept override { return device_; }
     [[nodiscard]] const wgpu::Texture& texture() const noexcept override { return texture_; }
     [[nodiscard]] const wgpu::TextureView& view() const noexcept override { return view_; }
