@@ -23,6 +23,18 @@
 
 namespace elg::detail::os {
 
+int process_id() noexcept {
+    return getpid();
+}
+
+std::FILE* open_command_pipe(const std::string& command) {
+    return popen((command + " 2>&1").c_str(), "r");
+}
+
+int close_command_pipe(std::FILE* pipe) {
+    return pclose(pipe);
+}
+
 bool debugger_present() noexcept {
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
     kinfo_proc info{};

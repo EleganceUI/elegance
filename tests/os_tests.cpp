@@ -15,6 +15,7 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
+#include <cstdio>
 #include <string>
 
 using namespace elg;
@@ -33,4 +34,17 @@ TEST_CASE("a shared library that can't be loaded throws with its path", "[os]") 
     CHECK_THROWS_MATCHES(detail::DynamicLibrary("elg-tests-no-such-library"), ResourceError,
                          Catch::Matchers::MessageMatches(Catch::Matchers::StartsWith(
                              "can't load \"elg-tests-no-such-library\"")));
+}
+
+TEST_CASE("a shell command's output can be read", "[os]") {
+    CHECK(detail::os::process_id() > 0);
+    std::FILE* pipe = detail::os::open_command_pipe("echo elg");
+    REQUIRE(pipe != nullptr);
+    std::string output;
+    char buffer[256];
+    while (std::fgets(buffer, sizeof(buffer), pipe)) {
+        output += buffer;
+    }
+    CHECK(detail::os::close_command_pipe(pipe) == 0);
+    CHECK(output.starts_with("elg"));
 }

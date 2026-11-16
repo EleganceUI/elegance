@@ -9,6 +9,7 @@
 #include <elg/error.h>
 
 #include <dlfcn.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <csignal>
@@ -21,6 +22,18 @@
 #endif
 
 namespace elg::detail::os {
+
+int process_id() noexcept {
+    return getpid();
+}
+
+std::FILE* open_command_pipe(const std::string& command) {
+    return popen((command + " 2>&1").c_str(), "r");
+}
+
+int close_command_pipe(std::FILE* pipe) {
+    return pclose(pipe);
+}
 
 bool debugger_present() noexcept {
     std::ifstream status("/proc/self/status");

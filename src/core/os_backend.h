@@ -10,6 +10,7 @@
 // platform/<os>/os.cpp.
 
 #include <cstddef>
+#include <cstdio>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -24,6 +25,15 @@ std::optional<std::string> environment_variable(const char* name);
 
 // Per-user writable folder for Elegance's data (crash reports).
 std::filesystem::path pref_path();
+
+// --- Processes ---
+
+int process_id() noexcept;
+// Starts `command` in the system's shell, its standard error joined to its standard output, and
+// returns a pipe to read that output from, or nullptr if it can't be started.
+std::FILE* open_command_pipe(const std::string& command);
+// Closes a pipe from open_command_pipe() once the command has ended: the shell's exit status.
+int close_command_pipe(std::FILE* pipe);
 
 // --- Crash reports ---
 

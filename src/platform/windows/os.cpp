@@ -9,11 +9,25 @@
 
 #include <elg/error.h>
 
+#include <process.h>
 #include <windows.h>
 
 #include <format>
 
 namespace elg::detail::os {
+
+int process_id() noexcept {
+    return _getpid();
+}
+
+std::FILE* open_command_pipe(const std::string& command) {
+    // cmd /c strips the outer quotes of a line that starts with one; keep the command's own.
+    return _popen(("\"" + command + " 2>&1\"").c_str(), "r");
+}
+
+int close_command_pipe(std::FILE* pipe) {
+    return _pclose(pipe);
+}
 
 bool debugger_present() noexcept {
     return IsDebuggerPresent() != 0;

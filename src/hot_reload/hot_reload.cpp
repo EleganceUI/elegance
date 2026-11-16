@@ -10,6 +10,7 @@
 
 #include "core/dynamic_library.h"
 #include "core/log.h"
+#include "core/os_backend.h"
 #include "core/ui_tasks.h"
 
 #include <elg/error.h>
@@ -30,18 +31,6 @@
 #include <stop_token>
 #include <thread>
 #include <utility>
-
-#if defined(_WIN32)
-#include <process.h>
-#define elg_popen _popen
-#define elg_pclose _pclose
-#define elg_getpid _getpid
-#else
-#include <unistd.h>
-#define elg_popen popen
-#define elg_pclose pclose
-#define elg_getpid getpid
-#endif
 
 namespace elg::detail {
 
@@ -94,13 +83,7 @@ std::optional<fs::file_time_type> modified(const fs::path& file) {
 // Runs `command` through the shell; returns its exit code and output (stdout and stderr).
 std::pair<int, std::string> run(const std::string& command) {
     std::string output;
-#if defined(_WIN32)
-    // cmd /c strips the outer quotes of a line that starts with one; keep the command's own.
-    const std::string line = "\"" + command + " 2>&1\"";
-#else
-    const std::string line = command + " 2>&1";
-#endif
-    FILE* pipe = elg_popen(line.c_str(), "r");
+    std::FILE* pipe = os::open_command_pipe(command);
     if (!pipe) {
         return {-1, "couldn't start the build command"};
     }
@@ -111,7 +94,7 @@ std::pair<int, std::string> run(const std::string& command) {
     while (std::fgets(buffer, sizeof(buffer), pipe)) {
         output += buffer;
     }
-    return {elg_pclose(pipe), std::move(output)};
+    return {os::close_command_pipe(pipe), std::move(output)};
 }
 
 // The first line of build output that reports an error, for the status badge.
@@ -144,7 +127,7 @@ public:
         // (or deletes) its copies. A folder left by an earlier process with this pid goes.
         static std::atomic<unsigned> hosts{0};
         copies_ = fs::temp_directory_path(error) / "elegance-reload" /
-                  std::format("{}-{}", elg_getpid(), hosts.fetch_add(1) + 1);
+                  std::format("{}-{}", os::process_id(), hosts.fetch_add(1) + 1);
         fs::remove_all(copies_, error);
         fs::create_directories(copies_, error);
     }
