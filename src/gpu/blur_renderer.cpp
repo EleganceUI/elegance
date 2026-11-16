@@ -4,7 +4,15 @@
 
 #include "gpu/blur_renderer.h"
 
+#include "gpu/device.h"
+#include "gpu/webgpu.h"
+
+#include <webgpu/webgpu_cpp.h>
+
 namespace elg::detail::gpu {
+
+const wgpu::TextureFormat BlurRenderer::kFormat = wgpu::TextureFormat::R8Unorm;
+const wgpu::TextureFormat BlurRenderer::kColorFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
 
 namespace {
 
@@ -23,7 +31,14 @@ struct Immediates {
 
 } // namespace
 
-BlurRenderer::BlurRenderer(const Device& device, const wgpu::BindGroupLayout& image_layout) {
+struct BlurRenderer::Pipelines {
+    wgpu::RenderPipeline single;
+    wgpu::RenderPipeline color;
+    wgpu::RenderPipeline downsample;
+};
+
+BlurRenderer::BlurRenderer(const Device& device, const wgpu::BindGroupLayout& image_layout)
+    : pipelines_(std::make_unique<Pipelines>()) {
     const wgpu::Device& dev = device.handle();
     const wgpu::ShaderModule module = create_shader(dev, kBlurWgsl, "blur.wgsl");
 
@@ -52,14 +67,16 @@ BlurRenderer::BlurRenderer(const Device& device, const wgpu::BindGroupLayout& im
         descriptor.fragment = &fragment;
         return dev.CreateRenderPipeline(&descriptor);
     };
-    single_ = pipeline(kFormat, "fs_main", "blur");
-    color_ = pipeline(kColorFormat, "fs_main", "blur (color)");
-    downsample_ = pipeline(kColorFormat, "fs_downsample", "downsample");
+    pipelines_->single = pipeline(kFormat, "fs_main", "blur");
+    pipelines_->color = pipeline(kColorFormat, "fs_main", "blur (color)");
+    pipelines_->downsample = pipeline(kColorFormat, "fs_downsample", "downsample");
 }
+
+BlurRenderer::~BlurRenderer() = default;
 
 void BlurRenderer::blur(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& source, std::uint32_t width,
                         std::uint32_t height, bool horizontal, float sigma, Channel channel, bool clamp_edges) {
-    pass.SetPipeline(channel == Channel::color ? color_ : single_);
+    pass.SetPipeline(channel == Channel::color ? pipelines_->color : pipelines_->single);
     pass.SetBindGroup(0, source);
     const Immediates immediates{{static_cast<float>(width), static_cast<float>(height)},
                                 {horizontal ? 1.f : 0.f, horizontal ? 0.f : 1.f},
@@ -77,7 +94,7 @@ void BlurRenderer::downsample(const wgpu::RenderPassEncoder& pass, const wgpu::B
                               std::uint32_t width, std::uint32_t height, std::uint32_t factor, bool clamp_edges) {
     const std::uint32_t target_width = (width + factor - 1) / factor;
     const std::uint32_t target_height = (height + factor - 1) / factor;
-    pass.SetPipeline(downsample_);
+    pass.SetPipeline(pipelines_->downsample);
     pass.SetBindGroup(0, source);
     const Immediates immediates{{static_cast<float>(width), static_cast<float>(height)},
                                 {0, 0},

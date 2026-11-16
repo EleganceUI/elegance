@@ -13,14 +13,23 @@
 
 namespace wgpu {
 
+// NOLINTBEGIN(bugprone-forward-declaration-namespace): WebGPU's own, which the GPU layer's
+// classes of the same names (gpu::Device, gpu::Instance, gpu::Buffer) wrap.
 class Adapter;
+class BindGroup;
+class BindGroupLayout;
+class Buffer;
 class CommandBuffer;
+class CommandEncoder;
 class Device;
 class Instance;
 class Queue;
+class RenderPassEncoder;
+class RenderPipeline;
 class Surface;
 class Texture;
 class TextureView;
+// NOLINTEND(bugprone-forward-declaration-namespace)
 
 struct Future;
 struct InstanceDescriptor;
@@ -28,6 +37,7 @@ struct InstanceDescriptor;
 enum class BackendType : std::uint32_t;
 enum class FeatureName : std::uint32_t;
 enum class TextureFormat : std::uint32_t;
+enum class BufferUsage : std::uint64_t;
 
 } // namespace wgpu
 

@@ -5,13 +5,14 @@
 #ifndef ELG_GPU_PATH_RENDERER_H
 #define ELG_GPU_PATH_RENDERER_H
 
-#include "gpu/device.h"
-#include "gpu/render_image.h"
-#include "gpu/webgpu.h"
+#include "gpu/webgpu_types.h"
 
 #include <cstdint>
+#include <memory>
 
 namespace elg::detail::gpu {
+
+class Device;
 
 // Path coverage masks (design.md §5, "stencil-then-cover"). A path's polygons go to the GPU as
 // fan triangles. Drawing them into a multisampled stencil buffer counts windings per sample
@@ -20,37 +21,33 @@ namespace elg::detail::gpu {
 // anti-aliased R8 mask. The UI pass then fills the path's color or gradient through that mask.
 class PathRenderer {
 public:
-    static constexpr wgpu::TextureFormat kMaskFormat = wgpu::TextureFormat::R8Unorm;
-    static constexpr wgpu::TextureFormat kStencilFormat = wgpu::TextureFormat::Stencil8;
+    // R8Unorm and Stencil8 (defined with WebGPU's values in the source file).
+    static const wgpu::TextureFormat kMaskFormat;
+    static const wgpu::TextureFormat kStencilFormat;
     static constexpr std::uint32_t kSamples = 4; // the only multisample count WebGPU guarantees
 
     explicit PathRenderer(const Device& device);
+    ~PathRenderer();
 
     PathRenderer(const PathRenderer&) = delete;
     PathRenderer& operator=(const PathRenderer&) = delete;
     PathRenderer(PathRenderer&&) = delete;
     PathRenderer& operator=(PathRenderer&&) = delete;
-    ~PathRenderer() = default;
 
     // Records one mask of `width` x `height` pixels: `vertex_count` fan-triangle vertices (vec2,
-    // mask pixels) from `vertices` at `first_vertex`. `samples_color` (sampled) and `stencil` are
+    // mask pixels) from `vertices` at `first_vertex`. `samples_color` (sampled) and `stencil` view
     // multisampled scratch images at least that large; `mask` receives the coverage.
-    void render(const wgpu::CommandEncoder& encoder, const RenderImage& samples_color, const RenderImage& stencil,
-                const RenderImage& mask, std::uint32_t width, std::uint32_t height, const wgpu::Buffer& vertices,
-                std::uint32_t first_vertex, std::uint32_t vertex_count, bool even_odd);
+    void render(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& samples_color,
+                const wgpu::TextureView& stencil, const wgpu::TextureView& mask, std::uint32_t width,
+                std::uint32_t height, const wgpu::Buffer& vertices, std::uint32_t first_vertex,
+                std::uint32_t vertex_count, bool even_odd);
 
 private:
+    struct Pipelines; // the shader, the stencil and cover pipelines, and the resolve
     wgpu::RenderPipeline create_pipeline(bool cover, bool even_odd);
 
     const Device& device_;
-    wgpu::ShaderModule module_;
-    wgpu::PipelineLayout layout_;
-    wgpu::RenderPipeline stencil_non_zero_;
-    wgpu::RenderPipeline stencil_even_odd_;
-    wgpu::RenderPipeline cover_non_zero_;
-    wgpu::RenderPipeline cover_even_odd_;
-    wgpu::BindGroupLayout resolve_layout_;
-    wgpu::RenderPipeline resolve_;
+    std::unique_ptr<Pipelines> pipelines_;
 };
 
 } // namespace elg::detail::gpu

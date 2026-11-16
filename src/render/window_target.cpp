@@ -4,10 +4,12 @@
 
 #include "render/window_target.h"
 
+#include "core/crash.h"
 #include "render/color_space.h"
 
 #include <algorithm>
 #include <cstdint>
+#include <format>
 #include <span>
 #include <utility>
 
@@ -16,8 +18,8 @@ namespace elg::detail {
 namespace {
 
 // Layers hold premultiplied linear color; sRGB storage keeps 8-bit precision where it matters.
+// Color blurs (gpu::BlurRenderer::kColorFormat) read and write it too.
 constexpr wgpu::TextureFormat kLayerFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
-static_assert(kLayerFormat == gpu::BlurRenderer::kColorFormat);
 // Layers can be copied from, for backdrops read inside them.
 constexpr wgpu::TextureUsage kLayerUsage =
     wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc;
@@ -54,12 +56,13 @@ WindowTarget::WindowTarget(const gpu::Device& device, wgpu::Surface surface, boo
     : device_(device), presenter_(gpu::create_presenter(device, std::move(surface), transparent, native_window)),
       sampler_(gpu::create_linear_sampler(device.handle())), instances_(device.handle(), wgpu::BufferUsage::Vertex),
       stops_(device.handle(), wgpu::BufferUsage::Storage), path_vertices_(device.handle(), wgpu::BufferUsage::Vertex) {
+    ELG_DEBUG_ASSERT(kLayerFormat == gpu::BlurRenderer::kColorFormat, "layers and color blurs differ in format");
 }
 
 void WindowTarget::render(const WindowFrame& frame, const RenderResources& resources) {
     const Color clear = frame.list.clear_color;
-    const wgpu::TextureView view = presenter_->begin_frame(window_side(frame.pixel_width),
-                                                           window_side(frame.pixel_height), {clear.r, clear.g, clear.b, 1});
+    const wgpu::TextureView view = presenter_->begin_frame(
+        window_side(frame.pixel_width), window_side(frame.pixel_height), {clear.r, clear.g, clear.b, 1});
     if (!view) {
         return; // minimized, or skipped
     }
@@ -267,8 +270,8 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
             pooled_image(ImageRole::path_stencil, 0, gpu::PathRenderer::kStencilFormat, path.width, path.height,
                          gpu::PathRenderer::kSamples, wgpu::TextureUsage::RenderAttachment);
         gpu::RenderImage image(device_.handle(), gpu::PathRenderer::kMaskFormat, path.width, path.height);
-        resources.paths.render(encoder, samples, stencil, image, path.width, path.height, path_vertices_.handle(),
-                               new_mask.first_vertex, new_mask.vertex_count, path.even_odd);
+        resources.paths.render(encoder, samples.view(), stencil.view(), image.view(), path.width, path.height,
+                               path_vertices_.handle(), new_mask.first_vertex, new_mask.vertex_count, path.even_odd);
         wgpu::BindGroup group = image_group(resources, image.view());
         images_.store({ImageRole::path_mask, path.key}, std::move(image),
                       image_bytes(gpu::PathRenderer::kMaskFormat, path.width, path.height, 1), std::move(group));
