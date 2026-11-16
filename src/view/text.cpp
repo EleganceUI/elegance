@@ -7,7 +7,8 @@
 #include <elg/text.h>
 
 #include "core/utf8.h"
-#include "text/glyph_draw.h"
+#include "view/glyph_draw.h"
+#include "view/styled_draw.h"
 #include "view/view_node.h"
 
 #include <algorithm>

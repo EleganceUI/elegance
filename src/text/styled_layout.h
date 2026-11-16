@@ -6,10 +6,9 @@
 #define ELG_TEXT_STYLED_LAYOUT_H
 
 // Text in runs of different fonts and styles (StyledText, styled TextFields): shaped run by run,
-// wrapped as one text, and drawn with each run's color, background, and lines.
+// and wrapped as one text. View draws it (view/styled_draw.h).
 
-#include "display/display_list.h"
-#include "text/glyph_atlas.h"
+#include "text/font_library.h"
 #include "text/text_layout.h"
 
 #include <elg/color.h>
@@ -58,19 +57,6 @@ std::vector<CaretStop> caret_stops(const StyledShape& shape, const TextLayoutRes
 
 // A run's font: `base` with the style's family, weight, and slant (styled_text.cpp).
 Font run_font(const Font& base, const RunStyle& style);
-
-struct DrawStyle {
-    Color color;
-    std::optional<Color> background;
-    bool underline = false;
-    bool strikethrough = false;
-};
-
-// Draws laid-out styled text at `origin` (each line's left edge; `line_x` offsets lines, e.g.
-// for alignment). `styles[i]` is how style i looks.
-void draw_styled(DisplayList& list, GlyphAtlas& atlas, const FontFace& base, const StyledShape& shape,
-                 const TextLayoutResult& layout, const std::vector<DrawStyle>& styles, Point origin, float size,
-                 float scale, const std::vector<float>& line_x = {});
 
 } // namespace elg::detail
 

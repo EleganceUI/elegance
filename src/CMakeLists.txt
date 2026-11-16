@@ -96,6 +96,7 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         view/split_view.cpp
         view/stack_layout.cpp
         view/styles.cpp
+        view/styled_draw.cpp
         view/styled_text.cpp
         view/text.cpp
         view/text_field.cpp
