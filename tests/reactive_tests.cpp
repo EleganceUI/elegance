@@ -421,3 +421,64 @@ TEST_CASE("state read off the UI thread of a running App throws in debug builds"
     CHECK(count() == 1); // on the UI thread: fine
 #endif
 }
+
+TEST_CASE("reading a computed that throws still depends on it", "[reactive]") {
+    const Owner owner;
+    const State<int> input(-1);
+    const auto doubled = computed([=] {
+        if (input() < 0) {
+            throw std::runtime_error("negative");
+        }
+        return input() * 2;
+    });
+    std::vector<int> seen;
+    effect([=, &seen] {
+        try {
+            seen.push_back(doubled());
+        } catch (const std::runtime_error&) {
+            seen.push_back(-1);
+        }
+    });
+    input = 3; // the computed recovers, and the effect that read it runs again
+    detail::flush_effects();
+    CHECK(seen == std::vector<int>{-1, 6});
+}
+
+TEST_CASE("an effect whose computed value throws when checked runs again once it recovers", "[reactive]") {
+    const Owner owner;
+    const State<int> input(1);
+    const auto doubled = computed([=] {
+        if (input() < 0) {
+            throw std::runtime_error("negative");
+        }
+        return input() * 2;
+    });
+    std::vector<int> seen;
+    effect([=, &seen] { seen.push_back(doubled()); });
+    input = -1;
+    CHECK_THROWS_AS(detail::flush_effects(), std::runtime_error);
+    input = 4;
+    detail::flush_effects();
+    CHECK(seen == std::vector<int>{2, 8});
+}
+
+TEST_CASE("priority effects run first, in the order they were scheduled", "[reactive]") {
+    const Owner owner;
+    const State<int> trigger(0);
+    std::vector<std::string> log;
+    effect([=, &log] {
+        trigger();
+        log.emplace_back("plain");
+    });
+    for (const char* name : {"first", "second"}) {
+        detail::start_effect(std::make_shared<detail::EffectNode>([=, &log] {
+                                 trigger();
+                                 log.emplace_back(name);
+                             }),
+                             true);
+    }
+    log.clear();
+    trigger = 1;
+    detail::flush_effects();
+    CHECK(log == std::vector<std::string>{"first", "second", "plain"});
+}

@@ -713,93 +713,28 @@ how to lower a modifier. Users can implement any of them.
   few built-ins (e.g. `aspect_ratio`, `border`) purely with the public API and comparing
   rendered output.
 
-#### User extensions (`extension View` equivalent)
-C++ has no extension methods, and C++26 adds no member injection or UFCS. Elegance gets real
-dot-syntax extensions with an **extension header** instead. This is the same technique as
-Eigen's `EIGEN_MATRIXBASE_PLUGIN` and Dear ImGui's `IM_VEC2_CLASS_EXTRA`: a user header is
-`#include`d *inside* the class body of `elg::View`.
-
-**1. Declare the extensions.** This file is included inside `class View { ... }`, so it holds
-declarations only.
+#### Custom modifiers (`extension View` equivalent)
+C++ has no extension methods. An app's own modifiers are plain functions from `View` to `View`,
+applied in a chain with `View::apply()`. `v.apply(f)` is `f(v)`, so a chain still reads left to
+right, built-in and custom modifiers mixed freely:
 ```cpp
-// app/view_extensions.h
-View card(float radius = 12) &&;
-View badge(elg::Prop<int> count) &&;
-View debug_border(elg::Color c = elg::Color::red) &&;
-```
+// app/card.h
+elg::View card(elg::View content); // a padded, rounded surface
 
-**2. Define them as normal code**, either in a header after `<elg/elegance.h>` (mark them
-`inline`) or in any `.cpp` of the module:
-```cpp
-// app/view_extensions.cpp
-#include <elg/elegance.h>
-#include "card.h"
-
-elg::View elg::View::card(float radius) && {
-    return std::move(*this).modifier(app::Card{radius});
+// With arguments: return the function.
+inline auto badge(elg::Prop<int> count) {
+    return [count](elg::View content) {
+        return content.overlay(app::Badge(count), elg::Alignment::top_trailing);
+    };
 }
-elg::View elg::View::badge(Prop<int> count) && {
-    return std::move(*this).overlay(app::Badge(count), Alignment::top_trailing);
-}
+
+Text("Inbox").font(Font::headline).padding().apply(card).apply(badge(unread))
 ```
+A modifier with state or layout of its own is a `Modifier` type, applied with
+`.modifier(Card{})`: the form the built-in modifiers come down to.
 
-**3. Register the header per target** in CMake:
-```cmake
-elegance_view_extensions(my_app_views app/view_extensions.h)
-# sets ELG_VIEW_EXTENSIONS="app/view_extensions.h" on every TU of the target
-```
-
-**4. Use them like built-ins**, on every view type, mixed freely with built-in modifiers:
-```cpp
-Text("Inbox").font(Font::headline).padding().card().badge(unread)
-```
-
-How it's wired in `view.h`:
-```cpp
-class ELG_API View {
-public:
-    // ... built-in modifiers ...
-#ifdef ELG_VIEW_EXTENSIONS
-#include ELG_VIEW_EXTENSIONS
-#endif
-private:
-    detail::ViewRef node_;
-};
-// Guard: extensions may add non-virtual member functions only.
-static_assert(sizeof(View) == sizeof(detail::ViewRef), "view extensions must not add data members");
-static_assert(!std::is_polymorphic_v<View>, "view extensions must not add virtual functions");
-```
-**Export detail (Windows):** `View` and `Shape` export their members one by one
-(`ELG_API` on each method), not the whole class. A `dllimport` class can't have members
-defined outside the DLL, and extension definitions in app code are exactly that (MSVC error
-C2491).
-
-A matching `ELG_TEXT_EXTENSIONS` / `ELG_SHAPE_EXTENSIONS` hook covers type-specific extensions
-(e.g. a custom `Text::code_style()`).
-
-**Rules for extensions**
-- **Sugar only**: functions only, with no data members and no virtuals (the guards above enforce
-  this). Each body should come down to `.modifier()`, `.apply()`, or other modifiers, exactly
-  like the built-ins.
-- **One extension header per module**: it can `#include` several sub-headers, so third-party
-  extension packs compose by being included from it.
-- **Hot reload safe**: extension definitions live in the user module and are reloaded with it.
-- **Standard caveat**: technically, the library's own TUs see a `View` without the extra members
-  and the user's TUs see one with them, which is an ODR violation ("ill-formed, no diagnostic
-  required"). In practice it is safe on MSVC, GCC, and Clang because the layout and vtable are
-  identical and the added functions only exist in user code. Eigen and ImGui have relied on the
-  same thing for years. The static_asserts guard the parts that would actually break.
-
-**Without the extension header**, these forms always work:
-```cpp
-Text("Hi").modifier(Card{})                        // canonical; what SwiftUI desugars to
-Text("Hi").apply(card)                             // function-style: View card(View v)
-```
-
-- **OPEN**: Also support a pipe syntax (`Text("Hi") | card()`)? Proposed: no, because it creates
-  a third way to chain.
-- **Future**: if C++ gets code injection (P3294) or UFCS, the extension header can become a
-  first-class language feature with the same user-facing syntax.
+`class View` has one definition, the same in the library and in every app: there is no way to
+add members to it.
 
 #### Catalog (v1)
 
@@ -1777,7 +1712,7 @@ Separate render thread from day one (decided).
 **M1: Static UI**
 - [x] `View` type + `View::modifier()` + modifier protocols (view, layout, decoration) +
   lowering to the element tree
-- [x] User extensions via `elegance_view_extensions()` (the sandbox's `.card()`)
+- [x] Custom modifiers with `View::apply()` (the sandbox's `card`)
 - [x] Follow the hot-reload framework rules from day one (§9.6)
 - [x] Layout protocol + custom `Layout`: VStack/HStack/ZStack, Spacer, frame (fixed and
   flexible), padding, fixed_size, layout_priority, offset

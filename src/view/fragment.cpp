@@ -4,6 +4,7 @@
 
 // If and ForEach: dynamic children (design.md §6, structural reactivity).
 
+#include "view/event_dispatcher.h"
 #include "view/view_node.h"
 
 #include "core/log.h"
@@ -100,14 +101,12 @@ void FragmentElement::set_items(const std::vector<ForEachItem>& items) {
     next.reserve(items.size());
     std::vector<bool> kept(children_.size(), false);
     std::unordered_set<ItemKey> seen;
-    bool reported_duplicate = false;
     bool changed = items.size() != children_.size();
 
     for (const ForEachItem& item : items) {
         if (!seen.insert(item.key).second) {
-            if (!reported_duplicate) {
+            if (!std::exchange(reported_duplicate_, true)) { // once per ForEach
                 log_warning("ForEach has duplicate keys; items with a repeated key are rebuilt on every change");
-                reported_duplicate = true;
             }
         } else if (auto it = existing.find(item.key); it != existing.end() && !kept[it->second] &&
                                                     same_value(children_[it->second].value, item)) {
@@ -123,7 +122,11 @@ void FragmentElement::set_items(const std::vector<ForEachItem>& items) {
     // Children not kept either animate out (kept in exiting_ until done) or are destroyed here:
     // their scopes first (ending their effects), then their elements.
     for (std::size_t i = 0; i < children_.size(); ++i) {
-        if (!kept[i] && children_[i].transition->remove(animation)) {
+        if (kept[i]) {
+            continue;
+        }
+        element_leaving(*children_[i].transition); // its interactions end first
+        if (children_[i].transition->remove(animation)) {
             exiting_.push_back(std::move(children_[i]));
         }
     }

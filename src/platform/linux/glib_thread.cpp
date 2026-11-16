@@ -7,6 +7,7 @@
 #include "platform/linux/glib_thread.h"
 
 #include "core/log.h"
+#include "core/ui_tasks.h"
 
 #include <SDL3/SDL.h>
 
@@ -79,10 +80,10 @@ private:
         });
     }
 
+    // Called by GLib: what the work throws goes to the UI thread.
     static gboolean run(gpointer data) {
-        auto* task = static_cast<Task*>(data);
-        task->work(task->self->bus_);
-        delete task;
+        const std::unique_ptr<Task> task(static_cast<Task*>(data));
+        run_foreign_callback([&] { task->work(task->self->bus_); });
         return G_SOURCE_REMOVE;
     }
 

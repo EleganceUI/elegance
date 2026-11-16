@@ -69,7 +69,8 @@ struct GridItem {
         return {Kind::flexible, minimum, maximum};
     }
     /// As many tracks as fit in an equal share of the space, each at least `minimum` points (one
-    /// squeezed track if even one doesn't fit). Without a length to share, one track of `minimum`.
+    /// squeezed track if even one doesn't fit), but at most 10,000: past that, they're wider.
+    /// Without a length to share, one track of `minimum`.
     ///
     /// @param minimum The smallest size of each track in points.
     /// @param maximum The largest size of each track in points.

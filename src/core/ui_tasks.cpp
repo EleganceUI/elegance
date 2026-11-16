@@ -4,6 +4,8 @@
 
 #include "core/ui_tasks.h"
 
+#include "core/app_errors.h"
+
 #include <cstdint>
 #include <iterator>
 #include <mutex>
@@ -63,7 +65,12 @@ struct Release {
 };
 // The running App's UI thread (none while no App runs), and what other threads handed it.
 std::thread::id g_release_thread;
-std::vector<Release> g_releases;
+// Leaked: objects handed over that no thread destroyed before the process ends stay reachable,
+// rather than being destroyed during static destruction, when the threads they use are gone.
+std::vector<Release>& g_releases = *new std::vector<Release>();
+// The process's main thread, recorded while the program loads (static initialization runs on
+// it). Outside a run it takes the UI thread's place: other threads hand it what they release.
+const std::thread::id g_main_thread = std::this_thread::get_id();
 
 std::vector<Release> take_releases() {
     const std::lock_guard lock(g_mutex);
@@ -108,6 +115,10 @@ bool run_ui_tasks() {
         try {
             task->work();
         } catch (...) {
+            if (reporting_app_errors()) { // while an App runs: reported, and the others run on
+                report_app_exception(std::current_exception(), AppCode::task);
+                continue;
+            }
             // The tasks after it run later, still first and in order.
             const std::lock_guard lock(g_mutex);
             g_tasks.insert(g_tasks.begin(), std::make_move_iterator(task + 1), std::make_move_iterator(tasks.end()));
@@ -117,12 +128,24 @@ bool run_ui_tasks() {
     return !tasks.empty();
 }
 
+void deliver_foreign_exception(const std::exception_ptr& error) noexcept {
+    try {
+        post_ui_task([error] { report_app_exception(error, AppCode::callback); });
+    } catch (...) {
+        // Swallowed: out of memory, so this one is lost; nothing may leave a foreign callback.
+    }
+}
+
 void release_on_ui_thread(void* object, void (*destroy)(void*) noexcept) noexcept {
     bool handed_over = false;
+    bool collect = false;
     std::function<void()> wake;
     {
         const std::lock_guard lock(g_mutex);
-        if (g_release_thread != std::thread::id() && g_release_thread != std::this_thread::get_id()) {
+        // While an App runs, its UI thread destroys these; outside a run, the main thread does.
+        const bool running = g_release_thread != std::thread::id();
+        const std::thread::id ui = running ? g_release_thread : g_main_thread;
+        if (ui != std::this_thread::get_id()) {
             try {
                 g_releases.push_back({object, destroy});
                 handed_over = true;
@@ -130,12 +153,18 @@ void release_on_ui_thread(void* object, void (*destroy)(void*) noexcept) noexcep
             } catch (...) {
                 // Swallowed: out of memory, so it's destroyed here, rather than not at all.
             }
+        } else {
+            // Outside a run, what other threads handed over waits for the main thread: now.
+            collect = !running && !g_releases.empty();
         }
     }
     if (!handed_over) {
         destroy(object);
     } else if (wake) {
         wake();
+    }
+    if (collect) {
+        run_ui_releases();
     }
 }
 

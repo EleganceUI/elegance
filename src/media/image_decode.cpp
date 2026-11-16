@@ -20,10 +20,7 @@ namespace elg::detail {
 namespace {
 
 std::atomic<std::uint64_t> g_next_id{1};
-
-// Images with more pixels are refused before decoding: a few bytes of header can ask for
-// gigabytes. 2^27 RGBA pixels are 512 MiB.
-constexpr std::uint64_t kMaxPixels = std::uint64_t{1} << 27;
+std::atomic<std::uint32_t> g_max_texture_side{ImageLimits::kDefaultMaxSide};
 
 // EXIF orientation 1-8: whether the stored pixels are turned a quarter (the upright size swaps).
 bool swaps_axes(int orientation) {
@@ -69,22 +66,36 @@ void orient(DecodedImage& image, int orientation) {
     image.height = out_h;
 }
 
+// The size and orientation of an image within `limits`.
+StoredImageInfo probe_within(std::span<const std::uint8_t> data, const ImageLimits& limits) {
+    const StoredImageInfo info = platform_probe_image(data);
+    if (std::uint64_t{info.width} * info.height > limits.max_pixels) {
+        throw ResourceError(std::format("the image is {} x {} pixels, more than the {} an image may have", info.width,
+                                        info.height, limits.max_pixels));
+    }
+    return info;
+}
+
 } // namespace
 
-ImageInfo probe_image(std::span<const std::uint8_t> data) {
-    const StoredImageInfo info = platform_probe_image(data);
+std::uint32_t max_texture_side() noexcept {
+    return g_max_texture_side.load();
+}
+
+void set_max_texture_side(std::uint32_t side) noexcept {
+    g_max_texture_side = std::max(side, 1u);
+}
+
+ImageInfo probe_image(std::span<const std::uint8_t> data, const ImageLimits& limits) {
+    const StoredImageInfo info = probe_within(data, limits);
     return swaps_axes(info.orientation) ? ImageInfo{info.height, info.width} : ImageInfo{info.width, info.height};
 }
 
-std::shared_ptr<const DecodedImage> decode_image(std::span<const std::uint8_t> data, std::uint32_t max_size) {
-    const StoredImageInfo info = platform_probe_image(data);
-    if (std::uint64_t{info.width} * info.height > kMaxPixels) {
-        throw ResourceError(std::format("the image is {} x {} pixels, more than the {} an image may have", info.width,
-                                        info.height, kMaxPixels));
-    }
+std::shared_ptr<const DecodedImage> decode_image(std::span<const std::uint8_t> data, const ImageLimits& limits) {
+    probe_within(data, limits);
     auto image = std::make_shared<DecodedImage>();
     image->id = g_next_id.fetch_add(1);
-    const int orientation = platform_decode_image(data, max_size, *image);
+    const int orientation = platform_decode_image(data, std::min(limits.max_side, max_texture_side()), *image);
     orient(*image, orientation);
     return image;
 }

@@ -61,8 +61,15 @@ void report(std::uint64_t token, bool clicked) {
     }
 }
 
+void handle_signal(const gchar* signal, GVariant* parameters);
+
+// Called by GDBus on the GLib thread: what handling throws goes to the UI thread.
 void on_signal(GDBusConnection*, const gchar*, const gchar*, const gchar*, const gchar* signal, GVariant* parameters,
                gpointer) {
+    run_foreign_callback([&] { handle_signal(signal, parameters); });
+}
+
+void handle_signal(const gchar* signal, GVariant* parameters) {
     guint32 id = 0;
     bool clicked = false;
     if (g_strcmp0(signal, "ActionInvoked") == 0) {

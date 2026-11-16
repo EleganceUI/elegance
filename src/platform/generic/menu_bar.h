@@ -13,11 +13,17 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace elg::detail::menus {
+
+// The menus as App::menu_bar() was given them, shared by everything resolved from them.
+using Source = std::shared_ptr<const std::vector<MenuBarItem>>;
+// Runs item `id` of `source`: the menus that were shown when it was chosen.
+using Command = std::function<void(const Source& source, std::uint32_t id)>;
 
 struct Item {
     // Its position in a pre-order walk of the menus App::menu_bar was given (from 1), so a
@@ -32,12 +38,14 @@ struct Item {
     // Whether choosing it runs a command (App's); false for roles the platform carries out itself.
     bool has_action = true;
     std::vector<Item> submenu;
+    // The menus it was resolved from, where `id` is (none for separators and added menus).
+    Source source;
     bool operator==(const Item&) const = default;
 };
 
 // The menus for this platform. `macos` keeps macOS's roles (the app, hide and full-screen
 // items); elsewhere they're left out and the app menu's items join the first menu.
-std::vector<Item> resolve(const std::vector<MenuBarItem>& menus, bool macos);
+std::vector<Item> resolve(const Source& menus, bool macos);
 
 // The item with pre-order position `id`, or nullptr.
 const MenuBarItem* find(const std::vector<MenuBarItem>& menus, std::uint32_t id);
@@ -57,7 +65,7 @@ std::uint32_t match_shortcut(const std::vector<Item>& menus, const KeyboardShort
 
 // Linux: the bar of menus at the top of a window. `menus` is read reactively (it changes when
 // App::menu_bar is called again); `command` runs an item; `checked` says whether a check box is.
-View menu_bar_view(const Prop<std::vector<Item>>& menus, const std::function<void(std::uint32_t)>& command,
+View menu_bar_view(const Prop<std::vector<Item>>& menus, const Command& command,
                    const std::function<bool(std::uint32_t)>& checked);
 
 } // namespace elg::detail::menus

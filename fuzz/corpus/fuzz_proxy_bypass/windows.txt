@@ -1,0 +1,4 @@
+*.corp;<local>;*a*b*c*
+wiki.corp
+443
+http=web:80;https=secure:443

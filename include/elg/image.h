@@ -47,12 +47,21 @@ struct ImageSource {
     std::span<const unsigned char> data;
     /// Raster images: pixels per point, e.g. 2 for @2x artwork. 0 or less counts as 1.
     float scale = 1;
+    /// Raster images: the most pixels (width times height) the image may have, 2^27 by default.
+    /// One with more is refused before it's decoded, like a file that can't be read. Lower it for
+    /// images from untrusted sources, or raise it for very large ones. 0 counts as the default.
+    std::uint64_t max_pixels = std::uint64_t{1} << 27;
+    /// Raster images: the longest side the image is decoded at, 8192 pixels by default. A larger
+    /// image is scaled down while decoding, keeping its aspect ratio, so both sides fit; its size in
+    /// points doesn't change. A larger value is still bounded by the largest texture the GPU can
+    /// hold (at least 8192). 0 counts as the default.
+    std::uint32_t max_side = 8192;
 };
 
 /// An icon or a raster image. Raster images are drawn at their own size (pixels / scale) unless
 /// made .resizable(). They decode in the background and appear once ready; their size is known
-/// right away, so layout doesn't jump. A file that can't be read or decoded logs a warning and
-/// shows nothing.
+/// right away, so layout doesn't jump. A file that can't be read or decoded, or an image over
+/// `source.max_pixels`, logs a warning (naming the limit) and shows nothing.
 ///
 /// @param source What to show.
 /// @return The image.
@@ -76,7 +85,7 @@ struct AsyncImagePhase {
     enum class Kind { loading, success, failure };
     Kind kind = Kind::loading; ///< which phase it is
     View image;                ///< success: the image (an Image, so .resizable() applies)
-    std::string error;         ///< failure: why
+    std::string error;         ///< failure: why (for a limit, which one)
 };
 
 /// How an AsyncImage shows its image and caches it.
@@ -88,12 +97,23 @@ struct AsyncImageOptions {
     /// false: kept in memory only, never in the disk cache (for private images whose server
     /// doesn't send Cache-Control: no-store).
     bool disk_cache = true;
+    /// The most pixels (width times height) the image may have, 2^27 by default; one with more puts
+    /// the view in its failure phase. 0 counts as the default.
+    std::uint64_t max_pixels = std::uint64_t{1} << 27;
+    /// The longest side the image is decoded at, 8192 pixels by default; a larger one is scaled down
+    /// to fit, as with ImageSource::max_side, and so is one larger than the GPU's largest texture. 0
+    /// counts as the default.
+    std::uint32_t max_side = 8192;
 };
 
 /// Loads an image over HTTP(S) when first shown (design.md §13.3): an indeterminate Progress while
 /// loading, the image once it's here, a placeholder icon (with the error as its tooltip) if it
 /// fails. Downloads are cached in memory, so lists scrolling back don't fetch again, and on disk
 /// for as long as the server allows (set_image_cache). A view that goes away cancels its download.
+///
+/// A download fails, naming the limit in its error and the log, when the response's header
+/// section is over 64 KiB, its body over 64 MiB, it takes more than 5 redirects, or it isn't
+/// done after 30 seconds (redirects included); so does an image over `options.max_pixels`.
 ///
 /// @code
 /// AsyncImage(url, {.content_mode = ContentMode::fill}).frame(48, 48).clip_shape(Circle())

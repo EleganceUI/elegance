@@ -1,0 +1,8 @@
+max-age=600, no-store
+Sun, 06 Nov 1994 08:59:37 GMT
+Sun, 06 Nov 1994 08:49:37 GMT
+30
+"e"
+Sat, 05 Nov 1994 08:49:37 GMT
+/next
+8

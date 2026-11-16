@@ -163,3 +163,26 @@ TEST_CASE("on_text_input makes the view focusable and gets what's typed", "[inpu
     window.events->text_input({.kind = TextInputEvent::Kind::composition, .text = "k"});
     CHECK(typed == "hé");
 }
+
+TEST_CASE("a press taken while another view holds the pointer cancels that view's press", "[raw-input]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    std::vector<std::string> left_log;
+    const Window window(HStack({.spacing = 0},
+                               kSquare.frame(25, 50).on_pointer([&](const PointerEvent& event) {
+                                   if (event.kind == PointerEvent::Kind::down) {
+                                       left_log.emplace_back("down");
+                                       return true;
+                                   }
+                                   if (event.kind == PointerEvent::Kind::cancel) {
+                                       left_log.emplace_back("cancel");
+                                   }
+                                   return false;
+                               }),
+                               kSquare.frame(25, 50).on_pointer([](const PointerEvent& event) {
+                                   return event.kind == PointerEvent::Kind::down;
+                               })));
+    window.button(PointerEvent::Kind::down, {37, 50}); // the left view captures
+    window.events->pointer_button(PointerEvent::Kind::down, {62, 50}, MouseButton::right, 1, KeyModifiers::none);
+    CHECK(left_log == std::vector<std::string>{"down", "cancel"});
+}

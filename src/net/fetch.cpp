@@ -53,8 +53,16 @@ using asio::awaitable;
 using asio::use_awaitable;
 
 struct FetchTask::State {
-    std::atomic<bool> cancelled{false};
+    // Pending until cancelled or until its callback starts, whichever comes first.
+    enum class Stage { pending, cancelled, called };
+    std::atomic<Stage> stage{Stage::pending};
     asio::cancellation_signal signal; // network thread only
+
+    // Whether the callback may start now; if so, cancelling comes too late from here on.
+    bool start_callback() {
+        Stage expected = Stage::pending;
+        return stage.compare_exchange_strong(expected, Stage::called);
+    }
 };
 
 namespace {
@@ -224,6 +232,29 @@ std::shared_ptr<ssl::context> context_for(const std::string& roots) {
     return context;
 }
 
+// The most a response's status line and header fields may take together.
+constexpr std::size_t kMaxHeader = std::size_t{64} * 1024;
+
+// "64 MiB", "16 KiB", "100 bytes".
+std::string describe_size(std::size_t bytes) {
+    constexpr std::size_t kKiB = 1024;
+    if (bytes >= kKiB * kKiB && bytes % (kKiB * kKiB) == 0) {
+        return std::format("{} MiB", bytes / (kKiB * kKiB));
+    }
+    if (bytes >= kKiB && bytes % kKiB == 0) {
+        return std::format("{} KiB", bytes / kKiB);
+    }
+    return std::format("{} bytes", bytes);
+}
+
+// "30 s", "200 ms".
+std::string describe_duration(std::chrono::milliseconds duration) {
+    if (duration.count() % 1000 == 0) {
+        return std::format("{} s", duration.count() / 1000);
+    }
+    return std::format("{} ms", duration.count());
+}
+
 std::string describe(const boost::system::error_code& error) {
     namespace e = asio::error;
     if (error == e::operation_aborted) {
@@ -239,8 +270,8 @@ std::string describe(const boost::system::error_code& error) {
     if (error.category() == e::get_ssl_category() || error.category() == ssl::error::get_stream_category()) {
         return std::format("the secure connection failed: {}", error.message());
     }
-    if (error == bhttp::error::body_limit) {
-        return "the response is too large";
+    if (error == bhttp::error::header_limit) {
+        return std::format("the response's header section is larger than {}", describe_size(kMaxHeader));
     }
     if (error == e::eof || error == e::connection_reset || error == e::connection_aborted ||
         error == bhttp::error::end_of_stream || error == bhttp::error::partial_message) {
@@ -340,7 +371,7 @@ awaitable<Reply> exchange(Stream& stream, beast::flat_buffer& buffer, const Targ
     co_await bhttp::async_write(stream, serializer, use_awaitable);
 
     bhttp::response_parser<bhttp::vector_body<std::uint8_t>> parser;
-    parser.header_limit(64 * 1024);
+    parser.header_limit(kMaxHeader);
     parser.body_limit(max_body);
     co_await bhttp::async_read(stream, buffer, parser, use_awaitable);
     auto& response = parser.get();
@@ -477,108 +508,147 @@ awaitable<Reply> request(const urls::url& url, const FetchOptions& options, ssl:
     }
 }
 
-bool is_redirect(unsigned status) {
-    return status == 301 || status == 302 || status == 303 || status == 307 || status == 308;
-}
-
-struct Outcome {
-    Reply reply;
-    bool redirected = false;
-};
-
-// The request and its redirects, up to the final response. Doesn't throw (the timeout's || would
-// wait out its timer). Validators go with the first request only: they're the first URL's.
-awaitable<std::expected<Outcome, std::string>> follow(const std::string& text, const FetchOptions& options,
-                                                      ssl::context& tls, const Validators* validators) {
+// One request, without following a redirect. Doesn't throw: the timeout's || would wait out its
+// timer for an exception.
+awaitable<std::expected<Reply, std::string>> attempt(const urls::url& url, const FetchOptions& options,
+                                                     ssl::context& tls, const Validators* validators) {
     try {
-        const auto parsed = urls::parse_uri(text);
-        if (!parsed) {
-            co_return std::unexpected("not an http(s) URL");
-        }
-        urls::url url = *parsed;
-        for (int redirects = 0;; ++redirects) {
-            if ((url.scheme_id() != urls::scheme::http && url.scheme_id() != urls::scheme::https) ||
-                url.host_address().empty()) {
-                co_return std::unexpected("not an http(s) URL");
-            }
-            Reply reply = co_await request(url, options, tls, redirects == 0 ? validators : nullptr);
-            if (is_redirect(reply.status) && !reply.location.empty()) {
-                if (redirects == options.max_redirects) {
-                    co_return std::unexpected("too many redirects");
-                }
-                const auto reference = urls::parse_uri_reference(reply.location);
-                urls::url next;
-                if (!reference || !urls::resolve(url, *reference, next)) {
-                    co_return std::unexpected("the server redirected to an invalid URL");
-                }
-                if (url.scheme_id() == urls::scheme::https && next.scheme_id() != urls::scheme::https) {
-                    co_return std::unexpected("the server redirected from https to http");
-                }
-                url = std::move(next);
-                continue;
-            }
-            co_return Outcome{std::move(reply), redirects > 0};
-        }
+        co_return co_await request(url, options, tls, validators);
     } catch (const FetchFailure& failure) {
         co_return std::unexpected(failure.what());
     } catch (const boost::system::system_error& failure) {
+        if (failure.code() == bhttp::error::body_limit) {
+            co_return std::unexpected(std::format("the response is larger than {}", describe_size(options.max_body)));
+        }
         co_return std::unexpected(describe(failure.code()));
     }
 }
 // NOLINTEND(cppcoreguidelines-avoid-reference-coroutine-parameters)
 
-awaitable<FetchResult> run(std::string url, FetchOptions options, std::shared_ptr<ssl::context> tls) {
+// Where `location`, a redirect's Location from `from`, leads, or why it can't be followed.
+std::expected<urls::url, std::string> redirect_target(const urls::url& from, std::string_view location) {
+    const auto reference = urls::parse_uri_reference(location);
+    urls::url next;
+    if (!reference || !urls::resolve(from, *reference, next)) {
+        return std::unexpected("the server redirected to an invalid URL");
+    }
+    if (from.scheme_id() == urls::scheme::https && next.scheme_id() != urls::scheme::https) {
+        return std::unexpected("the server redirected from https to http");
+    }
+    return next;
+}
+
+// The request and its redirects, up to the final response. At each URL, a stored response answers
+// while it's fresh (a stored redirect leads on from there), and is revalidated once it's stale; if
+// the server can't be reached then, a stale one still answers unless it must be revalidated. Each
+// response is stored under the URL that returned it.
+awaitable<FetchResult> run(std::string text, FetchOptions options, std::shared_ptr<ssl::context> tls) {
     using namespace asio::experimental::awaitable_operators;
     const std::shared_ptr<HttpCache> cache = options.cache;
     const std::uint64_t generation = cache ? cache->generation() : 0;
-    std::optional<CacheEntry> cached;
-    if (cache) {
-        cached = co_await off_network_thread([cache, url] { return cache->find(url); });
-        if (cached && cached->fresh(unix_now())) {
-            co_return std::move(cached->body);
-        }
-    }
-    const Validators validators = cached ? Validators{cached->etag, cached->last_modified} : Validators{};
-    const bool revalidating = cached && cached->revalidates();
-
-    asio::steady_timer timer(co_await asio::this_coro::executor, options.timeout);
-    auto outcome = co_await (follow(url, options, *tls, revalidating ? &validators : nullptr) ||
-                             timer.async_wait(use_awaitable));
-    std::expected<Outcome, std::string> result =
-        outcome.index() == 1 ? std::unexpected("the request timed out") : std::move(std::get<0>(outcome));
-    if (!result) {
-        if (cached && cached->usable_stale()) {
-            co_return std::move(cached->body); // offline: what we had
-        }
-        co_return std::unexpected(std::move(result.error()));
-    }
-    Reply& reply = result->reply;
-    const auto keep = [cache, generation](CacheEntry entry) { // in the background: the caller needn't wait
+    // In the background: the caller needn't wait.
+    const auto keep = [cache, generation](CacheEntry entry) {
         asio::post(Network::instance().blocking(), [cache, generation, entry = std::move(entry)] {
             cache->store(entry, generation);
         });
     };
-    if (reply.status == 304 && revalidating) {
-        refresh_cache_entry(*cached, reply.cache, unix_now());
-        keep(*cached);
-        co_return std::move(cached->body);
+    const auto forget = [cache](std::string key) {
+        asio::post(Network::instance().blocking(), [cache, key = std::move(key)] { cache->remove(key); });
+    };
+    const auto parsed = urls::parse_uri(text);
+    if (!parsed) {
+        co_return std::unexpected("not an http(s) URL");
     }
-    if (reply.status < 200 || reply.status >= 300) {
-        co_return std::unexpected(std::format("HTTP {}", reply.status));
-    }
-    if (cache && reply.status == 200) {
-        if (auto entry = make_cache_entry(url, result->redirected, reply.cache, reply.body, unix_now())) {
-            keep(std::move(*entry));
+    urls::url url = *parsed;
+    // One deadline for the whole request, redirects included.
+    asio::steady_timer timer(co_await asio::this_coro::executor, options.timeout);
+    for (int redirects = 0;; ++redirects) {
+        if ((co_await asio::this_coro::cancellation_state).cancelled() != asio::cancellation_type::none) {
+            co_return std::unexpected("cancelled");
         }
+        if ((url.scheme_id() != urls::scheme::http && url.scheme_id() != urls::scheme::https) ||
+            url.host_address().empty()) {
+            co_return std::unexpected("not an http(s) URL");
+        }
+        const std::string key(url.buffer());
+        std::optional<CacheEntry> cached;
+        if (cache) {
+            cached = co_await off_network_thread([cache, key] { return cache->find(key); });
+        }
+        std::string location; // where this URL redirects to
+        if (cached && cached->fresh(unix_now())) {
+            if (!cached->redirect()) {
+                co_return std::move(cached->body);
+            }
+            location = cached->location;
+        } else {
+            const Validators validators = cached ? Validators{cached->headers.etag, cached->headers.last_modified}
+                                                 : Validators{};
+            const bool revalidating = cached && cached->revalidates();
+            auto outcome = co_await (attempt(url, options, *tls, revalidating ? &validators : nullptr) ||
+                                     timer.async_wait(use_awaitable));
+            std::expected<Reply, std::string> result =
+                outcome.index() == 1
+                    ? std::unexpected(std::format("the request timed out (after {})", describe_duration(options.timeout)))
+                    : std::move(std::get<0>(outcome));
+            if (!result) {
+                if (!cached || !cached->usable_stale()) {
+                    co_return std::unexpected(std::move(result.error()));
+                }
+                // Offline: what we had, a stale redirect included.
+                if (!cached->redirect()) {
+                    co_return std::move(cached->body);
+                }
+                location = cached->location;
+            } else if (Reply& reply = *result; reply.status == 304 && revalidating) {
+                if (forbids_storing(reply.cache)) {
+                    forget(key); // after it has answered
+                } else {
+                    refresh_cache_entry(*cached, reply.cache, unix_now());
+                    keep(*cached);
+                }
+                if (!cached->redirect()) {
+                    co_return std::move(cached->body);
+                }
+                location = cached->location;
+            } else if (is_redirect_status(reply.status) && !reply.location.empty()) {
+                if (cache) {
+                    if (auto entry = make_cache_entry(key, reply.status, reply.location, reply.cache, {}, unix_now())) {
+                        keep(std::move(*entry));
+                    }
+                }
+                location = std::move(reply.location);
+            } else if (reply.status < 200 || reply.status >= 300) {
+                co_return std::unexpected(std::format("HTTP {}", reply.status));
+            } else {
+                if (cache && reply.status == 200) {
+                    if (auto entry = make_cache_entry(key, reply.status, {}, reply.cache, reply.body, unix_now())) {
+                        keep(std::move(*entry));
+                    }
+                }
+                co_return std::move(reply.body);
+            }
+        }
+        if (redirects == options.max_redirects) {
+            co_return std::unexpected(std::format("too many redirects (more than {})", options.max_redirects));
+        }
+        std::expected<urls::url, std::string> next = redirect_target(url, location);
+        if (!next) {
+            co_return std::unexpected(std::move(next.error()));
+        }
+        url = std::move(*next);
     }
-    co_return std::move(reply.body);
 }
 
 } // namespace
 
 void FetchTask::cancel() const {
-    if (!state_ || state_->cancelled.exchange(true)) {
+    if (!state_) {
         return;
+    }
+    State::Stage expected = State::Stage::pending;
+    if (!state_->stage.compare_exchange_strong(expected, State::Stage::cancelled)) {
+        return; // cancelled already, or its callback has started
     }
     asio::post(Network::instance().io(), [state = state_] { state->signal.emit(asio::cancellation_type::terminal); });
 }
@@ -586,28 +656,35 @@ void FetchTask::cancel() const {
 FetchTask fetch(std::string url, std::function<void(FetchResult)> done, FetchOptions options) {
     auto state = std::make_shared<FetchTask::State>();
     asio::io_context& io = Network::instance().io();
-    asio::post(io, [&io, state, url = std::move(url), done = std::move(done), options = std::move(options)]() mutable {
-        if (state->cancelled) {
-            return;
+    // Every way the download ends goes through here, so its callback starts at most once, and
+    // never once cancel() has returned.
+    auto finish = [state, done = std::move(done), before = options.before_callback](FetchResult result) {
+        if (before) {
+            before();
+        }
+        if (state->start_callback()) {
+            done(std::move(result));
+        }
+    };
+    asio::post(io, [&io, state, url = std::move(url), finish = std::move(finish), options = std::move(options)]() mutable {
+        if (state->stage != FetchTask::State::Stage::pending) {
+            return; // cancelled before it began
         }
         std::shared_ptr<ssl::context> tls;
         try {
             tls = context_for(options.root_certificates);
         } catch (const boost::system::system_error& failure) {
-            done(std::unexpected(std::format("the secure connection failed: {}", failure.code().message())));
+            finish(std::unexpected(std::format("the secure connection failed: {}", failure.code().message())));
             return;
         }
         asio::co_spawn(io, run(std::move(url), std::move(options), std::move(tls)),
                        asio::bind_cancellation_slot(state->signal.slot(),
-                                                    [state, done = std::move(done)](const std::exception_ptr& failure,
-                                                                                    FetchResult result) {
-                                                        if (state->cancelled) {
-                                                            return;
-                                                        }
+                                                    [finish = std::move(finish)](const std::exception_ptr& failure,
+                                                                                 FetchResult result) {
                                                         if (failure) {
                                                             result = std::unexpected("the download failed");
                                                         }
-                                                        done(std::move(result));
+                                                        finish(std::move(result));
                                                     }));
     });
     return FetchTask(state);

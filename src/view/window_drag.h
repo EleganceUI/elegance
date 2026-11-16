@@ -9,6 +9,8 @@
 
 #include <elg/events.h>
 
+#include <functional>
+
 namespace elg::detail {
 
 // `.window_drag_area()`: marks where pressing moves the window. The window system does the
@@ -35,6 +37,37 @@ public:
 private:
     bool focusable_;
 };
+
+// `.focused(binding)` around a view: focusable itself only when nothing inside is (so Tab and
+// clicks reach the field it wraps, not an invisible wrapper first). focusable() walks what's
+// inside; Tab learns the same from its own walk instead (collect_focus_order).
+class FocusScopeHandler final : public EventHandler {
+public:
+    void set_scope(Element* scope) noexcept { scope_ = scope; }
+    [[nodiscard]] bool focusable() const override {
+        bool inner = false;
+        std::function<void(Element&)> walk = [&](Element& element) {
+            if (inner) {
+                return;
+            }
+            if (EventHandler* handler = element.event_handler(); handler && handler->focusable()) {
+                inner = true;
+                return;
+            }
+            element.for_each_child(walk);
+        };
+        scope_->for_each_child(walk);
+        return !inner;
+    }
+
+private:
+    Element* scope_ = nullptr;
+};
+
+// Whether `handler` is a `.focused(binding)` scope's.
+inline bool is_focus_scope(const EventHandler& handler) {
+    return dynamic_cast<const FocusScopeHandler*>(&handler) != nullptr;
+}
 
 // Whether `element` is a `.focusable(false)` scope.
 inline bool blocks_focus(Element& element) {

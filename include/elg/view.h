@@ -1047,6 +1047,17 @@ public:
     /// @param action Called with each scroll; returns whether it consumed it. May be empty.
     /// @return This view, handling scrolling.
     [[nodiscard]] ELG_API View on_scroll(std::function<bool(const ScrollEvent&)> action) const;
+    /// Like on_pointer(), in the capture phase (EventPhase): sees a `down`, `up` or `hover` on
+    /// its way in, before views inside it. Consuming a `down` captures the pointer here.
+    ///
+    /// @param action Called with each event; returns whether it consumed it. May be empty.
+    /// @return This view, handling pointer events before the views inside it.
+    [[nodiscard]] ELG_API View on_pointer_capture(std::function<bool(const PointerEvent&)> action) const;
+    /// Like on_scroll(), in the capture phase (EventPhase): sees scrolling before views inside it.
+    ///
+    /// @param action Called with each scroll; returns whether it consumed it. May be empty.
+    /// @return This view, handling scrolling before the views inside it.
+    [[nodiscard]] ELG_API View on_scroll_capture(std::function<bool(const ScrollEvent&)> action) const;
     /// Hover intent: called with true once the pointer has rested on the view for the hover
     /// delay's `enter` (passing over faster doesn't count), and false when it leaves (after its
     /// `exit`): for previews and other things that shouldn't flash as the pointer passes. The
@@ -1253,12 +1264,31 @@ public:
     /// @param action Called with each key event; returns whether it handled it. May be empty.
     /// @return This view, handling keys.
     [[nodiscard]] ELG_API View on_key(std::function<bool(const KeyEvent&)> action) const;
+    /// Like on_key_press(), in the capture phase (EventPhase): sees the key before the focused
+    /// view inside it.
+    ///
+    /// @param key The key.
+    /// @param action Runs on each press. May be empty.
+    /// @return This view, handling `key` before the views inside it.
+    [[nodiscard]] ELG_API View on_key_press_capture(Key key, std::function<void()> action) const;
+    /// Like on_key(), in the capture phase (EventPhase): sees every key down and up before the
+    /// focused view inside it.
+    ///
+    /// @param action Called with each key event; returns whether it handled it. May be empty.
+    /// @return This view, handling keys before the views inside it.
+    [[nodiscard]] ELG_API View on_key_capture(std::function<bool(const KeyEvent&)> action) const;
     /// Makes the view focusable and sees the text typed while it has focus: commits, and an IME's
     /// compositions in progress. Keys still go to on_key. Return true if handled.
     ///
     /// @param action Called with each text input; returns whether it handled it. May be empty.
     /// @return This view, taking text input.
     [[nodiscard]] ELG_API View on_text_input(std::function<bool(const TextInputEvent&)> action) const;
+    /// Like on_text_input(), in the capture phase (EventPhase): sees the text typed into a
+    /// focused view inside it, before that view. It doesn't make this view focusable.
+    ///
+    /// @param action Called with each text input; returns whether it handled it. May be empty.
+    /// @return This view, seeing text input before the views inside it.
+    [[nodiscard]] ELG_API View on_text_input_capture(std::function<bool(const TextInputEvent&)> action) const;
 
     // --- Selection ---
 
@@ -1546,12 +1576,6 @@ public:
         return modifier(LayoutValueModifier<Key>(std::move(value)));
     }
 
-    // User extensions: a header of extra member declarations, set per target with
-    // elegance_view_extensions() in CMake (design.md §9.4).
-#ifdef ELG_VIEW_EXTENSIONS
-#include ELG_VIEW_EXTENSIONS
-#endif
-
 private:
     friend struct detail::ViewAccess;
 
@@ -1577,11 +1601,6 @@ private:
 
     std::shared_ptr<const detail::ViewNode> node_;
 };
-
-// Extensions may add member functions only; these catch the changes that would break the ABI.
-static_assert(sizeof(View) == sizeof(std::shared_ptr<const detail::ViewNode>),
-              "view extensions must not add data members");
-static_assert(!std::is_polymorphic_v<View>, "view extensions must not add virtual functions");
 
 } // namespace elg
 

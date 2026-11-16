@@ -174,3 +174,20 @@ TEST_CASE("what a click handler writes takes effect after the click", "[click][r
     detail::flush_effects();
     CHECK(seen == std::vector<int>{0, 1});
 }
+
+TEST_CASE("a screen reader's target in a disabled view is marked disabled", "[click][accessibility]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const State<bool> off(false);
+    const Window window(kSquare.accessibility_action([] {}).disabled([off] { return off(); }));
+    const auto disabled = [&] {
+        const detail::AccessTree tree = detail::build_accessibility_tree(*window.root, "Test", {100, 100}, nullptr);
+        const auto found = std::ranges::find_if(tree.targets, [](const auto& entry) { return bool(entry.second.action); });
+        REQUIRE(found != tree.targets.end());
+        return found->second.disabled;
+    };
+    CHECK_FALSE(disabled());
+    off = true;
+    detail::flush_effects();
+    CHECK(disabled());
+}

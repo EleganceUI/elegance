@@ -8,19 +8,35 @@
 
 #include "shim.h"
 
+#include "core/app_errors.h"
+#include "test_images.h"
+#include "text/text_system.h"
+#include "view/view_node.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <memory>
 #include <string>
+#include <vector>
 
 using elg::Animation;
+using elg::App;
+using elg::AppCode;
 using elg::Binding;
+using elg::ErrorAction;
+using elg::Text;
 using elg::View;
+namespace detail = elg::detail;
 
 extern "C" {
 int32_t elg_take_error(ElgStrSink out, void* ctx);
 uint32_t elg_abi_version();
 View* elg_empty_view();
+App* elg_app_new();
+void elg_app_free(App* app);
+void elg_app_on_error(App* app, ElgClosure handler);
+View* elg_view_component(ElgClosure body);
 void elg_view_free(View* view);
 View* elg_vstack(int32_t alignment, ElgOptLen spacing, View** children, size_t count);
 View* elg_button(View* take_label, ElgClosure on_click);
@@ -39,6 +55,11 @@ void elg_binding_bool_free(Binding<bool>* binding);
 void elg_binding_i32_free(Binding<int>* binding);
 void elg_binding_string_free(Binding<std::string>* binding);
 void elg_binding_f64_free(Binding<double>* binding);
+Text* elg_text(ElgProp content);
+View* elg_text_to_view(const Text* text);
+void elg_text_free(Text* text);
+void elg_string_assign(std::string* target, ElgStr value);
+View* elg_image(const ElgImageSource* source);
 }
 
 namespace {
@@ -177,6 +198,88 @@ TEST_CASE("bindings of every type can be freed, which drops their closures", "[c
     CHECK(take_error() == 0);
 }
 
+TEST_CASE("strings with malformed UTF-8 show as U+FFFD", "[c-api][utf8]") {
+    elg::detail::Scope scope;
+    const elg::detail::Scope::Use use(scope);
+    static elg::detail::TextSystem text_system;
+    const auto label = [](ElgProp content) {
+        Text* text = elg_text(content);
+        REQUIRE(text != nullptr);
+        View* view = elg_text_to_view(text);
+        elg_text_free(text);
+        REQUIRE(view != nullptr);
+        const std::unique_ptr<elg::detail::Element> element = elg::detail::lower(*view, {.text = &text_system});
+        elg_view_free(view);
+        elg::detail::AccessibilityInfo info;
+        element->accessibility(info);
+        return info.label;
+    };
+    // A static string, cut short in the middle of a character.
+    const ElgStr cut{"ab\xE2\x82", 4};
+    CHECK(label({.kind = 0, .theme = 0, .value = &cut, .fn = {}}) == "ab\xEF\xBF\xBD");
+    // One a closure returns (through elg_string_assign), with a byte that never occurs in UTF-8.
+    const ElgClosure returns_bad = {nullptr,
+                                    [](void*, void*, void* ret) {
+                                        elg_string_assign(static_cast<std::string*>(ret), {"\xFFok", 3});
+                                        return true;
+                                    },
+                                    nullptr};
+    CHECK(label({.kind = 1, .theme = 0, .value = nullptr, .fn = returns_bad}) == "\xEF\xBF\xBDok");
+}
+
+TEST_CASE("an image source's pixel limit comes through the C API, and 0 is the default", "[c-api][image]") {
+    elg::detail::Scope scope;
+    const elg::detail::Scope::Use use(scope);
+    const std::vector<std::uint8_t> png = elg::test::black_png(64, 32);
+    const auto width = [](const ElgImageSource& source) {
+        View* view = elg_image(&source);
+        REQUIRE(view != nullptr);
+        const std::unique_ptr<elg::detail::Element> element = elg::detail::lower(*view, {});
+        elg_view_free(view);
+        return element->size_that_fits({}).width; // 0: refused
+    };
+    ElgImageSource source{.system_name = {}, .file = {}, .data = {png.data(), png.size()}, .scale = 1,
+                          .max_pixels = 2047, .max_side = 0};
+    CHECK(width(source) == 0);
+    source.max_pixels = 0;
+    CHECK(width(source) == 64);
+}
+
 TEST_CASE("the C API reports its ABI version", "[c-api]") {
     CHECK(elg_abi_version() >= 1);
+}
+
+TEST_CASE("the error handler's closure is dropped once: when replaced, or with the app", "[c-api]") {
+    Counts first;
+    Counts second;
+    App* const app = elg_app_new();
+    elg_app_on_error(app, closure(first));
+    elg_app_on_error(app, closure(second)); // replaces the first
+    CHECK(first.drops == 1);
+    elg_app_on_error(app, none(first)); // removes the handler, and drops what it was given
+    CHECK(second.drops == 1);
+    CHECK(first.drops == 2);
+    elg_app_free(app);
+    CHECK(take_error() == 0);
+}
+
+TEST_CASE("while an App runs, a panicking component body is reported, not the end of the run", "[c-api]") {
+    Counts counts;
+    detail::begin_app_errors();
+    View* const view = elg_view_component(panicking(counts));
+    REQUIRE(view);
+    {
+        detail::Scope scope;
+        const detail::Scope::Use use(scope);
+        static detail::TextSystem text; // what the placeholder of a debug build needs
+        CHECK_NOTHROW(detail::lower(elg::VStack(*view), {.text = &text}));
+    }
+    std::vector<int> codes;
+    CHECK_FALSE(detail::handle_app_errors([&](const std::exception_ptr&, AppCode code) {
+        codes.push_back(static_cast<int>(code));
+        return ErrorAction::resume;
+    }));
+    detail::end_app_errors();
+    CHECK(codes == std::vector<int>{static_cast<int>(AppCode::body)});
+    elg_view_free(view);
 }

@@ -9,6 +9,9 @@
 
 #include <SDL3/SDL.h>
 
+#include <sys/syscall.h>
+#include <unistd.h>
+
 #include <csignal>
 #include <fstream>
 #include <string>
@@ -50,6 +53,10 @@ void* native_handle(SDL_Window*) {
 
 Rect system_controls_frame(WindowParts&) {
     return {};
+}
+
+bool on_main_thread() {
+    return syscall(SYS_gettid) == getpid(); // the main thread's id is the process's
 }
 
 bool in_move_size_loop() {

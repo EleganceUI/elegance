@@ -6,6 +6,7 @@
 
 #include <elg/text.h>
 
+#include "core/utf8.h"
 #include "text/glyph_draw.h"
 #include "view/view_node.h"
 
@@ -120,10 +121,11 @@ void TextElement::relayout_now() {
 }
 
 void TextElement::set_content(std::string_view content) {
-    if (content == content_) {
+    std::string valid = valid_utf8(content);
+    if (valid == content_) {
         return;
     }
-    content_ = content;
+    content_ = std::move(valid);
     snap_next_layout();
     if (face_) {
         paragraphs_ = shape_text(*face_, content_, &text_->fonts);

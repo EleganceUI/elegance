@@ -159,7 +159,8 @@ Path& Path::arc_to(float rx, float ry, float rotation_degrees, bool large_arc, b
         delta += 2 * kPi;
     }
 
-    const int pieces = std::max(1, static_cast<int>(std::ceil(std::abs(delta) / (kPi / 2) - 1e-3f)));
+    // At most a full turn, so 1 to 4 quarters (NaN radii give a NaN delta: 1).
+    const int pieces = detail::clamped_cast<int>(std::ceil(std::abs(delta) / (kPi / 2) - 1e-3f), 1, 4);
     const float step = delta / static_cast<float>(pieces);
     const float handle = 4.f / 3.f * std::tan(step / 4);
     const auto on_ellipse = [&](float t) {
@@ -239,6 +240,14 @@ Path& Path::add_circle(Point center, float radius) {
 }
 
 Path& Path::add_path(const Path& other) {
+    if (other.empty()) {
+        return *this; // nothing to append: the current point and the open subpath stay
+    }
+    if (&other == this) {
+        // NOLINTNEXTLINE(performance-unnecessary-copy-initialization): `other` is this path, which grows
+        const Path copy = other; // a vector can't insert a range of its own elements
+        return add_path(copy);
+    }
     verbs_.insert(verbs_.end(), other.verbs_.begin(), other.verbs_.end());
     points_.insert(points_.end(), other.points_.begin(), other.points_.end());
     current_ = other.current_;

@@ -5,6 +5,7 @@
 // LazyVStack / LazyHStack (design.md §7): a stack over a ForEach that builds only the items near
 // the visible part of its ScrollView.
 
+#include "view/event_dispatcher.h"
 #include "view/view_node.h"
 
 #include "core/log.h"
@@ -64,6 +65,7 @@ public:
                 if (found == by_key.end()) {
                     sizes_.erase(it->first.key);
                 }
+                element_leaving(*it->second.element); // its interactions end first
                 it = rows_.erase(it);
                 removed = true;
             } else {

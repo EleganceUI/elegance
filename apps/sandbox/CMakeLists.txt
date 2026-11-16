@@ -1,12 +1,9 @@
 add_executable(sandbox
+        card.cpp
         contacts.cpp
         main.cpp
         todos.cpp
-        view_extensions.cpp
 )
-
-# Dot-syntax View extensions (.card(), ...), design.md §9.4.
-elegance_view_extensions(sandbox view_extensions.h)
 
 target_link_libraries(sandbox PRIVATE Elegance::Elegance)
 target_include_directories(sandbox PRIVATE ${PROJECT_SOURCE_DIR}/apps/common) # no_error_dialogs.h

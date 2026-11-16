@@ -11,8 +11,12 @@ include(Catch)
 add_executable(elegance_tests
         accessibility_tests.cpp
         animation_tests.cpp
+        app_error_tests.cpp
+        app_thread_tests.cpp
         audio_tests.cpp
         backdrop_tests.cpp
+        canvas_tests.cpp
+        capture_phase_tests.cpp
         capture_tests.cpp
         desktop_tests.cpp
         environment_tests.cpp
@@ -21,6 +25,7 @@ add_executable(elegance_tests
         gpu_image_tests.cpp
         grid_tests.cpp
         hover_tests.cpp
+        leaving_tests.cpp
         lifecycle_tests.cpp
         click_tests.cpp
         raw_input_tests.cpp
@@ -28,9 +33,11 @@ add_executable(elegance_tests
         disabled_tests.cpp
         dynamic_children_tests.cpp
         floating_tests.cpp
+        float_to_int_tests.cpp
         frame_source_tests.cpp
         modifier_shorthand_tests.cpp
         picker_slider_style_tests.cpp
+        menu_bar_tests.cpp
         menu_style_tests.cpp
         selection_tests.cpp
         secure_text_input_tests.cpp
@@ -50,10 +57,12 @@ add_executable(elegance_tests
         shape_hit_tests.cpp
         render_device_lifetime_tests.cpp
         size_observer_tests.cpp
+        tab_order_tests.cpp
         text_input_tests.cpp
         toggle_tests.cpp
         ui_release_tests.cpp
         ui_task_tests.cpp
+        utf8_tests.cpp
         video_tests.cpp
         test_setup.cpp
 )

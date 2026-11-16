@@ -36,34 +36,42 @@ thread_local std::string g_error_message;
 
 } // namespace
 
-void elg_shim::capture_error() noexcept {
+int32_t elg_shim::error_kind(const std::exception_ptr& error, std::string& message) noexcept {
     try {
-        throw;
-    } catch (const RustPanic&) {
-        g_error_kind = panic_error;
-        g_error_message = "a Rust callback panicked";
-    } catch (const UsageError& e) {
-        g_error_kind = usage_error;
-        g_error_message = e.what();
-    } catch (const ResourceError& e) {
-        g_error_kind = resource_error;
-        g_error_message = e.what();
-    } catch (const GpuError& e) {
-        g_error_kind = gpu_error;
-        g_error_message = e.what();
-    } catch (const PlatformError& e) {
-        g_error_kind = platform_error;
-        g_error_message = e.what();
-    } catch (const Error& e) {
-        g_error_kind = elegance_error;
-        g_error_message = e.what();
-    } catch (const std::exception& e) {
-        g_error_kind = other_error;
-        g_error_message = e.what();
+        try {
+            std::rethrow_exception(error);
+        } catch (const RustPanic&) {
+            message = "a Rust callback panicked";
+            return panic_error;
+        } catch (const UsageError& e) {
+            message = e.what();
+            return usage_error;
+        } catch (const ResourceError& e) {
+            message = e.what();
+            return resource_error;
+        } catch (const GpuError& e) {
+            message = e.what();
+            return gpu_error;
+        } catch (const PlatformError& e) {
+            message = e.what();
+            return platform_error;
+        } catch (const Error& e) {
+            message = e.what();
+            return elegance_error;
+        } catch (const std::exception& e) {
+            message = e.what();
+            return other_error;
+        } catch (...) {
+            message = "unknown C++ exception";
+            return other_error;
+        }
     } catch (...) {
-        g_error_kind = other_error;
-        g_error_message = "unknown C++ exception";
+        return other_error; // the message couldn't be copied: out of memory
     }
+}
+
+void elg_shim::capture_error() noexcept {
+    g_error_kind = error_kind(std::current_exception(), g_error_message);
 }
 
 /// Takes this thread's pending error: the pending error's kind (0: none), with its message sent to
@@ -1013,15 +1021,42 @@ ELG_EXPORT void elg_app_window(App* app, const ElgWindowDesc* desc, ElgClosure c
 }
 
 /// Wraps `App::run()`: opens the windows and runs the event loop until the last window closes or
-/// elg_app_quit() is called. Errors and panics in app callbacks end it after a clean shutdown.
+/// elg_app_quit() is called. Errors and panics in app callbacks are written to the log and passed
+/// to elg_app_on_error()'s handler, and the app goes on, unless the handler ends the run.
 ///
 /// @param app The app (borrowed).
-/// @return The process exit code, or -1 on failure (no windows, already running, or an error that
-///   propagated out of a callback).
+/// @return The process exit code, or -1 on failure (no windows, already running, an error the
+///   error handler ended the run with, or one of Elegance's own).
 ELG_EXPORT int32_t elg_app_run(App* app) {
     ELG_TRY
     return app->run();
     ELG_CATCH(-1)
+}
+
+/// Wraps `App::on_error()`: calls `handler` with each exception that escapes app code while the app
+/// runs, binding callbacks included, on the UI thread between events.
+///
+/// @param app The app (borrowed).
+/// @param handler Consumed closure; args: `const ElgAppError*`, valid during the call; ret:
+///   `int32_t*`, which it sets to 1 to end the run (elg_app_run() then fails with that error) or
+///   leaves 0 to go on. A null `call` removes the handler. What it panics with is only logged.
+ELG_EXPORT void elg_app_on_error(App* app, ElgClosure handler) {
+    ELG_TRY
+    const Consumed consumed(handler);
+    const SharedFn fn = share(handler);
+    if (!fn) {
+        app->on_error({});
+        return;
+    }
+    app->on_error([fn](const AppError& error) {
+        std::string message;
+        const int32_t kind = elg_shim::error_kind(error.exception, message);
+        ElgAppError info{kind, c_str(message), static_cast<int32_t>(error.code)};
+        int32_t quit = 0;
+        fn->call(&info, &quit);
+        return quit == 1 ? ErrorAction::quit : ErrorAction::resume;
+    });
+    ELG_CATCH_VOID
 }
 
 /// Wraps `App::quit()`: makes elg_app_run() return after the current event. Call it on the UI
@@ -1058,7 +1093,7 @@ ELG_EXPORT const char* elg_version() {
 
 // The C API's ABI version. It goes up by one whenever an exported function's signature, a struct
 // passed across the API, or the value of a documented constant changes.
-constexpr std::uint32_t kAbiVersion = 1;
+constexpr std::uint32_t kAbiVersion = 2;
 
 /// The C API's ABI version: a binding checks it when it loads the library, and refuses to run
 /// with a version it wasn't built for. It changes whenever an exported function's signature, a

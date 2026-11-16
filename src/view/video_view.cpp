@@ -10,6 +10,7 @@
 #include <elg/error.h>
 #include <elg/gpu_image.h>
 
+#include "core/numeric.h"
 #include "media/video_source.h"
 #include "view/view_node.h"
 
@@ -216,7 +217,8 @@ private:
 };
 
 std::string clock(double seconds) {
-    const int s = std::isfinite(seconds) ? static_cast<int>(seconds) : 0;
+    // Durations come from media files, and can be past int's range.
+    const int s = std::isfinite(seconds) ? clamped_cast<int>(seconds) : 0;
     return s >= 3600 ? std::format("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60) : std::format("{}:{:02}", s / 60, s % 60);
 }
 

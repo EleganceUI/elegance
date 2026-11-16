@@ -24,6 +24,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <format>
 #include <functional>
@@ -46,9 +47,10 @@
 extern "C" {
 
 /// UTF-8 text: `len` bytes at `ptr`, not NUL-terminated. A null `ptr` is the empty string.
-/// Passed to Elegance, it's read during the call (Elegance copies what it keeps). Passed to a
-/// callback or returned, it points into Elegance's memory: valid during the callback, or as long
-/// as the function says.
+/// Malformed UTF-8 in text that Elegance shows, edits or exposes to assistive technology reads as
+/// U+FFFD, as it does through the C++ API. Passed to Elegance, it's read during the call
+/// (Elegance copies what it keeps). Passed to a callback or returned, it points into Elegance's
+/// memory: valid during the callback, or as long as the function says.
 struct ElgStr {
     const char* ptr; ///< The first byte, or null.
     size_t len;      ///< Length in bytes.
@@ -86,6 +88,16 @@ struct ElgClosure {
     void* data;     ///< The closure's state, passed to `call` and `drop`.
     ElgCallFn call; ///< Runs the closure; null: no closure.
     ElgDropFn drop; ///< Frees `data`; null: nothing to free.
+};
+
+/// An exception that escaped app code while the app ran, as elg_app_on_error()'s handler gets it.
+struct ElgAppError {
+    int32_t kind;   ///< The error's kind, numbered as elg_take_error() numbers them.
+    ElgStr message; ///< What it says; valid only during the call.
+    /// The kind of app code it escaped, elg::AppCode: 0 a view's body, 1 an effect, 2 an event
+    /// handler or action, 3 a task, 4 a timer, 5 on_appear or on_disappear, 6 layout, 7 a Canvas's
+    /// drawing, 8 another callback.
+    int32_t code;
 };
 
 /// Receives a string from Elegance (an error message, a font family, a device's error).
@@ -361,6 +373,12 @@ struct ElgImageSource {
     ElgStr file;        ///< A raster image file's path (PNG, JPEG, ...).
     ElgBytes data;      ///< Encoded image data in memory, in any of those formats (copied).
     float scale;        ///< Raster images: pixels per point, e.g. 2 for double-resolution artwork.
+    /// Raster images: the most pixels (width times height) the image may have; one with more isn't
+    /// shown. 0: the default, 2^27.
+    uint64_t max_pixels;
+    /// Raster images: the longest side the image is decoded at; a larger one is scaled down to fit.
+    /// 0: the default, 8192.
+    uint32_t max_side;
 };
 
 } // extern "C"
@@ -669,6 +687,8 @@ inline elg::ImageSource image_source(const ElgImageSource& s) {
     result.file = path(s.file);
     result.data = bytes(s.data);
     result.scale = s.scale;
+    result.max_pixels = s.max_pixels;
+    result.max_side = s.max_side;
     return result;
 }
 
@@ -923,6 +943,8 @@ struct RustComponent {
 
 // Records the current exception for elg_take_error().
 void capture_error() noexcept;
+// The kind of `error`, numbered as elg_take_error() numbers them, and its message.
+int32_t error_kind(const std::exception_ptr& error, std::string& message) noexcept;
 
 // --- ABI layout ---
 

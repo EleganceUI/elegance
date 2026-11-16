@@ -10,6 +10,9 @@
 
 #include "reactive/runtime.h"
 
+#include "core/app_errors.h"
+#include "core/scope_exit.h"
+
 #include <elg/error.h>
 
 #include <algorithm>
@@ -36,9 +39,10 @@ int g_batch_depth = 0;
 // Computed values and effects running now, nested; no flush starts inside them.
 int g_running = 0;
 bool g_flushing = false;
-// Effects waiting to run, in order. Disposed nodes remove themselves, so the queue never holds
-// a dangling pointer, even when running one effect disposes others (e.g. If unmounting a
-// branch).
+// Effects waiting to run, in the order they were scheduled: priority effects in a queue of their
+// own, which a flush empties first. Disposed nodes remove themselves, so the queues never hold a
+// dangling pointer, even when running one effect disposes others (e.g. If unmounting a branch).
+std::deque<ReactiveNode*> g_priority_pending;
 std::deque<ReactiveNode*> g_pending;
 // The running App's UI thread; none (a default id) while no App runs. Other threads read it.
 std::atomic<std::thread::id> g_ui_thread;
@@ -82,17 +86,25 @@ struct Runtime {
             }
             if (!node->queued_) {
                 node->queued_ = true;
-                if (node->priority_) {
-                    g_pending.push_front(node);
-                } else {
-                    g_pending.push_back(node);
-                }
+                (node->priority_ ? g_priority_pending : g_pending).push_back(node);
             }
         }
         if (was_clean) {
             for (ReactiveNode* observer : node->observers_) {
                 mark(observer, check);
             }
+        }
+    }
+
+    // Makes `source` a dependency of `observer`, the node running now (none: nothing to link).
+    static void link(ReactiveNode* observer, ReactiveNode* source) {
+        // A disposed node links to nothing: an effect disposed while it runs reads on, unsubscribed.
+        if (!observer || observer == source || observer->disposed_ || source->disposed_) {
+            return;
+        }
+        if (std::ranges::find(observer->sources_, source) == observer->sources_.end()) {
+            observer->sources_.push_back(source);
+            source->observers_.push_back(observer);
         }
     }
 
@@ -142,18 +154,18 @@ void ReactiveNode::track() {
 #ifndef NDEBUG
     check_ui_thread(); // reads, too, belong to the UI thread: checked in debug builds
 #endif
-    if (kind_ != Kind::signal) {
-        update();
-    }
+    // The reader depends on this node even when bringing it up to date throws (a computed value
+    // that throws): it runs again once the computed value can recover.
     ReactiveNode* const observer = g_observer;
-    // A disposed node links to nothing: an effect disposed while it runs reads on, unsubscribed.
-    if (!observer || observer == this || observer->disposed_ || disposed_) {
-        return;
+    if (kind_ != Kind::signal) {
+        try {
+            update();
+        } catch (...) {
+            Runtime::link(observer, this);
+            throw;
+        }
     }
-    if (std::ranges::find(observer->sources_, this) == observer->sources_.end()) {
-        observer->sources_.push_back(this);
-        observers_.push_back(observer);
-    }
+    Runtime::link(observer, this);
 }
 
 void ReactiveNode::notify_changed() {
@@ -167,9 +179,15 @@ void ReactiveNode::update() {
         return;
     }
     if (status_ == check) {
-        // Bring sources up to date; one that changed marks this node dirty.
+        // Bring sources up to date; one that changed marks this node dirty. One that throws does
+        // too: this node then runs and meets the exception when it reads that source, instead of
+        // staying unscheduled at `check`.
         for (std::size_t i = 0; i < sources_.size() && status_ != dirty; ++i) {
-            sources_[i]->update();
+            try {
+                sources_[i]->update();
+            } catch (...) {
+                status_ = dirty;
+            }
         }
     }
     if (status_ == dirty) {
@@ -189,7 +207,7 @@ void ReactiveNode::dispose() noexcept {
     }
     observers_.clear();
     if (queued_) {
-        std::erase(g_pending, this);
+        std::erase(priority_ ? g_priority_pending : g_pending, this);
         queued_ = false;
     }
 }
@@ -239,7 +257,9 @@ void start_effect(std::shared_ptr<EffectNode> effect, bool priority) {
     EffectNode* const node = effect.get();
     Runtime::set_owner(node, g_scope); // later runs build into it too
     g_scope->adopt(std::move(effect));
-    node->update(); // first run, establishing its dependencies
+    // First run, establishing its dependencies. While an App runs, what it throws is reported,
+    // and what it would have set keeps its default.
+    run_app_code(AppCode::effect, [node] { node->update(); });
 }
 
 void check_ui_thread() {
@@ -248,6 +268,13 @@ void check_ui_thread() {
         throw UsageError("reactive state was used off the UI thread; state belongs to the UI thread "
                          "(design.md §6)");
     }
+}
+
+void track_reads(ReactiveNode& observer, const std::function<void()>& function) {
+    Runtime::unlink_sources(&observer);
+    ReactiveNode* const previous = std::exchange(g_observer, &observer);
+    const ScopeExit restore([previous] { g_observer = previous; });
+    function();
 }
 
 void begin_batch() noexcept {
@@ -288,17 +315,20 @@ void flush_effects() {
         ~Done() { g_flushing = false; }
     };
     const Done done;
-    for (int runs = 0; !g_pending.empty(); ++runs) {
+    for (int runs = 0; !g_priority_pending.empty() || !g_pending.empty(); ++runs) {
         if (runs >= kMaxEffectRuns) {
-            for (ReactiveNode* node : g_pending) {
-                Runtime::dequeue(node);
+            for (std::deque<ReactiveNode*>* queue : {&g_priority_pending, &g_pending}) {
+                for (ReactiveNode* node : *queue) {
+                    Runtime::dequeue(node);
+                }
+                queue->clear();
             }
-            g_pending.clear();
             throw UsageError("effects keep re-triggering each other; an effect probably writes state "
                              "it also reads");
         }
-        ReactiveNode* const node = g_pending.front();
-        g_pending.pop_front();
+        std::deque<ReactiveNode*>& queue = g_priority_pending.empty() ? g_pending : g_priority_pending;
+        ReactiveNode* const node = queue.front();
+        queue.pop_front();
         Runtime::dequeue(node);
         // Run inside the transaction that scheduled it, so animatable properties it sets animate.
         const std::shared_ptr<const Animation> transaction = Runtime::take_transaction(node);
@@ -315,14 +345,20 @@ void flush_effects() {
             node->update();
         } catch (...) {
             g_running_animation = previous;
-            throw;
+            // While an App runs: reported, and the effects still scheduled run on. The effect
+            // keeps what it read before it threw.
+            if (!reporting_app_errors()) {
+                throw;
+            }
+            report_app_exception(std::current_exception(), AppCode::effect);
+            continue;
         }
         g_running_animation = previous;
     }
 }
 
 bool has_scheduled_effects() noexcept {
-    return !g_pending.empty();
+    return !g_priority_pending.empty() || !g_pending.empty();
 }
 
 std::shared_ptr<const Animation> begin_transaction(std::shared_ptr<const Animation> animation) {

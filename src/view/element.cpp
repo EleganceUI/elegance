@@ -4,6 +4,12 @@
 
 #include "view/element.h"
 
+#include "view/event_dispatcher.h"
+
+#include "core/app_errors.h"
+
+#include "reactive/runtime.h"
+
 #include "view/focus.h"
 #include "view/view_node.h"
 
@@ -12,6 +18,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <unordered_map>
 
 namespace elg::detail {
 
@@ -30,11 +37,26 @@ bool drawable(const Rect& r) {
 
 } // namespace
 
+namespace {
+
+// The elements that have been given an accessibility id, by it: ids are never reused, so a
+// screen reader's request finds its element, or nothing once that element is gone. UI thread.
+std::unordered_map<std::uint64_t, Element*>& elements_by_accessibility_id() {
+    static std::unordered_map<std::uint64_t, Element*> elements;
+    return elements;
+}
+
+} // namespace
+
 // --- Element ---
 
 Element::~Element() {
     if (focus_manager_) {
         focus_manager_->forget(this); // also ends a .focused watch on this element
+    }
+    element_destroyed(this); // event dispatch lets go of it
+    if (accessibility_id_ != 0) {
+        elements_by_accessibility_id().erase(accessibility_id_);
     }
 }
 
@@ -67,8 +89,19 @@ std::uint64_t Element::accessibility_id() const noexcept {
     static std::atomic<std::uint64_t> next{2}; // 1 is each window's root
     if (accessibility_id_ == 0) {
         accessibility_id_ = next.fetch_add(1, std::memory_order_relaxed);
+        try {
+            elements_by_accessibility_id().emplace(accessibility_id_, const_cast<Element*>(this));
+        } catch (...) {
+            // Swallowed: out of memory; a screen reader then can't name this element.
+        }
     }
     return accessibility_id_;
+}
+
+Element* element_with_accessibility_id(std::uint64_t id) noexcept {
+    const auto& elements = elements_by_accessibility_id();
+    const auto found = elements.find(id);
+    return found != elements.end() ? found->second : nullptr;
 }
 
 namespace {
@@ -495,8 +528,22 @@ void CanvasElement::paint_impl(DisplayList& list) const {
     if (!draw_ || !drawable(frame())) {
         return;
     }
-    GraphicsContext context(list, frame(), list.scale);
-    draw_(context);
+    // A draw function that throws: reported, and what it drew in this frame goes.
+    const std::size_t before = list.commands.size();
+    bool drew = true;
+    {
+        GraphicsContext context(list, frame(), list.scale);
+        drew = run_app_code(AppCode::drawing, [&] {
+            if (reads_) {
+                track_reads(*reads_, [&] { draw_(context); });
+            } else {
+                draw_(context);
+            }
+        });
+    }
+    if (!drew) {
+        list.commands.erase(list.commands.begin() + static_cast<std::ptrdiff_t>(before), list.commands.end());
+    }
 }
 
 // --- LayoutElement ---
@@ -539,7 +586,13 @@ void LayoutElement::on_structure_changed() {
 }
 
 Size LayoutElement::measure(ProposedSize proposal) {
-    return layout_->cached_size_that_fits(proposal, handles_, cache_);
+    // A Layout that throws: reported once, and the view has no size and shows nothing until its
+    // layout is invalidated.
+    Size size;
+    if (!failed_) {
+        failed_ = !run_app_code(AppCode::layout, [&] { size = layout_->cached_size_that_fits(proposal, handles_, cache_); });
+    }
+    return failed_ ? Size{} : size;
 }
 
 void LayoutElement::arrange(Rect bounds, ProposedSize proposal) {
@@ -549,7 +602,9 @@ void LayoutElement::arrange(Rect bounds, ProposedSize proposal) {
         child->collect_exiting(exiting);
     }
     move_exiting(exiting);
-    layout_->cached_place_children(bounds, proposal, handles_, cache_);
+    if (!failed_) {
+        failed_ = !run_app_code(AppCode::layout, [&] { layout_->cached_place_children(bounds, proposal, handles_, cache_); });
+    }
 }
 
 // Back to front: by z-index, then (exiting children after the rest, then) declaration order.
@@ -564,6 +619,9 @@ std::vector<Element*> LayoutElement::paint_order() const {
 }
 
 void LayoutElement::paint_impl(DisplayList& list) const {
+    if (failed_) {
+        return; // its Layout threw: nothing to show this frame
+    }
     for (const Element* child : paint_order()) {
         child->paint(list);
     }
@@ -633,11 +691,19 @@ float LayoutModifierElement::z_index() const noexcept {
 }
 
 Size LayoutModifierElement::measure(ProposedSize proposal) {
-    return modifier_->size_that_fits(proposal, LayoutChild(*content_));
+    // A modifier that throws: reported once, and the view has no size and shows nothing until its
+    // layout is invalidated.
+    Size size;
+    if (!failed_) {
+        failed_ = !run_app_code(AppCode::layout, [&] { size = modifier_->size_that_fits(proposal, LayoutChild(*content_)); });
+    }
+    return failed_ ? Size{} : size;
 }
 
 void LayoutModifierElement::arrange(Rect bounds, ProposedSize proposal) {
-    modifier_->place(bounds, proposal, LayoutChild(*content_));
+    if (!failed_) {
+        failed_ = !run_app_code(AppCode::layout, [&] { modifier_->place(bounds, proposal, LayoutChild(*content_)); });
+    }
 }
 
 // --- EffectElement ---
@@ -659,7 +725,7 @@ void EffectElement::on_render_size(float scale) {
         return;
     }
     last_render_size_ = physical;
-    effects_.on_size_change(physical);
+    run_app_code(AppCode::layout, [&] { effects_.on_size_change(physical); });
 }
 
 const ShapeFill* EffectElement::clip_path(float scale) const {

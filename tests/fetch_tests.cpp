@@ -9,6 +9,11 @@
 #include "net/http_cache.h"
 #include "net/proxy.h"
 
+#include "core/log.h"
+#include "core/ui_tasks.h"
+#include "test_images.h"
+#include "view/view_node.h"
+
 #include <elg/elegance.h>
 
 #include <boost/asio.hpp>
@@ -18,7 +23,9 @@
 #include <boost/beast/ssl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <array>
 #include <filesystem>
@@ -28,10 +35,12 @@
 #include <mutex>
 #include <random>
 #include <string>
+#include <string_view>
 #include <thread>
 
 using namespace elg;
 using namespace std::chrono_literals;
+using Catch::Matchers::ContainsSubstring;
 
 namespace {
 
@@ -89,6 +98,18 @@ wmZAujteSAEKpmLCsCEVJ8Z884hfe+U0WYC9HPiHLcu3n1AfGNHyekNG
 //   /stale      200, stale at once, with an ETag
 //   /nostore    200, not to be stored
 //   /two-fields 200 with Cache-Control in two fields, together "don't store"
+//   /header-60k 200 with a header section of about 60 KiB
+//   /header-70k 200 with a header section of about 70 KiB
+//   /huge.png   200 with a PNG file of 16384 x 8193 pixels (in 106 KB)
+//   /small.png  200 with a PNG file of 64 x 32 pixels
+//   /aged       200, fresh for 600 s but already 600 s old, with an ETag; its 304 has no Age
+//   /gone-on-304 200 "kept", revalidated every time, with an ETag; its 304 says no-store
+//   /latest     302 to /v123.png, with no lifetime of its own
+//   /v123.png   200 "v123", fresh for a year
+//   /moved      302 to /hello, fresh for a minute
+//   /permanent  301 to /hello, with no lifetime of its own
+//   /stale-redirect 302 to /stale, stale at once
+//   /strict-redirect 302 to /stale, stale at once, and never to be used stale (must-revalidate)
 // Connections stay open for more requests, unless `drop` (closed after each response, without
 // saying so).
 class TestServer {
@@ -198,6 +219,53 @@ private:
             response.insert(bhttp::field::cache_control, "max-age=600");
             response.insert(bhttp::field::cache_control, "no-store");
             response.body() = "split";
+        } else if (target == "/header-60k" || target == "/header-70k") {
+            // In fields of 10 KiB: Beast refuses to hold a single field value of 64 KiB or more.
+            for (int i = 0; i < (target == "/header-60k" ? 6 : 7); ++i) {
+                response.insert(std::format("X-Padding-{}", i), std::string(std::size_t{10} * 1024, 'p'));
+            }
+            response.body() = "padded";
+        } else if (target == "/aged") {
+            response.set(bhttp::field::etag, "\"a\"");
+            if (request[bhttp::field::if_none_match] == "\"a\"") {
+                response.result(bhttp::status::not_modified); // no Cache-Control or Age
+                ++not_modified_;
+            } else {
+                response.set(bhttp::field::cache_control, "max-age=600");
+                response.set(bhttp::field::age, "600");
+                response.body() = "aged";
+            }
+        } else if (target == "/gone-on-304") {
+            response.set(bhttp::field::etag, "\"g\"");
+            if (request[bhttp::field::if_none_match] == "\"g\"") {
+                response.result(bhttp::status::not_modified);
+                response.set(bhttp::field::cache_control, "no-store");
+                ++not_modified_;
+            } else {
+                response.set(bhttp::field::cache_control, "no-cache");
+                response.body() = "kept";
+            }
+        } else if (target == "/latest" || target == "/moved" || target == "/permanent" ||
+                   target == "/stale-redirect" || target == "/strict-redirect") {
+            response.result(target == "/permanent" ? bhttp::status::moved_permanently : bhttp::status::found);
+            const bool to_stale = target == "/stale-redirect" || target == "/strict-redirect";
+            response.set(bhttp::field::location, target == "/latest" ? "/v123.png" : to_stale ? "/stale" : "/hello");
+            if (target == "/moved") {
+                response.set(bhttp::field::cache_control, "max-age=60");
+            } else if (target == "/stale-redirect") {
+                response.set(bhttp::field::cache_control, "max-age=0");
+            } else if (target == "/strict-redirect") {
+                response.set(bhttp::field::cache_control, "max-age=0, must-revalidate");
+            }
+        } else if (target == "/v123.png") {
+            response.set(bhttp::field::cache_control, "max-age=31536000");
+            response.body() = "v123";
+        } else if (target == "/small.png") {
+            const std::vector<std::uint8_t> png = test::black_png(64, 32);
+            response.body().assign(png.begin(), png.end());
+        } else if (target == "/huge.png") {
+            const std::vector<std::uint8_t> png = test::black_png(16384, 8193);
+            response.body().assign(png.begin(), png.end());
         } else {
             response.result(bhttp::status::not_found);
         }
@@ -377,6 +445,33 @@ net::FetchResult fetch(std::string url, net::FetchOptions options = {}) {
     return future.get();
 }
 
+// Shows an AsyncImage of `url` (memory cache only), and runs the UI thread's tasks until it leaves
+// the loading phase.
+AsyncImagePhase load_async_image(const std::string& url, AsyncImageOptions options = {.disk_cache = false}) {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    AsyncImagePhase last;
+    const View view = AsyncImage(
+        url,
+        [&](const AsyncImagePhase& phase) {
+            last = phase;
+            return View();
+        },
+        options);
+    const std::unique_ptr<detail::Element> root = detail::lower(view, {});
+    for (int i = 0; i < 1000 && last.kind == AsyncImagePhase::Kind::loading; ++i) {
+        std::this_thread::sleep_for(10ms);
+        detail::run_ui_tasks();
+        detail::flush_effects();
+    }
+    return last;
+}
+
+// Whether a recent log line has `text` in it.
+bool logged(std::string_view text) {
+    return std::ranges::any_of(detail::recent_log_lines(), [&](const std::string& line) { return line.contains(text); });
+}
+
 std::string text(const net::FetchResult& result) {
     INFO((result.has_value() ? std::string() : result.error())); // why it failed, if it did
     REQUIRE(result.has_value());
@@ -390,9 +485,23 @@ TEST_CASE("downloads follow redirects and report HTTP errors", "[fetch]") {
     CHECK(text(fetch(server.url("/hello"))) == "hello");
     CHECK(text(fetch(server.url("/redirect"))) == "hello");
     CHECK(fetch(server.url("/missing")).error() == "HTTP 404");
-    CHECK(fetch(server.url("/loop")).error() == "too many redirects");
-    CHECK(fetch(server.url("/big"), {.max_body = 1024}).error() == "the response is too large");
     CHECK(text(fetch(server.url("/big"))).size() == 4096);
+}
+
+TEST_CASE("downloads name the limit they exceeded", "[fetch]") {
+    const TestServer server;
+    CHECK(fetch(server.url("/loop")).error() == "too many redirects (more than 5)");
+    CHECK(fetch(server.url("/loop"), {.max_redirects = 2}).error() == "too many redirects (more than 2)");
+    CHECK(fetch(server.url("/big"), {.max_body = 1024}).error() == "the response is larger than 1 KiB");
+    CHECK(fetch(server.url("/big"), {.max_body = 1000}).error() == "the response is larger than 1000 bytes");
+}
+
+TEST_CASE("downloads refuse a response whose header section is over 64 KiB", "[fetch]") {
+    const TestServer server;
+    CHECK(text(fetch(server.url("/header-60k"))) == "padded");
+    CHECK(fetch(server.url("/header-70k")).error() == "the response's header section is larger than 64 KiB");
+    // The connection is closed, not left with the rest of that response: the next request works.
+    CHECK(text(fetch(server.url("/hello"))) == "hello");
 }
 
 TEST_CASE("downloads refuse what isn't an http(s) URL", "[fetch]") {
@@ -403,7 +512,7 @@ TEST_CASE("downloads refuse what isn't an http(s) URL", "[fetch]") {
 
 TEST_CASE("downloads time out", "[fetch]") {
     const TestServer server;
-    CHECK(fetch(server.url("/slow"), {.timeout = 200ms}).error() == "the request timed out");
+    CHECK(fetch(server.url("/slow"), {.timeout = 200ms}).error() == "the request timed out (after 200 ms)");
 }
 
 TEST_CASE("cancelled downloads don't call back", "[fetch]") {
@@ -417,6 +526,39 @@ TEST_CASE("cancelled downloads don't call back", "[fetch]") {
     // The network thread is still running: a later download completes, and the cancelled one stayed quiet.
     CHECK(text(fetch(server.url("/hello"))) == "hello");
     CHECK_FALSE(called);
+}
+
+TEST_CASE("a download cancelled just as it ends doesn't call back", "[fetch]") {
+    const TestServer server;
+    std::promise<net::FetchTask> task;
+    std::promise<void> cancelled;
+    std::atomic<bool> called = false;
+    // The download is over and its callback is next when the hook cancels it: cancel() returns
+    // before the callback could start, so it mustn't.
+    net::FetchOptions options;
+    options.before_callback = [&, shared = task.get_future().share()] {
+        shared.get().cancel();
+        cancelled.set_value();
+    };
+    task.set_value(net::fetch(server.url("/hello"), [&](net::FetchResult) { called = true; }, std::move(options)));
+    REQUIRE(cancelled.get_future().wait_for(10s) == std::future_status::ready);
+    CHECK(text(fetch(server.url("/hello"))) == "hello"); // after the network thread is done with it
+    CHECK_FALSE(called);
+}
+
+TEST_CASE("cancelling doesn't wait for a callback that has started", "[fetch]") {
+    const TestServer server;
+    std::promise<void> started;
+    std::promise<void> release;
+    const std::shared_future<void> released = release.get_future().share();
+    const net::FetchTask task = net::fetch(server.url("/hello"), [&, released](net::FetchResult) {
+        started.set_value();
+        released.wait();
+    });
+    REQUIRE(started.get_future().wait_for(10s) == std::future_status::ready);
+    task.cancel(); // returns while the callback waits for it
+    release.set_value();
+    CHECK(text(fetch(server.url("/hello"))) == "hello");
 }
 
 TEST_CASE("https checks the certificate and the host name", "[fetch]") {
@@ -560,6 +702,34 @@ TEST_CASE("proxy settings: URLs, NO_PROXY, the environment, Windows' lists", "[p
     CHECK_FALSE(local->has_value());
 }
 
+TEST_CASE("bypass patterns match in time proportional to pattern times host", "[proxy]") {
+    CHECK(net::wildcard_match("", ""));
+    CHECK(net::wildcard_match("*", ""));
+    CHECK(net::wildcard_match("**", "a"));
+    CHECK(net::wildcard_match("*.corp", "wiki.corp"));
+    CHECK(net::wildcard_match("w*i*.corp", "wiki.corp"));
+    CHECK(net::wildcard_match("*a*b", "aXbYab"));
+    CHECK(net::wildcard_match("a*", "a"));
+    CHECK_FALSE(net::wildcard_match("", "a"));
+    CHECK_FALSE(net::wildcard_match("*.corp", "corp"));
+    CHECK_FALSE(net::wildcard_match("a*b", "aXbY"));
+    CHECK_FALSE(net::wildcard_match("wiki", "wiki.corp"));
+
+    // A backtracking matcher tries the ways to split the host among the stars: about 10^23 here.
+    std::string pattern;
+    for (int i = 0; i < 16; ++i) {
+        pattern += "*a";
+    }
+    pattern += "*b";
+    const std::string host(200, 'a');
+    CHECK_FALSE(net::wildcard_match(pattern, host));
+    CHECK(net::wildcard_match(pattern, host + "b"));
+    // Through Windows' bypass list, which is where such patterns come from.
+    const net::ProxyChoice choice = net::proxy_from_windows_settings("proxy:8080", pattern, "https", host + ".com");
+    REQUIRE(choice);
+    CHECK(choice->has_value());
+}
+
 TEST_CASE("HTTP dates and freshness", "[cache]") {
     constexpr std::int64_t kNov6 = 784111777; // Sun, 06 Nov 1994 08:49:37 GMT
     CHECK(net::parse_http_date("Sun, 06 Nov 1994 08:49:37 GMT") == kNov6);
@@ -570,7 +740,7 @@ TEST_CASE("HTTP dates and freshness", "[cache]") {
 
     const std::int64_t now = kNov6;
     const auto entry = [&](const net::CacheHeaders& headers) {
-        return net::make_cache_entry("https://example.com/a.png", false, headers, {1, 2, 3}, now);
+        return net::make_cache_entry("https://example.com/a.png", 200, {}, headers, {1, 2, 3}, now);
     };
     // NOLINTBEGIN(bugprone-unchecked-optional-access): each entry is REQUIREd before it's read
     const auto max_age = entry({.cache_control = "public, max-age=60"});
@@ -609,9 +779,184 @@ TEST_CASE("HTTP dates and freshness", "[cache]") {
     // A 304 renews it.
     net::CacheEntry renewed = *aged;
     // NOLINTEND(bugprone-unchecked-optional-access)
-    net::refresh_cache_entry(renewed, {.cache_control = "max-age=60"}, now + 100);
+    net::refresh_cache_entry(renewed, {.cache_control = "max-age=60", .age = "0"}, now + 100);
     CHECK(renewed.fresh(now + 159));
-    CHECK(renewed.etag == "\"e\"");
+    CHECK(renewed.headers.etag == "\"e\"");
+}
+
+TEST_CASE("a 304 updates the stored fields it carries, and freshness comes from the result", "[cache]") {
+    constexpr std::int64_t now = 784111777; // Sun, 06 Nov 1994 08:49:37 GMT
+    auto stored = net::make_cache_entry("https://example.com/a.png", 200, {},
+                                        {.cache_control = "max-age=600", .date = "Sun, 06 Nov 1994 08:49:37 GMT",
+                                         .etag = "\"e\"", .last_modified = "Sat, 05 Nov 1994 08:49:37 GMT"},
+                                        {1, 2, 3}, now);
+    REQUIRE(stored);
+    net::CacheEntry entry = *stored; // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
+    CHECK_FALSE(entry.fresh(now + 600));
+
+    // A 304 an hour later with only a Date: max-age stays, and counts from the new Date.
+    net::refresh_cache_entry(entry, {.date = "Sun, 06 Nov 1994 09:49:37 GMT"}, now + 3600);
+    CHECK(entry.headers.cache_control == "max-age=600");
+    CHECK(entry.headers.etag == "\"e\"");
+    CHECK(entry.headers.last_modified == "Sat, 05 Nov 1994 08:49:37 GMT");
+    CHECK(entry.fresh(now + 3600 + 599));
+    CHECK_FALSE(entry.fresh(now + 3600 + 600));
+
+    // One that changes Cache-Control and the ETag replaces them.
+    net::refresh_cache_entry(entry, {.cache_control = "no-cache", .etag = "\"f\""}, now + 4000);
+    CHECK(entry.no_cache);
+    CHECK_FALSE(entry.fresh(now + 4000));
+    CHECK(entry.headers.etag == "\"f\"");
+    CHECK(entry.body == std::vector<std::uint8_t>{1, 2, 3});
+
+    CHECK(net::forbids_storing({.cache_control = "max-age=60, no-store"}));
+    CHECK_FALSE(net::forbids_storing({.cache_control = "no-cache"}));
+    // A `*` anywhere in Vary, also in a list or a second field (joined with ", ").
+    CHECK(net::forbids_storing({.vary = "*"}));
+    CHECK(net::forbids_storing({.vary = "Accept-Encoding, *"}));
+    CHECK(net::forbids_storing({.vary = "Accept,* "}));
+    CHECK_FALSE(net::forbids_storing({.vary = "Accept, Accept-Encoding"}));
+    CHECK_FALSE(net::make_cache_entry("https://example.com/a.png", 200, {},
+                                      {.cache_control = "max-age=60", .vary = "Accept-Encoding, *"}, {1}, now));
+    CHECK_FALSE(net::make_cache_entry("https://example.com/b", 301, "/c", {.vary = "Origin, *"}, {}, now));
+    CHECK(net::make_cache_entry("https://example.com/a.png", 200, {},
+                                {.cache_control = "max-age=60", .vary = "Accept-Encoding"}, {1}, now));
+}
+
+TEST_CASE("a 304 without Age drops the stored one, and one without Date dates it on arrival", "[cache]") {
+    constexpr std::int64_t now = 784111777; // Sun, 06 Nov 1994 08:49:37 GMT
+    const std::string url = "https://example.com/a.png";
+    CHECK(net::format_http_date(now) == "Sun, 06 Nov 1994 08:49:37 GMT");
+    const std::int64_t later = now + std::int64_t{400} * 86400 + 5;
+    CHECK(net::parse_http_date(net::format_http_date(later)) == later);
+
+    // Stored 3000 seconds old with a lifetime of 600: stale at once.
+    auto aged = net::make_cache_entry(url, 200, {}, {.cache_control = "max-age=600", .age = "3000", .etag = "\"a\""},
+                                      {1}, now);
+    REQUIRE(aged);
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): both entries are REQUIREd before they're read
+    CHECK_FALSE(aged->fresh(now));
+    net::refresh_cache_entry(*aged, {.etag = "\"a\""}, now + 10);
+    CHECK(aged->headers.age.empty());
+    CHECK(aged->fresh(now + 10 + 599));
+    CHECK_FALSE(aged->fresh(now + 10 + 600));
+    // A 304 with an Age replaces it.
+    net::refresh_cache_entry(*aged, {.age = "100"}, now + 20);
+    CHECK(aged->headers.age == "100");
+    CHECK(aged->fresh(now + 20 + 499));
+    CHECK_FALSE(aged->fresh(now + 20 + 500));
+
+    // Stored with a Date; the 304 an hour later has none, so the stored one becomes its arrival.
+    auto dated = net::make_cache_entry(url, 200, {},
+                                       {.cache_control = "max-age=600", .date = "Sun, 06 Nov 1994 08:49:37 GMT",
+                                        .etag = "\"d\""},
+                                       {1}, now);
+    REQUIRE(dated);
+    net::refresh_cache_entry(*dated, {}, now + 3600);
+    CHECK(dated->headers.date == "Sun, 06 Nov 1994 09:49:37 GMT");
+    CHECK(dated->fresh(now + 3600 + 599));
+    CHECK_FALSE(dated->fresh(now + 3600 + 600));
+    // A 304 with a Date replaces it.
+    net::refresh_cache_entry(*dated, {.date = "Sun, 06 Nov 1994 09:59:37 GMT"}, now + 4200);
+    CHECK(dated->headers.date == "Sun, 06 Nov 1994 09:59:37 GMT");
+    // NOLINTEND(bugprone-unchecked-optional-access)
+}
+
+TEST_CASE("redirects make cache entries with a lifetime of their own, or permanent ones", "[cache]") {
+    constexpr std::int64_t now = 784111777;
+    const auto redirect = [&](unsigned status, const net::CacheHeaders& headers) {
+        return net::make_cache_entry("https://example.com/latest", status, "/v2.png", headers, {}, now);
+    };
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): each entry is REQUIREd before it's read
+    const auto timed = redirect(302, {.cache_control = "max-age=60"});
+    REQUIRE(timed);
+    CHECK(timed->redirect());
+    CHECK(timed->location == "/v2.png");
+    CHECK(timed->fresh(now + 59));
+    CHECK_FALSE(timed->fresh(now + 60));
+    const auto until = redirect(307, {.expires = "Sun, 06 Nov 1994 08:59:37 GMT", .date = "Sun, 06 Nov 1994 08:49:37 GMT"});
+    REQUIRE(until);
+    CHECK(until->lifetime == 600);
+    const auto stale = redirect(303, {.cache_control = "max-age=0"}); // kept: offline, it's still the way
+    REQUIRE(stale);
+    CHECK_FALSE(stale->fresh(now));
+    // Temporary ones without max-age or Expires aren't kept, not even with a Last-Modified.
+    CHECK_FALSE(redirect(302, {}));
+    CHECK_FALSE(redirect(307, {.date = "Sun, 06 Nov 1994 08:49:37 GMT", .last_modified = "Sat, 05 Nov 1994 08:49:37 GMT"}));
+    // Permanent ones are fresh until they're evicted...
+    for (const unsigned status : {301u, 308u}) {
+        const auto permanent = redirect(status, {});
+        REQUIRE(permanent);
+        CHECK(permanent->permanent);
+        CHECK(permanent->fresh(now + std::int64_t{100} * 365 * 24 * 3600));
+    }
+    // ...unless they say otherwise.
+    const auto short_lived = redirect(301, {.cache_control = "max-age=10"});
+    REQUIRE(short_lived);
+    CHECK_FALSE(short_lived->fresh(now + 10));
+    const auto revalidated = redirect(308, {.cache_control = "no-cache"});
+    REQUIRE(revalidated);
+    CHECK_FALSE(revalidated->fresh(now));
+    // NOLINTEND(bugprone-unchecked-optional-access)
+    CHECK_FALSE(redirect(301, {.cache_control = "no-store"}));
+    CHECK_FALSE(redirect(308, {.vary = "*"}));
+    CHECK_FALSE(net::make_cache_entry("https://example.com/latest", 301, "", {}, {}, now)); // nowhere to go
+    CHECK_FALSE(net::make_cache_entry("https://example.com/a", 404, "", {.cache_control = "max-age=60"}, {}, now));
+}
+
+TEST_CASE("cache files keep a response's fields and status, and older files are a miss", "[cache]") {
+    const TemporaryDirectory directory;
+    net::HttpCache cache(directory.path, std::uint64_t{1} << 20);
+    const std::int64_t now = net::unix_now();
+    auto redirect = net::make_cache_entry("https://example.com/latest", 308, "https://example.com/v2.png",
+                                          {.cache_control = "public", .etag = "\"r\""}, {}, now);
+    auto image = net::make_cache_entry("https://example.com/v2.png", 200, {},
+                                       {.cache_control = "max-age=600", .age = "5", .etag = "\"i\"", .vary = "Accept"},
+                                       {4, 5, 6}, now);
+    REQUIRE((redirect && image));
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): REQUIREd above
+    cache.store(*redirect, cache.generation());
+    cache.store(*image, cache.generation());
+    // NOLINTEND(bugprone-unchecked-optional-access)
+    const auto found_redirect = cache.find("https://example.com/latest");
+    REQUIRE(found_redirect);
+    // NOLINTBEGIN(bugprone-unchecked-optional-access): both are REQUIREd before they're read
+    CHECK(found_redirect->status == 308);
+    CHECK(found_redirect->location == "https://example.com/v2.png");
+    CHECK(found_redirect->permanent);
+    CHECK(found_redirect->headers.etag == "\"r\"");
+    const auto found_image = cache.find("https://example.com/v2.png");
+    REQUIRE(found_image);
+    CHECK(found_image->status == 200);
+    CHECK(found_image->headers.cache_control == "max-age=600");
+    CHECK(found_image->headers.vary == "Accept");
+    CHECK(found_image->initial_age == 5);
+    CHECK(found_image->fresh(now + 594));
+    CHECK_FALSE(found_image->fresh(now + 595));
+    CHECK(found_image->body == std::vector<std::uint8_t>{4, 5, 6});
+    // NOLINTEND(bugprone-unchecked-optional-access)
+
+    // A file of the previous format, as it would have been written: a miss, and removed.
+    std::filesystem::path stored;
+    for (const auto& item : std::filesystem::recursive_directory_iterator(directory.path)) {
+        std::ifstream in(item.path(), std::ios::binary);
+        std::string magic;
+        std::string url_line;
+        if (item.is_regular_file() && std::getline(in, magic) && std::getline(in, url_line) &&
+            url_line == "url https://example.com/v2.png") {
+            stored = item.path();
+        }
+    }
+    REQUIRE_FALSE(stored.empty());
+    std::ofstream(stored, std::ios::binary | std::ios::trunc)
+        << "ELGCACHE 2\nurl https://example.com/v2.png\nredirected 0\nreceived " << now
+        << "\ninitial-age 0\nlifetime 600\nno-cache 0\nmust-revalidate 0\netag \nlast-modified \nsize 1\n\nx";
+    CHECK_FALSE(cache.find("https://example.com/v2.png"));
+    CHECK_FALSE(std::filesystem::exists(stored));
+
+    cache.remove("https://example.com/latest");
+    CHECK_FALSE(cache.find("https://example.com/latest"));
+    CHECK(directory.files() == 0);
 }
 
 TEST_CASE("the disk cache answers while fresh and revalidates after", "[fetch][cache]") {
@@ -631,6 +976,32 @@ TEST_CASE("the disk cache answers while fresh and revalidates after", "[fetch][c
     CHECK(server.hits("/revalidate") == 2);
     CHECK(server.not_modified() == 1);
 
+    // A 304 without Cache-Control keeps the stored max-age; without Age, the stored Age goes, so
+    // the entry is fresh again.
+    CHECK(text(fetch(server.url("/aged"), options)) == "aged"); // stored, but stale at once
+    REQUIRE(wait_until_cached(*cache, server.url("/aged")));
+    CHECK(text(fetch(server.url("/aged"), options)) == "aged"); // revalidated: a 304
+    CHECK(server.hits("/aged") == 2);
+    const auto fresh_in_cache = [&] {
+        const std::optional<net::CacheEntry> entry = cache->find(server.url("/aged"));
+        return entry && entry->fresh(net::unix_now());
+    };
+    for (int i = 0; i < 200 && !fresh_in_cache(); ++i) {
+        std::this_thread::sleep_for(10ms); // until the update is stored
+    }
+    CHECK(text(fetch(server.url("/aged"), options)) == "aged");
+    CHECK(server.hits("/aged") == 2); // fresh now: from the cache
+
+    // no-store in a 304: answered with the stored body, which is then removed.
+    CHECK(text(fetch(server.url("/gone-on-304"), options)) == "kept");
+    REQUIRE(wait_until_cached(*cache, server.url("/gone-on-304")));
+    CHECK(text(fetch(server.url("/gone-on-304"), options)) == "kept");
+    for (int i = 0; i < 200 && cache->find(server.url("/gone-on-304")); ++i) {
+        std::this_thread::sleep_for(10ms);
+    }
+    CHECK_FALSE(cache->find(server.url("/gone-on-304")));
+    CHECK(server.hits("/gone-on-304") == 2);
+
     const std::size_t before = directory.files();
     CHECK(text(fetch(server.url("/nostore"), options)) == "secret");
     CHECK(text(fetch(server.url("/nostore"), options)) == "secret");
@@ -644,6 +1015,93 @@ TEST_CASE("the disk cache answers while fresh and revalidates after", "[fetch][c
         std::this_thread::sleep_for(10ms);
     }
     CHECK_FALSE(cache->find(server.url("/two-fields")));
+}
+
+TEST_CASE("a response reached through a redirect is stored under its own URL", "[fetch][cache]") {
+    const TestServer server;
+    const TemporaryDirectory directory;
+    const auto cache = std::make_shared<net::HttpCache>(directory.path, 1 << 20);
+    const net::FetchOptions options{.cache = cache};
+    CHECK(text(fetch(server.url("/latest"), options)) == "v123");
+    REQUIRE(wait_until_cached(*cache, server.url("/v123.png")));
+    const std::optional<net::CacheEntry> image = cache->find(server.url("/v123.png"));
+    REQUIRE(image);
+    CHECK(image->lifetime == 31536000); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
+    CHECK_FALSE(cache->find(server.url("/latest"))); // neither the image nor the redirect, which has no lifetime
+    // So /latest is asked again, and leads to the stored image.
+    CHECK(text(fetch(server.url("/latest"), options)) == "v123");
+    CHECK(server.hits("/latest") == 2);
+    CHECK(server.hits("/v123.png") == 1);
+}
+
+TEST_CASE("redirects are stored under their own URL and followed from the cache while fresh", "[fetch][cache]") {
+    const TestServer server;
+    const TemporaryDirectory directory;
+    const auto cache = std::make_shared<net::HttpCache>(directory.path, 1 << 20);
+    const net::FetchOptions options{.cache = cache};
+
+    // A temporary redirect with a lifetime.
+    CHECK(text(fetch(server.url("/moved"), options)) == "hello");
+    REQUIRE(wait_until_cached(*cache, server.url("/moved")));
+    const std::optional<net::CacheEntry> moved = cache->find(server.url("/moved"));
+    REQUIRE(moved);
+    CHECK(moved->status == 302); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
+    CHECK(text(fetch(server.url("/moved"), options)) == "hello");
+    CHECK(server.hits("/moved") == 1);
+    CHECK(server.hits("/hello") == 2); // not cacheable itself
+
+    // A permanent one without: fresh until it's evicted.
+    CHECK(text(fetch(server.url("/permanent"), options)) == "hello");
+    REQUIRE(wait_until_cached(*cache, server.url("/permanent")));
+    CHECK(text(fetch(server.url("/permanent"), options)) == "hello");
+    CHECK(server.hits("/permanent") == 1);
+
+    // A stale one goes to the server again.
+    CHECK(text(fetch(server.url("/stale-redirect"), options)) == "stale");
+    REQUIRE(wait_until_cached(*cache, server.url("/stale-redirect")));
+    CHECK(text(fetch(server.url("/stale-redirect"), options)) == "stale");
+    CHECK(server.hits("/stale-redirect") == 2);
+
+    // Redirects from the cache count toward the limit too.
+    CHECK(fetch(server.url("/moved"), {.max_redirects = 0, .cache = cache}).error() == "too many redirects (more than 0)");
+}
+
+TEST_CASE("a stale stored redirect is followed when the server is gone", "[fetch][cache]") {
+    const TemporaryDirectory directory;
+    const auto cache = std::make_shared<net::HttpCache>(directory.path, 1 << 20);
+    std::string url;
+    {
+        const TestServer server;
+        url = server.url("/stale-redirect");
+        CHECK(text(fetch(url, {.cache = cache})) == "stale");
+        REQUIRE(wait_until_cached(*cache, url));
+        REQUIRE(wait_until_cached(*cache, server.url("/stale")));
+    }
+    // The stale redirect, then the stale copy it leads to.
+    CHECK(text(fetch(url, {.cache = cache})) == "stale");
+    CHECK_FALSE(fetch(url).has_value());
+}
+
+TEST_CASE("a stale stored redirect that must be revalidated isn't followed offline", "[fetch][cache]") {
+    const TemporaryDirectory directory;
+    const auto cache = std::make_shared<net::HttpCache>(directory.path, 1 << 20);
+    std::string url;
+    {
+        const TestServer server;
+        url = server.url("/strict-redirect");
+        CHECK(text(fetch(url, {.cache = cache})) == "stale");
+        REQUIRE(wait_until_cached(*cache, url));
+        REQUIRE(wait_until_cached(*cache, server.url("/stale")));
+    }
+    // It fails as it would with nothing stored, though /stale itself could answer.
+    const net::FetchResult offline = fetch(url, {.cache = cache});
+    REQUIRE_FALSE(offline.has_value());
+    CHECK(offline.error() == fetch(url).error());
+    // Nor is one with no-cache.
+    const auto no_cache = net::make_cache_entry(url, 302, "/stale", {.cache_control = "no-cache, max-age=60"}, {},
+                                                net::unix_now());
+    REQUIRE(no_cache);
+    CHECK_FALSE(no_cache->usable_stale()); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
 }
 
 TEST_CASE("the disk cache answers with a stale copy when the server is gone", "[fetch][cache]") {
@@ -668,7 +1126,7 @@ TEST_CASE("the disk cache keeps to its limit and clears only its own files", "[c
 
     net::HttpCache cache(directory.path, std::uint64_t{16} * 1024);
     const auto store = [&](int i) {
-        auto entry = net::make_cache_entry(std::format("https://example.com/{}.png", i), false,
+        auto entry = net::make_cache_entry(std::format("https://example.com/{}.png", i), 200, {},
                                            {.cache_control = "max-age=600"}, std::vector<std::uint8_t>(1500, 7),
                                            net::unix_now());
         REQUIRE(entry);
@@ -684,7 +1142,7 @@ TEST_CASE("the disk cache keeps to its limit and clears only its own files", "[c
     // Stores begun before a clear are dropped.
     const std::uint64_t before = cache.generation();
     cache.clear();
-    auto late = net::make_cache_entry("https://example.com/late.png", false, {.cache_control = "max-age=600"}, {1},
+    auto late = net::make_cache_entry("https://example.com/late.png", 200, {}, {.cache_control = "max-age=600"}, {1},
                                       net::unix_now());
     REQUIRE(late);
     cache.store(*late, before); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
@@ -702,7 +1160,7 @@ TEST_CASE("the disk cache keeps to its limit and clears only its own files", "[c
 TEST_CASE("values that would break a cache file's lines aren't written to it", "[cache]") {
     const std::int64_t now = net::unix_now();
     const auto entry = [&](std::string etag) {
-        return net::make_cache_entry("https://example.com/a.png", false,
+        return net::make_cache_entry("https://example.com/a.png", 200, {},
                                      {.cache_control = "max-age=600", .etag = std::move(etag)}, {1}, now);
     };
     CHECK_FALSE(entry("\"e\"\r\nlifetime 999999999"));
@@ -711,7 +1169,7 @@ TEST_CASE("values that would break a cache file's lines aren't written to it", "
     REQUIRE(kept);
     // NOLINTBEGIN(bugprone-unchecked-optional-access): REQUIREd above
     net::refresh_cache_entry(*kept, {.cache_control = "max-age=600", .etag = "\"f\"\nlifetime 9"}, now);
-    CHECK(kept->etag == "\"e\""); // the 304's can't be written: the old one stays
+    CHECK(kept->headers.etag == "\"e\""); // the 304's can't be written: the old one stays
     // NOLINTEND(bugprone-unchecked-optional-access)
 }
 
@@ -728,7 +1186,7 @@ TEST_CASE("a damaged or truncated cache file is a miss, and goes", "[cache]") {
     };
     for (const bool truncate : {true, false}) {
         net::HttpCache cache(directory.path, std::uint64_t{1} << 20);
-        auto entry = net::make_cache_entry(url, false, {.cache_control = "max-age=600"}, {1, 2, 3, 4}, net::unix_now());
+        auto entry = net::make_cache_entry(url, 200, {}, {.cache_control = "max-age=600"}, {1, 2, 3, 4}, net::unix_now());
         REQUIRE(entry);
         cache.store(*entry, cache.generation()); // NOLINT(bugprone-unchecked-optional-access): REQUIREd above
         const std::filesystem::path stored = file();
@@ -741,6 +1199,47 @@ TEST_CASE("a damaged or truncated cache file is a miss, and goes", "[cache]") {
         CHECK_FALSE(cache.find(url));
         CHECK_FALSE(std::filesystem::exists(stored));
     }
+}
+
+TEST_CASE("AsyncImage fails on an image with too many pixels, and logs why", "[fetch][image]") {
+    const TestServer server;
+    const AsyncImagePhase phase = load_async_image(server.url("/huge.png"));
+    CHECK(phase.kind == AsyncImagePhase::Kind::failure);
+    CHECK_THAT(phase.error, ContainsSubstring("more than the 134217728"));
+    CHECK(logged(std::format("AsyncImage: {}: {}", server.url("/huge.png"), phase.error)));
+}
+
+TEST_CASE("an AsyncImage's limits can be lowered or raised for it", "[fetch][image]") {
+    const TestServer server;
+    const AsyncImagePhase lowered = load_async_image(server.url("/small.png"), {.disk_cache = false, .max_pixels = 2047});
+    CHECK(lowered.kind == AsyncImagePhase::Kind::failure);
+    CHECK_THAT(lowered.error, ContainsSubstring("64 x 32 pixels, more than the 2047"));
+    CHECK(load_async_image(server.url("/small.png")).kind == AsyncImagePhase::Kind::success);
+    // Raised: no longer a failure (it isn't decoded until its image is shown).
+    const AsyncImagePhase raised =
+        load_async_image(server.url("/huge.png"), {.disk_cache = false, .max_pixels = std::uint64_t{1} << 28});
+    CHECK(raised.kind == AsyncImagePhase::Kind::success);
+}
+
+TEST_CASE("an AsyncImage applies its own limits to an image another view downloaded", "[fetch][image]") {
+    const TestServer server;
+    const std::string url = server.url("/huge.png");
+    // The first view's raised limit lets it in, and into the memory cache...
+    CHECK(load_async_image(url, {.disk_cache = false, .max_pixels = std::uint64_t{1} << 28}).kind ==
+          AsyncImagePhase::Kind::success);
+    // ...where the next view, with the default limit, finds it too large.
+    const AsyncImagePhase next = load_async_image(url);
+    CHECK(next.kind == AsyncImagePhase::Kind::failure);
+    CHECK_THAT(next.error, ContainsSubstring("more than the 134217728"));
+    CHECK(server.hits("/huge.png") == 1);
+}
+
+TEST_CASE("AsyncImage logs the limit a download exceeded", "[fetch][image]") {
+    const TestServer server;
+    const AsyncImagePhase phase = load_async_image(server.url("/header-70k"));
+    CHECK(phase.kind == AsyncImagePhase::Kind::failure);
+    CHECK(phase.error == "the response's header section is larger than 64 KiB");
+    CHECK(logged(std::format("AsyncImage: {}: {}", server.url("/header-70k"), phase.error)));
 }
 
 TEST_CASE("AsyncImage builds", "[fetch][image]") {

@@ -8,6 +8,7 @@
 #include "core/crash.h"
 #endif
 #include "core/log.h"
+#include "media/image_decode.h"
 #include "platform/generic/platform.h"
 
 #include <elg/error.h>
@@ -273,6 +274,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     wgpu::Limits granted;
     device_.GetLimits(&granted);
     max_texture_side_ = granted.maxTextureDimension2D;
+    set_max_texture_side(max_texture_side_); // images decode to fit this device's textures
 
     device_.SetLoggingCallback([](wgpu::LoggingType type, wgpu::StringView message) {
         try {

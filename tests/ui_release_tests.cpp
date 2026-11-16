@@ -65,9 +65,23 @@ TEST_CASE("when the run ends, what's still waiting is destroyed on the UI thread
     detail::end_ui_releases();
     CHECK(destroyed_on == std::this_thread::get_id());
 
-    // After it, nothing waits for a UI thread: the thread that lets go destroys.
+    // After it, the main thread takes the UI thread's place: another thread that lets go hands
+    // the object over, and the main thread destroys it when it next lets go of one.
     std::thread::id after_on;
     let_go_elsewhere(detail::make_ui_shared<Tracked>(after_on));
-    CHECK(after_on != std::thread::id());
-    CHECK(after_on != std::this_thread::get_id());
+    CHECK(after_on == std::thread::id()); // not destroyed by the thread that let go
+    std::thread::id here_on;
+    detail::make_ui_shared<Tracked>(here_on).reset();
+    CHECK(here_on == std::this_thread::get_id());
+    CHECK(after_on == std::this_thread::get_id());
+}
+
+TEST_CASE("outside a run, what another thread lets go of waits for the next run's UI thread", "[threads]") {
+    std::thread::id destroyed_on;
+    let_go_elsewhere(detail::make_ui_shared<Tracked>(destroyed_on));
+    CHECK(destroyed_on == std::thread::id());
+    detail::begin_ui_releases();
+    CHECK(detail::run_ui_releases());
+    CHECK(destroyed_on == std::this_thread::get_id());
+    detail::end_ui_releases();
 }

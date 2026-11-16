@@ -66,6 +66,8 @@ public:
     }
 
     EventHandler* event_handler() noexcept override { return this; }
+    // Disabled: the dispatcher cancels its drag and moves focus off it (release_disabled).
+    EventHandler* disabled_handler() noexcept override { return enabled() ? nullptr : this; }
     void for_each_child(const std::function<void(Element&)>& visit) override {
         visit(*parts_.track);
         visit(*parts_.fill);

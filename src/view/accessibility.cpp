@@ -6,6 +6,8 @@
 
 #include "view/accessibility.h"
 
+#include "core/utf8.h"
+
 #include "text/font_library.h"
 #include "view/view_node.h"
 
@@ -69,6 +71,7 @@ struct Pending {
     std::optional<AccessRole> role;
     bool combine = false;
     std::function<void()> action;
+    bool action_disabled = false; // the action's view is in a .disabled() view
     std::function<std::optional<ToggleState>()> toggled;
     std::function<bool()> selected;
 
@@ -90,6 +93,7 @@ struct Pending {
         combine = combine || spec.combine;
         if (spec.action && !action) {
             action = spec.action;
+            action_disabled = untrack([&] { return element.environment().get<DisabledKey>(); });
         }
         if (spec.toggled && !toggled) {
             toggled = spec.toggled;
@@ -173,7 +177,7 @@ private:
             element.for_each_child([&](Element& child) { visit(child, node.children, {}); });
         }
         node.info = std::move(info);
-        tree_.targets[node.id] = {&element, pending.action};
+        tree_.targets[node.id] = {pending.action, pending.action_disabled || node.info.disabled};
         out.push_back(node.id);
         tree_.nodes.push_back(std::move(node));
     }
@@ -226,6 +230,12 @@ AccessTree build_accessibility_tree(Element& root, const std::string& window_tit
     std::vector<std::uint64_t> children;
     Builder(tree).visit(root, children, {});
     tree.nodes.front().children = std::move(children);
+    for (AccessNode& node : tree.nodes) { // labels from modifiers, and the window's title
+        make_valid_utf8(node.info.label);
+        make_valid_utf8(node.info.value);
+        make_valid_utf8(node.info.hint);
+        make_valid_utf8(node.info.placeholder);
+    }
     // Focus: the focused element's node, or the nearest one around it.
     for (const Element* e = focused; e; e = e->parent()) {
         if (tree.targets.contains(e->accessibility_id())) {

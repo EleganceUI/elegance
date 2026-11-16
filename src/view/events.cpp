@@ -137,17 +137,22 @@ private:
 
 class KeyEventHandler final : public EventHandler {
 public:
-    explicit KeyEventHandler(std::function<bool(const KeyEvent&)> action) : action_(std::move(action)) {}
+    KeyEventHandler(std::function<bool(const KeyEvent&)> action, EventPhase phase)
+        : action_(std::move(action)), phase_(phase) {}
 
     EventResult key(const KeyEvent& event) override { return {.consumed = action_ && action_(event)}; }
+    [[nodiscard]] EventPhase phase() const override { return phase_; }
 
 private:
     std::function<bool(const KeyEvent&)> action_;
+    EventPhase phase_;
 };
 
 class PointerHandler final : public EventHandler {
 public:
-    explicit PointerHandler(std::function<bool(const PointerEvent&)> action) : action_(std::move(action)) {}
+    PointerHandler(std::function<bool(const PointerEvent&)> action, EventPhase phase)
+        : action_(std::move(action)), phase_(phase) {}
+    [[nodiscard]] EventPhase phase() const override { return phase_; }
 
     EventResult pointer(const PointerEvent& event, Rect frame) override {
         if (!action_) {
@@ -160,11 +165,14 @@ public:
 
 private:
     std::function<bool(const PointerEvent&)> action_;
+    EventPhase phase_;
 };
 
 class ScrollHandler final : public EventHandler {
 public:
-    explicit ScrollHandler(std::function<bool(const ScrollEvent&)> action) : action_(std::move(action)) {}
+    ScrollHandler(std::function<bool(const ScrollEvent&)> action, EventPhase phase)
+        : action_(std::move(action)), phase_(phase) {}
+    [[nodiscard]] EventPhase phase() const override { return phase_; }
 
     EventResult scroll(const ScrollEvent& event, Rect frame) override {
         if (!action_) {
@@ -177,18 +185,23 @@ public:
 
 private:
     std::function<bool(const ScrollEvent&)> action_;
+    EventPhase phase_;
 };
 
 class TextInputHandler final : public EventHandler {
 public:
-    explicit TextInputHandler(std::function<bool(const TextInputEvent&)> action) : action_(std::move(action)) {}
+    TextInputHandler(std::function<bool(const TextInputEvent&)> action, EventPhase phase)
+        : action_(std::move(action)), phase_(phase) {}
 
-    [[nodiscard]] bool focusable() const override { return true; }
-    [[nodiscard]] bool accepts_text_input() const override { return true; }
+    // In the capture phase it hears what's typed into a view inside it: not a focus stop itself.
+    [[nodiscard]] bool focusable() const override { return phase_ == EventPhase::bubble; }
+    [[nodiscard]] bool accepts_text_input() const override { return phase_ == EventPhase::bubble; }
+    [[nodiscard]] EventPhase phase() const override { return phase_; }
     EventResult text_input(const TextInputEvent& event) override { return {.consumed = action_ && action_(event)}; }
 
 private:
     std::function<bool(const TextInputEvent&)> action_;
+    EventPhase phase_;
 };
 
 class PointerStyleHandler final : public EventHandler {
@@ -214,19 +227,19 @@ std::unique_ptr<EventHandler> FocusableModifier::make_handler() const {
 }
 
 std::unique_ptr<EventHandler> KeyEventModifier::make_handler() const {
-    return std::make_unique<KeyEventHandler>(action_);
+    return std::make_unique<KeyEventHandler>(action_, phase_);
 }
 
 std::unique_ptr<EventHandler> PointerModifier::make_handler() const {
-    return std::make_unique<PointerHandler>(action_);
+    return std::make_unique<PointerHandler>(action_, phase_);
 }
 
 std::unique_ptr<EventHandler> ScrollModifier::make_handler() const {
-    return std::make_unique<ScrollHandler>(action_);
+    return std::make_unique<ScrollHandler>(action_, phase_);
 }
 
 std::unique_ptr<EventHandler> TextInputModifier::make_handler() const {
-    return std::make_unique<TextInputHandler>(action_);
+    return std::make_unique<TextInputHandler>(action_, phase_);
 }
 
 std::unique_ptr<EventHandler> ClickModifier::make_handler() const {

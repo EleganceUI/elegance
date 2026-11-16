@@ -5,6 +5,7 @@
 #include "text/font_library.h"
 
 #include "core/log.h"
+#include "core/scope_exit.h"
 #include "platform/generic/platform.h"
 
 #include <elg/error.h>
@@ -144,6 +145,14 @@ FontFace::FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigne
     if (FT_New_Memory_Face(library, data_->data(), static_cast<FT_Long>(data_->size()), 0, &ft_face_) != 0) {
         throw ResourceError(std::format("\"{}\" isn't a supported font file", name));
     }
+    // The destructor doesn't run if the constructor throws: what it made so far goes here then.
+    bool constructed = false;
+    const ScopeExit release_if_thrown([&] {
+        if (!constructed) {
+            hb_font_destroy(hb_font_); // null-safe
+            FT_Done_Face(ft_face_);
+        }
+    });
     units_per_em_ = ft_face_->units_per_EM > 0 ? static_cast<float>(ft_face_->units_per_EM) : 1000.f;
 
     hb_blob_t* blob = hb_blob_create(reinterpret_cast<const char*>(data_->data()),
@@ -157,6 +166,7 @@ FontFace::FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigne
     // alike; the other axes keep their defaults.
     FT_MM_Var* axes = nullptr;
     if (FT_HAS_MULTIPLE_MASTERS(ft_face_) && FT_Get_MM_Var(ft_face_, &axes) == 0) {
+        const ScopeExit done_axes([&] { FT_Done_MM_Var(library, axes); });
         std::vector<FT_Fixed> coordinates(axes->num_axis);
         for (FT_UInt i = 0; i < axes->num_axis; ++i) {
             const FT_Var_Axis& axis = axes->axis[i];
@@ -175,7 +185,6 @@ FontFace::FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigne
             const hb_variation_t variation{HB_TAG('w', 'g', 'h', 't'), static_cast<float>(variation_weight_)};
             hb_font_set_variations(hb_font_, &variation, 1);
         }
-        FT_Done_MM_Var(library, axes);
     }
     // Positions come back in font units.
     hb_font_set_scale(hb_font_, static_cast<int>(units_per_em_), static_cast<int>(units_per_em_));
@@ -203,6 +212,7 @@ FontFace::FontFace(FT_Library library, std::shared_ptr<const std::vector<unsigne
         }
     }
     log_debug("loaded font {} ({}{})", name, id, palette_.empty() ? "" : ", color");
+    constructed = true;
 }
 
 std::span<const ColorLayer> FontFace::color_layers(std::uint32_t glyph) const {
