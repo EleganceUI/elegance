@@ -880,7 +880,7 @@ typedef struct ElgItemKeys {
     size_t count;           ///< How many `keys` there are.
 } ElgItemKeys;
 
-/// One preview of a Rust views module, for elg_rust_module_entry() (`PreviewEntry`, without its body).
+/// One preview of a Rust views module, for elg_rust_module_entry() (`PreviewEntry`).
 typedef struct ElgPreviewDesc {
     ElgStr name;  ///< The preview's name (copied).
     ElgStr file;  ///< The source file it's in (copied).
@@ -3394,10 +3394,9 @@ ElgView* elg_hot_reload(ElgStr module, ElgStr build_command, const ElgStr* watch
 ///
 /// @param has_root The module has a root view.
 /// @param previews The module's previews (borrowed; their strings are copied).
-/// @param count How many `previews` there are; at most 256.
-/// @param build Builds the root view or a preview, by index. The newest module's is the one called.
-/// @return The entry, kept by the shim for the rest of the process; null, with a UsageError, when the module
-///   has more previews than the thunk table holds (also printed to stderr).
+/// @param count How many `previews` there are.
+/// @param build Builds this module's root view or one of its previews, by index; the entry calls it.
+/// @return The entry, of this module alone, kept by the shim for the rest of the process; null on failure.
 const ElgModuleEntry* elg_rust_module_entry(bool has_root, const ElgPreviewDesc* previews, size_t count, ElgModuleBuild build);
 
 // --- Grids ---
