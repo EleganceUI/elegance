@@ -10,7 +10,6 @@
 // platform/<os>/os.cpp.
 
 #include <cstddef>
-#include <cstdio>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -31,11 +30,23 @@ std::filesystem::path pref_path();
 // The running program's file, or an empty path if the system doesn't say.
 std::filesystem::path executable_path();
 int process_id() noexcept;
-// Starts `command` in the system's shell, its standard error joined to its standard output, and
-// returns a pipe to read that output from, or nullptr if it can't be started.
-std::FILE* open_command_pipe(const std::string& command);
-// Closes a pipe from open_command_pipe() once the command has ended: the shell's exit status.
-int close_command_pipe(std::FILE* pipe);
+// Starts `command` in the system's shell, as a child process, its standard error joined to its
+// standard output, and returns a handle to it, or nullptr if it can't be started. On Linux and
+// macOS the shell leads a process group of its own, which every process it starts joins, and
+// reads its standard input from /dev/null.
+void* start_command(const std::string& command);
+// Reads the command's output into `buffer`, waiting until there's some: how many bytes were read,
+// 0 once the output has ended (every process that could write it has exited) or end_command() was
+// called.
+std::size_t read_command_output(void* command, std::span<char> buffer);
+// Linux and macOS: kills the command's process group, its shell and what that started, without
+// waiting for them; a read_command_output() waiting on another thread returns 0. Any thread, until
+// finish_command(), but not at the same time as it. Windows: does nothing, so the command runs
+// until it exits.
+void end_command(void* command) noexcept;
+// Waits for the shell to exit and frees the handle: the shell's exit status, or -1 if it didn't
+// exit by itself (end_command() killed it).
+int finish_command(void* command) noexcept;
 // Whether the process's other threads are already gone when Elegance's static objects are
 // destroyed at exit: for a DLL on Windows, which the process unloads after ending them.
 bool threads_end_before_static_destruction() noexcept;

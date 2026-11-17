@@ -5,12 +5,14 @@
 // What the library asks the operating system through the backend interfaces (core/os_backend.h,
 // net/net_backend.h, text/text_backend.h).
 
+#include "core/child_process.h"
 #include "core/crash.h"
 #include "core/dynamic_library.h"
 #include "core/os_backend.h"
 #include "net/http_cache.h"
 #include "net/net_backend.h"
 #include "platform/platform.h"
+#include "test_processes.h"
 #include "text/text_backend.h"
 
 #include <elg/app.h>
@@ -23,11 +25,13 @@
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <algorithm>
-#include <cstdio>
+#include <array>
+#include <chrono>
 #include <filesystem>
 #include <map>
 #include <optional>
 #include <string>
+#include <thread>
 
 using namespace elg;
 
@@ -61,18 +65,56 @@ TEST_CASE("a shared library that can't be loaded throws with its path", "[os]") 
                              "can't load \"elg-tests-no-such-library\"")));
 }
 
-TEST_CASE("a shell command's output can be read", "[os]") {
-    CHECK(detail::os::process_id() > 0);
-    std::FILE* pipe = detail::os::open_command_pipe("echo elg");
-    REQUIRE(pipe != nullptr);
+namespace {
+
+// Everything `process` writes until its output ends.
+std::string output_of(detail::ChildProcess& process) {
     std::string output;
-    char buffer[256];
-    while (std::fgets(buffer, sizeof(buffer), pipe)) {
-        output += buffer;
+    std::array<char, 256> buffer{};
+    while (const std::size_t read = process.read(buffer)) {
+        output.append(buffer.data(), read);
     }
-    CHECK(detail::os::close_command_pipe(pipe) == 0);
-    CHECK(output.starts_with("elg"));
+    return output;
 }
+
+} // namespace
+
+TEST_CASE("a shell command's output can be read, and its exit status", "[os]") {
+    CHECK(detail::os::process_id() > 0);
+    detail::ChildProcess echo("echo elg");
+    CHECK(output_of(echo).starts_with("elg"));
+    CHECK(echo.wait() == 0);
+    if (current_platform() != Platform::windows) {
+        detail::ChildProcess failing("echo elg >&2; exit 3");
+        CHECK(output_of(failing).starts_with("elg")); // its standard error too
+        CHECK(failing.wait() == 3);
+    }
+}
+
+#if !defined(_WIN32)
+TEST_CASE("ending a shell command kills what it started, and a read waiting for its output returns", "[os]") {
+    // The sleep holds the output open: the read returns only once it's gone, or the command is ended.
+    detail::ChildProcess process("sleep 30 & echo $!; wait");
+    std::string line;
+    std::array<char, 64> buffer{};
+    while (!line.contains('\n')) {
+        const std::size_t read = process.read(buffer);
+        REQUIRE(read > 0);
+        line.append(buffer.data(), read);
+    }
+    const int sleep = std::stoi(line);
+    const auto ending = std::chrono::steady_clock::now();
+    std::jthread ender([&process] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        process.end();
+    });
+    CHECK(process.read(buffer) == 0);
+    ender.join();
+    CHECK(process.wait() == -1);
+    CHECK(std::chrono::steady_clock::now() - ending < std::chrono::seconds(2));
+    CHECK(elg_tests::process_ends(sleep));
+}
+#endif
 
 TEST_CASE("the image cache is in the user's cache folder, by the program's name", "[os]") {
     CHECK(detail::os::executable_path().stem() == "elegance_tests");

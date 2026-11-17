@@ -12,6 +12,7 @@
 #include <process.h>
 #include <windows.h>
 
+#include <cstdio>
 #include <format>
 
 namespace elg::detail::os {
@@ -28,13 +29,20 @@ int process_id() noexcept {
     return _getpid();
 }
 
-std::FILE* open_command_pipe(const std::string& command) {
+// A command is a pipe from _popen, whose process can't be ended here yet.
+void* start_command(const std::string& command) {
     // cmd /c strips the outer quotes of a line that starts with one; keep the command's own.
     return _popen(("\"" + command + " 2>&1\"").c_str(), "r");
 }
 
-int close_command_pipe(std::FILE* pipe) {
-    return _pclose(pipe);
+std::size_t read_command_output(void* command, std::span<char> buffer) {
+    return std::fread(buffer.data(), 1, buffer.size(), static_cast<std::FILE*>(command));
+}
+
+void end_command(void*) noexcept {}
+
+int finish_command(void* command) noexcept {
+    return _pclose(static_cast<std::FILE*>(command));
 }
 
 bool threads_end_before_static_destruction() noexcept {

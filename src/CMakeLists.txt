@@ -218,7 +218,8 @@ elg_layer(core_os
         LINUX platform/linux/os.cpp
         LIBRARIES SDL3::SDL3)
 elg_layer(core
-        SOURCES core/app_errors.cpp core/crash.cpp core/dynamic_library.cpp core/error.cpp core/log.cpp
+        SOURCES core/app_errors.cpp core/child_process.cpp core/crash.cpp core/dynamic_library.cpp core/error.cpp
+                core/log.cpp
                 core/ui_tasks.cpp core/utf8.cpp core/version.cpp
         DEPENDS core_os)
 target_compile_definitions(elegance_core PRIVATE ELG_VERSION_STRING="${PROJECT_VERSION}")

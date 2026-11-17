@@ -8,6 +8,7 @@
 
 #include <elg/hot_reload.h>
 
+#include "core/child_process.h"
 #include "core/dynamic_library.h"
 #include "core/log.h"
 #include "core/os_backend.h"
@@ -21,15 +22,16 @@
 #include <elg/views.h>
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
-#include <cstdio>
 #include <format>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -89,21 +91,21 @@ std::optional<fs::file_time_type> modified(const fs::path& file) {
     return error ? std::nullopt : std::optional(time);
 }
 
-// Runs `command` through the shell; returns its exit code and output (stdout and stderr).
+// Runs `command` through the shell, as a child process; returns its exit code and output (stdout
+// and stderr).
 std::pair<int, std::string> run(const std::string& command) {
-    std::string output;
-    std::FILE* pipe = os::open_command_pipe(command);
-    if (!pipe) {
+    std::optional<ChildProcess> process;
+    try {
+        process.emplace(command);
+    } catch (const std::exception&) {
         return {-1, "couldn't start the build command"};
     }
-    char buffer[4096];
-    // No lock is held here: with libstdc++, the analyzer misses the unlock in ModuleHost::watch's
-    // interruptible sleep (a condition_variable_any).
-    // NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection): see above
-    while (std::fgets(buffer, sizeof(buffer), pipe)) {
-        output += buffer;
+    std::string output;
+    std::array<char, 4096> buffer{};
+    while (const std::size_t read = process->read(buffer)) {
+        output.append(buffer.data(), read);
     }
-    return {os::close_command_pipe(pipe), std::move(output)};
+    return {process->wait(), std::move(output)};
 }
 
 // The first line of build output that reports an error, for the status badge.
