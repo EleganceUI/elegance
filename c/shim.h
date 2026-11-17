@@ -909,9 +909,11 @@ void release_on_ui_thread(Leftovers&& leftovers) noexcept;
 // closures (also a prop's), handles (`take_*`) and arrays of view handles. share(), required(),
 // hold(), prop(), own(), take() and take_all() clear what they take over, so each is released
 // exactly once. Off the UI thread of a running App, what's left is released on the UI thread.
-// Declare it first, inside ELG_TRY, naming every consumed argument (by-value copies of options
-// structs that hold closures, too):
+// Declare it first, before ELG_TRY (after the copies it guards, which mustn't throw), naming every
+// consumed argument (by-value copies of options structs that hold closures, too), so that it
+// releases them however the call ends, also when ELG_TRY fails it:
 //   const Consumed consumed(take_label, on_click, title);
+//   ELG_TRY
 template <size_t N>
 class Consumed {
 public:

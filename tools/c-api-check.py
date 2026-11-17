@@ -6,7 +6,9 @@
 # Checks every function the C API exports:
 # - it keeps C++ exceptions from crossing into the caller: its body is inside ELG_TRY ... ELG_CATCH
 #   (or ELG_TRY_ANY_THREAD, VIEW_TRY or MOD_TRY, which expand to the same);
-# - its doc says "Callable from any thread" exactly when it starts with ELG_TRY_ANY_THREAD.
+# - its doc says "Callable from any thread" exactly when it starts with ELG_TRY_ANY_THREAD;
+# - it guards what it consumes (Consumed, ConsumedElements) before the try block, so that the
+#   guards release it however the call ends.
 # Fails, naming each function, if one doesn't. CI runs it on every pull request.
 #
 #   python3 tools/c-api-check.py
@@ -20,6 +22,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TRY = re.compile(r"\b(ELG_TRY|ELG_TRY_ANY_THREAD|VIEW_TRY|MOD_TRY)\b")
 EXPORT = re.compile(r"\bELG_EXPORT\b[^{;]*\{")
+GUARD = re.compile(r"(?:const Consumed consumed|ConsumedElements<[^>]*>\s+\w+)\(")
 ANY_THREAD = "callable from any thread"
 
 
@@ -66,12 +69,16 @@ def main():
             elif documented and not any_thread:
                 problems.append(f"{where}'s doc says it's callable from any thread: start it with "
                                 "ELG_TRY_ANY_THREAD")
+            after = text[match.end():i - 1][found.end():]
+            if any(after[:g.start()].count("{") == after[:g.start()].count("}") for g in GUARD.finditer(after)):
+                problems.append(f"{where} guards what it consumes inside its try block: declare the guard before "
+                                f"{found.group(1)}, so that it releases them however the call ends")
     if problems:
         print("\n".join(problems))
         print(f"\nc-api-check: {len(problems)} problems in {count} exported functions")
         return 1
-    print(f"c-api-check: all {count} exported functions catch exceptions, and ELG_TRY_ANY_THREAD marks those "
-          "documented as callable from any thread")
+    print(f"c-api-check: all {count} exported functions catch exceptions, guard what they consume before their "
+          "try block, and ELG_TRY_ANY_THREAD marks those documented as callable from any thread")
     return 0
 
 

@@ -123,7 +123,7 @@ std::optional<Prop<Color>> optional_color(const ElgProp* given, ElgProp& p) {
         ELG_CATCH(nullptr)                                                                                           \
     }                                                                                                                \
     ELG_EXPORT void elg_##name##_style_free(std::shared_ptr<const Style>* s) {                                       \
-        ELG_TRY delete s;                                                                                            \
+        const Consumed consumed(s); ELG_TRY                                                                          \
         ELG_CATCH_VOID                                                                                               \
     }                                                                                                                \
     ELG_EXPORT View* elg_mod_##name##_style(const View* v, const std::shared_ptr<const Style>* style) {             \
@@ -145,7 +145,7 @@ std::optional<Prop<Color>> optional_color(const ElgProp* given, ElgProp& p) {
         ELG_CATCH(nullptr)                                                                                           \
     }                                                                                                                \
     ELG_EXPORT void elg_##name##_config_free(Config* c) {                                                            \
-        ELG_TRY delete c;                                                                                            \
+        const Consumed consumed(c); ELG_TRY                                                                          \
         ELG_CATCH_VOID                                                                                               \
     }
 
@@ -166,7 +166,7 @@ std::optional<Prop<Color>> optional_color(const ElgProp* given, ElgProp& p) {
 // with elg_<name>_style_free), or null on failure.
 #define RUST_STYLE(name, Style, Config)                                                                              \
     ELG_EXPORT std::shared_ptr<const Style>* elg_##name##_style_rust(ElgClosure make_body) {                         \
-        ELG_TRY const Consumed consumed(make_body);                                                                  \
+        const Consumed consumed(make_body); ELG_TRY                                                                  \
         return make_style<Style, RustStyle<Style, Config>>(required(make_body, "make_body"));                        \
         ELG_CATCH(nullptr)                                                                                           \
     }
@@ -236,8 +236,8 @@ MAKE_BODY(toggle, ToggleStyle, ToggleConfiguration)
 /// @param animation How a flip animates (borrowed; copied); null: it flips at once.
 /// @return The style, owned by the caller (free it with elg_toggle_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const ToggleStyle>* elg_toggle_style_rust(ElgClosure make_body, const Animation* animation) {
-    ELG_TRY
     const Consumed consumed(make_body);
+    ELG_TRY
     return make_style<ToggleStyle, RustAnimatedStyle<ToggleStyle, ToggleConfiguration>>(
         required(make_body, "make_body"), elg_shim::animation(animation));
     ELG_CATCH(nullptr)
@@ -262,10 +262,10 @@ struct ElgSwitchToggleStyleOptions {
 /// @param o The options (borrowed; their closures are taken over).
 /// @return The style, owned by the caller (free it with elg_toggle_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const ToggleStyle>* elg_switch_toggle_style(const ElgSwitchToggleStyleOptions* o) {
-    ELG_TRY
     ElgSwitchToggleStyleOptions c = *o;
     ElgProp on = c.on ? *c.on : ElgProp{};
     const Consumed consumed(on, c.off, c.knob);
+    ELG_TRY
     SwitchToggleStyleOptions options;
     options.on = optional_color(c.on, on);
     options.off = prop<Color>(c.off);
@@ -327,8 +327,8 @@ MAKE_BODY(checkbox, CheckboxStyle, CheckboxConfiguration)
 /// @param animation How checking and unchecking animate (borrowed; copied); null: at once.
 /// @return The style, owned by the caller (free it with elg_checkbox_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const CheckboxStyle>* elg_checkbox_style_rust(ElgClosure make_body, const Animation* animation) {
-    ELG_TRY
     const Consumed consumed(make_body);
+    ELG_TRY
     return make_style<CheckboxStyle, RustAnimatedStyle<CheckboxStyle, CheckboxConfiguration>>(
         required(make_body, "make_body"), elg_shim::animation(animation));
     ELG_CATCH(nullptr)
@@ -354,10 +354,10 @@ struct ElgBoxCheckboxStyleOptions {
 /// @param o The options (borrowed; their closures are taken over, and their views consumed).
 /// @return The style, owned by the caller (free it with elg_checkbox_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const CheckboxStyle>* elg_box_checkbox_style(const ElgBoxCheckboxStyleOptions* o) {
-    ELG_TRY
     ElgBoxCheckboxStyleOptions c = *o;
     ElgProp fill = c.fill ? *c.fill : ElgProp{};
     const Consumed consumed(fill, c.empty, c.border, c.mark, c.take_check, c.take_dash);
+    ELG_TRY
     BoxCheckboxStyleOptions options;
     options.size = c.size;
     options.corner_radius = c.corner_radius;
@@ -437,13 +437,13 @@ struct ElgBoxNumberInputStyleOptions {
 ///   outline and stacked arrows, the default. Null: `PlainNumberInputStyle`, just the number and the arrows.
 /// @return The style, owned by the caller (free it with elg_number_input_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const NumberInputStyle>* elg_number_input_style_builtin(const ElgBoxNumberInputStyleOptions* o) {
+    ElgBoxNumberInputStyleOptions c = o ? *o : ElgBoxNumberInputStyleOptions{};
+    ElgProp focused_border = c.focused_border ? *c.focused_border : ElgProp{};
+    const Consumed consumed(c.background, c.border, focused_border);
     ELG_TRY
     if (!o) {
         return make_style<NumberInputStyle, PlainNumberInputStyle>();
     }
-    ElgBoxNumberInputStyleOptions c = *o;
-    ElgProp focused_border = c.focused_border ? *c.focused_border : ElgProp{};
-    const Consumed consumed(c.background, c.border, focused_border);
     BoxNumberInputStyleOptions options;
     options.background = prop<Color>(c.background);
     options.border = prop<Color>(c.border);
@@ -520,10 +520,10 @@ struct ElgProgressStyleOptions {
 /// @param o The style's options (borrowed; required; their closures are taken over).
 /// @return The style, owned by the caller (free it with elg_progress_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const ProgressStyle>* elg_progress_style_builtin(int32_t kind, const ElgProgressStyleOptions* o) {
-    ELG_TRY
     ElgProgressStyleOptions c = *o;
     ElgProp fill = c.fill ? *c.fill : ElgProp{};
     const Consumed consumed(c.track, fill);
+    ELG_TRY
     if (kind == 0) {
         return make_style<ProgressStyle, LinearProgressStyle>(
             LinearProgressStyleOptions{prop<Color>(c.track), optional_color(c.fill, fill), c.a});
@@ -666,8 +666,8 @@ CONFIG_HANDLE(slider, SliderConfiguration)
 ///   usage error.
 /// @return The style, owned by the caller (free it with elg_slider_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const SliderStyle>* elg_slider_style_rust(ElgClosure track, ElgClosure fill, ElgClosure thumb) {
-    ELG_TRY
     const Consumed consumed(track, fill, thumb);
+    ELG_TRY
     SharedFn track_fn = required(track, "track");
     SharedFn fill_fn = share(fill);
     SharedFn thumb_fn = required(thumb, "thumb");
@@ -689,10 +689,10 @@ struct ElgKnobSliderStyleOptions {
 /// @param o The options (borrowed; their closures are taken over).
 /// @return The style, owned by the caller (free it with elg_slider_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const SliderStyle>* elg_knob_slider_style(const ElgKnobSliderStyleOptions* o) {
-    ELG_TRY
     ElgKnobSliderStyleOptions c = *o;
     ElgProp fill = c.fill ? *c.fill : ElgProp{};
     const Consumed consumed(c.track, fill);
+    ELG_TRY
     return make_style<SliderStyle, KnobSliderStyle>(
         KnobSliderStyleOptions{prop<Color>(c.track), optional_color(c.fill, fill), c.track_thickness, c.knob_size});
     ELG_CATCH(nullptr)
@@ -765,13 +765,13 @@ struct ElgBarNavigationStackStyleOptions {
 /// @return The style, owned by the caller (free it with elg_navigation_stack_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const NavigationStackStyle>* elg_navigation_stack_style_builtin(
     const ElgBarNavigationStackStyleOptions* o) {
+    ElgBarNavigationStackStyleOptions c = o ? *o : ElgBarNavigationStackStyleOptions{};
+    ElgProp back_color = c.back_color ? *c.back_color : ElgProp{};
+    const Consumed consumed(c.background, back_color);
     ELG_TRY
     if (!o) {
         return make_style<NavigationStackStyle, PlainNavigationStackStyle>();
     }
-    ElgBarNavigationStackStyleOptions c = *o;
-    ElgProp back_color = c.back_color ? *c.back_color : ElgProp{};
-    const Consumed consumed(c.background, back_color);
     BarNavigationStackStyleOptions options;
     options.height = c.height;
     options.background = prop<Color>(c.background);
@@ -834,8 +834,8 @@ MAKE_BODY(popover, PopoverStyle, PopoverConfiguration)
 /// @param popup_motion How popovers open and close (`motion()`); `has` false: at once.
 /// @return The style, owned by the caller (free it with elg_popover_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const PopoverStyle>* elg_popover_style_rust(ElgClosure make_body, ElgPopupMotion popup_motion) {
-    ELG_TRY
     const Consumed consumed(make_body);
+    ELG_TRY
     return make_style<PopoverStyle, RustPopupStyle<PopoverStyle, PopoverConfiguration>>(
         required(make_body, "make_body"), motion(popup_motion));
     ELG_CATCH(nullptr)
@@ -887,8 +887,8 @@ MAKE_BODY(tooltip, TooltipStyle, TooltipConfiguration)
 /// @param popup_motion How tooltips open and close (`motion()`); `has` false: at once.
 /// @return The style, owned by the caller (free it with elg_tooltip_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const TooltipStyle>* elg_tooltip_style_rust(ElgClosure make_body, ElgPopupMotion popup_motion) {
-    ELG_TRY
     const Consumed consumed(make_body);
+    ELG_TRY
     return make_style<TooltipStyle, RustPopupStyle<TooltipStyle, TooltipConfiguration>>(
         required(make_body, "make_body"), motion(popup_motion));
     ELG_CATCH(nullptr)
@@ -934,8 +934,8 @@ MAKE_BODY(menu, MenuStyle, MenuConfiguration)
 /// @return The style, owned by the caller (free it with elg_menu_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const MenuStyle>* elg_menu_style_rust(ElgClosure make_body, ElgClosure make_item,
                                                                   ElgPopupMotion popup_motion) {
-    ELG_TRY
     const Consumed consumed(make_body, make_item);
+    ELG_TRY
     SharedFn body = required(make_body, "make_body");
     SharedFn item = share(make_item);
     return make_style<MenuStyle, RustMenuStyle>(std::move(body), std::move(item), motion(popup_motion));
@@ -1026,13 +1026,13 @@ struct ElgHighlightRowStyleOptions {
 ///   rounded highlight, the default. Null: `PlainRowStyle`, just the content.
 /// @return The style, owned by the caller (free it with elg_row_style_free()), or null on failure.
 ELG_EXPORT std::shared_ptr<const RowStyle>* elg_row_style_builtin(const ElgHighlightRowStyleOptions* o) {
+    ElgHighlightRowStyleOptions c = o ? *o : ElgHighlightRowStyleOptions{};
+    ElgProp selected = c.selected ? *c.selected : ElgProp{};
+    const Consumed consumed(selected, c.on_selected, c.hovered);
     ELG_TRY
     if (!o) {
         return make_style<RowStyle, PlainRowStyle>();
     }
-    ElgHighlightRowStyleOptions c = *o;
-    ElgProp selected = c.selected ? *c.selected : ElgProp{};
-    const Consumed consumed(selected, c.on_selected, c.hovered);
     return make_style<RowStyle, HighlightRowStyle>(HighlightRowStyleOptions{
         optional_color(c.selected, selected), prop<Color>(c.on_selected), prop<Color>(c.hovered), c.corner_radius,
         edge_insets(c.padding)});

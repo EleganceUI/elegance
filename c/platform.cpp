@@ -43,8 +43,8 @@ static void send_devices(const std::vector<Device>& devices, const RustFn& each)
 /// @param each Borrowed closure, called once per device before this returns; args: `ElgDevice*`,
 ///   ret: null. Required: none is a usage error.
 ELG_EXPORT void elg_audio_output_devices(ElgClosure each) {
-    ELG_TRY
     const Consumed consumed(each);
+    ELG_TRY
     const SharedFn f = required(each, "each");
     send_devices(audio_output_devices(), *f);
     ELG_CATCH_VOID
@@ -138,8 +138,8 @@ ELG_EXPORT AudioPlayer* elg_audio_player_clone(const AudioPlayer* player) {
 ///
 /// @param player The player (consumed); may be null.
 ELG_EXPORT void elg_audio_player_free(AudioPlayer* player) {
+    const Consumed consumed(player); // freed as the call ends
     ELG_TRY
-    delete player;
     ELG_CATCH_VOID
 }
 /// Wraps `AudioPlayer::play()`, `pause()`, `toggle()` and `stop()` (which pauses and goes back to
@@ -240,8 +240,8 @@ struct ElgRenderBuffer {
 ///   the audio thread; ret: null. Keep it short and lock-light.
 /// @return The stream, owned by the caller (elg_audio_stream_free()), or nullptr on failure.
 ELG_EXPORT AudioStream* elg_audio_stream_new(ElgStr device_id, uint32_t sample_rate, uint32_t channels, ElgClosure on_render) {
-    ELG_TRY_ANY_THREAD
     const Consumed consumed(on_render);
+    ELG_TRY_ANY_THREAD
     AudioStreamOptions options;
     options.device_id = str(device_id);
     options.sample_rate = sample_rate;
@@ -358,8 +358,8 @@ ELG_EXPORT uint32_t elg_audio_stream_channels(const AudioStream* stream) {
 /// @param each Borrowed closure, called once per device before this returns; args: `ElgDevice*`,
 ///   ret: null. Required: none is a usage error.
 ELG_EXPORT void elg_audio_input_devices(ElgClosure each) {
-    ELG_TRY
     const Consumed consumed(each);
+    ELG_TRY
     const SharedFn f = required(each, "each");
     send_devices(audio_input_devices(), *f);
     ELG_CATCH_VOID
@@ -386,8 +386,8 @@ struct ElgSamples {
 /// @return The recorder, owned by the caller (elg_audio_recorder_free()), or nullptr on failure.
 ELG_EXPORT AudioRecorder* elg_audio_recorder_new(ElgStr device_id, uint32_t sample_rate, uint32_t channels,
                                                  ElgClosure on_samples, bool keeps_samples) {
-    ELG_TRY
     const Consumed consumed(on_samples);
+    ELG_TRY
     AudioRecorderOptions options;
     options.device_id = str(device_id);
     options.sample_rate = sample_rate;
@@ -415,8 +415,8 @@ ELG_EXPORT AudioRecorder* elg_audio_recorder_clone(const AudioRecorder* recorder
 ///
 /// @param recorder The recorder (consumed); may be null.
 ELG_EXPORT void elg_audio_recorder_free(AudioRecorder* recorder) {
+    const Consumed consumed(recorder); // freed as the call ends
     ELG_TRY
-    delete recorder;
     ELG_CATCH_VOID
 }
 /// Wraps `AudioRecorder::start()` (which continues the recording), `stop()`, `toggle()` and
@@ -495,8 +495,8 @@ ELG_EXPORT uint32_t elg_audio_recorder_channels(const AudioRecorder* recorder) {
 /// @param each Borrowed closure, called once before this returns; args: `ElgSamples*`, ret: null.
 ///   Required: none is a usage error.
 ELG_EXPORT void elg_audio_recorder_samples(const AudioRecorder* recorder, ElgClosure each) {
-    ELG_TRY
     const Consumed consumed(each);
+    ELG_TRY
     const SharedFn f = required(each, "each");
     const std::vector<float> samples = recorder->samples();
     ElgSamples arg{samples.data(), samples.size()};
@@ -519,8 +519,8 @@ ELG_EXPORT void elg_audio_recorder_save_wav(const AudioRecorder* recorder, ElgSt
 /// @param each Borrowed closure, called once before this returns; args: `ElgBytes*`, ret: null.
 ///   Required: none is a usage error.
 ELG_EXPORT void elg_audio_recorder_wav(const AudioRecorder* recorder, ElgClosure each) {
-    ELG_TRY
     const Consumed consumed(each);
+    ELG_TRY
     const SharedFn f = required(each, "each");
     const std::vector<unsigned char> wav = recorder->wav();
     ElgBytes arg{wav.data(), wav.size()};
@@ -542,8 +542,8 @@ ELG_EXPORT Sound* elg_audio_recorder_sound(const AudioRecorder* recorder) {
 /// @param each Borrowed closure, called once per camera before this returns; args: `ElgDevice*`,
 ///   ret: null. Required: none is a usage error.
 ELG_EXPORT void elg_camera_devices(ElgClosure each) {
-    ELG_TRY
     const Consumed consumed(each);
+    ELG_TRY
     const SharedFn f = required(each, "each");
     send_devices(camera_devices(), *f);
     ELG_CATCH_VOID
@@ -575,8 +575,8 @@ ELG_EXPORT Camera* elg_camera_clone(const Camera* camera) {
 ///
 /// @param camera The camera (consumed); may be null.
 ELG_EXPORT void elg_camera_free(Camera* camera) {
+    const Consumed consumed(camera); // freed as the call ends
     ELG_TRY
-    delete camera;
     ELG_CATCH_VOID
 }
 /// Wraps `Camera::start()` and `stop()`.
@@ -638,8 +638,8 @@ ELG_EXPORT bool elg_camera_mirrored(const Camera* camera) {
 ///   null. Required: none is a usage error.
 /// @return true if `each` got a frame; false before the first frame, and on failure.
 ELG_EXPORT bool elg_camera_snapshot(const Camera* camera, ElgClosure each) {
-    ELG_TRY
     const Consumed consumed(each);
+    ELG_TRY
     const SharedFn f = required(each, "each");
     const auto png = camera->snapshot();
     if (!png) {
@@ -696,8 +696,8 @@ ELG_EXPORT VideoPlayer* elg_video_player_clone(const VideoPlayer* player) {
 ///
 /// @param player The player (consumed); may be null.
 ELG_EXPORT void elg_video_player_free(VideoPlayer* player) {
+    const Consumed consumed(player); // freed as the call ends
     ELG_TRY
-    delete player;
     ELG_CATCH_VOID
 }
 /// Wraps `VideoPlayer::play()`, `pause()`, `toggle()` and `stop()` (which pauses and goes back to
@@ -999,8 +999,8 @@ static void send_paths(const SharedFn& f, const std::vector<std::filesystem::pat
 /// @param done Consumed closure, called once on the UI thread when the dialog closes. `done` args:
 ///   ElgPaths* (empty if cancelled). ret: null. Required: none is a usage error.
 ELG_EXPORT void elg_choose_files(const ElgFileFilter* fs, size_t filter_count, ElgStr directory, bool multiple, ElgClosure done) {
-    ELG_TRY
     const Consumed consumed(done);
+    ELG_TRY
     const SharedFn f = required(done, "done");
     choose_files({filters(fs, filter_count), path(directory), multiple},
                  [f](const std::vector<std::filesystem::path>& paths) { send_paths(f, paths); });
@@ -1018,8 +1018,8 @@ ELG_EXPORT void elg_choose_files(const ElgFileFilter* fs, size_t filter_count, E
 ///   `ElgPaths*`, the chosen path (none if cancelled); ret: null. Required: none is a usage error.
 ELG_EXPORT void elg_choose_save_file(const ElgFileFilter* fs, size_t filter_count, ElgStr directory, ElgStr name,
                                      ElgClosure done) {
-    ELG_TRY
     const Consumed consumed(done);
+    ELG_TRY
     const SharedFn f = required(done, "done");
     choose_save_file({filters(fs, filter_count), path(directory), str(name)}, [f](std::optional<std::filesystem::path> p) {
         std::vector<std::filesystem::path> paths;
@@ -1039,8 +1039,8 @@ ELG_EXPORT void elg_choose_save_file(const ElgFileFilter* fs, size_t filter_coun
 ///   `ElgPaths*`, the chosen folders (none if cancelled); ret: null. Required: none is a usage
 ///   error.
 ELG_EXPORT void elg_choose_folders(ElgStr directory, bool multiple, ElgClosure done) {
-    ELG_TRY
     const Consumed consumed(done);
+    ELG_TRY
     const SharedFn f = required(done, "done");
     choose_folders({path(directory), multiple}, [f](const std::vector<std::filesystem::path>& paths) { send_paths(f, paths); });
     ELG_CATCH_VOID
@@ -1054,8 +1054,8 @@ ELG_EXPORT void elg_choose_folders(ElgStr directory, bool multiple, ElgClosure d
 /// @param on_click Optional consumed closure (`call` null: none), run on the UI thread when the
 ///   notification is clicked; args and ret: null.
 ELG_EXPORT void elg_notify(ElgStr title, ElgStr body, ElgClosure on_click) {
-    ELG_TRY
     const Consumed consumed(on_click);
+    ELG_TRY
     notify({str(title), str(body), action(share(on_click))});
     ELG_CATCH_VOID
 }
@@ -1163,8 +1163,8 @@ ELG_EXPORT TrayIcon* elg_tray_icon_clone(const TrayIcon* icon) {
 ///
 /// @param icon The tray icon (consumed); may be null.
 ELG_EXPORT void elg_tray_icon_free(TrayIcon* icon) {
+    const Consumed consumed(icon); // freed as the call ends
     ELG_TRY
-    delete icon;
     ELG_CATCH_VOID
 }
 /// Wraps `TrayIcon::set_tooltip()`.
