@@ -57,7 +57,7 @@ namespace {
 class NoFrames final : public FrameSource {
 public:
     bool update() override { return false; }
-    std::optional<VideoFrame> current() const override { return std::nullopt; }
+    [[nodiscard]] std::optional<VideoFrame> current() const override { return std::nullopt; }
 };
 
 // Platforms without a video backend yet: an error, shown by the view.

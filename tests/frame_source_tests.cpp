@@ -52,7 +52,7 @@ public:
         taken_ = decoded_;
         return true;
     }
-    std::optional<detail::VideoFrame> current() const override {
+    [[nodiscard]] std::optional<detail::VideoFrame> current() const override {
         detail::VideoFrame frame;
         frame.width = 16;
         frame.height = 16;
