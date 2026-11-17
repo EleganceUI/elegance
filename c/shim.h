@@ -31,6 +31,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -878,10 +879,36 @@ inline std::vector<elg::View> take_all(ViewArray& array) {
     return result;
 }
 
+// What a C API call consumed but didn't take over, moved out of the call's arguments to be
+// released together: closures to drop, and handles to free.
+struct Leftovers {
+    std::vector<ElgClosure> closures;
+    std::vector<std::pair<void*, void (*)(void*) noexcept>> objects; // each with what frees it
+
+    [[nodiscard]] bool empty() const noexcept { return closures.empty() && objects.empty(); }
+    void release() noexcept {
+        for (ElgClosure& closure : closures) {
+            elg_shim::release(closure);
+        }
+        for (const auto& [object, free] : objects) {
+            free(object);
+        }
+        closures.clear();
+        objects.clear();
+    }
+};
+
+// Whether this thread isn't the UI thread of a running App: there, what a call consumed is released
+// on the UI thread instead, as closures and handles given to it belong there.
+bool off_ui_thread() noexcept;
+// Releases `leftovers` on the UI thread: handed over to it between its events (or as its run ends),
+// since this is another thread of a running App.
+void release_on_ui_thread(Leftovers&& leftovers) noexcept;
+
 // Releases, when a C API call returns or throws, what the call consumes but hasn't taken over:
 // closures (also a prop's), handles (`take_*`) and arrays of view handles. share(), required(),
 // hold(), prop(), own(), take() and take_all() clear what they take over, so each is released
-// exactly once.
+// exactly once. Off the UI thread of a running App, what's left is released on the UI thread.
 // Declare it first, inside ELG_TRY, naming every consumed argument (by-value copies of options
 // structs that hold closures, too):
 //   const Consumed consumed(take_label, on_click, title);
@@ -892,6 +919,17 @@ public:
         requires(sizeof...(T) == N)
     explicit Consumed(T&... items) noexcept : items_{item(items)...} {}
     ~Consumed() {
+        if (off_ui_thread()) {
+            Leftovers leftovers;
+            try {
+                for (const Item& item : items_) {
+                    item.move_to(item.target, leftovers);
+                }
+            } catch (...) {
+                // Swallowed: out of memory, so what wasn't moved is released here, below, rather than not at all.
+            }
+            release_on_ui_thread(std::move(leftovers));
+        }
         for (const Item& item : items_) {
             item.release(item.target);
         }
@@ -905,22 +943,48 @@ private:
     struct Item {
         void* target;
         void (*release)(void*) noexcept;
+        // Moves what's left of the argument into `leftovers` (clearing it), or throws std::bad_alloc.
+        void (*move_to)(void*, Leftovers&);
     };
     static Item item(ElgClosure& closure) noexcept {
-        return {&closure, [](void* p) noexcept { elg_shim::release(*static_cast<ElgClosure*>(p)); }};
+        return {&closure, [](void* p) noexcept { elg_shim::release(*static_cast<ElgClosure*>(p)); },
+                [](void* p, Leftovers& leftovers) {
+                    auto& c = *static_cast<ElgClosure*>(p);
+                    if (c.drop) {
+                        leftovers.closures.push_back(c);
+                    }
+                    c = {};
+                }};
     }
     static Item item(ElgProp& prop) noexcept { return item(prop.fn); }
     static Item item(ViewArray& array) noexcept {
-        return {&array, [](void* p) noexcept {
+        return {&array,
+                [](void* p) noexcept {
                     auto& a = *static_cast<ViewArray*>(p);
                     for (; a.taken < a.count; ++a.taken) {
                         delete a.views[a.taken];
+                    }
+                },
+                [](void* p, Leftovers& leftovers) {
+                    auto& a = *static_cast<ViewArray*>(p);
+                    for (; a.taken < a.count; ++a.taken) {
+                        leftovers.objects.emplace_back(a.views[a.taken],
+                                                       [](void* view) noexcept { delete static_cast<elg::View*>(view); });
                     }
                 }};
     }
     template <class H>
     static Item item(H*& handle) noexcept {
-        return {static_cast<void*>(&handle), [](void* p) noexcept { delete std::exchange(*static_cast<H**>(p), nullptr); }};
+        return {static_cast<void*>(&handle),
+                [](void* p) noexcept { delete std::exchange(*static_cast<H**>(p), nullptr); },
+                [](void* p, Leftovers& leftovers) {
+                    H*& h = *static_cast<H**>(p);
+                    if (h) {
+                        leftovers.objects.emplace_back(const_cast<std::remove_const_t<H>*>(h),
+                                                       [](void* object) noexcept { delete static_cast<H*>(object); });
+                    }
+                    h = nullptr;
+                }};
     }
 
     std::array<Item, N> items_;

@@ -9,6 +9,8 @@
 #include "shim.h"
 
 #include "core/app_errors.h"
+#include "core/ui_tasks.h"
+#include "reactive/runtime.h"
 #include "test_images.h"
 #include "text/text_system.h"
 #include "view/view_node.h"
@@ -18,6 +20,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 using elg::Animation;
@@ -282,4 +285,27 @@ TEST_CASE("while an App runs, a panicking component body is reported, not the en
     detail::end_app_errors();
     CHECK(codes == std::vector<int>{static_cast<int>(AppCode::body)});
     elg_view_free(view);
+}
+
+TEST_CASE("what a call consumed but didn't take over, on another thread of a running App, is released on "
+          "the UI thread",
+          "[c-api][threads]") {
+    detail::set_ui_thread(std::this_thread::get_id()); // as App::run does
+    detail::begin_ui_releases();
+    Counts button_counts;
+    View* const button = elg_button(elg_empty_view(), closure(button_counts)); // made on the UI thread
+    REQUIRE(button);
+    Counts counts;
+    std::thread([&] {
+        ElgClosure unused = closure(counts);
+        View* take_view = button;
+        const elg_shim::Consumed consumed(unused, take_view);
+    }).join();
+    CHECK(counts.drops == 0); // waiting for the UI thread
+    CHECK(button_counts.drops == 0);
+    CHECK(detail::run_ui_releases());
+    CHECK(counts.drops == 1);
+    CHECK(button_counts.drops == 1); // the view went, and the action it kept
+    detail::end_ui_releases();
+    detail::set_ui_thread(std::nullopt);
 }

@@ -24,13 +24,29 @@ namespace {
 // Releases, when a C API call returns or throws, what the elements of a consumed array of structs
 // hold (closures, handles), from the first element not handed out yet: `release_held` releases
 // one element. next() hands out each element in turn, as a copy for the caller's own Consumed to
-// guard from then on. Declare it first, like Consumed.
+// guard from then on. Declare it first, like Consumed. Off the UI thread of a running App, the
+// elements left are released on the UI thread, as Consumed's leftovers are.
 template <class T>
 class ConsumedElements {
 public:
     ConsumedElements(const T* items, size_t count, void (*release_held)(T&) noexcept) noexcept
         : items_(items), count_(count), release_held_(release_held) {}
     ~ConsumedElements() {
+        if (next_ < count_ && off_ui_thread()) {
+            try {
+                auto* const left = new Left{std::vector<T>(items_ + next_, items_ + count_), release_held_};
+                next_ = count_;
+                elg::detail::release_on_ui_thread(left, [](void* object) noexcept {
+                    auto* const handed_over = static_cast<Left*>(object);
+                    for (T& item : handed_over->items) {
+                        handed_over->release_held(item);
+                    }
+                    delete handed_over;
+                });
+            } catch (...) {
+                // Swallowed: out of memory, so they're released here, below, rather than not at all.
+            }
+        }
         for (; next_ < count_; ++next_) {
             T item = items_[next_];
             release_held_(item);
@@ -44,6 +60,11 @@ public:
     T next() noexcept { return items_[next_++]; }
 
 private:
+    struct Left {
+        std::vector<T> items;
+        void (*release_held)(T&) noexcept;
+    };
+
     const T* items_;
     size_t count_;
     void (*release_held_)(T&) noexcept;

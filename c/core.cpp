@@ -74,6 +74,33 @@ void elg_shim::capture_error() noexcept {
     g_error_kind = error_kind(std::current_exception(), g_error_message);
 }
 
+bool elg_shim::off_ui_thread() noexcept {
+    try {
+        elg::detail::check_ui_thread();
+        return false;
+    } catch (...) {
+        return true;
+    }
+}
+
+void elg_shim::release_on_ui_thread(Leftovers&& leftovers) noexcept {
+    if (leftovers.empty()) {
+        return;
+    }
+    Leftovers* held = nullptr;
+    try {
+        held = new Leftovers(std::move(leftovers));
+    } catch (...) {
+        leftovers.release(); // out of memory: here, rather than not at all
+        return;
+    }
+    elg::detail::release_on_ui_thread(held, [](void* object) noexcept {
+        auto* const handed_over = static_cast<Leftovers*>(object);
+        handed_over->release();
+        delete handed_over;
+    });
+}
+
 /// Takes this thread's pending error: the pending error's kind (0: none), with its message sent to
 /// `out`; clears it. A call that fails records its exception here, replacing any earlier one.
 /// Callable from any thread.
