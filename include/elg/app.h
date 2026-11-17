@@ -226,6 +226,7 @@ namespace detail {
 // For bindings: destroys `object` with `destroy` on the UI thread. Called on another thread while
 // an App runs, it hands the object over, and the UI thread destroys it between events or as the
 // run ends. Outside a run, the main thread does. Thread-safe.
+// NOLINTNEXTLINE(readability-redundant-declaration): Core declares it too, without this header
 ELG_API void release_on_ui_thread(void* object, void (*destroy)(void*) noexcept) noexcept;
 
 } // namespace detail
