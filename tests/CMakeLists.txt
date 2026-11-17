@@ -127,17 +127,22 @@ function(elg_layer_tests layer)
                          "LSAN_OPTIONS=string_append::suppressions=${CMAKE_CURRENT_SOURCE_DIR}/lsan_suppressions.txt")
 endfunction()
 
-elg_layer_tests(core ui_release_tests.cpp ui_task_tests.cpp)
-elg_layer_tests(geometry path_tests.cpp)
-elg_layer_tests(reactive reactive_tests.cpp)
-elg_layer_tests(animation)
-elg_layer_tests(text glyph_atlas_tests.cpp)
-elg_layer_tests(media sample_ring_tests.cpp)
-elg_layer_tests(net)
-elg_layer_tests(display)
-elg_layer_tests(gpu render_device_lifetime_tests.cpp)
-elg_layer_tests(render frame_source_tests.cpp)
-elg_layer_tests(platform menu_bar_tests.cpp)
+# Not in a shared build on Windows: there a layer's object files are compiled to export Elegance's
+# classes, and an exported class has all its inline members, and its vtable, in every object file
+# that includes it, whichever layer they refer to. Windows' static build has them.
+if (NOT (WIN32 AND ELG_BUILD_SHARED))
+    elg_layer_tests(core ui_release_tests.cpp ui_task_tests.cpp)
+    elg_layer_tests(geometry path_tests.cpp)
+    elg_layer_tests(reactive reactive_tests.cpp)
+    elg_layer_tests(animation)
+    elg_layer_tests(text glyph_atlas_tests.cpp)
+    elg_layer_tests(media sample_ring_tests.cpp)
+    elg_layer_tests(net)
+    elg_layer_tests(display)
+    elg_layer_tests(gpu render_device_lifetime_tests.cpp)
+    elg_layer_tests(render frame_source_tests.cpp)
+    elg_layer_tests(platform menu_bar_tests.cpp)
+endif ()
 
 # Compile the public FFI surface as real C, not merely as C++ with extern "C" declarations.
 enable_language(C)
