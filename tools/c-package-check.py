@@ -38,8 +38,9 @@ def run(command, **kwargs):
 
 
 def symbols(command):
-    """The names in `nm` output (lines ending in "<type> <name>")."""
-    return [line.split()[-1] for line in run(command).splitlines() if len(line.split()) >= 2]
+    """The names in `nm` output: each line's last word, but for an archive's "member.o:" lines. A
+    line is "[address] <type> <name>", or on macOS, with -u, the name alone."""
+    return [line.split()[-1] for line in run(command).splitlines() if line.strip() and not line.endswith(":")]
 
 
 def check_exports(shared):
@@ -98,9 +99,16 @@ def check_link(static, compiler, flags, what):
     with tempfile.TemporaryDirectory() as folder:
         program = pathlib.Path(folder) / "link_check"
         # Linux: as Ubuntu's toolchain links, so that a library nothing refers to isn't needed.
-        as_needed = ["-Wl,--as-needed"] if sys.platform.startswith("linux") else []
-        command = [compiler, *flags, "-std=c++17", str(ROOT / "c" / "link_check.cpp"), "-I", str(static / "include"),
-                   *as_needed, *link_arguments(static), "-o", str(program)]
+        # macOS: for the package's architecture, which CI builds for x86_64 on an arm64 runner too.
+        target = []
+        if sys.platform.startswith("linux"):
+            target = ["-Wl,--as-needed"]
+        elif sys.platform == "darwin":
+            archive = static / "lib" / "libelegance_c.a"
+            for arch in run(["lipo", "-archs", str(archive)]).split():
+                target += ["-arch", arch]
+        command = [compiler, *flags, *target, "-std=c++17", str(ROOT / "c" / "link_check.cpp"), "-I",
+                   str(static / "include"), *link_arguments(static), "-o", str(program)]
         built = subprocess.run(command, capture_output=True, text=True)
         if built.returncode != 0:
             problems.append(f"link_check.cpp doesn't build with {what}:\n{built.stderr[-3000:]}")
