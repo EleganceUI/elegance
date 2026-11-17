@@ -8,6 +8,7 @@
 #include <elg/audio.h>
 
 #include "core/log.h"
+#include "core/os_backend.h"
 #include "core/ui_tasks.h"
 
 #include <elg/error.h>
@@ -29,20 +30,28 @@ namespace elg::detail {
 
 namespace {
 
+// miniaudio's file functions, for the characters of the platform's paths: wide ones (Windows')
+// are UTF-16.
+[[maybe_unused]] ma_result init_sound(ma_engine* engine, const char* path, ma_uint32 flags, ma_sound* sound) {
+    return ma_sound_init_from_file(engine, path, flags, nullptr, nullptr, sound);
+}
+
+[[maybe_unused]] ma_result init_sound(ma_engine* engine, const wchar_t* path, ma_uint32 flags, ma_sound* sound) {
+    return ma_sound_init_from_file_w(engine, path, flags, nullptr, nullptr, sound);
+}
+
 // The process's engine, started on first use; nullptr when there's no output device.
 class AudioEngine {
 public:
     static AudioEngine& instance() {
-#if defined(_WIN32) && !defined(ELG_STATIC_DEFINE)
-        // Never destroyed when Elegance is in a DLL: at exit Windows ends the process's other
-        // threads before it unloads the DLL, and ma_engine_uninit() then waits for ever for the
-        // device's thread. The process ending closes the device anyway.
-        static AudioEngine* const engine = new AudioEngine();
-        return *engine;
-#else
+        if (os::threads_end_before_static_destruction()) {
+            // Never destroyed then (Elegance in a DLL on Windows): ma_engine_uninit() would wait
+            // for ever for the device's thread. The process ending closes the device anyway.
+            static auto* const engine = new AudioEngine();
+            return *engine;
+        }
         static AudioEngine engine;
         return engine;
-#endif
     }
 
     ma_engine* get() {
@@ -338,11 +347,7 @@ AudioPlayer::AudioPlayer(const std::filesystem::path& file) : state_(detail::mak
         return; // no output device: a silent player
     }
     const ma_uint32 flags = MA_SOUND_FLAG_STREAM | MA_SOUND_FLAG_NO_SPATIALIZATION;
-#if defined(_WIN32)
-    const ma_result result = ma_sound_init_from_file_w(engine, file.c_str(), flags, nullptr, nullptr, &state_->sound);
-#else
-    const ma_result result = ma_sound_init_from_file(engine, file.c_str(), flags, nullptr, nullptr, &state_->sound);
-#endif
+    const ma_result result = detail::init_sound(engine, file.c_str(), flags, &state_->sound);
     if (result != MA_SUCCESS) {
         throw ResourceError(std::format("{} isn't audio this build can play (WAV, FLAC, MP3)", state_->name));
     }

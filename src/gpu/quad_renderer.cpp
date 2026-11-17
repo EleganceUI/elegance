@@ -4,7 +4,14 @@
 
 #include "gpu/quad_renderer.h"
 
+#include "gpu/device.h"
+#include "gpu/webgpu.h"
+
+#include <webgpu/webgpu_cpp.h>
+
 #include <cstddef>
+#include <utility>
+#include <vector>
 
 namespace elg::detail::gpu {
 
@@ -17,9 +24,22 @@ constexpr char kUiWgsl[] =
 
 } // namespace
 
-QuadRenderer::QuadRenderer(const Device& device, const wgpu::BindGroupLayout& image_layout) : device_(device) {
+struct QuadRenderer::Pipelines {
+    wgpu::ShaderModule module;
+    wgpu::BindGroupLayout stops_layout;
+    wgpu::PipelineLayout layout;
+    struct Cached {
+        wgpu::TextureFormat format{};
+        bool masking = false;
+        wgpu::RenderPipeline pipeline;
+    };
+    std::vector<Cached> cached;
+};
+
+QuadRenderer::QuadRenderer(const Device& device, const wgpu::BindGroupLayout& image_layout)
+    : device_(device), pipelines_(std::make_unique<Pipelines>()) {
     const wgpu::Device& dev = device_.handle();
-    module_ = create_shader(dev, kUiWgsl, "ui.wgsl");
+    pipelines_->module = create_shader(dev, kUiWgsl, "ui.wgsl");
 
     wgpu::BindGroupLayoutEntry stops{};
     stops.binding = 0;
@@ -29,23 +49,25 @@ QuadRenderer::QuadRenderer(const Device& device, const wgpu::BindGroupLayout& im
     stops_info.label = "gradient stops";
     stops_info.entryCount = 1;
     stops_info.entries = &stops;
-    stops_layout_ = dev.CreateBindGroupLayout(&stops_info);
+    pipelines_->stops_layout = dev.CreateBindGroupLayout(&stops_info);
 
-    const wgpu::BindGroupLayout layouts[] = {image_layout, stops_layout_, image_layout};
+    const wgpu::BindGroupLayout layouts[] = {image_layout, pipelines_->stops_layout, image_layout};
     wgpu::PipelineLayoutDescriptor layout_info;
     layout_info.label = "ui";
     layout_info.bindGroupLayoutCount = std::size(layouts);
     layout_info.bindGroupLayouts = layouts;
     layout_info.immediateSize = sizeof(Immediates);
-    layout_ = dev.CreatePipelineLayout(&layout_info);
+    pipelines_->layout = dev.CreatePipelineLayout(&layout_info);
 }
+
+QuadRenderer::~QuadRenderer() = default;
 
 wgpu::BindGroup QuadRenderer::stops_group(const wgpu::Buffer& stops) const {
     wgpu::BindGroupEntry entry;
     entry.binding = 0;
     entry.buffer = stops;
     wgpu::BindGroupDescriptor descriptor;
-    descriptor.layout = stops_layout_;
+    descriptor.layout = pipelines_->stops_layout;
     descriptor.entryCount = 1;
     descriptor.entries = &entry;
     return device_.handle().CreateBindGroup(&descriptor);
@@ -85,7 +107,7 @@ void QuadRenderer::draw(const wgpu::RenderPassEncoder& pass, std::uint32_t first
 }
 
 const wgpu::RenderPipeline& QuadRenderer::pipeline_for(wgpu::TextureFormat format, bool masking) {
-    for (const CachedPipeline& cached : pipelines_) {
+    for (const Pipelines::Cached& cached : pipelines_->cached) {
         if (cached.format == format && cached.masking == masking) {
             return cached.pipeline;
         }
@@ -122,22 +144,23 @@ const wgpu::RenderPipeline& QuadRenderer::pipeline_for(wgpu::TextureFormat forma
     target.format = format;
     target.blend = &blend;
     wgpu::FragmentState fragment;
-    fragment.module = module_;
+    fragment.module = pipelines_->module;
     fragment.entryPoint = "fs_main";
     fragment.targetCount = 1;
     fragment.targets = &target;
 
     wgpu::RenderPipelineDescriptor descriptor;
     descriptor.label = masking ? "ui (masking)" : "ui";
-    descriptor.layout = layout_;
-    descriptor.vertex.module = module_;
+    descriptor.layout = pipelines_->layout;
+    descriptor.vertex.module = pipelines_->module;
     descriptor.vertex.entryPoint = "vs_main";
     descriptor.vertex.bufferCount = 1;
     descriptor.vertex.buffers = &instances;
     descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleStrip;
     descriptor.primitive.cullMode = wgpu::CullMode::None;
     descriptor.fragment = &fragment;
-    return pipelines_.emplace_back(format, masking, device_.handle().CreateRenderPipeline(&descriptor)).pipeline;
+    wgpu::RenderPipeline pipeline = device_.handle().CreateRenderPipeline(&descriptor);
+    return pipelines_->cached.emplace_back(format, masking, std::move(pipeline)).pipeline;
 }
 
 } // namespace elg::detail::gpu

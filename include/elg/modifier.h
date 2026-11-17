@@ -24,7 +24,8 @@ namespace elg {
 
 namespace detail {
 class Element;
-}
+struct LayoutAccess;
+} // namespace detail
 
 /// Which protocol a Modifier implements: one per protocol class (ViewModifier, LayoutModifier,
 /// DecorationModifier, EnvironmentModifier, EffectModifier, EventModifier).
@@ -76,14 +77,10 @@ public:
     [[nodiscard]] virtual View body(View content) const = 0;
 };
 
-/// A child as seen by a layout or layout modifier: it can be measured and placed.
+/// A child as seen by a layout or layout modifier: it can be measured and placed. The framework
+/// makes these.
 class ELG_API LayoutChild {
 public:
-    /// Internal: created by the framework.
-    ///
-    /// @param element The child's element; must outlive this.
-    explicit LayoutChild(detail::Element& element) noexcept;
-
     /// Measures the child.
     ///
     /// @param proposal The size offered to it.
@@ -112,6 +109,9 @@ public:
     }
 
 private:
+    friend struct detail::LayoutAccess;
+    explicit LayoutChild(detail::Element& element) noexcept; // `element` must outlive this
+
     [[nodiscard]] const void* layout_value(const std::type_info& key) const;
 
     detail::Element* element_;

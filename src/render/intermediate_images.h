@@ -6,7 +6,8 @@
 #define ELG_RENDER_INTERMEDIATE_IMAGES_H
 
 #include "gpu/eviction.h"
-#include "gpu/webgpu.h"
+#include "gpu/render_image.h"
+#include "gpu/webgpu_types.h"
 
 #include <algorithm>
 #include <chrono>
@@ -48,24 +49,6 @@ struct ImageSlotHash {
     }
 };
 
-// The GPU memory an image takes: every sample of every texel.
-constexpr std::size_t image_bytes(wgpu::TextureFormat format, std::uint32_t width, std::uint32_t height,
-                                  std::uint32_t samples) {
-    std::size_t texel = 16; // formats not listed: at most this
-    switch (format) {
-    case wgpu::TextureFormat::R8Unorm: texel = 1; break;
-    // Backends may keep stencil in a 32-bit depth-stencil format (D24S8 on Direct3D, and on
-    // Vulkan without separate 8-bit stencil): counted that large everywhere.
-    case wgpu::TextureFormat::Stencil8:
-    case wgpu::TextureFormat::RGBA8Unorm:
-    case wgpu::TextureFormat::RGBA8UnormSrgb:
-    case wgpu::TextureFormat::BGRA8Unorm:
-    case wgpu::TextureFormat::BGRA8UnormSrgb: texel = 4; break;
-    default: break;
-    }
-    return texel * width * height * std::max(samples, 1u);
-}
-
 inline constexpr gpu::CachePolicy kIntermediateImagePolicy{std::chrono::seconds(5), std::size_t{64} << 20};
 
 // A window's offscreen images (layers, blur passes, backdrop and window copies, path masks and
@@ -79,7 +62,6 @@ class IntermediateImages {
 public:
     struct Entry {
         Image image;
-        wgpu::BindGroup group; // path masks: the group that samples it
         gpu::CacheUse use;
     };
 
@@ -96,8 +78,8 @@ public:
     }
 
     // Puts `image`, which takes `bytes`, in `slot` in place of what was there; used by this frame.
-    Entry& store(const ImageSlot& slot, Image image, std::size_t bytes, wgpu::BindGroup group = {}) {
-        Entry& entry = images_.insert_or_assign(slot, Entry{std::move(image), std::move(group), {}}).first->second;
+    Entry& store(const ImageSlot& slot, Image image, std::size_t bytes) {
+        Entry& entry = images_.insert_or_assign(slot, Entry{std::move(image), {}}).first->second;
         entry.use.bytes = bytes;
         frame_.mark(entry.use);
         return entry;
@@ -124,7 +106,7 @@ public:
             capacity_height = std::max(capacity_height, entry->image.height());
         }
         return store(slot, make(capacity_width, capacity_height),
-                     image_bytes(format, capacity_width, capacity_height, samples))
+                     gpu::image_bytes(format, capacity_width, capacity_height, samples))
             .image;
     }
 

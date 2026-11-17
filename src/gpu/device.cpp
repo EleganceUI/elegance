@@ -8,27 +8,32 @@
 #include "core/crash.h"
 #endif
 #include "core/log.h"
+#include "core/os_backend.h"
+#include "gpu/instance.h"
+#include "gpu/render_device.h"
+#include "gpu/system.h"
+#include "gpu/webgpu.h"
 #include "media/image_decode.h"
-#include "platform/generic/platform.h"
 
 #include <elg/error.h>
 
+#include <webgpu/webgpu_cpp.h>
+
 #include <format>
 #include <mutex>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
-#if defined(_WIN32)
-#include <algorithm>
-#include <cstring>
-#include <filesystem>
-
-#include <windows.h> // the build defines WIN32_LEAN_AND_MEAN and NOMINMAX
-#include <dxgi1_4.h>
-#include <wrl/client.h>
-#endif
-
 namespace elg::detail::gpu {
+
+struct Device::Objects {
+    wgpu::Adapter adapter;
+    wgpu::Device device;
+    wgpu::Queue queue;
+};
+
+static_assert(wgpu::BackendType{} == wgpu::BackendType::Undefined); // Device::backend_'s first value
 
 struct Device::Errors {
     std::mutex mutex;
@@ -62,7 +67,7 @@ std::mutex g_render_device_mutex;
 std::weak_ptr<RenderDevice> g_render_device;
 
 wgpu::BackendType requested_backend() {
-    const std::string value = platform::environment_variable("ELG_GPU_BACKEND").value_or("");
+    const std::string value = os::environment_variable("ELG_GPU_BACKEND").value_or("");
     if (value.empty()) {
         return wgpu::BackendType::Undefined;
     }
@@ -80,54 +85,6 @@ wgpu::BackendType requested_backend() {
     return wgpu::BackendType::Undefined;
 }
 
-#if defined(_WIN32)
-// WebGPU doesn't report the adapter's LUID; DXGI does, for the adapter with the same IDs.
-std::optional<std::array<std::uint8_t, 8>> find_luid(std::uint32_t vendor, std::uint32_t device) {
-    Microsoft::WRL::ComPtr<IDXGIFactory1> factory;
-    if (FAILED(CreateDXGIFactory1(IID_PPV_ARGS(&factory)))) {
-        return std::nullopt;
-    }
-    Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
-    for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
-        DXGI_ADAPTER_DESC1 desc{};
-        if (SUCCEEDED(adapter->GetDesc1(&desc)) && desc.VendorId == vendor && desc.DeviceId == device) {
-            std::array<std::uint8_t, 8> luid{};
-            static_assert(sizeof(desc.AdapterLuid) == luid.size());
-            std::memcpy(luid.data(), &desc.AdapterLuid, luid.size());
-            return luid;
-        }
-    }
-    return std::nullopt;
-}
-
-// Dawn's Direct3D 12 backend compiles shaders with the DirectX shader compiler, which it loads
-// from beside the module Dawn is in (webgpu_dawn.dll, or the app itself when it links Dawn
-// statically) or from System32. If it isn't there, creating the adapter fails instead of falling
-// back to the older FXC, so ask for FXC up front.
-bool dxc_available() {
-    std::vector<std::filesystem::path> folders;
-    HMODULE dawn = nullptr;
-    if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                           reinterpret_cast<LPCWSTR>(&wgpuCreateInstance), &dawn)) {
-        wchar_t path[MAX_PATH];
-        const DWORD length = GetModuleFileNameW(dawn, path, MAX_PATH);
-        if (length > 0 && length < MAX_PATH) {
-            folders.push_back(std::filesystem::path(path).parent_path());
-        }
-    }
-    wchar_t system[MAX_PATH];
-    const UINT length = GetSystemDirectoryW(system, MAX_PATH);
-    if (length > 0 && length < MAX_PATH) {
-        folders.emplace_back(system);
-    }
-    std::error_code error;
-    return std::ranges::any_of(folders, [&](const std::filesystem::path& folder) {
-        return std::filesystem::exists(folder / L"dxcompiler.dll", error) &&
-               std::filesystem::exists(folder / L"dxil.dll", error);
-    });
-}
-#endif
-
 } // namespace
 
 std::shared_ptr<RenderDevice> render_device() {
@@ -135,31 +92,29 @@ std::shared_ptr<RenderDevice> render_device() {
     return g_render_device.lock();
 }
 
-Device::Device(const Instance& instance) : instance_(instance), errors_(std::make_shared<Errors>()) {
+Device::Device(const Instance& instance)
+    : instance_(instance), errors_(std::make_shared<Errors>()), objects_(std::make_unique<Objects>()) {
     wgpu::RequestAdapterOptions options;
     options.powerPreference = wgpu::PowerPreference::HighPerformance;
     options.backendType = requested_backend();
-#if defined(_WIN32)
-    const char* const no_dxc[] = {"use_dxc"};
+    const std::span<const char* const> disabled = disabled_adapter_toggles();
     wgpu::DawnTogglesDescriptor toggles;
-    if (!dxc_available()) {
-        toggles.disabledToggleCount = 1;
-        toggles.disabledToggles = no_dxc;
+    if (!disabled.empty()) {
+        toggles.disabledToggleCount = disabled.size();
+        toggles.disabledToggles = disabled.data();
         options.nextInChain = &toggles;
-        log_info("dxcompiler.dll and dxil.dll aren't beside the app: Direct3D 12 compiles shaders with FXC (slower)");
     }
-#endif
     std::string adapter_error;
     instance.wait(instance.handle().RequestAdapter(
         &options, wgpu::CallbackMode::WaitAnyOnly,
         [&](wgpu::RequestAdapterStatus status, wgpu::Adapter adapter, wgpu::StringView message) {
             if (status == wgpu::RequestAdapterStatus::Success) {
-                adapter_ = std::move(adapter);
+                objects_->adapter = std::move(adapter);
             } else {
                 adapter_error = to_string(message);
             }
         }));
-    if (!adapter_) {
+    if (!objects_->adapter) {
         throw GpuError(std::format("no GPU can run WebGPU{}{}",
                                    options.backendType == wgpu::BackendType::Undefined
                                        ? std::string()
@@ -168,19 +123,17 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     }
 
     wgpu::AdapterInfo info;
-    adapter_.GetInfo(&info);
+    objects_->adapter.GetInfo(&info);
     name_ = to_string(info.device);
     if (name_.empty()) {
         name_ = to_string(info.description);
     }
     backend_ = info.backendType;
-#if defined(_WIN32)
-    luid_ = find_luid(info.vendorID, info.deviceID);
-#endif
+    luid_ = adapter_luid(info.vendorID, info.deviceID);
 
     // External-image publication imports resources from producer threads. Dawn's implicit
     // synchronization keeps those operations safe alongside rendering and frame retirement.
-    if (!adapter_.HasFeature(wgpu::FeatureName::ImplicitDeviceSynchronization)) {
+    if (!objects_->adapter.HasFeature(wgpu::FeatureName::ImplicitDeviceSynchronization)) {
         throw GpuError("Dawn must support ImplicitDeviceSynchronization for external-image publication");
     }
     std::vector<wgpu::FeatureName> features{wgpu::FeatureName::ImplicitDeviceSynchronization};
@@ -191,14 +144,14 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
                    wgpu::FeatureName::SharedTextureMemoryIOSurface, wgpu::FeatureName::SharedFenceMTLSharedEvent,
                    wgpu::FeatureName::SharedTextureMemoryOpaqueFD, wgpu::FeatureName::SharedFenceVkSemaphoreOpaqueFD,
                    wgpu::FeatureName::SharedTextureMemoryVkDedicatedAllocation}) {
-        if (adapter_.HasFeature(feature)) {
+        if (objects_->adapter.HasFeature(feature)) {
             features.push_back(feature);
         }
     }
 
     // As much as the GPU allows of what large images and video frames need.
     wgpu::Limits supported;
-    adapter_.GetLimits(&supported);
+    objects_->adapter.GetLimits(&supported);
     wgpu::Limits limits;
     limits.maxTextureDimension2D = supported.maxTextureDimension2D;
     limits.maxBufferSize = supported.maxBufferSize;
@@ -213,7 +166,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     // PIX, RenderDoc) name each render pass ("blur", "layer shadow", "window", ...).
     const char* const labels[] = {"use_user_defined_labels_in_backend"};
     wgpu::DawnTogglesDescriptor device_toggles;
-    if (platform::environment_variable("ELG_GPU_LABELS").value_or("") == "1") {
+    if (os::environment_variable("ELG_GPU_LABELS").value_or("") == "1") {
         device_toggles.enabledToggleCount = 1;
         device_toggles.enabledToggles = labels;
         descriptor.nextInChain = &device_toggles;
@@ -258,25 +211,25 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
         });
 
     std::string device_error;
-    instance.wait(adapter_.RequestDevice(
+    instance.wait(objects_->adapter.RequestDevice(
         &descriptor, wgpu::CallbackMode::WaitAnyOnly,
         [&](wgpu::RequestDeviceStatus status, wgpu::Device device, wgpu::StringView message) {
             if (status == wgpu::RequestDeviceStatus::Success) {
-                device_ = std::move(device);
+                objects_->device = std::move(device);
             } else {
                 device_error = to_string(message);
             }
         }));
-    if (!device_) {
+    if (!objects_->device) {
         throw GpuError(std::format("the GPU \"{}\" could not create a WebGPU device: {}", name_, device_error));
     }
-    queue_ = device_.GetQueue();
+    objects_->queue = objects_->device.GetQueue();
     wgpu::Limits granted;
-    device_.GetLimits(&granted);
+    objects_->device.GetLimits(&granted);
     max_texture_side_ = granted.maxTextureDimension2D;
     set_max_texture_side(max_texture_side_); // images decode to fit this device's textures
 
-    device_.SetLoggingCallback([](wgpu::LoggingType type, wgpu::StringView message) {
+    objects_->device.SetLoggingCallback([](wgpu::LoggingType type, wgpu::StringView message) {
         try {
             if (type == wgpu::LoggingType::Error) {
                 log_error("webgpu: {}", std::string_view(message));
@@ -293,8 +246,8 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
     log_info("GPU: {} ({} through WebGPU)", name_, to_string(backend_));
 
     published_ = std::make_shared<RenderDevice>();
-    published_->device = device_;
-    published_->queue = queue_;
+    published_->device = objects_->device;
+    published_->queue = objects_->queue;
     published_->instance = instance.handle();
     published_->backend = backend_;
     published_->max_texture_side = max_texture_side_;
@@ -303,7 +256,7 @@ Device::Device(const Instance& instance) : instance_(instance), errors_(std::mak
         const std::lock_guard lock(states.mutex);
         // Also prune expired entries from constructors that failed after registration.
         std::erase_if(states.devices, [](const auto& entry) { return entry.second.expired(); });
-        states.devices[device_.Get()] = errors_;
+        states.devices[objects_->device.Get()] = errors_;
     }
     const std::lock_guard lock(g_render_device_mutex);
     g_render_device = published_;
@@ -321,13 +274,29 @@ Device::~Device() {
     {
         auto& states = Errors::registry();
         const std::lock_guard lock(states.mutex);
-        states.devices.erase(device_.Get());
+        states.devices.erase(objects_->device.Get());
     }
     const std::lock_guard lock(published_->mutex);
     published_->active = false;
     // Do not eagerly Destroy(): imported frames may still need to export completion
     // fences. Dawn references held by those frames and submitted work own the remaining
     // lifetime; releasing the renderer's references is not a GPU-completion assertion.
+}
+
+const wgpu::Device& Device::handle() const noexcept {
+    return objects_->device;
+}
+
+const wgpu::Adapter& Device::adapter() const noexcept {
+    return objects_->adapter;
+}
+
+const wgpu::Queue& Device::queue() const noexcept {
+    return objects_->queue;
+}
+
+bool Device::has_feature(wgpu::FeatureName feature) const {
+    return objects_->device.HasFeature(feature);
 }
 
 void Device::check() const {
@@ -338,13 +307,13 @@ void Device::check() const {
 }
 
 void Device::submit(const wgpu::CommandBuffer& commands) const {
-    queue_.Submit(1, &commands);
+    objects_->queue.Submit(1, &commands);
     check();
 }
 
 void Device::wait_idle() const {
-    instance_.wait(queue_.OnSubmittedWorkDone(wgpu::CallbackMode::WaitAnyOnly,
-                                              [](wgpu::QueueWorkDoneStatus, wgpu::StringView) {}));
+    instance_.wait(objects_->queue.OnSubmittedWorkDone(wgpu::CallbackMode::WaitAnyOnly,
+                                                       [](wgpu::QueueWorkDoneStatus, wgpu::StringView) {}));
     check();
 }
 
@@ -358,9 +327,9 @@ void Device::finish_deferred() const {
     wgpu::BufferDescriptor descriptor;
     descriptor.size = 4;
     descriptor.usage = wgpu::BufferUsage::CopyDst;
-    const wgpu::Buffer scrap = device_.CreateBuffer(&descriptor);
+    const wgpu::Buffer scrap = objects_->device.CreateBuffer(&descriptor);
     const auto submit_scrap = [&] {
-        const wgpu::CommandEncoder encoder = device_.CreateCommandEncoder();
+        const wgpu::CommandEncoder encoder = objects_->device.CreateCommandEncoder();
         encoder.ClearBuffer(scrap);
         submit(encoder.Finish());
     };
@@ -368,7 +337,7 @@ void Device::finish_deferred() const {
     wait_idle();
     // Waiting doesn't run the deletions; Tick does, but only while work is outstanding.
     submit_scrap();
-    device_.Tick();
+    objects_->device.Tick();
     check();
 }
 

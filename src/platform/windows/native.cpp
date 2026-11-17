@@ -2,13 +2,16 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Windows under SDL (platform/generic/native.h): WebGPU draws into the HWND, DWM rounds
+// Windows under SDL (platform/sdl/native.h): WebGPU draws into the HWND, DWM rounds
 // undecorated windows' corners, and password fields detach the IME. Top-level windows are
 // subclassed for what SDL doesn't pass on: menu commands, the taskbar button's creation, and
 // accent color changes.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 #include "platform/windows/shell.h"
+
+#include <elg/events.h>
+#include <elg/platform.h>
 
 #include <SDL3/SDL.h>
 
@@ -16,6 +19,9 @@
 #include <commctrl.h>
 #include <dwmapi.h>
 #include <imm.h>
+
+#include <filesystem>
+#include <system_error>
 
 namespace elg::detail::platform {
 
@@ -139,12 +145,31 @@ void wait_for_compositor() {
     DwmFlush();
 }
 
-bool debugger_present() noexcept {
-    return IsDebuggerPresent() != 0;
+std::optional<std::filesystem::path> caption_icon_font() {
+    wchar_t windows[MAX_PATH] = L"C:\\Windows";
+    GetWindowsDirectoryW(windows, MAX_PATH);
+    std::filesystem::path file = std::filesystem::path(windows) / "Fonts" / "segmdl2.ttf";
+    std::error_code error;
+    if (std::filesystem::exists(file, error)) {
+        return file;
+    }
+    return std::nullopt;
 }
 
-void debug_break() noexcept {
-    __debugbreak();
+KeyModifiers word_modifier() noexcept {
+    return KeyModifiers::control;
 }
 
 } // namespace elg::detail::platform
+
+namespace elg {
+
+Platform current_platform() noexcept {
+    return Platform::windows;
+}
+
+KeyModifiers primary_modifier() noexcept {
+    return KeyModifiers::control;
+}
+
+} // namespace elg

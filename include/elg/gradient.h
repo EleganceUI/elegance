@@ -176,25 +176,23 @@ struct AngularGradient {
         : stops(detail::even_stops(colors)), center(at), start_angle(from_angle), end_angle(to_angle) {}
 };
 
-namespace detail {
-// What .backdrop_blur() fills its shape with: what's drawn behind it in the window, blurred, then
-// adjusted. Inside an offscreen group (opacity below 1, a shadow, a blur, ...) it sees only what
-// the group drew behind it, as CSS's backdrop-filter does.
+/// What .backdrop_blur() fills its shape with: what's drawn behind it in the window, blurred, then
+/// adjusted. Inside an offscreen group (opacity below 1, a shadow, a blur, ...) it sees only what
+/// the group drew behind it, as CSS's backdrop-filter does.
 struct BackdropFill {
-    float blur = 0;       // radius in points
-    float saturation = 1; // 1 keeps the colors
-    float brightness = 0; // added to each channel: -1 black ... 1 white
-    float noise = 0;      // grain, 0...1, so smooth gradients don't band
+    float blur = 0;       ///< radius in points
+    float saturation = 1; ///< 1 keeps the colors
+    float brightness = 0; ///< added to each channel: -1 black ... 1 white
+    float noise = 0;      ///< grain, 0...1, so smooth gradients don't band
 };
-} // namespace detail
 
 /// What a shape or background is filled with: a color or a gradient. Converts implicitly, so
 /// .fill(Color::red) and .fill(LinearGradient({...})) both work. (.backdrop_blur() fills with a
-/// detail::BackdropFill.)
+/// BackdropFill.)
 class ShapeStyle {
 public:
     /// One of the fills a ShapeStyle can hold.
-    using Value = std::variant<Color, LinearGradient, RadialGradient, EllipticalGradient, AngularGradient, detail::BackdropFill>;
+    using Value = std::variant<Color, LinearGradient, RadialGradient, EllipticalGradient, AngularGradient, BackdropFill>;
 
     /// A solid fill.
     ///
@@ -219,7 +217,7 @@ public:
     /// What .backdrop_blur() fills with: the window behind, blurred.
     ///
     /// @param backdrop The blur and color adjustments.
-    ShapeStyle(detail::BackdropFill backdrop) : value_(backdrop) {}
+    ShapeStyle(BackdropFill backdrop) : value_(backdrop) {}
 
     /// The fill, for code that draws it.
     ///

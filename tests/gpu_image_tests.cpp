@@ -27,7 +27,7 @@ TEST_CASE("GPU image C handles and view references", "[gpu-image]") {
   auto *image = elg_gpu_image_create(16, 16, ELG_GPU_IMAGE_BOTTOM_LEFT);
   REQUIRE(image);
   CHECK(elg::gpu_image_flipped(image));
-  auto source = elg::gpu_image_source(image);
+  auto source = elg::detail::gpu_image_source(image);
   REQUIRE(source);
   CHECK(source->size.peek().width == 16);
   CHECK(source->size.peek().height == 16);
@@ -35,7 +35,7 @@ TEST_CASE("GPU image C handles and view references", "[gpu-image]") {
   auto view = elg::GpuImageView(image);
   auto another_window = elg::GpuImageView(image, elg::ContentMode::fill);
   elg_gpu_image_clear(image);
-  CHECK(elg::gpu_image_source(image) == source);
+  CHECK(elg::detail::gpu_image_source(image) == source);
   CHECK(source->id == source_id);
   CHECK(source->size.peek().width == 16);
   CHECK(source->size.peek().height == 16);
@@ -86,7 +86,7 @@ TEST_CASE("rejected GPU image publications never transfer ownership",
   // not imported.
   CHECK(elg_gpu_image_publish(image.get(), &frame) ==
         ELG_GPU_IMAGE_DEVICE_UNAVAILABLE);
-  auto source = elg::gpu_image_source(image.get());
+  auto source = elg::detail::gpu_image_source(image.get());
   const auto source_id = source->id;
   for (const auto dimensions :
        {elg::Size{17, 16}, elg::Size{16, 23}, elg::Size{64, 32}}) {
@@ -97,7 +97,7 @@ TEST_CASE("rejected GPU image publications never transfer ownership",
     // API.
     CHECK(elg_gpu_image_publish(image.get(), &frame) ==
           ELG_GPU_IMAGE_DEVICE_UNAVAILABLE);
-    CHECK(elg::gpu_image_source(image.get()) == source);
+    CHECK(elg::detail::gpu_image_source(image.get()) == source);
     CHECK(source->id == source_id);
     CHECK_FALSE(source->current());
     CHECK(source->size.peek().width == 16);
@@ -112,6 +112,8 @@ TEST_CASE("rejected GPU image publications never transfer ownership",
 
 #ifdef __APPLE__
 #include "gpu/device.h"
+#include "gpu/instance.h"
+#include "gpu/render_device.h"
 #include <IOSurface/IOSurface.h>
 #include <atomic>
 #include <chrono>
@@ -193,7 +195,7 @@ TEST_CASE("GPU image resizing coalesces UI metadata without retaining frames",
       elg_gpu_image_create(16, 16, ELG_GPU_IMAGE_BOTTOM_LEFT),
       elg_gpu_image_destroy);
   REQUIRE(image);
-  auto source = elg::gpu_image_source(image.get());
+  auto source = elg::detail::gpu_image_source(image.get());
   const auto source_id = source->id;
   auto releases = std::make_shared<std::atomic<unsigned>>(0);
   auto wakes = std::make_shared<std::atomic<unsigned>>(0);
@@ -234,7 +236,7 @@ TEST_CASE("GPU image resizing coalesces UI metadata without retaining frames",
   CHECK(releases->load() ==
         1); // queued metadata did not retain the replaced 48x40 frame
   CHECK(source->id == source_id);
-  CHECK(elg::gpu_image_source(image.get()) == source);
+  CHECK(elg::detail::gpu_image_source(image.get()) == source);
   CHECK(elg::gpu_image_flipped(image.get()));
   REQUIRE(source->current());
   CHECK(source->current()->width == 64);

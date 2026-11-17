@@ -7,6 +7,7 @@
 // around them.
 
 #include "view/icons.h"
+#include "platform/platform.h"
 #include "view/accessibility.h"
 #include "view/view_node.h"
 
@@ -20,11 +21,8 @@
 #include <elg/views.h>
 
 #include <filesystem>
+#include <optional>
 #include <utility>
-
-#if defined(_WIN32)
-#include <windows.h> // the build defines WIN32_LEAN_AND_MEAN and NOMINMAX
-#endif
 
 namespace elg::detail {
 
@@ -36,16 +34,10 @@ constexpr std::string_view kIconFamily = "elg.caption-glyphs";
 
 bool icon_font_available() {
     static const bool available = [] {
-#if defined(_WIN32)
-        wchar_t windows[MAX_PATH] = L"C:\\Windows";
-        GetWindowsDirectoryW(windows, MAX_PATH);
-        const std::filesystem::path file = std::filesystem::path(windows) / "Fonts" / "segmdl2.ttf";
-        std::error_code error;
-        if (std::filesystem::exists(file, error)) {
-            register_font(std::string(kIconFamily), file);
+        if (const std::optional<std::filesystem::path> file = platform::caption_icon_font()) {
+            register_font(std::string(kIconFamily), *file);
             return true;
         }
-#endif
         return false;
     }();
     return available;

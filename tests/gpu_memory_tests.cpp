@@ -8,9 +8,11 @@
 
 #include "gpu/device.h"
 #include "gpu/eviction.h"
+#include "gpu/external_image.h"
 #include "gpu/instance.h"
 #include "gpu/texture_cache.h"
 #include "gpu/video_textures.h"
+#include "gpu/webgpu.h"
 #include "render/frame_plan.h"
 #include "render/intermediate_images.h"
 #include "render/path_cache.h"
@@ -19,6 +21,7 @@
 #include <elg/elegance.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <webgpu/webgpu_cpp.h>
 
 #include <array>
 #include <chrono>
@@ -39,7 +42,7 @@ using namespace std::chrono_literals;
 
 namespace {
 
-// Stands in for gpu::RenderImage.
+// Stands in for WindowTarget's offscreen images.
 struct FakeImage {
     int id = 0;
     wgpu::TextureFormat format_ = wgpu::TextureFormat::RGBA8UnormSrgb;
@@ -67,11 +70,11 @@ const detail::gpu::CacheClock::time_point t0{};
 } // namespace
 
 TEST_CASE("an image's GPU size counts every sample", "[gpu-memory]") {
-    CHECK(detail::image_bytes(wgpu::TextureFormat::R8Unorm, 100, 50, 1) == 5'000);
-    CHECK(detail::image_bytes(wgpu::TextureFormat::R8Unorm, 100, 50, 4) == 20'000);
+    CHECK(detail::gpu::image_bytes(wgpu::TextureFormat::R8Unorm, 100, 50, 1) == 5'000);
+    CHECK(detail::gpu::image_bytes(wgpu::TextureFormat::R8Unorm, 100, 50, 4) == 20'000);
     // Stencil as backends may store it: 32 bits.
-    CHECK(detail::image_bytes(wgpu::TextureFormat::Stencil8, 100, 50, 4) == 80'000);
-    CHECK(detail::image_bytes(wgpu::TextureFormat::BGRA8Unorm, 100, 50, 1) == 20'000);
+    CHECK(detail::gpu::image_bytes(wgpu::TextureFormat::Stencil8, 100, 50, 4) == 80'000);
+    CHECK(detail::gpu::image_bytes(wgpu::TextureFormat::BGRA8Unorm, 100, 50, 1) == 20'000);
 }
 
 TEST_CASE("a window's offscreen images are kept by slot, whichever slot comes first", "[gpu-memory]") {
@@ -152,7 +155,7 @@ TEST_CASE("a window keeps at most 64 MB of offscreen images beyond what its fram
     pool.images.begin_frame(t0 + 300ms);
     pool.acquire(detail::ImageRole::path_samples, 4, kSide, kSide, wgpu::TextureFormat::R8Unorm, 4);
     pool.images.store({detail::ImageRole::path_mask, 42}, FakeImage{100, wgpu::TextureFormat::R8Unorm, 4096, 4096},
-                      detail::image_bytes(wgpu::TextureFormat::R8Unorm, 4096, 4096, 1));
+                      detail::gpu::image_bytes(wgpu::TextureFormat::R8Unorm, 4096, 4096, 1));
     pool.images.end_frame();
     // Unused now: 0, 1, 2 (16 MB each, used at 100 ms) and 3 (used at 200 ms): 64 MB, kept.
     CHECK(pool.images.size() == 6);
@@ -359,7 +362,7 @@ TEST_CASE("a path a canvas draws again unchanged is not flattened again", "[gpu-
         detail::DisplayList list;
         {
             const detail::PathCache::Use use(cache);
-            GraphicsContext g(list, {10, 10, 100, 100}, scale);
+            GraphicsContext g = detail::GraphicsAccess::context(list, {10, 10, 100, 100}, scale);
             g.fill_path(circle, ShapeStyle(Color::black));
             g.stroke_path(circle, Color::white, {.width = 2});
             g.fill_path(other, ShapeStyle(Color::black));
@@ -544,6 +547,22 @@ detail::DecodedImage square_image(std::uint64_t id, std::uint32_t side) {
     return image;
 }
 
+// An image imported from another API, as GpuImage makes them: here, a texture of the test's.
+class TestExternalImage final : public detail::gpu::ExternalImage {
+public:
+    TestExternalImage(wgpu::Device device, wgpu::Texture texture)
+        : device_(std::move(device)), texture_(std::move(texture)), view_(texture_.CreateView()) {}
+    void accept() noexcept override {}
+    [[nodiscard]] const wgpu::Device& device() const noexcept override { return device_; }
+    [[nodiscard]] const wgpu::Texture& texture() const noexcept override { return texture_; }
+    [[nodiscard]] const wgpu::TextureView& view() const noexcept override { return view_; }
+
+private:
+    wgpu::Device device_;
+    wgpu::Texture texture_;
+    wgpu::TextureView view_;
+};
+
 // A frame in memory of `side` x `side` pixels from video source `source`.
 detail::VideoFrame cpu_frame(std::uint64_t source, std::uint32_t side) {
     detail::VideoFrame frame;
@@ -671,10 +690,7 @@ TEST_CASE("VideoTextures keeps an external image while a recording holds it", "[
     frame.width = 16;
     frame.height = 16;
     frame.texture_id = 7;
-    frame.device = device.handle();
-    frame.texture = device.handle().CreateTexture(&descriptor);
-    frame.external_view = frame.texture.CreateView();
-    frame.texture_lease = std::make_shared<int>(0);
+    frame.external = std::make_shared<TestExternalImage>(device.handle(), device.handle().CreateTexture(&descriptor));
     const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
 
     std::vector<std::uint64_t> acquired;

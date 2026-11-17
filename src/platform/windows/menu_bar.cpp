@@ -6,7 +6,7 @@
 // Commands come back as WM_COMMAND (native.cpp's subclass); shortcuts are shown after a tab and
 // matched by the app, since SDL's message loop has no accelerator table.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 #include "platform/windows/shell.h"
 
 #include <windows.h>

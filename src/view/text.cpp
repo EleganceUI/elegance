@@ -30,7 +30,7 @@ Text with_style(const Text& text, const F& change) {
     const TextNode& node = node_of(text);
     TextStyle style = node.style();
     change(style);
-    return Text(std::make_shared<const TextNode>(node.content(), std::move(style)));
+    return detail::ViewAccess::text(std::make_shared<const TextNode>(node.content(), std::move(style)));
 }
 
 } // namespace

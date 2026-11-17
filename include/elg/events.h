@@ -134,13 +134,7 @@ constexpr bool has(KeyModifiers set, KeyModifiers modifier) noexcept {
 /// The platform's shortcut modifier: Cmd on macOS, Ctrl elsewhere.
 ///
 /// @return KeyModifiers::super on macOS, KeyModifiers::control elsewhere.
-constexpr KeyModifiers primary_modifier() noexcept {
-#if defined(__APPLE__)
-  return KeyModifiers::super;
-#else
-  return KeyModifiers::control;
-#endif
-}
+ELG_API KeyModifiers primary_modifier() noexcept;
 
 /// The mouse pointer's shape over a view, like CSS's `cursor`
 /// (View::pointer_style()). The innermost view under the pointer with a style

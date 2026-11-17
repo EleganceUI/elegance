@@ -4,58 +4,74 @@
 
 #include "render/window_target.h"
 
+#include "core/crash.h"
+#include "gpu/blur_renderer.h"
+#include "gpu/buffer.h"
+#include "gpu/device.h"
+#include "gpu/path_renderer.h"
+#include "gpu/presenter.h"
+#include "gpu/quad_renderer.h"
+#include "gpu/render_image.h"
+#include "gpu/texture_cache.h"
+#include "gpu/video_textures.h"
+#include "gpu/webgpu.h"
 #include "render/color_space.h"
+#include "render/frame_plan.h"
+#include "render/intermediate_images.h"
 
-#if defined(_WIN32)
-#include "core/log.h"
-#include "platform/generic/platform.h"
-
-#include <atomic>
-#endif
+#include <webgpu/webgpu_cpp.h>
 
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <cstdint>
+#include <format>
+#include <memory>
+#include <optional>
 #include <span>
+#include <utility>
+#include <vector>
 
 namespace elg::detail {
 
 namespace {
 
-#if defined(_WIN32)
-// The longest a composition frame waits for the display to be ready (it's a hint for pacing).
-constexpr unsigned kReadyTimeoutMs = 50;
-
-// Whether a window presents through DirectComposition (platform/windows/composition.h) instead of its
-// WebGPU surface.
-bool wants_composition(const gpu::Device& device, bool transparent, void* native_window) {
-    if (!native_window) {
-        return false;
-    }
-    // Before composition_allowed(), whose log line would otherwise claim DirectComposition.
-    if (!gpu::CompositionTarget::supported(device)) {
-        static std::atomic_flag logged;
-        if (!logged.test_and_set()) {
-            log_info("windows present through WebGPU surfaces (the GPU backend can't share textures with "
-                     "DirectComposition)");
-        }
-        return false;
-    }
-    if (!gpu::composition_allowed()) {
-        return false;
-    }
-    // ELG_PRESENT=surface: WebGPU surfaces for opaque windows only.
-    return transparent || platform::environment_variable("ELG_PRESENT").value_or("") != "surface";
-}
-#endif
-
 // Layers hold premultiplied linear color; sRGB storage keeps 8-bit precision where it matters.
+// Color blurs (gpu::BlurRenderer::kColorFormat) read and write it too.
 constexpr wgpu::TextureFormat kLayerFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
-static_assert(kLayerFormat == gpu::BlurRenderer::kColorFormat);
 // Layers can be copied from, for backdrops read inside them.
 constexpr wgpu::TextureUsage kLayerUsage =
     wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopySrc;
 // The color blur images backdrops share (blurred layers use their layer's index).
 constexpr std::uint64_t kBackdropBlurSlot = ~std::uint64_t{0};
+
+// An offscreen image that is rendered to and then sampled (layers, blur passes, path masks), or
+// a multisampled / stencil scratch attachment (path masks): its texture (gpu/render_image.h)
+// and the view passes use.
+class RenderImage {
+public:
+    RenderImage(const wgpu::Device& device, wgpu::TextureFormat format, std::uint32_t width, std::uint32_t height,
+                std::uint32_t samples = 1,
+                wgpu::TextureUsage usage = wgpu::TextureUsage::RenderAttachment | wgpu::TextureUsage::TextureBinding)
+        : format_(format), width_(width), height_(height),
+          texture_(gpu::create_render_texture(device, format, width, height, samples, usage)),
+          view_(texture_.CreateView()) {}
+
+    [[nodiscard]] const wgpu::Texture& texture() const noexcept { return texture_; }
+    [[nodiscard]] const wgpu::TextureView& view() const noexcept { return view_; }
+    [[nodiscard]] wgpu::TextureFormat format() const noexcept { return format_; }
+    [[nodiscard]] std::uint32_t width() const noexcept { return width_; }
+    [[nodiscard]] std::uint32_t height() const noexcept { return height_; }
+
+    wgpu::BindGroup group; // path masks: the group that samples it
+
+private:
+    wgpu::TextureFormat format_;
+    std::uint32_t width_;
+    std::uint32_t height_;
+    wgpu::Texture texture_;
+    wgpu::TextureView view_;
+};
 
 // Clears the target first, or with no `clear` continues on what it holds.
 wgpu::RenderPassEncoder begin_pass(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& view,
@@ -74,7 +90,7 @@ wgpu::RenderPassEncoder begin_pass(const wgpu::CommandEncoder& encoder, const wg
 
 // Brackets rendering into an offscreen image that is sampled afterwards.
 template <class Draw>
-void render_offscreen(const wgpu::CommandEncoder& encoder, const gpu::RenderImage& target, const char* label,
+void render_offscreen(const wgpu::CommandEncoder& encoder, const RenderImage& target, const char* label,
                       const Draw& draw) {
     const wgpu::RenderPassEncoder pass = begin_pass(encoder, target.view(), wgpu::Color{0, 0, 0, 0}, label);
     draw(pass);
@@ -83,147 +99,173 @@ void render_offscreen(const wgpu::CommandEncoder& encoder, const gpu::RenderImag
 
 } // namespace
 
+class WindowTarget::State {
+public:
+    State(const gpu::Device& device, wgpu::Surface surface, bool transparent, void* native_window);
+
+    void render(const WindowFrame& frame, const RenderResources& resources);
+
+private:
+    struct LayerGroups {
+        wgpu::BindGroup content; // blurred, when the layer blurs
+        wgpu::BindGroup raw;     // as drawn
+        wgpu::BindGroup shadow;
+        wgpu::BindGroup inner_shadow;
+    };
+
+    // Where a frame goes: the presenter's image. `texture` is set when it can be copied from:
+    // backdrops are then read from it directly, instead of the window drawing offscreen and
+    // being copied over.
+    struct DrawTarget {
+        wgpu::TextureView view;
+        wgpu::TextureFormat format{};
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        wgpu::Texture texture;
+    };
+
+    // What a pass draws into. `texture` is set when it can be copied from (layers, the offscreen
+    // window image): only such passes can read backdrops.
+    struct PassTarget {
+        wgpu::Texture texture;
+        wgpu::TextureView view;
+        wgpu::TextureFormat format{};
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        wgpu::Color clear;
+    };
+
+    // The images and groups a frame's passes sample.
+    struct FrameGroups {
+        wgpu::BindGroup stops;
+        std::vector<LayerGroups> layers;
+        std::vector<wgpu::BindGroup> paths;
+        std::vector<wgpu::BindGroup> images;
+        std::vector<wgpu::BindGroup> videos;
+    };
+
+    // Records the frame. `acquired_videos` collects the shared video textures it samples, to
+    // release once it's submitted.
+    wgpu::CommandBuffer record(const DrawTarget& target, const WindowFrame& frame, const RenderResources& resources,
+                               std::vector<std::uint64_t>& acquired_videos);
+    // Records a pass, split wherever its instances read a backdrop.
+    void draw_pass(const wgpu::CommandEncoder& encoder, const PassTarget& target, const PlanPass& plan_pass,
+                   const FramePlan& plan, const FrameGroups& groups, const RenderResources& resources);
+    // Copies a backdrop's region out of `texture` and blurs it as planned; returns its group.
+    wgpu::BindGroup take_backdrop(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture,
+                                  const PlanBackdrop& backdrop, const RenderResources& resources);
+    // Blurs a color image (`width` x `height` of it) into pooled images, downsampled by `factor`
+    // first; `slot` picks the pooled images (ImageSlot::index). Returns the result's group.
+    wgpu::BindGroup blur_color(const wgpu::CommandEncoder& encoder, const wgpu::BindGroup& source, std::uint32_t width,
+                               std::uint32_t height, float sigma, std::uint32_t factor, bool clamp_edges,
+                               std::uint64_t slot, const RenderResources& resources);
+    const wgpu::BindGroup& empty_group(const RenderResources& resources);
+    // A side of the window's image: the window's (in pixels), up to what the device's textures
+    // allow.
+    [[nodiscard]] std::uint32_t window_side(int pixels) const;
+    [[nodiscard]] wgpu::BindGroup image_group(const RenderResources& resources, const wgpu::TextureView& view) const;
+    RenderImage& pooled_image(ImageRole role, std::uint64_t index, wgpu::TextureFormat format, std::uint32_t width,
+                              std::uint32_t height, std::uint32_t samples = 1,
+                              wgpu::TextureUsage usage = wgpu::TextureUsage::RenderAttachment |
+                                                         wgpu::TextureUsage::TextureBinding);
+
+    const gpu::Device& device_;
+    // Every offscreen image, path coverage masks included: masks are kept by content
+    // (PlanPath::key), so unchanged paths are only composited, not rendered again.
+    IntermediateImages<RenderImage> images_;
+    PathHashes path_hashes_;
+    std::vector<std::array<float, 2>> path_fans_; // of the masks a frame renders
+    std::unique_ptr<gpu::Presenter> presenter_;
+    wgpu::Sampler sampler_; // for sampling layers
+    gpu::Buffer instances_;
+    gpu::Buffer stops_;
+    gpu::Buffer path_vertices_;
+    bool window_reads_backdrops_ = false; // the last frame recorded did
+    std::optional<RenderImage> empty_;    // bound where no second image is
+    wgpu::BindGroup empty_group_;
+};
+
 WindowTarget::WindowTarget(const gpu::Device& device, wgpu::Surface surface, bool transparent, void* native_window)
-    : device_(device), sampler_(gpu::create_linear_sampler(device.handle())),
-      instances_(device.handle(), wgpu::BufferUsage::Vertex), stops_(device.handle(), wgpu::BufferUsage::Storage),
-      path_vertices_(device.handle(), wgpu::BufferUsage::Vertex) {
-#if defined(_WIN32)
-    // Every window presents through DirectComposition (no stretched frames while resizing, and
-    // transparency), unless wants_composition() says otherwise.
-    if (wants_composition(device, transparent, native_window)) {
-        try {
-            composition_ = std::make_unique<gpu::CompositionTarget>(device, native_window, transparent);
-        } catch (const std::exception& error) {
-            log_warning("window falls back to a WebGPU surface: {}", error.what());
-        }
-    }
-    if (transparent && !composition_) {
-        static std::atomic_flag warned;
-        if (!warned.test_and_set()) {
-            log_warning("transparent windows render opaque: they present through WebGPU surfaces, which "
-                        "can't be transparent on Windows");
-        }
-    }
-    if (composition_) {
-        return;
-    }
-#else
-    (void)native_window;
-#endif
-    swapchain_ = std::make_unique<gpu::Swapchain>(device, std::move(surface), transparent);
-}
+    : state_(std::make_unique<State>(device, std::move(surface), transparent, native_window)) {}
+
+WindowTarget::~WindowTarget() = default;
 
 void WindowTarget::render(const WindowFrame& frame, const RenderResources& resources) {
-#if defined(_WIN32)
-    if (composition_) {
-        render_composition(frame, resources);
-        return;
-    }
-#endif
-    const std::uint32_t width = window_side(frame.pixel_width);
-    const std::uint32_t height = window_side(frame.pixel_height);
-    if (!swapchain_->prepare(width, height)) {
-        return; // minimized
-    }
-    wgpu::TextureView view = swapchain_->acquire();
+    state_->render(frame, resources);
+}
+
+WindowTarget::State::State(const gpu::Device& device, wgpu::Surface surface, bool transparent, void* native_window)
+    : device_(device), presenter_(gpu::create_presenter(device, std::move(surface), transparent, native_window)),
+      sampler_(gpu::create_linear_sampler(device.handle())), instances_(device.handle(), wgpu::BufferUsage::Vertex),
+      stops_(device.handle(), wgpu::BufferUsage::Storage), path_vertices_(device.handle(), wgpu::BufferUsage::Vertex) {
+    ELG_DEBUG_ASSERT(kLayerFormat == gpu::BlurRenderer::kColorFormat, "layers and color blurs differ in format");
+}
+
+void WindowTarget::State::render(const WindowFrame& frame, const RenderResources& resources) {
+    const Color clear = frame.list.clear_color;
+    const wgpu::TextureView view = presenter_->begin_frame(
+        window_side(frame.pixel_width), window_side(frame.pixel_height), {clear.r, clear.g, clear.b, 1});
     if (!view) {
-        // Out of date: reconfigured, then once more; still resizing if that fails too.
-        if (!swapchain_->prepare(width, height)) {
-            return;
-        }
-        view = swapchain_->acquire();
-        if (!view) {
-            return;
-        }
+        return; // minimized, or skipped
     }
 
     std::vector<std::uint64_t> acquired_videos;
-    const wgpu::CommandBuffer commands = record({view, swapchain_->view_format(), swapchain_->width(),
-                                                 swapchain_->height(), swapchain_->copy_source()},
+    const wgpu::CommandBuffer commands = record({view, presenter_->view_format(), presenter_->width(),
+                                                 presenter_->height(), presenter_->copy_source()},
                                                 frame, resources, acquired_videos);
     device_.submit(commands);
     resources.videos.release(acquired_videos); // back to the decoder
-    swapchain_->present();
-    if (window_reads_backdrops_) {
-        // From the next frame on, backdrops come straight from the window's images (when the
-        // surface allows): no offscreen window, no full-window copy.
-        swapchain_->request_copy_source();
-    }
+    presenter_->end_frame(window_reads_backdrops_);
     device_.tick();
 }
 
-void WindowTarget::render_composition([[maybe_unused]] const WindowFrame& frame,
-                                      [[maybe_unused]] const RenderResources& resources) {
-#if defined(_WIN32)
-    const std::uint32_t width = window_side(frame.pixel_width);
-    const std::uint32_t height = window_side(frame.pixel_height);
-    if (!composition_->prepare(width, height)) {
-        return; // minimized
-    }
-    composition_->wait_until_ready(kReadyTimeoutMs); // paced to the display
-    const Color clear = frame.list.clear_color;
-    composition_->set_background({clear.r, clear.g, clear.b, 1});
-
-    const wgpu::TextureView view = composition_->begin_access();
-    std::vector<std::uint64_t> acquired_videos;
-    const wgpu::CommandBuffer commands = record({view, composition_->view_format(), composition_->width(),
-                                                 composition_->height()},
-                                                frame, resources, acquired_videos);
-    device_.submit(commands);
-    resources.videos.release(acquired_videos);
-    composition_->end_access();
-    // Direct3D copies the image next, so the rendering must be finished.
-    device_.wait_idle();
-    composition_->present();
-    device_.tick();
-#endif
-}
-
-std::uint32_t WindowTarget::window_side(int pixels) const {
+std::uint32_t WindowTarget::State::window_side(int pixels) const {
     return std::min(static_cast<std::uint32_t>(std::max(pixels, 0)), device_.max_texture_side());
 }
 
-wgpu::BindGroup WindowTarget::image_group(const RenderResources& resources, const wgpu::TextureView& view) const {
+wgpu::BindGroup WindowTarget::State::image_group(const RenderResources& resources,
+                                                 const wgpu::TextureView& view) const {
     return gpu::create_image_group(device_.handle(), resources.image_layout, view, sampler_);
 }
 
-gpu::RenderImage& WindowTarget::pooled_image(ImageRole role, std::uint64_t index, wgpu::TextureFormat format,
-                                             std::uint32_t width, std::uint32_t height, std::uint32_t samples,
-                                             wgpu::TextureUsage usage) {
+RenderImage& WindowTarget::State::pooled_image(ImageRole role, std::uint64_t index, wgpu::TextureFormat format,
+                                               std::uint32_t width, std::uint32_t height, std::uint32_t samples,
+                                               wgpu::TextureUsage usage) {
     return images_.acquire({role, index}, format, width, height, samples, device_.max_texture_side(),
                            [&](std::uint32_t w, std::uint32_t h) {
-                               return gpu::RenderImage(device_.handle(), format, w, h, samples, usage);
+                               return RenderImage(device_.handle(), format, w, h, samples, usage);
                            });
 }
 
-const wgpu::BindGroup& WindowTarget::empty_group(const RenderResources& resources) {
+const wgpu::BindGroup& WindowTarget::State::empty_group(const RenderResources& resources) {
     if (!empty_group_) {
-        empty_ = gpu::RenderImage(device_.handle(), kLayerFormat, 1, 1); // zeroed: transparent
+        empty_ = RenderImage(device_.handle(), kLayerFormat, 1, 1); // zeroed: transparent
         empty_group_ = image_group(resources, empty_->view());
     }
     return empty_group_;
 }
 
-wgpu::BindGroup WindowTarget::blur_color(const wgpu::CommandEncoder& encoder, const wgpu::BindGroup& source,
-                                         std::uint32_t width, std::uint32_t height, float sigma, std::uint32_t factor,
-                                         bool clamp_edges, std::uint64_t slot, const RenderResources& resources) {
+wgpu::BindGroup WindowTarget::State::blur_color(const wgpu::CommandEncoder& encoder, const wgpu::BindGroup& source,
+                                                std::uint32_t width, std::uint32_t height, float sigma,
+                                                std::uint32_t factor, bool clamp_edges, std::uint64_t slot,
+                                                const RenderResources& resources) {
     wgpu::BindGroup input = source;
     if (factor > 1) {
         width = (width + factor - 1) / factor;
         height = (height + factor - 1) / factor;
-        const gpu::RenderImage& down = pooled_image(ImageRole::color_down, slot, kLayerFormat, width, height);
+        const RenderImage& down = pooled_image(ImageRole::color_down, slot, kLayerFormat, width, height);
         render_offscreen(encoder, down, "downsample", [&](const wgpu::RenderPassEncoder& pass) {
             resources.blur.downsample(pass, source, width * factor, height * factor, factor, clamp_edges);
         });
         input = image_group(resources, down.view());
         sigma /= static_cast<float>(factor);
     }
-    const gpu::RenderImage& horizontal = pooled_image(ImageRole::color_horizontal, slot, kLayerFormat, width, height);
+    const RenderImage& horizontal = pooled_image(ImageRole::color_horizontal, slot, kLayerFormat, width, height);
     render_offscreen(encoder, horizontal, "blur", [&](const wgpu::RenderPassEncoder& pass) {
         resources.blur.blur(pass, input, width, height, true, sigma, gpu::BlurRenderer::Channel::color, clamp_edges);
     });
     const wgpu::BindGroup horizontal_group = image_group(resources, horizontal.view());
-    const gpu::RenderImage& vertical = pooled_image(ImageRole::color_blurred, slot, kLayerFormat, width, height);
+    const RenderImage& vertical = pooled_image(ImageRole::color_blurred, slot, kLayerFormat, width, height);
     render_offscreen(encoder, vertical, "blur", [&](const wgpu::RenderPassEncoder& pass) {
         resources.blur.blur(pass, horizontal_group, width, height, false, sigma, gpu::BlurRenderer::Channel::color,
                             clamp_edges);
@@ -231,13 +273,13 @@ wgpu::BindGroup WindowTarget::blur_color(const wgpu::CommandEncoder& encoder, co
     return image_group(resources, vertical.view());
 }
 
-wgpu::BindGroup WindowTarget::take_backdrop(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture,
-                                            const PlanBackdrop& backdrop, const RenderResources& resources) {
+wgpu::BindGroup WindowTarget::State::take_backdrop(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture,
+                                                   const PlanBackdrop& backdrop, const RenderResources& resources) {
     // One set of images serves every backdrop: each is read by the pass right after it, before
     // the next is taken (WebGPU keeps the order). A copy's format must match the source's, up
     // to sRGB: layers are kLayerFormat, the window's surface image may differ (e.g. BGRA).
     const wgpu::TextureFormat format = gpu::srgb_variant(texture.GetFormat());
-    const gpu::RenderImage& copy =
+    const RenderImage& copy =
         pooled_image(format == kLayerFormat ? ImageRole::backdrop_copy : ImageRole::window_copy, 0, format,
                      backdrop.width, backdrop.height, 1,
                      wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst);
@@ -255,8 +297,9 @@ wgpu::BindGroup WindowTarget::take_backdrop(const wgpu::CommandEncoder& encoder,
                       backdrop.downsample, true, kBackdropBlurSlot, resources);
 }
 
-void WindowTarget::draw_pass(const wgpu::CommandEncoder& encoder, const PassTarget& target, const PlanPass& plan_pass,
-                             const FramePlan& plan, const FrameGroups& groups, const RenderResources& resources) {
+void WindowTarget::State::draw_pass(const wgpu::CommandEncoder& encoder, const PassTarget& target,
+                                    const PlanPass& plan_pass, const FramePlan& plan, const FrameGroups& groups,
+                                    const RenderResources& resources) {
     gpu::QuadRenderer& quads = resources.quads;
     wgpu::BindGroup second = empty_group(resources);
     wgpu::RenderPassEncoder pass;
@@ -325,9 +368,9 @@ void WindowTarget::draw_pass(const wgpu::CommandEncoder& encoder, const PassTarg
     pass.End();
 }
 
-wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowFrame& frame,
-                                         const RenderResources& resources,
-                                         std::vector<std::uint64_t>& acquired_videos) {
+wgpu::CommandBuffer WindowTarget::State::record(const DrawTarget& target, const WindowFrame& frame,
+                                                const RenderResources& resources,
+                                                std::vector<std::uint64_t>& acquired_videos) {
     const gpu::CacheClock::time_point now = gpu::CacheClock::now();
     images_.begin_frame(now);
     const FramePlan plan =
@@ -366,21 +409,21 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
         if (images_.contains({ImageRole::path_mask, path.key})) {
             continue; // the same path twice in this frame
         }
-        const gpu::RenderImage& samples = pooled_image(ImageRole::path_samples, 0, gpu::PathRenderer::kMaskFormat,
-                                                       path.width, path.height, gpu::PathRenderer::kSamples);
-        const gpu::RenderImage& stencil =
+        const RenderImage& samples = pooled_image(ImageRole::path_samples, 0, gpu::PathRenderer::kMaskFormat,
+                                                  path.width, path.height, gpu::PathRenderer::kSamples);
+        const RenderImage& stencil =
             pooled_image(ImageRole::path_stencil, 0, gpu::PathRenderer::kStencilFormat, path.width, path.height,
                          gpu::PathRenderer::kSamples, wgpu::TextureUsage::RenderAttachment);
-        gpu::RenderImage image(device_.handle(), gpu::PathRenderer::kMaskFormat, path.width, path.height);
-        resources.paths.render(encoder, samples, stencil, image, path.width, path.height, path_vertices_.handle(),
-                               new_mask.first_vertex, new_mask.vertex_count, path.even_odd);
-        wgpu::BindGroup group = image_group(resources, image.view());
+        RenderImage image(device_.handle(), gpu::PathRenderer::kMaskFormat, path.width, path.height);
+        resources.paths.render(encoder, samples.view(), stencil.view(), image.view(), path.width, path.height,
+                               path_vertices_.handle(), new_mask.first_vertex, new_mask.vertex_count, path.even_odd);
+        image.group = image_group(resources, image.view());
         images_.store({ImageRole::path_mask, path.key}, std::move(image),
-                      image_bytes(gpu::PathRenderer::kMaskFormat, path.width, path.height, 1), std::move(group));
+                      gpu::image_bytes(gpu::PathRenderer::kMaskFormat, path.width, path.height, 1));
     }
     groups.paths.resize(plan.paths.size());
     for (std::size_t i = 0; i < plan.paths.size(); ++i) {
-        groups.paths[i] = images_.find({ImageRole::path_mask, plan.paths[i].key})->group;
+        groups.paths[i] = images_.find({ImageRole::path_mask, plan.paths[i].key})->image.group;
     }
 
     // Images: uploaded (with their mips) the first time a frame draws them.
@@ -408,7 +451,7 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
         const PlanPass& layer = plan.layers[i];
         LayerGroups& layer_groups = groups.layers[i];
 
-        const gpu::RenderImage& content =
+        const RenderImage& content =
             pooled_image(ImageRole::layer, i, kLayerFormat, layer.width, layer.height, 1, kLayerUsage);
         draw_pass(encoder, {content.texture(), content.view(), kLayerFormat, layer.width, layer.height, {0, 0, 0, 0}},
                   layer, plan, groups, resources);
@@ -417,7 +460,7 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
 
         if (layer.shadow_sigma) {
             const float sigma = *layer.shadow_sigma;
-            const gpu::RenderImage& horizontal =
+            const RenderImage& horizontal =
                 pooled_image(ImageRole::shadow_horizontal, shadows, gpu::BlurRenderer::kFormat, layer.width,
                              layer.height);
             render_offscreen(encoder, horizontal, "layer shadow", [&](const wgpu::RenderPassEncoder& pass) {
@@ -426,7 +469,7 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
             });
             const wgpu::BindGroup horizontal_group = image_group(resources, horizontal.view());
 
-            const gpu::RenderImage& vertical =
+            const RenderImage& vertical =
                 pooled_image(ImageRole::shadow, shadows, gpu::BlurRenderer::kFormat, layer.width, layer.height);
             render_offscreen(encoder, vertical, "layer shadow", [&](const wgpu::RenderPassEncoder& pass) {
                 resources.blur.blur(pass, horizontal_group, layer.width, layer.height, false, sigma,
@@ -438,7 +481,7 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
         if (layer.inner_shadow_sigma) {
             // The blurred inverse of the alpha: full outside the content, fading in from its edges.
             const float sigma = *layer.inner_shadow_sigma;
-            const gpu::RenderImage& horizontal =
+            const RenderImage& horizontal =
                 pooled_image(ImageRole::inner_horizontal, inner_shadows, gpu::BlurRenderer::kFormat, layer.width,
                              layer.height);
             render_offscreen(encoder, horizontal, "inner shadow", [&](const wgpu::RenderPassEncoder& pass) {
@@ -446,7 +489,7 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
                                     gpu::BlurRenderer::Channel::inverse_alpha);
             });
             const wgpu::BindGroup horizontal_group = image_group(resources, horizontal.view());
-            const gpu::RenderImage& vertical =
+            const RenderImage& vertical =
                 pooled_image(ImageRole::inner_shadow, inner_shadows, gpu::BlurRenderer::kFormat, layer.width,
                              layer.height);
             render_offscreen(encoder, vertical, "inner shadow", [&](const wgpu::RenderPassEncoder& pass) {
@@ -469,7 +512,7 @@ wgpu::CommandBuffer WindowTarget::record(const DrawTarget& target, const WindowF
                                           static_cast<double>(clear[2]), static_cast<double>(clear[3])};
     window_reads_backdrops_ = plan.blit_instance.has_value();
     if (plan.blit_instance && !target.texture) {
-        const gpu::RenderImage& image =
+        const RenderImage& image =
             pooled_image(ImageRole::window, 0, kLayerFormat, target.width, target.height, 1, kLayerUsage);
         draw_pass(encoder, {image.texture(), image.view(), kLayerFormat, target.width, target.height, clear_color},
                   plan.main, plan, groups, resources);

@@ -5,8 +5,8 @@
 #ifndef ELG_RENDER_FRAME_MAILBOX_H
 #define ELG_RENDER_FRAME_MAILBOX_H
 
-#include "platform/generic/platform.h"
-#include "render/display_list.h"
+#include "platform/platform.h"
+#include "display/display_list.h"
 #include "text/atlas.h"
 
 #include <chrono>

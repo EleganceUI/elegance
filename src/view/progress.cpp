@@ -156,7 +156,7 @@ private:
         const float line = std::min(spec_.thickness, bounds.width / 2);
         const float radius = (std::min(bounds.width, bounds.height) - line) / 2;
         const Point center{bounds.width / 2, bounds.height / 2};
-        GraphicsContext g(list, bounds, list.scale);
+        GraphicsContext g = detail::GraphicsAccess::context(list, bounds, list.scale);
         const StrokeStyle stroke{.width = line, .cap = LineCap::round};
         g.stroke_path(Path().add_circle(center, radius), track_, {.width = line});
 

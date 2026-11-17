@@ -5,15 +5,15 @@
 #ifndef ELG_GPU_QUAD_RENDERER_H
 #define ELG_GPU_QUAD_RENDERER_H
 
-#include "gpu/device.h"
-#include "gpu/webgpu.h"
+#include "gpu/webgpu_types.h"
 
 #include <array>
 #include <cstdint>
-#include <utility>
-#include <vector>
+#include <memory>
 
 namespace elg::detail::gpu {
+
+class Device;
 
 // Primitive kinds; see shaders/ui.wgsl.
 enum class QuadKind : int {
@@ -54,12 +54,12 @@ static_assert(sizeof(QuadInstance) == 160);
 class QuadRenderer {
 public:
     QuadRenderer(const Device& device, const wgpu::BindGroupLayout& image_layout);
+    ~QuadRenderer();
 
     QuadRenderer(const QuadRenderer&) = delete;
     QuadRenderer& operator=(const QuadRenderer&) = delete;
     QuadRenderer(QuadRenderer&&) = delete;
     QuadRenderer& operator=(QuadRenderer&&) = delete;
-    ~QuadRenderer() = default;
 
     // The gradient stops' group: one read-only storage buffer.
     [[nodiscard]] wgpu::BindGroup stops_group(const wgpu::Buffer& stops) const;
@@ -80,20 +80,14 @@ private:
     struct Immediates {
         float viewport[2];
     };
+    // The shader, the layouts, and the pipelines made so far, which are specific to the target
+    // format (swapchain, layers) and blending.
+    struct Pipelines;
     const wgpu::RenderPipeline& pipeline_for(wgpu::TextureFormat format, bool masking = false);
 
     const Device& device_;
-    wgpu::ShaderModule module_;
-    wgpu::BindGroupLayout stops_layout_;
-    wgpu::PipelineLayout layout_;
+    std::unique_ptr<Pipelines> pipelines_;
     Immediates immediates_{};
-    // Pipelines are specific to the target format (swapchain, layers) and blending.
-    struct CachedPipeline {
-        wgpu::TextureFormat format{};
-        bool masking = false;
-        wgpu::RenderPipeline pipeline;
-    };
-    std::vector<CachedPipeline> pipelines_;
 };
 
 } // namespace elg::detail::gpu

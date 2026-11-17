@@ -4,7 +4,15 @@
 
 #include "gpu/path_renderer.h"
 
+#include "gpu/device.h"
+#include "gpu/webgpu.h"
+
+#include <webgpu/webgpu_cpp.h>
+
 namespace elg::detail::gpu {
+
+const wgpu::TextureFormat PathRenderer::kMaskFormat = wgpu::TextureFormat::R8Unorm;
+const wgpu::TextureFormat PathRenderer::kStencilFormat = wgpu::TextureFormat::Stencil8;
 
 namespace {
 
@@ -18,18 +26,29 @@ struct Immediates {
 
 } // namespace
 
-PathRenderer::PathRenderer(const Device& device) : device_(device) {
+struct PathRenderer::Pipelines {
+    wgpu::ShaderModule module;
+    wgpu::PipelineLayout layout;
+    wgpu::RenderPipeline stencil_non_zero;
+    wgpu::RenderPipeline stencil_even_odd;
+    wgpu::RenderPipeline cover_non_zero;
+    wgpu::RenderPipeline cover_even_odd;
+    wgpu::BindGroupLayout resolve_layout;
+    wgpu::RenderPipeline resolve;
+};
+
+PathRenderer::PathRenderer(const Device& device) : device_(device), pipelines_(std::make_unique<Pipelines>()) {
     const wgpu::Device& dev = device_.handle();
-    module_ = create_shader(dev, kPathWgsl, "path.wgsl");
+    pipelines_->module = create_shader(dev, kPathWgsl, "path.wgsl");
 
     wgpu::PipelineLayoutDescriptor layout_info;
     layout_info.label = "path";
     layout_info.immediateSize = sizeof(Immediates);
-    layout_ = dev.CreatePipelineLayout(&layout_info);
-    stencil_non_zero_ = create_pipeline(false, false);
-    stencil_even_odd_ = create_pipeline(false, true);
-    cover_non_zero_ = create_pipeline(true, false);
-    cover_even_odd_ = create_pipeline(true, true);
+    pipelines_->layout = dev.CreatePipelineLayout(&layout_info);
+    pipelines_->stencil_non_zero = create_pipeline(false, false);
+    pipelines_->stencil_even_odd = create_pipeline(false, true);
+    pipelines_->cover_non_zero = create_pipeline(true, false);
+    pipelines_->cover_even_odd = create_pipeline(true, true);
 
     // The resolve: reads every sample of the coverage, writes the mask.
     wgpu::BindGroupLayoutEntry samples{};
@@ -42,30 +61,32 @@ PathRenderer::PathRenderer(const Device& device) : device_(device) {
     group_info.label = "path samples";
     group_info.entryCount = 1;
     group_info.entries = &samples;
-    resolve_layout_ = dev.CreateBindGroupLayout(&group_info);
+    pipelines_->resolve_layout = dev.CreateBindGroupLayout(&group_info);
     wgpu::PipelineLayoutDescriptor resolve_layout_info;
     resolve_layout_info.label = "path resolve";
     resolve_layout_info.bindGroupLayoutCount = 1;
-    resolve_layout_info.bindGroupLayouts = &resolve_layout_;
+    resolve_layout_info.bindGroupLayouts = &pipelines_->resolve_layout;
     const wgpu::PipelineLayout resolve_layout = dev.CreatePipelineLayout(&resolve_layout_info);
 
     wgpu::ColorTargetState target;
     target.format = kMaskFormat;
     target.writeMask = wgpu::ColorWriteMask::Red;
     wgpu::FragmentState fragment;
-    fragment.module = module_;
+    fragment.module = pipelines_->module;
     fragment.entryPoint = "fs_resolve";
     fragment.targetCount = 1;
     fragment.targets = &target;
     wgpu::RenderPipelineDescriptor descriptor;
     descriptor.label = "path resolve";
     descriptor.layout = resolve_layout;
-    descriptor.vertex.module = module_;
+    descriptor.vertex.module = pipelines_->module;
     descriptor.vertex.entryPoint = "vs_cover";
     descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
     descriptor.fragment = &fragment;
-    resolve_ = dev.CreateRenderPipeline(&descriptor);
+    pipelines_->resolve = dev.CreateRenderPipeline(&descriptor);
 }
+
+PathRenderer::~PathRenderer() = default;
 
 wgpu::RenderPipeline PathRenderer::create_pipeline(bool cover, bool even_odd) {
     const wgpu::VertexAttribute position{.format = wgpu::VertexFormat::Float32x2, .offset = 0, .shaderLocation = 0};
@@ -103,15 +124,15 @@ wgpu::RenderPipeline PathRenderer::create_pipeline(bool cover, bool even_odd) {
     target.format = kMaskFormat;
     target.writeMask = cover ? wgpu::ColorWriteMask::Red : wgpu::ColorWriteMask::None;
     wgpu::FragmentState fragment;
-    fragment.module = module_;
+    fragment.module = pipelines_->module;
     fragment.entryPoint = "fs_coverage";
     fragment.targetCount = 1;
     fragment.targets = &target;
 
     wgpu::RenderPipelineDescriptor descriptor;
     descriptor.label = cover ? "path cover" : "path stencil";
-    descriptor.layout = layout_;
-    descriptor.vertex.module = module_;
+    descriptor.layout = pipelines_->layout;
+    descriptor.vertex.module = pipelines_->module;
     descriptor.vertex.entryPoint = cover ? "vs_cover" : "vs_fill";
     descriptor.vertex.bufferCount = cover ? 0 : 1;
     descriptor.vertex.buffers = cover ? nullptr : &vertices;
@@ -123,17 +144,17 @@ wgpu::RenderPipeline PathRenderer::create_pipeline(bool cover, bool even_odd) {
     return device_.handle().CreateRenderPipeline(&descriptor);
 }
 
-void PathRenderer::render(const wgpu::CommandEncoder& encoder, const RenderImage& samples_color,
-                          const RenderImage& stencil, const RenderImage& mask, std::uint32_t width,
+void PathRenderer::render(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& samples_color,
+                          const wgpu::TextureView& stencil, const wgpu::TextureView& mask, std::uint32_t width,
                           std::uint32_t height, const wgpu::Buffer& vertices, std::uint32_t first_vertex,
                           std::uint32_t vertex_count, bool even_odd) {
     {
         wgpu::RenderPassColorAttachment color;
-        color.view = samples_color.view();
+        color.view = samples_color;
         color.loadOp = wgpu::LoadOp::Clear;
         color.storeOp = wgpu::StoreOp::Store; // read by the resolve
         wgpu::RenderPassDepthStencilAttachment depth_stencil;
-        depth_stencil.view = stencil.view();
+        depth_stencil.view = stencil;
         depth_stencil.stencilLoadOp = wgpu::LoadOp::Clear;
         depth_stencil.stencilStoreOp = wgpu::StoreOp::Discard;
         wgpu::RenderPassDescriptor descriptor;
@@ -146,27 +167,27 @@ void PathRenderer::render(const wgpu::CommandEncoder& encoder, const RenderImage
         pass.SetScissorRect(0, 0, width, height);
 
         const Immediates immediates{{static_cast<float>(width), static_cast<float>(height)}};
-        pass.SetPipeline(even_odd ? stencil_even_odd_ : stencil_non_zero_);
+        pass.SetPipeline(even_odd ? pipelines_->stencil_even_odd : pipelines_->stencil_non_zero);
         pass.SetImmediates(0, &immediates, sizeof(immediates));
         pass.SetVertexBuffer(0, vertices);
         pass.Draw(vertex_count, 1, first_vertex, 0);
 
-        pass.SetPipeline(even_odd ? cover_even_odd_ : cover_non_zero_);
+        pass.SetPipeline(even_odd ? pipelines_->cover_even_odd : pipelines_->cover_non_zero);
         pass.Draw(3);
         pass.End();
     }
 
     wgpu::BindGroupEntry entry;
     entry.binding = 0;
-    entry.textureView = samples_color.view();
+    entry.textureView = samples_color;
     wgpu::BindGroupDescriptor group;
-    group.layout = resolve_layout_;
+    group.layout = pipelines_->resolve_layout;
     group.entryCount = 1;
     group.entries = &entry;
     const wgpu::BindGroup samples = device_.handle().CreateBindGroup(&group);
 
     wgpu::RenderPassColorAttachment color;
-    color.view = mask.view();
+    color.view = mask;
     color.loadOp = wgpu::LoadOp::Clear;
     color.storeOp = wgpu::StoreOp::Store;
     wgpu::RenderPassDescriptor descriptor;
@@ -174,7 +195,7 @@ void PathRenderer::render(const wgpu::CommandEncoder& encoder, const RenderImage
     descriptor.colorAttachmentCount = 1;
     descriptor.colorAttachments = &color;
     const wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&descriptor);
-    pass.SetPipeline(resolve_);
+    pass.SetPipeline(pipelines_->resolve);
     pass.SetBindGroup(0, samples);
     pass.Draw(3);
     pass.End();

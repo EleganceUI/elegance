@@ -5,7 +5,7 @@
 // The menu bar on Linux (App::menu_bar): there's no global menu to rely on, so the app draws it
 // at the top of each window's content (menu_bar_view) and matches its shortcuts itself.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 
 namespace elg::detail::platform::native {
 

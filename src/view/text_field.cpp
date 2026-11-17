@@ -6,6 +6,7 @@
 
 #include "core/numeric.h"
 #include "core/utf8.h"
+#include "platform/platform.h"
 #include "text/glyph_draw.h"
 #include "text/styled_layout.h"
 
@@ -712,11 +713,7 @@ EventResult TextEditor::key(const KeyEvent& event) {
     }
     const bool shift = has(event.modifiers, KeyModifiers::shift);
     const bool primary = has(event.modifiers, primary_modifier());
-#if defined(__APPLE__)
-    const bool word = has(event.modifiers, KeyModifiers::alt);
-#else
-    const bool word = has(event.modifiers, KeyModifiers::control);
-#endif
+    const bool word = has(event.modifiers, platform::word_modifier());
     // Ctrl+Alt is AltGr on Windows: it types characters.
     const bool shortcut = (has(event.modifiers, KeyModifiers::control) && !has(event.modifiers, KeyModifiers::alt)) ||
                           has(event.modifiers, KeyModifiers::super);

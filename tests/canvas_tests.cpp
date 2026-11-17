@@ -4,7 +4,7 @@
 
 // When a Canvas calls its draw function, with what, and when it asks to be drawn again.
 
-#include "render/display_list.h"
+#include "display/display_list.h"
 #include "view/view_node.h"
 
 #include <elg/elegance.h>

@@ -5,31 +5,34 @@
 #ifndef ELG_GPU_BLUR_RENDERER_H
 #define ELG_GPU_BLUR_RENDERER_H
 
-#include "gpu/device.h"
-#include "gpu/webgpu.h"
+#include "gpu/webgpu_types.h"
 
 #include <cstdint>
+#include <memory>
 
 namespace elg::detail::gpu {
+
+class Device;
 
 // One direction of a separable Gaussian blur, and a box downsample ahead of wide blurs
 // (shaders/blur.wgsl). Single-channel blurs (R8) make shadows; color blurs (sRGB RGBA, like
 // layers) make blurred layers and backdrops.
 class BlurRenderer {
 public:
-    static constexpr wgpu::TextureFormat kFormat = wgpu::TextureFormat::R8Unorm;
-    static constexpr wgpu::TextureFormat kColorFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
+    // R8Unorm and RGBA8UnormSrgb (defined with WebGPU's values in the source file).
+    static const wgpu::TextureFormat kFormat;
+    static const wgpu::TextureFormat kColorFormat;
     // What a pass reads from its source: a single channel into kFormat, or color into
     // kColorFormat.
     enum class Channel { alpha = 0, red = 1, color = 2, inverse_alpha = 3 };
 
     BlurRenderer(const Device& device, const wgpu::BindGroupLayout& image_layout);
+    ~BlurRenderer();
 
     BlurRenderer(const BlurRenderer&) = delete;
     BlurRenderer& operator=(const BlurRenderer&) = delete;
     BlurRenderer(BlurRenderer&&) = delete;
     BlurRenderer& operator=(BlurRenderer&&) = delete;
-    ~BlurRenderer() = default;
 
     // Records into `pass`, covering `width` x `height` at its top-left; the source's valid region
     // is the same size. `clamp_edges`: outside it repeats its edge instead of being transparent.
@@ -41,9 +44,8 @@ public:
                     std::uint32_t height, std::uint32_t factor, bool clamp_edges);
 
 private:
-    wgpu::RenderPipeline single_;
-    wgpu::RenderPipeline color_;
-    wgpu::RenderPipeline downsample_;
+    struct Pipelines; // single-channel, color, downsample
+    std::unique_ptr<Pipelines> pipelines_;
 };
 
 } // namespace elg::detail::gpu

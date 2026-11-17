@@ -7,12 +7,15 @@
 
 #include <elg/elegance.h>
 
+#include "gpu/external_image.h"
 #include "render/frame_plan.h"
 #include "view/view_node.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <webgpu/webgpu_cpp.h>
 
 #include <limits>
+#include <memory>
 
 using namespace elg;
 
@@ -38,6 +41,20 @@ public:
     int updates = 0;
     mutable int snapshots = 0;
     std::optional<detail::VideoFrame> next;
+};
+
+// An image imported from another API with no GPU objects: planning only passes it on.
+class NoExternalImage final : public detail::gpu::ExternalImage {
+public:
+    void accept() noexcept override {}
+    [[nodiscard]] const wgpu::Device& device() const noexcept override { return device_; }
+    [[nodiscard]] const wgpu::Texture& texture() const noexcept override { return texture_; }
+    [[nodiscard]] const wgpu::TextureView& view() const noexcept override { return view_; }
+
+private:
+    wgpu::Device device_;
+    wgpu::Texture texture_;
+    wgpu::TextureView view_;
 };
 
 } // namespace
@@ -94,8 +111,8 @@ TEST_CASE("video geometry follows the sampled snapshot without UI size updates",
     frame.width = 100;
     frame.height = 200;
     frame.frame_id = 1;
-    const auto lease = std::make_shared<int>(42);
-    frame.texture_lease = lease;
+    const std::shared_ptr<const detail::gpu::ExternalImage> external = std::make_shared<NoExternalImage>();
+    frame.external = external;
 
     detail::DisplayList list;
     list.scale = 2;
@@ -115,7 +132,7 @@ TEST_CASE("video geometry follows the sampled snapshot without UI size updates",
     REQUIRE(portrait.video_frames.size() == 1);
     REQUIRE(portrait.video_frames[0]);
     // NOLINTBEGIN(bugprone-unchecked-optional-access): portrait's frame is REQUIREd; landscape's is the same source's
-    CHECK(portrait.video_frames[0]->texture_lease == lease);
+    CHECK(portrait.video_frames[0]->external == external);
 
     frame.width = 400;
     frame.height = 100;

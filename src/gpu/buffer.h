@@ -5,10 +5,11 @@
 #ifndef ELG_GPU_BUFFER_H
 #define ELG_GPU_BUFFER_H
 
-#include "gpu/webgpu.h"
+#include "gpu/webgpu_types.h"
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <span>
 
 namespace elg::detail::gpu {
@@ -18,18 +19,24 @@ namespace elg::detail::gpu {
 // every frame.
 class Buffer {
 public:
-    Buffer(wgpu::Device  device, wgpu::BufferUsage usage) noexcept;
+    Buffer(const wgpu::Device& device, wgpu::BufferUsage usage);
+    ~Buffer();
+
+    Buffer(const Buffer&) = delete;
+    Buffer& operator=(const Buffer&) = delete;
+    Buffer(Buffer&&) = delete;
+    Buffer& operator=(Buffer&&) = delete;
 
     // Replaces the contents, growing the buffer if needed. Always leaves a (non-empty) buffer to
     // bind, even for empty data.
     void write(std::span<const std::byte> data);
 
-    [[nodiscard]] const wgpu::Buffer& handle() const noexcept { return buffer_; }
+    [[nodiscard]] const wgpu::Buffer& handle() const noexcept;
 
 private:
-    wgpu::Device device_;
+    struct Objects; // the device and the buffer
+    std::unique_ptr<Objects> objects_;
     wgpu::BufferUsage usage_;
-    wgpu::Buffer buffer_;
     std::uint64_t capacity_ = 0;
 };
 

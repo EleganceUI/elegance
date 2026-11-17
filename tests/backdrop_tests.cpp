@@ -30,8 +30,8 @@ detail::DisplayList paint(detail::Element& root) {
 }
 
 // The backdrops drawn, in order.
-std::vector<detail::BackdropFill> backdrops(const detail::DisplayList& list) {
-    std::vector<detail::BackdropFill> found;
+std::vector<BackdropFill> backdrops(const detail::DisplayList& list) {
+    std::vector<BackdropFill> found;
     for (const detail::DrawCommand& command : list.commands) {
         const ShapeStyle* fill = nullptr;
         if (const auto* rect = std::get_if<detail::RectCommand>(&command)) {
@@ -39,7 +39,7 @@ std::vector<detail::BackdropFill> backdrops(const detail::DisplayList& list) {
         } else if (const auto* path = std::get_if<detail::PathCommand>(&command)) {
             fill = &path->fill;
         }
-        if (const auto* backdrop = fill ? std::get_if<detail::BackdropFill>(&fill->value()) : nullptr) {
+        if (const auto* backdrop = fill ? std::get_if<BackdropFill>(&fill->value()) : nullptr) {
             found.push_back(*backdrop);
         }
     }
@@ -57,7 +57,7 @@ TEST_CASE("a backdrop blur goes behind what it wraps", "[backdrop]") {
                                         .backdrop_blur(20, {.saturation = 1.8f, .brightness = -0.1f, .noise = 0.02f}),
                                     {});
     const detail::DisplayList list = paint(*root);
-    const std::vector<detail::BackdropFill> found = backdrops(list);
+    const std::vector<BackdropFill> found = backdrops(list);
     REQUIRE(found.size() == 1);
     CHECK(found[0].blur == 20);
     CHECK(found[0].saturation == 1.8f);
@@ -66,7 +66,7 @@ TEST_CASE("a backdrop blur goes behind what it wraps", "[backdrop]") {
     // First: the backdrop, then the tint, then the content.
     const auto* first = std::get_if<detail::RectCommand>(&list.commands.front());
     REQUIRE(first);
-    CHECK(std::holds_alternative<detail::BackdropFill>(first->fill.value()));
+    CHECK(std::holds_alternative<BackdropFill>(first->fill.value()));
 }
 
 TEST_CASE("a backdrop blur follows its state", "[backdrop]") {
@@ -80,7 +80,7 @@ TEST_CASE("a backdrop blur follows its state", "[backdrop]") {
     radius = 30.f;
     saturation = 0.f;
     detail::flush_effects();
-    const detail::BackdropFill now = backdrops(paint(*root)).front();
+    const BackdropFill now = backdrops(paint(*root)).front();
     CHECK(now.blur == 30);
     CHECK(now.saturation == 0);
 }

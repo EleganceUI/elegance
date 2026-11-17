@@ -46,6 +46,7 @@ add_executable(elegance_tests
         image_tests.cpp
         navigation_tests.cpp
         number_input_tests.cpp
+        os_tests.cpp
         path_tests.cpp
         progress_tests.cpp
         prop_argument_tests.cpp

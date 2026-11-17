@@ -10,20 +10,22 @@ endif ()
 add_library(elegance ${ELG_LIBRARY_TYPE}
         animation/animation.cpp
         animation/frame_clock.cpp
-        app.cpp
-        error.cpp
-        graphics_context.cpp
+        app/app.cpp
+        core/error.cpp
+        view/graphics_context.cpp
         geometry/path.cpp
         core/app_errors.cpp
         core/crash.cpp
+        core/dynamic_library.cpp
         core/log.cpp
-        core/timers.cpp
+        reactive/timers.cpp
         core/ui_tasks.cpp
         core/utf8.cpp
         gpu/atlas_texture.cpp
         gpu/blur_renderer.cpp
         gpu/buffer.cpp
         gpu/device.cpp
+        gpu/external_image.cpp
         gpu/instance.cpp
         gpu/path_renderer.cpp
         gpu/quad_renderer.cpp
@@ -38,23 +40,23 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         media/image_decode.cpp
         media/miniaudio.cpp
         media/recorder.cpp
-        media/gpu_image.cpp
         media/video_feed.cpp
         media/video_source.cpp
         net/fetch.cpp
         net/http_cache.cpp
         net/proxy.cpp
-        platform/generic/accessibility_adapter.cpp
-        platform/generic/desktop_sdl.cpp
-        platform/generic/dynamic_library.cpp
-        platform/generic/menu_bar.cpp
-        platform/generic/platform_sdl.cpp
-        platform/generic/system_text.cpp
+        platform/sdl/accessibility_adapter.cpp
+        platform/sdl/desktop_sdl.cpp
+        platform/sdl/menu_bar.cpp
+        platform/sdl/os.cpp
+        platform/sdl/platform_sdl.cpp
+        platform/sdl/system_text.cpp
         reactive/runtime.cpp
-        render/display_list.cpp
+        display/display_list.cpp
         render/frame_mailbox.cpp
         render/frame_plan.cpp
         render/frame_sources.cpp
+        render/gpu_image.cpp
         render/path_cache.cpp
         render/render_thread.cpp
         render/window_target.cpp
@@ -73,14 +75,14 @@ add_library(elegance ${ELG_LIBRARY_TYPE}
         view/gestures.cpp
         view/fragment.cpp
         view/grid_layout.cpp
-        view/hot_reload.cpp
+        hot_reload/hot_reload.cpp
         view/image.cpp
         view/accessibility.cpp
         view/async_image.cpp
         view/raster_image.cpp
         view/video_view.cpp
         view/inspect.cpp
-        view/inspector.cpp
+        app/inspector.cpp
         view/lazy_stack.cpp
         view/menus.cpp
         view/modifiers.cpp
@@ -200,18 +202,22 @@ if (ELG_ICONS)
     endif ()
 endif ()
 
-# Each OS's own code: platform/windows, platform/macos, platform/linux (also other Unix desktops).
+# Each OS's own code: platform/windows, platform/macos, platform/linux (also other Unix desktops),
+# and the GPU layer's interop with each OS's graphics APIs (gpu/<os>).
 if (WIN32)
     target_sources(elegance PRIVATE
+            gpu/windows/composition.cpp
+            gpu/windows/system.cpp
             platform/windows/appearance.cpp
             platform/windows/camera.cpp
-            platform/windows/composition.cpp
             platform/windows/dock.cpp
             platform/windows/fonts.cpp
             platform/windows/image_codec.cpp
             platform/windows/menu_bar.cpp
             platform/windows/native.cpp
+            platform/windows/net.cpp
             platform/windows/notifications.cpp
+            platform/windows/os.cpp
             platform/windows/proxy.cpp
             platform/windows/video_source.cpp)
     # dwmapi: rounded corners and backdrops; comctl32: window subclassing; d3d11/dxgi/dcomp: transparent windows.
@@ -223,19 +229,23 @@ if (APPLE)
     enable_language(OBJCXX)
     # Integrated title bars and trackpad gestures through AppKit.
     set(elg_apple_sources
+            gpu/macos/surface_publisher.mm
             platform/macos/appearance.mm
             platform/macos/camera.mm
             platform/macos/dock.mm
             platform/macos/input.mm
             platform/macos/menu_bar.mm
             platform/macos/notifications.mm
-            platform/macos/surface_publisher.mm
             platform/macos/title_bar.mm
             platform/macos/video_source.mm)
     target_sources(elegance PRIVATE ${elg_apple_sources}
+            gpu/presenter.cpp
+            gpu/system.cpp
             platform/macos/fonts.cpp
             platform/macos/image_codec.cpp
             platform/macos/native.cpp
+            platform/macos/net.cpp
+            platform/macos/os.cpp
             platform/macos/pixel_buffer.cpp
             platform/macos/proxy.cpp)
     set_source_files_properties(${elg_apple_sources} PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
@@ -274,6 +284,8 @@ if (UNIX AND NOT APPLE)
         message(STATUS "Elegance: GIO not found (gio-2.0): notifications are only logged")
     endif ()
     target_sources(elegance PRIVATE
+            gpu/presenter.cpp
+            gpu/system.cpp
             platform/linux/appearance.cpp
             platform/linux/camera.cpp
             platform/linux/dock.cpp
@@ -282,7 +294,9 @@ if (UNIX AND NOT APPLE)
             platform/linux/image_codec.cpp
             platform/linux/menu_bar.cpp
             platform/linux/native.cpp
+            platform/linux/net.cpp
             platform/linux/notifications.cpp
+            platform/linux/os.cpp
             platform/linux/proxy.cpp
             platform/linux/video_source.cpp)
 endif ()
@@ -310,7 +324,7 @@ if (WIN32 AND ELG_BUILD_SHARED)
 endif ()
 
 # Dawn's Direct3D 12 backend loads the DirectX shader compiler at run time (without it, the
-# device uses the older, much slower FXC: see dxc_available() in gpu/device.cpp), so it isn't
+# device uses the older, much slower FXC: see dxc_available() in gpu/windows/system.cpp), so it isn't
 # among the linked DLLs above. It goes next to
 # the apps: beside elegance.dll, or with a static Elegance, into the runtime output folder (set it,
 # or copy these two DLLs next to your app yourself).

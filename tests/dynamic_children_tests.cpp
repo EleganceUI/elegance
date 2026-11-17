@@ -5,7 +5,7 @@
 // Children that come and go while the app runs: repeated keys in lazy stacks, and handles that
 // outlive the views they point at.
 
-#include "render/display_list.h"
+#include "display/display_list.h"
 #include "view/focus.h"
 #include "view/view_node.h"
 

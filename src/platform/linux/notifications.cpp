@@ -7,7 +7,7 @@
 // (glib_thread.h), where its signals (a click) arrive too. Without GIO in the build, they're
 // logged.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 
 #include "core/log.h"
 

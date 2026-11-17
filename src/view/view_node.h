@@ -18,6 +18,7 @@
 #include <elg/modifier.h>
 #include <elg/prop.h>
 #include <elg/reactive.h>
+#include <elg/shapes.h>
 #include <elg/view.h>
 #include <elg/views.h>
 
@@ -66,9 +67,14 @@ public:
     [[nodiscard]] virtual std::unique_ptr<Element> lower(const LowerContext& context) const = 0;
 };
 
+class ShapeNode;
+class TextNode;
+
 struct ViewAccess {
     static const std::shared_ptr<const ViewNode>& node(const View& view) noexcept { return view.node_; }
     static View make(std::shared_ptr<const ViewNode> node) noexcept { return View(std::move(node)); }
+    static Shape shape(std::shared_ptr<const ShapeNode> node) { return Shape(std::move(node)); }
+    static Text text(std::shared_ptr<const TextNode> node) { return Text(std::move(node)); }
 };
 
 // Mounts a view: builds its element tree. Runs component bodies and ViewModifier bodies.

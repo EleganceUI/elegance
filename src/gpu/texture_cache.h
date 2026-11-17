@@ -5,17 +5,18 @@
 #ifndef ELG_GPU_TEXTURE_CACHE_H
 #define ELG_GPU_TEXTURE_CACHE_H
 
-#include "gpu/device.h"
 #include "gpu/eviction.h"
-#include "gpu/webgpu.h"
+#include "gpu/webgpu_types.h"
 #include "media/image_decode.h"
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
-#include <unordered_map>
+#include <memory>
 
 namespace elg::detail::gpu {
+
+class Device;
 
 // What TextureCache keeps of the textures that frames don't draw.
 inline constexpr CachePolicy kDecodedImagePolicy{std::chrono::seconds(10), std::size_t{512} << 20};
@@ -42,12 +43,12 @@ public:
     // `policy`: kDecodedImagePolicy, unless tests ask for another.
     TextureCache(const Device& device, wgpu::BindGroupLayout image_layout,
                  CachePolicy policy = kDecodedImagePolicy);
+    ~TextureCache();
 
     TextureCache(const TextureCache&) = delete;
     TextureCache& operator=(const TextureCache&) = delete;
     TextureCache(TextureCache&&) = delete;
     TextureCache& operator=(TextureCache&&) = delete;
-    ~TextureCache() = default;
 
     // Starts a window's frame, drawn at `now`: the textures it acquires are the ones it needs.
     void begin_frame(CacheClock::time_point now) noexcept { frame_.begin(now); }
@@ -62,22 +63,16 @@ public:
     void end_frame();
 
     // How many images have a texture.
-    [[nodiscard]] std::size_t size() const noexcept { return textures_.size(); }
+    [[nodiscard]] std::size_t size() const noexcept;
 
 private:
-    struct Texture {
-        wgpu::Texture texture;
-        wgpu::BindGroup group;
-        CacheUse use;
-    };
+    // The image layout, the sampler, the mip pipeline, and the textures by DecodedImage::id.
+    struct Objects;
 
     void generate_mips(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture, std::uint32_t levels);
 
     const Device& device_;
-    wgpu::BindGroupLayout layout_;
-    wgpu::Sampler sampler_;
-    wgpu::RenderPipeline mip_pipeline_;
-    std::unordered_map<std::uint64_t, Texture> textures_; // by DecodedImage::id
+    std::unique_ptr<Objects> objects_;
     CachePolicy policy_;
     CacheFrame frame_;
     bool warned_ = false; // about an image too large for a texture

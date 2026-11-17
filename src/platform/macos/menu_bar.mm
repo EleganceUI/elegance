@@ -6,7 +6,7 @@
 // own. Roles without an action of their own use AppKit's standard actions (About, Hide, the
 // window's Minimize, Zoom, Full Screen). Compiled with ARC.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 
 #import <AppKit/AppKit.h>
 

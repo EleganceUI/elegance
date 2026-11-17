@@ -5,7 +5,7 @@
 #ifndef ELG_TEXT_GLYPH_DRAW_H
 #define ELG_TEXT_GLYPH_DRAW_H
 
-#include "render/display_list.h"
+#include "display/display_list.h"
 #include "text/glyph_atlas.h"
 #include "text/text_layout.h"
 

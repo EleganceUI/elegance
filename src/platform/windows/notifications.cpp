@@ -5,7 +5,7 @@
 // Notifications on Windows (elg/desktop.h): a shell notification icon's balloon, which Windows 10
 // and later show as a toast and keep in the notification center.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"

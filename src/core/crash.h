@@ -22,7 +22,7 @@ namespace elg::detail {
 #if defined(__cpp_lib_stacktrace)
 using StackTrace = std::stacktrace;
 #else
-// libc++ (macOS) has no <stacktrace>: the return addresses, symbolized by execinfo.
+// libc++ has no <stacktrace>: the return addresses, which the system names (core/os_backend.h).
 struct StackTrace {
     static StackTrace current() noexcept;
     std::vector<void*> frames;

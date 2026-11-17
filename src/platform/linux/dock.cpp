@@ -7,7 +7,7 @@
 // its desktop entry (glib_thread.h's app_id). A badge shows only when it's a number. Without
 // GIO, neither shows.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 
 #if defined(ELG_HAVE_GIO)
 

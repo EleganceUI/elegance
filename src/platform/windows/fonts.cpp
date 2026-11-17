@@ -3,12 +3,14 @@
 // https://mozilla.org/MPL/2.0/.
 
 // Font files on Windows (text/font_library.h): Segoe UI, and Windows' own fonts
-// for other scripts and symbols.
+// for other scripts and symbols. And the glyph cache's folder (text/text_backend.h).
 // TODO: real system font discovery (DirectWrite).
 
+#include "core/os_backend.h"
 #include "text/font_library.h"
+#include "text/text_backend.h"
 
-#include "platform/generic/platform.h"
+#include "platform/platform.h"
 
 #include <filesystem>
 #include <vector>
@@ -19,7 +21,7 @@ std::vector<std::filesystem::path> system_font_candidates(Weight weight, bool it
     const int w = static_cast<int>(weight);
     std::vector<std::filesystem::path> files;
     const std::filesystem::path dir =
-        std::filesystem::path(platform::environment_variable("WINDIR").value_or("C:\\Windows")) / "Fonts";
+        std::filesystem::path(os::environment_variable("WINDIR").value_or("C:\\Windows")) / "Fonts";
     if (italic) {
         // Segoe UI's italics; upright ones follow if they're missing.
         if (w <= 300) {
@@ -50,12 +52,20 @@ std::vector<std::filesystem::path> system_font_candidates(Weight weight, bool it
 std::vector<std::filesystem::path> fallback_font_candidates() {
     std::vector<std::filesystem::path> files;
     const std::filesystem::path dir =
-        std::filesystem::path(platform::environment_variable("WINDIR").value_or("C:\\Windows")) / "Fonts";
+        std::filesystem::path(os::environment_variable("WINDIR").value_or("C:\\Windows")) / "Fonts";
     for (const char* name : {"seguisym.ttf", "seguiemj.ttf", "msyh.ttc", "YuGothR.ttc", "malgun.ttf", "Nirmala.ttf",
                              "ebrima.ttf", "gadugi.ttf", "seguihis.ttf", "simsun.ttc", "arial.ttf"}) {
         files.push_back(dir / name);
     }
     return files;
+}
+
+std::optional<std::filesystem::path> glyph_cache_folder(
+    const std::function<std::optional<std::string>(const char*)>& get) {
+    if (const auto base = get("LOCALAPPDATA")) {
+        return std::filesystem::path(*base) / "Elegance" / "GlyphCache";
+    }
+    return std::nullopt;
 }
 
 } // namespace elg::detail

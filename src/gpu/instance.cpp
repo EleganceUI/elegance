@@ -4,48 +4,33 @@
 
 #include "gpu/instance.h"
 
+#include "gpu/system.h"
+#include "gpu/webgpu.h"
+
 #include <elg/error.h>
 
-#include <cstdint>
-#include <span>
-#include <string>
-#include <string_view>
+#include <webgpu/webgpu_cpp.h>
 
-#if defined(_WIN32)
-#include <dawn/native/DawnNative.h>
-#include <windows.h>
-#endif
+#include <cstdint>
+#include <iterator>
 
 namespace elg::detail::gpu {
 
-Instance::Instance() {
+Instance::Instance() : instance_(std::make_unique<wgpu::Instance>()) {
     // WaitAny with a timeout: requesting the adapter and device, and waiting for the GPU.
     const wgpu::InstanceFeatureName features[] = {wgpu::InstanceFeatureName::TimedWaitAny};
     wgpu::InstanceDescriptor descriptor;
     descriptor.requiredFeatureCount = std::size(features);
     descriptor.requiredFeatures = features;
-#if defined(_WIN32)
-    // Dawn looks for d3dcompiler_47.dll (Direct3D 11) and vulkan-1.dll next to itself, then by
-    // bare name. That second try uses LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, which needs an absolute
-    // path, so it always fails (ERROR_INVALID_PARAMETER) and the system's copies are never found.
-    // Name System32 as a search path instead (Dawn appends the file name).
-    char system[MAX_PATH];
-    const UINT length = GetSystemDirectoryA(system, MAX_PATH);
-    std::string system_dir = length > 0 && length < MAX_PATH ? std::string(system, length) + '\\' : std::string();
-    std::string_view search_paths[] = {system_dir};
-    dawn::native::DawnInstanceDescriptor dawn_descriptor;
-    dawn_descriptor.additionalRuntimeSearchPaths = std::span(search_paths, system_dir.empty() ? 0 : 1);
-    descriptor.nextInChain = &dawn_descriptor;
-#endif
-    instance_ = wgpu::CreateInstance(&descriptor);
-    if (!instance_) {
+    *instance_ = create_instance(descriptor);
+    if (!*instance_) {
         throw GpuError("WebGPU is not available: the instance could not be created");
     }
 }
 
 void Instance::wait(wgpu::Future future) const {
     constexpr std::uint64_t kTimeout = 5'000'000'000; // nanoseconds
-    const wgpu::WaitStatus status = instance_.WaitAny(future, kTimeout);
+    const wgpu::WaitStatus status = instance_->WaitAny(future, kTimeout);
     if (status == wgpu::WaitStatus::TimedOut) {
         throw GpuError("the GPU didn't answer for 5 seconds: the device is treated as lost");
     }
@@ -83,11 +68,17 @@ wgpu::Surface Instance::create_surface(const platform::SurfaceSource& source) co
         break;
     case Kind::none: throw GpuError("the window has nothing to draw into");
     }
-    wgpu::Surface surface = instance_.CreateSurface(&descriptor);
+    wgpu::Surface surface = instance_->CreateSurface(&descriptor);
     if (!surface) {
         throw_gpu_error("create a window surface");
     }
     return surface;
+}
+
+Instance::~Instance() = default;
+
+const wgpu::Instance& Instance::handle() const noexcept {
+    return *instance_;
 }
 
 } // namespace elg::detail::gpu

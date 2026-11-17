@@ -268,7 +268,7 @@ drag & drop, IME composition, cursors, native file dialogs, multi-window, and th
   - Both dim while the window is inactive, and both are `.focusable(false)`.
 - `.focusable(false)` takes a whole subtree out of keyboard focus (Tab skips it, clicks leave
   focus alone).
-- **Transparency on Windows goes through DirectComposition** (`platform/windows/composition`).
+- **Transparency on Windows goes through DirectComposition** (`gpu/windows/composition`).
   - Windows Vulkan drivers expose only `VK_COMPOSITE_ALPHA_OPAQUE`; on this AMD machine
     `SDL_WINDOW_TRANSPARENT` alone gave black corners.
   - Each transparent window gets a D3D11 device on the same adapter (matched by LUID).
@@ -1382,7 +1382,7 @@ player.play();  player.is_playing();  player.time();    // signals
   samples.
 - macOS: `AVPlayer` + `AVPlayerItemVideoOutput` → `CVPixelBuffer`. When the renderer runs on
   Metal with IOSurface sharing, the output delivers IOSurface-backed BGRA, imported into Dawn as
-  is (`platform/macos/surface_publisher`, over the `ElgGpuImage` IOSurface transport); each
+  is (`gpu/macos/surface_publisher`, over the `ElgGpuImage` IOSurface transport); each
   buffer stays retained until the renderer's reads signal their MTLSharedEvent fences. Otherwise
   it delivers NV12, copied into `cpu` frames.
 - Linux: a GStreamer `playbin` with an `appsink` (DMA-BUF when available).
@@ -1634,7 +1634,7 @@ Separate render thread from day one (decided).
     - Swapchains have two images, so at most one frame is queued.
     - After each live-resize frame the UI thread waits for the compositor (`DwmFlush`), so the
       new frame is on screen before the next resize step.
-  - On Windows, every window now presents through DirectComposition (`platform/windows/composition`),
+  - On Windows, every window now presents through DirectComposition (`gpu/windows/composition`),
     so that path is no longer just for transparent windows:
     - A composition swapchain is shown at its own pixel size, never stretched.
     - A late frame stays anchored top-left over a background layer in the window's clear color:

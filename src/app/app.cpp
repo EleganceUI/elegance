@@ -1,0 +1,1764 @@
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file, You can obtain one at
+// https://mozilla.org/MPL/2.0/.
+
+#include <elg/app.h>
+#include <elg/window.h>
+
+#include "core/app_errors.h"
+#include "core/crash.h"
+#include "core/log.h"
+#include "core/scope_exit.h"
+#include "reactive/timers.h"
+#include "platform/desktop.h"
+#include "platform/menu_bar.h"
+#include "platform/system.h"
+#include "platform/platform.h"
+#include "platform/system_text.h"
+#include "reactive/runtime.h"
+#include "render/frame_mailbox.h"
+#include "render/path_cache.h"
+#include "render/render_thread.h"
+#include "text/text_system.h"
+#include "view/animated.h"
+#include "view/event_dispatcher.h"
+#include "view/floating.h"
+#include "platform/accessibility_adapter.h"
+#include "view/accessibility.h"
+#include "view/drop.h"
+#include "app/inspector.h"
+#include "core/ui_tasks.h"
+#include "view/view_node.h"
+
+#include <elg/error.h>
+#include <elg/animation.h>
+#include <elg/environment.h>
+#include <elg/platform.h>
+#include <elg/reactive.h>
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <exception>
+#include <map>
+#include <memory>
+#include <ranges>
+#include <thread>
+#include <vector>
+
+namespace elg {
+
+using namespace detail;
+using namespace std::chrono_literals;
+
+namespace {
+
+// Whether an App is running, on whichever thread (App::run).
+std::atomic<bool> g_app_running{false};
+
+// How long the UI thread waits for a frame to be presented when it must be on screen before
+// continuing (first frame, live resize). Bounded so a stuck driver can't freeze the app.
+constexpr auto kPresentTimeout = 100ms;
+constexpr auto kFirstFrameTimeout = 1000ms;
+// How long the UI thread waits for other work of the render thread (a window's removal). The
+// render thread itself waits at most 5 s for the GPU (gpu::Instance::wait()), so this is enough.
+constexpr auto kRenderWorkTimeout = 5000ms;
+// How long a new window (or popup) waits for its glyphs before showing anyway.
+constexpr auto kGlyphWarmup = 1500ms;
+constexpr auto kPopupGlyphWarmup = 150ms;
+// How long a frame that needs new glyphs (text changing font or weight) waits for them, as
+// browsers hold a frame for its fonts: long enough for a few glyphs, short enough to stay
+// responsive. If they aren't ready by then the frame shows without them, and redraws when they are.
+constexpr auto kGlyphFrameHold = 50ms;
+// While animating, the loop paces itself by waiting for the previous frame's present (vsync);
+// this bounds the wait if presentation stalls.
+constexpr auto kAnimationFrameTimeout = 50ms;
+
+// Seconds between accessibility updates while frames come quickly (they're coalesced).
+constexpr double kAccessibilityInterval = 0.1;
+
+double seconds_now() {
+    return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
+struct WindowEntry {
+    WindowDesc desc;
+    ContentFunction content;
+    // Wraps the content (Linux: the menu bar above it). Set by App::run.
+    std::function<View(View)> wrap;
+};
+
+// The system's accent color while an App runs (system_accent_color()).
+State<std::optional<Color>>* g_accent_color = nullptr;
+
+// Where popup requests go: the app's popup host (in App::run).
+struct PopupSink {
+    std::function<void(PopupRequest, std::uint32_t opener)> open;
+    std::function<void(int level)> close_menus;
+    std::function<void(std::function<void()>)> close_menus_then;
+    std::function<void()> close_tooltip;
+    std::function<void(std::uint64_t token)> close_popup;
+    std::function<void(std::uint64_t token, Rect anchor, std::uint32_t opener)> move_popup;
+};
+
+// What a window's elements need from the platform beyond drawing (view/window_services.h).
+class LiveWindowServices final : public WindowServices {
+public:
+    explicit LiveWindowServices(platform::Window& window) noexcept : window_(&window) {}
+
+    void set_popups(const PopupSink* popups, int menu_level) noexcept {
+        popups_ = popups;
+        menu_level_ = menu_level;
+    }
+    void open_popup(PopupRequest request) override {
+        if (popups_) {
+            popups_->open(std::move(request), window_->id());
+        }
+    }
+    void close_menus(int level) override {
+        if (popups_) {
+            popups_->close_menus(level);
+        }
+    }
+    void close_menus_then(std::function<void()> action) override {
+        if (popups_) {
+            popups_->close_menus_then(std::move(action));
+        } else if (action) {
+            action();
+        }
+    }
+    void close_tooltip() override {
+        if (popups_) {
+            popups_->close_tooltip();
+        }
+    }
+    [[nodiscard]] int menu_level() const override { return menu_level_; }
+    void close_popup(std::uint64_t token) override {
+        if (popups_) {
+            popups_->close_popup(token);
+        }
+    }
+    void move_popup(std::uint64_t token, Rect anchor) override {
+        if (popups_) {
+            popups_->move_popup(token, anchor, window_->id());
+        }
+    }
+
+    void start_text_input(bool secure) override { window_->start_text_input(secure); }
+    void stop_text_input() override { window_->stop_text_input(); }
+    void set_text_input_area(Rect area, float cursor) override { window_->set_text_input_area(area, cursor); }
+    std::string clipboard_text() override { return platform::clipboard_text(); }
+    void set_clipboard_text(const std::string& text) override { platform::set_clipboard_text(text); }
+    void wake_at(double seconds) override {
+        if (!wake_ || seconds < *wake_) {
+            wake_ = seconds;
+        }
+    }
+
+    [[nodiscard]] std::optional<double> wake() const noexcept { return wake_; }
+    // True (and forgets it) when the requested wake time has come.
+    bool take_due(double now) noexcept {
+        if (wake_ && *wake_ <= now) {
+            wake_.reset();
+            return true;
+        }
+        return false;
+    }
+
+private:
+    platform::Window* window_;
+    std::optional<double> wake_;
+    const PopupSink* popups_ = nullptr;
+    int menu_level_ = -1;
+};
+
+} // namespace
+
+// What a WindowHandle refers to; outlives the window (handles may be kept), so `window` is
+// cleared when it closes.
+namespace detail {
+struct WindowState {
+    platform::Window* window = nullptr;
+    TitleBar title_bar = TitleBar::system;
+    State<bool> maximized{false};
+    State<bool> active{true};
+    State<Rect> system_controls{Rect{}};
+};
+
+// Makes the handles of windows, whose constructor is private.
+struct WindowAccess {
+    static WindowHandle handle(std::shared_ptr<WindowState> state) noexcept { return WindowHandle(std::move(state)); }
+};
+} // namespace detail
+
+namespace {
+
+EnvironmentValues with_window(EnvironmentValues environment, const std::shared_ptr<WindowState>& state) {
+    environment.set<WindowKey>(detail::WindowAccess::handle(state));
+    return environment;
+}
+
+// A window while the app runs. Member order matters: `dirty` and `scope` exist before mounting
+// (the tree refers to them). The scope ends first, in the destructor: effects and timers are
+// disposed before the elements they update are destroyed.
+struct LiveWindow {
+    LiveWindow(WindowEntry& window_entry, TextSystem& text, EnvironmentValues base,
+               const PopupSink* popups, const platform::PopupSpec* popup = nullptr, int menu_level = -1)
+        : entry(&window_entry), window(window_entry.desc, popup), is_popup(popup != nullptr),
+          state(std::make_shared<WindowState>(WindowState{.window = &window,
+                                                          .title_bar = window_entry.desc.title_bar,
+                                                          .system_controls = State<Rect>(window.system_controls_frame())})),
+          environment(with_window(std::move(base), state)), services(make_services(window, popups, menu_level)),
+          root(mount(text)) {
+        // Integrated title bars keep the system's frame only on macOS, which still needs the hit test
+        // for .window_drag_area() (its edges resize natively).
+        if (window_entry.desc.title_bar == TitleBar::hidden ||
+            (window_entry.desc.title_bar == TitleBar::integrated && current_platform() == Platform::macos)) {
+            window.set_hit_test([this](Point point) { return hit_area(point); });
+        }
+    }
+
+    LiveWindow(const LiveWindow&) = delete;
+    LiveWindow(LiveWindow&&) = delete;
+    LiveWindow& operator=(const LiveWindow&) = delete;
+    LiveWindow& operator=(LiveWindow&&) = delete;
+    ~LiveWindow() {
+        state->window = nullptr; // handles kept by the app now do nothing
+        scope.reset();
+    }
+
+    // Undecorated windows: resize at the edges, move from .window_drag_area() views.
+    platform::HitArea hit_area(Point point) {
+        if (entry->desc.resizable && !window.maximized()) {
+            constexpr float kEdge = 6;
+            const Size size = window.logical_size();
+            const bool left = point.x < kEdge;
+            const bool right = point.x >= size.width - kEdge;
+            const bool top = point.y < kEdge;
+            const bool bottom = point.y >= size.height - kEdge;
+            if (top && left) {
+                return platform::HitArea::resize_top_left;
+            }
+            if (top && right) {
+                return platform::HitArea::resize_top_right;
+            }
+            if (bottom && left) {
+                return platform::HitArea::resize_bottom_left;
+            }
+            if (bottom && right) {
+                return platform::HitArea::resize_bottom_right;
+            }
+            if (top) {
+                return platform::HitArea::resize_top;
+            }
+            if (bottom) {
+                return platform::HitArea::resize_bottom;
+            }
+            if (left) {
+                return platform::HitArea::resize_left;
+            }
+            if (right) {
+                return platform::HitArea::resize_right;
+            }
+        }
+        return events.drags_window_at(point) ? platform::HitArea::drag : platform::HitArea::normal;
+    }
+
+    // Builds the element tree. The body runs once (design.md §6); effects it creates belong to
+    // this window's scope.
+    std::unique_ptr<Element> mount(TextSystem& text) {
+        const Scope::Use use(*scope);
+        const EnvironmentScope environment_scope(environment); // Environment<K>() in the content function
+        View content = entry->content();
+        if (entry->wrap) {
+            content = entry->wrap(std::move(content));
+        }
+        return std::make_unique<FloatingLayerElement>(lower(content, LowerContext{.text = &text,
+                                                    .needs_frame = &dirty,
+                                                    .tree_changed = &tree_changed,
+                                                    .environment = environment,
+                                                    .focus = &focus,
+                                                    .services = &services}));
+    }
+
+    static LiveWindowServices make_services(platform::Window& window, const PopupSink* popups, int menu_level) {
+        LiveWindowServices services(window);
+        services.set_popups(popups, menu_level);
+        return services;
+    }
+
+    WindowEntry* entry;
+    platform::Window window;
+    bool is_popup;
+    bool closing = false; // a popup animating out: it takes no input
+    // Popups: where they go, kept by their anchor and re-fitted as their content changes size.
+    struct PopupFit {
+        FloatingPlacement placement;
+        Rect anchor;           // in the opener's logical points
+        std::uint32_t opener = 0;
+        Size size;             // the window's, as last fitted
+        bool stale = true;     // the anchor moved
+    };
+    std::optional<PopupFit> fit;
+    std::shared_ptr<WindowState> state; // behind this window's WindowHandles
+    bool dirty = true;
+    bool tree_changed = false; // If/ForEach added or removed elements
+    bool animating = false;    // the last frame had animations in progress
+    bool visible = true;       // as the render thread was last told
+    std::uint64_t last_frame = 0;
+    EnvironmentValues environment; // the root environment (system color scheme)
+    LiveWindowServices services;
+    FocusManager focus{&services}; // outlives the tree (elements let go of it when destroyed)
+    std::unique_ptr<Scope> scope = std::make_unique<Scope>();
+    std::unique_ptr<Element> root;
+    PathCache paths; // what its canvases flattened, from one frame to the next
+    EventDispatcher events{*root, focus};
+    // Screen readers (design.md §12); made by App::run, dormant until one asks.
+    std::unique_ptr<AccessibilityAdapter> accessibility;
+    AccessTree accessibility_tree; // the last one sent: what requests act on
+    // Accessibility updates are coalesced while frames come quickly: the next may be sent then,
+    // and `accessibility_stale` holds one skipped meanwhile.
+    double accessibility_next = 0;
+    bool accessibility_stale = false;
+};
+
+MouseButton to_mouse_button(platform::PointerButton button) {
+    switch (button) {
+    case platform::PointerButton::left: return MouseButton::left;
+    case platform::PointerButton::middle: return MouseButton::middle;
+    case platform::PointerButton::right: return MouseButton::right;
+    case platform::PointerButton::other: return MouseButton::other;
+    }
+    return MouseButton::other;
+}
+
+// Lays out the root view in the window (centered, like SwiftUI) and paints it.
+WindowFrame build_frame(LiveWindow& live) {
+    WindowFrame frame;
+    frame.window_id = live.window.id();
+    const platform::PixelSize pixels = live.window.pixel_size();
+    frame.pixel_width = pixels.width;
+    frame.pixel_height = pixels.height;
+    frame.scale = live.window.scale();
+    // Transparent windows start clear, so only what's drawn covers the desktop.
+    frame.list.clear_color = live.entry->desc.background.value_or(
+        platform::see_through(live.entry->desc) ? Color::clear : resolve_theme_color(live.environment, ThemeColor::background));
+    frame.list.scale = frame.scale;
+
+    // Popups get the size their content measured, which their window was made at least as big as
+    // (its size in points comes back from whole pixels).
+    const Size size = live.fit ? live.fit->size : live.window.logical_size();
+    const ProposedSize proposal{size.width, size.height};
+    // While animations run, things move without invalidating layout: lay out everything.
+    const FullLayoutScope full_layout(live.animating);
+    const Size fitted = live.root->size_that_fits(proposal);
+    live.root->place(aligned_position({0, 0, size.width, size.height}, fitted, Alignment::center), proposal);
+    live.root->notify_render_size(frame.scale);
+    {
+        const PathCache::Use paths(live.paths);
+        live.root->paint(frame.list);
+    }
+    live.paths.end_frame();
+    return frame;
+}
+
+} // namespace
+
+struct App::Impl {
+    std::vector<WindowEntry> windows;
+    bool running = false;
+    bool quit_requested = false;
+    platform::Platform* platform = nullptr; // valid while running
+    // The menu bar as given (menu commands find their items here), its check boxes' states by
+    // item id, and, while running, how to show it again after a change.
+    std::vector<MenuBarItem> menus;
+    std::map<std::uint32_t, bool> menu_checks;
+    std::function<void()> show_menus;
+    std::function<ErrorAction(const AppError&)> error_handler;
+};
+
+App::App() : impl_(std::make_unique<Impl>()) {}
+
+void WindowHandle::close() const {
+    if (state_ && state_->window) {
+        state_->window->request_close();
+    }
+}
+
+void WindowHandle::minimize() const {
+    if (state_ && state_->window) {
+        state_->window->minimize();
+    }
+}
+
+void WindowHandle::toggle_maximized() const {
+    if (state_ && state_->window) {
+        state_->window->toggle_maximized();
+    }
+}
+
+bool WindowHandle::is_maximized() const {
+    return state_ && state_->maximized();
+}
+
+bool WindowHandle::is_active() const {
+    return !state_ || state_->active();
+}
+
+TitleBar WindowHandle::title_bar() const {
+    return state_ ? state_->title_bar : TitleBar::system;
+}
+
+Rect WindowHandle::system_controls_frame() const {
+    return state_ ? state_->system_controls() : Rect{};
+}
+
+App::~App() = default;
+
+App& App::window(WindowDesc desc, ContentFunction content) {
+    detail::make_valid_utf8(desc);
+    if (impl_->running) {
+        throw UsageError("App::window(): adding windows while the app runs isn't supported yet");
+    }
+    if (!content) {
+        throw UsageError("App::window(): the content function is empty");
+    }
+    impl_->windows.push_back({std::move(desc), std::move(content), {}});
+    return *this;
+}
+
+App& App::menu_bar(std::vector<MenuBarItem> menus) {
+    detail::make_valid_utf8(menus);
+    impl_->menus = std::move(menus);
+    impl_->menu_checks.clear();
+    if (impl_->show_menus) {
+        impl_->show_menus();
+    }
+    return *this;
+}
+
+void App::quit() {
+    impl_->quit_requested = true;
+    if (impl_->platform) {
+        impl_->platform->wake();
+    }
+}
+
+std::string AppError::message() const {
+    return exception_message(exception);
+}
+
+App& App::on_error(std::function<ErrorAction(const AppError&)> handler) {
+    impl_->error_handler = std::move(handler);
+    return *this;
+}
+
+int App::run() {
+    Impl& self = *impl_;
+    std::exception_ptr exit_error; // what run() throws once the run has ended
+    if (self.running) {
+        throw UsageError("App::run() is already running");
+    }
+    if (!platform::native::on_main_thread()) {
+        throw UsageError("App::run() must be called on the main thread, the one that ran main()");
+    }
+    if (self.windows.empty()) {
+        throw UsageError("App::run(): no windows; call App::window() first");
+    }
+    // One App runs at a time, so the UI thread can't change while one runs.
+    if (g_app_running.exchange(true)) {
+        throw UsageError("App::run(): another App is running; only one App runs at a time");
+    }
+    const ScopeExit app_done([] { g_app_running = false; });
+    self.running = true;
+    self.quit_requested = false;
+    const ScopeExit reset([&] {
+        self.running = false;
+        self.platform = nullptr;
+    });
+
+    // Reactive state belongs to this thread while the app runs (design.md §6).
+    set_ui_thread(std::this_thread::get_id());
+    const ScopeExit release_ui_thread([] { set_ui_thread(std::nullopt); });
+    // Media objects that other threads let go of come back to this one to be destroyed. Last of
+    // all, once every thread of this run has stopped, what's left is destroyed too.
+    begin_ui_releases();
+    const ScopeExit end_releases([] { end_ui_releases(); });
+    // From here on, what escapes app code is reported and the app goes on (core/app_errors.h).
+    begin_app_errors();
+    const ScopeExit end_errors([] { end_app_errors(); });
+    // After the windows are gone: their views' timers and on_disappear actions end with the app.
+    const ScopeExit stop_timers([] {
+        cancel_all_timers();
+        clear_lifecycle_actions();
+    });
+
+    // Declaration order is teardown order in reverse: the render thread stops first (with the
+    // GPU and the windows' surfaces), then windows go, then SDL.
+    const CrashHandlerScope crash_handlers;
+    platform::Platform platform;
+    self.platform = &platform;
+    // What this run handed the system to call back goes with it: notification click handlers and
+    // the native menu bar's command (which refers to this function's locals).
+    const ScopeExit forget_handlers([] {
+        platform::native::forget_notification_handlers();
+        platform::native::forget_menu_command();
+        platform::remove_tray_icons(); // before SDL quits; TrayIcons kept after the run do nothing
+    });
+
+    // Fonts and glyphs, shared by all windows; outlives every element tree. Glyphs finishing on
+    // the atlas's workers wake the event loop to draw them.
+    TextSystem text;
+    text.atlas.set_on_ready([&platform] { platform.wake(); });
+    // Work other threads hand to this one (hot-reload builds) wakes the loop. What Elegance posted
+    // for this run and didn't run refers to it (menu commands, accessibility requests): it goes.
+    set_ui_task_waker([&platform] { platform.wake(); });
+    begin_ui_tasks();
+    const ScopeExit stop_task_wakes([] {
+        set_ui_task_waker({});
+        end_ui_tasks();
+    });
+    text.atlas.set_disk_cache(GlyphDiskCache::default_directory());
+    const ScopeExit stop_glyph_wakes([&text] { text.atlas.set_on_ready({}); });
+
+    // Every window's environment starts from the system's light/dark setting, as reactive state:
+    // when it changes, only the colors that depend on it update.
+    const auto system_scheme = [] { return platform::system_prefers_dark() ? ColorScheme::dark : ColorScheme::light; };
+    const State<ColorScheme> scheme(system_scheme());
+    EnvironmentValues base;
+    base.set<ColorSchemeKey>(scheme);
+
+    // Popups (design.md §13.1): menus and modal floating content (a stack: level 0, then
+    // submenus), floating content that leaves its window usable, and one tooltip, each a popup
+    // window with its own tree. Requests come from event handlers and effects and are carried out
+    // between events and layout, never while an event is being handled.
+    struct OpenPopup {
+        std::unique_ptr<WindowEntry> entry;
+        std::uint32_t id = 0;
+        int level = 0; // menus
+        std::function<void()> on_close;
+        std::uint64_t token = 0;   // floating content
+        std::uint32_t opener = 0;  // the window it belongs to
+        PopupMotion motion = PopupMotion::none();
+        std::shared_ptr<TransitionElement*> exit; // its content's transition, with a motion
+    };
+    std::vector<OpenPopup> menus;
+    std::vector<OpenPopup> floats;  // non-modal floating content
+    std::vector<OpenPopup> closing; // animating out; they take no input
+    std::optional<OpenPopup> tooltip;
+    struct PendingPopups {
+        std::optional<int> close_level;
+        bool close_tooltip = false;
+        std::vector<std::function<void()>> after_close;
+        std::vector<std::pair<PopupRequest, std::uint32_t>> opens;
+        std::vector<std::uint64_t> close_tokens;
+        std::vector<std::pair<std::uint64_t, Rect>> moves;
+        [[nodiscard]] bool any() const {
+            return close_level || close_tooltip || !after_close.empty() || !opens.empty() || !close_tokens.empty() ||
+                   !moves.empty();
+        }
+    } pending;
+    const auto request_close = [&](int level) {
+        pending.close_level = pending.close_level ? std::min(*pending.close_level, level) : level;
+        // Opening a deeper menu after this request would be pointless. A dropped one counts as
+        // closed (a popover's binding goes back to false).
+        std::vector<std::function<void()>> dropped;
+        std::erase_if(pending.opens, [&](auto& open) {
+            const bool drop = open.first.kind != PopupRequest::Kind::tooltip && open.first.modal && open.first.level >= level;
+            if (drop && open.first.on_close) {
+                dropped.push_back(std::move(open.first.on_close));
+            }
+            return drop;
+        });
+        for (auto& on_close : dropped) {
+            run_app_code(AppCode::callback, on_close); // a binding going back to false
+        }
+    };
+    const PopupSink popup_sink{
+        .open =
+            [&](PopupRequest request, std::uint32_t opener) {
+                if (request.kind == PopupRequest::Kind::tooltip) {
+                    pending.close_tooltip = true;
+                } else if (request.modal) {
+                    request_close(request.level);
+                }
+                pending.opens.emplace_back(std::move(request), opener);
+            },
+        .close_menus = [&](int level) { request_close(level); },
+        .close_menus_then =
+            [&](std::function<void()> action) {
+                request_close(0);
+                if (action) {
+                    pending.after_close.push_back(std::move(action));
+                }
+            },
+        .close_tooltip = [&] { pending.close_tooltip = true; },
+        .close_popup =
+            [&](std::uint64_t token) {
+                // Not opened yet: dropped, and closed as far as its view is concerned.
+                std::erase_if(pending.opens, [&](const auto& open) { return open.first.token == token; });
+                pending.close_tokens.push_back(token);
+            },
+        .move_popup = [&](std::uint64_t token, Rect anchor, std::uint32_t) { pending.moves.emplace_back(token, anchor); },
+    };
+
+    // The system's accent color, for system_accent_color(); refreshed when the theme changes.
+    State<std::optional<Color>> accent_color(platform::native::system_accent_color());
+    g_accent_color = &accent_color;
+    const ScopeExit forget_accent([] { g_accent_color = nullptr; });
+
+    std::vector<std::unique_ptr<LiveWindow>> windows;
+    const auto find_window = [&](std::uint32_t id) {
+        return std::ranges::find_if(windows, [&](const auto& live) { return live->window.id() == id; });
+    };
+
+    // The menu bar (design.md §13.4): the system's (macOS, Windows), or drawn at the top of each
+    // window (Linux). Chosen items come here, from the menus or their shortcuts.
+    const bool macos_menus = current_platform() == Platform::macos;
+    // A chosen item's id is looked up in the menus that were shown when it was chosen, which its
+    // command carries along: never in menus given since, where the id may be another item.
+    menus::Source shown_source = std::make_shared<const std::vector<MenuBarItem>>(self.menus);
+    State<std::vector<menus::Item>> shown_menus(menus::resolve(shown_source, macos_menus));
+    State<std::map<std::uint32_t, bool>> shown_checks;
+    const auto run_menu_command = [&](const menus::Source& source, std::uint32_t id) {
+        const MenuBarItem* found = source ? menus::find(*source, id) : nullptr;
+        if (!found || !found->enabled) {
+            return;
+        }
+        // Copied: its callbacks may replace the menu bar (App::menu_bar).
+        const MenuBarItem item = *found;
+        if (item.checked && source != shown_source) {
+            // Chosen from menus replaced since: its own callback, with nothing shown to update.
+            if (item.toggled) {
+                run_app_code(AppCode::event_handler, [&] { item.toggled(!*item.checked); });
+            }
+        } else if (item.checked) {
+            const auto known = self.menu_checks.find(id);
+            const bool now = !(known != self.menu_checks.end() ? known->second : *item.checked);
+            self.menu_checks[id] = now;
+            shown_checks = self.menu_checks;
+            platform::native::set_menu_checked(id, now);
+            if (item.toggled) {
+                run_app_code(AppCode::event_handler, [&] { item.toggled(now); });
+            }
+        }
+        if (item.action) {
+            run_app_code(AppCode::event_handler, item.action);
+            return;
+        }
+        const std::uint32_t focused = platform::focused_window_id();
+        const auto target = find_window(focused);
+        switch (item.role) {
+        case MenuRole::quit: self.quit_requested = true; break;
+        case MenuRole::minimize:
+            if (target != windows.end()) {
+                (*target)->window.minimize();
+            }
+            break;
+        case MenuRole::zoom:
+            if (target != windows.end()) {
+                (*target)->window.toggle_maximized();
+            }
+            break;
+        default:
+            // Editing: the shortcut, to the focused view (a text field takes it).
+            if (const auto key = menus::edit_key(item.role); key && focused != 0) {
+                platform.post_key(focused, key->key, key->modifiers);
+            }
+            break;
+        }
+    };
+    self.show_menus = [&] {
+        shown_source = std::make_shared<const std::vector<MenuBarItem>>(self.menus);
+        shown_menus = menus::resolve(shown_source, macos_menus);
+        shown_checks = self.menu_checks;
+        if (!platform::native::draws_menu_bar_in_content()) {
+            // Commands from the system's menus run between events, like other UI tasks, on the
+            // menus these are.
+            platform::native::set_menu_bar(shown_menus.peek(), [&run_menu_command, source = shown_source](std::uint32_t id) {
+                post_ui_task([&run_menu_command, source, id] { run_menu_command(source, id); });
+            });
+        }
+    };
+    const ScopeExit forget_menus([&self] { self.show_menus = {}; });
+    if (!self.menus.empty()) {
+        self.show_menus();
+    }
+    if (platform::native::draws_menu_bar_in_content()) {
+        for (WindowEntry& entry : self.windows) {
+            entry.wrap = [&shown_menus, &shown_checks, &run_menu_command](const View& content) {
+                View bar = menus::menu_bar_view([&shown_menus] { return shown_menus(); },
+                                                [&run_menu_command](const menus::Source& source, std::uint32_t id) {
+                                                    run_menu_command(source, id);
+                                                },
+                                                [&shown_checks, &shown_menus](std::uint32_t id) {
+                                                    const auto& checks = shown_checks();
+                                                    if (const auto found = checks.find(id); found != checks.end()) {
+                                                        return found->second;
+                                                    }
+                                                    // Not chosen yet: as given.
+                                                    std::function<std::optional<bool>(const std::vector<menus::Item>&)> initial =
+                                                        [&](const std::vector<menus::Item>& items) -> std::optional<bool> {
+                                                        for (const menus::Item& item : items) {
+                                                            if (item.id == id) {
+                                                                return item.checked;
+                                                            }
+                                                            if (const auto inner = initial(item.submenu)) {
+                                                                return inner;
+                                                            }
+                                                        }
+                                                        return std::nullopt;
+                                                    };
+                                                    return initial(shown_menus.peek()).value_or(false);
+                                                });
+                return VStack({.spacing = 0}, If([&shown_menus] { return !shown_menus().empty(); }, std::move(bar)),
+                              std::move(content).frame({.max_width = elg::infinity, .max_height = elg::infinity}));
+            };
+        }
+    }
+    const ScopeExit unwrap([&self] {
+        for (WindowEntry& entry : self.windows) {
+            entry.wrap = {};
+        }
+    });
+
+    for (WindowEntry& entry : self.windows) {
+        windows.push_back(std::make_unique<LiveWindow>(entry, text, base, &popup_sink));
+    }
+
+    FrameMailbox mailbox;
+    // The render thread lets go of the video sources it drew: once it's stopped, they go before
+    // the windows and the platform.
+    const ScopeExit release_rendered([] { run_ui_releases(); });
+    const RenderThread renderer(mailbox, [&platform] { platform.wake(); });
+    for (const auto& live : windows) {
+        mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), platform::see_through(live->entry->desc),
+                                      live->window.native_handle()});
+    }
+
+    // The inspector (design.md §16): F12 opens it for the focused window.
+    std::shared_ptr<Inspector> inspector;
+    std::unique_ptr<WindowEntry> inspector_entry;
+    std::uint32_t inspector_window = 0;
+    bool inspector_changed = false; // its states were written outside an event: flush and draw
+    PointerStyle pointer_style = PointerStyle::arrow; // the shape last shown
+    double inspector_rows_at = -1;   // when its tree was last refreshed
+    bool inspector_rows_stale = false;
+    std::optional<ElementPath> inspector_seen_selection;
+    bool inspector_seen_picking = false;
+    constexpr double kInspectorRefresh = 0.5; // seconds between tree refreshes while things change
+    constexpr double kInspectorStats = 0.25;
+
+    const auto refresh_inspector_rows = [&](LiveWindow& target) {
+        inspector->rows = inspect_tree(*target.root);
+        inspector_rows_at = seconds_now();
+        inspector_rows_stale = false;
+        inspector_changed = true;
+    };
+
+    // Screen readers (design.md §12): the window's tree, built when asked for, and their requests.
+    // Carried out between events, like an event: what it writes takes effect after it.
+    const auto perform_access_request = [&](std::uint32_t window_id, const AccessRequest& request) {
+        const DeferEffects defer;
+        auto it = std::ranges::find_if(windows, [&](const auto& live) { return live->window.id() == window_id; });
+        if (it == windows.end()) {
+            return;
+        }
+        LiveWindow& live = **it;
+        // Frames since the last update (coalesced) may have destroyed elements the targets name.
+        if (live.accessibility && std::exchange(live.accessibility_stale, false)) {
+            live.accessibility->update();
+        }
+        const auto target = live.accessibility_tree.targets.find(request.target);
+        Element* element = element_with_accessibility_id(request.target); // nothing once it's gone
+        if (target == live.accessibility_tree.targets.end() || !element) {
+            return;
+        }
+        switch (request.action.kind) {
+        case AccessibilityAction::Kind::focus:
+            // A screen reader can name any element; only focusable ones take focus.
+            if (const auto* handler = element->event_handler(); handler && handler->focusable()) {
+                live.focus.focus(element, true);
+            }
+            break;
+        case AccessibilityAction::Kind::scroll_into_view:
+            for (Element* e = element->parent(); e; e = e->parent()) {
+                e->reveal(element->frame());
+            }
+            break;
+        case AccessibilityAction::Kind::click:
+            if (target->second.disabled) {
+                break; // a disabled view isn't activated
+            }
+            if (target->second.action) {
+                run_app_code(AppCode::event_handler, target->second.action);
+                break;
+            }
+            [[fallthrough]];
+        default: element->accessibility_action(request.action); break;
+        }
+        live.dirty = true;
+    };
+    const auto attach_accessibility = [&](LiveWindow& live) {
+        LiveWindow* const window = &live;
+        const std::uint32_t id = live.window.id();
+        live.accessibility = std::make_unique<AccessibilityAdapter>(
+            live.window.native_handle(),
+            AccessibilityAdapter::Callbacks{
+                .build = [window]() -> const AccessTree& {
+                    window->accessibility_tree = build_accessibility_tree(
+                        *window->root, window->entry->desc.title, window->window.logical_size(), window->focus.focused());
+                    return window->accessibility_tree;
+                },
+                .scale = [window] { return window->window.scale(); },
+                .request = [&perform_access_request, id](const AccessRequest& request) { perform_access_request(id, request); },
+            });
+    };
+
+    // Room around a popup's content for its shadow; the window is that much bigger.
+    constexpr float kPopupMargin = 14;
+    // Sizes a popup window to its content (up to the display) and places it by its anchor: when
+    // it opens, when its content changes size, and when its anchor moves.
+    const auto fit_popup = [&](LiveWindow& live) {
+        if (!live.fit) {
+            return;
+        }
+        const DeferEffects measuring; // what layout writes waits for the next flush
+        const auto opener = find_window(live.fit->opener);
+        if (opener == windows.end()) {
+            return;
+        }
+        const Rect area = (*opener)->window.usable_area();
+        const Size room{area.width + 2 * kPopupMargin, area.height + 2 * kPopupMargin};
+        Size size = live.root->size_that_fits({});
+        if (size.width > room.width || size.height > room.height) {
+            size = live.root->size_that_fits({std::min(size.width, room.width), std::min(size.height, room.height)});
+        }
+        if (!live.fit->stale && size.width == live.fit->size.width && size.height == live.fit->size.height) {
+            return;
+        }
+        live.fit->size = size;
+        live.fit->stale = false;
+        const Size panel{size.width - 2 * kPopupMargin, size.height - 2 * kPopupMargin};
+        const Point origin = place_floating(panel, live.fit->anchor, live.fit->placement, area);
+        live.window.set_popup_frame({origin.x - kPopupMargin, origin.y - kPopupMargin, size.width, size.height});
+    };
+
+    // Builds and posts a window's frame. Glyphs it used for the first time go to the atlas first.
+    const auto post_frame = [&](LiveWindow& live) {
+        const DeferEffects drawing; // what layout and paint write waits for the next flush
+        // Cleared first: layout may ask for another frame (lazy stacks measuring new items,
+        // ScrollPosition requests settling), and that request must survive.
+        live.dirty = false;
+        fit_popup(live);
+        const bool inspected = inspector && live.window.id() == inspector->target;
+        const double build_start = inspected ? seconds_now() : 0;
+        const std::uint64_t glyphs_requested = text.atlas.requested();
+        WindowFrame frame = build_frame(live);
+        if (inspected) {
+            const double now = seconds_now();
+            if (now - inspector->last_stats >= kInspectorStats) {
+                inspector->stats = count_frame(frame.list, (now - build_start) * 1000, inspector->rows.peek().size());
+                inspector->last_stats = now;
+                inspector_changed = true;
+            }
+            // The tree follows the window, at most twice a second (a refresh later catches up).
+            if (now - inspector_rows_at >= kInspectorRefresh) {
+                refresh_inspector_rows(live);
+            } else {
+                inspector_rows_stale = true;
+            }
+            paint_inspector_overlay(*inspector, *live.root, frame.list);
+        }
+        if (std::exchange(live.tree_changed, false)) {
+            if (live.events.revalidate()) { // layout added or removed elements (lazy stacks)
+                live.dirty = true;
+            }
+        }
+        live.animating = frame.list.animating;
+        if (live.accessibility) {
+            // Only when a client (a screen reader) listens. Walking a large tree takes a while, so
+            // during bursts of frames it's at most every kAccessibilityInterval, and once after.
+            const double now = seconds_now();
+            if (now >= live.accessibility_next) {
+                live.accessibility->update();
+                live.accessibility_next = now + kAccessibilityInterval;
+                live.accessibility_stale = false;
+            } else {
+                live.accessibility_stale = true; // sent by the main loop when it's time
+            }
+        }
+        if (text.atlas.requested() != glyphs_requested) {
+            text.atlas.wait_idle(kGlyphFrameHold);
+        }
+        if (std::vector<GlyphUpload> uploads = text.atlas.take_uploads(); !uploads.empty()) {
+            mailbox.post(AtlasUploadCommand{std::move(uploads)});
+        }
+        live.last_frame = mailbox.post(std::move(frame));
+        return live.last_frame;
+    };
+    // Hidden and minimized windows don't draw new frames of videos; shown again, a new frame
+    // shows each video's newest.
+    const auto sync_visibility = [&mailbox](LiveWindow& live) {
+        if (const bool visible = live.window.visible(); visible != live.visible) {
+            live.visible = visible;
+            mailbox.post(WindowVisibilityCommand{live.window.id(), visible});
+            live.dirty = live.dirty || visible;
+        }
+    };
+
+    // Draw before showing, so windows never appear blank: lay out once (which requests the
+    // glyphs), let the glyph workers finish (briefly), then draw with them.
+    std::uint64_t first_frame = 0;
+    for (const auto& live : windows) {
+        if (live->window.shows_before_first_frame()) {
+            live->window.show();
+        }
+        first_frame = post_frame(*live);
+    }
+    if (!text.atlas.wait_idle(kGlyphWarmup)) {
+        log_debug("showing windows before all glyphs are ready");
+    }
+    for (const auto& live : windows) {
+        first_frame = post_frame(*live);
+    }
+    mailbox.wait_until_done(first_frame, kFirstFrameTimeout);
+    for (const auto& live : windows) {
+        attach_accessibility(*live);
+        if (!live->window.shows_before_first_frame()) {
+            live->window.show();
+        }
+    }
+
+    // While the user drags a window edge, the OS blocks the event loop below in a modal loop.
+    // SDL calls this from inside it, so the window keeps rendering at its new size. Waiting for
+    // the present keeps the OS from stretching a stale frame.
+    std::exception_ptr callback_error;
+    platform.set_live_resize_callback([&](std::uint32_t window_id) {
+        if (callback_error) {
+            return;
+        }
+        try {
+            if (auto it = find_window(window_id); it != windows.end()) {
+                set_frame_time(seconds_now());
+                mailbox.wait_until_done(post_frame(**it), kPresentTimeout);
+                platform::wait_for_compositor();
+            }
+        } catch (...) {
+            // Rethrown from the main loop; nothing may unwind through the OS modal loop.
+            callback_error = std::current_exception();
+            platform.wake();
+        }
+    });
+    const ScopeExit clear_callback([&] { platform.set_live_resize_callback({}); });
+
+    // --- Popups ---
+
+    std::function<void(std::uint32_t)> destroy_window;
+    destroy_window = [&](std::uint32_t id) {
+        // Popups of the window go first: a popup window can't outlive its parent.
+        for (auto it = std::ranges::find(closing, id, &OpenPopup::opener); it != closing.end();
+             it = std::ranges::find(closing, id, &OpenPopup::opener)) {
+            const std::uint32_t child = it->id;
+            closing.erase(it);
+            destroy_window(child);
+        }
+        for (auto it = std::ranges::find(floats, id, &OpenPopup::opener); it != floats.end();
+             it = std::ranges::find(floats, id, &OpenPopup::opener)) {
+            const OpenPopup popup = std::move(*it);
+            floats.erase(it);
+            destroy_window(popup.id);
+            if (popup.on_close) {
+                run_app_code(AppCode::callback, popup.on_close); // a binding going back to false
+            }
+        }
+        if (auto it = find_window(id); it != windows.end()) {
+            // The render thread must release the window's surface before the window goes.
+            if (!mailbox.wait_until_done(mailbox.post(RemoveWindowCommand{id}), kRenderWorkTimeout)) {
+                log_warning("the renderer didn't release window {} in time", id);
+            }
+            windows.erase(it);
+        }
+    };
+    const auto close_inspector = [&] {
+        if (inspector) {
+            const std::uint32_t target = inspector->target;
+            destroy_window(inspector_window);
+            inspector.reset();
+            inspector_entry.reset();
+            inspector_window = 0;
+            if (auto it = find_window(target); it != windows.end()) {
+                (*it)->dirty = true; // without the highlight
+            }
+        }
+    };
+    const auto open_inspector = [&](LiveWindow& target) {
+        close_inspector();
+        inspector = std::make_shared<Inspector>();
+        inspector->target = target.window.id();
+        inspector->title = target.entry->desc.title.empty() ? std::string("Window") : target.entry->desc.title;
+        refresh_inspector_rows(target);
+        inspector_entry = std::make_unique<WindowEntry>();
+        inspector_entry->desc = {.title = "Inspector — " + inspector->title.peek(), .width = 480, .height = 720};
+        inspector_entry->content = [model = inspector] { return InspectorView(model); };
+        auto live = std::make_unique<LiveWindow>(*inspector_entry, text, base, &popup_sink);
+        mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), false, live->window.native_handle()});
+        // Interrupted from here on (an exception), the render thread lets go of the window first.
+        bool opened = false;
+        const ScopeExit withdraw([&, id = live->window.id()] {
+            if (!opened) {
+                try {
+                    mailbox.wait_until_done(mailbox.post(RemoveWindowCommand{id}), kRenderWorkTimeout);
+                } catch (...) { // NOLINT(bugprone-empty-catch): unwinding already; the window goes anyway
+                }
+            }
+        });
+        const bool show_first = live->window.shows_before_first_frame();
+        if (show_first) {
+            live->window.show();
+        }
+        post_frame(*live);
+        text.atlas.wait_idle(kGlyphWarmup);
+        mailbox.wait_until_done(post_frame(*live), kFirstFrameTimeout);
+        attach_accessibility(*live);
+        if (!show_first) {
+            live->window.show();
+        }
+        inspector_window = live->window.id();
+        windows.push_back(std::move(live));
+        opened = true;
+        target.dirty = true;
+    };
+
+    // Closes a popup's window: at once, or after its content animates out by its motion.
+    const auto retire = [&](OpenPopup popup) {
+        auto it = find_window(popup.id);
+        if (it == windows.end()) {
+            return;
+        }
+        TransitionElement* transition = popup.exit ? *popup.exit : nullptr;
+        if (transition && transition->remove(popup.motion.animation())) {
+            (*it)->closing = true;
+            (*it)->dirty = true;
+            popup.on_close = nullptr;
+            closing.push_back(std::move(popup));
+        } else {
+            destroy_window(popup.id);
+        }
+    };
+    // Elements that a flush destroyed (If, ForEach, closed floating content) are forgotten by the
+    // event dispatcher before anything reads its state again: each flush is followed by this.
+    const auto forget_removed = [&] {
+        for (const auto& live : windows) {
+            if (std::exchange(live->tree_changed, false) && live->events.revalidate()) {
+                live->dirty = true;
+            }
+        }
+    };
+    // Closing popups whose animation has finished go.
+    const auto finish_closing = [&] {
+        for (auto it = closing.begin(); it != closing.end();) {
+            const auto window = find_window(it->id);
+            const bool done = window == windows.end() || !*it->exit || (*it->exit)->exit_finished();
+            if (!done) {
+                ++it;
+                continue;
+            }
+            const std::uint32_t id = it->id;
+            it = closing.erase(it);
+            destroy_window(id);
+            it = closing.begin(); // destroying may have removed others (its children)
+        }
+    };
+    const auto close_menus_from = [&](int level) {
+        // Deepest first: a submenu is a child window of the menu that opened it.
+        while (!menus.empty() && menus.back().level >= level) {
+            OpenPopup popup = std::move(menus.back());
+            menus.pop_back();
+            const std::function<void()> on_close = std::move(popup.on_close);
+            retire(std::move(popup));
+            if (on_close) {
+                run_app_code(AppCode::callback, on_close); // e.g. a popover's binding goes back to false
+            }
+        }
+    };
+    const auto close_tooltip_now = [&] {
+        if (tooltip) {
+            OpenPopup popup = std::move(*tooltip);
+            tooltip.reset();
+            retire(std::move(popup));
+        }
+    };
+    const auto top_menu = [&]() -> LiveWindow* {
+        if (menus.empty()) {
+            return nullptr;
+        }
+        auto it = find_window(menus.back().id);
+        return it != windows.end() ? it->get() : nullptr;
+    };
+
+    const auto open_popup = [&](PopupRequest request, std::uint32_t opener_id) {
+        auto opener_it = find_window(opener_id);
+        if (opener_it == windows.end()) {
+            return; // closed meanwhile
+        }
+        const LiveWindow& opener = **opener_it;
+        const bool is_menu = request.kind == PopupRequest::Kind::menu;
+        const bool is_tooltip = request.kind == PopupRequest::Kind::tooltip;
+        auto entry = std::make_unique<WindowEntry>();
+        entry->desc = {.title = "", .width = 1, .height = 1, .resizable = false,
+                       .title_bar = TitleBar::hidden, .transparent = true};
+        // The content draws its own chrome (menu panels, popovers); the margin leaves its shadow
+        // room. With a motion, it animates in (and later out, before the window closes).
+        const PopupMotion motion = request.motion.value_or(PopupMotion::none());
+        auto exit = std::make_shared<TransitionElement*>(nullptr);
+        entry->content = [content = request.content, motion, exit] {
+            return with_popup_motion(content().padding(kPopupMargin), motion, exit);
+        };
+        const platform::PopupSpec spec{.parent = &opener.window, .tooltip = is_tooltip};
+        // Menu rows respond to the pointer at once, like native menus (submenus have their own
+        // opening delay).
+        EnvironmentValues environment = request.environment;
+        if (is_menu) {
+            environment.set<HoverDelayKey>(HoverDelay{.enter = 0, .exit = 0});
+        }
+        auto live = std::make_unique<LiveWindow>(*entry, text, environment, &popup_sink, &spec,
+                                                 is_tooltip || !request.modal ? -1 : request.level);
+        live->events.set_menu_navigation(is_menu);
+        live->fit = LiveWindow::PopupFit{.placement = request.placement, .anchor = request.anchor, .opener = opener_id};
+        fit_popup(*live);
+
+        mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), true, live->window.native_handle()});
+        // Interrupted from here on (an exception), the render thread lets go of the window first.
+        bool opened = false;
+        const ScopeExit withdraw([&, id = live->window.id()] {
+            if (!opened) {
+                try {
+                    mailbox.wait_until_done(mailbox.post(RemoveWindowCommand{id}), kRenderWorkTimeout);
+                } catch (...) { // NOLINT(bugprone-empty-catch): unwinding already; the window goes anyway
+                }
+            }
+        });
+        const bool show_first = live->window.shows_before_first_frame();
+        if (show_first) {
+            live->window.show();
+        }
+        post_frame(*live); // requests its glyphs
+        text.atlas.wait_idle(kPopupGlyphWarmup);
+        mailbox.wait_until_done(post_frame(*live), kFirstFrameTimeout);
+        if (!show_first) {
+            live->window.show();
+        }
+        const std::uint32_t id = live->window.id();
+        windows.push_back(std::move(live));
+        opened = true;
+        OpenPopup popup{std::move(entry), id,     request.level, std::move(request.on_close), request.token,
+                        opener_id,        motion, exit};
+        if (is_tooltip) {
+            tooltip = std::move(popup);
+        } else if (request.modal) {
+            menus.push_back(std::move(popup));
+        } else {
+            floats.push_back(std::move(popup));
+        }
+    };
+
+    // Carries out queued requests: closes, then actions of chosen items, then opens.
+    bool check_popup_focus = false;
+    const auto process_popups = [&] {
+        while (pending.any()) {
+            if (const std::optional<int> level = std::exchange(pending.close_level, std::nullopt)) {
+                close_menus_from(*level);
+            }
+            if (std::exchange(pending.close_tooltip, false)) {
+                close_tooltip_now();
+            }
+            for (auto& action : std::exchange(pending.after_close, {})) {
+                run_app_code(AppCode::event_handler, action); // a chosen menu item's
+            }
+            for (const std::uint64_t token : std::exchange(pending.close_tokens, {})) {
+                if (auto it = std::ranges::find(floats, token, &OpenPopup::token); it != floats.end()) {
+                    OpenPopup popup = std::move(*it);
+                    floats.erase(it);
+                    const std::function<void()> on_close = std::move(popup.on_close);
+                    retire(std::move(popup));
+                    if (on_close) {
+                        run_app_code(AppCode::callback, on_close);
+                    }
+                }
+            }
+            for (auto& [request, opener] : std::exchange(pending.opens, {})) {
+                open_popup(std::move(request), opener);
+            }
+            for (const auto& [token, anchor] : std::exchange(pending.moves, {})) {
+                for (const std::vector<OpenPopup>* list : {&menus, &floats}) {
+                    const auto it = std::ranges::find(*list, token, &OpenPopup::token);
+                    if (it == list->end()) {
+                        continue;
+                    }
+                    if (auto window = find_window(it->id); window != windows.end() && (*window)->fit) {
+                        (*window)->fit->anchor = anchor;
+                        (*window)->fit->stale = true;
+                        (*window)->dirty = true;
+                    }
+                }
+            }
+        }
+        // Focus moved to another app: menus close.
+        if (std::exchange(check_popup_focus, false) && !menus.empty() && !platform::any_window_focused()) {
+            close_menus_from(0);
+        }
+    };
+
+    // Drag and drop from other apps (design.md §13.4), per window: what's being dropped, where,
+    // and the view targeted (by path, so a tree change can't leave it dangling).
+    struct DropSession {
+        std::vector<std::filesystem::path> files;
+        std::string text;
+        Point location;
+        std::optional<ElementPath> target;
+    };
+    std::unordered_map<std::uint32_t, DropSession> drops;
+    const auto set_drop_target = [&](LiveWindow& live, DropSession& session, std::optional<ElementPath> target) {
+        if (target == session.target) {
+            return;
+        }
+        const auto notify = [&](const std::optional<ElementPath>& path, bool on) {
+            if (!path) {
+                return;
+            }
+            if (auto* element = dynamic_cast<DropElement*>(element_at(*live.root, *path))) {
+                if (element->options().targeted) {
+                    element->options().targeted(on);
+                }
+            }
+        };
+        notify(session.target, false);
+        session.target = std::move(target);
+        notify(session.target, true);
+        live.dirty = true;
+    };
+    const auto handle_drop = [&](const platform::Event& event) {
+        auto it = find_window(event.window_id);
+        if (it == windows.end() || (*it)->is_popup) {
+            return;
+        }
+        LiveWindow& live = **it;
+        DropSession& session = drops[event.window_id];
+        if (event.type != platform::EventType::drop_begin && event.type != platform::EventType::drop_complete) {
+            session.location = live.window.to_logical(event.x, event.y);
+        }
+        switch (event.type) {
+        case platform::EventType::drop_begin: session = {}; break;
+        case platform::EventType::drop_file:
+        case platform::EventType::drop_text:
+        case platform::EventType::drop_position: {
+            if (event.type == platform::EventType::drop_file) {
+                const std::string_view path = event.text;
+                session.files.emplace_back(std::u8string(path.begin(), path.end()));
+            } else if (event.type == platform::EventType::drop_text) {
+                session.text += event.text;
+            }
+            // What's coming isn't known while dragging: files are the usual case.
+            const bool files = !session.files.empty() || session.text.empty();
+            DropElement* target = find_drop_target(*live.root, session.location, files);
+            if (!target && session.files.empty()) {
+                target = find_drop_target(*live.root, session.location, false);
+            }
+            set_drop_target(live, session, target ? path_of(*live.root, *target) : std::nullopt);
+            break;
+        }
+        case platform::EventType::drop_complete: {
+            const bool files = !session.files.empty();
+            if (files || !session.text.empty()) {
+                if (DropElement* target = find_drop_target(*live.root, session.location, files)) {
+                    const Rect frame = target->frame();
+                    const Point local{session.location.x - frame.x, session.location.y - frame.y};
+                    const DropOptions options = target->options(); // the handler may rebuild the tree
+                    set_drop_target(live, session, std::nullopt);
+                    run_app_code(AppCode::event_handler, [&] {
+                        if (files) {
+                            options.files(session.files, local);
+                        } else {
+                            options.text(session.text, local);
+                        }
+                    });
+                }
+            }
+            set_drop_target(live, session, std::nullopt);
+            drops.erase(event.window_id);
+            live.dirty = true;
+            break;
+        }
+        default: break;
+        }
+    };
+
+    const auto handle = [&](const platform::Event& event) {
+        // Handlers may start animations (e.g. scrolling); they must start now, not at the last
+        // frame's time, which can be long ago after idling.
+        set_frame_time(seconds_now());
+        switch (event.type) {
+        case platform::EventType::quit:
+            log_debug("quit requested by the OS");
+            self.quit_requested = true;
+            break;
+        case platform::EventType::window_exposed:
+        case platform::EventType::window_resized:
+        case platform::EventType::window_scale_changed:
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                (*it)->dirty = true;
+                if (event.type == platform::EventType::window_resized && !(*it)->is_popup && !menus.empty()) {
+                    request_close(0);
+                }
+            }
+            break;
+        case platform::EventType::window_close_requested:
+            log_debug("window {} close requested", event.window_id);
+            if (auto it = find_window(event.window_id); it != windows.end() && !(*it)->is_popup) {
+                // Popups belong to a window; destroying it would destroy them under us.
+                close_menus_from(0);
+                close_tooltip_now();
+                if (event.window_id == inspector_window) {
+                    close_inspector();
+                    break;
+                }
+                if (inspector && event.window_id == inspector->target) {
+                    close_inspector();
+                }
+                const auto regular = std::ranges::count_if(windows, [](const auto& live) { return !live->is_popup; });
+                if (regular == 1) {
+                    self.quit_requested = true;
+                } else {
+                    destroy_window(event.window_id);
+                }
+            }
+            break;
+        case platform::EventType::pointer_move:
+        case platform::EventType::pointer_down:
+        case platform::EventType::pointer_up:
+        case platform::EventType::pointer_leave:
+            if (event.type == platform::EventType::pointer_down) {
+                pending.close_tooltip = pending.close_tooltip || tooltip.has_value();
+            }
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                LiveWindow& live = **it;
+                if (live.closing) {
+                    break;
+                }
+                // While a menu is open it has the pointer: elsewhere, a press closes the menus
+                // (and isn't passed on), and nothing else reacts.
+                if (!menus.empty() && !live.is_popup) {
+                    if (event.type == platform::EventType::pointer_down) {
+                        request_close(0);
+                    }
+                    break;
+                }
+                const Point location = live.window.to_logical(event.x, event.y);
+                if (inspector && inspector->picking.peek() && live.window.id() == inspector->target) {
+                    std::vector<Element*> hits;
+                    std::optional<ElementPath> hovered;
+                    if (event.type != platform::EventType::pointer_leave && live.root->hit_test(location, hits)) {
+                        hovered = path_of(*live.root, *hits.back());
+                    }
+                    if (hovered != inspector->hovered) {
+                        inspector->hovered = hovered;
+                        live.dirty = true;
+                    }
+                    if (event.type == platform::EventType::pointer_down && hovered) {
+                        refresh_inspector_rows(live);
+                        reveal_in_inspector(*inspector, *hovered);
+                        inspector->picking = false;
+                        inspector->hovered.reset();
+                        inspector_changed = true;
+                        live.dirty = true;
+                    }
+                    break;
+                }
+                bool redraw = false;
+                switch (event.type) {
+                case platform::EventType::pointer_move: redraw = live.events.pointer_moved(location); break;
+                case platform::EventType::pointer_down:
+                    redraw = live.events.pointer_button(PointerEvent::Kind::down, location,
+                                                        to_mouse_button(event.button), event.clicks,
+                                                        event.modifiers);
+                    break;
+                case platform::EventType::pointer_up:
+                    redraw = live.events.pointer_button(PointerEvent::Kind::up, location,
+                                                        to_mouse_button(event.button), event.clicks,
+                                                        event.modifiers);
+                    break;
+                default: redraw = live.events.pointer_left(); break;
+                }
+                live.dirty |= redraw;
+            }
+            break;
+        case platform::EventType::wheel:
+            pending.close_tooltip = pending.close_tooltip || tooltip.has_value();
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                LiveWindow& live = **it;
+                ScrollEvent scroll{.location = live.window.to_logical(event.x, event.y),
+                                   .dx = event.scroll_dx,
+                                   .dy = event.scroll_dy,
+                                   .precise = event.precise,
+                                   .modifiers = event.modifiers,
+                                   .phase = event.phase,
+                                   .momentum = event.momentum,
+                                   .time = event.time};
+                // Shift turns a plain wheel sideways, as in browsers.
+                if (!event.precise && has(event.modifiers, KeyModifiers::shift) && scroll.dx == 0) {
+                    std::swap(scroll.dx, scroll.dy);
+                }
+                if (live.events.scroll(scroll)) {
+                    live.dirty = true;
+                }
+            }
+            break;
+        case platform::EventType::magnify:
+        case platform::EventType::rotate:
+        case platform::EventType::two_finger_double_tap:
+            pending.close_tooltip = pending.close_tooltip || tooltip.has_value();
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                LiveWindow& live = **it;
+                const Point location = live.window.to_logical(event.x, event.y);
+                bool redraw = false;
+                if (event.type == platform::EventType::magnify) {
+                    redraw = live.events.magnify({.location = location, .delta = 1 + event.amount, .phase = event.phase});
+                } else if (event.type == platform::EventType::rotate) {
+                    redraw = live.events.rotate({.location = location, .delta = event.amount, .phase = event.phase});
+                } else {
+                    redraw = live.events.two_finger_double_tap(location);
+                }
+                live.dirty |= redraw;
+            }
+            break;
+        case platform::EventType::text_input:
+        case platform::EventType::text_editing: {
+            // Like keys, typing goes to the open popover or menu (a popover's text field).
+            LiveWindow* target = top_menu();
+            if (!target) {
+                if (auto it = find_window(event.window_id); it != windows.end()) {
+                    target = it->get();
+                }
+            }
+            if (target) {
+                const TextInputEvent input{event.type == platform::EventType::text_input
+                                               ? TextInputEvent::Kind::commit
+                                               : TextInputEvent::Kind::composition,
+                                           event.text, event.text_cursor};
+                if (target->events.text_input(input)) {
+                    target->dirty = true;
+                }
+            }
+            break;
+        }
+        case platform::EventType::key_down:
+        case platform::EventType::key_up: {
+            pending.close_tooltip = pending.close_tooltip || tooltip.has_value();
+            const KeyEvent key{event.type == platform::EventType::key_down ? KeyEvent::Kind::down : KeyEvent::Kind::up,
+                               event.key, event.modifiers, event.repeat};
+            if (key.kind == KeyEvent::Kind::down && key.key == Key::f12 && !key.repeat && menus.empty()) {
+                if (inspector && (event.window_id == inspector_window || event.window_id == inspector->target)) {
+                    close_inspector();
+                } else if (auto it = find_window(event.window_id); it != windows.end() && !(*it)->is_popup) {
+                    open_inspector(**it);
+                }
+                break;
+            }
+            if (key.kind == KeyEvent::Kind::down && key.key == Key::escape && inspector && inspector->picking.peek()) {
+                inspector->picking = false;
+                inspector->hovered.reset();
+                inspector_changed = true;
+                break;
+            }
+            if (LiveWindow* menu = top_menu()) {
+                // The open menu takes the keyboard: Esc closes it, Left leaves a submenu.
+                if (menu->events.key(key)) {
+                    menu->dirty = true;
+                }
+                if (key.kind == KeyEvent::Kind::down) {
+                    const int level = menus.back().level;
+                    if (key.key == Key::escape || (key.key == Key::left && level > 0)) {
+                        request_close(level);
+                    }
+                }
+            } else if (auto it = find_window(event.window_id); it != windows.end()) {
+                if ((*it)->events.key(key)) {
+                    (*it)->dirty = true;
+                } else if (key.kind == KeyEvent::Kind::down && !key.repeat && !event.synthetic && !(*it)->is_popup &&
+                           !platform::native::menu_bar_handles_shortcuts()) {
+                    // A menu item's shortcut, once no view wanted the key.
+                    if (const std::uint32_t id =
+                            menus::match_shortcut(shown_menus.peek(), KeyboardShortcut{key.key, key.modifiers})) {
+                        run_menu_command(shown_source, id);
+                    }
+                }
+            }
+            break;
+        }
+        case platform::EventType::window_visibility_changed:
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                sync_visibility(**it);
+            }
+            break;
+        case platform::EventType::window_maximized:
+        case platform::EventType::window_restored:
+        case platform::EventType::window_focus_gained:
+        case platform::EventType::window_focus_lost:
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                if (event.type == platform::EventType::window_restored) {
+                    sync_visibility(**it); // perhaps no longer minimized
+                }
+                const WindowState& state = *(*it)->state;
+                switch (event.type) {
+                case platform::EventType::window_maximized: state.maximized = true; break;
+                case platform::EventType::window_restored: state.maximized = false; break;
+                case platform::EventType::window_focus_gained: state.active = true; break;
+                default: state.active = false; break;
+                }
+            }
+            check_popup_focus = check_popup_focus || event.type == platform::EventType::window_focus_lost;
+            if (event.type == platform::EventType::window_focus_gained ||
+                event.type == platform::EventType::window_focus_lost) {
+                for (const auto& live : windows) {
+                    live->window.update_secure_input(); // macOS Secure Event Input follows the keyboard
+                }
+            }
+            break;
+        case platform::EventType::window_fullscreen_changed:
+            // The traffic lights leave with the title bar in fullscreen.
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                (*it)->state->system_controls = (*it)->window.system_controls_frame();
+            }
+            break;
+        case platform::EventType::window_moved:
+            // Menus stay where they opened; moving their window closes them.
+            if (auto it = find_window(event.window_id); it != windows.end() && !(*it)->is_popup && !menus.empty()) {
+                request_close(0);
+            }
+            break;
+        case platform::EventType::system_theme_changed:
+            scheme = system_scheme();
+            accent_color = platform::native::system_accent_color();
+            for (const auto& live : windows) {
+                live->window.refresh_appearance();
+                live->dirty = true; // the default window background follows the scheme
+            }
+            break;
+        case platform::EventType::drop_begin:
+        case platform::EventType::drop_position:
+        case platform::EventType::drop_file:
+        case platform::EventType::drop_text:
+        case platform::EventType::drop_complete:
+            handle_drop(event);
+            break;
+        case platform::EventType::wake:
+        case platform::EventType::none:
+            break;
+        }
+    };
+
+    // Views that just became .disabled() lose their press, gestures, and focus; what the cancelled
+    // handlers write takes effect too. Removed elements are forgotten first, so this touches none.
+    const auto release_disabled = [&] {
+        forget_removed();
+        for (const auto& live : windows) {
+            if (live->events.release_disabled()) {
+                live->dirty = true;
+                flush_effects();
+                forget_removed();
+            }
+        }
+    };
+
+    // Each event's handlers run first; then their effects, so the next event sees what they changed.
+    // What the last event, task or timer disabled lets go before this event is dispatched.
+    const auto deliver = [&](const platform::Event& event) {
+        release_disabled();
+        {
+            const DeferEffects dispatching;
+            handle(event);
+        }
+        flush_effects();
+        forget_removed();
+    };
+
+    set_frame_time(seconds_now());
+    while (!self.quit_requested) {
+        // Idle: block until something happens. Animating: keep drawing, picking up events as
+        // they come.
+        const bool animating = std::ranges::any_of(windows, [](const auto& live) { return live->animating; });
+        if (!animating && !pending.any() && !has_lifecycle_actions() && !has_scheduled_effects()) {
+            // Wake for the next timer or pending hover change (hover delays), else sleep until an
+            // event.
+            std::optional<double> deadline = next_timer_due();
+            if (inspector && inspector_rows_stale) {
+                deadline = inspector_rows_at + kInspectorRefresh;
+            }
+            for (const auto& live : windows) {
+                const std::optional<double> accessibility =
+                    live->accessibility_stale ? std::optional(live->accessibility_next) : std::nullopt;
+                for (const std::optional<double> due : {live->events.next_deadline(), live->services.wake(), accessibility}) {
+                    if (due && (!deadline || *due < *deadline)) {
+                        deadline = due;
+                    }
+                }
+            }
+            deliver(deadline ? platform.wait_event(*deadline - seconds_now()) : platform.wait_event());
+        }
+        while (auto event = platform.poll_event()) {
+            deliver(*event);
+        }
+        if (text.atlas.has_uploads()) {
+            for (const auto& live : windows) {
+                live->dirty = true; // glyphs finished on the workers: draw them
+            }
+        }
+        for (const auto& live : windows) {
+            if (live->events.tick()) { // hover changes whose delay has passed
+                live->dirty = true;
+            }
+            if (live->services.take_due(seconds_now())) { // e.g. the caret blinking
+                live->dirty = true;
+            }
+            // A coalesced accessibility update, once frames stopped coming (no need to draw).
+            if (live->accessibility_stale && !live->dirty && !live->animating &&
+                seconds_now() >= live->accessibility_next) {
+                live->accessibility_stale = false;
+                live->accessibility_next = seconds_now() + kAccessibilityInterval;
+                live->accessibility->update();
+            }
+        }
+        flush_effects(); // what hover changes wrote
+        run_ui_releases(); // what other threads let go of
+        run_ui_tasks();    // e.g. a hot reload
+        flush_effects();
+        // What escaped app code goes to the error handler, between events (App::on_error). It
+        // may end the run, and so does running out of memory in app code.
+        const AppErrorHandler handler = [&self](const std::exception_ptr& error, AppCode code) {
+            return self.error_handler ? self.error_handler(AppError{error, code}) : ErrorAction::resume;
+        };
+        if (const std::exception_ptr end = handle_app_errors(handler); end && !exit_error) {
+            exit_error = end;
+            self.quit_requested = true;
+        }
+        flush_effects(); // what the handler wrote
+        run_due_timers(seconds_now());
+        flush_effects(); // hover and other effects may ask for popups
+        forget_removed();
+        process_popups();
+        if (inspector) {
+            auto target = find_window(inspector->target);
+            if (target != windows.end()) {
+                LiveWindow& live = **target;
+                if (inspector->refresh_requested.peek()) {
+                    inspector->refresh_requested = false;
+                    refresh_inspector_rows(live);
+                } else if (inspector_rows_stale && seconds_now() - inspector_rows_at >= kInspectorRefresh) {
+                    refresh_inspector_rows(live);
+                }
+                // A selection made in the inspector, or picking turned on or off: the highlight
+                // in the window changes.
+                if (inspector->selected.peek() != inspector_seen_selection ||
+                    inspector->picking.peek() != inspector_seen_picking) {
+                    inspector_seen_selection = inspector->selected.peek();
+                    inspector_seen_picking = inspector->picking.peek();
+                    if (!inspector_seen_picking) {
+                        inspector->hovered.reset();
+                    }
+                    live.dirty = true;
+                }
+            }
+        }
+        if (callback_error) {
+            std::rethrow_exception(callback_error);
+        }
+        if (const std::exception_ptr error = renderer.error()) {
+            std::rethrow_exception(error);
+        }
+        if (self.quit_requested) {
+            break;
+        }
+        // State written by event handlers takes effect here: effects update the elements they
+        // bind and request frames, then dirty windows draw. Every animation in a frame samples the
+        // same time; layout changes caused by an animated transaction animate too.
+        set_frame_time(seconds_now());
+        flush_effects();
+        // Views just added appear, and views gone disappear. What they write takes effect in
+        // this frame too, so a view starting an animation in on_appear is never drawn still.
+        while (run_lifecycle_actions()) {
+            flush_effects();
+        }
+        release_disabled();
+        const std::shared_ptr<const Animation> transaction = take_flush_animation();
+        const LayoutAnimationScope layout_animation(transaction.get());
+        finish_closing();
+        forget_removed();
+        for (const auto& live : windows) {
+            if (live->dirty || live->animating) {
+                post_frame(*live);
+                // Content may have moved under the pointer (scrolling, animations).
+                if (live->events.refresh_hover()) {
+                    live->dirty = true;
+                }
+            }
+        }
+        // What this frame's flushes changed is laid out: the next flush starts a new update, so
+        // implicit animations that fired in this one stop applying.
+        end_update();
+        app_frame_ended(); // the same exception in the next frame isn't logged again
+        // The pointer's shape follows what's under it, here after layout: content that moved,
+        // appeared, or went away under a still pointer changes it too. A popup over its window
+        // comes later in the list, and wins.
+        for (auto& window : std::ranges::reverse_view(windows)) {
+            if (window->events.pointer_inside()) {
+                if (const PointerStyle style = window->events.pointer_style(); style != pointer_style) {
+                    pointer_style = style;
+                    platform::set_pointer_style(style);
+                }
+                break;
+            }
+        }
+        // Frames of the inspected window update the inspector's states: show them now, not at the
+        // next event.
+        if (std::exchange(inspector_changed, false)) {
+            flush_effects();
+            forget_removed();
+            for (const auto& live : windows) {
+                if (live->window.id() == inspector_window && live->dirty) {
+                    post_frame(*live);
+                }
+            }
+            end_update();
+        }
+        for (const auto& live : windows) {
+            if (live->animating) {
+                mailbox.wait_until_done(live->last_frame, kAnimationFrameTimeout);
+            }
+        }
+    }
+    if (exit_error) {
+        std::rethrow_exception(exit_error); // the scope exits above end the run first
+    }
+    return 0;
+}
+
+const char* version() {
+    return ELG_VERSION_STRING;
+}
+
+void post_to_ui_thread(std::function<void()> task) {
+    if (!task) {
+        throw UsageError("post_to_ui_thread() needs a task");
+    }
+    detail::post_app_task(std::move(task));
+}
+
+std::optional<Color> system_accent_color() {
+    if (g_accent_color) {
+        return (*g_accent_color)();
+    }
+    return detail::platform::native::system_accent_color();
+}
+
+} // namespace elg

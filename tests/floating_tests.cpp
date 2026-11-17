@@ -5,7 +5,7 @@
 // Floating content: where it goes by its anchor, and in-window floating content (drawn by the
 // window's floating layer) opening, closing, and taking presses.
 
-#include "render/display_list.h"
+#include "display/display_list.h"
 #include "text/text_system.h"
 #include "view/animated.h"
 #include "view/event_dispatcher.h"

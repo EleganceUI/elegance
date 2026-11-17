@@ -5,8 +5,10 @@
 #ifndef ELG_GPU_INSTANCE_H
 #define ELG_GPU_INSTANCE_H
 
-#include "gpu/webgpu.h"
-#include "platform/generic/platform.h"
+#include "gpu/webgpu_types.h"
+#include "platform/platform.h"
+
+#include <memory>
 
 namespace elg::detail::gpu {
 
@@ -15,14 +17,14 @@ namespace elg::detail::gpu {
 class Instance {
 public:
     Instance();
+    ~Instance();
 
     Instance(const Instance&) = delete;
     Instance& operator=(const Instance&) = delete;
     Instance(Instance&&) = delete;
     Instance& operator=(Instance&&) = delete;
-    ~Instance() = default;
 
-    [[nodiscard]] const wgpu::Instance& handle() const noexcept { return instance_; }
+    [[nodiscard]] const wgpu::Instance& handle() const noexcept;
 
     // Blocks until `future` (from a WaitAnyOnly callback) has completed, for at most 5 seconds:
     // after that, throws GpuError, as for a lost device.
@@ -32,7 +34,7 @@ public:
     [[nodiscard]] wgpu::Surface create_surface(const platform::SurfaceSource& source) const;
 
 private:
-    wgpu::Instance instance_;
+    std::unique_ptr<wgpu::Instance> instance_;
 };
 
 } // namespace elg::detail::gpu

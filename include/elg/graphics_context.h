@@ -15,18 +15,14 @@ namespace elg {
 
 namespace detail {
 class DisplayList;
-}
+struct GraphicsAccess;
+} // namespace detail
 
 /// Immediate-mode drawing inside a Canvas view (design.md §14). Coordinates are logical points
-/// relative to the canvas's top-left corner. Valid only during the draw call it's passed to.
+/// relative to the canvas's top-left corner. Valid only during the draw call it's passed to; the
+/// framework makes one for each draw.
 class ELG_API GraphicsContext {
 public:
-    /// Internal: created by the framework for each draw.
-    ///
-    /// @param list Receives the drawing commands; must outlive the context.
-    /// @param bounds The canvas's frame, in window points.
-    /// @param scale Pixels per logical point.
-    GraphicsContext(detail::DisplayList& list, Rect bounds, float scale) noexcept;
     /// Closes any clips still pushed.
     ~GraphicsContext();
     GraphicsContext(const GraphicsContext&) = delete;
@@ -108,6 +104,11 @@ public:
     void pop_clip();
 
 private:
+    friend struct detail::GraphicsAccess;
+    // `list` receives the drawing commands and must outlive the context; `bounds` is the canvas's
+    // frame in window points, `scale` pixels per logical point.
+    GraphicsContext(detail::DisplayList& list, Rect bounds, float scale) noexcept;
+
     detail::DisplayList* list_;
     Rect bounds_;
     float scale_;

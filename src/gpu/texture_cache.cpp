@@ -5,9 +5,14 @@
 #include "gpu/texture_cache.h"
 
 #include "core/log.h"
+#include "gpu/device.h"
+#include "gpu/webgpu.h"
+
+#include <webgpu/webgpu_cpp.h>
 
 #include <algorithm>
 #include <bit>
+#include <unordered_map>
 #include <utility>
 
 namespace elg::detail::gpu {
@@ -22,15 +27,29 @@ constexpr wgpu::TextureFormat kFormat = wgpu::TextureFormat::RGBA8UnormSrgb; // 
 
 } // namespace
 
+struct TextureCache::Objects {
+    struct Texture {
+        wgpu::Texture texture;
+        wgpu::BindGroup group;
+        CacheUse use;
+    };
+
+    wgpu::BindGroupLayout layout;
+    wgpu::Sampler sampler;
+    wgpu::RenderPipeline mip_pipeline;
+    std::unordered_map<std::uint64_t, Texture> textures; // by DecodedImage::id
+};
+
 TextureCache::TextureCache(const Device& device, wgpu::BindGroupLayout image_layout, CachePolicy policy)
-    : device_(device), layout_(std::move(image_layout)), sampler_(create_linear_sampler(device.handle())),
-      policy_(policy) {
+    : device_(device), objects_(std::make_unique<Objects>()), policy_(policy) {
+    objects_->layout = std::move(image_layout);
+    objects_->sampler = create_linear_sampler(device.handle());
     const wgpu::Device& dev = device.handle();
     const wgpu::ShaderModule module = create_shader(dev, kMipmapWgsl, "mipmap.wgsl");
     wgpu::PipelineLayoutDescriptor layout_info;
     layout_info.label = "mipmap";
     layout_info.bindGroupLayoutCount = 1;
-    layout_info.bindGroupLayouts = &layout_;
+    layout_info.bindGroupLayouts = &objects_->layout;
     const wgpu::PipelineLayout layout = dev.CreatePipelineLayout(&layout_info);
 
     wgpu::ColorTargetState target;
@@ -47,11 +66,17 @@ TextureCache::TextureCache(const Device& device, wgpu::BindGroupLayout image_lay
     descriptor.vertex.entryPoint = "vs_main";
     descriptor.primitive.topology = wgpu::PrimitiveTopology::TriangleList;
     descriptor.fragment = &fragment;
-    mip_pipeline_ = dev.CreateRenderPipeline(&descriptor);
+    objects_->mip_pipeline = dev.CreateRenderPipeline(&descriptor);
+}
+
+TextureCache::~TextureCache() = default;
+
+std::size_t TextureCache::size() const noexcept {
+    return objects_->textures.size();
 }
 
 wgpu::BindGroup TextureCache::acquire(const wgpu::CommandEncoder& encoder, const DecodedImage& image) {
-    if (const auto it = textures_.find(image.id); it != textures_.end()) {
+    if (const auto it = objects_->textures.find(image.id); it != objects_->textures.end()) {
         frame_.mark(it->second.use);
         return it->second.group;
     }
@@ -65,7 +90,7 @@ wgpu::BindGroup TextureCache::acquire(const wgpu::CommandEncoder& encoder, const
     }
     const auto levels = static_cast<std::uint32_t>(std::bit_width(std::max(image.width, image.height)));
 
-    Texture texture;
+    Objects::Texture texture;
     wgpu::TextureDescriptor descriptor;
     descriptor.label = "image";
     descriptor.dimension = wgpu::TextureDimension::e2D;
@@ -75,7 +100,8 @@ wgpu::BindGroup TextureCache::acquire(const wgpu::CommandEncoder& encoder, const
     descriptor.usage = wgpu::TextureUsage::TextureBinding | wgpu::TextureUsage::CopyDst |
                        wgpu::TextureUsage::RenderAttachment; // mips are rendered
     texture.texture = device_.handle().CreateTexture(&descriptor);
-    texture.group = create_image_group(device_.handle(), layout_, texture.texture.CreateView(), sampler_);
+    texture.group =
+        create_image_group(device_.handle(), objects_->layout, texture.texture.CreateView(), objects_->sampler);
 
     // Level 0 through the queue (ahead of this frame's commands), then each level rendered
     // from the one above.
@@ -90,7 +116,7 @@ wgpu::BindGroup TextureCache::acquire(const wgpu::CommandEncoder& encoder, const
 
     texture.use.bytes = decoded_texture_bytes(image.width, image.height);
     frame_.mark(texture.use);
-    return textures_.emplace(image.id, std::move(texture)).first->second.group;
+    return objects_->textures.emplace(image.id, std::move(texture)).first->second.group;
 }
 
 void TextureCache::generate_mips(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture,
@@ -100,7 +126,7 @@ void TextureCache::generate_mips(const wgpu::CommandEncoder& encoder, const wgpu
         view.baseMipLevel = level - 1;
         view.mipLevelCount = 1;
         const wgpu::BindGroup source =
-            create_image_group(device_.handle(), layout_, texture.CreateView(&view), sampler_);
+            create_image_group(device_.handle(), objects_->layout, texture.CreateView(&view), objects_->sampler);
         view.baseMipLevel = level;
 
         wgpu::RenderPassColorAttachment color;
@@ -112,7 +138,7 @@ void TextureCache::generate_mips(const wgpu::CommandEncoder& encoder, const wgpu
         pass_info.colorAttachmentCount = 1;
         pass_info.colorAttachments = &color;
         const wgpu::RenderPassEncoder pass = encoder.BeginRenderPass(&pass_info);
-        pass.SetPipeline(mip_pipeline_);
+        pass.SetPipeline(objects_->mip_pipeline);
         pass.SetBindGroup(0, source);
         pass.Draw(3);
         pass.End();
@@ -120,7 +146,7 @@ void TextureCache::generate_mips(const wgpu::CommandEncoder& encoder, const wgpu
 }
 
 void TextureCache::end_frame() {
-    evict(textures_, frame_, policy_);
+    evict(objects_->textures, frame_, policy_);
 }
 
 } // namespace elg::detail::gpu

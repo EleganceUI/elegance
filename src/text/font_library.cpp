@@ -6,7 +6,7 @@
 
 #include "core/log.h"
 #include "core/scope_exit.h"
-#include "platform/generic/platform.h"
+#include "platform/platform.h"
 
 #include <elg/error.h>
 

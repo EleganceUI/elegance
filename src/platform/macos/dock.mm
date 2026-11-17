@@ -6,7 +6,7 @@
 // over the app's icon by a view of our own in the tile, as Finder and Safari show downloads.
 // Compiled with ARC.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 
 #import <AppKit/AppKit.h>
 

@@ -11,6 +11,7 @@
 #include <elg/gpu_image.h>
 
 #include "core/numeric.h"
+#include "media/media_access.h"
 #include "media/video_source.h"
 #include "view/view_node.h"
 
@@ -235,19 +236,19 @@ View SwitchIcon(const char* on, const char* off, const std::function<bool()>& sh
 namespace elg {
 
 View VideoView(const VideoPlayer& player, ContentMode mode) {
-    return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(player.source(), mode));
+    return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(detail::MediaAccess::source(player), mode));
 }
 
 View CameraView(const Camera& camera, ContentMode mode) {
-    return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(camera.source(), mode, camera.mirrored()));
+    return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(detail::MediaAccess::source(camera), mode, camera.mirrored()));
 }
 
 View VideoFeedView(const VideoFeed& feed, ContentMode mode, bool mirrored) {
-    return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(feed.source(), mode, mirrored));
+    return detail::ViewAccess::make(std::make_shared<const detail::VideoNode>(detail::MediaAccess::source(feed), mode, mirrored));
 }
 
 View GpuImageView(const ElgGpuImage* image, ContentMode mode) {
-    const auto source = gpu_image_source(image);
+    const auto source = detail::gpu_image_source(image);
     if (!source) {
         return View{};
     }

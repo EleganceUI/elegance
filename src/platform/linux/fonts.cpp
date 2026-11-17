@@ -4,11 +4,12 @@
 
 // Font files on Linux (text/font_library.h): the system's choice through fontconfig, loaded when
 // it's there (every desktop has it), then DejaVu, Noto or Liberation where distributions usually
-// put them.
+// put them. And the glyph cache's folder (text/text_backend.h).
 
 #include "text/font_library.h"
+#include "text/text_backend.h"
 
-#include "platform/generic/dynamic_library.h"
+#include "core/dynamic_library.h"
 
 #include <filesystem>
 #include <map>
@@ -91,7 +92,7 @@ private:
 
     bool load() {
         try {
-            library_ = std::make_unique<platform::DynamicLibrary>("libfontconfig.so.1");
+            library_ = std::make_unique<DynamicLibrary>("libfontconfig.so.1");
         } catch (...) {
             return false;
         }
@@ -101,7 +102,7 @@ private:
                find(pattern_get_string_, "FcPatternGetString") && find(pattern_destroy_, "FcPatternDestroy");
     }
 
-    std::unique_ptr<platform::DynamicLibrary> library_;
+    std::unique_ptr<DynamicLibrary> library_;
     Pattern* (*name_parse_)(const unsigned char*) = nullptr;
     int (*pattern_add_integer_)(Pattern*, const char*, int) = nullptr;
     int (*pattern_add_bool_)(Pattern*, const char*, int) = nullptr;
@@ -148,6 +149,18 @@ std::vector<std::filesystem::path> fallback_font_candidates() {
         files.emplace_back(file);
     }
     return files;
+}
+
+std::optional<std::filesystem::path> glyph_cache_folder(
+    const std::function<std::optional<std::string>(const char*)>& get) {
+    // An empty or relative XDG_CACHE_HOME counts as unset (the XDG Base Directory spec).
+    if (const auto xdg = get("XDG_CACHE_HOME"); xdg && std::filesystem::path(*xdg).is_absolute()) {
+        return std::filesystem::path(*xdg) / "elegance" / "glyphs";
+    }
+    if (const auto home = get("HOME"); home && !home->empty()) {
+        return std::filesystem::path(*home) / ".cache" / "elegance" / "glyphs";
+    }
+    return std::nullopt;
 }
 
 } // namespace elg::detail

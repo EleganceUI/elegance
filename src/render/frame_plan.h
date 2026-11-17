@@ -6,7 +6,7 @@
 #define ELG_RENDER_FRAME_PLAN_H
 
 #include "gpu/quad_renderer.h"
-#include "render/display_list.h"
+#include "display/display_list.h"
 
 #include <array>
 #include <cstdint>

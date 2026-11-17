@@ -4,7 +4,7 @@
 
 // The menu bar's items as resolved for showing, and how a chosen one is found again.
 
-#include "platform/generic/menu_bar.h"
+#include "platform/menu_bar.h"
 
 #include <elg/app.h>
 

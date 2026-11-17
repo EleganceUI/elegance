@@ -2,25 +2,24 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// macOS under SDL (platform/generic/native.h): windows present through a CAMetalLayer, integrated
+// macOS under SDL (platform/sdl/native.h): windows present through a CAMetalLayer, integrated
 // title bars and trackpad input come from AppKit (title_bar.mm, input.mm).
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
 
 #include "platform/macos/appearance.h"
 #include "platform/macos/input.h"
 #include "platform/macos/title_bar.h"
 
 #include <elg/error.h>
+#include <elg/events.h>
+#include <elg/platform.h>
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_metal.h>
 
 #include <pthread.h>
-#include <sys/sysctl.h>
-#include <unistd.h>
 
-#include <csignal>
 #include <format>
 
 namespace elg::detail::platform {
@@ -141,18 +140,24 @@ void remove_input_monitor(void* monitor) {
 
 void wait_for_compositor() {}
 
-bool debugger_present() noexcept {
-    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
-    kinfo_proc info{};
-    std::size_t size = sizeof(info);
-    if (sysctl(mib, 4, &info, &size, nullptr, 0) != 0) {
-        return false;
-    }
-    return (info.kp_proc.p_flag & P_TRACED) != 0;
+std::optional<std::filesystem::path> caption_icon_font() {
+    return std::nullopt;
 }
 
-void debug_break() noexcept {
-    std::raise(SIGTRAP);
+KeyModifiers word_modifier() noexcept {
+    return KeyModifiers::alt;
 }
 
 } // namespace elg::detail::platform
+
+namespace elg {
+
+Platform current_platform() noexcept {
+    return Platform::macos;
+}
+
+KeyModifiers primary_modifier() noexcept {
+    return KeyModifiers::super;
+}
+
+} // namespace elg

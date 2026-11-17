@@ -65,9 +65,8 @@ public:
     /// @return This shape, stroked.
     [[nodiscard]] ELG_API Shape stroke_border(Prop<Color> color, float line_width = 1) const;
 
-    /// Internal: created by the shape functions below.
-    ///
-    /// @param node The shape's description.
+private:
+    friend struct detail::ViewAccess; // the shape functions below make shapes through it
     ELG_API explicit Shape(std::shared_ptr<const detail::ShapeNode> node);
 };
 

@@ -2,19 +2,19 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Linux (and other Unix desktops) under SDL (platform/generic/native.h): WebGPU draws into the
+// Linux (and other Unix desktops) under SDL (platform/sdl/native.h): WebGPU draws into the
 // Wayland surface or the X11 window. SDL's password input type turns the IME off on Wayland.
 
-#include "platform/generic/native.h"
+#include "platform/sdl/native.h"
+
+#include <elg/events.h>
+#include <elg/platform.h>
 
 #include <SDL3/SDL.h>
 
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#include <csignal>
-#include <fstream>
-#include <string>
 #include <string_view>
 
 namespace elg::detail::platform {
@@ -77,19 +77,24 @@ void remove_input_monitor(void*) {}
 
 void wait_for_compositor() {}
 
-bool debugger_present() noexcept {
-    std::ifstream status("/proc/self/status");
-    std::string line;
-    while (std::getline(status, line)) {
-        if (line.starts_with("TracerPid:")) {
-            return line.find_first_not_of(" \t0", 10) != std::string::npos;
-        }
-    }
-    return false;
+std::optional<std::filesystem::path> caption_icon_font() {
+    return std::nullopt;
 }
 
-void debug_break() noexcept {
-    std::raise(SIGTRAP);
+KeyModifiers word_modifier() noexcept {
+    return KeyModifiers::control;
 }
 
 } // namespace elg::detail::platform
+
+namespace elg {
+
+Platform current_platform() noexcept {
+    return Platform::linux;
+}
+
+KeyModifiers primary_modifier() noexcept {
+    return KeyModifiers::control;
+}
+
+} // namespace elg

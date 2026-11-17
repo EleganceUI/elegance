@@ -5,11 +5,10 @@
 #include "core/crash.h"
 
 #include "core/log.h"
-#include "platform/generic/platform.h"
+#include "core/os_backend.h"
 
 #include <elg/app.h>
 
-#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -19,10 +18,6 @@
 #include <print>
 #include <sstream>
 #include <thread>
-
-#if !defined(__cpp_lib_stacktrace)
-#include <execinfo.h>
-#endif
 
 namespace elg::detail {
 
@@ -35,8 +30,7 @@ StackTrace StackTrace::current() noexcept {
     StackTrace trace;
     try {
         trace.frames.resize(128);
-        const int count = backtrace(trace.frames.data(), static_cast<int>(trace.frames.size()));
-        trace.frames.resize(static_cast<std::size_t>(std::max(count, 0)));
+        trace.frames.resize(os::capture_stack(trace.frames));
     } catch (...) {
         trace.frames.clear();
     }
@@ -48,12 +42,10 @@ std::string to_text(const StackTrace& trace) {
     if (trace.frames.empty()) {
         return "(unavailable)";
     }
-    char** symbols = backtrace_symbols(trace.frames.data(), static_cast<int>(trace.frames.size()));
-    for (std::size_t i = 0; i < trace.frames.size(); ++i) {
-        text += symbols ? symbols[i] : std::format("{}", trace.frames[i]);
+    for (const std::string& frame : os::describe_stack(trace.frames)) {
+        text += frame;
         text += '\n';
     }
-    std::free(static_cast<void*>(symbols));
     return text;
 }
 #endif
@@ -85,7 +77,7 @@ std::string build_report(std::string_view message, const std::source_location& w
 
 std::filesystem::path write_report(const std::string& report) {
     const auto now = std::chrono::floor<std::chrono::seconds>(std::chrono::system_clock::now());
-    const std::filesystem::path dir = platform::pref_path() / "crashes";
+    const std::filesystem::path dir = os::pref_path() / "crashes";
     std::filesystem::create_directories(dir);
     const std::filesystem::path path = dir / std::format("crash-{:%Y%m%d-%H%M%S}.txt", now);
     std::ofstream file(path);
@@ -127,15 +119,15 @@ void internal_error(std::string_view message, std::source_location where, const 
         }
     }
 
-    if (platform::debugger_present()) {
-        platform::debug_break();
+    if (os::debugger_present()) {
+        os::debug_break();
     }
 
     const std::string box =
         path.empty() ? std::string("An internal error occurred in Elegance.")
                      : "An internal error occurred in Elegance.\nA crash report was written to:\n" +
                            path;
-    platform::show_error_box("Elegance crashed", box.c_str());
+    os::show_error_box("Elegance crashed", box.c_str());
     std::abort();
 }
 
