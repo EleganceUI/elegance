@@ -2166,7 +2166,7 @@ Separate render thread from day one (decided).
       layout. It's kept across measure, place and frames.
     - Called without framework storage (by another layout), it builds a temporary cache.
   - Layout values: `view.layout_value<Key>(value)` and `LayoutChild::value<Key>()`, where a key
-    is a type with `Value` and `default_value()`.
+    is a type with `Value`, `name` and `default_value()`, told apart by a hash of its name.
     - Carried by a layout-transparent `LayoutValueModifier<Key>`.
     - Found through the modifiers wrapping a child (effects, decorations, events, transitions),
       never inside nested layouts.

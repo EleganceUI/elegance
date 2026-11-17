@@ -24,6 +24,7 @@
 #include <elg/view.h>
 #include <elg/views.h>
 
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -180,8 +181,9 @@ public:
             element->needs_arrange_ = true;
         }
     }
-    // A value from View::layout_value on this element or the modifiers wrapping its content.
-    virtual const void* find_layout_value(const std::type_info&) const noexcept { return nullptr; }
+    // A value from View::layout_value on this element or the modifiers wrapping its content, by
+    // its key's detail::key_id().
+    virtual const void* find_layout_value(std::uint64_t) const noexcept { return nullptr; }
 
     // How a parent layout sees this element: itself, or for If/ForEach the elements they show
     // right now (flattened), or nothing for EmptyView.
@@ -478,7 +480,7 @@ private:
 // when added and out when removed during an animated update.
 class TransitionElement final : public Element {
 public:
-    const void* find_layout_value(const std::type_info& key) const noexcept override {
+    const void* find_layout_value(std::uint64_t key) const noexcept override {
         return content_->find_layout_value(key);
     }
     TransitionElement(Transition transition, std::unique_ptr<Element> content)
@@ -561,7 +563,7 @@ private:
 
 class LayoutModifierElement final : public Element {
 public:
-    const void* find_layout_value(const std::type_info& key) const noexcept override;
+    const void* find_layout_value(std::uint64_t key) const noexcept override;
     void inspect(Inspection& out) const override;
     LayoutModifierElement(std::shared_ptr<const LayoutModifier> modifier, std::unique_ptr<Element> content)
         : modifier_(std::move(modifier)), content_(std::move(content)) {
@@ -595,7 +597,7 @@ private:
 // fast path (alpha multiply, analytic shadow); anything else is rendered as an offscreen layer.
 class EffectElement final : public Element {
 public:
-    const void* find_layout_value(const std::type_info& key) const noexcept override {
+    const void* find_layout_value(std::uint64_t key) const noexcept override {
         return content_->find_layout_value(key);
     }
     void inspect(Inspection& out) const override;
@@ -676,7 +678,7 @@ private:
 
 class DecorationElement final : public Element {
 public:
-    const void* find_layout_value(const std::type_info& key) const noexcept override {
+    const void* find_layout_value(std::uint64_t key) const noexcept override {
         return content_->find_layout_value(key);
     }
     void inspect(Inspection& out) const override;
@@ -731,7 +733,7 @@ private:
 // A view with an EventModifier: owns the handler; layout, paint, and hit testing pass through.
 class EventElement final : public Element {
 public:
-    const void* find_layout_value(const std::type_info& key) const noexcept override {
+    const void* find_layout_value(std::uint64_t key) const noexcept override {
         return content_->find_layout_value(key);
     }
     // `environment_delay` reads the environment's hover delay (used unless the handler has its own).

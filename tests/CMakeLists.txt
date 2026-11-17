@@ -24,6 +24,7 @@ add_executable(elegance_tests
         gpu_image_tests.cpp
         grid_tests.cpp
         hover_tests.cpp
+        layout_value_tests.cpp
         leaving_tests.cpp
         lifecycle_tests.cpp
         click_tests.cpp

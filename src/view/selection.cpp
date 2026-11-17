@@ -165,7 +165,7 @@ public:
     HoverDelay effective_hover_delay() const override { return {.enter = 0, .exit = 0}; }
     float layout_priority() const noexcept override { return content_->layout_priority(); }
     float z_index() const noexcept override { return content_->z_index(); }
-    const void* find_layout_value(const std::type_info& key) const noexcept override {
+    const void* find_layout_value(std::uint64_t key) const noexcept override {
         return content_->find_layout_value(key);
     }
     EventHandler* event_handler() noexcept override { return this; }
@@ -272,7 +272,7 @@ public:
     float layout_priority() const noexcept override { return content_->layout_priority(); }
     float z_index() const noexcept override { return content_->z_index(); }
     bool is_spacer() const noexcept override { return content_->is_spacer(); }
-    const void* find_layout_value(const std::type_info& key) const noexcept override {
+    const void* find_layout_value(std::uint64_t key) const noexcept override {
         return content_->find_layout_value(key);
     }
     EventHandler* event_handler() noexcept override { return this; }

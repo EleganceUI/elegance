@@ -6,7 +6,9 @@
 
 #include "shim.h"
 
+#include <cstdint>
 #include <exception>
+#include <string_view>
 
 using namespace elg;
 using namespace elg_shim;
@@ -189,14 +191,15 @@ struct RustLayoutValue {
 
 struct RustLayoutKey {
     using Value = RustLayoutValue;
+    static constexpr std::string_view name = "elg.rust_layout_value";
     static RustLayoutValue default_value() { return {}; }
 };
 
 class RustLayoutValueModifier final : public LayoutValueModifierBase {
 public:
     explicit RustLayoutValueModifier(SharedFn owner) : owner_(std::move(owner)), value_{owner_->data()} {}
-    [[nodiscard]] const void* value_for(const std::type_info& key) const noexcept override {
-        if (key != typeid(RustLayoutKey)) {
+    [[nodiscard]] const void* value_for(std::uint64_t key) const noexcept override {
+        if (key != elg::detail::key_id(RustLayoutKey::name)) {
             return nullptr;
         }
         bool matches = false;

@@ -569,7 +569,7 @@ void LayoutElement::rebuild_children() {
     }
 }
 
-const void* LayoutModifierElement::find_layout_value(const std::type_info& key) const noexcept {
+const void* LayoutModifierElement::find_layout_value(std::uint64_t key) const noexcept {
     if (const auto* carrier = dynamic_cast<const LayoutValueModifierBase*>(modifier_.get())) {
         if (const void* value = carrier->value_for(key)) {
             return value;

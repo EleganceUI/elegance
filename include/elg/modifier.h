@@ -16,8 +16,8 @@
 #include <elg/shapes.h>
 #include <elg/view.h>
 
+#include <cstdint>
 #include <memory>
-#include <typeinfo>
 #include <optional>
 
 namespace elg {
@@ -97,12 +97,13 @@ public:
     [[nodiscard]] bool is_spacer() const noexcept;
 
     /// The value set on this child with View::layout_value<Key>(...), else Key::default_value().
+    /// Keys are told apart by their `name`.
     ///
-    /// @tparam Key The key.
+    /// @tparam Key The key: a type with a `Value` type, a `name` and a `default_value()`.
     /// @return The child's value for `Key`.
     template <class Key>
     [[nodiscard]] typename Key::Value value() const {
-        if (const void* found = layout_value(typeid(Key))) {
+        if (const void* found = layout_value(detail::key_id(Key::name))) {
             return *static_cast<const typename Key::Value*>(found);
         }
         return Key::default_value();
@@ -112,7 +113,7 @@ private:
     friend struct detail::LayoutAccess;
     explicit LayoutChild(detail::Element& element) noexcept; // `element` must outlive this
 
-    [[nodiscard]] const void* layout_value(const std::type_info& key) const;
+    [[nodiscard]] const void* layout_value(std::uint64_t key) const;
 
     detail::Element* element_;
 };
@@ -162,14 +163,14 @@ public:
     }
     /// The value for `key`, if this modifier carries it.
     ///
-    /// @param key The key's type, `typeid(Key)`.
+    /// @param key The key's name as detail::key_id() hashes it: `detail::key_id(Key::name)`.
     /// @return A pointer to the `Key::Value` this modifier holds, or nullptr for another key.
-    [[nodiscard]] virtual const void* value_for(const std::type_info& key) const noexcept = 0;
+    [[nodiscard]] virtual const void* value_for(std::uint64_t key) const noexcept = 0;
 };
 
 /// The modifier View::layout_value<Key>() applies: carries `value` for `Key`.
 ///
-/// @tparam Key The key: a type with a `Value` type and a `default_value()`.
+/// @tparam Key The key: a type with a `Value` type, a `name` and a `default_value()`.
 template <class Key>
 class LayoutValueModifier final : public LayoutValueModifierBase {
 public:
@@ -177,10 +178,10 @@ public:
     explicit LayoutValueModifier(typename Key::Value value) : value_(std::move(value)) {}
     /// The value for `key`, if it's `Key`.
     ///
-    /// @param key The key's type.
-    /// @return The value for `Key` if `key` is `typeid(Key)`, else nullptr.
-    [[nodiscard]] const void* value_for(const std::type_info& key) const noexcept override {
-        return key == typeid(Key) ? &value_ : nullptr;
+    /// @param key A key's name as detail::key_id() hashes it.
+    /// @return The value for `Key` if `key` is `detail::key_id(Key::name)`, else nullptr.
+    [[nodiscard]] const void* value_for(std::uint64_t key) const noexcept override {
+        return key == detail::key_id(Key::name) ? &value_ : nullptr;
     }
 
 private:

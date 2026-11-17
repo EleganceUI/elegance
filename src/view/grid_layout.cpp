@@ -15,6 +15,7 @@
 #include <atomic>
 #include <cmath>
 #include <numeric>
+#include <string_view>
 
 namespace elg {
 
@@ -29,21 +30,25 @@ struct GridRowCell {
 
 struct GridRowKey {
     using Value = GridRowCell;
+    static constexpr std::string_view name = "elg.grid_row";
     static GridRowCell default_value() { return {}; }
 };
 
 struct GridCellColumnsKey {
     using Value = int;
+    static constexpr std::string_view name = "elg.grid_cell_columns";
     static int default_value() { return 1; }
 };
 
 struct GridCellAlignmentKey {
     using Value = std::optional<Alignment>;
+    static constexpr std::string_view name = "elg.grid_cell_alignment";
     static std::optional<Alignment> default_value() { return std::nullopt; }
 };
 
 struct GridColumnAlignmentKey {
     using Value = std::optional<HorizontalAlignment>;
+    static constexpr std::string_view name = "elg.grid_column_alignment";
     static std::optional<HorizontalAlignment> default_value() { return std::nullopt; }
 };
 
