@@ -108,7 +108,8 @@ jobs:
                     libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev \
                     libxinerama-dev libx11-xcb-dev libxkbcommon-dev libwayland-dev wayland-protocols libdecor-0-dev \
                     libegl1-mesa-dev libgl1-mesa-dev libgles2-mesa-dev libdrm-dev libgbm-dev \
-                    libasound2-dev libpulse-dev libdbus-1-dev libibus-1.0-dev libudev-dev
+                    libasound2-dev libpulse-dev libdbus-1-dev libibus-1.0-dev libudev-dev \
+                    clang libc++-dev libc++abi-dev
                   pipx install 'cmake>=4.3'
                   echo "CC=gcc-14" >> "$GITHUB_ENV"
                   echo "CXX=g++-14" >> "$GITHUB_ENV"
@@ -230,6 +231,14 @@ jobs:
             # one also runs: the static one would need AccessKit's shared library next to it.
             - name: Link check
               run: build/c/elegance_c_link_check
+
+            # The installed packages (ELGSPEC-0007.R17): the shared library exports only the C API, and
+            # the static package keeps its C++ standard library to itself (on Linux, where it holds it)
+            # or links the system's (macOS); link_check.cpp links with it and runs, with the C++
+            # compiler's standard library, and on Linux with Clang's libc++ (installed above) too.
+            - name: Package check
+              if: runner.os != 'Windows'
+              run: python3 tools/c-package-check.py dist dist-static
 
             - name: Package
               run: |

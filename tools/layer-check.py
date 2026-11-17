@@ -151,8 +151,9 @@ THIRD_PARTY = [
 
 
 def third_party(header):
-    """(library name, allowed layers) for a third-party header, or None for a standard one."""
-    if header in STANDARD or header.startswith("elg/"):
+    """(library name, allowed layers) for a third-party header, or None for a standard one or
+    Elegance's own (its public headers, and the C API's, elg-c/)."""
+    if header in STANDARD or header.startswith("elg/") or header.startswith("elg-c/"):
         return None
     for pattern, name, layers in THIRD_PARTY:
         if pattern.match(header):
@@ -519,6 +520,8 @@ def check_c_api(path, found):
             continue
         if kind == "<" and (header in STANDARD or header.startswith("elg/")):
             continue
+        if kind == "<" and (ROOT / "c" / "include" / header).is_file():
+            continue  # the C API's header (elg-c/)
         report(path, line, f"includes {header}, which is neither public nor the C API's own", "ELGSPEC-0001.R8")
 
 

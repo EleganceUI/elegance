@@ -70,6 +70,7 @@ if (ELG_C_STATIC)
     target_link_libraries(elegance_c_api PRIVATE elegance)
     elegance_c_api_warnings(elegance_c_api)
     add_executable(elegance_c_link_check link_check.cpp)
+    target_include_directories(elegance_c_link_check PRIVATE include)
     target_link_libraries(elegance_c_link_check PRIVATE elegance_c_api)
     if (MSVC)
         target_compile_definitions(elegance_c_api PRIVATE NOMINMAX)
@@ -77,12 +78,34 @@ if (ELG_C_STATIC)
     endif ()
 
     set(package "${CMAKE_CURRENT_BINARY_DIR}/package")
+    # Linux: the C++ standard library the package is built with, and its unwinder, which the package
+    # holds (package-static.cmake): libc++'s with -stdlib=libc++, libstdc++'s otherwise.
     set(cxx_stdlib "")
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libstdc++.a
-                        OUTPUT_VARIABLE cxx_stdlib OUTPUT_STRIP_TRAILING_WHITESPACE)
+        separate_arguments(cxx_flags UNIX_COMMAND "${CMAKE_CXX_FLAGS}")
+        if (CMAKE_CXX_FLAGS MATCHES "-stdlib=libc\\+\\+")
+            set(runtime libc++.a libc++abi.a libunwind.a libc++experimental.a)
+        else ()
+            set(runtime libstdc++.a libgcc_eh.a)
+        endif ()
+        foreach (archive IN LISTS runtime)
+            execute_process(COMMAND ${CMAKE_CXX_COMPILER} ${cxx_flags} -print-file-name=${archive}
+                            OUTPUT_VARIABLE path OUTPUT_STRIP_TRAILING_WHITESPACE)
+            if (IS_ABSOLUTE "${path}" AND EXISTS "${path}")
+                list(APPEND cxx_stdlib "${path}")
+            elseif (NOT archive STREQUAL "libc++experimental.a")
+                message(FATAL_ERROR "The static package holds ${archive}, which ${CMAKE_CXX_COMPILER} can't find")
+            endif ()
+        endforeach ()
+        list(JOIN cxx_stdlib "|" cxx_stdlib)
     endif ()
     find_program(ELG_LIBTOOL libtool)
+    # GNU ld, which gives common symbols space in a relocatable link (package-static.cmake); lld
+    # doesn't.
+    find_program(ELG_GNU_LD NAMES ld.bfd)
+    if (NOT ELG_GNU_LD)
+        set(ELG_GNU_LD "${CMAKE_LINKER}")
+    endif ()
     add_custom_command(
             OUTPUT "${package}/elegance-link.txt"
             COMMAND ${CMAKE_COMMAND}
@@ -92,6 +115,9 @@ if (ELG_C_STATIC)
                     "-DSYSTEM=${CMAKE_SYSTEM_NAME}"
                     "-DAR=${CMAKE_AR}"
                     "-DLIBTOOL=${ELG_LIBTOOL}"
+                    "-DLD=${ELG_GNU_LD}"
+                    "-DOBJCOPY=${CMAKE_OBJCOPY}"
+                    "-DNM=${CMAKE_NM}"
                     "-DCXX_STDLIB=${cxx_stdlib}"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/package-static.cmake"
             DEPENDS elegance_c_api elegance "${CMAKE_CURRENT_SOURCE_DIR}/package-static.cmake"
@@ -109,6 +135,7 @@ endif ()
 add_library(elegance_c SHARED ${C_API_SOURCES})
 elegance_c_api_warnings(elegance_c)
 add_executable(elegance_c_link_check link_check.cpp)
+target_include_directories(elegance_c_link_check PRIVATE include)
 target_link_libraries(elegance_c_link_check PRIVATE elegance_c)
 # The whole archive, so ELG_API functions the C API doesn't call (elg_gpu_image_*) are exported too.
 target_link_libraries(elegance_c PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,elegance>")
