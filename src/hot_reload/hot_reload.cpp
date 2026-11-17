@@ -241,6 +241,17 @@ public:
                 throw ResourceError(std::format("{} was built against another Elegance version",
                                                 options_.module.filename().string()));
             }
+            // What the host and the module both use: Elegance, compiled from headers that hash to
+            // headers_hash, and the app's own shared types, which it hashes on both sides.
+            if (entry->elegance_hash != headers_hash) {
+                throw ResourceError(std::format("Restart the app to load {}: it was built against Elegance headers "
+                                                "that changed after the app started",
+                                                options_.module.filename().string()));
+            }
+            if (entry->app_hash != options_.app_hash) {
+                throw ResourceError(std::format("Restart the app to load {}: it changed types the app shares with it",
+                                                options_.module.filename().string()));
+            }
             LoadedModule module{.library = std::move(library), .has_root = entry->has_root, .build = entry->build,
                                 .context = entry->context};
             if (entry->previews) {

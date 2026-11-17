@@ -18,6 +18,7 @@
 //   app.window({.title = "Todos"}, [] { return HotReload({.module = ..., .build_command = ..., .watch = {...}}); });
 
 #include <elg/export.h>
+#include <elg/headers_hash.h>
 #include <elg/view.h>
 
 #include <cstddef>
@@ -48,7 +49,33 @@ struct ModuleEntry {
     /// `previews` at `index`.
     View (*build)(const void* context, std::int32_t index) = nullptr;
     const void* context = nullptr; ///< what `build` is called with: the module's own data
+    /// The hash of Elegance's public headers the module was compiled with. HotReload() mounts the
+    /// module only when it's the one Elegance was compiled with.
+    std::uint64_t elegance_hash = 0;
+    /// The app's hash of the types its host shares with the module (layout_hash()), or 0.
+    /// HotReload() mounts the module only when it's HotReloadOptions::app_hash.
+    std::uint64_t app_hash = 0;
 };
+
+/// A hash of the sizes and alignments of `T...`, in order: for the types an app's host shares with
+/// its views module (its stores, the values it puts in the environment). Give the same hash to
+/// ELG_MODULE_WITH_APP_HASH and HotReloadOptions::app_hash, and a reload that changes those types
+/// asks for a restart instead of mounting the module. Any other value both sides compute works too,
+/// such as a number the app changes along with those types.
+///
+/// @tparam T The shared types.
+/// @return The hash: 64-bit FNV-1a of each type's size and alignment.
+template <class... T>
+[[nodiscard]] constexpr std::uint64_t layout_hash() {
+    std::uint64_t hash = 14695981039346656037ULL;
+    const auto mix = [&hash](std::uint64_t value) {
+        for (int byte = 0; byte < 8; ++byte) {
+            hash = (hash ^ ((value >> (byte * 8)) & 0xFF)) * 1099511628211ULL;
+        }
+    };
+    (..., (mix(sizeof(T)), mix(alignof(T))));
+    return hash;
+}
 
 /// The version of ModuleEntry this Elegance loads. A module built with another one isn't loaded;
 /// HotReload() shows an error instead.
@@ -83,11 +110,16 @@ inline View build_module_view(const void*, std::int32_t index) {
     return index < 0 ? views.root() : views.bodies.at(static_cast<std::size_t>(index))();
 }
 
-// The entry ELG_MODULE returns.
-inline ModuleEntry module_entry(View (*root)()) {
+// The entry ELG_MODULE returns: with the hash of the headers it was compiled with.
+inline ModuleEntry module_entry(View (*root)(), std::uint64_t app_hash = 0) {
     ModuleViews& views = module_views();
     views.root = root;
-    return {.abi = module_abi, .has_root = root != nullptr, .previews = &views.previews, .build = &build_module_view};
+    return {.abi = module_abi,
+            .has_root = root != nullptr,
+            .previews = &views.previews,
+            .build = &build_module_view,
+            .elegance_hash = headers_hash,
+            .app_hash = app_hash};
 }
 
 } // namespace detail
@@ -100,10 +132,14 @@ inline ModuleEntry module_entry(View (*root)()) {
 
 /// Makes this shared library a views module, with `root` (a View() function, or nullptr) as the
 /// app's content.
-#define ELG_MODULE(root)                                                                          \
+#define ELG_MODULE(root) ELG_MODULE_WITH_APP_HASH(root, 0)
+
+/// ELG_MODULE, with `app_hash`: the hash of the types the app's host shares with this module, the
+/// one it gives HotReloadOptions::app_hash (see layout_hash()).
+#define ELG_MODULE_WITH_APP_HASH(root, app_hash)                                                  \
     ELG_MODULE_EXPORT const ::elg::ModuleEntry* elg_module_entry();                               \
     ELG_MODULE_EXPORT const ::elg::ModuleEntry* elg_module_entry() {                              \
-        static const ::elg::ModuleEntry entry = ::elg::detail::module_entry(root);                \
+        static const ::elg::ModuleEntry entry = ::elg::detail::module_entry(root, app_hash);      \
         return &entry;                                                                            \
     }
 
@@ -142,6 +178,10 @@ struct HotReloadOptions {
     /// Files and folders (searched recursively) whose changes trigger a rebuild.
     std::vector<std::filesystem::path> watch;
     HotReloadShow show = HotReloadShow::root; ///< the root view, or the previews
+    /// The hash of the types this host shares with the module, the one the module gives
+    /// ELG_MODULE_WITH_APP_HASH (see layout_hash()): a load whose hash differs isn't mounted, and
+    /// asks for a restart. 0 for a module that has none.
+    std::uint64_t app_hash = 0;
 };
 
 /// The views module's content, rebuilt and reloaded when its sources change. A small status

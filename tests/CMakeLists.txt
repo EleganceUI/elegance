@@ -95,11 +95,13 @@ endif ()
 if (ELG_BUILD_SHARED)
     elegance_views_module(hot_reload_first hot_reload/first_module.cpp)
     elegance_views_module(hot_reload_second hot_reload/second_module.cpp)
+    elegance_views_module(hot_reload_changed hot_reload/changed_module.cpp)
     target_sources(elegance_tests PRIVATE hot_reload_tests.cpp)
-    add_dependencies(elegance_tests hot_reload_first hot_reload_second)
+    add_dependencies(elegance_tests hot_reload_first hot_reload_second hot_reload_changed)
     target_compile_definitions(elegance_tests PRIVATE
             ELG_TEST_FIRST_MODULE="$<TARGET_FILE:hot_reload_first>"
-            ELG_TEST_SECOND_MODULE="$<TARGET_FILE:hot_reload_second>")
+            ELG_TEST_SECOND_MODULE="$<TARGET_FILE:hot_reload_second>"
+            ELG_TEST_CHANGED_MODULE="$<TARGET_FILE:hot_reload_changed>")
 endif ()
 
 # Under LeakSanitizer: fontconfig (loaded from the system on Linux) keeps its caches until exit.

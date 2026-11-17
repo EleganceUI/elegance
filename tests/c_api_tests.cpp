@@ -84,7 +84,7 @@ void elg_text_free(Text* text);
 void elg_string_assign(std::string* target, ElgStr value);
 View* elg_image(const ElgImageSource* source);
 const ModuleEntry* elg_rust_module_entry(bool has_root, const PreviewDesc* previews, size_t count,
-                                         bool (*build)(int32_t index, View* ret));
+                                         bool (*build)(int32_t index, View* ret), uint64_t app_hash);
 }
 
 namespace {
@@ -307,11 +307,14 @@ TEST_CASE("each Rust module's entry builds that module's views, however many pre
     for (const std::string& name : names) {
         previews.push_back({.name = {name.data(), name.size()}, .file = {"views.rs", 8}, .line = 1});
     }
-    const ModuleEntry* first = elg_rust_module_entry(true, previews.data(), previews.size(), build_first);
-    const ModuleEntry* second = elg_rust_module_entry(false, previews.data(), 1, build_second);
+    const ModuleEntry* first = elg_rust_module_entry(true, previews.data(), previews.size(), build_first, 0);
+    const ModuleEntry* second = elg_rust_module_entry(false, previews.data(), 1, build_second, 7);
     REQUIRE(first);
     REQUIRE(second);
     CHECK(first != second);
+    CHECK(first->elegance_hash == elg::detail::headers_hash);
+    CHECK(first->app_hash == 0);
+    CHECK(second->app_hash == 7);
     CHECK(first->has_root);
     CHECK_FALSE(second->has_root);
     REQUIRE(first->previews->size() == 300);

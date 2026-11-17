@@ -3127,8 +3127,11 @@ ELG_EXPORT View* elg_mod_animates_layout(const View* v, bool enabled) {
 /// @param watch Files and folders (searched recursively) whose changes trigger a rebuild.
 /// @param watch_count How many `watch` paths there are.
 /// @param show `HotReloadShow`: 0 the module's root view, 1 its previews.
+/// @param app_hash `HotReloadOptions::app_hash`: the hash of the types this host shares with the module, the
+///   one the module gives elg_rust_module_entry(); 0 for none. A load whose hash differs isn't mounted.
 /// @return The view, owned by the caller, or null on failure.
-ELG_EXPORT View* elg_hot_reload(ElgStr module, ElgStr build_command, const ElgStr* watch, size_t watch_count, int32_t show) {
+ELG_EXPORT View* elg_hot_reload(ElgStr module, ElgStr build_command, const ElgStr* watch, size_t watch_count, int32_t show,
+                                uint64_t app_hash) {
     ELG_TRY
     HotReloadOptions options;
     options.module = path(module);
@@ -3137,6 +3140,7 @@ ELG_EXPORT View* elg_hot_reload(ElgStr module, ElgStr build_command, const ElgSt
         options.watch.push_back(path(watch[i]));
     }
     options.show = static_cast<HotReloadShow>(show);
+    options.app_hash = app_hash;
     return out(HotReload(std::move(options)));
     ELG_CATCH(nullptr)
 }
@@ -3189,9 +3193,12 @@ View build_module_view(const void* context, int32_t index) {
 /// @param previews The module's previews (borrowed; their strings are copied).
 /// @param count How many `previews` there are.
 /// @param build Builds this module's root view or one of its previews, by index; the entry calls it.
-/// @return The entry, of this module alone, kept by the shim for the rest of the process; null on failure.
+/// @param app_hash The hash of the types the app's host shares with this module (`ModuleEntry::app_hash`), the
+///   one the host gives elg_hot_reload(); 0 for none.
+/// @return The entry, of this module alone, kept by the shim for the rest of the process; null on failure. It
+///   carries the hash of the Elegance headers this library was compiled with (`ModuleEntry::elegance_hash`).
 ELG_EXPORT const ModuleEntry* elg_rust_module_entry(bool has_root, const ElgPreviewDesc* previews, size_t count,
-                                                    ElgModuleBuild build) {
+                                                    ElgModuleBuild build, uint64_t app_hash) {
     ELG_TRY
     auto module = std::make_unique<RustModule>();
     module->strings.reserve(count * 2);
@@ -3202,8 +3209,13 @@ ELG_EXPORT const ModuleEntry* elg_rust_module_entry(bool has_root, const ElgPrev
         module->previews.push_back({name, file, previews[i].line});
     }
     module->build = build;
-    module->entry = {.abi = module_abi, .has_root = has_root, .previews = &module->previews,
-                     .build = &build_module_view, .context = module.get()};
+    module->entry = {.abi = module_abi,
+                     .has_root = has_root,
+                     .previews = &module->previews,
+                     .build = &build_module_view,
+                     .context = module.get(),
+                     .elegance_hash = detail::headers_hash,
+                     .app_hash = app_hash};
     return &g_modules.emplace_back(std::move(module))->entry;
     ELG_CATCH(nullptr)
 }

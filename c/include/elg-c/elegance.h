@@ -3384,8 +3384,10 @@ ElgView* elg_mod_animates_layout(const ElgView* v, bool enabled);
 /// @param watch Files and folders (searched recursively) whose changes trigger a rebuild.
 /// @param watch_count How many `watch` paths there are.
 /// @param show `HotReloadShow`: 0 the module's root view, 1 its previews.
+/// @param app_hash `HotReloadOptions::app_hash`: the hash of the types this host shares with the module, the
+///   one the module gives elg_rust_module_entry(); 0 for none. A load whose hash differs isn't mounted.
 /// @return The view, owned by the caller, or null on failure.
-ElgView* elg_hot_reload(ElgStr module, ElgStr build_command, const ElgStr* watch, size_t watch_count, int32_t show);
+ElgView* elg_hot_reload(ElgStr module, ElgStr build_command, const ElgStr* watch, size_t watch_count, int32_t show, uint64_t app_hash);
 
 // --- Views modules (hot reload and previews) ---
 
@@ -3396,8 +3398,11 @@ ElgView* elg_hot_reload(ElgStr module, ElgStr build_command, const ElgStr* watch
 /// @param previews The module's previews (borrowed; their strings are copied).
 /// @param count How many `previews` there are.
 /// @param build Builds this module's root view or one of its previews, by index; the entry calls it.
-/// @return The entry, of this module alone, kept by the shim for the rest of the process; null on failure.
-const ElgModuleEntry* elg_rust_module_entry(bool has_root, const ElgPreviewDesc* previews, size_t count, ElgModuleBuild build);
+/// @param app_hash The hash of the types the app's host shares with this module (`ModuleEntry::app_hash`), the
+///   one the host gives elg_hot_reload(); 0 for none.
+/// @return The entry, of this module alone, kept by the shim for the rest of the process; null on failure. It
+///   carries the hash of the Elegance headers this library was compiled with (`ModuleEntry::elegance_hash`).
+const ElgModuleEntry* elg_rust_module_entry(bool has_root, const ElgPreviewDesc* previews, size_t count, ElgModuleBuild build, uint64_t app_hash);
 
 // --- Grids ---
 

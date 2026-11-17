@@ -81,6 +81,23 @@ target_include_directories(elegance_settings INTERFACE
         ${CMAKE_CURRENT_BINARY_DIR}/generated
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+# <elg/headers_hash.h>: a hash of the public headers, which a views module's entry carries and
+# HotReload() compares with the one Elegance was compiled with. The build writes it again when a
+# header changes (only if the hash did), before anything that links Elegance is compiled.
+file(GLOB_RECURSE elg_public_headers CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/include/elg/*.h")
+set(elg_headers_hash_stamp "${CMAKE_CURRENT_BINARY_DIR}/generated/headers_hash.stamp")
+add_custom_command(
+        OUTPUT "${elg_headers_hash_stamp}"
+        BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/generated/elg/headers_hash.h"
+        COMMAND ${CMAKE_COMMAND} "-DROOT=${PROJECT_SOURCE_DIR}"
+                "-DHEADER=${CMAKE_CURRENT_BINARY_DIR}/generated/elg/headers_hash.h" "-DSTAMP=${elg_headers_hash_stamp}"
+                -P "${PROJECT_SOURCE_DIR}/cmake/ElgHeadersHash.cmake"
+        DEPENDS ${elg_public_headers} "${PROJECT_SOURCE_DIR}/cmake/ElgHeadersHash.cmake"
+        COMMENT "Hashing Elegance's public headers"
+        VERBATIM)
+add_custom_target(elegance_headers_hash DEPENDS "${elg_headers_hash_stamp}")
+add_dependencies(elegance_settings elegance_headers_hash)
 if (ELG_BUILD_SHARED)
     # What generate_export_header() tests for the library's own sources: ELG_API exports.
     target_compile_definitions(elegance_settings INTERFACE elegance_EXPORTS)
