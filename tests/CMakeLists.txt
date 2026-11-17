@@ -90,6 +90,18 @@ if (MSVC)
     target_compile_options(elegance_tests PRIVATE /utf-8)
 endif ()
 
+# Hot reload, which needs a shared Elegance: views modules built as an app's are, for the tests to
+# load.
+if (ELG_BUILD_SHARED)
+    elegance_views_module(hot_reload_first hot_reload/first_module.cpp)
+    elegance_views_module(hot_reload_second hot_reload/second_module.cpp)
+    target_sources(elegance_tests PRIVATE hot_reload_tests.cpp)
+    add_dependencies(elegance_tests hot_reload_first hot_reload_second)
+    target_compile_definitions(elegance_tests PRIVATE
+            ELG_TEST_FIRST_MODULE="$<TARGET_FILE:hot_reload_first>"
+            ELG_TEST_SECOND_MODULE="$<TARGET_FILE:hot_reload_second>")
+endif ()
+
 # Under LeakSanitizer: fontconfig (loaded from the system on Linux) keeps its caches until exit.
 # A test that hangs fails after two minutes, by name, instead of holding the run until CI gives up.
 catch_discover_tests(elegance_tests PROPERTIES TIMEOUT 120 ENVIRONMENT_MODIFICATION

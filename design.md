@@ -2176,7 +2176,8 @@ Separate render thread from day one (decided).
     - `ELG_MODULE(root)` exports `elg_module_entry` (an ABI version, the root view and the
       module's previews).
     - `ELG_PREVIEW("Name") { ... }` registers into a per-module list (an inline function's
-      static, so each DLL has its own).
+      static). `elegance_views_module()` builds modules with hidden symbols and exports only
+      `elg_module_entry`, so each module and each load of one has its own.
     - `HotReload({.module, .build_command, .watch, .show})` is a window's content.
   - A reload is a `ForEach` over a one-item "generation" list, so the existing machinery
     unmounts the old tree (its scope and effects) and mounts the new module's views. No new

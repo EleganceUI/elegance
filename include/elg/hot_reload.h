@@ -52,7 +52,8 @@ inline constexpr std::uint32_t module_abi = 1;
 
 namespace detail {
 
-// The module's previews: an inline function's static, so each module (DLL) has its own.
+// The module's previews: an inline function's static. Each module, and each load of one, has its
+// own, since elegance_views_module() exports nothing from a module but its entry.
 inline std::vector<PreviewEntry>& module_previews() {
     static std::vector<PreviewEntry> previews;
     return previews;

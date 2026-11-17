@@ -7,7 +7,8 @@
 # elegance_views_module(<target> <sources>...)
 #
 #   A views module: a shared library holding an app's views, with ELG_MODULE(...) in one source
-#   file. It links the shared Elegance library, like the app that loads it.
+#   file. It links the shared Elegance library, like the app that loads it. Its symbols are
+#   hidden, inline functions' too, and it exports only elg_module_entry.
 #
 # elegance_hot_reload(<host> MODULE <views target> [WATCH <files or folders>...])
 #
@@ -30,6 +31,19 @@ function(elegance_views_module target)
     _elegance_require_shared("elegance_views_module(${target})")
     add_library(${target} SHARED ${ARGN})
     target_link_libraries(${target} PRIVATE Elegance::Elegance)
+    # Static objects that Elegance's headers define (the preview registry) are the module's own:
+    # nothing it defines is exported but its entry, so the dynamic linker can't bind another
+    # module's, or another load's, references to them (GCC makes inline functions' statics
+    # STB_GNU_UNIQUE, which glibc binds process-wide). A DLL exports only its dllexport symbols.
+    set_target_properties(${target} PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+    if (APPLE)
+        target_link_options(${target} PRIVATE "LINKER:-exported_symbol,_elg_module_entry")
+    elseif (NOT WIN32)
+        set(exports "${CMAKE_CURRENT_BINARY_DIR}/${target}_exports.map")
+        file(CONFIGURE OUTPUT "${exports}" CONTENT "{\n    global: elg_module_entry;\n    local: *;\n};\n")
+        target_link_options(${target} PRIVATE "LINKER:--version-script=${exports}")
+        set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${exports}")
+    endif ()
     elegance_warnings(${target})
 endfunction()
 
