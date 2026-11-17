@@ -98,6 +98,9 @@ if (ELG_C_STATIC)
             endif ()
         endforeach ()
         list(JOIN cxx_stdlib "|" cxx_stdlib)
+        # Rebinds GCC's GNU unique symbols, for objcopy to make them local (unique-to-global.py).
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        set(python "${Python3_EXECUTABLE}")
     endif ()
     find_program(ELG_LIBTOOL libtool)
     # GNU ld, which gives common symbols space in a relocatable link (package-static.cmake); lld
@@ -119,8 +122,10 @@ if (ELG_C_STATIC)
                     "-DOBJCOPY=${CMAKE_OBJCOPY}"
                     "-DNM=${CMAKE_NM}"
                     "-DCXX_STDLIB=${cxx_stdlib}"
+                    "-DPYTHON=${python}"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/package-static.cmake"
             DEPENDS elegance_c_api elegance "${CMAKE_CURRENT_SOURCE_DIR}/package-static.cmake"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/unique-to-global.py"
                     "${CMAKE_CURRENT_BINARY_DIR}/elegance/elegance-link.txt"
             COMMENT "Merging the static package"
             VERBATIM)

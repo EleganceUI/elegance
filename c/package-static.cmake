@@ -21,7 +21,8 @@
 #
 # Inputs: MANIFEST, C_API (the C API's static library), OUT, SYSTEM (CMAKE_SYSTEM_NAME), AR
 # (CMAKE_AR: ar, or lib.exe with MSVC), LIBTOOL (Apple's); on Linux, LD, OBJCOPY and NM (CMake's),
-# and CXX_STDLIB: the archives of the C++ standard library and its unwinder, separated by `|`.
+# PYTHON (Python 3), and CXX_STDLIB: the archives of the C++ standard library and its unwinder,
+# separated by `|`.
 
 foreach (var MANIFEST C_API OUT SYSTEM AR)
     if (NOT DEFINED ${var})
@@ -141,7 +142,7 @@ else ()
     # standard library, or another copy of this one, and the two never meet. Its COMDAT groups
     # become plain sections, so the linker doesn't keep the app's copy of an inline function in
     # place of the package's.
-    foreach (var LD OBJCOPY NM)
+    foreach (var LD OBJCOPY NM PYTHON)
         if (NOT ${var})
             message(FATAL_ERROR "package-static.cmake: ${var} is not set")
         endif ()
@@ -151,8 +152,10 @@ else ()
     list(APPEND archives ${runtime})
     list(REMOVE_DUPLICATES archives)
     list(APPEND lines "lib m" "lib dl" "lib pthread")
-    # Its roots: the C API's functions, and Elegance's own elg_* ones (elg/gpu_image.h).
-    set(roots "")
+    # Its roots: the C API's functions, and Elegance's own elg_* ones (elg/gpu_image.h). And
+    # __cxa_pure_virtual, which libstdc++'s own objects refer to weakly, so that nothing would
+    # bring it in: then the app's C++ standard library would define it.
+    set(roots "-u" "__cxa_pure_virtual")
     foreach (archive IN LISTS archives)
         execute_process(COMMAND "${NM}" -g --defined-only "${archive}" OUTPUT_VARIABLE defined ERROR_QUIET)
         string(REGEX MATCHALL " [TDBR] elg_[A-Za-z0-9_]+" found "${defined}")
@@ -165,6 +168,9 @@ else ()
     # Common symbols get space (-d), so that they too can be made local.
     execute_process(COMMAND "${LD}" -r --force-group-allocation -d -o "${object}" ${roots} --start-group ${archives}
                             --end-group
+                    COMMAND_ERROR_IS_FATAL ANY)
+    # GCC's GNU unique symbols, which objcopy leaves global, become plain global ones it localizes.
+    execute_process(COMMAND "${PYTHON}" "${CMAKE_CURRENT_LIST_DIR}/unique-to-global.py" "${object}"
                     COMMAND_ERROR_IS_FATAL ANY)
     execute_process(COMMAND "${OBJCOPY}" --wildcard "--keep-global-symbol=elg_*" "${object}" COMMAND_ERROR_IS_FATAL ANY)
     file(REMOVE "${output}")
