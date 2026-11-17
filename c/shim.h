@@ -25,6 +25,8 @@
 
 #include <elg/elegance.h>
 
+#include "layout_fields.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -32,6 +34,7 @@
 #include <filesystem>
 #include <format>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -1020,15 +1023,32 @@ int32_t error_kind(const std::exception_ptr& error, std::string& message) noexce
 
 // --- ABI layout ---
 
-// One line, "name size align", of an elg_layouts_* function: elegance-sys's layout test compares
-// each C struct with its Rust declaration.
-inline void layout(ElgStrSink out, void* ctx, const char* name, size_t size, size_t align) {
-    sink(out, ctx, std::string(name) + ' ' + std::to_string(size) + ' ' + std::to_string(align) + '\n');
+// A field of a struct, as layout() reports it.
+struct FieldLayout {
+    const char* name;
+    size_t offset;
+};
+
+// One line of an elg_layouts_* function: "name size align", then " field:offset" for each field,
+// in order. elegance-sys's layout test compares each struct with its Rust declaration, and the C
+// tests with the C header's.
+inline void layout(ElgStrSink out, void* ctx, const char* name, size_t size, size_t align,
+                   std::initializer_list<FieldLayout> fields) {
+    std::string line = std::format("{} {} {}", name, size, align);
+    for (const FieldLayout& field : fields) {
+        line += std::format(" {}:{}", field.name, field.offset);
+    }
+    line += '\n';
+    sink(out, ctx, line);
 }
 
 } // namespace elg_shim
 
-#define ELG_LAYOUT(T) ::elg_shim::layout(out, ctx, #T, sizeof(T), alignof(T))
+// Reports struct T (in an elg_layouts_* function): its size, alignment and fields, which
+// layout_fields.h lists for every struct that crosses the API.
+#define ELG_FIELD_LAYOUT(T, field) ::elg_shim::FieldLayout{#field, offsetof(T, field)},
+#define ELG_LAYOUT(T) \
+    ::elg_shim::layout(out, ctx, #T, sizeof(T), alignof(T), {ELG_FIELDS_##T(ELG_FIELD_LAYOUT)})
 
 // Starts a C API function's try block, which ends with ELG_CATCH or ELG_CATCH_VOID. ELG_TRY, for
 // a function of the UI thread, fails the call with a UsageError off the UI thread of a running

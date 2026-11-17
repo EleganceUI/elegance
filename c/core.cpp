@@ -1473,8 +1473,8 @@ ELG_EXPORT void elg_transition_free(Transition* transition) {
 
 // --- ABI layout (shim.h's structs and this file's) ---
 
-/// Describes the layout of shim.h's structs and this file's, for elegance-sys's layout test: one
-/// line per struct, "name size align".
+/// Describes the layout of shim.h's structs and this file's, for a binding's layout test: one line
+/// per struct, "name size align", then " field:offset" for each of its fields, in order.
 ///
 /// @param out Receives each line.
 /// @param ctx Passed to `out`.
@@ -1483,6 +1483,7 @@ ELG_EXPORT void elg_layouts_core(ElgStrSink out, void* ctx) {
     ELG_LAYOUT(ElgStr);
     ELG_LAYOUT(ElgBytes);
     ELG_LAYOUT(ElgClosure);
+    ELG_LAYOUT(ElgAppError);
     ELG_LAYOUT(ElgColor);
     ELG_LAYOUT(ElgSize);
     ELG_LAYOUT(ElgPixelSize);

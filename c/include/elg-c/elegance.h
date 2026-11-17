@@ -1814,8 +1814,8 @@ void elg_transition_free(ElgTransition* transition);
 
 // --- ABI layout (shim.h's structs and this file's) ---
 
-/// Describes the layout of shim.h's structs and this file's, for elegance-sys's layout test: one
-/// line per struct, "name size align".
+/// Describes the layout of shim.h's structs and this file's, for a binding's layout test: one line
+/// per struct, "name size align", then " field:offset" for each of its fields, in order.
 ///
 /// @param out Receives each line.
 /// @param ctx Passed to `out`.
@@ -3480,10 +3480,10 @@ ElgView* elg_mod_grid_column_alignment(const ElgView* v, int32_t a);
 
 // --- ABI layout ---
 
-/// Reports the size and alignment of each C struct in this file, for elegance-sys's layout test (which
-/// compares them with its Rust declarations).
+/// Describes the layout of this file's structs, for a binding's layout test: one line per struct,
+/// "name size align", then " field:offset" for each of its fields, in order.
 ///
-/// @param out Called once per struct with a "name size align" line.
+/// @param out Receives each line.
 /// @param ctx Passed to `out`.
 void elg_layouts_views(ElgStrSink out, void* ctx);
 
@@ -3767,8 +3767,8 @@ ElgView* elg_mod_rust_event_modifier(const ElgView* v, ElgClosure make_handler);
 
 // --- ABI layout ---
 
-/// Describes the layout of this file's structs, for elegance-sys's layout test: one line per
-/// struct, "name size align".
+/// Describes the layout of this file's structs, for a binding's layout test: one line per struct,
+/// "name size align", then " field:offset" for each of its fields, in order.
 ///
 /// @param out Receives each line.
 /// @param ctx Passed to `out`.
@@ -4421,8 +4421,8 @@ void elg_tray_icon_set_menu(const ElgTrayIcon* icon, const ElgTrayMenuItem* menu
 
 // --- ABI layout (this file's structs and elg/gpu_image.h's) ---
 
-/// Describes the layout of this file's structs and elg/gpu_image.h's, for elegance-sys's layout
-/// test: one line per struct, "name size align".
+/// Describes the layout of this file's structs and elg/gpu_image.h's, for a binding's layout test: one
+/// line per struct, "name size align", then " field:offset" for each of its fields, in order.
 ///
 /// @param out Receives each line.
 /// @param ctx Passed to `out`.
@@ -5224,10 +5224,10 @@ bool elg_row_config_state(const ElgRowConfiguration* c, int32_t which);
 
 // --- ABI layout ---
 
-/// Reports the size and alignment of each C struct in this file, for elegance-sys's layout test (which
-/// compares them with its Rust declarations).
+/// Describes the layout of this file's structs, for a binding's layout test: one line per struct,
+/// "name size align", then " field:offset" for each of its fields, in order.
 ///
-/// @param out Called once per struct with a "name size align" line.
+/// @param out Receives each line.
 /// @param ctx Passed to `out`.
 void elg_layouts_styles(ElgStrSink out, void* ctx);
 

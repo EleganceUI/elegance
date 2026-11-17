@@ -149,7 +149,7 @@ add_test(NAME gpu_image_c_smoke COMMAND gpu_image_c_smoke)
 # The C API's header (c/include/elg-c/elegance.h, ELGSPEC-0007.R14) compiled as C11, in a program that
 # refers to every function it declares (tests/c_api_functions.c) and links with the library.
 if (TARGET elegance_c_api)
-    add_executable(c_api_c_tests c_api_c_tests.c c_api_functions.c)
+    add_executable(c_api_c_tests c_api_c_tests.c c_api_functions.c c_api_layouts.c)
     set_target_properties(c_api_c_tests PROPERTIES LINKER_LANGUAGE CXX C_STANDARD 11 C_STANDARD_REQUIRED ON
                                                    C_EXTENSIONS OFF)
     target_include_directories(c_api_c_tests PRIVATE ${PROJECT_SOURCE_DIR}/c/include)

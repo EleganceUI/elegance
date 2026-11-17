@@ -1190,8 +1190,8 @@ ELG_EXPORT void elg_tray_icon_set_menu(const TrayIcon* icon, const ElgTrayMenuIt
 
 // --- ABI layout (this file's structs and elg/gpu_image.h's) ---
 
-/// Describes the layout of this file's structs and elg/gpu_image.h's, for elegance-sys's layout
-/// test: one line per struct, "name size align".
+/// Describes the layout of this file's structs and elg/gpu_image.h's, for a binding's layout test: one
+/// line per struct, "name size align", then " field:offset" for each of its fields, in order.
 ///
 /// @param out Receives each line.
 /// @param ctx Passed to `out`.

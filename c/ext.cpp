@@ -834,8 +834,8 @@ ELG_EXPORT View* elg_mod_rust_event_modifier(const View* v, ElgClosure make_hand
 
 // --- ABI layout ---
 
-/// Describes the layout of this file's structs, for elegance-sys's layout test: one line per
-/// struct, "name size align".
+/// Describes the layout of this file's structs, for a binding's layout test: one line per struct,
+/// "name size align", then " field:offset" for each of its fields, in order.
 ///
 /// @param out Receives each line.
 /// @param ctx Passed to `out`.

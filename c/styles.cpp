@@ -1076,10 +1076,10 @@ ELG_EXPORT bool elg_row_config_state(const RowConfiguration* c, int32_t which) {
 
 // --- ABI layout ---
 
-/// Reports the size and alignment of each C struct in this file, for elegance-sys's layout test (which
-/// compares them with its Rust declarations).
+/// Describes the layout of this file's structs, for a binding's layout test: one line per struct,
+/// "name size align", then " field:offset" for each of its fields, in order.
 ///
-/// @param out Called once per struct with a "name size align" line.
+/// @param out Receives each line.
 /// @param ctx Passed to `out`.
 ELG_EXPORT void elg_layouts_styles(ElgStrSink out, void* ctx) {
     ELG_TRY
