@@ -76,6 +76,7 @@ void elg_shim::capture_error() noexcept {
 
 /// Takes this thread's pending error: the pending error's kind (0: none), with its message sent to
 /// `out`; clears it. A call that fails records its exception here, replacing any earlier one.
+/// Callable from any thread.
 ///
 /// @param out Receives the message, if there's an error.
 /// @param ctx Passed to `out`.
@@ -83,7 +84,7 @@ void elg_shim::capture_error() noexcept {
 ///   3 elg::ResourceError, 4 elg::GpuError, 5 elg::PlatformError, 6 another elg::Error, 7 any other
 ///   C++ exception. 0 on failure.
 ELG_EXPORT int32_t elg_take_error(ElgStrSink out, void* ctx) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     const int32_t kind = std::exchange(g_error_kind, no_error);
     if (kind != no_error) {
         sink(out, ctx, g_error_message);
@@ -94,10 +95,11 @@ ELG_EXPORT int32_t elg_take_error(ElgStrSink out, void* ctx) {
 }
 
 /// Whether this thread has an error that elg_take_error() hasn't taken yet.
+/// Callable from any thread.
 ///
 /// @return true if an error is pending. False on failure.
 ELG_EXPORT bool elg_error_pending() {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return g_error_kind != no_error;
     ELG_CATCH(false)
 }
@@ -1076,17 +1078,18 @@ ELG_EXPORT void elg_app_quit(App* app) {
 /// @param task Consumed closure, a Send closure; it runs on the UI thread. args and ret: null.
 ///   Required: none is a usage error.
 ELG_EXPORT void elg_post_to_ui_thread(ElgClosure task) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     const Consumed consumed(task);
     post_to_ui_thread(action(required(task, "task")));
     ELG_CATCH_VOID
 }
 
 /// Wraps `version()`: the library's version string, e.g. "0.1.0".
+/// Callable from any thread.
 ///
 /// @return A static, NUL-terminated string; don't free it. Null on failure.
 ELG_EXPORT const char* elg_version() {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return version();
     ELG_CATCH(nullptr)
 }
@@ -1098,10 +1101,11 @@ constexpr std::uint32_t kAbiVersion = 2;
 /// The C API's ABI version: a binding checks it when it loads the library, and refuses to run
 /// with a version it wasn't built for. It changes whenever an exported function's signature, a
 /// struct's layout, or a documented constant's value does.
+/// Callable from any thread.
 ///
 /// @return The version, 1 or more; 0 on failure.
 ELG_EXPORT uint32_t elg_abi_version() {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return kAbiVersion;
     ELG_CATCH(0)
 }

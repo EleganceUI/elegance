@@ -51,60 +51,66 @@ ELG_EXPORT void elg_audio_output_devices(ElgClosure each) {
 }
 
 /// Wraps `Sound::load()` for a file: a short sound, decoded into memory once (WAV, FLAC, or MP3).
+/// Callable from any thread.
 ///
 /// @param file The file's path.
 /// @return The sound, owned by the caller (elg_sound_free()), or nullptr with a ResourceError if
 ///   the file can't be read or decoded.
 ELG_EXPORT Sound* elg_sound_load_file(ElgStr file) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return new Sound(Sound::load(path(file)));
     ELG_CATCH(nullptr)
 }
 /// Wraps `Sound::load()` for encoded audio in memory.
+/// Callable from any thread.
 ///
 /// @param data The encoded audio (WAV, FLAC, or MP3), read during the call.
 /// @return The sound, owned by the caller (elg_sound_free()), or nullptr with a ResourceError if
 ///   it can't be decoded.
 ELG_EXPORT Sound* elg_sound_load_data(ElgBytes data) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return new Sound(Sound::load(bytes(data)));
     ELG_CATCH(nullptr)
 }
 /// Copies a sound; copies share the decoded audio.
+/// Callable from any thread.
 ///
 /// @param sound The sound (borrowed).
 /// @return The copy, owned by the caller (elg_sound_free()). Null on failure.
 ELG_EXPORT Sound* elg_sound_clone(const Sound* sound) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return new Sound(*sound);
     ELG_CATCH(nullptr)
 }
 /// Frees a sound.
+/// Callable from any thread.
 ///
 /// @param sound The sound (consumed); may be null.
 ELG_EXPORT void elg_sound_free(Sound* sound) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     delete sound;
     ELG_CATCH_VOID
 }
 /// Wraps `Sound::play()`: plays the sound in a new voice, so plays overlap. Without an output
 /// device it does nothing.
+/// Callable from any thread.
 ///
 /// @param sound The sound (borrowed).
 /// @param volume 0 to 1, and beyond, amplified.
 /// @param pitch Playback speed and pitch: 1 as recorded, 2 an octave up.
 /// @param pan -1 left to 1 right.
 ELG_EXPORT void elg_sound_play(const Sound* sound, float volume, float pitch, float pan) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     sound->play({volume, pitch, pan});
     ELG_CATCH_VOID
 }
 /// Wraps `Sound::duration()`.
+/// Callable from any thread.
 ///
 /// @param sound The sound (borrowed).
 /// @return The length in seconds. 0 on failure.
 ELG_EXPORT double elg_sound_duration(const Sound* sound) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return sound->duration();
     ELG_CATCH(0)
 }
@@ -223,6 +229,7 @@ struct ElgRenderBuffer {
 
 /// Wraps `AudioStream(AudioStreamOptions)`: live audio out, samples written as they're made
 /// (elg_audio_stream_write()) or mixed on demand by `on_render`. It starts playing when made.
+/// Callable from any thread.
 ///
 /// @param device_id An output's ElgDevice::id; empty: the system's default (followed when it
 ///   changes).
@@ -233,7 +240,7 @@ struct ElgRenderBuffer {
 ///   the audio thread; ret: null. Keep it short and lock-light.
 /// @return The stream, owned by the caller (elg_audio_stream_free()), or nullptr on failure.
 ELG_EXPORT AudioStream* elg_audio_stream_new(ElgStr device_id, uint32_t sample_rate, uint32_t channels, ElgClosure on_render) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     const Consumed consumed(on_render);
     AudioStreamOptions options;
     options.device_id = str(device_id);
@@ -249,19 +256,21 @@ ELG_EXPORT AudioStream* elg_audio_stream_new(ElgStr device_id, uint32_t sample_r
     ELG_CATCH(nullptr)
 }
 /// Copies a stream; copies share it.
+/// Callable from any thread.
 ///
 /// @param stream The stream (borrowed).
 /// @return The copy, owned by the caller (elg_audio_stream_free()). Null on failure.
 ELG_EXPORT AudioStream* elg_audio_stream_clone(const AudioStream* stream) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return new AudioStream(*stream);
     ELG_CATCH(nullptr)
 }
 /// Frees a stream; it stops when the last copy goes.
+/// Callable from any thread.
 ///
 /// @param stream The stream (consumed); may be null.
 ELG_EXPORT void elg_audio_stream_free(AudioStream* stream) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     delete stream;
     ELG_CATCH_VOID
 }
@@ -272,16 +281,17 @@ ELG_EXPORT void elg_audio_stream_free(AudioStream* stream) {
 /// @param samples Interleaved samples, -1 to 1, copied.
 /// @param count Number of samples (frames times channels).
 ELG_EXPORT void elg_audio_stream_write(const AudioStream* stream, const float* samples, size_t count) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     stream->write(std::span<const float>(samples, count));
     ELG_CATCH_VOID
 }
 /// Wraps `AudioStream::clear()` (drops what's queued), `start()` and `stop()` (which pauses it).
+/// Callable from any thread.
 ///
 /// @param stream The stream (borrowed).
 /// @param op 0 clear, 1 start, 2 stop.
 ELG_EXPORT void elg_audio_stream_control(const AudioStream* stream, int32_t op) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     switch (op) {
     case 0: stream->clear(); break;
     case 1: stream->start(); break;
@@ -290,20 +300,22 @@ ELG_EXPORT void elg_audio_stream_control(const AudioStream* stream, int32_t op) 
     ELG_CATCH_VOID
 }
 /// Wraps `AudioStream::queued_frames()`.
+/// Callable from any thread.
 ///
 /// @param stream The stream (borrowed).
 /// @return How many frames are queued, or 0 on failure.
 ELG_EXPORT size_t elg_audio_stream_queued_frames(const AudioStream* stream) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return stream->queued_frames();
     ELG_CATCH(0)
 }
 /// Wraps `AudioStream::set_volume()`.
+/// Callable from any thread.
 ///
 /// @param stream The stream (borrowed).
 /// @param volume 0 to 1, and beyond, amplified; negative counts as 0.
 ELG_EXPORT void elg_audio_stream_set_volume(const AudioStream* stream, float volume) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     stream->set_volume(volume);
     ELG_CATCH_VOID
 }
@@ -318,20 +330,22 @@ ELG_EXPORT void elg_audio_stream_error(const AudioStream* stream, ElgStrSink out
     ELG_CATCH_VOID
 }
 /// Wraps `AudioStream::sample_rate()`.
+/// Callable from any thread.
 ///
 /// @param stream The stream (borrowed).
 /// @return Frames per second, after clamping. 0 on failure.
 ELG_EXPORT uint32_t elg_audio_stream_sample_rate(const AudioStream* stream) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return stream->sample_rate();
     ELG_CATCH(0)
 }
 /// Wraps `AudioStream::channels()`.
+/// Callable from any thread.
 ///
 /// @param stream The stream (borrowed).
 /// @return The number of channels, after clamping. 0 on failure.
 ELG_EXPORT uint32_t elg_audio_stream_channels(const AudioStream* stream) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return stream->channels();
     ELG_CATCH(0)
 }
@@ -837,37 +851,41 @@ ELG_EXPORT elg::View* elg_gpu_image_view(const ElgGpuImage* image, int32_t mode)
 
 /// Wraps `VideoFeed()`: video the app makes itself (a decoder of its own, a screen capture), shown
 /// by elg_video_feed_view().
+/// Callable from any thread.
 ///
 /// @return The feed, owned by the caller (elg_video_feed_free()), or nullptr on failure.
 ELG_EXPORT VideoFeed* elg_video_feed_new() {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return new VideoFeed();
     ELG_CATCH(nullptr)
 }
 /// Copies a feed; copies share it.
+/// Callable from any thread.
 ///
 /// @param feed The feed (borrowed).
 /// @return The copy, owned by the caller (elg_video_feed_free()). Null on failure.
 ELG_EXPORT VideoFeed* elg_video_feed_clone(const VideoFeed* feed) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return new VideoFeed(*feed);
     ELG_CATCH(nullptr)
 }
 /// Frees a feed.
+/// Callable from any thread.
 ///
 /// @param feed The feed (consumed); may be null.
 ELG_EXPORT void elg_video_feed_free(VideoFeed* feed) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     delete feed;
     ELG_CATCH_VOID
 }
 /// Whether two feeds are the same feed (copies of one another): `VideoFeed`'s operator==.
+/// Callable from any thread.
 ///
 /// @param a A feed (borrowed).
 /// @param b Another feed (borrowed).
 /// @return true for the same feed. False on failure.
 ELG_EXPORT bool elg_video_feed_eq(const VideoFeed* a, const VideoFeed* b) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     return *a == *b;
     ELG_CATCH(false)
 }
@@ -884,7 +902,7 @@ ELG_EXPORT bool elg_video_feed_eq(const VideoFeed* a, const VideoFeed* b) {
 /// @param full_range YUV in 0...255 rather than 16...235.
 ELG_EXPORT void elg_video_feed_push(const VideoFeed* feed, int32_t format, uint32_t width, uint32_t height,
                                     const uint8_t* pixels, size_t count, bool full_range) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     feed->push(static_cast<VideoFeed::Format>(format), width, height, std::vector<std::uint8_t>(pixels, pixels + count),
                full_range);
     ELG_CATCH_VOID
@@ -893,7 +911,7 @@ ELG_EXPORT void elg_video_feed_push(const VideoFeed* feed, int32_t format, uint3
 ///
 /// @param feed The feed (borrowed).
 ELG_EXPORT void elg_video_feed_clear(const VideoFeed* feed) {
-    ELG_TRY
+    ELG_TRY_ANY_THREAD
     feed->clear();
     ELG_CATCH_VOID
 }

@@ -959,6 +959,8 @@ inline void layout(ElgStrSink out, void* ctx, const char* name, size_t size, siz
 #define ELG_LAYOUT(T) ::elg_shim::layout(out, ctx, #T, sizeof(T), alignof(T))
 
 #define ELG_TRY try {
+// Starts the body of a function whose doc says "Callable from any thread".
+#define ELG_TRY_ANY_THREAD try {
 #define ELG_CATCH(fallback)               \
     }                                     \
     catch (...) {                         \
