@@ -20,6 +20,7 @@
 #include <elg/export.h>
 #include <elg/view.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -29,11 +30,10 @@ namespace elg {
 
 // --- In a views module ---
 
-/// A preview: a view shown on its own in the preview host (SwiftUI Previews-style). ELG_PREVIEW
-/// registers one.
+/// A preview: a view shown on its own in the preview host (SwiftUI Previews-style), as a
+/// ModuleEntry lists it. ELG_PREVIEW registers one.
 struct PreviewEntry {
-    const char* name; ///< shown in the preview list; it lives in the module
-    View (*body)();   ///< builds the preview
+    const char* name; ///< shown in the preview list; the host copies it
     const char* file; ///< the source file of its ELG_PREVIEW
     int line;         ///< the line of its ELG_PREVIEW
 };
@@ -42,26 +42,52 @@ struct PreviewEntry {
 /// compiler, runtime, and Elegance (design.md §9.6, rule 4). ELG_MODULE defines it.
 struct ModuleEntry {
     std::uint32_t abi = 0; ///< the module_abi the module was built with
-    View (*root)() = nullptr; ///< the app's content; nullptr for preview-only modules
+    bool has_root = false; ///< whether the module has a root view, the app's content
     const std::vector<PreviewEntry>* previews = nullptr; ///< the module's previews
+    /// Builds one of the module's views, with `context`: the root view for `index` -1, else
+    /// `previews` at `index`.
+    View (*build)(const void* context, std::int32_t index) = nullptr;
+    const void* context = nullptr; ///< what `build` is called with: the module's own data
 };
 
 /// The version of ModuleEntry this Elegance loads. A module built with another one isn't loaded;
 /// HotReload() shows an error instead.
-inline constexpr std::uint32_t module_abi = 1;
+inline constexpr std::uint32_t module_abi = 2;
 
 namespace detail {
 
-// The module's previews: an inline function's static. Each module, and each load of one, has its
+// A C++ module's views: its root view, and its previews with their bodies, by index.
+struct ModuleViews {
+    View (*root)() = nullptr;
+    std::vector<PreviewEntry> previews;
+    std::vector<View (*)()> bodies;
+};
+
+// The module's views: an inline function's static. Each module, and each load of one, has its
 // own, since elegance_views_module() exports nothing from a module but its entry.
-inline std::vector<PreviewEntry>& module_previews() {
-    static std::vector<PreviewEntry> previews;
-    return previews;
+inline ModuleViews& module_views() {
+    static ModuleViews views;
+    return views;
 }
 
 inline bool register_preview(const char* name, View (*body)(), const char* file, int line) {
-    module_previews().push_back({name, body, file, line});
+    ModuleViews& views = module_views();
+    views.previews.push_back({name, file, line});
+    views.bodies.push_back(body);
     return true;
+}
+
+// ModuleEntry::build in a C++ module: its own views, so it needs no context.
+inline View build_module_view(const void*, std::int32_t index) {
+    const ModuleViews& views = module_views();
+    return index < 0 ? views.root() : views.bodies.at(static_cast<std::size_t>(index))();
+}
+
+// The entry ELG_MODULE returns.
+inline ModuleEntry module_entry(View (*root)()) {
+    ModuleViews& views = module_views();
+    views.root = root;
+    return {.abi = module_abi, .has_root = root != nullptr, .previews = &views.previews, .build = &build_module_view};
 }
 
 } // namespace detail
@@ -77,7 +103,7 @@ inline bool register_preview(const char* name, View (*body)(), const char* file,
 #define ELG_MODULE(root)                                                                          \
     ELG_MODULE_EXPORT const ::elg::ModuleEntry* elg_module_entry();                               \
     ELG_MODULE_EXPORT const ::elg::ModuleEntry* elg_module_entry() {                              \
-        static const ::elg::ModuleEntry entry{::elg::module_abi, root, &::elg::detail::module_previews()}; \
+        static const ::elg::ModuleEntry entry = ::elg::detail::module_entry(root);                \
         return &entry;                                                                            \
     }
 

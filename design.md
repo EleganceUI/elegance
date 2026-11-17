@@ -2173,8 +2173,10 @@ Separate render thread from day one (decided).
   - Sandbox: `FlowLayout` (wrapping tags) uses both, with a `RowBreak` value.
 - [x] Hot reload and previews (§9.6), reset-on-reload:
   - `elg/hot_reload.h`:
-    - `ELG_MODULE(root)` exports `elg_module_entry` (an ABI version, the root view and the
-      module's previews).
+    - `ELG_MODULE(root)` exports `elg_module_entry`: an ABI version, whether there's a root
+      view, the module's previews, and a function and context that build the module's own views
+      by index (a Rust module's entry from the C API has its module as the context). The host
+      copies what it needs of the entry.
     - `ELG_PREVIEW("Name") { ... }` registers into a per-module list (an inline function's
       static). `elegance_views_module()` builds modules with hidden symbols and exports only
       `elg_module_entry`, so each module and each load of one has its own.

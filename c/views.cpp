@@ -3143,11 +3143,11 @@ ELG_EXPORT View* elg_hot_reload(ElgStr module, ElgStr build_command, const ElgSt
 
 // --- Views modules (hot reload and previews) ---
 //
-// A Rust views module exports elg_module_entry (elegance's `preview` feature), which calls this. The entry
-// holds plain `View (*)()` functions, so each preview gets a thunk from a fixed table that calls
-// back into Rust with its index (-1: the root view).
+// A Rust views module exports elg_module_entry (elegance's `preview` feature), which calls this. Each
+// call registers a module of its own, which the entry's context points to: the entry builds its
+// views with the `build` function that module passed.
 
-/// One preview of a Rust views module, for elg_rust_module_entry() (`PreviewEntry`, without its body).
+/// One preview of a Rust views module, for elg_rust_module_entry() (`PreviewEntry`).
 struct ElgPreviewDesc {
     ElgStr name;  ///< The preview's name (copied).
     ElgStr file;  ///< The source file it's in (copied).
@@ -3159,38 +3159,26 @@ using ElgModuleBuild = bool (*)(int32_t index, View* ret);
 
 namespace {
 
-constexpr std::size_t kMaxPreviews = 256;
-
-// One registered module: its strings, previews, and entry. Kept for the rest of the process: the
-// host holds each module's entry, and may still read it after a newer module registered.
+// One registered module: its strings, previews, build function and entry. Kept for the rest of
+// the process: the host holds each module's entry, and may still build its views after a newer
+// module registered.
 struct RustModule {
     std::vector<std::string> strings; // stable c_str()s: reserved up front
     std::vector<PreviewEntry> previews;
+    ElgModuleBuild build = nullptr;
     ModuleEntry entry;
 };
 
 std::vector<std::unique_ptr<RustModule>> g_modules;
-// The newest module's: the views the host mounts after loading it.
-ElgModuleBuild g_module_build = nullptr;
 
-View build_module_view(int32_t index) {
+// ModuleEntry::build of every Rust module: `context` is the module whose view it builds.
+View build_module_view(const void* context, int32_t index) {
     View result;
-    if (!g_module_build(index, &result)) {
+    if (!static_cast<const RustModule*>(context)->build(index, &result)) {
         throw RustPanic();
     }
     return result;
 }
-
-View module_root() {
-    return build_module_view(-1);
-}
-
-template <std::size_t... I>
-std::array<View (*)(), sizeof...(I)> make_preview_thunks(std::index_sequence<I...>) {
-    return {+[]() -> View { return build_module_view(static_cast<int32_t>(I)); }...};
-}
-
-const std::array<View (*)(), kMaxPreviews> g_preview_thunks = make_preview_thunks(std::make_index_sequence<kMaxPreviews>{});
 
 } // namespace
 
@@ -3199,30 +3187,23 @@ const std::array<View (*)(), kMaxPreviews> g_preview_thunks = make_preview_thunk
 ///
 /// @param has_root The module has a root view.
 /// @param previews The module's previews (borrowed; their strings are copied).
-/// @param count How many `previews` there are; at most 256.
-/// @param build Builds the root view or a preview, by index. The newest module's is the one called.
-/// @return The entry, kept by the shim for the rest of the process; null, with a UsageError, when the module
-///   has more previews than the thunk table holds (also printed to stderr).
+/// @param count How many `previews` there are.
+/// @param build Builds this module's root view or one of its previews, by index; the entry calls it.
+/// @return The entry, of this module alone, kept by the shim for the rest of the process; null on failure.
 ELG_EXPORT const ModuleEntry* elg_rust_module_entry(bool has_root, const ElgPreviewDesc* previews, size_t count,
                                                     ElgModuleBuild build) {
     ELG_TRY
-    if (count > kMaxPreviews) {
-        // The host calls this through the module, not through the C API: say why on stderr too.
-        const std::string message =
-            std::format("a views module can have at most {} previews; this one has {}", kMaxPreviews, count);
-        std::println(stderr, "elegance: {}", message);
-        throw elg::UsageError(message);
-    }
     auto module = std::make_unique<RustModule>();
     module->strings.reserve(count * 2);
     module->previews.reserve(count);
     for (size_t i = 0; i < count; ++i) {
         const char* name = module->strings.emplace_back(str(previews[i].name)).c_str();
         const char* file = module->strings.emplace_back(str(previews[i].file)).c_str();
-        module->previews.push_back({name, g_preview_thunks[i], file, previews[i].line});
+        module->previews.push_back({name, file, previews[i].line});
     }
-    module->entry = {module_abi, has_root ? &module_root : nullptr, &module->previews};
-    g_module_build = build;
+    module->build = build;
+    module->entry = {.abi = module_abi, .has_root = has_root, .previews = &module->previews,
+                     .build = &build_module_view, .context = module.get()};
     return &g_modules.emplace_back(std::move(module))->entry;
     ELG_CATCH(nullptr)
 }

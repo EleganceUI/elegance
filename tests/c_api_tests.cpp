@@ -13,11 +13,15 @@
 #include "reactive/runtime.h"
 #include "test_images.h"
 #include "text/text_system.h"
+#include "view/element.h"
 #include "view/view_node.h"
+
+#include <elg/hot_reload.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <format>
 #include <memory>
 #include <string>
 #include <thread>
@@ -28,9 +32,17 @@ using elg::App;
 using elg::AppCode;
 using elg::Binding;
 using elg::ErrorAction;
+using elg::ModuleEntry;
 using elg::Text;
 using elg::View;
 namespace detail = elg::detail;
+
+// elg_rust_module_entry()'s preview, as views.cpp declares it (ElgPreviewDesc).
+struct PreviewDesc {
+    ElgStr name;
+    ElgStr file;
+    int32_t line;
+};
 
 extern "C" {
 int32_t elg_take_error(ElgStrSink out, void* ctx);
@@ -71,6 +83,8 @@ View* elg_text_to_view(const Text* text);
 void elg_text_free(Text* text);
 void elg_string_assign(std::string* target, ElgStr value);
 View* elg_image(const ElgImageSource* source);
+const ModuleEntry* elg_rust_module_entry(bool has_root, const PreviewDesc* previews, size_t count,
+                                         bool (*build)(int32_t index, View* ret));
 }
 
 namespace {
@@ -117,6 +131,32 @@ ElgProp static_bool(Counts& counts) {
 // The calling thread's error kind, cleared (0: none).
 int32_t take_error() {
     return elg_take_error([](void*, const char*, size_t) {}, nullptr);
+}
+
+detail::TextSystem& text_system() {
+    static detail::TextSystem system;
+    return system;
+}
+
+// What a view that is a Text shows.
+std::string text_of(const View& view) {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const auto element = detail::lower(view, {.text = &text_system()});
+    detail::Inspection inspection;
+    element->inspect(inspection);
+    return inspection.detail;
+}
+
+// Two Rust modules' build functions (ElgModuleBuild), each naming its module and the view's index.
+bool build_first(int32_t index, View* ret) {
+    *ret = Text(std::format("first {}", index));
+    return true;
+}
+
+bool build_second(int32_t index, View* ret) {
+    *ret = Text(std::format("second {}", index));
+    return true;
 }
 
 } // namespace
@@ -254,6 +294,33 @@ TEST_CASE("an image source's pixel limit comes through the C API, and 0 is the d
     CHECK(width(source) == 0);
     source.max_pixels = 0;
     CHECK(width(source) == 64);
+}
+
+TEST_CASE("each Rust module's entry builds that module's views, however many previews it has", "[c-api][hot-reload]") {
+    std::vector<std::string> names;
+    names.reserve(300);
+    for (int i = 0; i < 300; ++i) {
+        names.push_back(std::format("preview {}", i));
+    }
+    std::vector<PreviewDesc> previews;
+    previews.reserve(names.size());
+    for (const std::string& name : names) {
+        previews.push_back({.name = {name.data(), name.size()}, .file = {"views.rs", 8}, .line = 1});
+    }
+    const ModuleEntry* first = elg_rust_module_entry(true, previews.data(), previews.size(), build_first);
+    const ModuleEntry* second = elg_rust_module_entry(false, previews.data(), 1, build_second);
+    REQUIRE(first);
+    REQUIRE(second);
+    CHECK(first != second);
+    CHECK(first->has_root);
+    CHECK_FALSE(second->has_root);
+    REQUIRE(first->previews->size() == 300);
+    CHECK(std::string((*first->previews)[299].name) == "preview 299");
+    CHECK(second->previews->size() == 1);
+    // The module registered first still builds its own views, after the second registered.
+    CHECK(text_of(first->build(first->context, -1)) == "first -1");
+    CHECK(text_of(first->build(first->context, 299)) == "first 299");
+    CHECK(text_of(second->build(second->context, 0)) == "second 0");
 }
 
 TEST_CASE("the C API reports its ABI version", "[c-api]") {

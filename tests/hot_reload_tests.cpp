@@ -6,8 +6,12 @@
 // elegance_views_module(), as an app's are; only shared builds have them.
 
 #include "core/dynamic_library.h"
+#include "text/text_system.h"
+#include "view/element.h"
+#include "view/view_node.h"
 
 #include <elg/hot_reload.h>
+#include <elg/reactive.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -63,6 +67,29 @@ const ModuleEntry& entry_of(void* entry_function) {
     return *entry;
 }
 
+detail::TextSystem& text_system() {
+    static detail::TextSystem system;
+    return system;
+}
+
+// The texts a view shows.
+std::vector<std::string> texts(const View& view) {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const auto root = detail::lower(view, {.text = &text_system()});
+    std::vector<std::string> found;
+    const auto visit = [&](this const auto& self, detail::Element& element) -> void {
+        detail::Inspection inspection;
+        element.inspect(inspection);
+        if (inspection.name == "Text") {
+            found.push_back(inspection.detail);
+        }
+        element.for_each_child([&](detail::Element& child) { self(child); });
+    };
+    visit(*root);
+    return found;
+}
+
 std::vector<std::string> preview_names(const ModuleEntry& entry) {
     std::vector<std::string> names;
     if (entry.previews) {
@@ -99,9 +126,23 @@ TEST_CASE("each load of a module lists only its own previews, though another loa
     CHECK(preview_names(again_entry) == std::vector<std::string>{"first: one", "first: two"});
     CHECK(again_entry.previews != first_entry.previews);
     CHECK(preview_names(second_entry) == std::vector<std::string>{"second: one"});
-    // Nothing but the entry is exported (the Itanium ABI's name of detail::module_previews()).
-    CHECK_FALSE(again.symbol("_ZN3elg6detail15module_previewsEv"));
+    // Nothing but the entry is exported (the Itanium ABI's name of detail::module_views()).
+    CHECK_FALSE(again.symbol("_ZN3elg6detail12module_viewsEv"));
 #if !defined(_WIN32)
     dlclose(first);
 #endif
+}
+
+TEST_CASE("each module's entry builds that module's views", "[hot-reload]") {
+    const TemporaryDirectory folder;
+    const detail::DynamicLibrary first(folder.copy(ELG_TEST_FIRST_MODULE, "first"));
+    const detail::DynamicLibrary second(folder.copy(ELG_TEST_SECOND_MODULE, "second"));
+    const ModuleEntry& first_entry = entry_of(first.symbol("elg_module_entry"));
+    const ModuleEntry& second_entry = entry_of(second.symbol("elg_module_entry"));
+    REQUIRE(first_entry.has_root);
+    REQUIRE(second_entry.has_root);
+    CHECK(texts(first_entry.build(first_entry.context, -1)) == std::vector<std::string>{"first root"});
+    CHECK(texts(second_entry.build(second_entry.context, -1)) == std::vector<std::string>{"second root"});
+    CHECK(texts(first_entry.build(first_entry.context, 1)) == std::vector<std::string>{"first: two"});
+    CHECK(texts(second_entry.build(second_entry.context, 0)) == std::vector<std::string>{"second: one"});
 }

@@ -20,17 +20,21 @@
 #include <elg/theme.h>
 #include <elg/views.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
 #include <cstdio>
 #include <format>
 #include <map>
 #include <memory>
 #include <mutex>
 #include <stop_token>
+#include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace elg::detail {
 
@@ -47,9 +51,14 @@ struct Status {
     bool operator==(const Status&) const = default;
 };
 
+// A load, with what the host uses of its entry, copied: the entry and its strings are in the
+// module's memory.
 struct LoadedModule {
     std::unique_ptr<DynamicLibrary> library;
-    const ModuleEntry* entry = nullptr;
+    bool has_root = false;
+    View (*build)(const void* context, std::int32_t index) = nullptr;
+    const void* context = nullptr;
+    std::vector<std::string> previews; // their names, by index
 };
 
 // Last-write times of every file under the watched paths.
@@ -195,7 +204,14 @@ public:
                 throw ResourceError(std::format("{} was built against another Elegance version",
                                                 options_.module.filename().string()));
             }
-            modules_.push_back({std::move(library), entry});
+            LoadedModule module{.library = std::move(library), .has_root = entry->has_root, .build = entry->build,
+                                .context = entry->context};
+            if (entry->previews) {
+                for (const PreviewEntry& preview : *entry->previews) {
+                    module.previews.emplace_back(preview.name ? preview.name : "Preview");
+                }
+            }
+            modules_.push_back(std::move(module));
         } catch (const std::exception& error) {
             log_warning("hot reload: {}", error.what());
             status_ = Status{Phase::failed, error.what()};
@@ -203,13 +219,7 @@ public:
         }
         loaded_time_ = *time;
 
-        // Previews, copied: their names live in the module.
-        std::vector<std::string> names;
-        if (const std::vector<PreviewEntry>* previews = modules_.back().entry->previews) {
-            for (const PreviewEntry& preview : *previews) {
-                names.emplace_back(preview.name ? preview.name : "Preview");
-            }
-        }
+        std::vector<std::string> names = modules_.back().previews;
         if (std::ranges::find(names, selected_.peek()) == names.end()) {
             selected_ = names.empty() ? std::string() : names.front();
         }
@@ -243,23 +253,22 @@ public:
         if (modules_.empty()) {
             return Text("Waiting for the views module…").foreground_style(ThemeColor::secondary);
         }
-        const ModuleEntry& entry = *modules_.back().entry;
+        const LoadedModule& module = modules_.back();
         if (options_.show == HotReloadShow::root) {
-            if (!entry.root) {
+            if (!module.has_root) {
                 return Text("This module has no root view (ELG_MODULE(nullptr)); open it in the preview host")
                     .foreground_style(ThemeColor::secondary);
             }
-            return entry.root();
+            return module.build(module.context, -1);
         }
         return preview_browser();
     }
 
     View preview(const std::string& name) const {
-        if (!modules_.empty() && modules_.back().entry->previews) {
-            for (const PreviewEntry& preview : *modules_.back().entry->previews) {
-                if (name == (preview.name ? preview.name : "Preview")) {
-                    return preview.body();
-                }
+        if (!modules_.empty()) {
+            const LoadedModule& module = modules_.back();
+            if (const auto found = std::ranges::find(module.previews, name); found != module.previews.end()) {
+                return module.build(module.context, static_cast<std::int32_t>(found - module.previews.begin()));
             }
         }
         return Text("No previews in this module; add ELG_PREVIEW(\"Name\") { ... }")
