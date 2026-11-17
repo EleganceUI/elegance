@@ -8,20 +8,24 @@
 
 #include "core/dynamic_library.h"
 #include "core/ui_tasks.h"
+#include "hot_reload/probe.h"
 #include "test_processes.h"
 #include "text/text_system.h"
 #include "view/element.h"
 #include "view/view_node.h"
 
 #include <elg/hot_reload.h>
+#include <elg/modifiers/environment.h>
 #include <elg/reactive.h>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <format>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <random>
 #include <string>
@@ -109,13 +113,37 @@ struct Mounted {
     detail::Scope::Use use{scope};
     std::unique_ptr<detail::Element> root;
 
-    // Runs what other threads posted to the UI thread, and the effects that changed.
-    static void update() {
+    // Runs what other threads posted to the UI thread and the effects that changed, then lays
+    // the views out in an 800 x 600 window.
+    void update() const {
         detail::run_ui_tasks();
         detail::flush_effects();
+        (void)root->size_that_fits({800.f, 600.f});
+        root->place({}, {800.f, 600.f});
+    }
+    // Updates until `done()`, for up to 20 s: whether it got there.
+    [[nodiscard]] bool update_until(const std::function<bool()>& done) const {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+        while (true) {
+            update();
+            if (done()) {
+                return true;
+            }
+            if (std::chrono::steady_clock::now() >= deadline) {
+                return false;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
     }
     [[nodiscard]] bool shows(const std::string& text) const { return std::ranges::contains(texts(*root), text); }
 };
+
+// Writes `module` over `to`, as a build does, with a newer time than the file had.
+void build_into(const fs::path& module, const fs::path& to) {
+    const fs::file_time_type before = fs::last_write_time(to);
+    fs::copy_file(module, to, fs::copy_options::overwrite_existing);
+    fs::last_write_time(to, std::max(fs::last_write_time(to), before + std::chrono::seconds(1)));
+}
 
 std::vector<std::string> preview_names(const ModuleEntry& entry) {
     std::vector<std::string> names;
@@ -168,10 +196,61 @@ TEST_CASE("each module's entry builds that module's views", "[hot-reload]") {
     const ModuleEntry& second_entry = entry_of(second.symbol("elg_module_entry"));
     REQUIRE(first_entry.has_root);
     REQUIRE(second_entry.has_root);
-    CHECK(texts(first_entry.build(first_entry.context, -1)) == std::vector<std::string>{"first root"});
-    CHECK(texts(second_entry.build(second_entry.context, -1)) == std::vector<std::string>{"second root"});
+    CHECK(texts(first_entry.build(first_entry.context, -1)) == std::vector<std::string>{"first root 0"});
+    CHECK(texts(second_entry.build(second_entry.context, -1)) == std::vector<std::string>{"second root 0"});
     CHECK(texts(first_entry.build(first_entry.context, 1)) == std::vector<std::string>{"first: two"});
     CHECK(texts(second_entry.build(second_entry.context, 0)) == std::vector<std::string>{"second: one"});
+}
+
+TEST_CASE("a load that succeeds unmounts the views of the load before it, and mounts its own", "[hot-reload]") {
+    const TemporaryDirectory folder;
+    const fs::path module = folder.copy(ELG_TEST_FIRST_MODULE, "views");
+    HotReloadOptions options;
+    options.module = module;
+    const auto probe = std::make_shared<elg_tests::Probe>();
+    const Mounted mounted(HotReload(options).environment<elg_tests::ProbeKey>(probe));
+    REQUIRE(mounted.shows("first root 0"));
+    CHECK(probe->events == std::vector<std::string>{"first root mounted"});
+
+    build_into(ELG_TEST_SECOND_MODULE, module);
+    REQUIRE(mounted.update_until([&] { return mounted.shows("second root 0"); }));
+    CHECK_FALSE(mounted.shows("first root 0"));
+    std::vector<std::string> events = probe->events;
+    std::ranges::sort(events);
+    CHECK(events == std::vector<std::string>{"first root mounted", "first root unmounted", "second root mounted"});
+}
+
+TEST_CASE("a build that fails keeps the views, and shows all its output until a load succeeds", "[hot-reload]") {
+    const TemporaryDirectory folder;
+    const fs::path module = folder.copy(ELG_TEST_FIRST_MODULE, "views");
+    const fs::path sources = folder.path / "sources";
+    fs::create_directories(sources);
+    std::ofstream(sources / "views.cpp") << "1";
+    HotReloadOptions options;
+    options.module = module;
+    options.build_command = "echo views.cpp:3:1: error: expected a view&& echo the next line of the output&& exit 1";
+    options.watch = {sources};
+    const auto probe = std::make_shared<elg_tests::Probe>();
+    const Mounted mounted(HotReload(options).environment<elg_tests::ProbeKey>(probe));
+    REQUIRE(mounted.shows("first root 0"));
+    probe->increment();
+    mounted.update();
+    REQUIRE(mounted.shows("first root 1"));
+
+    // A source changes, so the host builds, and the build fails.
+    std::ofstream(sources / "views.cpp") << "2";
+    fs::last_write_time(sources / "views.cpp", fs::last_write_time(sources / "views.cpp") + std::chrono::seconds(1));
+    REQUIRE(mounted.update_until([&] { return mounted.shows("the next line of the output"); }));
+    CHECK(mounted.shows("The build failed"));
+    CHECK(mounted.shows("views.cpp:3:1: error: expected a view"));
+    CHECK(mounted.shows("first root 1")); // the same views, with their state
+    CHECK(probe->events == std::vector<std::string>{"first root mounted"});
+
+    // The next load: the output goes.
+    build_into(ELG_TEST_SECOND_MODULE, module);
+    REQUIRE(mounted.update_until([&] { return mounted.shows("second root 0"); }));
+    CHECK_FALSE(mounted.shows("the next line of the output"));
+    CHECK_FALSE(mounted.shows("The build failed"));
 }
 
 #if !defined(_WIN32)

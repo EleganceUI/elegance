@@ -2195,7 +2195,9 @@ Separate render thread from day one (decided).
     - Results reach the UI thread through `post_ui_task` (a queue the App drains each loop
       iteration, with a wake).
   - A status badge shows "Building…", the first compiler error (file, line, message) or
-    "Reloaded (N ms)". A failed build keeps the last good views.
+    "Reloaded (N ms)". A failed build keeps the last good views, and a panel over the bottom
+    shows the build's whole output, one line per row of a lazy stack, until a build or a load
+    succeeds (Hide hides it until the next failure).
   - CMake: `elegance_views_module(target sources...)` and
     `elegance_hot_reload(host MODULE views [WATCH ...])`. The latter generates
     `<host>_hot_reload.h` with `elg_hot_reload_options()`. On Windows the rebuild runs through a

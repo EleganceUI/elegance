@@ -18,6 +18,7 @@
 #include <elg/error.h>
 #include <elg/reactive.h>
 #include <elg/shapes.h>
+#include <elg/styles.h>
 #include <elg/text.h>
 #include <elg/theme.h>
 #include <elg/views.h>
@@ -133,7 +134,34 @@ std::string first_error(const std::string& output) {
         }
         start = end + 1;
     }
-    return "the build failed (see the console)";
+    return "the build failed";
+}
+
+// A line of build output, for the output panel.
+struct OutputLine {
+    std::size_t index = 0;
+    std::string text;
+    bool operator==(const OutputLine&) const = default;
+};
+
+// `output`'s lines, without carriage returns and the empty lines at its end.
+std::vector<OutputLine> output_lines(const std::string& output) {
+    std::vector<OutputLine> lines;
+    std::size_t start = 0;
+    while (start < output.size()) {
+        std::size_t end = output.find('\n', start);
+        if (end == std::string::npos) {
+            end = output.size();
+        }
+        std::string text = output.substr(start, end - start);
+        std::erase(text, '\r');
+        lines.push_back({lines.size(), std::move(text)});
+        start = end + 1;
+    }
+    while (!lines.empty() && lines.back().text.find_first_not_of(" \t") == std::string::npos) {
+        lines.pop_back();
+    }
+    return lines;
 }
 
 class ModuleHost : public std::enable_shared_from_this<ModuleHost> {
@@ -248,6 +276,7 @@ public:
         } else {
             status_ = Status{};
         }
+        build_output_ = std::vector<OutputLine>();
     }
 
     void set_status(Status status) const { status_ = std::move(status); }
@@ -286,6 +315,9 @@ public:
 
     State<std::int64_t> generation_{0};
     State<Status> status_{Status{}};
+    // The output of the build that failed last, shown until a build or a load succeeds; empty:
+    // none to show.
+    State<std::vector<OutputLine>> build_output_{std::vector<OutputLine>()};
     State<std::vector<std::string>> preview_names_{std::vector<std::string>()};
     State<std::string> selected_{std::string()};
 
@@ -342,9 +374,13 @@ private:
             }
             if (code != 0) {
                 log_warning("hot reload: the build failed ({} ms):\n{}", ms, output);
-                post([message = first_error(output)](ModuleHost& host) { host.set_status({Phase::failed, message}); });
+                post([message = first_error(output), lines = output_lines(output)](ModuleHost& host) {
+                    host.set_status({Phase::failed, message});
+                    host.build_output_ = lines;
+                });
             } else {
                 log_debug("hot reload: built in {} ms", ms);
+                post([](ModuleHost& host) { host.build_output_ = std::vector<OutputLine>(); });
             }
         };
 
@@ -422,6 +458,29 @@ View StatusBadge(const std::shared_ptr<ModuleHost>& host) {
         .padding(14);
 }
 
+// The output of the build that failed last, in a panel over the bottom of the content that
+// scrolls, while there is one; Hide hides it until the next build fails.
+View BuildOutput(const std::shared_ptr<ModuleHost>& host) {
+    const View header = HStack({.spacing = 8}, Circle().fill(Color::hex(0xED8796)).frame(8, 8),
+                               Text("The build failed").font(Font::headline), Spacer(),
+                               Button("Hide", [host] { host->build_output_ = std::vector<OutputLine>(); })
+                                   .button_style(BorderedButtonStyle{}));
+    const View lines = ScrollView(
+        LazyVStack({.alignment = HorizontalAlignment::leading, .spacing = 0},
+                   ForEach([host] { return host->build_output_(); }, &OutputLine::index, [](const OutputLine& line) {
+                       return Text(line.text.empty() ? std::string(" ") : line.text)
+                           .font(Font::footnote)
+                           .frame(FlexibleFrameOptions{.max_width = infinity, .alignment = Alignment::leading});
+                   })));
+    const View panel = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10}, header,
+                              lines.frame(FlexibleFrameOptions{.max_width = infinity, .max_height = 240}))
+                           .padding(14)
+                           .background(RoundedRectangle(12).fill(ThemeColor::surface_raised))
+                           .shadow({.color = Color::black.opacity(0.25f), .radius = 8, .y = 2})
+                           .padding(EdgeInsets{.top = 0, .leading = 14, .bottom = 14, .trailing = 14});
+    return If([host] { return !host->build_output_().empty(); }, panel);
+}
+
 } // namespace
 
 } // namespace elg::detail
@@ -435,7 +494,8 @@ View HotReload(HotReloadOptions options) {
                                  [host](std::int64_t) { return host->content(); });
     return ZStack({.alignment = Alignment::bottom_trailing},
                   ZStack(content).frame(FlexibleFrameOptions{.max_width = infinity, .max_height = infinity}),
-                  detail::StatusBadge(host));
+                  VStack({.alignment = HorizontalAlignment::trailing, .spacing = 0}, detail::StatusBadge(host),
+                         detail::BuildOutput(host)));
 }
 
 } // namespace elg

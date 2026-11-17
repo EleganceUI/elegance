@@ -4,6 +4,8 @@
 
 // A views module that hot_reload_tests.cpp loads, with a root view and one preview.
 
+#include "probe.h"
+
 #include <elg/hot_reload.h>
 #include <elg/text.h>
 
@@ -12,7 +14,7 @@ using namespace elg;
 namespace {
 
 View Root() {
-    return Text("second root");
+    return elg_tests::ProbedRoot{"second root"};
 }
 
 } // namespace
