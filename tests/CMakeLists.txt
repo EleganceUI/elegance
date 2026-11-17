@@ -131,6 +131,25 @@ set_target_properties(gpu_image_c_smoke PROPERTIES LINKER_LANGUAGE CXX C_STANDAR
 target_link_libraries(gpu_image_c_smoke PRIVATE Elegance::Elegance)
 add_test(NAME gpu_image_c_smoke COMMAND gpu_image_c_smoke)
 
+# The C API's header (c/include/elg-c/elegance.h, ELGSPEC-0007.R14) compiled as C11, in a program that
+# refers to every function it declares (tests/c_api_functions.c) and links with the library.
+if (TARGET elegance_c_api)
+    add_executable(c_api_c_tests c_api_c_tests.c c_api_functions.c)
+    set_target_properties(c_api_c_tests PROPERTIES LINKER_LANGUAGE CXX C_STANDARD 11 C_STANDARD_REQUIRED ON
+                                                   C_EXTENSIONS OFF)
+    target_include_directories(c_api_c_tests PRIVATE ${PROJECT_SOURCE_DIR}/c/include)
+    target_link_libraries(c_api_c_tests PRIVATE elegance_c_api Elegance::Elegance)
+    if (elg_dawn_type STREQUAL "SHARED_LIBRARY")
+        target_link_libraries(c_api_c_tests PRIVATE dawn::webgpu_dawn)
+    endif ()
+    if (MSVC)
+        target_compile_options(c_api_c_tests PRIVATE /W4 $<$<BOOL:${ELG_WARNINGS_AS_ERRORS}>:/WX>)
+    else ()
+        target_compile_options(c_api_c_tests PRIVATE -Wall -Wextra -Wpedantic $<$<BOOL:${ELG_WARNINGS_AS_ERRORS}>:-Werror>)
+    endif ()
+    add_test(NAME c_api_c_tests COMMAND c_api_c_tests)
+endif ()
+
 # The layers' folders, dependencies, backend interfaces, OS code and includes (ELGSPEC-0001.R10):
 # fails, naming the file, what it includes and the requirement, when any include breaks
 # ELGSPEC-0001.R1 to R8. CI also runs it as a step of its own.
