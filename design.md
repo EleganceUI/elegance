@@ -2188,7 +2188,9 @@ Separate render thread from day one (decided).
     the file. The previous module stays loaded while its views fade out; older ones unload.
     Modules still loaded at exit are left loaded.
   - A watcher thread polls the watched folders every 250 ms.
-    - A change runs the build command (output captured).
+    - A change runs the build command (output captured) as a child process (`core/child_process.h`).
+      On Linux and macOS its shell leads a process group of its own; destroying the host (its
+      window closing, the app quitting) kills that group and doesn't wait for the build.
     - A new module file (from our build or an IDE's) reloads once it has settled.
     - Results reach the UI thread through `post_ui_task` (a queue the App drains each loop
       iteration, with a wake).

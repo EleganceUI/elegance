@@ -2,10 +2,13 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Hot reload: views modules and their entries. The modules (tests/hot_reload) are built with
-// elegance_views_module(), as an app's are; only shared builds have them.
+// Hot reload: views modules, their entries, and the host that loads them (HotReload()). The
+// modules (tests/hot_reload) are built with elegance_views_module(), as an app's are; only shared
+// builds have them.
 
 #include "core/dynamic_library.h"
+#include "core/ui_tasks.h"
+#include "test_processes.h"
 #include "text/text_system.h"
 #include "view/element.h"
 #include "view/view_node.h"
@@ -15,11 +18,15 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <format>
+#include <fstream>
+#include <memory>
 #include <random>
 #include <string>
 #include <system_error>
+#include <thread>
 #include <vector>
 
 #if !defined(_WIN32)
@@ -72,11 +79,8 @@ detail::TextSystem& text_system() {
     return system;
 }
 
-// The texts a view shows.
-std::vector<std::string> texts(const View& view) {
-    detail::Scope scope;
-    const detail::Scope::Use use(scope);
-    const auto root = detail::lower(view, {.text = &text_system()});
+// The texts that `root` and the elements inside it show.
+std::vector<std::string> texts(detail::Element& root) {
     std::vector<std::string> found;
     const auto visit = [&](this const auto& self, detail::Element& element) -> void {
         detail::Inspection inspection;
@@ -86,9 +90,32 @@ std::vector<std::string> texts(const View& view) {
         }
         element.for_each_child([&](detail::Element& child) { self(child); });
     };
-    visit(*root);
+    visit(root);
     return found;
 }
+
+// The texts a view shows.
+std::vector<std::string> texts(const View& view) {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const auto root = detail::lower(view, {.text = &text_system()});
+    return texts(*root);
+}
+
+// A view mounted with a scope of its own, as a window's content is.
+struct Mounted {
+    explicit Mounted(const View& view) : root(detail::lower(view, {.text = &text_system()})) {}
+    detail::Scope scope;
+    detail::Scope::Use use{scope};
+    std::unique_ptr<detail::Element> root;
+
+    // Runs what other threads posted to the UI thread, and the effects that changed.
+    static void update() {
+        detail::run_ui_tasks();
+        detail::flush_effects();
+    }
+    [[nodiscard]] bool shows(const std::string& text) const { return std::ranges::contains(texts(*root), text); }
+};
 
 std::vector<std::string> preview_names(const ModuleEntry& entry) {
     std::vector<std::string> names;
@@ -146,3 +173,41 @@ TEST_CASE("each module's entry builds that module's views", "[hot-reload]") {
     CHECK(texts(first_entry.build(first_entry.context, 1)) == std::vector<std::string>{"first: two"});
     CHECK(texts(second_entry.build(second_entry.context, 0)) == std::vector<std::string>{"second: one"});
 }
+
+#if !defined(_WIN32)
+TEST_CASE("a host destroyed while its module builds ends the build at once, and what the build started",
+          "[hot-reload]") {
+    using namespace std::chrono_literals;
+    const TemporaryDirectory folder;
+    const fs::path ids = folder.path / "build-ids";
+    // The module isn't built yet, so the host builds it right away. The build's shell starts a
+    // sleep, which holds the build's output open, writes their process ids, and waits for it.
+    HotReloadOptions options;
+    options.module = folder.path / "views";
+    options.build_command = std::format("sleep 30 & echo $$ $! > '{0}.part' && mv '{0}.part' '{0}'; wait", ids.string());
+    auto mounted = std::make_unique<Mounted>(HotReload(options));
+
+    // The UI thread goes on while the build runs.
+    const auto deadline = std::chrono::steady_clock::now() + 20s;
+    while (!fs::exists(ids) && std::chrono::steady_clock::now() < deadline) {
+        mounted->update();
+        std::this_thread::sleep_for(10ms);
+    }
+    REQUIRE(fs::exists(ids));
+    int shell = 0;
+    int sleep = 0;
+    std::ifstream(ids) >> shell >> sleep;
+    REQUIRE(shell > 0);
+    REQUIRE(sleep > 0);
+    mounted->update();
+    CHECK(mounted->shows("Building…"));
+
+    // As a closed window's views go, so does the host that they hold.
+    const auto stopping = std::chrono::steady_clock::now();
+    mounted.reset();
+    CHECK(std::chrono::steady_clock::now() - stopping < 2s);
+    CHECK(elg_tests::process_ends(shell));
+    CHECK(elg_tests::process_ends(sleep));
+    detail::run_ui_tasks(); // what the build's thread posted for the host that's gone
+}
+#endif

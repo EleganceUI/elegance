@@ -4,7 +4,8 @@
 
 // Hot reload (design.md §9.6): a views module is loaded from a copy, its content is the single
 // item of a ForEach keyed by the module's generation, so a reload unmounts the old tree (and
-// disposes its scope) and mounts the new module's views, like any other ForEach change.
+// disposes its scope) and mounts the new module's views, like any other ForEach change. Builds
+// run as child processes, which a stop request (the host going) ends at once.
 
 #include <elg/hot_reload.h>
 
@@ -92,8 +93,8 @@ std::optional<fs::file_time_type> modified(const fs::path& file) {
 }
 
 // Runs `command` through the shell, as a child process; returns its exit code and output (stdout
-// and stderr).
-std::pair<int, std::string> run(const std::string& command) {
+// and stderr). A stop request ends it, and what it started, without waiting for them (-1).
+std::pair<int, std::string> run(const std::string& command, const std::stop_token& stop) {
     std::optional<ChildProcess> process;
     try {
         process.emplace(command);
@@ -101,9 +102,14 @@ std::pair<int, std::string> run(const std::string& command) {
         return {-1, "couldn't start the build command"};
     }
     std::string output;
-    std::array<char, 4096> buffer{};
-    while (const std::size_t read = process->read(buffer)) {
-        output.append(buffer.data(), read);
+    {
+        // Runs on the thread that asks to stop, or here if one already has. Leaving this block
+        // waits for it to return, so it never runs during wait().
+        const std::stop_callback end(stop, [&process]() noexcept { process->end(); });
+        std::array<char, 4096> buffer{};
+        while (const std::size_t read = process->read(buffer)) {
+            output.append(buffer.data(), read);
+        }
     }
     return {process->wait(), std::move(output)};
 }
@@ -152,8 +158,9 @@ public:
         if (watcher_.joinable()) {
             watcher_.join();
         }
-        // Loaded modules stay loaded: elements built from them may still be torn down after this,
-        // and their code still run (see load()).
+        // request_stop() ended a build that was running (run()'s stop callback; on Linux and
+        // macOS), so the join doesn't wait for it. Loaded modules stay loaded: elements built from
+        // them may still be torn down after this, and their code still run (see load()).
         for (LoadedModule& module : modules_) {
             [[maybe_unused]] auto* leaked = module.library.release();
         }
@@ -323,10 +330,16 @@ private:
             });
         };
         const auto build = [&] {
+            if (stop.stop_requested()) {
+                return;
+            }
             post([](ModuleHost& host) { host.set_status({Phase::building, "Building…"}); });
             const auto started = Clock::now();
-            auto [code, output] = run(options.build_command);
+            auto [code, output] = run(options.build_command, stop);
             const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count();
+            if (stop.stop_requested()) {
+                return; // ended: the host is going
+            }
             if (code != 0) {
                 log_warning("hot reload: the build failed ({} ms):\n{}", ms, output);
                 post([message = first_error(output)](ModuleHost& host) { host.set_status({Phase::failed, message}); });
@@ -342,21 +355,22 @@ private:
         }
         std::mutex mutex;
         std::condition_variable_any sleeper;
-        while (!stop.stop_requested()) {
-            {
-                std::unique_lock lock(mutex);
-                sleeper.wait_for(lock, stop, std::chrono::milliseconds(250), [] { return false; });
-            }
-            if (stop.stop_requested()) {
-                break;
-            }
+        // Sleeps unless a stop is requested: false if one was.
+        const auto sleep = [&](std::chrono::milliseconds duration) {
+            std::unique_lock lock(mutex);
+            sleeper.wait_for(lock, stop, duration, [] { return false; });
+            return !stop.stop_requested();
+        };
+        while (sleep(std::chrono::milliseconds(250))) {
             post([](ModuleHost& host) { host.clear_status_if_due(); });
 
             // Sources changed: rebuild (the new module file is picked up below).
             if (!options.build_command.empty()) {
                 const std::map<fs::path, fs::file_time_type> now = scan(options.watch);
                 if (now != sources) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(150)); // editors save in steps
+                    if (!sleep(std::chrono::milliseconds(150))) { // editors save in steps
+                        break;
+                    }
                     sources = scan(options.watch);
                     build();
                 }
