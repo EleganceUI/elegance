@@ -143,13 +143,16 @@ private:
     std::thread thread_;
 };
 
-// Runs `work` on a blocking thread and resumes with its result.
+// Runs `work` on a blocking thread and resumes with its result. On a strand of its own: when the
+// awaiting coroutine is cancelled, co_spawn forwards that to the spawned one through the latter's
+// executor, and on the bare pool that could run on its other thread while the spawned coroutine
+// checks its cancellation state or completes.
 template <class Work>
 awaitable<std::invoke_result_t<Work&>> off_network_thread(Work work) {
     using Result = std::invoke_result_t<Work&>;
     co_return co_await asio::co_spawn(
-        Network::instance().blocking(), [work = std::move(work)]() mutable -> awaitable<Result> { co_return work(); },
-        use_awaitable);
+        asio::make_strand(Network::instance().blocking()),
+        [work = std::move(work)]() mutable -> awaitable<Result> { co_return work(); }, use_awaitable);
 }
 
 // The system's root certificates (net/net_backend.h): the certificate store on Windows, the
