@@ -37,6 +37,10 @@ int32_t elg_take_error(ElgStrSink out, void* ctx);
 uint32_t elg_abi_version();
 const char* elg_version();
 void elg_check_ui_thread();
+uint64_t elg_signal_new(ElgClosure owner);
+uint64_t elg_computed_new(ElgClosure compute);
+void elg_node_track(uint64_t node);
+void elg_node_notify(uint64_t node);
 elg::VideoFeed* elg_video_feed_new();
 void elg_video_feed_free(elg::VideoFeed* feed);
 View* elg_empty_view();
@@ -368,4 +372,39 @@ TEST_CASE("while an App runs, a function of the UI thread fails on another threa
     CHECK(counts.drops == 1);
     detail::end_ui_releases();
     detail::set_ui_thread(std::nullopt);
+}
+
+TEST_CASE("a handle to reactive state that has ended is a usage error, also once its slot is reused",
+          "[c-api][reactive]") {
+    Counts first;
+    Counts second;
+    std::uint64_t ended = 0;
+    {
+        detail::Scope scope;
+        const detail::Scope::Use use(scope);
+        ended = elg_signal_new(closure(first));
+        REQUIRE(ended != 0);
+        elg_node_notify(ended);
+        CHECK(take_error() == 0);
+    } // the scope ends, and the node with it
+    CHECK(first.drops == 1);
+    elg_node_track(ended);
+    CHECK(take_error() == 2);
+    {
+        detail::Scope scope;
+        const detail::Scope::Use use(scope);
+        const std::uint64_t reused = elg_signal_new(closure(second)); // most likely in the ended one's slot
+        REQUIRE(reused != 0);
+        CHECK(reused != ended);
+        elg_node_notify(ended);
+        CHECK(take_error() == 2);
+        elg_node_track(reused);
+        CHECK(take_error() == 0);
+        const std::uint64_t computed = elg_computed_new(closure(second));
+        REQUIRE(computed != 0);
+        elg_node_track(computed);
+        CHECK(take_error() == 0);
+    }
+    elg_node_track(0); // no handle at all
+    CHECK(take_error() == 2);
 }

@@ -235,7 +235,91 @@ ELG_EXPORT View* elg_view_component(ElgClosure body) {
 
 namespace {
 
-using OwnerNode = detail::SignalNode<SharedFn>;
+// The handles the C API gives out for reactive nodes: a slot's index (plus 1, so that 0 is no
+// handle) in the low 32 bits and the slot's generation in the high 32. When a node ends, its slot
+// gets the next generation, so a handle to it fails to find it, also once the slot (or the node's
+// memory) has been reused.
+class NodeHandles {
+public:
+    std::uint64_t add(detail::ReactiveNode* node) {
+        std::uint32_t index = 0;
+        if (free_.empty()) {
+            index = static_cast<std::uint32_t>(slots_.size());
+            slots_.push_back({});
+        } else {
+            index = free_.back();
+            free_.pop_back();
+        }
+        slots_[index].node = node;
+        return (static_cast<std::uint64_t>(slots_[index].generation) << 32) | (index + 1);
+    }
+
+    void remove(std::uint32_t index) noexcept {
+        Slot& slot = slots_[index];
+        slot.node = nullptr;
+        slot.generation = slot.generation == UINT32_MAX ? 1 : slot.generation + 1;
+        try {
+            free_.push_back(index);
+        } catch (...) {
+            // Swallowed: out of memory, so the slot isn't used again.
+        }
+    }
+
+    // The node `handle` refers to, or a UsageError once it has ended.
+    [[nodiscard]] detail::ReactiveNode& node(std::uint64_t handle) const {
+        const std::uint64_t index = (handle & UINT32_MAX) - 1;
+        if (handle == 0 || index >= slots_.size() || slots_[index].generation != handle >> 32 || !slots_[index].node) {
+            throw UsageError("a handle to reactive state was used after the state ended (with the views or "
+                             "scope that made it)");
+        }
+        return *slots_[index].node;
+    }
+
+private:
+    struct Slot {
+        detail::ReactiveNode* node = nullptr;
+        std::uint32_t generation = 1;
+    };
+    std::vector<Slot> slots_;
+    std::vector<std::uint32_t> free_;
+};
+
+NodeHandles& handles() {
+    // Leaked, like roots(): nodes made outside any scope never end.
+    static auto* const instance = new NodeHandles();
+    return *instance;
+}
+
+// Part of a node made through the C API: removes the node's handle when the node ends.
+struct HandleSlot {
+    std::uint32_t index = UINT32_MAX; // none yet
+    HandleSlot() = default;
+    HandleSlot(const HandleSlot&) = delete;
+    HandleSlot& operator=(const HandleSlot&) = delete;
+    HandleSlot(HandleSlot&&) = delete;
+    HandleSlot& operator=(HandleSlot&&) = delete;
+    ~HandleSlot() {
+        if (index != UINT32_MAX) {
+            handles().remove(index);
+        }
+    }
+};
+
+// A signal node's value: the Rust side's slot (`owner`, dropped when the node ends), and the
+// node's handle.
+struct SignalOwner {
+    SharedFn owner;
+    std::shared_ptr<HandleSlot> slot = std::make_shared<HandleSlot>();
+};
+
+using OwnerNode = detail::SignalNode<SignalOwner>;
+
+// Registers `node`, whose `slot` removes it when it ends, and returns its handle.
+std::uint64_t handle_for(detail::ReactiveNode* node, HandleSlot& slot) {
+    const std::uint64_t handle = handles().add(node);
+    slot.index = static_cast<std::uint32_t>((handle & UINT32_MAX) - 1);
+    return handle;
+}
 
 std::vector<std::shared_ptr<detail::ReactiveNode>>& roots() {
     // Leaked: nodes made outside any scope (before App::run) live for the whole program, and
@@ -259,16 +343,16 @@ void adopt(std::shared_ptr<detail::ReactiveNode> node) {
 /// the whole program.
 ///
 /// @param owner Consumed closure that's never called; its `drop` runs when the node ends.
-/// @return The node, for elg_node_track() and elg_node_notify(). Its scope owns it, not the caller.
-///   nullptr on failure, and off the UI thread of a running App (a UsageError).
-ELG_EXPORT void* elg_signal_new(ElgClosure owner) {
+/// @return A handle to the node, for elg_node_track() and elg_node_notify(); its scope owns the
+///   node, not the caller. Once the node has ended, using the handle is a usage error. 0 on failure.
+ELG_EXPORT uint64_t elg_signal_new(ElgClosure owner) {
     const Consumed consumed(owner);
     ELG_TRY
-    auto node = std::make_shared<OwnerNode>(hold(owner));
-    void* raw = static_cast<detail::ReactiveNode*>(node.get());
+    auto node = std::make_shared<OwnerNode>(SignalOwner{.owner = hold(owner)});
+    const std::uint64_t handle = handle_for(node.get(), *node->value.slot);
     adopt(std::move(node));
-    return raw;
-    ELG_CATCH(nullptr)
+    return handle;
+    ELG_CATCH(0)
 }
 
 /// A computed node: the C++ side of a Rust Computed, owned by the current Scope like
@@ -278,40 +362,42 @@ ELG_EXPORT void* elg_signal_new(ElgClosure owner) {
 /// @param compute Consumed closure, run when the node is read and may have changed; args: null,
 ///   ret: `uint64_t*`. When the version stays the same, the node's dependents don't rerun.
 ///   Required: none is a usage error.
-/// @return The node, for elg_node_track(). Its scope owns it, not the caller. nullptr on failure,
-///   and off the UI thread of a running App (a UsageError).
-ELG_EXPORT void* elg_computed_new(ElgClosure compute) {
+/// @return A handle to the node, for elg_node_track(); its scope owns the node, not the caller.
+///   Once the node has ended, using the handle is a usage error. 0 on failure.
+ELG_EXPORT uint64_t elg_computed_new(ElgClosure compute) {
     const Consumed consumed(compute);
     ELG_TRY
     const SharedFn f = required(compute, "compute");
-    auto node = std::make_shared<detail::ComputedNode<std::uint64_t>>([f] {
+    auto slot = std::make_shared<HandleSlot>(); // goes with the node's function, so with the node
+    auto node = std::make_shared<detail::ComputedNode<std::uint64_t>>([f, slot] {
         std::uint64_t version = 0;
         f->call(nullptr, &version);
         return version;
     });
-    void* raw = static_cast<detail::ReactiveNode*>(node.get());
+    const std::uint64_t handle = handle_for(node.get(), *slot);
     adopt(std::move(node));
-    return raw;
-    ELG_CATCH(nullptr)
+    return handle;
+    ELG_CATCH(0)
 }
 
 /// A read (`ReactiveNode::track()`): subscribes the running computed/effect, bringing a computed
 /// up to date first.
 ///
-/// @param node A node from elg_signal_new() or elg_computed_new() (borrowed).
-ELG_EXPORT void elg_node_track(void* node) {
+/// @param node A handle from elg_signal_new() or elg_computed_new(); one whose node has ended is a
+///   usage error.
+ELG_EXPORT void elg_node_track(uint64_t node) {
     ELG_TRY
-    static_cast<detail::ReactiveNode*>(node)->track();
+    handles().node(node).track();
     ELG_CATCH_VOID
 }
 
 /// A write happened (UI thread only): `ReactiveNode::notify_changed()` marks the node's dependents
 /// and schedules the effects it affects. Off the UI thread, records a UsageError instead.
 ///
-/// @param node A node from elg_signal_new() (borrowed).
-ELG_EXPORT void elg_node_notify(void* node) {
+/// @param node A handle from elg_signal_new(); one whose node has ended is a usage error.
+ELG_EXPORT void elg_node_notify(uint64_t node) {
     ELG_TRY
-    static_cast<detail::ReactiveNode*>(node)->notify_changed();
+    handles().node(node).notify_changed();
     ELG_CATCH_VOID
 }
 
@@ -1128,7 +1214,7 @@ ELG_EXPORT const char* elg_version() {
 
 // The C API's ABI version. It goes up by one whenever an exported function's signature, a struct
 // passed across the API, or the value of a documented constant changes.
-constexpr std::uint32_t kAbiVersion = 2;
+constexpr std::uint32_t kAbiVersion = 3;
 
 /// The C API's ABI version: a binding checks it when it loads the library, and refuses to run
 /// with a version it wasn't built for. It changes whenever an exported function's signature, a
