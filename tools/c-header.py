@@ -46,9 +46,9 @@ OPAQUE = {
     "App": "ElgApp", "Binding<bool>": "ElgBindingBool", "Binding<float>": "ElgBindingF32",
     "Binding<int>": "ElgBindingI32", "Binding<std::string>": "ElgBindingString", "Binding<double>": "ElgBindingF64",
     "ScrollPosition": "ElgScrollPosition", "GraphicsContext": "ElgGraphicsContext", "LayoutCache": "ElgLayoutCache",
-    "LayoutChild": "ElgLayoutChild", "Effects": "ElgEffects", "Sound": "ElgSound", "AudioPlayer": "ElgAudioPlayer",
+    "Effects": "ElgEffects", "Sound": "ElgSound", "AudioPlayer": "ElgAudioPlayer",
     "AudioStream": "ElgAudioStream", "AudioRecorder": "ElgAudioRecorder", "Camera": "ElgCamera",
-    "VideoPlayer": "ElgVideoPlayer", "VideoFeed": "ElgVideoFeed", "TrayIcon": "ElgTrayIcon", "Theme": "ElgTheme",
+    "VideoPlayer": "ElgVideoPlayer", "VideoFeed": "ElgVideoFeed", "TrayIcon": "ElgTrayIcon",
     "ModuleEntry": "ElgModuleEntry",
     # Closures' results, written through the C API (elg_string_assign(), ...).
     "std::string": "ElgCppString", "Font": "ElgCppFont", "ShapeStyle": "ElgCppShapeStyle",

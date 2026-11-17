@@ -389,9 +389,41 @@ struct ElgImageSource {
     uint32_t max_side;
 };
 
+/// An elg::Theme: its light colors, then its dark ones (17 each, in elg::ColorTokens' order), then
+/// its blur radii (7, in elg::BlurTokens' order).
+struct ElgTheme {
+    ElgColor colors[34]; ///< `light`, then `dark`.
+    float blur[7];       ///< `blur`.
+};
+
+/// An elg::LayoutChild, which a custom layout gets an array of: one pointer, Elegance's, only for
+/// passing back to the C API.
+struct ElgLayoutChild {
+    void* element; ///< Elegance's.
+};
+
 } // extern "C"
 
+// The C structs that stand for C++ ones are laid out as those are, so they convert in place.
+static_assert(sizeof(ElgTheme) == sizeof(elg::Theme) && alignof(ElgTheme) == alignof(elg::Theme));
+static_assert(offsetof(ElgTheme, blur) == offsetof(elg::Theme, blur));
+static_assert(sizeof(ElgLayoutChild) == sizeof(elg::LayoutChild) && alignof(ElgLayoutChild) == alignof(elg::LayoutChild));
+
 namespace elg_shim {
+
+// The C++ objects that ElgTheme and ElgLayoutChild stand for.
+inline const elg::Theme& cpp_theme(const ElgTheme& theme) {
+    return *reinterpret_cast<const elg::Theme*>(&theme);
+}
+inline elg::Theme& cpp_theme(ElgTheme& theme) {
+    return *reinterpret_cast<elg::Theme*>(&theme);
+}
+inline const elg::LayoutChild* cpp_children(const ElgLayoutChild* children) {
+    return reinterpret_cast<const elg::LayoutChild*>(children);
+}
+inline const ElgLayoutChild* c_children(const elg::LayoutChild* children) {
+    return reinterpret_cast<const ElgLayoutChild*>(children);
+}
 
 // Thrown through Elegance when a Rust closure panicked; the panic payload stays on the Rust side.
 struct RustPanic final : std::exception {
@@ -801,7 +833,7 @@ struct PropValue<elg::PointerStyle> {
 };
 template <>
 struct PropValue<elg::Theme> {
-    static elg::Theme from(const void* v) { return *static_cast<const elg::Theme*>(v); }
+    static elg::Theme from(const void* v) { return cpp_theme(*static_cast<const ElgTheme*>(v)); }
 };
 template <>
 struct PropValue<elg::HoverDelay> {

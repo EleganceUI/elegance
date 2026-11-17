@@ -706,10 +706,10 @@ ELG_EXPORT int32_t elg_env_color_scheme(const EnvironmentValues* environment) {
 /// Reads the environment's theme (ThemeKey). A tracked read.
 ///
 /// @param environment The environment (borrowed).
-/// @param result Receives the elg::Theme (borrowed); left as it was on failure.
-ELG_EXPORT void elg_env_theme(const EnvironmentValues* environment, Theme* result) {
+/// @param result Receives the theme (borrowed); left as it was on failure.
+ELG_EXPORT void elg_env_theme(const EnvironmentValues* environment, ElgTheme* result) {
     ELG_TRY
-    *result = environment->get<ThemeKey>();
+    cpp_theme(*result) = environment->get<ThemeKey>();
     ELG_CATCH_VOID
 }
 
@@ -844,7 +844,7 @@ ELG_EXPORT void elg_env_set_color_scheme(EnvironmentValues* environment, ElgProp
 /// Sets the theme (ThemeKey).
 ///
 /// @param environment The environment to change (borrowed).
-/// @param value The theme: an ElgProp of elg::Theme (kind 0: `elg::Theme*`).
+/// @param value The theme: an ElgProp of elg::Theme (kind 0: `ElgTheme*`).
 ELG_EXPORT void elg_env_set_theme(EnvironmentValues* environment, ElgProp value) {
     const Consumed consumed(value);
     ELG_TRY
@@ -1513,6 +1513,8 @@ ELG_EXPORT void elg_layouts_core(ElgStrSink out, void* ctx) {
     ELG_LAYOUT(ElgStrokeStyle);
     ELG_LAYOUT(ElgRunStyle);
     ELG_LAYOUT(ElgImageSource);
+    ELG_LAYOUT(ElgTheme);
+    ELG_LAYOUT(ElgLayoutChild);
     ELG_LAYOUT(ElgWindowDesc);
     ELG_LAYOUT(ElgPose);
     ELG_CATCH_VOID

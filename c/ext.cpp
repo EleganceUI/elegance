@@ -23,7 +23,7 @@ struct ElgLayoutCall {
     int32_t op;
     ElgProposedSize proposal;    ///< Ops 0 and 1: the size the parent proposes.
     ElgRect bounds;              ///< Op 1: where the children go, with the size reported for `proposal`.
-    const LayoutChild* children; ///< Ops 0 and 1: the children, valid during the call.
+    const ElgLayoutChild* children; ///< Ops 0 and 1: the children, valid during the call.
     size_t count;                ///< Number of `children`.
     /// Ops 0 and 1: the view's cache storage, for the elg_layout_cache_* functions, valid during the
     /// call; null: uncached.
@@ -61,13 +61,13 @@ public:
 
 private:
     Size size(ProposedSize proposal, Rect, std::span<const LayoutChild> children, LayoutCache* cache) const {
-        ElgLayoutCall call{0, c_proposed(proposal), {}, children.data(), children.size(), cache};
+        ElgLayoutCall call{0, c_proposed(proposal), {}, c_children(children.data()), children.size(), cache};
         ElgSize result{};
         f_->call(&call, &result);
         return {result.width, result.height};
     }
     void place(Rect bounds, ProposedSize proposal, std::span<const LayoutChild> children, LayoutCache* cache) const {
-        ElgLayoutCall call{1, c_proposed(proposal), c_rect(bounds), children.data(), children.size(), cache};
+        ElgLayoutCall call{1, c_proposed(proposal), c_rect(bounds), c_children(children.data()), children.size(), cache};
         f_->call(&call, nullptr);
     }
 
@@ -141,9 +141,9 @@ ELG_EXPORT void elg_layout_cache_set_stale(LayoutCache* cache, bool stale) {
 ///   (borrowed).
 /// @param proposal The proposed size.
 /// @return The child's size in points, or zero on failure.
-ELG_EXPORT ElgSize elg_layout_child_size_that_fits(const LayoutChild* child, ElgProposedSize proposal) {
+ELG_EXPORT ElgSize elg_layout_child_size_that_fits(const ElgLayoutChild* child, ElgProposedSize proposal) {
     ELG_TRY
-    const Size s = child->size_that_fits(proposed(proposal));
+    const Size s = cpp_children(child)->size_that_fits(proposed(proposal));
     return {s.width, s.height};
     ELG_CATCH(ElgSize{})
 }
@@ -154,27 +154,27 @@ ELG_EXPORT ElgSize elg_layout_child_size_that_fits(const LayoutChild* child, Elg
 ///   (borrowed).
 /// @param position Where its top-left corner goes, in points.
 /// @param proposal The proposed size.
-ELG_EXPORT void elg_layout_child_place(const LayoutChild* child, ElgPoint position, ElgProposedSize proposal) {
+ELG_EXPORT void elg_layout_child_place(const ElgLayoutChild* child, ElgPoint position, ElgProposedSize proposal) {
     ELG_TRY
-    child->place(point(position), proposed(proposal));
+    cpp_children(child)->place(point(position), proposed(proposal));
     ELG_CATCH_VOID
 }
 /// Wraps `LayoutChild::layout_priority()`.
 ///
 /// @param child A child (borrowed).
 /// @return The child's layout priority. 0 on failure.
-ELG_EXPORT float elg_layout_child_priority(const LayoutChild* child) {
+ELG_EXPORT float elg_layout_child_priority(const ElgLayoutChild* child) {
     ELG_TRY
-    return child->layout_priority();
+    return cpp_children(child)->layout_priority();
     ELG_CATCH(0)
 }
 /// Wraps `LayoutChild::is_spacer()`.
 ///
 /// @param child A child (borrowed).
 /// @return true if the child is a Spacer. False on failure.
-ELG_EXPORT bool elg_layout_child_is_spacer(const LayoutChild* child) {
+ELG_EXPORT bool elg_layout_child_is_spacer(const ElgLayoutChild* child) {
     ELG_TRY
-    return child->is_spacer();
+    return cpp_children(child)->is_spacer();
     ELG_CATCH(false)
 }
 
@@ -246,9 +246,9 @@ ELG_EXPORT View* elg_mod_rust_layout_value(const View* v, ElgClosure owner) {
 /// @param child A child (borrowed).
 /// @return The `data` of the elg_mod_rust_layout_value() closure that matched, owned by its view;
 ///   null if none did, or on failure.
-ELG_EXPORT const void* elg_layout_child_rust_value(const LayoutChild* child) {
+ELG_EXPORT const void* elg_layout_child_rust_value(const ElgLayoutChild* child) {
     ELG_TRY
-    return child->value<RustLayoutKey>().data;
+    return cpp_children(child)->value<RustLayoutKey>().data;
     ELG_CATCH(nullptr)
 }
 
@@ -293,7 +293,7 @@ struct ElgLayoutModifierCall {
     int32_t op; ///< 0: size_that_fits (ret ElgSize*), 1: place, 2: layout_priority (ret ElgOptLen*)
     ElgProposedSize proposal;   ///< Ops 0 and 1: the size the parent proposes.
     ElgRect bounds;             ///< Op 1: where the view goes, with the size reported for `proposal`.
-    const LayoutChild* content; ///< Ops 0 and 1: the wrapped content, valid during the call; op 2: null.
+    const ElgLayoutChild* content; ///< Ops 0 and 1: the wrapped content, valid during the call; op 2: null.
 };
 
 namespace {
@@ -303,13 +303,13 @@ public:
     explicit RustLayoutModifier(SharedFn f) : f_(std::move(f)) {}
 
     [[nodiscard]] Size size_that_fits(ProposedSize proposal, const LayoutChild& content) const override {
-        ElgLayoutModifierCall call{0, c_proposed(proposal), {}, &content};
+        ElgLayoutModifierCall call{0, c_proposed(proposal), {}, c_children(&content)};
         ElgSize result{};
         f_->call(&call, &result);
         return {result.width, result.height};
     }
     void place(Rect bounds, ProposedSize proposal, const LayoutChild& content) const override {
-        ElgLayoutModifierCall call{1, c_proposed(proposal), c_rect(bounds), &content};
+        ElgLayoutModifierCall call{1, c_proposed(proposal), c_rect(bounds), c_children(&content)};
         f_->call(&call, nullptr);
     }
     [[nodiscard]] std::optional<float> layout_priority() const override {

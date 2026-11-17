@@ -158,9 +158,9 @@ ELG_EXPORT ElgPoint elg_aligned_position(ElgRect container, ElgSize content, Elg
 /// @param count How many `children` there are.
 /// @return The size the stack takes; zero on failure.
 ELG_EXPORT ElgSize elg_stack_layout_size(int32_t kind, ElgAlignment a, ElgOptLen spacing, ElgProposedSize proposal,
-                                         const LayoutChild* children, size_t count) {
+                                         const ElgLayoutChild* children, size_t count) {
     ELG_TRY
-    const std::span<const LayoutChild> span(children, count);
+    const std::span<const LayoutChild> span(cpp_children(children), count);
     Size result;
     if (kind == 0) {
         result = VStackLayout(static_cast<HorizontalAlignment>(a.horizontal), length(spacing)).size_that_fits(proposed(proposal), span);
@@ -184,9 +184,9 @@ ELG_EXPORT ElgSize elg_stack_layout_size(int32_t kind, ElgAlignment a, ElgOptLen
 /// @param children The custom layout's children (borrowed).
 /// @param count How many `children` there are.
 ELG_EXPORT void elg_stack_layout_place(int32_t kind, ElgAlignment a, ElgOptLen spacing, ElgRect bounds,
-                                       ElgProposedSize proposal, const LayoutChild* children, size_t count) {
+                                       ElgProposedSize proposal, const ElgLayoutChild* children, size_t count) {
     ELG_TRY
-    const std::span<const LayoutChild> span(children, count);
+    const std::span<const LayoutChild> span(cpp_children(children), count);
     if (kind == 0) {
         VStackLayout(static_cast<HorizontalAlignment>(a.horizontal), length(spacing)).place_children(rect(bounds), proposed(proposal), span);
     } else if (kind == 1) {
@@ -3057,8 +3057,8 @@ ELG_EXPORT View* elg_mod_color_scheme(const View* v, ElgProp scheme) {
 /// @param v The view (borrowed).
 /// @param theme The theme (borrowed; copied).
 /// @return `v` with the theme set inside (a new view, owned by the caller), or null on failure.
-ELG_EXPORT View* elg_mod_theme(const View* v, const Theme* theme) {
-    MOD_TRY(v->theme(*theme))
+ELG_EXPORT View* elg_mod_theme(const View* v, const ElgTheme* theme) {
+    MOD_TRY(v->theme(cpp_theme(*theme)))
 }
 /// Wraps `View::disabled()`: controls inside stop responding and look disabled.
 ///
@@ -3302,9 +3302,9 @@ ELG_EXPORT View* elg_grid(const ElgGridDesc* desc, View** children, size_t count
 /// @param children The custom layout's children (borrowed).
 /// @param count How many `children` there are.
 /// @return The size the grid takes; zero on failure.
-ELG_EXPORT ElgSize elg_grid_layout_size(const ElgGridDesc* desc, ElgProposedSize proposal, const LayoutChild* children, size_t count) {
+ELG_EXPORT ElgSize elg_grid_layout_size(const ElgGridDesc* desc, ElgProposedSize proposal, const ElgLayoutChild* children, size_t count) {
     ELG_TRY
-    const Size s = grid_layout(*desc)->size_that_fits(proposed(proposal), std::span<const LayoutChild>(children, count));
+    const Size s = grid_layout(*desc)->size_that_fits(proposed(proposal), std::span<const LayoutChild>(cpp_children(children), count));
     return {s.width, s.height};
     ELG_CATCH(ElgSize{})
 }
@@ -3318,9 +3318,9 @@ ELG_EXPORT ElgSize elg_grid_layout_size(const ElgGridDesc* desc, ElgProposedSize
 /// @param children The custom layout's children (borrowed).
 /// @param count How many `children` there are.
 ELG_EXPORT void elg_grid_layout_place(const ElgGridDesc* desc, ElgRect bounds, ElgProposedSize proposal,
-                                      const LayoutChild* children, size_t count) {
+                                      const ElgLayoutChild* children, size_t count) {
     ELG_TRY
-    grid_layout(*desc)->place_children(rect(bounds), proposed(proposal), std::span<const LayoutChild>(children, count));
+    grid_layout(*desc)->place_children(rect(bounds), proposed(proposal), std::span<const LayoutChild>(cpp_children(children), count));
     ELG_CATCH_VOID
 }
 

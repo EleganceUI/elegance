@@ -89,8 +89,6 @@ typedef struct ElgGraphicsContext ElgGraphicsContext;
 typedef struct ElgItemKeys ElgItemKeys;
 /// A handle to an elg::LayoutCache.
 typedef struct ElgLayoutCache ElgLayoutCache;
-/// A handle to an elg::LayoutChild.
-typedef struct ElgLayoutChild ElgLayoutChild;
 /// A handle to an elg::MenuConfiguration.
 typedef struct ElgMenuConfiguration ElgMenuConfiguration;
 /// A handle to an elg::MenuItemConfiguration.
@@ -147,8 +145,6 @@ typedef struct ElgTextFieldConfiguration ElgTextFieldConfiguration;
 typedef struct ElgTextFieldStyle ElgTextFieldStyle;
 /// A handle to a std::vector<TextSpan>.
 typedef struct ElgTextSpans ElgTextSpans;
-/// A handle to an elg::Theme.
-typedef struct ElgTheme ElgTheme;
 /// A handle to an elg::ToggleConfiguration.
 typedef struct ElgToggleConfiguration ElgToggleConfiguration;
 /// A handle to a std::shared_ptr<const ToggleStyle>.
@@ -644,6 +640,19 @@ typedef struct ElgImageSource {
     /// 0: the default, 8192.
     uint32_t max_side;
 } ElgImageSource;
+
+/// An elg::Theme: its light colors, then its dark ones (17 each, in elg::ColorTokens' order), then
+/// its blur radii (7, in elg::BlurTokens' order).
+typedef struct ElgTheme {
+    ElgColor colors[34]; ///< `light`, then `dark`.
+    float blur[7];       ///< `blur`.
+} ElgTheme;
+
+/// An elg::LayoutChild, which a custom layout gets an array of: one pointer, Elegance's, only for
+/// passing back to the C API.
+typedef struct ElgLayoutChild {
+    void* element; ///< Elegance's.
+} ElgLayoutChild;
 
 /// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
 typedef struct ElgWindowDesc {
@@ -1368,7 +1377,7 @@ int32_t elg_env_color_scheme(const ElgEnvironmentValues* environment);
 /// Reads the environment's theme (ThemeKey). A tracked read.
 ///
 /// @param environment The environment (borrowed).
-/// @param result Receives the elg::Theme (borrowed); left as it was on failure.
+/// @param result Receives the theme (borrowed); left as it was on failure.
 void elg_env_theme(const ElgEnvironmentValues* environment, ElgTheme* result);
 
 /// Reads the environment's foreground (ForegroundKey): the color of text and unfilled shapes. A
@@ -1449,7 +1458,7 @@ void elg_env_set_color_scheme(ElgEnvironmentValues* environment, ElgProp value);
 /// Sets the theme (ThemeKey).
 ///
 /// @param environment The environment to change (borrowed).
-/// @param value The theme: an ElgProp of elg::Theme (kind 0: `elg::Theme*`).
+/// @param value The theme: an ElgProp of elg::Theme (kind 0: `ElgTheme*`).
 void elg_env_set_theme(ElgEnvironmentValues* environment, ElgProp value);
 
 /// Sets the foreground (ForegroundKey): the color of text and unfilled shapes.

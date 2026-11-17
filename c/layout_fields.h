@@ -45,6 +45,8 @@
 #define ELG_FIELDS_ElgStrokeStyle(X) X(ElgStrokeStyle, width) X(ElgStrokeStyle, cap) X(ElgStrokeStyle, join) X(ElgStrokeStyle, miter_limit) X(ElgStrokeStyle, dash) X(ElgStrokeStyle, dash_count) X(ElgStrokeStyle, dash_phase)
 #define ELG_FIELDS_ElgRunStyle(X) X(ElgRunStyle, has_weight) X(ElgRunStyle, weight) X(ElgRunStyle, italic) X(ElgRunStyle, family) X(ElgRunStyle, has_color) X(ElgRunStyle, color) X(ElgRunStyle, has_background) X(ElgRunStyle, background) X(ElgRunStyle, underline) X(ElgRunStyle, strikethrough) X(ElgRunStyle, keep_together)
 #define ELG_FIELDS_ElgImageSource(X) X(ElgImageSource, system_name) X(ElgImageSource, file) X(ElgImageSource, data) X(ElgImageSource, scale) X(ElgImageSource, max_pixels) X(ElgImageSource, max_side)
+#define ELG_FIELDS_ElgTheme(X) X(ElgTheme, colors) X(ElgTheme, blur)
+#define ELG_FIELDS_ElgLayoutChild(X) X(ElgLayoutChild, element)
 #define ELG_FIELDS_ElgWindowDesc(X) X(ElgWindowDesc, title) X(ElgWindowDesc, width) X(ElgWindowDesc, height) X(ElgWindowDesc, resizable) X(ElgWindowDesc, has_min_size) X(ElgWindowDesc, min_size) X(ElgWindowDesc, has_background) X(ElgWindowDesc, background) X(ElgWindowDesc, title_bar) X(ElgWindowDesc, has_system_controls_position) X(ElgWindowDesc, system_controls_position) X(ElgWindowDesc, transparent) X(ElgWindowDesc, opacity) X(ElgWindowDesc, fullscreen)
 #define ELG_FIELDS_ElgPose(X) X(ElgPose, opacity) X(ElgPose, scale) X(ElgPose, x) X(ElgPose, y)
 #define ELG_FIELDS_ElgTextFieldOptions(X) X(ElgTextFieldOptions, on_submit) X(ElgTextFieldOptions, secure) X(ElgTextFieldOptions, line_limit) X(ElgTextFieldOptions, styler) X(ElgTextFieldOptions, on_key)
