@@ -12,10 +12,14 @@
 #include "gpu/path_renderer.h"
 #include "gpu/quad_renderer.h"
 #include "gpu/texture_cache.h"
-#include "gpu/video_textures.h"
 #include "gpu/webgpu.h"
+#include "media/image_decode.h"
+#include "media/video_source.h"
 #include "render/frame_sources.h"
+#include "render/gpu_image.h"
+#include "render/video_textures.h"
 #include "render/window_target.h"
+#include "text/atlas.h"
 
 #include <elg/error.h>
 
@@ -78,17 +82,21 @@ void RenderThread::run(std::promise<void> ready) noexcept {
     };
 
     try {
+        // Decoders that make frames in GPU memory hand them to this renderer's device, once it
+        // exists and while it runs.
+        set_native_frame_importer({&imports_native_frames, &import_native_frame});
         // Declaration order is destruction order in reverse: windows, then pipelines and the
         // atlas, then the device and the instance.
         const gpu::Instance instance;
         const gpu::Device device(instance);
+        set_max_texture_side(device.max_texture_side()); // images decode to fit this device's textures
         const wgpu::BindGroupLayout image_layout = gpu::create_image_layout(device.handle());
-        gpu::AtlasTexture atlas(device, image_layout);
+        gpu::AtlasTexture atlas(device, image_layout, kAtlasSize);
         gpu::QuadRenderer quads(device, image_layout);
         gpu::BlurRenderer blur(device, image_layout);
         gpu::PathRenderer paths(device);
         gpu::TextureCache textures(device, image_layout); // outlives the windows drawing with it
-        gpu::VideoTextures videos(device, image_layout);
+        VideoTextures videos(device, image_layout);
         const RenderResources resources{quads, textures, videos, blur, paths, image_layout, atlas.group()};
         // Video decoders share frames with this device: they must run on the same GPU.
         if (const auto luid = device.luid()) {
@@ -121,7 +129,11 @@ void RenderThread::run(std::promise<void> ready) noexcept {
                                    windows.erase(remove.window_id);
                                    sources.remove(remove.window_id);
                                },
-                               [&](const AtlasUploadCommand& upload) { atlas.upload(upload.uploads); },
+                               [&](const AtlasUploadCommand& upload) {
+                                   for (const GlyphUpload& glyphs : upload.uploads) {
+                                       atlas.upload(glyphs.x, glyphs.y, glyphs.width, glyphs.height, glyphs.rgba);
+                                   }
+                               },
                                [&](const WindowVisibilityCommand& visibility) {
                                    sources.set_visible(visibility.window_id, visibility.visible);
                                },

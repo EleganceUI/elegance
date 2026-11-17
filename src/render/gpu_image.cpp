@@ -4,8 +4,11 @@
 
 #include <elg/gpu_image.h>
 
+#include "render/gpu_image.h"
+
 #include "core/ui_tasks.h"
 #include "gpu/external_image.h"
+#include "gpu/native_image.h"
 #include "media/video_source.h"
 
 #include <atomic>
@@ -20,23 +23,42 @@ namespace {
 std::atomic<std::uint64_t> next_external_id{1ull << 61};
 } // namespace
 
+bool imports_native_frames() {
+    return gpu::imports_native_images();
+}
 
-class ExternalImageSource final : public VideoSource {
-public:
-    // Publishing and clearing wake the render thread: it never looks for frames on its own.
-    ExternalImageSource(std::uint32_t width, std::uint32_t height, bool flip)
-        : VideoSource(true), flipped(flip), natural_size_{static_cast<float>(width), static_cast<float>(height)} {
-        size = natural_size_;
-        ready = true;
+std::optional<VideoFrame> import_native_frame(const VideoFrame& native) {
+    if (native.kind != VideoFrame::Kind::native || !native.native) {
+        return std::nullopt;
     }
-    void play() override {}
-    void pause() override {}
-    void seek(double) override {}
-    void set_volume(float) override {}
-    void set_muted(bool) override {}
-    void set_looping(bool) override {}
+    gpu::NativeImport imported = gpu::import_native_image(native.native.get());
+    if (!imported.image) {
+        return std::nullopt;
+    }
+    // As a GpuImage's published frame.
+    VideoFrame frame;
+    frame.kind = VideoFrame::Kind::external;
+    frame.width = imported.width;
+    frame.height = imported.height;
+    frame.source_id = native.source_id;
+    frame.texture_id = next_external_id.fetch_add(1, std::memory_order_relaxed);
+    frame.frame_id = frame.texture_id;
+    imported.image->accept(); // its release follows the last reference
+    frame.external = std::move(imported.image);
+    return frame;
+}
 
-    std::uint32_t publish(const ElgGpuImageFrame& input) {
+
+// A GPU image's frames: the last published one, until it's cleared. Publishing and clearing wake
+// the render thread: it never looks for frames on its own.
+class ExternalImageFrames final : public FrameSource {
+public:
+    explicit ExternalImageFrames(Size natural_size) : FrameSource(true), natural_size_(natural_size) {}
+
+    // Any thread. When the size changes and no task for the views' size is pending,
+    // `post_size_task` posts one, which reads the size with take_size().
+    template <typename PostSizeTask>
+    std::uint32_t publish(const ElgGpuImageFrame& input, PostSizeTask post_size_task) {
         if (!input.width || !input.height || !input.release ||
             (input.format != ELG_GPU_IMAGE_RGBA8 && input.format != ELG_GPU_IMAGE_BGRA8) ||
             input.transport < ELG_GPU_IMAGE_IOSURFACE || input.transport > ELG_GPU_IMAGE_VULKAN_OPAQUE_FD ||
@@ -77,23 +99,7 @@ public:
                                        natural_size_.height != next_size.height)) {
                 // Queue before accepting ownership so allocation failure leaves the old frame
                 // intact. The task takes this mutex only after publication commits.
-                post_ui_task([weak = std::weak_ptr<ExternalImageSource>(
-                                  std::static_pointer_cast<ExternalImageSource>(shared_from_this()))] {
-                    if (const auto source = weak.lock()) {
-                        Size latest;
-                        {
-                            const std::lock_guard source_lock(source->mutex_);
-                            latest = source->natural_size_;
-                            source->size_task_pending_ = false;
-                        }
-                        // Read the latest metadata, not captured dimensions or a GPU frame.
-                        // A racing publication queues the next task; UI tasks run in order.
-                        const auto previous = source->size.peek();
-                        if (previous.width != latest.width || previous.height != latest.height) {
-                            source->size = latest;
-                        }
-                    }
-                });
+                post_size_task();
                 size_task_pending_ = true;
             }
             external->accept();
@@ -117,6 +123,13 @@ public:
         }
         notify_new_frame();
     }
+    // UI thread, in the task publish() posted: the latest size. A size that changes after this
+    // posts the next task.
+    Size take_size() {
+        const std::lock_guard lock(mutex_);
+        size_task_pending_ = false;
+        return natural_size_;
+    }
     bool update() override {
         const std::lock_guard lock(mutex_);
         return std::exchange(reported_, number_) != number_;
@@ -125,13 +138,54 @@ public:
         const std::lock_guard lock(mutex_);
         return frame_; // strong snapshot reservation, not a weak owner notification
     }
-    const bool flipped;
 private:
     mutable std::mutex mutex_;
     Size natural_size_;
     bool size_task_pending_ = false;
     std::optional<VideoFrame> frame_;
     std::uint64_t number_ = 0, reported_ = 0;
+};
+
+// A GPU image's views' states, and its frames.
+class ExternalImageSource final : public VideoSource {
+public:
+    ExternalImageSource(std::uint32_t width, std::uint32_t height, bool flip)
+        : flipped(flip),
+          frames_(std::make_shared<ExternalImageFrames>(Size{static_cast<float>(width), static_cast<float>(height)})) {
+        size = Size{static_cast<float>(width), static_cast<float>(height)};
+        ready = true;
+    }
+    std::shared_ptr<FrameSource> frames() override { return frames_; }
+    void play() override {}
+    void pause() override {}
+    void seek(double) override {}
+    void set_volume(float) override {}
+    void set_muted(bool) override {}
+    void set_looping(bool) override {}
+
+    // Any thread.
+    std::uint32_t publish(const ElgGpuImageFrame& input) {
+        return frames_->publish(input, [this] {
+            post_ui_task([weak = std::weak_ptr<ExternalImageSource>(
+                              std::static_pointer_cast<ExternalImageSource>(shared_from_this()))] {
+                if (const auto source = weak.lock()) {
+                    // Read the latest metadata, not captured dimensions or a GPU frame.
+                    // A racing publication queues the next task; UI tasks run in order.
+                    const Size latest = source->frames_->take_size();
+                    const auto previous = source->size.peek();
+                    if (previous.width != latest.width || previous.height != latest.height) {
+                        source->size = latest;
+                    }
+                }
+            });
+        });
+    }
+    void clear() { frames_->clear(); }
+
+    const bool flipped;
+
+private:
+    const std::shared_ptr<ExternalImageFrames> frames_;
 };
 } // namespace elg::detail
 

@@ -9,6 +9,7 @@
 
 #include "core/log.h"
 #include "core/os_backend.h"
+#include "net/net_backend.h"
 
 #include <boost/asio/ip/address.hpp>
 #include <boost/url.hpp>
@@ -20,6 +21,7 @@
 #include <format>
 #include <map>
 #include <mutex>
+#include <variant>
 #include <vector>
 
 namespace elg::detail::net {
@@ -236,6 +238,24 @@ ProxyChoice proxy_from_windows_settings(std::string_view proxies, std::string_vi
     return any ? parse_proxy_url(*any) : ProxyChoice(std::nullopt);
 }
 
+namespace {
+
+// The system's settings for a request to `scheme` and `host`, as a choice.
+ProxyChoice choice_of(SystemProxy system, std::string_view scheme, std::string_view host) {
+    if (auto* server = std::get_if<SystemProxyServer>(&system)) {
+        return Proxy{std::move(server->host), std::move(server->port), {}};
+    }
+    if (const auto* list = std::get_if<SystemProxyList>(&system)) {
+        return proxy_from_windows_settings(list->proxies, list->bypass, scheme, host);
+    }
+    if (auto* error = std::get_if<SystemProxyError>(&system)) {
+        return std::unexpected(std::move(error->message));
+    }
+    return std::nullopt; // directly
+}
+
+} // namespace
+
 ProxyChoice find_proxy(std::string_view scheme, std::string_view host, std::string_view port) {
     if (is_loopback(host)) {
         return std::nullopt;
@@ -255,7 +275,7 @@ ProxyChoice find_proxy(std::string_view scheme, std::string_view host, std::stri
             return it->second.first;
         }
     }
-    ProxyChoice choice = system_proxy(scheme, host, port);
+    ProxyChoice choice = choice_of(system_proxy(scheme, host, port), scheme, host);
     const std::lock_guard lock(mutex);
     if (remembered.size() > 256) {
         remembered.clear();

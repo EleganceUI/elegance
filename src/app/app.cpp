@@ -17,7 +17,8 @@
 #include "platform/system_text.h"
 #include "reactive/runtime.h"
 #include "render/frame_mailbox.h"
-#include "render/path_cache.h"
+#include "view/menu_bar_view.h"
+#include "view/path_cache.h"
 #include "render/render_thread.h"
 #include "text/text_system.h"
 #include "view/animated.h"
@@ -55,6 +56,21 @@ namespace {
 
 // Whether an App is running, on whichever thread (App::run).
 std::atomic<bool> g_app_running{false};
+
+// A window's native handles, as the platform gives them, in the form the GPU layer takes.
+gpu::SurfaceSource gpu_surface(const platform::SurfaceSource& source) {
+    using From = platform::SurfaceSource::Kind;
+    using To = gpu::SurfaceSource::Kind;
+    To kind = To::none;
+    switch (source.kind) {
+    case From::none: kind = To::none; break;
+    case From::win32: kind = To::win32; break;
+    case From::metal: kind = To::metal; break;
+    case From::xlib: kind = To::xlib; break;
+    case From::wayland: kind = To::wayland; break;
+    }
+    return {.kind = kind, .display = source.display, .handle = source.handle, .xlib_window = source.xlib_window};
+}
 
 // How long the UI thread waits for a frame to be presented when it must be on screen before
 // continuing (first frame, live resize). Bounded so a stuck driver can't freeze the app.
@@ -204,7 +220,7 @@ EnvironmentValues with_window(EnvironmentValues environment, const std::shared_p
 struct LiveWindow {
     LiveWindow(WindowEntry& window_entry, TextSystem& text, EnvironmentValues base,
                const PopupSink* popups, const platform::PopupSpec* popup = nullptr, int menu_level = -1)
-        : entry(&window_entry), window(window_entry.desc, popup), is_popup(popup != nullptr),
+        : entry(&window_entry), window_owner(platform::create_window(window_entry.desc, popup)), window(*window_owner), is_popup(popup != nullptr),
           state(std::make_shared<WindowState>(WindowState{.window = &window,
                                                           .title_bar = window_entry.desc.title_bar,
                                                           .system_controls = State<Rect>(window.system_controls_frame())})),
@@ -288,7 +304,8 @@ struct LiveWindow {
     }
 
     WindowEntry* entry;
-    platform::Window window;
+    std::unique_ptr<platform::Window> window_owner; // made by the platform (create_window())
+    platform::Window& window;
     bool is_popup;
     bool closing = false; // a popup animating out: it takes no input
     // Popups: where they go, kept by their anchor and re-fitted as their content changes size.
@@ -496,7 +513,8 @@ int App::run() {
     // Declaration order is teardown order in reverse: the render thread stops first (with the
     // GPU and the windows' surfaces), then windows go, then SDL.
     const CrashHandlerScope crash_handlers;
-    platform::Platform platform;
+    const std::unique_ptr<platform::Platform> platform_owner = platform::create_platform();
+    platform::Platform& platform = *platform_owner;
     self.platform = &platform;
     // What this run handed the system to call back goes with it: notification click handlers and
     // the native menu bar's command (which refers to this function's locals).
@@ -732,7 +750,7 @@ int App::run() {
     const ScopeExit release_rendered([] { run_ui_releases(); });
     const RenderThread renderer(mailbox, [&platform] { platform.wake(); });
     for (const auto& live : windows) {
-        mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), platform::see_through(live->entry->desc),
+        mailbox.post(AddWindowCommand{live->window.id(), gpu_surface(live->window.surface_source()), platform::see_through(live->entry->desc),
                                       live->window.native_handle()});
     }
 
@@ -1002,7 +1020,7 @@ int App::run() {
         inspector_entry->desc = {.title = "Inspector — " + inspector->title.peek(), .width = 480, .height = 720};
         inspector_entry->content = [model = inspector] { return InspectorView(model); };
         auto live = std::make_unique<LiveWindow>(*inspector_entry, text, base, &popup_sink);
-        mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), false, live->window.native_handle()});
+        mailbox.post(AddWindowCommand{live->window.id(), gpu_surface(live->window.surface_source()), false, live->window.native_handle()});
         // Interrupted from here on (an exception), the render thread lets go of the window first.
         bool opened = false;
         const ScopeExit withdraw([&, id = live->window.id()] {
@@ -1128,7 +1146,7 @@ int App::run() {
         live->fit = LiveWindow::PopupFit{.placement = request.placement, .anchor = request.anchor, .opener = opener_id};
         fit_popup(*live);
 
-        mailbox.post(AddWindowCommand{live->window.id(), live->window.surface_source(), true, live->window.native_handle()});
+        mailbox.post(AddWindowCommand{live->window.id(), gpu_surface(live->window.surface_source()), true, live->window.native_handle()});
         // Interrupted from here on (an exception), the render thread lets go of the window first.
         bool opened = false;
         const ScopeExit withdraw([&, id = live->window.id()] {
@@ -1741,10 +1759,6 @@ int App::run() {
         std::rethrow_exception(exit_error); // the scope exits above end the run first
     }
     return 0;
-}
-
-const char* version() {
-    return ELG_VERSION_STRING;
 }
 
 void post_to_ui_thread(std::function<void()> task) {

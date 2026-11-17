@@ -181,6 +181,7 @@ jobs:
                   ELG_GPU_BACKEND: vulkan
               run: |
                   xvfb-run -a -s "-screen 0 1280x1024x24" build/linux-release/bin/elegance_tests "[.gpu]"
+                  xvfb-run -a -s "-screen 0 1280x1024x24" build/linux-release/bin/elegance_gpu_tests "[.gpu]"
                   xvfb-run -a -s "-screen 0 1280x1024x24" build/linux-release/bin/sandbox --smoke-test
                   xvfb-run -a -s "-screen 0 1280x1024x24" build/linux-debug/bin/elegance-preview --smoke-test
                   build/linux-release/bin/elegance_tests "[.network]"
@@ -205,3 +206,10 @@ jobs:
             - name: C API exceptions
               if: ${{ matrix.checks == true && !cancelled() }}
               run: python3 tools/c-api-check.py
+
+            # The layers' folders, dependencies, backend interfaces, OS code and includes
+            # (ELGSPEC-0001.R1 to R8); each finding names the file, what it includes and the
+            # requirement (ELGSPEC-0001.R10). ctest runs it in every job too.
+            - name: Layers
+              if: ${{ matrix.checks == true && !cancelled() }}
+              run: python3 tools/layer-check.py

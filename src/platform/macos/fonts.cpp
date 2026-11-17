@@ -2,11 +2,10 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Font files on macOS (text/font_library.h): SF, and Apple's fonts for other scripts and symbols.
-// And the glyph cache's folder (text/text_backend.h).
+// Font files on macOS (text/text_backend.h): SF, and Apple's fonts for other scripts and symbols.
+// And the glyph cache's folder.
 // TODO: real system font discovery (CoreText).
 
-#include "text/font_library.h"
 #include "text/text_backend.h"
 
 #include <filesystem>
@@ -14,7 +13,7 @@
 
 namespace elg::detail {
 
-std::vector<std::filesystem::path> system_font_candidates(Weight, bool) {
+std::vector<std::filesystem::path> system_font_candidates(int, bool) {
     std::vector<std::filesystem::path> files;
     files.push_back("/System/Library/Fonts/SFNS.ttf");
     files.push_back("/System/Library/Fonts/Helvetica.ttc");

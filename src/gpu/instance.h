@@ -6,7 +6,7 @@
 #define ELG_GPU_INSTANCE_H
 
 #include "gpu/webgpu_types.h"
-#include "platform/platform.h"
+#include "gpu/surface_source.h"
 
 #include <memory>
 
@@ -31,7 +31,7 @@ public:
     void wait(wgpu::Future future) const;
 
     // A surface for a window. The window must outlive it.
-    [[nodiscard]] wgpu::Surface create_surface(const platform::SurfaceSource& source) const;
+    [[nodiscard]] wgpu::Surface create_surface(const SurfaceSource& source) const;
 
 private:
     std::unique_ptr<wgpu::Instance> instance_;

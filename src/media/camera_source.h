@@ -7,6 +7,7 @@
 
 #include <elg/capture.h>
 
+#include "media/frame_source.h"
 #include "media/video_source.h"
 
 #include <cstdint>
@@ -17,21 +18,17 @@
 
 namespace elg::detail {
 
-// A camera (design.md §13.3), as each OS captures it (platform/<os>/camera.*). play() starts
-// capturing and pause() stops; frames reach the renderer through update() and current().
+// A camera (design.md §13.3), as each OS captures it (platform/<os>/camera.*, through
+// media/video_backend.h). play() starts capturing and pause() stops; frames reach the renderer
+// through update() and current().
 class CameraSource : public VideoSource {
 public:
     // UI thread. The newest frame as a PNG image (not mirrored), or nullopt before the first.
     virtual std::optional<std::vector<unsigned char>> snapshot() const = 0;
 
 protected:
-    // `wakes_for_frames`: see VideoSource::wakes_for_frames().
-    explicit CameraSource(bool wakes_for_frames = false) : VideoSource(wakes_for_frames) {}
+    CameraSource() = default;
 };
-
-// The system's cameras, and one of them opened (stopped). UI thread.
-std::vector<CameraDevice> platform_camera_devices();
-std::shared_ptr<CameraSource> create_platform_camera(CameraOptions options);
 
 // Converts a packed frame (VideoFrame::Format, as in VideoFrame::pixels) to opaque BGRA, BT.601 or
 // BT.709 by `matrix`. For snapshots of cameras that deliver YUV.

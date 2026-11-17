@@ -14,6 +14,7 @@
 #include "text/text_system.h"
 #include "view/element.h"
 #include "view/focus.h"
+#include "view/styled_draw.h"
 #include "view/window_services.h"
 
 #include <elg/environment.h>

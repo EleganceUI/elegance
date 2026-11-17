@@ -5,7 +5,7 @@
 #ifndef ELG_RENDER_FRAME_SOURCES_H
 #define ELG_RENDER_FRAME_SOURCES_H
 
-#include "media/video_source.h"
+#include "media/frame_source.h"
 #include "render/frame_mailbox.h"
 
 #include <cstdint>
@@ -17,7 +17,7 @@
 
 namespace elg::detail {
 
-// The frame sources (the VideoSources of VideoCommands) in each window's last frame, and which of
+// The frame sources of the VideoCommands in each window's last frame, and which of
 // their frames each window drew: so each window showing a source draws again when it has a new
 // frame, whichever window looked first. Sources count their new frames here: update() is called
 // once per source per round, not per window. Render thread.
@@ -49,21 +49,21 @@ public:
 
 private:
     struct Source {
-        std::shared_ptr<VideoSource> source;
+        std::shared_ptr<FrameSource> source;
         std::uint64_t frames = 0; // new frames update() reported
     };
     struct Window {
         std::optional<WindowFrame> frame; // while it shows a source
         bool visible = true;
-        std::vector<std::pair<const VideoSource*, std::uint64_t>> drawn; // Source::frames then
+        std::vector<std::pair<const FrameSource*, std::uint64_t>> drawn; // Source::frames then
     };
     // Each source's frame count as of now, for the sources `frame` shows.
-    std::vector<std::pair<const VideoSource*, std::uint64_t>> counts(const WindowFrame& frame);
+    std::vector<std::pair<const FrameSource*, std::uint64_t>> counts(const WindowFrame& frame);
     // Drops sources no window shows, and tells the rest whether a visible window shows them
-    // (VideoSource::set_shown).
+    // (FrameSource::set_shown).
     void refresh();
 
-    std::unordered_map<const VideoSource*, Source> sources_;
+    std::unordered_map<const FrameSource*, Source> sources_;
     std::unordered_map<std::uint32_t, Window> windows_;
 };
 

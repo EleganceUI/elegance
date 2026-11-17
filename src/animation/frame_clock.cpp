@@ -2,7 +2,7 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#include "view/animated.h"
+#include "animation/frame_clock.h"
 
 namespace elg::detail {
 

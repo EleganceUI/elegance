@@ -2,11 +2,10 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Font files on Linux (text/font_library.h): the system's choice through fontconfig, loaded when
+// Font files on Linux (text/text_backend.h): the system's choice through fontconfig, loaded when
 // it's there (every desktop has it), then DejaVu, Noto or Liberation where distributions usually
-// put them. And the glyph cache's folder (text/text_backend.h).
+// put them. And the glyph cache's folder.
 
-#include "text/font_library.h"
 #include "text/text_backend.h"
 
 #include "core/dynamic_library.h"
@@ -118,8 +117,7 @@ private:
 
 } // namespace
 
-std::vector<std::filesystem::path> system_font_candidates(Weight weight, bool italic) {
-    const int w = static_cast<int>(weight);
+std::vector<std::filesystem::path> system_font_candidates(int w, bool italic) {
     std::vector<std::filesystem::path> files;
     if (Fontconfig* fontconfig = Fontconfig::get()) {
         if (std::optional<std::filesystem::path> file = fontconfig->match(w, italic)) {

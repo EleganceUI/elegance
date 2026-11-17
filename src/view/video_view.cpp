@@ -147,7 +147,7 @@ public:
     void inspect(Inspection& out) const override {
         out.name = "VideoView";
         out.detail = std::format("{} × {}", size_.width, size_.height);
-        out.properties.emplace_back("playing", source_->is_playing_now() ? "yes" : "no");
+        out.properties.emplace_back("playing", source_->frames()->is_playing_now() ? "yes" : "no");
         out.properties.emplace_back("mode", mode_ == ContentMode::fit ? "fit" : "fill");
     }
 
@@ -172,7 +172,7 @@ protected:
         }
         // Mirrored: the texture read right to left; flipped: bottom to top.
         const Rect uv{mirrored_ ? 1.f : 0.f, flipped_ ? 1.f : 0.f, mirrored_ ? -1.f : 1.f, flipped_ ? -1.f : 1.f};
-        list.commands.emplace_back(VideoCommand{bounds, uv, source_, 1, mode_});
+        list.commands.emplace_back(VideoCommand{bounds, uv, source_->frames(), 1, mode_});
         if (clip) {
             list.commands.emplace_back(PopClipCommand{});
         }

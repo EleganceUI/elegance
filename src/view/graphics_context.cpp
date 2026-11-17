@@ -5,7 +5,7 @@
 #include <elg/graphics_context.h>
 
 #include "display/display_list.h"
-#include "render/path_cache.h"
+#include "view/path_cache.h"
 #include "view/animated.h"
 
 #include <algorithm>

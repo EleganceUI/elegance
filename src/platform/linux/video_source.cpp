@@ -2,13 +2,13 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Video sources on Linux (design.md §13.3): GStreamer. A playbin decodes (in hardware where the
-// system's plugins can), plays the sound and keeps it in sync; its video goes to an appsink as
-// NV12, which the render thread packs into `cpu` frames. Each frame the appsink gets wakes the
-// render thread. GStreamer is the system's (found with pkg-config when building); without it,
-// video isn't available.
+// Videos on Linux (design.md §13.3, media/video_backend.h): GStreamer. A playbin decodes (in
+// hardware where the system's plugins can), plays the sound and keeps it in sync; its video goes
+// to an appsink as NV12, which the render thread packs into `cpu` frames. Each frame the appsink
+// gets wakes the render thread. GStreamer is the system's (found with pkg-config when building);
+// without it, video isn't available.
 
-#include "media/video_source.h"
+#include "media/video_backend.h"
 
 #if defined(ELG_HAVE_GSTREAMER)
 
@@ -28,6 +28,7 @@
 #include <mutex>
 #include <stop_token>
 #include <thread>
+#include <utility>
 
 namespace elg::detail {
 
@@ -63,16 +64,15 @@ double seconds_of(gint64 nanoseconds) {
     return nanoseconds < 0 ? 0.0 : static_cast<double>(nanoseconds) / GST_SECOND;
 }
 
-class GStreamerSource final : public VideoSource {
+class GStreamerEngine final : public VideoEngine {
 public:
-    // The appsink's callbacks wake the render thread for each frame: it doesn't poll.
-    explicit GStreamerSource(std::string url) : VideoSource(true), url_(std::move(url)) {}
-    GStreamerSource(const GStreamerSource&) = delete;
-    GStreamerSource& operator=(const GStreamerSource&) = delete;
-    GStreamerSource(GStreamerSource&&) = delete;
-    GStreamerSource& operator=(GStreamerSource&&) = delete;
+    explicit GStreamerEngine(std::string url) : url_(std::move(url)) {}
+    GStreamerEngine(const GStreamerEngine&) = delete;
+    GStreamerEngine& operator=(const GStreamerEngine&) = delete;
+    GStreamerEngine(GStreamerEngine&&) = delete;
+    GStreamerEngine& operator=(GStreamerEngine&&) = delete;
 
-    ~GStreamerSource() override {
+    ~GStreamerEngine() override {
         stop_reporting(); // before the playbin it asks goes
         if (playbin_) {
             // Stopping joins the streaming threads, so no bus handler or appsink callback runs
@@ -91,11 +91,14 @@ public:
         if (sink_) {
             gst_object_unref(sink_);
         }
-        delete weak_self_;
     }
 
-    // UI thread, right after construction (bus messages need shared_from_this()).
-    void open() {
+    // The appsink's callbacks wake the render thread for each frame: it doesn't poll.
+    [[nodiscard]] bool wakes_for_frames() const noexcept override { return true; }
+
+    void open(const std::shared_ptr<FrameSourceHost>& host) override {
+        host_ = host.get();
+        weak_host_ = host;
         if (!start_gstreamer()) {
             fail("video playback needs GStreamer, which didn't start");
             return;
@@ -117,7 +120,7 @@ public:
         g_object_set(sink, "caps", caps, "sync", TRUE, "max-buffers", 1, "drop", TRUE, nullptr);
         gst_caps_unref(caps);
         // A frame to show (the first while paused, then each while playing) wakes the render
-        // thread, which takes it in update(). The callbacks get the source itself: the destructor
+        // thread, which takes it in update(). The callbacks get the engine itself: the destructor
         // stops the pipeline, and so the callbacks, first.
         GstAppSinkCallbacks callbacks{};
         callbacks.new_preroll = &on_preroll;
@@ -126,9 +129,9 @@ public:
         sink_ = GST_ELEMENT(gst_object_ref(sink));
         g_object_set(playbin_, "uri", uri.c_str(), "video-sink", sink, nullptr);
 
-        weak_self_ = new std::weak_ptr<GStreamerSource>(std::static_pointer_cast<GStreamerSource>(shared_from_this()));
+        // The bus handler gets the engine too: the destructor removes it once the pipeline stopped.
         GstBus* bus = gst_element_get_bus(playbin_);
-        gst_bus_set_sync_handler(bus, &on_message, weak_self_, nullptr);
+        gst_bus_set_sync_handler(bus, &on_message, this, nullptr);
         gst_object_unref(bus);
         // Paused: it prerolls, so the duration and size are known before playing.
         if (gst_element_set_state(playbin_, GST_STATE_PAUSED) == GST_STATE_CHANGE_FAILURE) {
@@ -146,8 +149,8 @@ public:
             seek(0);
         }
         gst_element_set_state(playbin_, GST_STATE_PLAYING);
-        playing = true;
-        playing_now_ = true;
+        host_->set_playing(true);
+        host_->set_playing_now(true);
         start_reporting();
     }
 
@@ -156,8 +159,8 @@ public:
         if (playbin_) {
             gst_element_set_state(playbin_, GST_STATE_PAUSED);
         }
-        playing = false;
-        playing_now_ = false;
+        host_->set_playing(false);
+        host_->set_playing_now(false);
     }
 
     void seek(double seconds) override {
@@ -168,7 +171,7 @@ public:
                                     static_cast<GstSeekFlags>(GST_SEEK_FLAG_FLUSH | GST_SEEK_FLAG_ACCURATE),
                                     static_cast<gint64>(seconds * GST_SECOND));
         }
-        time = seconds;
+        host_->set_time(seconds);
     }
 
     void set_volume(float value) override {
@@ -176,17 +179,17 @@ public:
         if (playbin_) {
             g_object_set(playbin_, "volume", static_cast<gdouble>(value), nullptr);
         }
-        volume = value;
+        host_->set_volume(value);
     }
 
     void set_muted(bool value) override {
         if (playbin_) {
             g_object_set(playbin_, "mute", static_cast<gboolean>(value), nullptr);
         }
-        muted = value;
+        host_->set_muted(value);
     }
 
-    void set_looping(bool value) override { looping = value; }
+    void set_looping(bool value) override { host_->set_looping(value); }
 
     // --- Render thread ---
 
@@ -213,11 +216,12 @@ public:
         if (!frame) {
             return false;
         }
-        const bool resized = !current_size_ || current_size_->width != static_cast<float>(frame->width) ||
-                             current_size_->height != static_cast<float>(frame->height);
+        const bool resized =
+            !current_size_ || current_size_->first != frame->width || current_size_->second != frame->height;
         if (resized) {
-            current_size_ = Size{static_cast<float>(frame->width), static_cast<float>(frame->height)};
-            post([size = *current_size_](GStreamerSource& source) { source.size = size; });
+            current_size_ = std::pair(frame->width, frame->height);
+            post([width = static_cast<float>(frame->width), height = static_cast<float>(frame->height)](
+                     FrameSourceHost& host) { host.set_size(width, height); });
         }
         const std::lock_guard lock(mutex_);
         current_ = std::move(frame);
@@ -230,28 +234,24 @@ public:
     }
 
 private:
+    // Runs `action` with the host on the UI thread, unless the source is gone by then (the engine
+    // lives as long as its source).
     template <typename Action>
-    void post(Action action) {
-        if (!weak_self_) {
-            return;
-        }
-        post_ui_task([weak = *weak_self_, action = std::move(action)] {
-            if (const auto source = weak.lock()) {
-                action(*source);
+    void post(Action action) const {
+        post_ui_task([weak = weak_host_, action = std::move(action)] {
+            if (const auto host = weak.lock()) {
+                action(*host);
             }
         });
     }
 
     // Any thread: the error the view shows.
     void fail(std::string message) {
-        playing_now_ = false;
+        host_->set_playing_now(false);
         log_warning("video: {}", message);
-        post_ui_task([weak = std::weak_ptr<GStreamerSource>(std::static_pointer_cast<GStreamerSource>(shared_from_this())),
-                      message = std::move(message)] {
-            if (const auto source = weak.lock()) {
-                source->error = message;
-                source->playing = false;
-            }
+        post([message = std::move(message)](FrameSourceHost& host) {
+            host.set_error(message);
+            host.set_playing(false);
         });
     }
 
@@ -266,7 +266,7 @@ private:
             std::unique_lock lock(mutex);
             for (;;) {
                 wake.wait_for(lock, stop, std::chrono::milliseconds(250), [] { return false; });
-                if (stop.stop_requested() || !playing_now_) {
+                if (stop.stop_requested() || !host_->is_playing_now()) {
                     return;
                 }
                 report_time();
@@ -284,9 +284,9 @@ private:
     void report_time() {
         gint64 position = 0;
         if (gst_element_query_position(playbin_, GST_FORMAT_TIME, &position)) {
-            post([at = seconds_of(position)](GStreamerSource& source) {
-                if (!source.ended_) { // a report from before the end doesn't move the time back
-                    source.time = at;
+            post([this, at = seconds_of(position)](FrameSourceHost& host) {
+                if (!ended_) { // a report from before the end doesn't move the time back
+                    host.set_time(at);
                 }
             });
         }
@@ -297,13 +297,13 @@ private:
     // A preroll (the frame shown while paused: the first, or after a seek) is pulled apart from
     // played frames: pulling a played frame while paused drops the preroll.
     static GstFlowReturn on_preroll(GstAppSink*, gpointer data) {
-        auto* self = static_cast<GStreamerSource*>(data);
+        auto* self = static_cast<GStreamerEngine*>(data);
         self->preroll_ = true;
-        self->notify_new_frame();
+        self->host_->notify_new_frame();
         return GST_FLOW_OK;
     }
     static GstFlowReturn on_sample(GstAppSink*, gpointer data) {
-        static_cast<const GStreamerSource*>(data)->notify_new_frame();
+        static_cast<const GStreamerEngine*>(data)->host_->notify_new_frame();
         return GST_FLOW_OK;
     }
 
@@ -315,8 +315,9 @@ private:
     }
 
     static GstBusSyncReply handle_message(GstBus*, GstMessage* message, gpointer data) {
-        const auto source = static_cast<std::weak_ptr<GStreamerSource>*>(data)->lock();
-        if (!source) {
+        auto* const source = static_cast<GStreamerEngine*>(data);
+        const auto host = source->weak_host_.lock(); // and so the engine, while this runs
+        if (!host) {
             return GST_BUS_DROP;
         }
         switch (GST_MESSAGE_TYPE(message)) {
@@ -327,14 +328,14 @@ private:
             g_clear_error(&error);
             break;
         }
-        case GST_MESSAGE_EOS: source->post([](GStreamerSource& s) { s.on_end(); }); break;
+        case GST_MESSAGE_EOS: source->post([source](FrameSourceHost& h) { source->on_end(h); }); break;
         case GST_MESSAGE_ASYNC_DONE:
         case GST_MESSAGE_DURATION_CHANGED: {
             gint64 length = 0;
             if (gst_element_query_duration(source->playbin_, GST_FORMAT_TIME, &length)) {
-                source->post([length = seconds_of(length)](GStreamerSource& s) {
-                    s.duration = length;
-                    s.ready = true;
+                source->post([length = seconds_of(length)](FrameSourceHost& h) {
+                    h.set_duration(length);
+                    h.set_ready();
                 });
             }
             break;
@@ -345,17 +346,17 @@ private:
     }
 
     // UI thread: it played to its end.
-    void on_end() {
-        if (looping.peek()) {
+    void on_end(FrameSourceHost& host) {
+        if (host.looping()) {
             seek(0);
             gst_element_set_state(playbin_, GST_STATE_PLAYING);
             return;
         }
         stop_reporting();
         ended_ = true;
-        playing = false;
-        playing_now_ = false;
-        time = duration.peek();
+        host.set_playing(false);
+        host.set_playing_now(false);
+        host.set_time(host.duration());
     }
 
     // Copies an NV12 sample into a packed frame (no row padding).
@@ -396,8 +397,8 @@ private:
         frame.matrix = info.colorimetry.matrix == GST_VIDEO_COLOR_MATRIX_BT601 ? VideoFrame::Matrix::bt601
                                                                                 : VideoFrame::Matrix::bt709;
         frame.pixels = std::move(pixels);
-        frame.source_id = VideoSource::id;
-        frame.frame_id = next_media_id();
+        frame.source_id = host_->source_id();
+        frame.frame_id = host_->new_id();
         return frame;
     }
 
@@ -405,22 +406,20 @@ private:
     GstElement* playbin_ = nullptr;
     GstElement* sink_ = nullptr; // playbin's video sink (a reference of our own)
     std::atomic<bool> preroll_{false}; // the appsink has a preroll that update() hasn't taken
-    // The bus handler's reference (it outlives no source: the handler is removed first).
-    std::weak_ptr<GStreamerSource>* weak_self_ = nullptr;
+    FrameSourceHost* host_ = nullptr; // set by open(); outlives the engine
+    std::weak_ptr<FrameSourceHost> weak_host_; // for what's posted to the UI thread
     bool ended_ = false; // UI thread
     std::jthread reporter_; // the playback position, while it plays (UI thread)
-    // Render thread.
-    std::optional<Size> current_size_;
+    // Render thread: the current frame's size.
+    std::optional<std::pair<std::uint32_t, std::uint32_t>> current_size_;
     mutable std::mutex mutex_;
     std::optional<VideoFrame> current_;
 };
 
 } // namespace
 
-std::shared_ptr<VideoSource> create_platform_video_source(const std::string& url) {
-    auto source = detail::make_ui_shared<GStreamerSource>(url);
-    source->open();
-    return source;
+std::expected<std::unique_ptr<VideoEngine>, std::string> create_video_engine(const std::string& url) {
+    return std::make_unique<GStreamerEngine>(url);
 }
 
 } // namespace elg::detail
@@ -429,9 +428,9 @@ std::shared_ptr<VideoSource> create_platform_video_source(const std::string& url
 
 namespace elg::detail {
 
-std::shared_ptr<VideoSource> create_platform_video_source(const std::string& url) {
+std::expected<std::unique_ptr<VideoEngine>, std::string> create_video_engine(const std::string& url) {
     (void)url;
-    return VideoSource::unsupported("video playback needs GStreamer, which this build doesn't have");
+    return std::unexpected("video playback needs GStreamer, which this build doesn't have");
 }
 
 } // namespace elg::detail

@@ -7,6 +7,7 @@
 
 #include "text/font_library.h"
 #include "text/glyph_atlas.h"
+#include "text/text_backend.h"
 #include "text/text_system.h"
 
 #include <elg/elegance.h>
@@ -72,7 +73,7 @@ std::vector<std::uint8_t> uploaded(detail::GlyphAtlas& atlas, const detail::Font
 // The file the system font comes from.
 std::filesystem::path system_font_file() {
     std::filesystem::path found;
-    for (const std::filesystem::path& file : detail::system_font_candidates(Weight::regular, false)) {
+    for (const std::filesystem::path& file : detail::system_font_candidates(static_cast<int>(Weight::regular), false)) {
         if (std::filesystem::is_regular_file(file)) {
             found = file;
             break;
@@ -251,8 +252,8 @@ TEST_CASE("writing a font's cache file deletes its files of the earlier naming",
 
 #if defined(__linux__)
 TEST_CASE("the system font for each weight is a file that exists", "[text][linux]") {
-    const auto regular = detail::system_font_candidates(Weight::regular, false);
-    const auto bold = detail::system_font_candidates(Weight::bold, false);
+    const auto regular = detail::system_font_candidates(static_cast<int>(Weight::regular), false);
+    const auto bold = detail::system_font_candidates(static_cast<int>(Weight::bold), false);
     REQUIRE_FALSE(regular.empty());
     REQUIRE_FALSE(bold.empty());
     CHECK(std::filesystem::is_regular_file(regular.front()));

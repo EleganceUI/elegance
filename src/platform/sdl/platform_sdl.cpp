@@ -17,11 +17,92 @@
 #include <SDL3/SDL.h>
 
 #include <algorithm>
+#include <deque>
+#include <memory>
 #include <cmath>
 #include <format>
 #include <utility>
 
 namespace elg::detail::platform {
+
+// The platform interface's windows and event loop on SDL.
+class SdlWindow final : public Window {
+public:
+    SdlWindow(const WindowDesc& desc, const PopupSpec* popup);
+    ~SdlWindow() override;
+
+    SdlWindow(const SdlWindow&) = delete;
+    SdlWindow& operator=(const SdlWindow&) = delete;
+    SdlWindow(SdlWindow&&) = delete;
+    SdlWindow& operator=(SdlWindow&&) = delete;
+
+    [[nodiscard]] std::uint32_t id() const noexcept override { return id_; }
+    [[nodiscard]] PixelSize pixel_size() const override;
+    [[nodiscard]] float scale() const override;
+    [[nodiscard]] Size logical_size() const override;
+    [[nodiscard]] Point to_logical(float x, float y) const override;
+    void start_text_input(bool secure) override;
+    void stop_text_input() override;
+    void update_secure_input() override;
+    void set_text_input_area(Rect area, float cursor) override;
+    void show() override;
+    [[nodiscard]] void* native_handle() const override;
+    void minimize() override;
+    void toggle_maximized() override;
+    [[nodiscard]] bool maximized() const override;
+    [[nodiscard]] bool visible() const override;
+    void request_close() const override;
+    Rect system_controls_frame() override;
+    void set_hit_test(std::function<HitArea(Point)> test) override;
+    void set_popup_frame(Rect frame) override;
+    [[nodiscard]] Rect usable_area() const override;
+    [[nodiscard]] HitArea hit_test_at(Point point) const override { return hit_test_ ? hit_test_(point) : HitArea::normal; }
+    void refresh_appearance() override;
+    [[nodiscard]] SurfaceSource surface_source() const override;
+
+private:
+    SDL_Window* window_ = nullptr;
+    native::WindowParts native_;
+    // Popups: the window they belong to, which has the keyboard (they're never activated), and
+    // whether text input was started there for the popup.
+    SDL_Window* parent_ = nullptr;
+    bool parent_text_input_ = false;
+    bool secure_text_input_ = false; // a password field has the text input
+    bool secure_engaged_ = false;    // ...and the keyboard, so this window holds Secure Event Input
+    std::uint32_t id_ = 0;
+    std::function<HitArea(Point)> hit_test_;
+};
+
+class SdlPlatform final : public Platform {
+public:
+    SdlPlatform();
+    ~SdlPlatform() override;
+
+    SdlPlatform(const SdlPlatform&) = delete;
+    SdlPlatform& operator=(const SdlPlatform&) = delete;
+    SdlPlatform(SdlPlatform&&) = delete;
+    SdlPlatform& operator=(SdlPlatform&&) = delete;
+
+    Event wait_event() override;
+    Event wait_event(double seconds) override;
+    std::optional<Event> poll_event() override;
+    void wake() const override;
+    void post_key(std::uint32_t window_id, Key key, KeyModifiers modifiers) override;
+    void set_live_resize_callback(LiveResizeCallback callback) override;
+    // From the event watch, inside the OS's modal resize loop.
+    void dispatch_live_resize(std::uint32_t window_id) noexcept;
+
+private:
+    Event translate(const SDL_Event& event);
+
+    std::uint32_t wake_event_ = 0;
+    // Events taken from the OS directly (macOS trackpads), queued in order with SDL's: each one
+    // pushes an SDL event of this type, which takes the next from native_events_.
+    std::uint32_t native_event_ = 0;
+    std::deque<Event> native_events_;
+    void* input_monitor_ = nullptr;
+    LiveResizeCallback live_resize_;
+};
 
 namespace {
 
@@ -43,7 +124,7 @@ bool SDLCALL on_event_watch(void* userdata, SDL_Event* event) {
     const bool live_expose = event->type == SDL_EVENT_WINDOW_EXPOSED && event->window.data1 == 1;
     const bool resized = event->type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED && native::in_move_size_loop();
     if (live_expose || resized) {
-        static_cast<Platform*>(userdata)->dispatch_live_resize(event->window.windowID);
+        static_cast<SdlPlatform*>(userdata)->dispatch_live_resize(event->window.windowID);
     }
     return true;
 }
@@ -267,7 +348,7 @@ void hold_secure_input(bool hold) {
 
 } // namespace
 
-Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
+SdlWindow::SdlWindow(const WindowDesc& desc, const PopupSpec* popup) {
     if (desc.width <= 0 || desc.height <= 0) {
         throw UsageError(std::format("window \"{}\" has an invalid size {}x{}", desc.title,
                                      desc.width, desc.height));
@@ -302,7 +383,7 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
         // Menus and tooltips: always transparent and undecorated (they draw their own panel).
         flags = kGpuFlags | SDL_WINDOW_HIGH_PIXEL_DENSITY | SDL_WINDOW_HIDDEN | SDL_WINDOW_TRANSPARENT |
                 (popup->tooltip ? SDL_WINDOW_TOOLTIP : SDL_WINDOW_POPUP_MENU);
-        parent_ = popup->parent->window_;
+        parent_ = static_cast<const SdlWindow*>(popup->parent)->window_;
         window_ = SDL_CreatePopupWindow(parent_, 0, 0, std::max(1, width), std::max(1, height), flags);
     } else {
         window_ = SDL_CreateWindow(desc.title.c_str(), width, height, flags);
@@ -322,7 +403,7 @@ Window::Window(const WindowDesc& desc, const PopupSpec* popup) {
     }
 }
 
-void Window::set_popup_frame(Rect frame) {
+void SdlWindow::set_popup_frame(Rect frame) {
     // Logical points -> window coordinates (the inverse of to_logical); popups are positioned
     // relative to their parent.
     float density = SDL_GetWindowPixelDensity(window_);
@@ -336,7 +417,7 @@ void Window::set_popup_frame(Rect frame) {
     SDL_SetWindowPosition(window_, window_pixels(frame.x * factor), window_pixels(frame.y * factor));
 }
 
-Rect Window::usable_area() const {
+Rect SdlWindow::usable_area() const {
     SDL_Rect bounds{};
     if (!SDL_GetDisplayUsableBounds(SDL_GetDisplayForWindow(window_), &bounds)) {
         return {-1e6f, -1e6f, 2e6f, 2e6f}; // unknown: don't constrain
@@ -366,19 +447,19 @@ std::uint32_t focused_window_id() {
     return window ? SDL_GetWindowID(window) : 0;
 }
 
-void Window::refresh_appearance() {
+void SdlWindow::refresh_appearance() {
     native::appearance_changed(window_, native_);
 }
 
-void* Window::native_handle() const {
+void* SdlWindow::native_handle() const {
     return native::native_handle(window_);
 }
 
-void Window::minimize() {
+void SdlWindow::minimize() {
     SDL_MinimizeWindow(window_);
 }
 
-void Window::toggle_maximized() {
+void SdlWindow::toggle_maximized() {
     if (maximized()) {
         SDL_RestoreWindow(window_);
     } else {
@@ -386,19 +467,19 @@ void Window::toggle_maximized() {
     }
 }
 
-bool Window::maximized() const {
+bool SdlWindow::maximized() const {
     return (SDL_GetWindowFlags(window_) & SDL_WINDOW_MAXIMIZED) != 0;
 }
 
-bool Window::visible() const {
+bool SdlWindow::visible() const {
     return (SDL_GetWindowFlags(window_) & (SDL_WINDOW_HIDDEN | SDL_WINDOW_MINIMIZED)) == 0;
 }
 
-Rect Window::system_controls_frame() {
+Rect SdlWindow::system_controls_frame() {
     return native::system_controls_frame(native_);
 }
 
-void Window::request_close() const {
+void SdlWindow::request_close() const {
     SDL_Event event{};
     event.type = SDL_EVENT_WINDOW_CLOSE_REQUESTED;
     event.window.windowID = id_;
@@ -408,7 +489,7 @@ void Window::request_close() const {
 namespace {
 
 SDL_HitTestResult SDLCALL hit_test(SDL_Window*, const SDL_Point* area, void* data) {
-    auto* window = static_cast<Window*>(data);
+    auto* window = static_cast<SdlWindow*>(data);
     try {
         switch (window->hit_test_at(window->to_logical(static_cast<float>(area->x), static_cast<float>(area->y)))) {
         case HitArea::normal: return SDL_HITTEST_NORMAL;
@@ -430,12 +511,12 @@ SDL_HitTestResult SDLCALL hit_test(SDL_Window*, const SDL_Point* area, void* dat
 
 } // namespace
 
-void Window::set_hit_test(std::function<HitArea(Point)> test) {
+void SdlWindow::set_hit_test(std::function<HitArea(Point)> test) {
     hit_test_ = std::move(test);
     SDL_SetWindowHitTest(window_, hit_test_ ? &hit_test : nullptr, this);
 }
 
-Window::~Window() {
+SdlWindow::~SdlWindow() {
     if (parent_text_input_) {
         SDL_StopTextInput(parent_); // closed with its text field focused
     }
@@ -446,18 +527,18 @@ Window::~Window() {
     SDL_DestroyWindow(window_);
 }
 
-PixelSize Window::pixel_size() const {
+PixelSize SdlWindow::pixel_size() const {
     PixelSize size;
     SDL_GetWindowSizeInPixels(window_, &size.width, &size.height);
     return size;
 }
 
-float Window::scale() const {
+float SdlWindow::scale() const {
     const float scale = SDL_GetWindowDisplayScale(window_);
     return scale > 0 ? scale : 1.f;
 }
 
-Size Window::logical_size() const {
+Size SdlWindow::logical_size() const {
     const PixelSize pixels = pixel_size();
     const float s = scale();
     return {static_cast<float>(pixels.width) / s, static_cast<float>(pixels.height) / s};
@@ -480,7 +561,7 @@ void start_text_input_on(SDL_Window* window, bool secure) {
 
 } // namespace
 
-void Window::start_text_input(bool secure) {
+void SdlWindow::start_text_input(bool secure) {
     start_text_input_on(window_, secure);
     // A popup (a popover's text field): typing reaches the parent's native window, so SDL makes
     // text there. Unless the parent has text input of its own, it's started for the popup.
@@ -492,7 +573,7 @@ void Window::start_text_input(bool secure) {
     update_secure_input();
 }
 
-void Window::stop_text_input() {
+void SdlWindow::stop_text_input() {
     SDL_StopTextInput(window_);
     if (std::exchange(parent_text_input_, false)) {
         SDL_StopTextInput(parent_);
@@ -501,7 +582,7 @@ void Window::stop_text_input() {
     update_secure_input();
 }
 
-void Window::update_secure_input() {
+void SdlWindow::update_secure_input() {
     // A popup never has the keyboard; its parent does.
     SDL_Window* const keyboard = parent_ ? parent_ : window_;
     const bool engage = secure_text_input_ && (SDL_GetWindowFlags(keyboard) & SDL_WINDOW_INPUT_FOCUS) != 0;
@@ -511,7 +592,7 @@ void Window::update_secure_input() {
     }
 }
 
-void Window::set_text_input_area(Rect area, float cursor) {
+void SdlWindow::set_text_input_area(Rect area, float cursor) {
     // Logical points -> window coordinates (the inverse of to_logical).
     float density = SDL_GetWindowPixelDensity(window_);
     if (density <= 0) {
@@ -562,7 +643,7 @@ void set_pointer_style(PointerStyle style) {
     SDL_SetCursor(system(id));
 }
 
-Point Window::to_logical(float x, float y) const {
+Point SdlWindow::to_logical(float x, float y) const {
     // Window coordinates -> pixels (pixel density, e.g. 2 on Retina) -> points (display scale).
     float density = SDL_GetWindowPixelDensity(window_);
     if (density <= 0) {
@@ -572,7 +653,7 @@ Point Window::to_logical(float x, float y) const {
     return {x * factor, y * factor};
 }
 
-void Window::show() {
+void SdlWindow::show() {
     SDL_ShowWindow(window_);
 }
 
@@ -580,7 +661,7 @@ bool Window::shows_before_first_frame() {
     return std::string_view(SDL_GetCurrentVideoDriver()) == "wayland";
 }
 
-SurfaceSource Window::surface_source() const {
+SurfaceSource SdlWindow::surface_source() const {
     const SurfaceSource source = native::surface_source(window_, native_);
     if (!source.handle && source.xlib_window == 0) {
         throw GpuError(std::format("the window system gave no handle to draw into: {}", SDL_GetError()));
@@ -590,7 +671,7 @@ SurfaceSource Window::surface_source() const {
 
 // --- Platform ---
 
-Platform::Platform() {
+SdlPlatform::SdlPlatform() {
     if (g_platform_alive) {
         throw UsageError("only one elg::App can run at a time");
     }
@@ -619,7 +700,7 @@ Platform::Platform() {
     native::watch_appearance();
 }
 
-Platform::~Platform() {
+SdlPlatform::~SdlPlatform() {
     native::unwatch_appearance();
     native::remove_input_monitor(input_monitor_);
     SDL_RemoveEventWatch(&on_event_watch, this);
@@ -627,7 +708,7 @@ Platform::~Platform() {
     g_platform_alive = false;
 }
 
-Event Platform::wait_event() {
+Event SdlPlatform::wait_event() {
     SDL_Event event;
     if (!SDL_WaitEvent(&event)) {
         throw_sdl_error("failed to wait for events");
@@ -635,7 +716,7 @@ Event Platform::wait_event() {
     return translate(event);
 }
 
-Event Platform::wait_event(double seconds) {
+Event SdlPlatform::wait_event(double seconds) {
     SDL_Event event;
     const auto milliseconds = static_cast<Sint32>(std::clamp(std::ceil(seconds * 1000), 0.0, 1e6));
     if (!SDL_WaitEventTimeout(&event, milliseconds)) {
@@ -644,7 +725,7 @@ Event Platform::wait_event(double seconds) {
     return translate(event);
 }
 
-std::optional<Event> Platform::poll_event() {
+std::optional<Event> SdlPlatform::poll_event() {
     SDL_Event event;
     if (!SDL_PollEvent(&event)) {
         return std::nullopt;
@@ -652,7 +733,7 @@ std::optional<Event> Platform::poll_event() {
     return translate(event);
 }
 
-Event Platform::translate(const SDL_Event& event) {
+Event SdlPlatform::translate(const SDL_Event& event) {
     if (event.type == native_event_) {
         if (native_events_.empty()) {
             return {};
@@ -664,7 +745,7 @@ Event Platform::translate(const SDL_Event& event) {
     return platform::translate(event, wake_event_);
 }
 
-void Platform::post_key(std::uint32_t window_id, Key key, KeyModifiers modifiers) {
+void SdlPlatform::post_key(std::uint32_t window_id, Key key, KeyModifiers modifiers) {
     for (const EventType type : {EventType::key_down, EventType::key_up}) {
         Event event{type, window_id};
         event.key = key;
@@ -677,17 +758,17 @@ void Platform::post_key(std::uint32_t window_id, Key key, KeyModifiers modifiers
     }
 }
 
-void Platform::wake() const {
+void SdlPlatform::wake() const {
     SDL_Event event{};
     event.type = wake_event_;
     SDL_PushEvent(&event);
 }
 
-void Platform::set_live_resize_callback(LiveResizeCallback callback) {
+void SdlPlatform::set_live_resize_callback(LiveResizeCallback callback) {
     live_resize_ = std::move(callback);
 }
 
-void Platform::dispatch_live_resize(std::uint32_t window_id) noexcept {
+void SdlPlatform::dispatch_live_resize(std::uint32_t window_id) noexcept {
     if (!live_resize_) {
         return;
     }
@@ -705,6 +786,16 @@ void Platform::dispatch_live_resize(std::uint32_t window_id) noexcept {
 
 bool system_prefers_dark() {
     return SDL_GetSystemTheme() == SDL_SYSTEM_THEME_DARK;
+}
+
+// --- Factories ---
+
+std::unique_ptr<Window> create_window(const WindowDesc& desc, const PopupSpec* popup) {
+    return std::make_unique<SdlWindow>(desc, popup);
+}
+
+std::unique_ptr<Platform> create_platform() {
+    return std::make_unique<SdlPlatform>();
 }
 
 } // namespace elg::detail::platform

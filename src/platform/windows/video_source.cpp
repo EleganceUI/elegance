@@ -2,10 +2,10 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Video sources on Windows (design.md §13.3): Media Foundation's media engine in frame-server
-// mode, rendering each new frame into a ring of D3D11 textures shared with WebGPU.
+// Videos on Windows (design.md §13.3, media/video_backend.h): Media Foundation's media engine in
+// frame-server mode, rendering each new frame into a ring of D3D11 textures shared with WebGPU.
 
-#include "media/video_source.h"
+#include "media/video_backend.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
@@ -47,12 +47,14 @@ std::string hr_text(HRESULT result) {
     return std::format("HRESULT 0x{:08x}", static_cast<unsigned long>(result));
 }
 
-class MediaEngineSource;
+class MediaFoundationVideo;
 
-// The engine's event callback (on Media Foundation's threads). Holds the source weakly.
+// The engine's event callback (on Media Foundation's threads). Holds the source weakly: while it
+// lives, so does `video`.
 class EngineNotify final : public IMFMediaEngineNotify {
 public:
-    explicit EngineNotify(std::weak_ptr<MediaEngineSource> source) : source_(std::move(source)) {}
+    EngineNotify(MediaFoundationVideo* video, std::weak_ptr<FrameSourceHost> host)
+        : video_(video), host_(std::move(host)) {}
 
     STDMETHODIMP QueryInterface(REFIID riid, void** object) override {
         if (riid == __uuidof(IUnknown) || riid == __uuidof(IMFMediaEngineNotify)) {
@@ -75,14 +77,19 @@ public:
 
 private:
     std::atomic<ULONG> references_{1};
-    std::weak_ptr<MediaEngineSource> source_;
+    MediaFoundationVideo* video_;
+    std::weak_ptr<FrameSourceHost> host_;
 };
 
-class MediaEngineSource final : public VideoSource {
+class MediaFoundationVideo final : public VideoEngine {
 public:
-    explicit MediaEngineSource(std::string url) : url_(std::move(url)) {}
+    explicit MediaFoundationVideo(std::string url) : url_(std::move(url)) {}
+    MediaFoundationVideo(const MediaFoundationVideo&) = delete;
+    MediaFoundationVideo& operator=(const MediaFoundationVideo&) = delete;
+    MediaFoundationVideo(MediaFoundationVideo&&) = delete;
+    MediaFoundationVideo& operator=(MediaFoundationVideo&&) = delete;
 
-    ~MediaEngineSource() override {
+    ~MediaFoundationVideo() override {
         std::lock_guard lock(mutex_);
         if (engine_) {
             engine_->Shutdown();
@@ -93,6 +100,15 @@ public:
                 CloseHandle(slot.handle);
             }
         }
+    }
+
+    // The render thread looks for frames while it plays.
+    [[nodiscard]] bool wakes_for_frames() const noexcept override { return false; }
+
+    // The engine itself is made once the renderer's adapter is known (ensure_engine()).
+    void open(const std::shared_ptr<FrameSourceHost>& host) override {
+        host_ = host.get();
+        weak_host_ = host;
     }
 
     // --- UI thread ---
@@ -106,8 +122,8 @@ public:
             }
             engine_->Play();
         }
-        playing = true;
-        playing_now_ = true;
+        host_->set_playing(true);
+        host_->set_playing_now(true);
     }
 
     void pause() override {
@@ -116,8 +132,8 @@ public:
         if (ensure_engine()) {
             engine_->Pause();
         }
-        playing = false;
-        playing_now_ = false;
+        host_->set_playing(false);
+        host_->set_playing_now(false);
     }
 
     void seek(double seconds) override {
@@ -128,7 +144,7 @@ public:
             engine_->SetCurrentTime(seconds);
             pending_seek_.reset();
         }
-        time = seconds;
+        host_->set_time(seconds);
     }
 
     void set_volume(float value) override {
@@ -138,7 +154,7 @@ public:
         if (ensure_engine()) {
             engine_->SetVolume(value);
         }
-        volume = value;
+        host_->set_volume(value);
     }
 
     void set_muted(bool value) override {
@@ -147,7 +163,7 @@ public:
         if (ensure_engine()) {
             engine_->SetMuted(value);
         }
-        muted = value;
+        host_->set_muted(value);
     }
 
     void set_looping(bool value) override {
@@ -156,7 +172,7 @@ public:
         if (ensure_engine()) {
             engine_->SetLoop(value);
         }
-        looping = value;
+        host_->set_looping(value);
     }
 
     // --- Render thread ---
@@ -210,7 +226,7 @@ public:
             frame.kind = VideoFrame::Kind::cpu;
             frame.format = VideoFrame::Format::bgra;
             frame.pixels = pixels_;
-            frame.source_id = id;
+            frame.source_id = host_->source_id();
             frame.frame_id = frame_id_;
             return frame;
         }
@@ -228,12 +244,10 @@ public:
         if (!engine) {
             return;
         }
-        const std::weak_ptr<MediaEngineSource> weak =
-            std::static_pointer_cast<MediaEngineSource>(shared_from_this());
-        const auto post = [weak](auto action) {
+        const auto post = [weak = weak_host_](auto action) {
             post_ui_task([weak, action = std::move(action)] {
-                if (const auto source = weak.lock()) {
-                    action(*source);
+                if (const auto host = weak.lock()) {
+                    action(*host);
                 }
             });
         };
@@ -244,43 +258,43 @@ public:
             DWORD w = 0;
             DWORD h = 0;
             engine->GetNativeVideoSize(&w, &h);
-            post([length, w, h](MediaEngineSource& source) {
-                source.duration = std::isfinite(length) ? length : 0.0;
-                source.size = Size{static_cast<float>(w), static_cast<float>(h)};
-                source.ready = true;
+            post([length, w, h](FrameSourceHost& host) {
+                host.set_duration(std::isfinite(length) ? length : 0.0);
+                host.set_size(static_cast<float>(w), static_cast<float>(h));
+                host.set_ready();
             });
             break;
         }
         case MF_MEDIA_ENGINE_EVENT_TIMEUPDATE: {
             const double now = engine->GetCurrentTime();
-            post([now](MediaEngineSource& source) { source.time = now; });
+            post([now](FrameSourceHost& host) { host.set_time(now); });
             break;
         }
         case MF_MEDIA_ENGINE_EVENT_PLAYING:
-            playing_now_ = true;
-            post([](MediaEngineSource& source) { source.playing = true; });
+            host_->set_playing_now(true);
+            post([](FrameSourceHost& host) { host.set_playing(true); });
             break;
         case MF_MEDIA_ENGINE_EVENT_PAUSE:
         case MF_MEDIA_ENGINE_EVENT_ENDED: {
-            playing_now_ = false;
+            host_->set_playing_now(false);
             const double now = engine->GetCurrentTime();
-            post([now](MediaEngineSource& source) {
-                source.playing = false;
-                source.time = now;
+            post([now](FrameSourceHost& host) {
+                host.set_playing(false);
+                host.set_time(now);
             });
             break;
         }
         case MF_MEDIA_ENGINE_EVENT_ERROR: {
-            playing_now_ = false;
+            host_->set_playing_now(false);
             const auto code = static_cast<MF_MEDIA_ENGINE_ERR>(param1);
             std::string message = std::format("can't play {} (media error {})", url_, static_cast<int>(code));
             if (code == MF_MEDIA_ENGINE_ERR_SRC_NOT_SUPPORTED) {
                 message = std::format("can't play {}: the format isn't supported, or the file is missing", url_);
             }
             log_warning("video: {}", message);
-            post([message](MediaEngineSource& source) {
-                source.error = message;
-                source.playing = false;
+            post([message](FrameSourceHost& host) {
+                host.set_error(message);
+                host.set_playing(false);
             });
             break;
         }
@@ -305,7 +319,7 @@ private:
         if (failed_) {
             return false;
         }
-        const std::optional<RenderAdapter> adapter = render_adapter();
+        const std::optional<RenderAdapter> adapter = host_->render_adapter();
         if (!adapter) {
             return false; // the renderer isn't up yet: what was asked for applies once it is
         }
@@ -316,9 +330,9 @@ private:
             failed_ = true;
             const std::string message = failure.what();
             log_warning("video: {}", message);
-            post_ui_task([weak = std::weak_ptr<VideoSource>(shared_from_this()), message] {
-                if (const auto source = weak.lock()) {
-                    source->error = message;
+            post_ui_task([weak = weak_host_, message] {
+                if (const auto host = weak.lock()) {
+                    host->set_error(message);
                 }
             });
             return false;
@@ -374,7 +388,7 @@ private:
               "create the media engine factory");
         ComPtr<IMFAttributes> attributes;
         check(MFCreateAttributes(&attributes, 3), "create media engine attributes");
-        auto* notify = new EngineNotify(std::static_pointer_cast<MediaEngineSource>(shared_from_this()));
+        auto* notify = new EngineNotify(this, weak_host_);
         attributes->SetUnknown(MF_MEDIA_ENGINE_CALLBACK, notify);
         notify->Release(); // the attributes and the engine hold it
         attributes->SetUnknown(MF_MEDIA_ENGINE_DXGI_MANAGER, manager_.Get());
@@ -426,7 +440,7 @@ private:
                                                     nullptr, &slot.handle))) {
                 return false;
             }
-            slot.id = next_media_id();
+            slot.id = host_->new_id();
         }
         if (!shares_textures_) {
             desc.Usage = D3D11_USAGE_STAGING;
@@ -463,6 +477,8 @@ private:
     }
 
     const std::string url_;
+    FrameSourceHost* host_ = nullptr; // set by open(); outlives the engine
+    std::weak_ptr<FrameSourceHost> weak_host_; // for what's posted to the UI thread
     mutable std::mutex mutex_;
     ComPtr<ID3D11Device> device_;
     ComPtr<ID3D11DeviceContext> context_;
@@ -488,16 +504,16 @@ private:
 };
 
 STDMETHODIMP EngineNotify::EventNotify(DWORD event, DWORD_PTR param1, DWORD) {
-    if (const auto source = source_.lock()) {
-        source->on_event(event, param1);
+    if (const auto host = host_.lock()) {
+        video_->on_event(event, param1);
     }
     return S_OK;
 }
 
 } // namespace
 
-std::shared_ptr<VideoSource> create_platform_video_source(const std::string& url) {
-    return detail::make_ui_shared<MediaEngineSource>(url);
+std::expected<std::unique_ptr<VideoEngine>, std::string> create_video_engine(const std::string& url) {
+    return std::make_unique<MediaFoundationVideo>(url);
 }
 
 } // namespace elg::detail

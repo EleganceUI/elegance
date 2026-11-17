@@ -5,8 +5,8 @@
 #ifndef ELG_RENDER_FRAME_MAILBOX_H
 #define ELG_RENDER_FRAME_MAILBOX_H
 
-#include "platform/platform.h"
 #include "display/display_list.h"
+#include "gpu/surface_source.h"
 #include "text/atlas.h"
 
 #include <chrono>
@@ -29,7 +29,7 @@ struct WindowFrame {
 
 struct AddWindowCommand {
     std::uint32_t window_id = 0;
-    platform::SurfaceSource surface; // the window's; the render thread makes its surface from it
+    gpu::SurfaceSource surface; // the window's; the render thread makes its surface from it
     bool transparent = false;
     void* native_window = nullptr; // HWND on Windows (windows present through the compositor with it)
 };

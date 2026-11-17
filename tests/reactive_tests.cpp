@@ -5,7 +5,6 @@
 #include "reactive/runtime.h"
 
 #include <elg/error.h>
-#include <elg/prop.h>
 #include <elg/reactive.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -195,20 +194,6 @@ TEST_CASE("a Binding reads and writes its State") {
     CHECK(count() == 5);
 }
 
-TEST_CASE("Prop holds a static value or a reactive one") {
-    const Prop<float> fixed = 0.5;
-    REQUIRE(fixed.static_value());
-    CHECK(*fixed.static_value() == 0.5f);
-
-    const State<float> level(0.25f);
-    const Prop<float> from_state = level;
-    CHECK(from_state.is_reactive());
-    CHECK(from_state.get() == 0.25f);
-
-    const Prop<std::string> text = [=] { return std::to_string(static_cast<int>(level() * 100)); };
-    CHECK(text.get() == "25");
-}
-
 TEST_CASE("effects need an owner") {
     CHECK_THROWS_AS(effect([] {}), UsageError);
 }
@@ -230,7 +215,7 @@ TEST_CASE("constant() makes a binding that ignores writes") {
     CHECK(name() == "Ada");
 }
 
-TEST_CASE("a Signal reads a State, a Binding, or a closure, and works as a Prop") {
+TEST_CASE("a Signal reads a State, a Binding, or a closure") {
     const Owner owner;
     const State<bool> hovered(false);
     const Signal<bool> from_state = hovered;
@@ -239,14 +224,6 @@ TEST_CASE("a Signal reads a State, a Binding, or a closure, and works as a Prop"
     CHECK_FALSE(from_state());
     CHECK_FALSE(from_binding());
     CHECK(negated());
-
-    const Prop<bool> prop = from_state;
-    CHECK(prop.is_reactive());
-    std::vector<bool> seen;
-    effect([&] { seen.push_back(prop.get()); }); // reading through the Signal subscribes
-    hovered = true;
-    detail::flush_effects();
-    CHECK(seen == std::vector<bool>{false, true});
 }
 
 TEST_CASE("a computed that throws rethrows until what it read changes", "[reactive]") {

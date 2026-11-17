@@ -236,9 +236,10 @@ drag & drop, IME composition, cursors, native file dialogs, multi-window, and th
 - `src/platform/` is sorted by OS. `generic/` holds what's the same everywhere (the SDL layer,
   accessibility, dynamic libraries) and `native.h`, the hooks each OS implements. `windows/`,
   `macos/` and `linux/` (also other Unix desktops) hold each OS's own code, including the media,
-  image, font, proxy and notification backends that other folders declare: `VideoSource`'s and
-  `CameraSource`'s `create_platform_*`, `platform_decode_image`/`encode_png`,
-  `system_font_candidates`, `system_proxy`, and `native::show_notification`. Only short `#if`s
+  image, font, proxy and notification backends that other folders declare: the video and camera
+  engines (`media/video_backend.h`), `platform_decode_image`/`encode_png`
+  (`media/image_codec_backend.h`), `system_font_candidates` (`text/text_backend.h`),
+  `system_proxy` (`net/net_backend.h`), and `native::show_notification`. Only short `#if`s
   of a few lines stay inline elsewhere.
 
 ### 4.1 Window customization (implemented in M4)
@@ -1382,7 +1383,7 @@ player.play();  player.is_playing();  player.time();    // signals
   samples.
 - macOS: `AVPlayer` + `AVPlayerItemVideoOutput` → `CVPixelBuffer`. When the renderer runs on
   Metal with IOSurface sharing, the output delivers IOSurface-backed BGRA, imported into Dawn as
-  is (`gpu/macos/surface_publisher`, over the `ElgGpuImage` IOSurface transport); each
+  is (`gpu/macos/native_image`, as the `ElgGpuImage` IOSurface transport does); each
   buffer stays retained until the renderer's reads signal their MTLSharedEvent fences. Otherwise
   it delivers NV12, copied into `cpu` frames.
 - Linux: a GStreamer `playbin` with an `appsink` (DMA-BUF when available).
@@ -2276,7 +2277,7 @@ Separate render thread from day one (decided).
     player with play/pause, scrubber, time, volume and loop.
   - **Tests:** a WAV built in memory decodes with the right duration; missing and garbage
     inputs throw `ResourceError`.
-- [x] Media part 3, video (`elg/video.h`, `src/media/video_source.*`, `src/gpu/video_textures.*`):
+- [x] Media part 3, video (`elg/video.h`, `src/media/video_source.*`, `src/render/video_textures.*`):
   - **`VideoPlayer(path or URL)`:**
     - `play`, `pause`, `toggle`, `stop`, `seek`, `set_volume`, `set_muted`, `set_looping`.
     - Reactive `is_playing`, `is_ready`, `time`, `duration`, `natural_size`, `volume`,
@@ -2294,7 +2295,7 @@ Separate render thread from day one (decided).
   - **Frames:**
     - `TransferVideoFrame` writes into a ring of 3 shared BGRA D3D11 textures (NT handles), so
       frames in flight keep theirs, and waits for the copy.
-    - `gpu::VideoTextures` imports each texture once (`VK_KHR_external_memory_win32`, sRGB view)
+    - `VideoTextures` imports each texture once (`VK_KHR_external_memory_win32`, sRGB view)
       and samples it in place, with no copy.
     - Each command buffer acquires the textures from `VK_QUEUE_FAMILY_EXTERNAL` and releases
       them back at its end.
@@ -2446,7 +2447,7 @@ Separate render thread from day one (decided).
     start / stop / snapshot).
   - **Tests:** device listing, recorders and cameras before starting, WAV header, option
     clamping.
-  - **Frame handoff, the same on every platform** (`media/video_source.h`): `VideoFrame` is
+  - **Frame handoff, the same on every platform** (`media/video_frame.h`): `VideoFrame` is
     tagged.
     - `d3d11_shared`: a shared BGRA texture, imported into Vulkan and sampled in place (Media
       Foundation video). macOS IOSurfaces and Linux DMA-BUFs would join as kinds imported the

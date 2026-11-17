@@ -2,17 +2,17 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Cameras on Linux (design.md §13.3): Video4Linux2, streaming through memory-mapped buffers on a
-// capture thread. Cameras are /dev/video* nodes that capture video (others are metadata or
-// output nodes). Frames stay in the camera's format (NV12, YUYV, YUV420) for the renderer's YUV
-// pass; MJPEG, which many USB cameras need for larger sizes, is decoded to BGRA here. Access is
-// the device node's permissions (usually the "video" group).
+// Cameras on Linux (design.md §13.3, media/video_backend.h): Video4Linux2, streaming through
+// memory-mapped buffers on a capture thread. Cameras are /dev/video* nodes that capture video
+// (others are metadata or output nodes). Frames stay in the camera's format (NV12, YUYV, YUV420)
+// for the renderer's YUV pass; MJPEG, which many USB cameras need for larger sizes, is decoded to
+// BGRA here (by Media's decoder, through the host). Access is the device node's permissions
+// (usually the "video" group).
 
-#include "media/camera_source.h"
+#include "media/video_backend.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
-#include "media/image_decode.h"
 
 #include <linux/videodev2.h>
 
@@ -118,10 +118,9 @@ int format_rank(std::uint32_t format) {
 }
 
 // One camera, captured on its own thread; frames reach the GPU through update().
-class V4L2Camera final : public CameraSource {
+class V4L2Camera final : public CameraEngine {
 public:
-    // Each captured frame wakes the render thread.
-    explicit V4L2Camera(CameraOptions options) : CameraSource(true), options_(std::move(options)) {}
+    explicit V4L2Camera(CameraRequest options) : options_(std::move(options)) {}
 
     V4L2Camera(const V4L2Camera&) = delete;
     V4L2Camera(V4L2Camera&&) = delete;
@@ -129,45 +128,34 @@ public:
     V4L2Camera& operator=(V4L2Camera&&) = delete;
     ~V4L2Camera() override { stop_capture(); }
 
+    // Each captured frame wakes the render thread.
+    [[nodiscard]] bool wakes_for_frames() const noexcept override { return true; }
+
+    void open(const std::shared_ptr<FrameSourceHost>& host) override {
+        host_ = host.get();
+        weak_host_ = host;
+    }
+
     // --- UI thread ---
 
-    void play() override {
+    void start() override {
         if (thread_.joinable()) {
             return;
         }
-        error = std::string();
-        playing = true;
-        playing_now_ = true;
-        thread_ = std::jthread([this, weak = std::weak_ptr<VideoSource>(shared_from_this())](const std::stop_token& stop) {
-            capture(stop, weak);
-        });
+        host_->set_error(std::string());
+        host_->set_playing(true);
+        host_->set_playing_now(true);
+        thread_ = std::jthread([this, weak = weak_host_](const std::stop_token& stop) { capture(stop, weak); });
     }
 
-    void pause() override {
+    void stop() override {
         stop_capture();
-        playing = false;
+        host_->set_playing(false);
     }
 
-    void seek(double) override {}
-    void set_volume(float) override {}
-    void set_muted(bool) override {}
-    void set_looping(bool) override {}
-
-    std::optional<std::vector<unsigned char>> snapshot() const override {
-        std::optional<VideoFrame> frame;
-        {
-            const std::lock_guard lock(mutex_);
-            frame = current_;
-        }
-        if (!frame || !frame->pixels) {
-            return std::nullopt;
-        }
-        const std::vector<std::uint8_t> bgra =
-            frame_to_bgra(frame->format, frame->matrix, frame->full_range, *frame->pixels, frame->width, frame->height);
-        if (bgra.empty()) {
-            return std::nullopt;
-        }
-        return encode_png(bgra, frame->width, frame->height);
+    std::optional<VideoFrame> snapshot_frame() const override {
+        const std::lock_guard lock(mutex_);
+        return current_;
     }
 
     // --- Render thread ---
@@ -197,17 +185,18 @@ private:
             thread_.request_stop();
             thread_.join();
         }
-        playing_now_ = false;
+        host_->set_playing_now(false);
     }
 
-    // Capture thread: opens the camera, streams until `stop`, and closes it.
-    void capture(const std::stop_token& stop, const std::weak_ptr<VideoSource>& weak) {
+    // Capture thread: opens the camera, streams until `stop`, and closes it. `weak`: the host, for
+    // what's posted to the UI thread.
+    void capture(const std::stop_token& stop, const std::weak_ptr<FrameSourceHost>& weak) {
         const std::string path = options_.device_id.empty() ? first_camera() : options_.device_id;
         if (path.empty()) {
             fail(weak, "no camera was found");
             return;
         }
-        const FileHandle fd(open(path.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC));
+        const FileHandle fd(::open(path.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC));
         if (!fd) {
             fail(weak, errno == EACCES ? std::format("no permission to use the camera {} (is the user in the video group?)", path)
                                        : std::format("can't open the camera {}: {}", path, errno_text()));
@@ -306,7 +295,7 @@ private:
 
     static std::string first_camera() {
         for (const auto& node : video_nodes()) {
-            const FileHandle fd(open(node.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC));
+            const FileHandle fd(::open(node.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC));
             if (fd && capture_capability(fd.get())) {
                 return node.string();
             }
@@ -373,19 +362,19 @@ private:
     }
 
     // Capture thread: one frame from the camera, packed for the renderer.
-    void deliver(const std::weak_ptr<VideoSource>& weak, std::uint32_t pixel_format, std::span<const std::uint8_t> data,
+    void deliver(const std::weak_ptr<FrameSourceHost>& weak, std::uint32_t pixel_format, std::span<const std::uint8_t> data,
                  std::uint32_t width, std::uint32_t height, std::uint32_t stride) {
         VideoFrame frame;
         frame.kind = VideoFrame::Kind::cpu;
         frame.width = width;
         frame.height = height;
         frame.matrix = VideoFrame::Matrix::bt601; // webcams
-        frame.source_id = VideoSource::id;
-        frame.frame_id = next_media_id();
+        frame.source_id = host_->source_id();
+        frame.frame_id = host_->new_id();
         if (pixel_format == V4L2_PIX_FMT_MJPEG) {
             std::shared_ptr<const DecodedImage> image;
             try {
-                image = decode_image(data);
+                image = host_->decode_image(data);
             } catch (const std::exception&) {
                 return; // a corrupt frame now and then is normal
             }
@@ -413,7 +402,8 @@ private:
                 frame.pixels = std::move(pixels);
             }
         }
-        const Size frame_size{static_cast<float>(frame.width), static_cast<float>(frame.height)};
+        const auto frame_width = static_cast<float>(frame.width);
+        const auto frame_height = static_cast<float>(frame.height);
         bool resized = false;
         {
             const std::lock_guard lock(mutex_);
@@ -421,12 +411,12 @@ private:
             current_ = std::move(frame);
             ++frame_number_;
         }
-        notify_new_frame();
+        host_->notify_new_frame();
         if (resized) {
-            post_ui_task([weak, frame_size] {
+            post_ui_task([weak, frame_width, frame_height] {
                 if (const auto source = weak.lock()) {
-                    source->size = frame_size;
-                    source->ready = true;
+                    source->set_size(frame_width, frame_height);
+                    source->set_ready();
                 }
             });
         }
@@ -463,18 +453,20 @@ private:
     }
 
     // Capture thread: the error the view shows; capturing stops.
-    void fail(const std::weak_ptr<VideoSource>& weak, std::string message) {
-        playing_now_ = false;
+    void fail(const std::weak_ptr<FrameSourceHost>& weak, std::string message) {
+        host_->set_playing_now(false);
         log_warning("camera: {}", message);
         post_ui_task([weak, message = std::move(message)] {
             if (const auto source = weak.lock()) {
-                source->error = message;
-                source->playing = false;
+                source->set_error(message);
+                source->set_playing(false);
             }
         });
     }
 
-    const CameraOptions options_;
+    const CameraRequest options_;
+    FrameSourceHost* host_ = nullptr; // set by open(); outlives the engine
+    std::weak_ptr<FrameSourceHost> weak_host_; // for what's posted to the UI thread
     std::jthread thread_;
 
     mutable std::mutex mutex_;
@@ -485,8 +477,8 @@ private:
 
 } // namespace
 
-std::vector<CameraDevice> platform_camera_devices() {
-    std::vector<CameraDevice> devices;
+std::vector<CameraInfo> system_cameras() {
+    std::vector<CameraInfo> devices;
     for (const auto& node : video_nodes()) {
         const FileHandle fd(open(node.c_str(), O_RDWR | O_NONBLOCK | O_CLOEXEC));
         if (!fd) {
@@ -499,8 +491,8 @@ std::vector<CameraDevice> platform_camera_devices() {
     return devices;
 }
 
-std::shared_ptr<CameraSource> create_platform_camera(CameraOptions options) {
-    return detail::make_ui_shared<V4L2Camera>(std::move(options));
+std::unique_ptr<CameraEngine> create_camera_engine(CameraRequest request) {
+    return std::make_unique<V4L2Camera>(std::move(request));
 }
 
 } // namespace elg::detail

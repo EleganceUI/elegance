@@ -2,12 +2,11 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Font files on Windows (text/font_library.h): Segoe UI, and Windows' own fonts
-// for other scripts and symbols. And the glyph cache's folder (text/text_backend.h).
+// Font files on Windows (text/text_backend.h): Segoe UI, and Windows' own fonts
+// for other scripts and symbols. And the glyph cache's folder.
 // TODO: real system font discovery (DirectWrite).
 
 #include "core/os_backend.h"
-#include "text/font_library.h"
 #include "text/text_backend.h"
 
 #include "platform/platform.h"
@@ -17,8 +16,7 @@
 
 namespace elg::detail {
 
-std::vector<std::filesystem::path> system_font_candidates(Weight weight, bool italic) {
-    const int w = static_cast<int>(weight);
+std::vector<std::filesystem::path> system_font_candidates(int w, bool italic) {
     std::vector<std::filesystem::path> files;
     const std::filesystem::path dir =
         std::filesystem::path(os::environment_variable("WINDIR").value_or("C:\\Windows")) / "Fonts";

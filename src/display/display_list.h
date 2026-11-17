@@ -12,8 +12,8 @@
 #include <elg/path.h>
 #include <elg/view.h>
 
-#include "media/image_decode.h"
-#include "media/video_source.h"
+#include "media/decoded_image.h"
+#include "media/frame_source.h"
 
 #include <array>
 #include <memory>
@@ -90,7 +90,7 @@ struct ImageCommand {
 struct VideoCommand {
     Rect rect;
     Rect uv{0, 0, 1, 1};
-    std::shared_ptr<VideoSource> source;
+    std::shared_ptr<FrameSource> source;
     float opacity = 1;
     // When set, rect is the destination viewport, not a precomputed picture rectangle.
     // Resolve its aspect from the same frame snapshot that will be sampled.

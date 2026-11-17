@@ -7,8 +7,9 @@
 #include "core/numeric.h"
 #include "core/utf8.h"
 #include "platform/platform.h"
-#include "text/glyph_draw.h"
+#include "view/glyph_draw.h"
 #include "text/styled_layout.h"
+#include "view/styled_draw.h"
 
 #include <algorithm>
 #include <cctype>

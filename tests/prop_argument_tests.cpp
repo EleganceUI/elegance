@@ -11,6 +11,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <string>
+#include <vector>
+
 using namespace elg;
 
 namespace {
@@ -83,4 +86,32 @@ TEST_CASE("a lazy stack draws separators between its items", "[prop]") {
     CHECK(lines[0].x == 4);
     CHECK(lines[0].width == 96);
     CHECK(lines[0].y == 24.5f); // in the middle of the spacing after the first item
+}
+
+TEST_CASE("Prop holds a static value or a reactive one", "[prop]") {
+    const Prop<float> fixed = 0.5;
+    REQUIRE(fixed.static_value());
+    CHECK(*fixed.static_value() == 0.5f);
+
+    const State<float> level(0.25f);
+    const Prop<float> from_state = level;
+    CHECK(from_state.is_reactive());
+    CHECK(from_state.get() == 0.25f);
+
+    const Prop<std::string> text = [=] { return std::to_string(static_cast<int>(level() * 100)); };
+    CHECK(text.get() == "25");
+}
+
+TEST_CASE("a Signal works as a Prop, which subscribes through it", "[prop]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const State<bool> hovered(false);
+    const Signal<bool> from_state = hovered;
+    const Prop<bool> prop = from_state;
+    CHECK(prop.is_reactive());
+    std::vector<bool> seen;
+    effect([&] { seen.push_back(prop.get()); }); // reading through the Signal subscribes
+    hovered = true;
+    detail::flush_effects();
+    CHECK(seen == std::vector<bool>{false, true});
 }

@@ -132,5 +132,6 @@ jobs:
                   ELG_GPU_BACKEND: d3d12
               run: |
                   build/windows-release/bin/elegance_tests "[.gpu]"
+                  build/windows-release/bin/elegance_gpu_tests "[.gpu]"
                   build/windows-debug/bin/sandbox --smoke-test
                   build/windows-debug/bin/elegance-preview --smoke-test

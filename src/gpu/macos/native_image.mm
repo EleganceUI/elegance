@@ -2,15 +2,21 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Compiled with ARC.
+// Zero-copy video frames on macOS: IOSurface-backed BGRA pixel buffers imported into the
+// renderer's Metal device as they are (as elg/gpu_image.h's IOSurface transport does), rather
+// than copied into memory and uploaded again. Each buffer stays retained until the renderer is
+// done with it, including the GPU's reads, so the decoder's pool can't reuse it early. Compiled
+// with ARC.
 
-#include "gpu/macos/surface_publisher.h"
+#include "gpu/native_image.h"
 
 #include "core/log.h"
+#include "gpu/external_image.h"
 #include "gpu/render_device.h"
 
 #include <elg/gpu_image.h>
 
+#import <CoreVideo/CoreVideo.h>
 #import <Foundation/Foundation.h>
 #import <IOSurface/IOSurfaceRef.h>
 #import <Metal/Metal.h>
@@ -75,7 +81,7 @@ void released(void* userdata, const ElgGpuImageRelease* release) {
 
 } // namespace
 
-bool SurfacePublisher::available() {
+bool imports_native_images() {
     const auto renderer = gpu::render_device();
     if (!renderer) {
         return false;
@@ -86,38 +92,20 @@ bool SurfacePublisher::available() {
            renderer->device.HasFeature(wgpu::FeatureName::SharedFenceMTLSharedEvent);
 }
 
-CFDictionaryRef SurfacePublisher::buffer_attributes() {
-    static NSDictionary* attributes = @{
-        (__bridge NSString*)kCVPixelBufferPixelFormatTypeKey : @(kCVPixelFormatType_32BGRA),
-        (__bridge NSString*)kCVPixelBufferIOSurfacePropertiesKey : @{},
-        (__bridge NSString*)kCVPixelBufferMetalCompatibilityKey : @YES,
-    };
-    return (__bridge CFDictionaryRef)attributes;
-}
-
-SurfacePublisher::SurfacePublisher() : image_(elg_gpu_image_create(1, 1, ELG_GPU_IMAGE_TOP_LEFT)) {
-    if (image_) {
-        source_ = gpu_image_source(image_);
-    }
-}
-
-SurfacePublisher::~SurfacePublisher() {
-    if (image_) {
-        elg_gpu_image_clear(image_);
-        elg_gpu_image_destroy(image_);
-    }
-}
-
-bool SurfacePublisher::publish(CVPixelBufferRef buffer) {
+NativeImport import_native_image(void* image) {
+    auto buffer = static_cast<CVPixelBufferRef>(image);
     IOSurfaceRef surface = CVPixelBufferGetIOSurface(buffer);
-    if (!image_ || !surface || CVPixelBufferGetPixelFormatType(buffer) != kCVPixelFormatType_32BGRA) {
-        return false;
+    if (!surface || CVPixelBufferGetPixelFormatType(buffer) != kCVPixelFormatType_32BGRA) {
+        return {};
     }
     ElgGpuImageFrame frame{};
     frame.transport = ELG_GPU_IMAGE_IOSURFACE;
     frame.format = ELG_GPU_IMAGE_BGRA8;
     frame.width = static_cast<std::uint32_t>(IOSurfaceGetWidth(surface));
     frame.height = static_cast<std::uint32_t>(IOSurfaceGetHeight(surface));
+    if (frame.width == 0 || frame.height == 0) {
+        return {}; // as elg_gpu_image_publish() refuses it
+    }
     frame.handle = surface;
     frame.memory_fd = -1;
     // The decoder has finished writing a buffer by the time it hands it out.
@@ -126,20 +114,14 @@ bool SurfacePublisher::publish(CVPixelBufferRef buffer) {
     frame.token = g_next_token.fetch_add(1);
     frame.userdata = CVPixelBufferRetain(buffer);
     frame.release = &released;
-    const std::uint32_t status = elg_gpu_image_publish(image_, &frame);
-    if (status != ELG_GPU_IMAGE_OK) {
-        CVPixelBufferRelease(buffer); // no callback follows a failed publish
-        return false;
+    NativeImport imported;
+    if (import_external_image(frame, imported.image) != ELG_GPU_IMAGE_OK) {
+        CVPixelBufferRelease(buffer); // no callback follows a failed import
+        return {};
     }
-    return true;
-}
-
-bool SurfacePublisher::update() {
-    return source_ && source_->update();
-}
-
-std::optional<VideoFrame> SurfacePublisher::current() const {
-    return source_ ? source_->current() : std::nullopt;
+    imported.width = frame.width;
+    imported.height = frame.height;
+    return imported;
 }
 
 } // namespace elg::detail::gpu

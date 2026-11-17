@@ -2,17 +2,16 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Cameras on macOS (design.md §13.3): an AVCaptureSession with a video data output, delivering
-// NV12 on its own queue, packed into `cpu` frames (pixel_buffer.h). macOS asks the person for
-// access the first time (the app's Info.plist needs NSCameraUsageDescription, which
-// EleganceApplication.plist.in has); when it's denied, error() says where to allow it. Compiled
-// with ARC.
+// Cameras on macOS (design.md §13.3, media/video_backend.h): an AVCaptureSession with a video
+// data output, delivering NV12 on its own queue, packed into `cpu` frames (pixel_buffer.h). macOS
+// asks the person for access the first time (the app's Info.plist needs
+// NSCameraUsageDescription, which EleganceApplication.plist.in has); when it's denied, error()
+// says where to allow it. Compiled with ARC.
 
-#include "media/camera_source.h"
+#include "media/video_backend.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
-#include "media/image_decode.h"
 #include "platform/macos/pixel_buffer.h"
 
 #import <AVFoundation/AVFoundation.h>
@@ -44,7 +43,7 @@ namespace elg::detail {
 
 namespace {
 
-// Objective-C's `id`: inside VideoSource subclasses that name is the source's own id member.
+// Objective-C's `id`.
 using ObjcObject = id;
 
 NSArray<AVCaptureDevice*>* video_devices() {
@@ -68,11 +67,15 @@ std::string text_of(NSString* text) {
     return text ? std::string(text.UTF8String) : std::string();
 }
 
-class AVFoundationCamera final : public CameraSource {
+class AVFoundationCamera final : public CameraEngine {
 public:
-    explicit AVFoundationCamera(CameraOptions options) : options_(std::move(options)) {
+    explicit AVFoundationCamera(CameraRequest options) : options_(std::move(options)) {
         queue_ = dispatch_queue_create("elegance.camera", DISPATCH_QUEUE_SERIAL);
     }
+    AVFoundationCamera(const AVFoundationCamera&) = delete;
+    AVFoundationCamera& operator=(const AVFoundationCamera&) = delete;
+    AVFoundationCamera(AVFoundationCamera&&) = delete;
+    AVFoundationCamera& operator=(AVFoundationCamera&&) = delete;
 
     ~AVFoundationCamera() override {
         if (session_) {
@@ -87,28 +90,38 @@ public:
         delegate_.onFrame = nil;
     }
 
+    // The render thread looks for frames while it captures.
+    [[nodiscard]] bool wakes_for_frames() const noexcept override { return false; }
+
+    void open(const std::shared_ptr<FrameSourceHost>& host) override {
+        host_ = host.get();
+        weak_host_ = host;
+    }
+
     // --- UI thread ---
 
-    void play() override {
-        if (playing.peek()) {
+    void start() override {
+        if (host_->playing()) {
             return;
         }
-        error = std::string();
-        playing = true;
-        const std::weak_ptr<AVFoundationCamera> weak = std::static_pointer_cast<AVFoundationCamera>(shared_from_this());
+        host_->set_error(std::string());
+        host_->set_playing(true);
+        // Posted work and callbacks hold the source weakly: while it lives, so does the engine.
+        const std::weak_ptr<FrameSourceHost> weak = weak_host_;
+        AVFoundationCamera* const camera = this;
         switch ([AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo]) {
-        case AVAuthorizationStatusAuthorized: start(); break;
+        case AVAuthorizationStatusAuthorized: start_session(); break;
         case AVAuthorizationStatusNotDetermined: {
             // macOS asks the person; the answer comes on an arbitrary queue.
             [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo
                                      completionHandler:^(BOOL granted) {
-                                       post_ui_task([weak, granted] {
-                                           const auto camera = weak.lock();
-                                           if (!camera || !camera->playing.peek()) {
+                                       post_ui_task([weak, camera, granted] {
+                                           const auto host = weak.lock();
+                                           if (!host || !host->playing()) {
                                                return;
                                            }
                                            if (granted) {
-                                               camera->start();
+                                               camera->start_session();
                                            } else {
                                                camera->fail(denied_message());
                                            }
@@ -121,9 +134,9 @@ public:
         }
     }
 
-    void pause() override {
-        playing = false;
-        playing_now_ = false;
+    void stop() override {
+        host_->set_playing(false);
+        host_->set_playing_now(false);
         if (session_) {
             AVCaptureSession* session = session_;
             dispatch_async(queue_, ^{
@@ -132,26 +145,9 @@ public:
         }
     }
 
-    void seek(double) override {}
-    void set_volume(float) override {}
-    void set_muted(bool) override {}
-    void set_looping(bool) override {}
-
-    std::optional<std::vector<unsigned char>> snapshot() const override {
-        std::optional<VideoFrame> frame;
-        {
-            std::lock_guard lock(mutex_);
-            frame = current_;
-        }
-        if (!frame || !frame->pixels) {
-            return std::nullopt;
-        }
-        const std::vector<std::uint8_t> bgra =
-            frame_to_bgra(frame->format, frame->matrix, frame->full_range, *frame->pixels, frame->width, frame->height);
-        if (bgra.empty()) {
-            return std::nullopt;
-        }
-        return encode_png(bgra, frame->width, frame->height);
+    std::optional<VideoFrame> snapshot_frame() const override {
+        std::lock_guard lock(mutex_);
+        return current_;
     }
 
     // --- Render thread ---
@@ -176,11 +172,11 @@ private:
     }
 
     // UI thread: builds the session the first time, then starts it on the capture queue (it blocks).
-    void start() {
+    void start_session() {
         if (!session_ && !build_session()) {
             return;
         }
-        playing_now_ = true;
+        host_->set_playing_now(true);
         AVCaptureSession* session = session_;
         dispatch_async(queue_, ^{
           [session startRunning];
@@ -222,9 +218,11 @@ private:
         output.alwaysDiscardsLateVideoFrames = YES;
         output.videoSettings = @{(__bridge NSString*)kCVPixelBufferPixelFormatTypeKey : @(macos::kPreferredPixelFormat)};
         delegate_ = [ElgCameraDelegate new];
-        const std::weak_ptr<AVFoundationCamera> weak = std::static_pointer_cast<AVFoundationCamera>(shared_from_this());
+        // The callbacks hold the source weakly: while it lives, so does the engine.
+        const std::weak_ptr<FrameSourceHost> weak = weak_host_;
+        AVFoundationCamera* const camera = this;
         delegate_.onFrame = ^(CVPixelBufferRef buffer) {
-          if (const auto camera = weak.lock()) {
+          if (const auto alive = weak.lock()) {
               camera->on_frame(buffer);
           }
         };
@@ -242,7 +240,7 @@ private:
                                                                queue:nil
                                                           usingBlock:^(NSNotification* note) {
                                                             NSError* failure = note.userInfo[AVCaptureSessionErrorKey];
-                                                            if (const auto camera = weak.lock()) {
+                                                            if (const auto alive = weak.lock()) {
                                                                 camera->fail(std::format(
                                                                     "the camera stopped: {}",
                                                                     failure ? text_of(failure.localizedDescription)
@@ -281,11 +279,12 @@ private:
 
     // Capture queue.
     void on_frame(CVPixelBufferRef buffer) {
-        std::optional<VideoFrame> frame = macos::pack_pixel_buffer(buffer, VideoSource::id);
+        std::optional<VideoFrame> frame = macos::pack_pixel_buffer(buffer, host_->source_id());
         if (!frame) {
             return;
         }
-        const Size frame_size{static_cast<float>(frame->width), static_cast<float>(frame->height)};
+        const auto frame_width = static_cast<float>(frame->width);
+        const auto frame_height = static_cast<float>(frame->height);
         bool resized = false;
         {
             std::lock_guard lock(mutex_);
@@ -294,12 +293,10 @@ private:
             ++frame_number_;
         }
         if (resized) {
-            const std::weak_ptr<AVFoundationCamera> weak =
-                std::static_pointer_cast<AVFoundationCamera>(shared_from_this());
-            post_ui_task([weak, frame_size] {
-                if (const auto camera = weak.lock()) {
-                    camera->size = frame_size;
-                    camera->ready = true;
+            post_ui_task([weak = weak_host_, frame_width, frame_height] {
+                if (const auto host = weak.lock()) {
+                    host->set_size(frame_width, frame_height);
+                    host->set_ready();
                 }
             });
         }
@@ -307,18 +304,19 @@ private:
 
     // Any thread: the error the view shows.
     void fail(std::string message) {
-        playing_now_ = false;
+        host_->set_playing_now(false);
         log_warning("camera: {}", message);
-        const std::weak_ptr<AVFoundationCamera> weak = std::static_pointer_cast<AVFoundationCamera>(shared_from_this());
-        post_ui_task([weak, message = std::move(message)] {
-            if (const auto camera = weak.lock()) {
-                camera->error = message;
-                camera->playing = false;
+        post_ui_task([weak = weak_host_, message = std::move(message)] {
+            if (const auto host = weak.lock()) {
+                host->set_error(message);
+                host->set_playing(false);
             }
         });
     }
 
-    const CameraOptions options_;
+    const CameraRequest options_;
+    FrameSourceHost* host_ = nullptr; // set by open(); outlives the engine
+    std::weak_ptr<FrameSourceHost> weak_host_; // for the callbacks and what's posted to the UI thread
     dispatch_queue_t queue_ = nil;
     AVCaptureSession* session_ = nil;
     ElgCameraDelegate* delegate_ = nil;
@@ -332,16 +330,16 @@ private:
 
 } // namespace
 
-std::vector<CameraDevice> platform_camera_devices() {
-    std::vector<CameraDevice> devices;
+std::vector<CameraInfo> system_cameras() {
+    std::vector<CameraInfo> devices;
     for (AVCaptureDevice* device in video_devices()) {
         devices.push_back({text_of(device.uniqueID), text_of(device.localizedName)});
     }
     return devices;
 }
 
-std::shared_ptr<CameraSource> create_platform_camera(CameraOptions options) {
-    return detail::make_ui_shared<AVFoundationCamera>(std::move(options));
+std::unique_ptr<CameraEngine> create_camera_engine(CameraRequest request) {
+    return std::make_unique<AVFoundationCamera>(std::move(request));
 }
 
 } // namespace elg::detail

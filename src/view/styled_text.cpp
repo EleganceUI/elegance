@@ -11,6 +11,7 @@
 #include "text/text_system.h"
 #include "view/accessibility.h"
 #include "view/element.h"
+#include "view/styled_draw.h"
 #include "view/view_node.h"
 
 #include <elg/environment.h>

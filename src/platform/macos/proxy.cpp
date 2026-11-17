@@ -2,9 +2,9 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// The system's proxy settings on macOS (net/proxy.h): CFNetwork, which also runs PAC scripts.
+// The system's proxy settings on macOS (net/net_backend.h): CFNetwork, which also runs PAC scripts.
 
-#include "net/proxy.h"
+#include "net/net_backend.h"
 
 #include "core/log.h"
 
@@ -14,6 +14,7 @@
 #include <chrono>
 #include <format>
 #include <string>
+#include <variant>
 
 namespace elg::detail::net {
 
@@ -82,7 +83,7 @@ CFArrayRef run_pac(CFDictionaryRef entry, CFURLRef target) {
 }
 
 // The first usable entry of CFNetwork's list for a URL.
-ProxyChoice choose(CFArrayRef proxies, CFURLRef target, int depth = 0) {
+SystemProxy choose(CFArrayRef proxies, CFURLRef target, int depth = 0) {
     bool unsupported = false;
     for (CFIndex i = 0; proxies && i < CFArrayGetCount(proxies); ++i) {
         const auto entry = static_cast<CFDictionaryRef>(CFArrayGetValueAtIndex(proxies, i));
@@ -91,14 +92,14 @@ ProxyChoice choose(CFArrayRef proxies, CFURLRef target, int depth = 0) {
             continue;
         }
         if (CFEqual(type, kCFProxyTypeNone)) {
-            return std::nullopt;
+            return std::monostate{};
         }
         if (CFEqual(type, kCFProxyTypeHTTP) || CFEqual(type, kCFProxyTypeHTTPS)) {
             const auto host = static_cast<CFStringRef>(CFDictionaryGetValue(entry, kCFProxyHostNameKey));
             const auto port = static_cast<CFNumberRef>(CFDictionaryGetValue(entry, kCFProxyPortNumberKey));
             int number = 0;
             if (host && port && CFNumberGetValue(port, kCFNumberIntType, &number) && number > 0) {
-                return Proxy{cf_string(host), std::to_string(number), {}};
+                return SystemProxyServer{cf_string(host), std::to_string(number)};
             }
             continue;
         }
@@ -107,23 +108,23 @@ ProxyChoice choose(CFArrayRef proxies, CFURLRef target, int depth = 0) {
             CFArrayRef resolved = run_pac(entry, target);
             if (!resolved) {
                 log_warning("net: the proxy auto-configuration script failed; connecting directly");
-                return std::nullopt;
+                return std::monostate{};
             }
-            ProxyChoice choice = choose(resolved, target, depth + 1);
+            SystemProxy choice = choose(resolved, target, depth + 1);
             CFRelease(resolved);
             return choice;
         }
         unsupported = true; // SOCKS, FTP
     }
     if (unsupported) {
-        return std::unexpected("the system's proxy isn't supported (only HTTP proxies are)");
+        return SystemProxyError{"the system's proxy isn't supported (only HTTP proxies are)"};
     }
-    return std::nullopt;
+    return std::monostate{};
 }
 
 } // namespace
 
-ProxyChoice system_proxy(std::string_view scheme, std::string_view host, std::string_view port) {
+SystemProxy system_proxy(std::string_view scheme, std::string_view host, std::string_view port) {
     const std::string text = std::format("{}://{}:{}/", scheme, host.find(':') != std::string_view::npos
                                                                      ? std::format("[{}]", host)
                                                                      : std::string(host), port);
@@ -137,10 +138,10 @@ ProxyChoice system_proxy(std::string_view scheme, std::string_view host, std::st
         if (settings) {
             CFRelease(settings);
         }
-        return std::nullopt;
+        return std::monostate{};
     }
     CFArrayRef proxies = CFNetworkCopyProxiesForURL(target, settings);
-    ProxyChoice choice = choose(proxies, target);
+    SystemProxy choice = choose(proxies, target);
     if (proxies) {
         CFRelease(proxies);
     }

@@ -30,61 +30,60 @@ VideoFrame::Format frame_format(VideoFeed::Format format) {
 
 } // namespace
 
-// Pushing and clearing wake the render thread: it never looks for frames on its own.
-class FeedSource final : public VideoSource {
+// A feed's frames: what its last push() or clear() left. Pushing and clearing wake the render
+// thread: it never looks for frames on its own.
+class FeedFrames final : public FrameSource {
 public:
-    FeedSource() : VideoSource(true) {}
+    FeedFrames() : FrameSource(true) {}
 
-    void play() override {}
-    void pause() override {}
-    void seek(double) override {}
-    void set_volume(float) override {}
-    void set_muted(bool) override {}
-    void set_looping(bool) override {}
-
-    // Any thread.
-    void push(VideoFeed::Format format, std::uint32_t width, std::uint32_t height, std::vector<std::uint8_t> pixels,
+    // Any thread. True if the views' size and flags must follow (FeedSource::sync()): the frame
+    // changed size or appeared, and no sync is pending.
+    bool push(VideoFrame::Format format, std::uint32_t width, std::uint32_t height, std::vector<std::uint8_t> pixels,
               bool full_range) {
-        const VideoFrame::Format f = frame_format(format);
-        if (width == 0 || height == 0 || pixels.size() < packed_size(f, width, height)) {
-            return;
+        if (width == 0 || height == 0 || pixels.size() < packed_size(format, width, height)) {
+            return false;
         }
         bool post = false;
         {
             const std::lock_guard lock(mutex_);
             const bool resized = width != width_ || height != height_ || !frame_;
             frame_ = std::make_shared<const std::vector<std::uint8_t>>(std::move(pixels));
-            format_ = f;
+            format_ = format;
             width_ = width;
             height_ = height;
             full_range_ = full_range;
             ++number_;
-            playing_now_ = true;
+            set_playing_now(true);
             post = resized && !std::exchange(sync_pending_, true);
         }
         notify_new_frame();
-        if (post) {
-            post_sync();
-        }
+        return post;
     }
 
-    void clear() {
+    // Any thread. True as for push().
+    bool clear() {
         bool post = false;
         {
             const std::lock_guard lock(mutex_);
             if (!frame_) {
-                return;
+                return false; // nothing shown: nothing changes
             }
             frame_.reset();
             width_ = height_ = 0;
             ++number_;
-            playing_now_ = false;
+            set_playing_now(false);
             post = !std::exchange(sync_pending_, true);
         }
         notify_new_frame();
-        if (post) {
-            post_sync();
-        }
+        return post;
+    }
+
+    // UI thread, for FeedSource::sync(): the size and whether there's a frame, as the feed is now.
+    // The next change of size posts a sync again.
+    std::pair<Size, bool> sync() {
+        const std::lock_guard lock(mutex_);
+        sync_pending_ = false;
+        return {Size{static_cast<float>(width_), static_cast<float>(height_)}, frame_ != nullptr};
     }
 
     // Render thread.
@@ -116,13 +115,53 @@ public:
     }
 
 private:
-    // The calls that ran last under the lock decide what windows show, whatever the threads:
+    mutable std::mutex mutex_;
+    bool sync_pending_ = false; // a sync() is posted and hasn't read the state yet
+    std::shared_ptr<const std::vector<std::uint8_t>> frame_;
+    VideoFrame::Format format_ = VideoFrame::Format::bgra;
+    std::uint32_t width_ = 0;
+    std::uint32_t height_ = 0;
+    bool full_range_ = false;
+    std::uint64_t number_ = 0;
+    std::uint64_t reported_ = 0;
+};
+
+// A feed's views' states, and its frames.
+class FeedSource final : public VideoSource {
+public:
+    FeedSource() : frames_(std::make_shared<FeedFrames>()) {}
+    std::shared_ptr<FrameSource> frames() override { return frames_; }
+
+    void play() override {}
+    void pause() override {}
+    void seek(double) override {}
+    void set_volume(float) override {}
+    void set_muted(bool) override {}
+    void set_looping(bool) override {}
+
+    // Any thread.
+    void push(VideoFeed::Format format, std::uint32_t width, std::uint32_t height, std::vector<std::uint8_t> pixels,
+              bool full_range) {
+        if (frames_->push(frame_format(format), width, height, std::move(pixels), full_range)) {
+            post_sync();
+        }
+    }
+
+    void clear() {
+        if (frames_->clear()) {
+            post_sync();
+        }
+    }
+
+private:
+    // The calls that ran last under the frames' lock decide what windows show, whatever the
+    // threads:
     // - The render thread: each call changes the frame under the lock, then wakes the render
     //   thread, which then takes the frame under the lock. A wake that comes while the render
     //   thread is busy isn't lost (FrameMailbox keeps it), so after the last call's wake the
     //   render thread draws what the last call left, or something newer.
     // - The views' size and flags (UI thread): a call that changes the size or whether there's
-    //   a frame posts a sync() unless one is pending. sync() clears `sync_pending_` and reads the
+    //   a frame posts a sync() unless one is pending. sync() clears the pending flag and reads the
     //   state under the lock, so the pending one reads every change made before it runs. UI
     //   tasks run in order, so the last one to run reads the final state.
     void post_sync() {
@@ -134,28 +173,13 @@ private:
     }
     // UI thread: the views' size and flags, as the feed is now.
     void sync() {
-        Size frame_size;
-        bool has_frame = false;
-        {
-            const std::lock_guard lock(mutex_);
-            sync_pending_ = false;
-            has_frame = frame_ != nullptr;
-            frame_size = Size{static_cast<float>(width_), static_cast<float>(height_)};
-        }
+        const auto [frame_size, has_frame] = frames_->sync();
         size = frame_size;
         ready = has_frame;
         playing = has_frame;
     }
 
-    mutable std::mutex mutex_;
-    bool sync_pending_ = false; // a sync() is posted and hasn't read the state yet
-    std::shared_ptr<const std::vector<std::uint8_t>> frame_;
-    VideoFrame::Format format_ = VideoFrame::Format::bgra;
-    std::uint32_t width_ = 0;
-    std::uint32_t height_ = 0;
-    bool full_range_ = false;
-    std::uint64_t number_ = 0;
-    std::uint64_t reported_ = 0;
+    const std::shared_ptr<FeedFrames> frames_;
 };
 
 } // namespace detail

@@ -2,15 +2,14 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Cameras on Windows (design.md §13.3): Media Foundation's source reader (or DirectShow, for
-// cameras only it sees) on a capture thread. Windows asks the person for access in
-// Settings > Privacy; when it's denied, error() says so.
+// Cameras on Windows (design.md §13.3, media/video_backend.h): Media Foundation's source reader
+// (or DirectShow, for cameras only it sees) on a capture thread. Windows asks the person for
+// access in Settings > Privacy; when it's denied, error() says so.
 
-#include "media/camera_source.h"
+#include "media/video_backend.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
-#include "media/image_decode.h"
 
 #include <elg/error.h>
 
@@ -274,34 +273,41 @@ std::string string_attribute(IMFActivate* device, const GUID& key) {
 }
 
 // One camera, captured on its own thread; frames reach the GPU through update().
-class MediaFoundationCamera final : public CameraSource {
+class MediaFoundationCamera final : public CameraEngine {
 public:
-    explicit MediaFoundationCamera(CameraOptions options) : options_(std::move(options)) {}
+    explicit MediaFoundationCamera(CameraRequest options) : options_(std::move(options)) {}
+    MediaFoundationCamera(const MediaFoundationCamera&) = delete;
+    MediaFoundationCamera& operator=(const MediaFoundationCamera&) = delete;
+    MediaFoundationCamera(MediaFoundationCamera&&) = delete;
+    MediaFoundationCamera& operator=(MediaFoundationCamera&&) = delete;
 
     ~MediaFoundationCamera() override { stop_capture(); }
 
+    // The render thread looks for frames while it captures.
+    [[nodiscard]] bool wakes_for_frames() const noexcept override { return false; }
+
+    void open(const std::shared_ptr<FrameSourceHost>& host) override {
+        host_ = host.get();
+        weak_host_ = host;
+    }
+
     // --- UI thread ---
 
-    void play() override {
+    void start() override {
         if (thread_.joinable()) {
             return;
         }
-        error = std::string();
-        playing = true;
-        thread_ = std::jthread([this, weak = std::weak_ptr<VideoSource>(shared_from_this())](std::stop_token stop) {
-            capture(stop, weak);
-        });
+        host_->set_error(std::string());
+        host_->set_playing(true);
+        thread_ = std::jthread([this, weak = weak_host_](std::stop_token stop) { capture(stop, weak); });
     }
-    void pause() override {
+    void stop() override {
         stop_capture();
-        playing = false;
+        host_->set_playing(false);
     }
-    void seek(double) override {}
-    void set_volume(float) override {}
-    void set_muted(bool) override {}
-    void set_looping(bool) override {}
 
-    std::optional<std::vector<unsigned char>> snapshot() const override {
+    // As captured (BGRA), or converted to BGRA as this camera converts YUV.
+    std::optional<VideoFrame> snapshot_frame() const override {
         std::shared_ptr<const std::vector<std::uint8_t>> frame;
         std::uint32_t width = 0;
         std::uint32_t height = 0;
@@ -316,17 +322,22 @@ public:
             height = frame_height_;
             subtype = frame_subtype_;
         }
-        std::vector<std::uint8_t> bgra;
+        VideoFrame snapshot;
+        snapshot.kind = VideoFrame::Kind::cpu;
+        snapshot.width = width;
+        snapshot.height = height;
+        snapshot.format = VideoFrame::Format::bgra; // a snapshot makes its alpha opaque
         if (subtype == MEDIASUBTYPE_RGB32) {
-            bgra = *frame;
-            for (std::size_t i = 3; i < bgra.size(); i += 4) {
-                bgra[i] = 255; // RGB32 leaves alpha undefined
-            }
-        } else if (!to_bgra(subtype, frame->data(), static_cast<long>(frame->size()), static_cast<int>(width),
-                            static_cast<int>(height), bgra)) {
+            snapshot.pixels = std::move(frame);
+            return snapshot;
+        }
+        std::vector<std::uint8_t> bgra;
+        if (!to_bgra(subtype, frame->data(), static_cast<long>(frame->size()), static_cast<int>(width),
+                     static_cast<int>(height), bgra)) {
             return std::nullopt;
         }
-        return encode_png(bgra, width, height);
+        snapshot.pixels = std::make_shared<const std::vector<std::uint8_t>>(std::move(bgra));
+        return snapshot;
     }
 
     // --- Render thread ---
@@ -352,7 +363,7 @@ public:
         frame.format = frame_format(frame_subtype_);
         frame.matrix = frame_height_ >= 720 ? VideoFrame::Matrix::bt709 : VideoFrame::Matrix::bt601;
         frame.pixels = frame_;
-        frame.source_id = id;
+        frame.source_id = host_->source_id();
         frame.frame_id = frame_number_;
         return frame;
     }
@@ -363,22 +374,22 @@ private:
             thread_.request_stop();
             thread_.join(); // ReadSample returns within a frame
         }
-        playing_now_ = false;
+        host_->set_playing_now(false);
     }
 
-    void fail(const std::weak_ptr<VideoSource>& weak, std::string message) {
+    void fail(const std::weak_ptr<FrameSourceHost>& weak, std::string message) {
         log_warning("Camera: {}", message);
-        playing_now_ = false;
+        host_->set_playing_now(false);
         post_ui_task([weak, message] {
             if (const auto source = weak.lock()) {
-                source->error = message;
-                source->playing = false;
+                source->set_error(message);
+                source->set_playing(false);
             }
         });
     }
 
-    // The capture thread.
-    void capture(std::stop_token stop, std::weak_ptr<VideoSource> weak) {
+    // The capture thread. `weak`: the host, for what's posted to the UI thread.
+    void capture(std::stop_token stop, std::weak_ptr<FrameSourceHost> weak) {
         // A single-threaded apartment with a message loop (capture_directshow): DirectShow filters
         // that are apartment-threaded, like OBS's virtual camera, only deliver frames then.
         CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
@@ -444,11 +455,11 @@ private:
         current->GetGUID(MF_MT_SUBTYPE, &subtype);
         post_ui_task([weak, width, height] {
             if (const auto self = weak.lock()) {
-                self->size = Size{static_cast<float>(width), static_cast<float>(height)};
-                self->ready = true;
+                self->set_size(static_cast<float>(width), static_cast<float>(height));
+                self->set_ready();
             }
         });
-        playing_now_ = true;
+        host_->set_playing_now(true);
 
         while (!stop.stop_requested()) {
             DWORD flags = 0;
@@ -471,13 +482,13 @@ private:
             }
             store(buffer.Get(), subtype, width, height);
         }
-        playing_now_ = false;
+        host_->set_playing_now(false);
         reader.Reset();
         source->Shutdown();
     }
 
     // The same through a DirectShow graph: camera -> Sample Grabber (RGB32) -> Null Renderer.
-    void capture_directshow(std::stop_token stop, const std::weak_ptr<VideoSource>& weak) {
+    void capture_directshow(std::stop_token stop, const std::weak_ptr<FrameSourceHost>& weak) {
         const auto devices = enumerate_directshow();
         const std::string wanted = options_.device_id.starts_with(kDirectShowPrefix)
                                        ? options_.device_id.substr(std::string_view(kDirectShowPrefix).size())
@@ -638,11 +649,11 @@ private:
         }
         post_ui_task([weak, width, height] {
             if (const auto self = weak.lock()) {
-                self->size = Size{static_cast<float>(width), static_cast<float>(std::abs(height))};
-                self->ready = true;
+                self->set_size(static_cast<float>(width), static_cast<float>(std::abs(height)));
+                self->set_ready();
             }
         });
-        playing_now_ = true;
+        host_->set_playing_now(true);
         while (!stop.stop_requested()) {
             // Pump this apartment's messages while waiting.
             MsgWaitForMultipleObjects(0, nullptr, FALSE, 50, QS_ALLINPUT);
@@ -654,7 +665,7 @@ private:
         }
         control->Stop();
         grabber->SetCallback(nullptr, 1);
-        playing_now_ = false;
+        host_->set_playing_now(false);
     }
 
     // The camera mode closest to the requested size (larger preferred over smaller), at its best
@@ -756,7 +767,9 @@ private:
         ++frame_number_;
     }
 
-    CameraOptions options_;
+    CameraRequest options_;
+    FrameSourceHost* host_ = nullptr; // set by open(); outlives the engine
+    std::weak_ptr<FrameSourceHost> weak_host_; // for what's posted to the UI thread
     std::jthread thread_;
 
     mutable std::mutex frame_mutex_;
@@ -772,22 +785,22 @@ private:
 
 } // namespace
 
-std::vector<CameraDevice> platform_camera_devices() {
-    std::vector<CameraDevice> devices;
+std::vector<CameraInfo> system_cameras() {
+    std::vector<CameraInfo> devices;
     for (const auto& camera : enumerate_cameras()) {
         devices.push_back({string_attribute(camera.Get(), MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK),
                            string_attribute(camera.Get(), MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME)});
     }
     for (const auto& [name, moniker] : enumerate_directshow()) {
-        if (std::ranges::none_of(devices, [&](const CameraDevice& d) { return d.name == name; })) {
+        if (std::ranges::none_of(devices, [&](const CameraInfo& d) { return d.name == name; })) {
             devices.push_back({std::string(kDirectShowPrefix) + name, name});
         }
     }
     return devices;
 }
 
-std::shared_ptr<CameraSource> create_platform_camera(CameraOptions options) {
-    return detail::make_ui_shared<MediaFoundationCamera>(std::move(options));
+std::unique_ptr<CameraEngine> create_camera_engine(CameraRequest request) {
+    return std::make_unique<MediaFoundationCamera>(std::move(request));
 }
 
 } // namespace elg::detail

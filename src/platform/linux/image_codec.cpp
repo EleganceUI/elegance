@@ -2,11 +2,11 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// Images on Linux (media/image_decode.h): stb_image and stb_image_write, with the EXIF orientation
+// Images on Linux (media/image_codec_backend.h): stb_image and stb_image_write, with the EXIF orientation
 // of JPEG and PNG files read here, and images scaled down here too (stb_image_resize2 stores
 // floats through misaligned 64-bit pointers).
 
-#include "media/image_decode.h"
+#include "media/image_codec_backend.h"
 
 #include <elg/error.h>
 

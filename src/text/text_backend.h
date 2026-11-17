@@ -12,8 +12,16 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace elg::detail {
+
+// Font files to try for the system UI font of `weight` (100 to 900, as elg::Weight) and
+// `italic`, best match first. (macOS's SF is a variable font: one file draws every weight.)
+std::vector<std::filesystem::path> system_font_candidates(int weight, bool italic);
+// Fonts to fall back to for characters the requested font lacks, in order: symbols, emoji
+// (monochrome until color glyphs, design.md §11), CJK, then other scripts.
+std::vector<std::filesystem::path> fallback_font_candidates();
 
 // The glyph cache's folder (text/glyph_cache.h), in the user's cache folder as the system names
 // them, from the environment variables that `get` reads. nullopt when there's none.

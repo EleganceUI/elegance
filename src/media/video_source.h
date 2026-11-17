@@ -5,108 +5,46 @@
 #ifndef ELG_MEDIA_VIDEO_SOURCE_H
 #define ELG_MEDIA_VIDEO_SOURCE_H
 
+#include "media/frame_source.h"
+#include "media/video_frame.h"
+
 #include <elg/geometry.h>
 #include <elg/reactive.h>
 
-#include <array>
-#include <atomic>
-#include <cstdint>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 
 namespace elg::detail {
 
-namespace gpu {
-class ExternalImage; // the GPU layer's (gpu/external_image.h): opaque here
-} // namespace gpu
-
-// The GPU adapter the renderer uses (Windows: its LUID), published by the render thread once its
-// device exists. Video decoders must use the same adapter to share frames with it. When the
-// renderer can't import shared textures (Dawn's Vulkan backend on Windows), decoders hand over
-// `cpu` frames instead.
-struct RenderAdapter {
-    std::array<std::uint8_t, 8> luid{};
-    bool shares_textures = false;
-};
+// Published by the render thread once its device exists (RenderAdapter, media/video_frame.h).
 void set_render_adapter(RenderAdapter adapter);
 std::optional<RenderAdapter> render_adapter();
 
-// Told when the renderer reads a frame's shared texture (render thread), so its owner knows when
-// it may write it again.
-class SharedTextureOwner {
-public:
-    virtual ~SharedTextureOwner() = default;
-    virtual void began_reading(std::uint64_t texture_id) = 0;
-    // `fence` (Windows: a shared D3D fence's NT handle, valid for the call) reaches `value` once
-    // the GPU is done with it; null when there's nothing to wait for.
-    virtual void finished_reading(std::uint64_t texture_id, void* fence, std::uint64_t value) = 0;
+// How the renderer imports frames of VideoFrame::Kind::native (FrameSourceHost's functions of
+// those names): set by the render thread before its device exists. Any thread.
+struct NativeFrameImporter {
+    bool (*imports_native_frames)() = nullptr;
+    std::optional<VideoFrame> (*import_native_frame)(const VideoFrame& frame) = nullptr;
 };
+void set_native_frame_importer(NativeFrameImporter importer);
 
-// A frame for the renderer (design.md §13.3). How it gets to the GPU depends on the platform:
-// - `d3d11_shared`: a BGRA (or `rgba`) texture the decoder shares (Windows: an NT handle),
-//   sampled in place. `texture_id` changes when the texture does. With `wait_fence`, the GPU
-//   waits for that shared fence to reach `wait_value` before reading; `owner` hears about reads.
-// - `external`: an immutable imported allocation with an open Dawn access and an sRGB view.
-//   Snapshots and pending recordings retain it until submission; the last owner ends access and
-//   exports consumer fences before returning the allocation to its producer.
-// - `cpu`: pixels in memory, in `format`, packed (no row padding), top to bottom. The renderer
-//   uploads them and converts YUV to RGB in a GPU pass, the same on every platform. Any
-//   decoder or camera can start here.
-// Later: macOS IOSurfaces and Linux DMA-BUFs, imported like the D3D11 textures (macOS decodes to
-// `cpu` NV12 for now).
-struct VideoFrame {
-    enum class Kind { d3d11_shared, cpu, external };
-    enum class Format : std::uint32_t { bgra = 0, nv12 = 1, yuy2 = 2, i420 = 3, rgba = 4 }; // rgba: texture storage
-    enum class Matrix : std::uint32_t { bt601 = 0, bt709 = 1 };
-
-    Kind kind = Kind::cpu;
-    std::uint32_t width = 0;
-    std::uint32_t height = 0;
-    // d3d11_shared
-    void* shared_handle = nullptr;
-    std::uint64_t texture_id = 0;
-    void* wait_fence = nullptr;
-    std::uint64_t wait_fence_id = 0; // unique to the fence (handle values get reused)
-    std::uint64_t wait_value = 0;
-    std::weak_ptr<SharedTextureOwner> owner;
-    // external: the imported image, with its device, texture and prevalidated sRGB view. It owns
-    // one immutable imported allocation and its open Dawn access. Every snapshot and pending
-    // recording must retain it until submission.
-    std::shared_ptr<const gpu::ExternalImage> external;
-    // cpu (format also describes shared/external texture storage)
-    Format format = Format::bgra;
-    Matrix matrix = Matrix::bt709;
-    bool full_range = false; // YUV: 0...255 rather than 16...235
-    std::shared_ptr<const std::vector<std::uint8_t>> pixels;
-    std::uint64_t source_id = 0; // the renderer keeps a ring of images per source
-    std::uint64_t frame_id = 0;  // changes with every new frame
-};
-
-// A new id, unique among sources and the textures decoders share (VideoFrame::texture_id).
-std::uint64_t next_media_id();
-
-// What VideoSource::notify_new_frame() calls to wake the render thread: set by the render thread
-// while it runs, and cleared (an empty function) before it stops. Any thread.
-void set_frame_waker(std::function<void()> waker);
-
-// Bytes in a packed frame of `format`.
-std::size_t packed_size(VideoFrame::Format format, std::uint32_t width, std::uint32_t height);
-
-// A video being played (design.md §13.3), shared by VideoPlayer copies, the views showing it, and
-// frames on the render thread. The platform's media engine decodes it, plays its sound, and keeps
-// them in sync.
+// A video being played (design.md §13.3), shared by VideoPlayer copies and the views showing it:
+// what they ask of it, and what they read. The platform's media engine decodes it, plays its
+// sound, and keeps them in sync (media/video_backend.h). Its frames reach the renderer through
+// its FrameSource. UI thread.
 class VideoSource : public std::enable_shared_from_this<VideoSource> {
 public:
-    // UI thread. `url` is a file path or an http(s) URL.
+    // `url` is a file path or an http(s) URL.
     static std::shared_ptr<VideoSource> create(const std::string& url);
     // A source that never plays, with `message` as its error.
     static std::shared_ptr<VideoSource> unsupported(std::string message);
+    VideoSource(const VideoSource&) = delete;
+    VideoSource& operator=(const VideoSource&) = delete;
+    VideoSource(VideoSource&&) = delete;
+    VideoSource& operator=(VideoSource&&) = delete;
     virtual ~VideoSource() = default;
 
-    // --- UI thread ---
     virtual void play() = 0;
     virtual void pause() = 0;
     virtual void seek(double seconds) = 0;
@@ -114,7 +52,7 @@ public:
     virtual void set_muted(bool muted) = 0;
     virtual void set_looping(bool looping) = 0;
 
-    // What views read; updated on the UI thread from the engine's events.
+    // What views read; updated from the engine's events.
     State<bool> playing{false};
     State<bool> ready{false}; // metadata loaded: duration and size known
     State<double> time{0.0};
@@ -125,37 +63,12 @@ public:
     State<bool> looping{false};
     State<std::string> error{std::string()};
 
-    // --- Render thread ---
-    // Takes a new frame from the decoder if one is due; true if the current frame changed.
-    virtual bool update() = 0;
-    virtual std::optional<VideoFrame> current() const = 0;
-    // Whether frames keep coming.
-    bool is_playing_now() const noexcept { return playing_now_.load(std::memory_order_relaxed); }
-    // Whether it calls notify_new_frame() for each new frame; otherwise the render thread looks
-    // for frames regularly while it plays.
-    [[nodiscard]] bool wakes_for_frames() const noexcept { return wakes_for_frames_; }
-    // Whether a window shows it (FrameSources): only then do its new frames wake the render
-    // thread.
-    void set_shown(bool shown) noexcept { shown_ = shown; }
-
-    const std::uint64_t id;
+    // Its frames, for the display list and the render thread.
+    [[nodiscard]] virtual std::shared_ptr<FrameSource> frames() = 0;
 
 protected:
-    // `wakes_for_frames`: see wakes_for_frames().
-    explicit VideoSource(bool wakes_for_frames = false);
-    // Any thread, after the source's state changed: wakes the render thread, when a window shows
-    // it, to draw its new frame (or the lack of one).
-    void notify_new_frame() const;
-
-    std::atomic<bool> playing_now_{false};
-
-private:
-    const bool wakes_for_frames_;
-    std::atomic<bool> shown_{false};
+    VideoSource() = default;
 };
-
-// VideoSource::create's backend: each OS's media engine (platform/<os>/video_source.*). UI thread.
-std::shared_ptr<VideoSource> create_platform_video_source(const std::string& url);
 
 } // namespace elg::detail
 

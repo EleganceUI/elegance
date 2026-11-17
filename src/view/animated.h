@@ -8,6 +8,8 @@
 // Animated element properties (design.md §9.5): values that ease from where they are to a new
 // target when set during an animated transaction, evaluated at the frame's time.
 
+#include "animation/frame_clock.h"
+
 #include <elg/animation.h>
 #include <elg/color.h>
 #include <elg/geometry.h>
@@ -19,28 +21,6 @@
 #include <utility>
 
 namespace elg::detail {
-
-// The current frame's time in seconds (steady clock), set by the app once per frame so every
-// animation in a frame samples the same instant.
-double frame_time() noexcept;
-void set_frame_time(double seconds) noexcept;
-
-// The animation for layout changes in the frame being built (an animated transaction's), or
-// nullptr. Set by the app around layout.
-const Animation* layout_animation() noexcept;
-
-class LayoutAnimationScope {
-public:
-    explicit LayoutAnimationScope(const Animation* animation) noexcept;
-    ~LayoutAnimationScope();
-    LayoutAnimationScope(const LayoutAnimationScope&) = delete;
-    LayoutAnimationScope& operator=(const LayoutAnimationScope&) = delete;
-    LayoutAnimationScope(LayoutAnimationScope&&) = delete;
-    LayoutAnimationScope& operator=(LayoutAnimationScope&&) = delete;
-
-private:
-    const Animation* previous_;
-};
 
 // `.animation(animation, value)` on a subtree: changes inside animate when the value changed in
 // the same update (any flush since the last layout pass, through the next one).

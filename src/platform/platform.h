@@ -16,14 +16,11 @@
 #include <elg/geometry.h>
 
 #include <cstdint>
-#include <deque>
 #include <filesystem>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
-
-struct SDL_Window;
-union SDL_Event;
 
 namespace elg::detail::platform {
 
@@ -127,100 +124,86 @@ enum class HitArea {
 
 class Window;
 
-namespace native {
-// The OS's parts of a window (platform/sdl/native.h).
-struct WindowParts {
-    void* metal_view = nullptr; // SDL_MetalView on macOS: the window's CAMetalLayer
-    void* title_bar = nullptr;  // TitleBar::integrated on macOS (platform/macos/title_bar.h)
-};
-} // namespace native
-
 // A popup (menu or tooltip) window attached to `parent` (design.md §13.1).
 struct PopupSpec {
     const Window* parent = nullptr;
     bool tooltip = false;
 };
 
+// A window of the app, which the platform implementation makes (create_window()).
 class Window {
 public:
-    // Created hidden; call show() once the first frame is queued. With `popup`, the window is a
-    // borderless, transparent popup of its parent (place it with set_popup_frame()).
-    explicit Window(const WindowDesc& desc, const PopupSpec* popup = nullptr);
-    ~Window();
+    virtual ~Window() = default;
 
     Window(const Window&) = delete;
     Window& operator=(const Window&) = delete;
     Window(Window&&) = delete;
     Window& operator=(Window&&) = delete;
 
-    [[nodiscard]] std::uint32_t id() const noexcept { return id_; }
-    [[nodiscard]] PixelSize pixel_size() const;
+    [[nodiscard]] virtual std::uint32_t id() const noexcept = 0;
+    [[nodiscard]] virtual PixelSize pixel_size() const = 0;
     // Pixels per logical point.
-    [[nodiscard]] float scale() const;
-    [[nodiscard]] Size logical_size() const;
+    [[nodiscard]] virtual float scale() const = 0;
+    [[nodiscard]] virtual Size logical_size() const = 0;
     // Converts window coordinates (as in pointer events) to logical points.
-    [[nodiscard]] Point to_logical(float x, float y) const;
+    [[nodiscard]] virtual Point to_logical(float x, float y) const = 0;
     // Text input (IME) for this window, and where the text being edited is (logical points).
     // `secure`: a password's, as the platforms' password fields do it: SDL's password input type
     // (Wayland turns the IME off), the IME detached (Windows), and Secure Event Input while the
     // window has the keyboard (macOS: no IME, and other apps can't read the keys).
-    void start_text_input(bool secure);
-    void stop_text_input();
+    virtual void start_text_input(bool secure) = 0;
+    virtual void stop_text_input() = 0;
     // Call when any window gained or lost keyboard focus: macOS Secure Event Input is on only
     // while the window with the password field has it (it's system-wide).
-    void update_secure_input();
-    void set_text_input_area(Rect area, float cursor);
+    virtual void update_secure_input() = 0;
+    virtual void set_text_input_area(Rect area, float cursor) = 0;
 
-    void show();
+    virtual void show() = 0;
     // Whether to show the window before drawing its first frame, rather than after. Wayland
     // forbids drawing into a window before the compositor configures it, which showing does
     // (and maps windows only once they have a frame, so they never appear blank there anyway).
     [[nodiscard]] static bool shows_before_first_frame();
     // The window system's handle (HWND on Windows), or nullptr.
-    [[nodiscard]] void* native_handle() const;
+    [[nodiscard]] virtual void* native_handle() const = 0;
 
-    void minimize();
-    void toggle_maximized();
-    [[nodiscard]] bool maximized() const;
+    virtual void minimize() = 0;
+    virtual void toggle_maximized() = 0;
+    [[nodiscard]] virtual bool maximized() const = 0;
     // Neither hidden nor minimized.
-    [[nodiscard]] bool visible() const;
+    [[nodiscard]] virtual bool visible() const = 0;
     // Asks to close, like the system close button (arrives as window_close_requested).
-    void request_close() const;
+    virtual void request_close() const = 0;
     // Where the system draws its window controls over the content (TitleBar::integrated on
     // macOS), in logical points; empty elsewhere and in fullscreen. Integrates the title bar again
     // first, as leaving fullscreen undoes it: call after window_fullscreen_changed.
-    Rect system_controls_frame();
+    virtual Rect system_controls_frame() = 0;
     // Decides drag and resize areas (logical points) for windows without system decorations.
     // Called from inside event processing, on the UI thread.
-    void set_hit_test(std::function<HitArea(Point)> test);
+    virtual void set_hit_test(std::function<HitArea(Point)> test) = 0;
 
     // Popups: position and size, in the parent's logical points relative to its content.
-    void set_popup_frame(Rect frame);
+    virtual void set_popup_frame(Rect frame) = 0;
     // The usable area of this window's display (without taskbars), in this window's logical
     // points relative to its content.
-    [[nodiscard]] Rect usable_area() const;
-    [[nodiscard]] HitArea hit_test_at(Point point) const { return hit_test_ ? hit_test_(point) : HitArea::normal; }
+    [[nodiscard]] virtual Rect usable_area() const = 0;
+    [[nodiscard]] virtual HitArea hit_test_at(Point point) const = 0;
 
     // The system's light/dark setting changed: what the OS draws itself follows it (Windows'
     // title bar and Mica).
-    void refresh_appearance();
+    virtual void refresh_appearance() = 0;
 
     // The handles the render thread creates this window's surface from. The surface must be
     // gone before this window.
-    [[nodiscard]] SurfaceSource surface_source() const;
+    [[nodiscard]] virtual SurfaceSource surface_source() const = 0;
 
-private:
-    SDL_Window* window_ = nullptr;
-    native::WindowParts native_;
-    // Popups: the window they belong to, which has the keyboard (they're never activated), and
-    // whether text input was started there for the popup.
-    SDL_Window* parent_ = nullptr;
-    bool parent_text_input_ = false;
-    bool secure_text_input_ = false; // a password field has the text input
-    bool secure_engaged_ = false;    // ...and the keyboard, so this window holds Secure Event Input
-    std::uint32_t id_ = 0;
-    std::function<HitArea(Point)> hit_test_;
+protected:
+    Window() = default;
 };
+
+// Makes a window, hidden: call show() once its first frame is queued. With `popup`, the window
+// is a borderless, transparent popup of its parent (place it with set_popup_frame()). While a
+// Platform exists.
+std::unique_ptr<Window> create_window(const WindowDesc& desc, const PopupSpec* popup = nullptr);
 
 // Whether the system draws the window's material (WindowDesc::material) behind it here.
 bool draws_material(const WindowDesc& desc);
@@ -241,13 +224,12 @@ void set_clipboard_text(const std::string& text);
 // The pointer's shape (automatic: the arrow).
 void set_pointer_style(PointerStyle style);
 
-// Owns SDL's lifetime. Construct on the main thread, which becomes the UI thread.
+// The window system's event loop: one at a time, made by create_platform().
 class Platform {
 public:
     using LiveResizeCallback = MoveOnlyFunction<void(std::uint32_t window_id)>;
 
-    Platform();
-    ~Platform();
+    virtual ~Platform() = default;
 
     Platform(const Platform&) = delete;
     Platform& operator=(const Platform&) = delete;
@@ -255,34 +237,29 @@ public:
     Platform& operator=(Platform&&) = delete;
 
     // Blocks until an event arrives.
-    Event wait_event();
+    virtual Event wait_event() = 0;
     // Blocks until an event arrives or `seconds` pass (then returns EventType::none).
-    Event wait_event(double seconds);
-    std::optional<Event> poll_event();
+    virtual Event wait_event(double seconds) = 0;
+    virtual std::optional<Event> poll_event() = 0;
 
     // Wakes wait_event() with EventType::wake. Thread-safe.
-    void wake() const;
+    virtual void wake() const = 0;
 
     // Queues a press and release of `key` for `window_id`, as if typed (Event::synthetic). UI
     // thread.
-    void post_key(std::uint32_t window_id, Key key, KeyModifiers modifiers);
+    virtual void post_key(std::uint32_t window_id, Key key, KeyModifiers modifiers) = 0;
 
     // Called on the main thread from inside OS modal loops while the user resizes a window,
     // when the normal event loop is blocked. Must not throw.
-    void set_live_resize_callback(LiveResizeCallback callback);
-    void dispatch_live_resize(std::uint32_t window_id) noexcept;
+    virtual void set_live_resize_callback(LiveResizeCallback callback) = 0;
 
-private:
-    Event translate(const SDL_Event& event);
-
-    std::uint32_t wake_event_ = 0;
-    // Events taken from the OS directly (macOS trackpads), queued in order with SDL's: each one
-    // pushes an SDL event of this type, which takes the next from native_events_.
-    std::uint32_t native_event_ = 0;
-    std::deque<Event> native_events_;
-    void* input_monitor_ = nullptr;
-    LiveResizeCallback live_resize_;
+protected:
+    Platform() = default;
 };
+
+// Starts the window system (SDL), which the Platform owns until it goes. Call on the main thread,
+// which becomes the UI thread. Throws UsageError while another Platform exists.
+std::unique_ptr<Platform> create_platform();
 
 // Whether the OS is set to a dark appearance.
 bool system_prefers_dark();

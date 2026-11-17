@@ -13,11 +13,11 @@
 #include "gpu/quad_renderer.h"
 #include "gpu/render_image.h"
 #include "gpu/texture_cache.h"
-#include "gpu/video_textures.h"
 #include "gpu/webgpu.h"
 #include "render/color_space.h"
 #include "render/frame_plan.h"
 #include "render/intermediate_images.h"
+#include "render/video_textures.h"
 
 #include <webgpu/webgpu_cpp.h>
 
@@ -430,7 +430,8 @@ wgpu::CommandBuffer WindowTarget::State::record(const DrawTarget& target, const 
     resources.textures.begin_frame(now);
     groups.images.reserve(plan.images.size());
     for (const auto& image : plan.images) {
-        groups.images.push_back(resources.textures.acquire(encoder, *image));
+        groups.images.push_back(
+            resources.textures.acquire(encoder, {image->id, image->width, image->height, image->rgba}));
     }
     resources.textures.end_frame();
 

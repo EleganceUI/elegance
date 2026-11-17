@@ -20,7 +20,6 @@ add_executable(elegance_tests
         capture_tests.cpp
         desktop_tests.cpp
         environment_tests.cpp
-        glyph_atlas_tests.cpp
         gpu_memory_tests.cpp
         gpu_image_tests.cpp
         grid_tests.cpp
@@ -34,10 +33,8 @@ add_executable(elegance_tests
         dynamic_children_tests.cpp
         floating_tests.cpp
         float_to_int_tests.cpp
-        frame_source_tests.cpp
         modifier_shorthand_tests.cpp
         picker_slider_style_tests.cpp
-        menu_bar_tests.cpp
         menu_style_tests.cpp
         selection_tests.cpp
         secure_text_input_tests.cpp
@@ -47,22 +44,16 @@ add_executable(elegance_tests
         navigation_tests.cpp
         number_input_tests.cpp
         os_tests.cpp
-        path_tests.cpp
         progress_tests.cpp
         prop_argument_tests.cpp
         pointer_style_tests.cpp
-        reactive_tests.cpp
         required_callback_tests.cpp
-        sample_ring_tests.cpp
         separator_tests.cpp
         shape_hit_tests.cpp
-        render_device_lifetime_tests.cpp
         size_observer_tests.cpp
         tab_order_tests.cpp
         text_input_tests.cpp
         toggle_tests.cpp
-        ui_release_tests.cpp
-        ui_task_tests.cpp
         utf8_tests.cpp
         video_tests.cpp
         test_setup.cpp
@@ -103,9 +94,49 @@ endif ()
 catch_discover_tests(elegance_tests PROPERTIES TIMEOUT 120 ENVIRONMENT_MODIFICATION
                      "LSAN_OPTIONS=string_append::suppressions=${CMAKE_CURRENT_SOURCE_DIR}/lsan_suppressions.txt")
 
+# Each layer's own tests, linked with that layer and the layers below it only, as object files
+# (ELGSPEC-0001.R9): they build without the layers above it. So must the layer itself, since every
+# object file it needs has to be there: a layer without tests of its own still gets one, which
+# shows that it links on its own.
+function(elg_layer_tests layer)
+    set(target elegance_${layer}_tests)
+    add_executable(${target} test_setup.cpp ${ARGN})
+    get_target_property(objects elegance_${layer} ELG_OBJECTS)
+    target_link_libraries(${target} PRIVATE ${objects} Catch2::Catch2WithMain)
+    target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)
+    elegance_warnings(${target})
+    if (MSVC)
+        target_compile_options(${target} PRIVATE /utf-8)
+    endif ()
+    catch_discover_tests(${target} PROPERTIES TIMEOUT 120 ENVIRONMENT_MODIFICATION
+                         "LSAN_OPTIONS=string_append::suppressions=${CMAKE_CURRENT_SOURCE_DIR}/lsan_suppressions.txt")
+endfunction()
+
+elg_layer_tests(core ui_release_tests.cpp ui_task_tests.cpp)
+elg_layer_tests(geometry path_tests.cpp)
+elg_layer_tests(reactive reactive_tests.cpp)
+elg_layer_tests(animation)
+elg_layer_tests(text glyph_atlas_tests.cpp)
+elg_layer_tests(media sample_ring_tests.cpp)
+elg_layer_tests(net)
+elg_layer_tests(display)
+elg_layer_tests(gpu render_device_lifetime_tests.cpp)
+elg_layer_tests(render frame_source_tests.cpp)
+elg_layer_tests(platform menu_bar_tests.cpp)
+
 # Compile the public FFI surface as real C, not merely as C++ with extern "C" declarations.
 enable_language(C)
 add_executable(gpu_image_c_smoke gpu_image_c_smoke.c)
 set_target_properties(gpu_image_c_smoke PROPERTIES LINKER_LANGUAGE CXX C_STANDARD 11)
 target_link_libraries(gpu_image_c_smoke PRIVATE Elegance::Elegance)
 add_test(NAME gpu_image_c_smoke COMMAND gpu_image_c_smoke)
+
+# The layers' folders, dependencies, backend interfaces, OS code and includes (ELGSPEC-0001.R10):
+# fails, naming the file, what it includes and the requirement, when any include breaks
+# ELGSPEC-0001.R1 to R8. CI also runs it as a step of its own.
+find_package(Python3 COMPONENTS Interpreter)
+if (Python3_Interpreter_FOUND)
+    add_test(NAME layer_check COMMAND Python3::Interpreter "${Elegance_SOURCE_DIR}/tools/layer-check.py")
+else ()
+    message(STATUS "Elegance: Python 3 not found: the layer check (tools/layer-check.py) isn't a test")
+endif ()

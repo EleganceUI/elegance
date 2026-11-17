@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_RENDER_PATH_CACHE_H
-#define ELG_RENDER_PATH_CACHE_H
+#ifndef ELG_VIEW_PATH_CACHE_H
+#define ELG_VIEW_PATH_CACHE_H
 
 #include "display/display_list.h"
 
@@ -69,4 +69,4 @@ private:
 
 } // namespace elg::detail
 
-#endif // ELG_RENDER_PATH_CACHE_H
+#endif // ELG_VIEW_PATH_CACHE_H

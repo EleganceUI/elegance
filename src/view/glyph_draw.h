@@ -2,8 +2,8 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-#ifndef ELG_TEXT_GLYPH_DRAW_H
-#define ELG_TEXT_GLYPH_DRAW_H
+#ifndef ELG_VIEW_GLYPH_DRAW_H
+#define ELG_VIEW_GLYPH_DRAW_H
 
 #include "display/display_list.h"
 #include "text/glyph_atlas.h"
@@ -71,4 +71,4 @@ inline void draw_glyph(DisplayList& list, GlyphAtlas& atlas, const FontFace& fac
 
 } // namespace elg::detail
 
-#endif // ELG_TEXT_GLYPH_DRAW_H
+#endif // ELG_VIEW_GLYPH_DRAW_H

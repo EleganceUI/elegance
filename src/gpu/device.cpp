@@ -13,7 +13,6 @@
 #include "gpu/render_device.h"
 #include "gpu/system.h"
 #include "gpu/webgpu.h"
-#include "media/image_decode.h"
 
 #include <elg/error.h>
 
@@ -227,7 +226,6 @@ Device::Device(const Instance& instance)
     wgpu::Limits granted;
     objects_->device.GetLimits(&granted);
     max_texture_side_ = granted.maxTextureDimension2D;
-    set_max_texture_side(max_texture_side_); // images decode to fit this device's textures
 
     objects_->device.SetLoggingCallback([](wgpu::LoggingType type, wgpu::StringView message) {
         try {
