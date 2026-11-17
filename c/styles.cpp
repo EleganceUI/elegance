@@ -149,21 +149,23 @@ std::optional<Prop<Color>> optional_color(const ElgProp* given, ElgProp& p) {
         ELG_CATCH_VOID                                                                                               \
     }
 
-// MAKE_BODY(name, Style, Config) defines elg_<name>_style_make_body(s, c): the style's make_body(),
-// its body for configuration `c`, so a Rust style can wrap or reuse another style (e.g. the one in the
-// environment). Call it from a style's make_body, while Environment<K>() is available. `s` and `c` are
-// borrowed. Returns the body, owned by the caller, or null on failure.
+// MAKE_BODY(name, Style, Config) defines:
+//   elg_<name>_style_make_body(s, c): the style's make_body(), its body for configuration `c`, so a Rust
+//     style can wrap or reuse another style (e.g. the one in the environment). Call it from a style's
+//     make_body, while Environment<K>() is available. `s` and `c` are borrowed. Returns the body, owned by
+//     the caller, or null on failure.
 #define MAKE_BODY(name, Style, Config)                                                                               \
     ELG_EXPORT View* elg_##name##_style_make_body(const std::shared_ptr<const Style>* s, const Config* c) {         \
         ELG_TRY return out((*s)->make_body(*c));                                                                     \
         ELG_CATCH(nullptr)                                                                                           \
     }
 
-// RUST_STYLE(name, Style, Config) defines elg_<name>_style_rust(make_body): a style implemented in
-// Rust, for families whose style has only make_body(). It calls `make_body` (required: none is a usage
-// error) once per control as it's built, with args: a heap copy of the configuration, owned by the Rust
-// side (free it with elg_<name>_config_free), ret: View*. Returns the style, owned by the caller (free it
-// with elg_<name>_style_free), or null on failure.
+// RUST_STYLE(name, Style, Config) defines:
+//   elg_<name>_style_rust(make_body): a style implemented in Rust, for families whose style has only
+//     make_body(). It calls `make_body` (required: none is a usage error) once per control as it's built,
+//     with args: a heap copy of the configuration, owned by the Rust side (free it with
+//     elg_<name>_config_free), ret: View*. Returns the style, owned by the caller (free it with
+//     elg_<name>_style_free), or null on failure.
 #define RUST_STYLE(name, Style, Config)                                                                              \
     ELG_EXPORT std::shared_ptr<const Style>* elg_##name##_style_rust(ElgClosure make_body) {                         \
         const Consumed consumed(make_body); ELG_TRY                                                                  \

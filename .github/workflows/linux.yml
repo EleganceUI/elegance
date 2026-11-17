@@ -207,6 +207,12 @@ jobs:
               if: ${{ matrix.checks == true && !cancelled() }}
               run: python3 tools/c-api-check.py
 
+            # The C header (c/include/elg-c/elegance.h, ELGSPEC-0007.R14) is generated from c/: it must
+            # be up to date with it.
+            - name: C API header
+              if: ${{ matrix.checks == true && !cancelled() }}
+              run: python3 tools/c-header.py --check
+
             # The layers' folders, dependencies, backend interfaces, OS code and includes
             # (ELGSPEC-0001.R1 to R8); each finding names the file, what it includes and the
             # requirement (ELGSPEC-0001.R10). ctest runs it in every job too.

@@ -1,9 +1,9 @@
 # The prebuilt C library: the C API (c/*.cpp) and a static Elegance, with all of Elegance's
-# dependencies, in one shared library that exports only the C API (shim.h and ELG_API's C
-# functions). Language bindings link it with no C++ compiler, CMake, or vcpkg: CI
-# (.github/workflows/c-api.yml) builds it per target for each commit on main and attaches it to a
-# prerelease tagged c-<first 12 hex digits of the commit>, and elegance-rs's build script downloads
-# the one for the commit it pins.
+# dependencies, in one shared library that exports only the C API (the functions its C header,
+# include/elg-c/elegance.h, declares). Language bindings link it with no C++ compiler, CMake, or
+# vcpkg: CI (.github/workflows/c-api.yml) builds it per target for each commit on main and attaches
+# it to a prerelease tagged c-<first 12 hex digits of the commit>, and elegance-rs's build script
+# downloads the one for the commit it pins.
 #
 #   cmake -S c -B build/c -G Ninja -DCMAKE_BUILD_TYPE=Release \
 #         -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
@@ -101,7 +101,7 @@ if (ELG_C_STATIC)
     add_custom_target(elegance_c ALL DEPENDS "${package}/elegance-link.txt")
 
     install(DIRECTORY "${package}/" DESTINATION .)
-    install(FILES shim.h DESTINATION include/elg-c)
+    install(FILES include/elg-c/elegance.h DESTINATION include/elg-c)
     install(FILES "${ELEGANCE_ROOT}/LICENSE" DESTINATION . RENAME LICENSE-elegance)
     return()
 endif ()
@@ -139,7 +139,7 @@ install(TARGETS elegance_c
         RUNTIME DESTINATION lib
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib)
-install(FILES shim.h DESTINATION include/elg-c)
+install(FILES include/elg-c/elegance.h DESTINATION include/elg-c)
 # Dawn's Direct3D 12 backend loads the DirectX shader compiler at run time.
 if (WIN32)
     install(FILES

@@ -114,7 +114,7 @@ semaphore set shared_mutex source_location span spanstream sstream stack stacktr
 stop_token streambuf string string_view strstream syncstream system_error thread tuple type_traits
 typeindex typeinfo unordered_map unordered_set utility valarray variant vector version
 assert.h ctype.h errno.h float.h inttypes.h limits.h locale.h math.h setjmp.h signal.h stdarg.h
-stddef.h stdint.h stdio.h stdlib.h string.h time.h uchar.h wchar.h wctype.h
+stdbool.h stddef.h stdint.h stdio.h stdlib.h string.h time.h uchar.h wchar.h wctype.h
 cxxabi.h
 """.split())  # cxxabi.h: the C++ runtime's (GCC's and Clang's), used under a compiler test
 

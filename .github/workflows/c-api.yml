@@ -4,7 +4,7 @@
 #   push to main   a prerelease tagged c-<commit, 12 hex digits>
 #   tag v*         the release for that tag
 #
-# Two archives per target, each with include/elg-c/shim.h, the license, and BUILDINFO (the target
+# Two archives per target, each with include/elg-c/elegance.h, the license, and BUILDINFO (the target
 # and the full commit, which elegance-rs's build script checks against the commit it pins):
 #
 #   elegance-c-<target>.tar.gz          lib/: the shared library
