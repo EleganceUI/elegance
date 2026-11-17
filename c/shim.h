@@ -15,6 +15,10 @@
 //
 // Ownership: an `elg::View*` (and Text*, Shape*, ...) argument named `take_*` or passed in an
 // array is consumed. `const T*` arguments are borrowed. Returned pointers are owned by the caller.
+//
+// Threads: a function is for the UI thread unless its doc says "Callable from any thread". Called
+// on another thread while an App runs, it fails with a UsageError, and what it consumes is
+// released on the UI thread.
 
 #ifndef ELG_RUST_SHIM_H
 #define ELG_RUST_SHIM_H
@@ -1009,6 +1013,8 @@ struct RustComponent {
 
 // Records the current exception for elg_take_error().
 void capture_error() noexcept;
+// Throws a UsageError naming `function` when it's called off the UI thread of a running App.
+void require_ui_thread(const char* function);
 // The kind of `error`, numbered as elg_take_error() numbers them, and its message.
 int32_t error_kind(const std::exception_ptr& error, std::string& message) noexcept;
 
@@ -1024,8 +1030,12 @@ inline void layout(ElgStrSink out, void* ctx, const char* name, size_t size, siz
 
 #define ELG_LAYOUT(T) ::elg_shim::layout(out, ctx, #T, sizeof(T), alignof(T))
 
-#define ELG_TRY try {
-// Starts the body of a function whose doc says "Callable from any thread".
+// Starts a C API function's try block, which ends with ELG_CATCH or ELG_CATCH_VOID. ELG_TRY, for
+// a function of the UI thread, fails the call with a UsageError off the UI thread of a running
+// App; ELG_TRY_ANY_THREAD is for one whose doc says "Callable from any thread".
+#define ELG_TRY                                \
+    try {                                      \
+        ::elg_shim::require_ui_thread(__func__);
 #define ELG_TRY_ANY_THREAD try {
 #define ELG_CATCH(fallback)               \
     }                                     \

@@ -6,7 +6,8 @@
 # Checks every function the C API exports:
 # - it keeps C++ exceptions from crossing into the caller: its body is inside ELG_TRY ... ELG_CATCH
 #   (or ELG_TRY_ANY_THREAD, VIEW_TRY or MOD_TRY, which expand to the same);
-# - its doc says "Callable from any thread" exactly when it starts with ELG_TRY_ANY_THREAD;
+# - its doc says "Callable from any thread" exactly when it starts with ELG_TRY_ANY_THREAD (the
+#   others start with ELG_TRY, which fails the call off the UI thread of a running App);
 # - it guards what it consumes (Consumed, ConsumedElements) before the try block, so that the
 #   guards release it however the call ends.
 # Fails, naming each function, if one doesn't. CI runs it on every pull request.
@@ -67,8 +68,8 @@ def main():
                 problems.append(f"{where} uses ELG_TRY_ANY_THREAD, but its doc doesn't say it's callable from "
                                 "any thread")
             elif documented and not any_thread:
-                problems.append(f"{where}'s doc says it's callable from any thread: start it with "
-                                "ELG_TRY_ANY_THREAD")
+                problems.append(f"{where}'s doc says it's callable from any thread, but it fails off the UI "
+                                "thread: start it with ELG_TRY_ANY_THREAD")
             after = text[match.end():i - 1][found.end():]
             if any(after[:g.start()].count("{") == after[:g.start()].count("}") for g in GUARD.finditer(after)):
                 problems.append(f"{where} guards what it consumes inside its try block: declare the guard before "
@@ -78,7 +79,7 @@ def main():
         print(f"\nc-api-check: {len(problems)} problems in {count} exported functions")
         return 1
     print(f"c-api-check: all {count} exported functions catch exceptions, guard what they consume before their "
-          "try block, and ELG_TRY_ANY_THREAD marks those documented as callable from any thread")
+          "try block, and check for the UI thread unless documented as callable from any thread")
     return 0
 
 

@@ -74,6 +74,16 @@ void elg_shim::capture_error() noexcept {
     g_error_kind = error_kind(std::current_exception(), g_error_message);
 }
 
+void elg_shim::require_ui_thread(const char* function) {
+    try {
+        elg::detail::check_ui_thread();
+    } catch (const UsageError&) {
+        throw UsageError(std::format("{}() was called off the UI thread of the running App; only the functions "
+                                     "documented as callable from any thread may be",
+                                     function));
+    }
+}
+
 bool elg_shim::off_ui_thread() noexcept {
     try {
         elg::detail::check_ui_thread();
@@ -254,7 +264,6 @@ void adopt(std::shared_ptr<detail::ReactiveNode> node) {
 ELG_EXPORT void* elg_signal_new(ElgClosure owner) {
     const Consumed consumed(owner);
     ELG_TRY
-    detail::check_ui_thread(); // it joins the current scope
     auto node = std::make_shared<OwnerNode>(hold(owner));
     void* raw = static_cast<detail::ReactiveNode*>(node.get());
     adopt(std::move(node));
@@ -274,7 +283,6 @@ ELG_EXPORT void* elg_signal_new(ElgClosure owner) {
 ELG_EXPORT void* elg_computed_new(ElgClosure compute) {
     const Consumed consumed(compute);
     ELG_TRY
-    detail::check_ui_thread(); // as in elg_signal_new()
     const SharedFn f = required(compute, "compute");
     auto node = std::make_shared<detail::ComputedNode<std::uint64_t>>([f] {
         std::uint64_t version = 0;
@@ -288,8 +296,7 @@ ELG_EXPORT void* elg_computed_new(ElgClosure compute) {
 }
 
 /// A read (`ReactiveNode::track()`): subscribes the running computed/effect, bringing a computed
-/// up to date first. In debug builds, off the UI thread of a running App, records a UsageError
-/// instead.
+/// up to date first.
 ///
 /// @param node A node from elg_signal_new() or elg_computed_new() (borrowed).
 ELG_EXPORT void elg_node_track(void* node) {
@@ -304,16 +311,14 @@ ELG_EXPORT void elg_node_track(void* node) {
 /// @param node A node from elg_signal_new() (borrowed).
 ELG_EXPORT void elg_node_notify(void* node) {
     ELG_TRY
-    detail::check_ui_thread();
     static_cast<detail::ReactiveNode*>(node)->notify_changed();
     ELG_CATCH_VOID
 }
 
-/// Wraps `detail::check_ui_thread()`: records a UsageError when called off the UI thread of a
-/// running App.
+/// Records a UsageError when called off the UI thread of a running App, as every function of the
+/// UI thread does: for a binding to check where it is before work of its own.
 ELG_EXPORT void elg_check_ui_thread() {
     ELG_TRY
-    detail::check_ui_thread();
     ELG_CATCH_VOID
 }
 

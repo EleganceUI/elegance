@@ -35,6 +35,10 @@ namespace detail = elg::detail;
 extern "C" {
 int32_t elg_take_error(ElgStrSink out, void* ctx);
 uint32_t elg_abi_version();
+const char* elg_version();
+void elg_check_ui_thread();
+elg::VideoFeed* elg_video_feed_new();
+void elg_video_feed_free(elg::VideoFeed* feed);
 View* elg_empty_view();
 App* elg_app_new();
 void elg_app_free(App* app);
@@ -306,6 +310,62 @@ TEST_CASE("what a call consumed but didn't take over, on another thread of a run
     CHECK(detail::run_ui_releases());
     CHECK(counts.drops == 1);
     CHECK(button_counts.drops == 1); // the view went, and the action it kept
+    detail::end_ui_releases();
+    detail::set_ui_thread(std::nullopt);
+}
+
+TEST_CASE("while an App runs, a function of the UI thread fails on another thread, and releases what it "
+          "consumed on the UI thread",
+          "[c-api][threads]") {
+    detail::set_ui_thread(std::this_thread::get_id()); // as App::run does
+    detail::begin_ui_releases();
+    // What the other thread saw: each call's result and error.
+    struct Seen {
+        bool view_made = true;
+        int32_t view_error = 0;
+        std::string view_message;
+        bool button_made = true;
+        int32_t button_error = 0;
+        int drops_there = -1;
+        int32_t check_error = 0;
+        bool feed_made = false;
+        bool version_read = false;
+        int32_t any_thread_error = -1;
+    } seen;
+    const auto take = [](std::string& message) {
+        return elg_take_error(
+            [](void* ctx, const char* ptr, size_t len) { static_cast<std::string*>(ctx)->assign(ptr, len); }, &message);
+    };
+    Counts counts;
+    View* const label = elg_empty_view(); // made on the UI thread
+    REQUIRE(label);
+    std::thread([&] {
+        std::string ignored;
+        seen.view_made = elg_empty_view() != nullptr;
+        seen.view_error = take(seen.view_message);
+        seen.button_made = elg_button(label, closure(counts)) != nullptr;
+        seen.button_error = take(ignored);
+        seen.drops_there = counts.drops;
+        elg_check_ui_thread();
+        seen.check_error = take(ignored);
+        elg::VideoFeed* const feed = elg_video_feed_new(); // callable from any thread
+        seen.feed_made = feed != nullptr;
+        elg_video_feed_free(feed);
+        seen.version_read = elg_version() != nullptr;
+        seen.any_thread_error = take(ignored);
+    }).join();
+    CHECK_FALSE(seen.view_made);
+    CHECK(seen.view_error == 2); // a usage error
+    CHECK(seen.view_message.starts_with("elg_empty_view() was called off the UI thread"));
+    CHECK_FALSE(seen.button_made);
+    CHECK(seen.button_error == 2);
+    CHECK(seen.drops_there == 0); // its closure (and label) wait for the UI thread
+    CHECK(seen.check_error == 2);
+    CHECK(seen.feed_made);
+    CHECK(seen.version_read);
+    CHECK(seen.any_thread_error == 0);
+    CHECK(detail::run_ui_releases());
+    CHECK(counts.drops == 1);
     detail::end_ui_releases();
     detail::set_ui_thread(std::nullopt);
 }
