@@ -20,6 +20,21 @@ struct CompactKey {
     static bool default_value(const EnvironmentValues&) { return false; }
 };
 
+// CompactKey as another module (a views module) would define it: another type, with its own copy
+// of the name.
+struct CompactKeyElsewhere {
+    using Value = bool;
+    static constexpr char text[] = {'t', 'e', 's', 't', '.', 'c', 'o', 'm', 'p', 'a', 'c', 't'};
+    static constexpr std::string_view name{text, sizeof(text)};
+    static bool default_value(const EnvironmentValues&) { return false; }
+};
+
+struct WideKey {
+    using Value = bool;
+    static constexpr std::string_view name = "test.wide";
+    static bool default_value(const EnvironmentValues&) { return false; }
+};
+
 struct Owner {
     detail::Scope scope;
     detail::Scope::Use use{scope};
@@ -36,6 +51,17 @@ TEST_CASE("keys fall back to their defaults and can be overridden") {
     CHECK_FALSE(environment.get<CompactKey>());
     environment.set<CompactKey>(true);
     CHECK(environment.get<CompactKey>());
+}
+
+TEST_CASE("keys are told apart by their names, not their types", "[hot-reload]") {
+    EnvironmentValues environment;
+    environment.set<CompactKey>(true);
+    CHECK(environment.get<CompactKeyElsewhere>());
+    CHECK_FALSE(environment.get<WideKey>());
+    environment.set<CompactKeyElsewhere>(false);
+    CHECK_FALSE(environment.get<CompactKey>());
+    static_assert(detail::key_id(CompactKey::name) == detail::key_id(CompactKeyElsewhere::name));
+    static_assert(detail::key_id(CompactKey::name) != detail::key_id(WideKey::name));
 }
 
 TEST_CASE("setting a key doesn't affect copies made earlier") {

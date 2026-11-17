@@ -1788,8 +1788,8 @@ Separate render thread from day one (decided).
 
 **M3: Environment & Animation**
 - [x] Environment (`elg/environment.h`): `EnvironmentValues` is a persistent map of typed keys
-  with stable string names; every value is a reactive argument. `Environment<Key>()` reads a key
-  while views are built, and `.environment<Key>(value)` sets one.
+  with stable string names, kept as a hash of the name; every value is a reactive argument.
+  `Environment<Key>()` reads a key while views are built, and `.environment<Key>(value)` sets one.
   - Built-in keys: font, foreground, tint, color scheme, theme, disabled, button style.
 - [x] Themes (`elg/theme.h`): `Theme` with light and dark `ColorTokens`. `ThemeColor` tokens
   work anywhere a color does and resolve where they're used. Windows follow the system light/dark

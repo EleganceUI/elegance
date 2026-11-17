@@ -30,11 +30,24 @@
 #include <elg/prop.h>
 #include <elg/theme.h>
 
+#include <cstdint>
 #include <memory>
 #include <string_view>
 #include <utility>
 
 namespace elg {
+
+namespace detail {
+// A key's identifier: a hash (64-bit FNV-1a) of its name. It's the same wherever the key is
+// defined, in the app or in any views module, unlike the key's type or the address of its name.
+constexpr std::uint64_t key_id(std::string_view name) noexcept {
+    std::uint64_t hash = 0xcbf29ce484222325;
+    for (const char c : name) {
+        hash = (hash ^ static_cast<unsigned char>(c)) * 0x100000001b3;
+    }
+    return hash;
+}
+} // namespace detail
 
 class ButtonStyle;
 class ToggleStyle;
@@ -61,8 +74,9 @@ public:
     /// @return The value.
     template <class Key>
     [[nodiscard]] typename Key::Value get() const {
+        constexpr std::uint64_t key = detail::key_id(Key::name);
         for (const Entry* entry = head_.get(); entry; entry = entry->next.get()) {
-            if (entry->key == Key::name) {
+            if (entry->key == key) {
                 return static_cast<const Prop<typename Key::Value>*>(entry->value.get())->get();
             }
         }
@@ -87,14 +101,15 @@ public:
         // Environment-dependent values (e.g. a ThemeColor) resolve against the environment they
         // were set in, so a key's value never depends on itself.
         auto resolved = std::make_shared<const Prop<typename Key::Value>>(value.resolved_in(*this));
-        head_ = std::make_shared<const Entry>(Entry{Key::name, std::move(resolved), head_});
+        head_ = std::make_shared<const Entry>(Entry{detail::key_id(Key::name), std::move(resolved), head_});
     }
 
 private:
     // A persistent list: setting a key prepends, so copies made earlier are unaffected and
-    // copying is cheap.
+    // copying is cheap. A key is kept as detail::key_id(Key::name), not as a view of the name,
+    // which is in the memory of the code that defined the key: maybe a views module.
     struct Entry {
-        std::string_view key;
+        std::uint64_t key;
         std::shared_ptr<const void> value; // a Prop<Key::Value>
         std::shared_ptr<const Entry> next;
     };
