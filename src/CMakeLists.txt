@@ -263,7 +263,9 @@ elg_layer(media
         SOURCES media/audio.cpp media/audio_stream.cpp media/camera.cpp media/frame_source.cpp media/image_decode.cpp
                 media/miniaudio.cpp media/recorder.cpp media/video_feed.cpp media/video_source.cpp
         DEPENDS core geometry reactive media_os)
-target_include_directories(elegance_media PRIVATE "${MINIAUDIO_INCLUDE_DIR}")
+# A system folder, so that miniaudio.h is held to no warnings of ours: on macOS, nothing else this
+# layer uses adds vcpkg's include folder as one.
+target_include_directories(elegance_media SYSTEM PRIVATE "${MINIAUDIO_INCLUDE_DIR}")
 
 elg_layer(net_os
         WINDOWS platform/windows/net.cpp platform/windows/proxy.cpp
