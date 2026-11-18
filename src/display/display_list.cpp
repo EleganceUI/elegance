@@ -68,6 +68,44 @@ ShapeStyle with_opacity(const ShapeStyle& style, float opacity) {
                       style.value());
 }
 
+namespace {
+
+// Puts each scroll's content in window points, between a PushClipCommand and a PopClipCommand.
+void unscroll(std::vector<DrawCommand>& commands) {
+    // From the innermost out: an outer scroll then moves the inner one's content with its own.
+    for (std::size_t i = commands.size(); i-- > 0;) {
+        const auto* scroll = std::get_if<PushScrollCommand>(&commands[i]);
+        if (!scroll) {
+            continue;
+        }
+        const PushScrollCommand push = *scroll;
+        std::size_t end = i + 1;
+        for (int depth = 1; end < commands.size(); ++end) {
+            if (std::holds_alternative<PushScrollCommand>(commands[end])) {
+                ++depth;
+            } else if (std::holds_alternative<PopScrollCommand>(commands[end]) && --depth == 0) {
+                break;
+            }
+        }
+        transform(std::span(commands).subspan(i + 1, end - i - 1), push.origin.x, push.origin.y, 1, {});
+        commands[i] = PushClipCommand{push.viewport, {}};
+        if (end < commands.size()) {
+            commands[end] = PopClipCommand{};
+        }
+    }
+}
+
+} // namespace
+
+void transform(std::vector<DrawCommand>& commands, float dx, float dy, float scale, Point origin) {
+    if (scale != 1 && std::ranges::any_of(commands, [](const DrawCommand& command) {
+            return std::holds_alternative<PushScrollCommand>(command);
+        })) {
+        unscroll(commands);
+    }
+    transform(std::span(commands), dx, dy, scale, origin);
+}
+
 void transform(std::span<DrawCommand> commands, float dx, float dy, float scale, Point origin) {
     if (dx == 0 && dy == 0 && scale == 1) {
         return;
@@ -82,12 +120,26 @@ void transform(std::span<DrawCommand> commands, float dx, float dy, float scale,
     const auto radii = [&](const CornerRadii& r) {
         return CornerRadii{r.top_left * scale, r.top_right * scale, r.bottom_right * scale, r.bottom_left * scale};
     };
+    int scrolls = 0; // how deep in scrolls' content: it moves with them
     for (DrawCommand& command : commands) {
+        if (std::holds_alternative<PopScrollCommand>(command)) {
+            scrolls = std::max(scrolls - 1, 0);
+            continue;
+        }
+        if (scrolls > 0) {
+            scrolls += std::holds_alternative<PushScrollCommand>(command) ? 1 : 0;
+            continue;
+        }
         std::visit(Overloaded{
                        [&](RectCommand& c) {
                            c.rect = rect(c.rect);
                            c.radii = radii(c.radii);
                            c.border_width *= scale;
+                       },
+                       [&](PushScrollCommand& c) {
+                           c.viewport = rect(c.viewport);
+                           c.origin = point(c.origin.x, c.origin.y);
+                           ++scrolls;
                        },
                        [&](GlyphCommand& c) {
                            c.quad = rect(c.quad);
@@ -177,12 +229,7 @@ void append_faded(DisplayList& list, DisplayList&& content, float opacity) {
             return;
         }
     }
-    std::optional<Rect> bounds;
-    for (const DrawCommand& command : content.commands) {
-        if (const std::optional<Rect> b = draw_bounds(command)) {
-            bounds = bounds ? union_of(*bounds, *b) : *b;
-        }
-    }
+    const std::optional<Rect> bounds = draw_bounds(content.commands);
     if (!bounds) {
         return;
     }
@@ -220,9 +267,30 @@ std::optional<Rect> draw_bounds(const DrawCommand& command) {
                               }
                               return c.transform ? transformed_bounds(*c.transform, bounds) : bounds;
                           },
+                          [](const PushScrollCommand& c) -> std::optional<Rect> { return c.viewport; },
                           [](const auto&) -> std::optional<Rect> { return std::nullopt; },
                       },
                       command);
+}
+
+std::optional<Rect> draw_bounds(std::span<const DrawCommand> commands) {
+    std::optional<Rect> bounds;
+    int scrolls = 0; // how deep in scrolls' content, which their viewports bound
+    for (const DrawCommand& command : commands) {
+        if (std::holds_alternative<PopScrollCommand>(command)) {
+            scrolls = std::max(scrolls - 1, 0);
+            continue;
+        }
+        const bool in_scroll = scrolls > 0;
+        scrolls += std::holds_alternative<PushScrollCommand>(command) ? 1 : 0;
+        if (in_scroll) {
+            continue;
+        }
+        if (const std::optional<Rect> b = draw_bounds(command)) {
+            bounds = bounds ? union_of(*bounds, *b) : *b;
+        }
+    }
+    return bounds;
 }
 
 // The filter functions of CSS (Filter Effects Level 1), as SVG feColorMatrix values; brightness is

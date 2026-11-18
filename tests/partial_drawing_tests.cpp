@@ -95,6 +95,16 @@ detail::DisplayList scene(int step) {
         .transform = LayerTransform{std::cos(angle), std::sin(angle), -std::sin(angle), std::cos(angle), {115, 130}}});
     c.emplace_back(RectCommand{.rect = {100, 120, 30, 20}, .fill = fill(1, 0.8f, 0)});
     c.emplace_back(PopLayerCommand{});
+    // A scroll view over the gradient, its content scrolled 3 points a step; a row in it changes
+    // color on odd steps.
+    c.emplace_back(PushScrollCommand{.id = 7, .viewport = {150, 2, 46, 44}, .origin = {150, 2 - 3 * s}});
+    for (int row = 0; row < 10; ++row) {
+        const float shade = row % 2 == 0 ? 0.9f : 0.5f;
+        c.emplace_back(RectCommand{.rect = {0, 12 * static_cast<float>(row), 46, 12},
+                                   .radii = CornerRadii::all(3),
+                                   .fill = row == 4 && step % 2 == 1 ? fill(1, 0.5f, 0) : fill(shade, 0.8f, shade)});
+    }
+    c.emplace_back(PopScrollCommand{});
     // A triangle, a path, moving up by half a pixel.
     const auto triangle = std::make_shared<const Polygons>(Polygons{{{0, 20}, {10, 0}, {20, 20}}});
     const Point at{60, 136 - 0.5f * s};

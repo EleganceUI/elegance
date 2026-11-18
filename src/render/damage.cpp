@@ -134,6 +134,7 @@ struct Level {
     std::optional<Point> shadow_offset;  // its shadow's offset
     float shadow_reach = 0;              // how far its shadow's blur draws around it
     std::optional<Rect> mask;            // what its mask path can keep
+    Point offset;                        // where its (0, 0) is in the level around it (scrolls)
 };
 
 class Walker {
@@ -176,6 +177,8 @@ private:
                 widened = unite(widened, shadow.inset(-level.shadow_reach));
             }
             r = level.transform ? transformed_bounds(*level.transform, widened) : widened;
+            r.x += level.offset.x;
+            r.y += level.offset.y;
         }
         r = intersect(r, levels_.front().clips.back());
         return round_out(intersect(r, window_));
@@ -267,6 +270,25 @@ private:
                 [&](const PushLayerCommand& c) { return push_layer(c, key); },
                 [&](const LayerMaskCommand&) { return Footprint{key.value(), {}, std::nullopt}; },
                 [&](const PopLayerCommand&) {
+                    if (levels_.size() > 1) {
+                        levels_.pop_back();
+                    }
+                    return Footprint{key.value(), {}, std::nullopt};
+                },
+                [&](const PushScrollCommand& c) {
+                    // Its content, in its own points, shows at its origin, within its viewport:
+                    // what's drawn there is in its context, which its origin is part of.
+                    key.add(c.id).add(c.viewport).add(c.origin);
+                    const Point offset{c.origin.x * scale_, c.origin.y * scale_};
+                    const Rect viewport = pixels(c.viewport);
+                    Level level;
+                    level.clips = {Rect{viewport.x - offset.x, viewport.y - offset.y, viewport.width, viewport.height}};
+                    level.contexts = {key.value()};
+                    level.offset = offset;
+                    levels_.push_back(level);
+                    return Footprint{key.value(), up(levels_.back().clips.back()), std::nullopt};
+                },
+                [&](const PopScrollCommand&) {
                     if (levels_.size() > 1) {
                         levels_.pop_back();
                     }

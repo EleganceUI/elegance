@@ -603,6 +603,16 @@ private:
         return clip;
     }
 
+    // A scroll view's content, in its own points: drawn where its origin is, within its viewport.
+    // `index` goes from its PushScrollCommand to its PopScrollCommand.
+    void add_scroll(const PushScrollCommand& command, std::size_t& index, Point origin, PlanPass& pass,
+                    std::vector<QuadInstance>& out, const Clip& clip, const Rect& visible) {
+        const Clip viewport = push_clip(PushClipCommand{command.viewport, {}}, origin, clip);
+        const Point content{origin.x - command.origin.x * scale_, origin.y - command.origin.y * scale_};
+        ++index;
+        build(index, content, pass, out, visible, viewport);
+    }
+
     // Moves `index` from a layer's PushLayerCommand to its PopLayerCommand, past its content and
     // its mask: for a layer that draws nothing.
     void skip_layer(std::size_t& index) const {
@@ -844,7 +854,8 @@ private:
         std::vector<Clip> clips{root};
         for (; index < list_.commands.size(); ++index) {
             const DrawCommand& command = list_.commands[index];
-            if (std::holds_alternative<PopLayerCommand>(command) || std::holds_alternative<LayerMaskCommand>(command)) {
+            if (std::holds_alternative<PopLayerCommand>(command) || std::holds_alternative<LayerMaskCommand>(command) ||
+                std::holds_alternative<PopScrollCommand>(command)) {
                 return;
             }
             const Clip& clip = clips.back();
@@ -867,6 +878,8 @@ private:
                            },
                            [&](const LayerMaskCommand&) {},
                            [&](const PopLayerCommand&) {},
+                           [&](const PushScrollCommand& c) { add_scroll(c, index, origin, pass, out, clip, visible); },
+                           [&](const PopScrollCommand&) {},
                        },
                        command);
         }

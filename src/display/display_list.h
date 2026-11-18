@@ -106,6 +106,19 @@ struct PushClipCommand {
 
 struct PopClipCommand {};
 
+// A scroll view's content (ELGSPEC-0029.R13). The commands up to the matching PopScrollCommand
+// are in the content's own points, its top-left corner at (0, 0); they show with that corner at
+// `origin`, clipped to `viewport`. Their culling left out what's beyond `painted`. The renderer
+// may keep the content's pixels from one frame to the next, as tiles, by `id`.
+struct PushScrollCommand {
+    std::uint64_t id = 0; // the scroll view's
+    Rect viewport;        // window points
+    Point origin;         // window points
+    Rect painted;         // content points
+};
+
+struct PopScrollCommand {};
+
 // A color matrix over sRGB with straight alpha: four rows (red, green, blue, alpha out), each
 // four coefficients (red, green, blue, alpha in) and an offset.
 using ColorMatrix = std::array<float, 20>;
@@ -142,7 +155,7 @@ struct PopLayerCommand {};
 
 using DrawCommand = std::variant<RectCommand, GlyphCommand, BoxShadowCommand, InnerShadowCommand, PathCommand,
                                  ImageCommand, VideoCommand, PushClipCommand, PopClipCommand, PushLayerCommand,
-                                 LayerMaskCommand, PopLayerCommand>;
+                                 LayerMaskCommand, PopLayerCommand, PushScrollCommand, PopScrollCommand>;
 
 // Immutable-once-built draw commands for one window frame, in logical points and sRGB, in
 // painter's order. Holds copies of everything, never references into app memory
@@ -166,10 +179,18 @@ public:
 
 bool is_clear(const ShapeStyle& style);
 ShapeStyle with_opacity(const ShapeStyle& style, float opacity);
-// The area a command can draw into, in points; nullopt for structural commands (clip, pop).
+// The area a command can draw into, in points; nullopt for structural commands (clip, pop). A
+// scroll's is its viewport.
 std::optional<Rect> draw_bounds(const DrawCommand& command);
+// The area `commands` can draw into, in window points: the scrolls' content counts as their
+// viewports. nullopt when none draws.
+std::optional<Rect> draw_bounds(std::span<const DrawCommand> commands);
 Rect union_of(const Rect& a, const Rect& b);
-// Moves commands by (dx, dy) and scales them by `scale` around `origin` (transitions).
+// Moves commands by (dx, dy) and scales them by `scale` around `origin` (transitions). A scroll's
+// content moves with its PushScrollCommand. Scaled, it's put in window points instead, between a
+// PushClipCommand and a PopClipCommand: drawn directly, not from tiles.
+void transform(std::vector<DrawCommand>& commands, float dx, float dy, float scale, Point origin);
+// The same for commands with no scroll's content scaled: moved, or scaled where no scroll is.
 void transform(std::span<DrawCommand> commands, float dx, float dy, float scale, Point origin);
 // Appends `content` faded to `opacity` as a group: an alpha multiply for a single shape, an
 // offscreen layer otherwise.

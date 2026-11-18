@@ -161,6 +161,44 @@ TEST_CASE("damage under a backdrop blur damages all that it draws", "[damage]") 
     }
 }
 
+TEST_CASE("a scroll's content is damaged where it shows, in the window", "[damage]") {
+    // A 100 x 100 viewport at (50, 50), its content scrolled 40 points: a row at y 60 shows at 70.
+    const auto scroll = [](float scrolled) {
+        return detail::PushScrollCommand{.id = 1, .viewport = {50, 50, 100, 100}, .origin = {50, 50 - scrolled}};
+    };
+    const auto before = list_of({scroll(40), rect({0, 60, 100, 20}), rect({0, 400, 100, 20}), detail::PopScrollCommand{}});
+    SECTION("what changed in it") {
+        const auto now = list_of({scroll(40), rect({0, 60, 100, 20}, Color::rgb(255, 0, 0)), rect({0, 400, 100, 20}),
+                                  detail::PopScrollCommand{}});
+        CHECK(box(damage(before, now)) == Rect{50, 69, 100, 22});
+    }
+    SECTION("scrolled: all that shows of it") {
+        const auto now = list_of({scroll(50), rect({0, 60, 100, 20}), rect({0, 400, 100, 20}), detail::PopScrollCommand{}});
+        CHECK(box(damage(before, now)) == Rect{50, 50, 100, 100});
+    }
+}
+
+TEST_CASE("a scroll's content moves with it, and scaled, is put in window points", "[damage]") {
+    std::vector<detail::DrawCommand> commands{
+        detail::PushScrollCommand{.id = 1, .viewport = {50, 50, 100, 100}, .origin = {50, 10}},
+        rect({0, 60, 100, 20}), detail::PopScrollCommand{}, rect({0, 0, 10, 10})};
+    SECTION("moved") {
+        detail::transform(commands, 5, 7, 1, {});
+        const auto& scroll = std::get<detail::PushScrollCommand>(commands[0]);
+        CHECK(scroll.viewport == Rect{55, 57, 100, 100});
+        CHECK(scroll.origin == Point{55, 17});
+        CHECK(std::get<detail::RectCommand>(commands[1]).rect == Rect{0, 60, 100, 20}); // in its own points
+        CHECK(std::get<detail::RectCommand>(commands[3]).rect == Rect{5, 7, 10, 10});
+        CHECK(detail::draw_bounds(commands) == Rect{5, 7, 150, 150});
+    }
+    SECTION("scaled") {
+        detail::transform(commands, 0, 0, 2, {});
+        CHECK(std::get<detail::PushClipCommand>(commands[0]).rect == Rect{100, 100, 200, 200});
+        CHECK(std::get<detail::RectCommand>(commands[1]).rect == Rect{100, 140, 200, 40});
+        CHECK(std::holds_alternative<detail::PopClipCommand>(commands[2]));
+    }
+}
+
 TEST_CASE("the drawn area merges the damage into at most 4 rectangles", "[damage]") {
     SECTION("rects whose bounding box is at most twice their area are merged") {
         CHECK(detail::drawn_area({{0, 0, 10, 10}, {10, 0, 10, 10}}) == std::vector<Rect>{{0, 0, 20, 10}});

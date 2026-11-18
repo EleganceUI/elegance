@@ -1227,12 +1227,7 @@ void EffectElement::paint_impl(DisplayList& list) const {
     }
 
     // General path: render offscreen, then composite with the effects.
-    std::optional<Rect> bounds;
-    for (const DrawCommand& command : content.commands) {
-        if (const std::optional<Rect> b = draw_bounds(command)) {
-            bounds = bounds ? union_of(*bounds, *b) : *b;
-        }
-    }
+    const std::optional<Rect> bounds = draw_bounds(content.commands);
     if (!bounds) {
         return;
     }
@@ -1269,12 +1264,7 @@ void DecorationElement::paint_impl(DisplayList& list) const {
         mask.scale = list.scale;
         decoration_->paint(mask);
         list.animating |= content.animating || mask.animating;
-        std::optional<Rect> bounds;
-        for (const DrawCommand& command : content.commands) {
-            if (const std::optional<Rect> b = draw_bounds(command)) {
-                bounds = bounds ? union_of(*bounds, *b) : *b;
-            }
-        }
+        const std::optional<Rect> bounds = draw_bounds(content.commands);
         if (!bounds) {
             return;
         }

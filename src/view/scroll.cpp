@@ -253,21 +253,41 @@ std::optional<Axis> ScrollElement::thumb_at(Point point) const {
     return std::nullopt;
 }
 
+// Around what shows of a scroll view's content, how far it's painted too, in pixels: two tiles of
+// the renderer's (ELGSPEC-0029.R13).
+constexpr float kPaintedMargin = 512;
+
 void ScrollElement::paint_impl(DisplayList& list) const {
-    list.commands.emplace_back(PushClipCommand{frame(), {}});
-    // Only what's in the viewport is painted.
-    const std::optional<Rect> outer = list.cull;
-    Rect visible = frame();
-    if (outer) {
-        const float x = std::max(visible.x, outer->x);
-        const float y = std::max(visible.y, outer->y);
-        visible = {x, y, std::max(0.f, std::min(visible.max_x(), outer->max_x()) - x),
-                   std::max(0.f, std::min(visible.max_y(), outer->max_y()) - y)};
+    // What it paints of its content: what shows, and a margin along the axes it scrolls, which
+    // the renderer may draw ahead of scrolling (ELGSPEC-0029.R13); within what shows of the list.
+    const Rect view = frame();
+    const float margin = kPaintedMargin / (list.scale > 0 ? list.scale : 1.f);
+    const float across = scrolls(Axis::horizontal) ? margin : 0.f;
+    const float along = scrolls(Axis::vertical) ? margin : 0.f;
+    Rect painted{view.x - across, view.y - along, view.width + 2 * across, view.height + 2 * along};
+    if (const std::optional<Rect>& outer = list.cull) {
+        const float x = std::max(painted.x, outer->x);
+        const float y = std::max(painted.y, outer->y);
+        painted = {x, y, std::max(0.f, std::min(painted.max_x(), outer->max_x()) - x),
+                   std::max(0.f, std::min(painted.max_y(), outer->max_y()) - y)};
     }
-    list.cull = visible;
-    content_->paint(list);
-    list.cull = outer;
-    list.commands.emplace_back(PopClipCommand{});
+    // The content in its own points, its top-left corner at (0, 0): scrolled, what it draws stays
+    // the same.
+    const Point origin{content_->frame().x, content_->frame().y};
+    DisplayList content;
+    content.scale = list.scale;
+    content.cull = painted;
+    content_->paint(content);
+    list.animating = list.animating || content.animating;
+    transform(content.commands, -origin.x, -origin.y, 1, {});
+    list.commands.emplace_back(PushScrollCommand{.id = accessibility_id(),
+                                                 .viewport = view,
+                                                 .origin = origin,
+                                                 .painted = {painted.x - origin.x, painted.y - origin.y,
+                                                             painted.width, painted.height}});
+    list.commands.insert(list.commands.end(), std::make_move_iterator(content.commands.begin()),
+                         std::make_move_iterator(content.commands.end()));
+    list.commands.emplace_back(PopScrollCommand{});
 
     if (offset_x_.animating() || offset_y_.animating() || indicators_.animating() || stretching()) {
         list.animating = true;
