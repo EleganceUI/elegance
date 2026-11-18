@@ -34,8 +34,12 @@ std::uint32_t to_pixel_count(float v) {
     return clamped_cast<std::uint32_t>(v, 0, std::numeric_limits<std::uint32_t>::max());
 }
 // Blurs run at a lower resolution once sigma passes this many texels: the result is the same
-// (a blur that wide has no fine detail left) and the cost stays bounded.
+// (a blur that wide has no fine detail left) and the cost stays bounded, however wide the blur
+// (ELGSPEC-0024.R3).
 constexpr float kMaxBlurSigma = 12;
+// How far a blur reaches, in sigmas: beyond 4 lies less than 1/30000 of a Gaussian, too little to
+// show, also in the dark sRGB values where a small difference counts most (ELGSPEC-0024.R2).
+constexpr float kBlurSigmas = 4;
 
 // The clip in effect: `rect` with `radii` is the innermost rounded clip (at its own size; a plain
 // rect when there's none), and `scissor` is the intersection of every enclosing clip's rect.
@@ -73,9 +77,10 @@ std::array<float, 4> scaled_radii(const CornerRadii& radii, float scale, float w
     return {r(radii.top_left), r(radii.top_right), r(radii.bottom_right), r(radii.bottom_left)};
 }
 
+// A power of 2: blurs halve the resolution that many times, 2 x 2 texels at a time.
 std::uint32_t downsample_for(float sigma) {
     std::uint32_t factor = 1;
-    while (sigma / static_cast<float>(factor) > kMaxBlurSigma && factor < 8) {
+    while (sigma / static_cast<float>(factor) > kMaxBlurSigma && factor < (1u << 30)) {
         factor *= 2;
     }
     return factor;
@@ -277,7 +282,7 @@ private:
     void add_backdrop(const BackdropFill& backdrop_fill, QuadInstance instance, const Rect& extent, PlanPass& pass,
                       std::vector<QuadInstance>& out, const Clip& clip, int path) {
         const float sigma = std::max(0.5f, backdrop_fill.blur * scale_ / 2);
-        const float reach = std::ceil(3 * sigma) + 2;
+        const float reach = std::ceil(kBlurSigmas * sigma) + 2 + static_cast<float>(downsample_for(sigma));
         const Rect bounds{0, 0, static_cast<float>(pass.width), static_cast<float>(pass.height)};
         const Rect wanted = intersect(extent.inset(-reach), bounds);
         const float x0 = std::floor(wanted.x);
@@ -541,7 +546,7 @@ private:
         instance.color = to_linear_premultiplied(command.color);
         instance.params = {0, static_cast<float>(QuadKind::box_shadow), 0, 0};
         instance.extra = {0, sigma, 0, 0};
-        emit(pass, out, instance, r.inset(-3 * sigma - 1), clip, {});
+        emit(pass, out, instance, r.inset(-kBlurSigmas * sigma - 1), clip, {});
     }
 
     void add_inner_shadow(const InnerShadowCommand& command, Point origin, PlanPass& pass,
@@ -601,7 +606,7 @@ private:
     // the layer.
     [[nodiscard]] std::optional<Rect> needed_region(const PushLayerCommand& command, const Rect& shown,
                                                     const std::optional<LayerTransform>& transform, float shadow_sigma,
-                                                    std::optional<float> blur_sigma, std::uint32_t blur_downsample,
+                                                    std::optional<float> blur_sigma,
                                                     std::optional<float> inner_sigma) const {
         if (!(shown.width > 0) || !(shown.height > 0)) {
             return std::nullopt;
@@ -639,10 +644,13 @@ private:
             const float y0 = std::min(a.y, b.y);
             return Rect{x0, y0, std::max(a.max_x(), b.max_x()) - x0, std::max(a.max_y(), b.max_y()) - y0};
         };
-        const auto reach = [](float sigma) { return std::ceil(3 * sigma) + 2; };
+        // As far as a blur reads: kBlurSigmas sigmas, its edge texels, and a texel at its resolution.
+        const auto reach = [](float sigma) {
+            return std::ceil(kBlurSigmas * sigma) + 2 + static_cast<float>(downsample_for(sigma));
+        };
         Rect needed = v;
         if (blur_sigma) {
-            needed = unite(needed, v.inset(-(reach(*blur_sigma) + static_cast<float>(blur_downsample))));
+            needed = unite(needed, v.inset(-reach(*blur_sigma)));
         }
         if (command.shadow) {
             const Rect source{v.x - command.shadow->x * scale_, v.y - command.shadow->y * scale_, v.width, v.height};
@@ -663,12 +671,12 @@ private:
                    std::vector<QuadInstance>& out, const Clip& clip, const Rect& visible) {
         const float sigma = command.shadow ? std::max(0.5f, command.shadow->radius * scale_ / 2) : 0.f;
         // Room around the content for anti-aliasing and the blurs.
-        float margin = command.shadow ? std::ceil(3 * sigma) + 2 : 1;
+        float margin = command.shadow ? std::ceil(kBlurSigmas * sigma) + 2 : 1;
         std::optional<float> blur_sigma;
         if (command.blur > 0) {
             blur_sigma = std::max(0.5f, command.blur * scale_ / 2);
             if (!command.blur_opaque) {
-                margin = std::max(margin, std::ceil(3 * *blur_sigma) + 2);
+                margin = std::max(margin, std::ceil(kBlurSigmas * *blur_sigma) + 2);
             }
         }
         // The transform, in this pass's pixels.
@@ -683,8 +691,7 @@ private:
             command.inner_shadow ? std::optional(std::max(0.5f, command.inner_shadow->radius * scale_ / 2))
                                  : std::nullopt;
         const std::optional<Rect> needed =
-            needed_region(command, visible_through(visible, clip), transform, sigma, blur_sigma, blur_downsample,
-                          inner_sigma);
+            needed_region(command, visible_through(visible, clip), transform, sigma, blur_sigma, inner_sigma);
         const Rect content = to_pixels(command.bounds, origin);
         float x0 = std::floor(content.x - margin);
         float y0 = std::floor(content.y - margin);
@@ -709,6 +716,7 @@ private:
         layer.height = clamp_size(y1 - y0);
         if (command.shadow) {
             layer.shadow_sigma = sigma;
+            layer.shadow_downsample = downsample_for(sigma);
         }
         if (blur_sigma) {
             layer.blur_sigma = blur_sigma;
@@ -716,6 +724,9 @@ private:
             layer.blur_clamp = command.blur_opaque;
         }
         layer.inner_shadow_sigma = inner_sigma;
+        if (inner_sigma) {
+            layer.inner_shadow_downsample = downsample_for(*inner_sigma);
+        }
 
         std::vector<QuadInstance> layer_out;
         ++index;
@@ -759,7 +770,10 @@ private:
         if (command.shadow) {
             const Rect shadow_area{area.x + command.shadow->x * scale_, area.y + command.shadow->y * scale_,
                                    area.width, area.height};
-            QuadInstance shadow = layer_quad(shadow_area, texels, 1, QuadKind::layer_shadow);
+            const auto shadow_downsample = static_cast<float>(built.shadow_downsample);
+            QuadInstance shadow = layer_quad(
+                shadow_area, {0, 0, area.width / shadow_downsample, area.height / shadow_downsample}, 1,
+                QuadKind::layer_shadow);
             shadow.color = to_linear_premultiplied(command.shadow->color.opacity(command.opacity));
             place(shadow);
             emit(pass, out, shadow, extent_of(shadow_area), clip, {.layer = layer_index, .layer_image = LayerImage::shadow});
@@ -798,7 +812,9 @@ private:
         if (command.inner_shadow) {
             QuadInstance inner = layer_quad(area, texels, 1, QuadKind::layer_inner_shadow);
             inner.color = to_linear_premultiplied(command.inner_shadow->color.opacity(command.opacity));
-            inner.border_color = {command.inner_shadow->x * scale_, command.inner_shadow->y * scale_, 0, 0};
+            // The offset, and the scale of the blurred image, which may be downsampled.
+            inner.border_color = {command.inner_shadow->x * scale_, command.inner_shadow->y * scale_,
+                                  1 / static_cast<float>(built.inner_shadow_downsample), 0};
             place(inner);
             emit(pass, out, inner, extent_of(area), clip,
                  {.layer = layer_index, .layer_image = LayerImage::inner_shadow});

@@ -83,7 +83,9 @@ fn read_pair(texel: vec2f, offset: f32, step: f32, wa: f32, wb: f32) -> vec4f {
 fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let texel = floor(position.xy); // the target texel; the source is the same size
     let sigma = max(pc.sigma, 0.5);
-    let radius = min(i32(ceil(3.0 * sigma)), kMaxRadius);
+    // 4 sigma: beyond lies less than 1/30000 of the Gaussian. Wide blurs run downsampled, so that
+    // sigma stays within 12 texels and the radius within kMaxRadius.
+    let radius = min(i32(ceil(4.0 * sigma)), kMaxRadius);
     let weight = 0.5 / (sigma * sigma);
     var sum = read(texel); // the center, weight 1
     var weights = 1.0;

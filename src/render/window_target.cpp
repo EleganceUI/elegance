@@ -37,7 +37,7 @@ namespace elg::detail {
 namespace {
 
 // Layers hold premultiplied linear color; sRGB storage keeps 8-bit precision where it matters.
-// Color blurs (gpu::BlurRenderer::kColorFormat) read and write it too.
+// Color blurs read it, and write their own format (gpu::BlurRenderer::kColorFormat).
 constexpr wgpu::TextureFormat kLayerFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
 // Layers can be copied from, for backdrops read inside them.
 constexpr wgpu::TextureUsage kLayerUsage =
@@ -154,11 +154,17 @@ private:
     // Copies a backdrop's region out of `texture` and blurs it as planned; returns its group.
     wgpu::BindGroup take_backdrop(const wgpu::CommandEncoder& encoder, const wgpu::Texture& texture,
                                   const PlanBackdrop& backdrop, const RenderResources& resources);
-    // Blurs a color image (`width` x `height` of it) into pooled images, downsampled by `factor`
-    // first; `slot` picks the pooled images (ImageSlot::index). Returns the result's group.
-    wgpu::BindGroup blur_color(const wgpu::CommandEncoder& encoder, const wgpu::BindGroup& source, std::uint32_t width,
-                               std::uint32_t height, float sigma, std::uint32_t factor, bool clamp_edges,
-                               std::uint64_t slot, const RenderResources& resources);
+    // What a blur makes, in pooled images of its own roles: a blurred layer or backdrop (color),
+    // a layer's shadow (its alpha), or its inner shadow (its alpha's inverse).
+    enum class BlurKind { color, shadow, inner_shadow };
+    // Blurs `width` x `height` of `source` as a Gaussian of `sigma` pixels, at 1/`factor` (a power
+    // of 2) the resolution: halved that many times first, 2 x 2 texels into one. `slot` picks the
+    // pooled images (ImageSlot::index); `clamp_edges`, color only: outside the image repeats its
+    // edge. Returns the result's group, which is drawn at the image's size, so its bilinear
+    // filtering scales it back up.
+    wgpu::BindGroup blur(const wgpu::CommandEncoder& encoder, const wgpu::BindGroup& source, std::uint32_t width,
+                         std::uint32_t height, float sigma, std::uint32_t factor, BlurKind kind, bool clamp_edges,
+                         std::uint64_t slot, const RenderResources& resources);
     const wgpu::BindGroup& empty_group(const RenderResources& resources);
     // A side of the window's image: the window's (in pixels), up to what the device's textures
     // allow.
@@ -202,7 +208,6 @@ WindowTarget::State::State(const gpu::Device& device, std::unique_ptr<gpu::Prese
     : device_(device), presenter_(std::move(presenter)),
       sampler_(gpu::create_linear_sampler(device.handle())), instances_(device.handle(), wgpu::BufferUsage::Vertex),
       stops_(device.handle(), wgpu::BufferUsage::Storage), path_vertices_(device.handle(), wgpu::BufferUsage::Vertex) {
-    ELG_DEBUG_ASSERT(kLayerFormat == gpu::BlurRenderer::kColorFormat, "layers and color blurs differ in format");
 }
 
 void WindowTarget::State::render(const WindowFrame& frame, const RenderResources& resources) {
@@ -249,30 +254,66 @@ const wgpu::BindGroup& WindowTarget::State::empty_group(const RenderResources& r
     return empty_group_;
 }
 
-wgpu::BindGroup WindowTarget::State::blur_color(const wgpu::CommandEncoder& encoder, const wgpu::BindGroup& source,
-                                                std::uint32_t width, std::uint32_t height, float sigma,
-                                                std::uint32_t factor, bool clamp_edges, std::uint64_t slot,
-                                                const RenderResources& resources) {
+wgpu::BindGroup WindowTarget::State::blur(const wgpu::CommandEncoder& encoder, const wgpu::BindGroup& source,
+                                          std::uint32_t width, std::uint32_t height, float sigma, std::uint32_t factor,
+                                          BlurKind kind, bool clamp_edges, std::uint64_t slot,
+                                          const RenderResources& resources) {
+    using Channel = gpu::BlurRenderer::Channel;
+    struct Roles {
+        ImageRole down;
+        ImageRole horizontal;
+        ImageRole result;
+        wgpu::TextureFormat format;
+        Channel first; // what the first pass takes of the source's texels
+        const char* label;
+    };
+    const Roles roles =
+        kind == BlurKind::color    ? Roles{ImageRole::color_down, ImageRole::color_horizontal, ImageRole::color_blurred,
+                                        gpu::BlurRenderer::kColorFormat, Channel::color, "blur"}
+        : kind == BlurKind::shadow ? Roles{ImageRole::shadow_down, ImageRole::shadow_horizontal, ImageRole::shadow,
+                                           gpu::BlurRenderer::kFormat, Channel::alpha, "layer shadow"}
+                                   : Roles{ImageRole::inner_down, ImageRole::inner_horizontal, ImageRole::inner_shadow,
+                                           gpu::BlurRenderer::kFormat, Channel::inverse_alpha, "inner shadow"};
+    // Outside the image: transparent, which an inner shadow reads as full; from the second pass
+    // on, an inner shadow's single channel repeats its edge instead, as a color blur may.
+    Channel channel = roles.first;
+    const auto clamps = [&] { return kind == BlurKind::color ? clamp_edges : kind == BlurKind::inner_shadow && channel == Channel::red; };
+    const auto next = [&] {
+        if (kind != BlurKind::color) {
+            channel = Channel::red; // one channel from the first pass on
+        }
+    };
+
     wgpu::BindGroup input = source;
-    if (factor > 1) {
-        width = (width + factor - 1) / factor;
-        height = (height + factor - 1) / factor;
-        const RenderImage& down = pooled_image(ImageRole::color_down, slot, kLayerFormat, width, height);
+    std::uint64_t level = 0;
+    for (std::uint32_t done = 1; done < factor; done *= 2, ++level) {
+        const std::uint32_t half_width = (width + 1) / 2;
+        const std::uint32_t half_height = (height + 1) / 2;
+        const RenderImage& down = pooled_image(roles.down, slot ^ (level << 56), roles.format, half_width, half_height);
         render_offscreen(encoder, down, "downsample", [&](const wgpu::RenderPassEncoder& pass) {
-            resources.blur.downsample(pass, source, width * factor, height * factor, factor, clamp_edges);
+            resources.blur.downsample(pass, input, width, height, 2, clamps(), channel);
         });
         input = image_group(resources, down.view());
-        sigma /= static_cast<float>(factor);
+        width = half_width;
+        height = half_height;
+        next();
     }
-    const RenderImage& horizontal = pooled_image(ImageRole::color_horizontal, slot, kLayerFormat, width, height);
-    render_offscreen(encoder, horizontal, "blur", [&](const wgpu::RenderPassEncoder& pass) {
-        resources.blur.blur(pass, input, width, height, true, sigma, gpu::BlurRenderer::Channel::color, clamp_edges);
+    // The downsampling's boxes and the bilinear filtering that scales the result back up blur too:
+    // about factor^2 / 4 of variance, in pixels. The kernel, at the lower resolution, adds the rest.
+    float texel_sigma = sigma;
+    if (factor > 1) {
+        const auto f = static_cast<float>(factor);
+        texel_sigma = std::sqrt(std::max(sigma * sigma - f * f / 4 + 1.f / 12, 0.25f * f * f)) / f;
+    }
+    const RenderImage& horizontal = pooled_image(roles.horizontal, slot, roles.format, width, height);
+    render_offscreen(encoder, horizontal, roles.label, [&](const wgpu::RenderPassEncoder& pass) {
+        resources.blur.blur(pass, input, width, height, true, texel_sigma, channel, clamps());
     });
+    next();
     const wgpu::BindGroup horizontal_group = image_group(resources, horizontal.view());
-    const RenderImage& vertical = pooled_image(ImageRole::color_blurred, slot, kLayerFormat, width, height);
-    render_offscreen(encoder, vertical, "blur", [&](const wgpu::RenderPassEncoder& pass) {
-        resources.blur.blur(pass, horizontal_group, width, height, false, sigma, gpu::BlurRenderer::Channel::color,
-                            clamp_edges);
+    const RenderImage& vertical = pooled_image(roles.result, slot, roles.format, width, height);
+    render_offscreen(encoder, vertical, roles.label, [&](const wgpu::RenderPassEncoder& pass) {
+        resources.blur.blur(pass, horizontal_group, width, height, false, texel_sigma, channel, clamps());
     });
     return image_group(resources, vertical.view());
 }
@@ -297,8 +338,8 @@ wgpu::BindGroup WindowTarget::State::take_backdrop(const wgpu::CommandEncoder& e
     if (backdrop.sigma <= 0) {
         return image_group(resources, copy.view());
     }
-    return blur_color(encoder, image_group(resources, copy.view()), backdrop.width, backdrop.height, backdrop.sigma,
-                      backdrop.downsample, true, kBackdropBlurSlot, resources);
+    return blur(encoder, image_group(resources, copy.view()), backdrop.width, backdrop.height, backdrop.sigma,
+                backdrop.downsample, BlurKind::color, true, kBackdropBlurSlot, resources);
 }
 
 void WindowTarget::State::draw_pass(const wgpu::CommandEncoder& encoder, const PassTarget& target,
@@ -464,49 +505,20 @@ wgpu::CommandBuffer WindowTarget::State::record(const DrawTarget& target, const 
         layer_groups.content = layer_groups.raw;
 
         if (layer.shadow_sigma) {
-            const float sigma = *layer.shadow_sigma;
-            const RenderImage& horizontal =
-                pooled_image(ImageRole::shadow_horizontal, shadows, gpu::BlurRenderer::kFormat, layer.width,
-                             layer.height);
-            render_offscreen(encoder, horizontal, "layer shadow", [&](const wgpu::RenderPassEncoder& pass) {
-                resources.blur.blur(pass, layer_groups.raw, layer.width, layer.height, true, sigma,
-                                    gpu::BlurRenderer::Channel::alpha);
-            });
-            const wgpu::BindGroup horizontal_group = image_group(resources, horizontal.view());
-
-            const RenderImage& vertical =
-                pooled_image(ImageRole::shadow, shadows, gpu::BlurRenderer::kFormat, layer.width, layer.height);
-            render_offscreen(encoder, vertical, "layer shadow", [&](const wgpu::RenderPassEncoder& pass) {
-                resources.blur.blur(pass, horizontal_group, layer.width, layer.height, false, sigma,
-                                    gpu::BlurRenderer::Channel::red);
-            });
-            layer_groups.shadow = image_group(resources, vertical.view());
+            layer_groups.shadow = blur(encoder, layer_groups.raw, layer.width, layer.height, *layer.shadow_sigma,
+                                       layer.shadow_downsample, BlurKind::shadow, false, shadows, resources);
             ++shadows;
         }
         if (layer.inner_shadow_sigma) {
             // The blurred inverse of the alpha: full outside the content, fading in from its edges.
-            const float sigma = *layer.inner_shadow_sigma;
-            const RenderImage& horizontal =
-                pooled_image(ImageRole::inner_horizontal, inner_shadows, gpu::BlurRenderer::kFormat, layer.width,
-                             layer.height);
-            render_offscreen(encoder, horizontal, "inner shadow", [&](const wgpu::RenderPassEncoder& pass) {
-                resources.blur.blur(pass, layer_groups.raw, layer.width, layer.height, true, sigma,
-                                    gpu::BlurRenderer::Channel::inverse_alpha);
-            });
-            const wgpu::BindGroup horizontal_group = image_group(resources, horizontal.view());
-            const RenderImage& vertical =
-                pooled_image(ImageRole::inner_shadow, inner_shadows, gpu::BlurRenderer::kFormat, layer.width,
-                             layer.height);
-            render_offscreen(encoder, vertical, "inner shadow", [&](const wgpu::RenderPassEncoder& pass) {
-                resources.blur.blur(pass, horizontal_group, layer.width, layer.height, false, sigma,
-                                    gpu::BlurRenderer::Channel::red, true);
-            });
-            layer_groups.inner_shadow = image_group(resources, vertical.view());
+            layer_groups.inner_shadow =
+                blur(encoder, layer_groups.raw, layer.width, layer.height, *layer.inner_shadow_sigma,
+                     layer.inner_shadow_downsample, BlurKind::inner_shadow, false, inner_shadows, resources);
             ++inner_shadows;
         }
         if (layer.blur_sigma) {
-            layer_groups.content = blur_color(encoder, layer_groups.raw, layer.width, layer.height, *layer.blur_sigma,
-                                              layer.blur_downsample, layer.blur_clamp, i, resources);
+            layer_groups.content = blur(encoder, layer_groups.raw, layer.width, layer.height, *layer.blur_sigma,
+                                        layer.blur_downsample, BlurKind::color, layer.blur_clamp, i, resources);
         }
     }
 

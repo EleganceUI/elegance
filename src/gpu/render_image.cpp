@@ -26,6 +26,8 @@ std::size_t image_bytes(wgpu::TextureFormat format, std::uint32_t width, std::ui
     std::size_t texel = 16; // formats not listed: at most this
     switch (format) {
     case wgpu::TextureFormat::R8Unorm: texel = 1; break;
+    case wgpu::TextureFormat::R16Float: texel = 2; break;
+    case wgpu::TextureFormat::RGBA16Float: texel = 8; break;
     // Backends may keep stencil in a 32-bit depth-stencil format (D24S8 on Direct3D, and on
     // Vulkan without separate 8-bit stencil): counted that large everywhere.
     case wgpu::TextureFormat::Stencil8:

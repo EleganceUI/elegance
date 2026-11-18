@@ -14,13 +14,18 @@
 #include "media/video_frame.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <webgpu/webgpu_cpp.h>
 
+#include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <utility>
 #include <vector>
@@ -187,5 +192,113 @@ TEST_CASE("images are filtered with premultiplied alpha", "[.gpu][filtering]") {
             INFO("x " << x);
             CHECK(gray(pixels.at(x, 5)));
         }
+    }
+}
+
+namespace {
+
+// The share of a Gaussian of `sigma` pixels that falls between `from` and `to`, from a pixel's
+// center.
+double gaussian_share(double center, double from, double to, double sigma) {
+    const auto below = [&](double x) { return 0.5 * std::erfc(-(x - center) / (sigma * std::numbers::sqrt2)); };
+    return below(to) - below(from);
+}
+
+int to_srgb_byte(double linear) {
+    const double v = linear <= 0.0031308 ? linear * 12.92 : 1.055 * std::pow(linear, 1 / 2.4) - 0.055;
+    return static_cast<int>(std::lround(std::clamp(v, 0.0, 1.0) * 255));
+}
+
+// How a black `rect` (pixels) blurred as a Gaussian of `sigma` pixels covers the pixel (x, y).
+double blurred_cover(const Rect& rect, double sigma, int x, int y) {
+    const auto d = [](float v) { return static_cast<double>(v); };
+    return gaussian_share(x + 0.5, d(rect.x), d(rect.max_x()), sigma) *
+           gaussian_share(y + 0.5, d(rect.y), d(rect.max_y()), sigma);
+}
+
+// The largest difference, in any channel, between `pixels` and what `expected` says (linear
+// light, gray) of each pixel; where it is goes to the test's messages.
+int largest_difference(const Pixels& pixels, const std::function<double(int, int)>& expected) {
+    int largest = 0;
+    int at_x = 0;
+    int at_y = 0;
+    int wanted = 0;
+    int found = 0;
+    for (int y = 0; y < pixels.height; ++y) {
+        for (int x = 0; x < pixels.width; ++x) {
+            const int want = to_srgb_byte(expected(x, y));
+            const std::array<int, 4> got = pixels.at(x, y);
+            for (int channel = 0; channel < 3; ++channel) {
+                const int difference = std::abs(got[static_cast<std::size_t>(channel)] - want);
+                if (difference > largest) {
+                    largest = difference;
+                    at_x = x;
+                    at_y = y;
+                    wanted = want;
+                    found = got[static_cast<std::size_t>(channel)];
+                }
+            }
+        }
+    }
+    UNSCOPED_INFO("largest difference at (" << at_x << ", " << at_y << "): " << found << " for " << wanted);
+    return largest;
+}
+
+} // namespace
+
+TEST_CASE("blurs and shadows are Gaussian blurs of half their radius times the scale", "[.gpu][gaussian]") {
+    PixelRenderer renderer;
+    if (!renderer.draws()) {
+        SKIP("the GPU here draws nothing");
+    }
+    // Radius in points and the window's scale; sigma = radius * scale / 2 pixels. The widest run
+    // at 1/32 the resolution.
+    const auto [radius, scale] = GENERATE(table<float, float>({{3, 1}, {20, 1}, {60, 1}, {100, 2}, {200, 2}}));
+    const double sigma = static_cast<double>(radius * scale) / 2;
+    const auto margin = static_cast<float>(std::ceil(4 * sigma) + 8);
+    const float side = 100;                        // the rect's, in points
+    const auto size = static_cast<int>(std::ceil(side * scale + 2 * margin));
+    const Rect rect{margin / scale, margin / scale, side, side};             // points
+    const Rect pixels_rect{margin, margin, side * scale, side * scale};      // pixels
+    INFO("radius " << radius << " at scale " << scale);
+
+    detail::DisplayList list;
+    list.clear_color = Color::white;
+    SECTION("a blurred layer") {
+        list.commands.emplace_back(detail::PushLayerCommand{.bounds = rect, .blur = radius});
+        list.commands.emplace_back(detail::RectCommand{.rect = rect, .fill = ShapeStyle(Color::black)});
+        list.commands.emplace_back(detail::PopLayerCommand{});
+        const Pixels pixels = renderer.draw(list, size, size, scale);
+        CHECK(largest_difference(pixels, [&](int x, int y) { return 1 - blurred_cover(pixels_rect, sigma, x, y); }) <=
+              4);
+    }
+    SECTION("a layer's shadow") {
+        const Shadow shadow{.color = Color::black, .radius = radius};
+        list.commands.emplace_back(detail::PushLayerCommand{.bounds = rect, .shadow = shadow});
+        list.commands.emplace_back(detail::RectCommand{.rect = rect, .fill = ShapeStyle(Color::black)});
+        list.commands.emplace_back(detail::PopLayerCommand{});
+        const Pixels pixels = renderer.draw(list, size, size, scale);
+        CHECK(largest_difference(pixels, [&](int x, int y) {
+                  const auto px = static_cast<float>(x);
+                  const auto py = static_cast<float>(y);
+                  const bool inside = px >= pixels_rect.x && px < pixels_rect.max_x() && py >= pixels_rect.y &&
+                                      py < pixels_rect.max_y();
+                  return inside ? 0 : 1 - blurred_cover(pixels_rect, sigma, x, y);
+              }) <= 4);
+    }
+    SECTION("a backdrop blur") {
+        list.commands.emplace_back(detail::RectCommand{.rect = rect, .fill = ShapeStyle(Color::black)});
+        const float window = static_cast<float>(size) / scale;
+        list.commands.emplace_back(
+            detail::RectCommand{.rect = {0, 0, window, window}, .fill = ShapeStyle(BackdropFill{.blur = radius})});
+        const Pixels pixels = renderer.draw(list, size, size, scale);
+        CHECK(largest_difference(pixels, [&](int x, int y) { return 1 - blurred_cover(pixels_rect, sigma, x, y); }) <=
+              4);
+    }
+    SECTION("an analytic box shadow") {
+        list.commands.emplace_back(detail::BoxShadowCommand{.rect = rect, .color = Color::black, .blur_radius = radius});
+        const Pixels pixels = renderer.draw(list, size, size, scale);
+        CHECK(largest_difference(pixels, [&](int x, int y) { return 1 - blurred_cover(pixels_rect, sigma, x, y); }) <=
+              4);
     }
 }

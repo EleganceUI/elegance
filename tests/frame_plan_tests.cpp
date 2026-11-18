@@ -137,8 +137,8 @@ TEST_CASE("a layer's image covers what shows of it, and what its effects reach",
         list.commands.emplace_back(detail::PopLayerCommand{});
         const detail::FramePlan plan = detail::plan_frame(list, 100, 100);
         REQUIRE(plan.layers.size() == 1);
-        // sigma 5: 3 sigma and 2 on each side, and a texel for the downsampling.
-        CHECK(plan.layers[0].width == 100 + 2 * 18);
+        // sigma 5: 4 sigma and 2 on each side, and a texel for the downsampling.
+        CHECK(plan.layers[0].width == 100 + 2 * 23);
     }
     SECTION("a layer outside its window gets no image") {
         CHECK(detail::plan_frame(layer_at({0, 500}), 100, 100).layers.empty());
@@ -166,5 +166,31 @@ TEST_CASE("a layer's image covers what shows of it, and what its effects reach",
         const detail::FramePlan plan = detail::plan_frame(layer_at({150, 0}, {.shadow = shadow}), 100, 100);
         REQUIRE(plan.layers.size() == 1);
         CHECK(plan.layers[0].width >= 100);
+    }
+}
+
+TEST_CASE("blurs and shadows sample as many texels a pixel whatever their radius", "[render][blur-cost]") {
+    // The kernel's sigma, at the resolution each blur runs at, stays within 12 texels: so does
+    // what it samples for each pixel (ELGSPEC-0024.R3).
+    for (const float radius : {2.f, 50.f, 400.f, 5000.f}) {
+        INFO("radius " << radius);
+        detail::DisplayList list;
+        const Shadow shadow{.color = Color::black, .radius = radius};
+        list.commands.emplace_back(detail::PushLayerCommand{
+            .bounds = {0, 0, 100, 100}, .shadow = shadow, .blur = radius, .inner_shadow = shadow});
+        list.commands.emplace_back(detail::RectCommand{.rect = {0, 0, 100, 100}, .fill = ShapeStyle(Color::black)});
+        list.commands.emplace_back(detail::PopLayerCommand{});
+        const detail::FramePlan plan = detail::plan_frame(list, 100, 100);
+        REQUIRE(plan.layers.size() == 1);
+        const detail::PlanPass& layer = plan.layers[0];
+        REQUIRE(layer.shadow_sigma);
+        REQUIRE(layer.blur_sigma);
+        REQUIRE(layer.inner_shadow_sigma);
+        // NOLINTBEGIN(bugprone-unchecked-optional-access): REQUIRE stops the test without them
+        CHECK(*layer.shadow_sigma == radius / 2);
+        CHECK(*layer.shadow_sigma / static_cast<float>(layer.shadow_downsample) <= 12);
+        CHECK(*layer.blur_sigma / static_cast<float>(layer.blur_downsample) <= 12);
+        CHECK(*layer.inner_shadow_sigma / static_cast<float>(layer.inner_shadow_downsample) <= 12);
+        // NOLINTEND(bugprone-unchecked-optional-access)
     }
 }
