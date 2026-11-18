@@ -8,6 +8,7 @@
 
 #include "core/log.h"
 #include "core/os_backend.h"
+#include "gpu/instance.h"
 #include "gpu/swapchain.h"
 
 #include <elg/error.h>
@@ -37,10 +38,27 @@ namespace {
 // The longest a composition frame waits for the display to be ready (it's a hint for pacing).
 constexpr unsigned kReadyTimeoutMs = 50;
 
+// Throws when `result` is a failure: DeviceLost when Direct3D's device was removed or reset, so
+// the renderer starts over with a new device, and new composition swapchains for its windows
+// (ELGSPEC-0025.R1, R4); else elg::GpuError.
 void check_hr(HRESULT result, std::string_view what) {
-    if (FAILED(result)) {
-        throw GpuError(std::format("failed to {} (HRESULT 0x{:08x})", what, static_cast<unsigned long>(result)));
+    if (SUCCEEDED(result)) {
+        return;
     }
+    const std::string message =
+        std::format("failed to {} (HRESULT 0x{:08x})", what, static_cast<unsigned long>(result));
+    if (result == DXGI_ERROR_DEVICE_REMOVED || result == DXGI_ERROR_DEVICE_RESET || result == DXGI_ERROR_DEVICE_HUNG ||
+        result == DXGI_ERROR_DRIVER_INTERNAL_ERROR) {
+        throw DeviceLost(std::format("the window's Direct3D 11 device was lost: {}", message));
+    }
+    throw GpuError(message);
+}
+
+// A WebGPU call on the shared texture failed: DeviceLost if the device is gone (tick() says), else
+// elg::GpuError.
+[[noreturn]] void webgpu_failed(const Device& device, std::string_view what) {
+    device.tick();
+    throw_gpu_error(what);
 }
 
 // Whether a window presents through DirectComposition instead of its WebGPU surface.
@@ -74,6 +92,8 @@ std::unique_ptr<Presenter> create_presenter(const Device& device, const SurfaceS
     if (wants_composition(device, transparent, native_window)) {
         try {
             composition = std::make_unique<CompositionTarget>(device, native_window, transparent);
+        } catch (const DeviceLost&) {
+            throw; // the renderer starts over, with composition again
         } catch (const std::exception& error) {
             log_warning("window falls back to a WebGPU surface: {}", error.what());
         }
@@ -237,7 +257,7 @@ void CompositionTarget::end_frame(bool /*reads_backdrops*/, std::span<const Rect
     }
     wgpu::SharedTextureMemoryEndAccessState state;
     if (!end_access(state) || state.fenceCount != state.signaledValueCount) {
-        throw_gpu_error("end the frame's access to the shared texture");
+        webgpu_failed(device_, "end the frame's access to the shared texture");
     }
     for (std::size_t i = 0; i < state.fenceCount; ++i) {
         check_hr(impl_->context4->Wait(opened(state.fences[i]), state.signaledValues[i]),
@@ -352,7 +372,7 @@ wgpu::TextureView CompositionTarget::begin_access() {
         access.signaledValues = &impl_->copied_value;
     }
     if (impl_->memory.BeginAccess(impl_->texture, &access) != wgpu::Status::Success) {
-        throw_gpu_error("access the shared texture");
+        webgpu_failed(device_, "access the shared texture");
     }
     impl_->accessing = true;
     return impl_->view;
@@ -454,7 +474,7 @@ bool CompositionTarget::prepare(std::uint32_t width, std::uint32_t height) {
     CloseHandle(handle); // importing an NT handle doesn't take ownership of it
     if (!impl_->memory) {
         destroy_image();
-        throw_gpu_error("import the shared texture");
+        webgpu_failed(device_, "import the shared texture");
     }
     const wgpu::TextureFormat sampled = view_format();
     wgpu::TextureDescriptor descriptor;
