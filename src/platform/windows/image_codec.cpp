@@ -67,7 +67,10 @@ int exif_orientation(IWICBitmapFrameDecode* frame) {
             PropVariantInit(&value);
             if (SUCCEEDED(reader->GetMetadataByName(query, &value))) {
                 const int orientation = value.vt == VT_UI2 && value.uiVal >= 1 && value.uiVal <= 8 ? value.uiVal : 1;
-                PropVariantClear(&value);
+                // A number holds nothing to free; a value it can't clear isn't an orientation.
+                if (FAILED(PropVariantClear(&value))) {
+                    continue;
+                }
                 if (orientation != 1) {
                     return orientation;
                 }
@@ -128,26 +131,32 @@ std::optional<std::vector<unsigned char>> encode_png(std::span<const std::uint8_
         return std::nullopt;
     }
     ComPtr<IStream> stream;
-    CreateStreamOnHGlobal(nullptr, TRUE, &stream);
     ComPtr<IWICBitmapEncoder> encoder;
     ComPtr<IWICBitmapFrameEncode> frame;
-    if (FAILED(wic->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) ||
+    if (FAILED(CreateStreamOnHGlobal(nullptr, TRUE, &stream)) ||
+        FAILED(wic->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder)) ||
         FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)) ||
         FAILED(encoder->CreateNewFrame(&frame, nullptr)) || FAILED(frame->Initialize(nullptr)) ||
         FAILED(frame->SetSize(width, height))) {
         return std::nullopt;
     }
+    // The encoder may answer with a format of its own, which the pixels aren't in.
     WICPixelFormatGUID format = GUID_WICPixelFormat32bppBGRA;
-    frame->SetPixelFormat(&format);
-    if (FAILED(frame->WritePixels(height, width * 4, static_cast<UINT>(bgra.size()), const_cast<BYTE*>(bgra.data()))) ||
+    if (FAILED(frame->SetPixelFormat(&format)) || format != GUID_WICPixelFormat32bppBGRA ||
+        FAILED(frame->WritePixels(height, width * 4, static_cast<UINT>(bgra.size()), const_cast<BYTE*>(bgra.data()))) ||
         FAILED(frame->Commit()) || FAILED(encoder->Commit())) {
         return std::nullopt;
     }
     HGLOBAL memory = nullptr;
-    GetHGlobalFromStream(stream.Get(), &memory);
     STATSTG stat{};
-    stream->Stat(&stat, STATFLAG_NONAME);
+    if (FAILED(GetHGlobalFromStream(stream.Get(), &memory)) || FAILED(stream->Stat(&stat, STATFLAG_NONAME)) ||
+        stat.cbSize.QuadPart > GlobalSize(memory)) {
+        return std::nullopt;
+    }
     const auto* bytes = static_cast<const unsigned char*>(GlobalLock(memory));
+    if (!bytes) {
+        return std::nullopt;
+    }
     std::vector<unsigned char> png(bytes, bytes + stat.cbSize.QuadPart);
     GlobalUnlock(memory);
     return png;
