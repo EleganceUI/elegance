@@ -11,6 +11,7 @@
 
 #include <process.h>
 #include <windows.h>
+#include <objbase.h>
 
 #include <algorithm>
 #include <atomic>
@@ -168,6 +169,18 @@ int finish_command(void* command) noexcept {
         return -1;
     }
     return static_cast<int>(status);
+}
+
+// COM, in the multithreaded apartment: Elegance's threads decode images (WIC), present
+// (DXGI, DirectComposition) and play media (Media Foundation).
+bool begin_elegance_thread() noexcept {
+    return SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
+}
+
+void end_elegance_thread(bool begun) noexcept {
+    if (begun) {
+        CoUninitialize();
+    }
 }
 
 bool threads_end_before_static_destruction() noexcept {

@@ -9,6 +9,7 @@
 
 #include "core/log.h"
 #include "core/os_backend.h"
+#include "core/threads.h"
 #include "core/ui_tasks.h"
 
 #include <elg/error.h>
@@ -282,6 +283,7 @@ public:
 
 private:
     void run(const std::stop_token& stop) {
+        const ThreadSetup thread_setup; // miniaudio's output uses COM on Windows (WASAPI)
         bool was_playing = false;
         while (!stop.stop_requested()) {
             std::vector<std::weak_ptr<AudioPlayerState>> playing;

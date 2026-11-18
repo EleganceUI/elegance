@@ -6,6 +6,8 @@
 
 #include "gpu/render_device.h"
 
+#include "core/threads.h"
+
 #include <elg/gpu_image.h>
 
 #include <condition_variable>
@@ -48,6 +50,7 @@ public:
     }
 private:
     void run() {
+        const ThreadSetup thread_setup; // retiring an image may release Direct3D objects (COM)
         for (;;) {
             std::function<void()> job;
             {

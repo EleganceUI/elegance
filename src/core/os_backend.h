@@ -51,6 +51,14 @@ int finish_command(void* command) noexcept;
 // destroyed at exit: for a DLL on Windows, which the process unloads after ending them.
 bool threads_end_before_static_destruction() noexcept;
 
+// --- Threads that Elegance starts (core/threads.h) ---
+
+// Sets the calling thread up for the system services Elegance's threads use (Windows: COM, in the
+// multithreaded apartment): true if end_elegance_thread() has something to undo.
+bool begin_elegance_thread() noexcept;
+// Undoes begin_elegance_thread(), on the same thread, as it ends.
+void end_elegance_thread(bool begun) noexcept;
+
 // --- Crash reports ---
 
 bool debugger_present() noexcept;
