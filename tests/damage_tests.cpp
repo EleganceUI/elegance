@@ -3,7 +3,7 @@
 // https://mozilla.org/MPL/2.0/.
 
 // Which part of a window a frame draws again: the damage between two frames' display lists
-// (ELGSPEC-0029.R4, R5).
+// (ELGSPEC-0029.R4, R5), and the drawn area it's merged into (ELGSPEC-0029.R3).
 
 #include "display/display_list.h"
 #include "render/damage.h"
@@ -148,5 +148,31 @@ TEST_CASE("damage under a backdrop blur damages all that it draws", "[damage]") 
         const auto now = list_of({rect({0, 0, 200, 200}, Color::white), rect({150, 150, 10, 10}, Color::rgb(255, 0, 0)),
                                   glass});
         CHECK(box(damage(before, now)) == Rect{149, 149, 12, 12});
+    }
+}
+
+TEST_CASE("the drawn area merges the damage into at most 4 rectangles", "[damage]") {
+    SECTION("rects whose bounding box is at most twice their area are merged") {
+        CHECK(detail::drawn_area({{0, 0, 10, 10}, {10, 0, 10, 10}}) == std::vector<Rect>{{0, 0, 20, 10}});
+    }
+    SECTION("rects far apart stay apart") {
+        CHECK(detail::drawn_area({{0, 0, 10, 10}, {180, 180, 10, 10}}).size() == 2);
+    }
+    SECTION("past 4, the cheapest merges") {
+        std::vector<Rect> spread;
+        spread.reserve(10);
+        for (int i = 0; i < 10; ++i) {
+            spread.push_back({static_cast<float>(i * 30), static_cast<float>((i % 3) * 60), 5, 5});
+        }
+        const std::vector<Rect> drawn = detail::drawn_area(spread);
+        CHECK(drawn.size() <= 4);
+        for (const Rect& r : spread) {
+            CHECK(std::ranges::any_of(drawn, [&](const Rect& d) {
+                return r.x >= d.x && r.y >= d.y && r.max_x() <= d.max_x() && r.max_y() <= d.max_y();
+            }));
+        }
+    }
+    SECTION("nothing to draw") {
+        CHECK(detail::drawn_area({}).empty());
     }
 }

@@ -116,6 +116,10 @@ Rect unite(const Rect& a, const Rect& b) {
     return union_of(a, b);
 }
 
+float area(const Rect& r) {
+    return has_area(r) ? r.width * r.height : 0;
+}
+
 bool overlaps(const Rect& a, const Rect& b) {
     return has_area(a) && has_area(b) && a.x < b.max_x() && b.x < a.max_x() && a.y < b.max_y() && b.y < a.max_y();
 }
@@ -449,6 +453,71 @@ std::vector<Rect> damage_between(std::span<const Footprint> before, std::span<co
         }
     }
     return damage;
+}
+
+std::vector<Rect> drawn_area(std::vector<Rect> damage) {
+    std::erase_if(damage, [](const Rect& r) { return !has_area(r); });
+    struct Item {
+        Rect rect;
+        float area; // of the rects it stands for
+    };
+    std::vector<Item> items;
+    items.reserve(damage.size());
+    for (const Rect& r : damage) {
+        items.push_back({r, area(r)});
+    }
+    const auto added = [](const Item& a, const Item& b) { return area(union_of(a.rect, b.rect)) - a.area - b.area; };
+    const auto merge_best = [&](bool only_cheap) {
+        float best = std::numeric_limits<float>::max();
+        std::size_t best_i = 0;
+        std::size_t best_j = 0;
+        for (std::size_t i = 0; i < items.size(); ++i) {
+            for (std::size_t j = i + 1; j < items.size(); ++j) {
+                const float cost = added(items[i], items[j]);
+                if (only_cheap && area(union_of(items[i].rect, items[j].rect)) > 2 * (items[i].area + items[j].area)) {
+                    continue;
+                }
+                if (cost < best) {
+                    best = cost;
+                    best_i = i;
+                    best_j = j;
+                }
+            }
+        }
+        if (best == std::numeric_limits<float>::max()) {
+            return false;
+        }
+        items[best_i] = {union_of(items[best_i].rect, items[best_j].rect), items[best_i].area + items[best_j].area};
+        items.erase(items.begin() + static_cast<std::ptrdiff_t>(best_j));
+        return true;
+    };
+    // Many rects (a paragraph's glyphs): neighbors in reading order first, where that's cheap.
+    if (items.size() > 64) {
+        std::ranges::sort(items, [](const Item& a, const Item& b) {
+            return a.rect.y != b.rect.y ? a.rect.y < b.rect.y : a.rect.x < b.rect.x;
+        });
+        std::vector<Item> merged;
+        for (const Item& item : items) {
+            if (!merged.empty() &&
+                area(union_of(merged.back().rect, item.rect)) <= 2 * (merged.back().area + item.area)) {
+                merged.back() = {union_of(merged.back().rect, item.rect), merged.back().area + item.area};
+            } else {
+                merged.push_back(item);
+            }
+        }
+        items = std::move(merged);
+    }
+    while (merge_best(true)) {
+    }
+    while (items.size() > 4) {
+        merge_best(false);
+    }
+    std::vector<Rect> out;
+    out.reserve(items.size());
+    for (const Item& item : items) {
+        out.push_back(item.rect);
+    }
+    return out;
 }
 
 } // namespace elg::detail

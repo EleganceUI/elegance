@@ -6,7 +6,8 @@
 #define ELG_RENDER_DAMAGE_H
 
 // Which part of a window a frame must draw again: the damage region between it and the frame
-// before (ELGSPEC-0029.R4, R5). Render thread; no GPU.
+// before (ELGSPEC-0029.R4, R5), and the drawn area it's merged into (ELGSPEC-0029.R3). Render
+// thread; no GPU.
 
 #include "display/display_list.h"
 
@@ -41,6 +42,11 @@ std::vector<Footprint> footprints(const DisplayList& list, std::uint32_t width, 
 // of the commands added, removed or changed, a command that moved in painter's order among them;
 // then, while it overlaps what an effect of `now` reads, that effect's bounds too.
 std::vector<Rect> damage_between(std::span<const Footprint> before, std::span<const Footprint> now);
+
+// The drawn area of a damage region: its rects, overlapping ones merged, then those whose
+// bounding box is at most twice their area, then, while more than 4 are left, the two whose
+// bounding box adds the least area.
+std::vector<Rect> drawn_area(std::vector<Rect> damage);
 
 } // namespace elg::detail
 
