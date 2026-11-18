@@ -503,10 +503,13 @@ private:
     std::uint64_t frame_id_ = 0;
 };
 
+// Media Foundation calls it, on its threads: nothing may escape it (ELGSPEC-0002.R10).
 STDMETHODIMP EngineNotify::EventNotify(DWORD event, DWORD_PTR param1, DWORD) {
-    if (const auto host = host_.lock()) {
-        video_->on_event(event, param1);
-    }
+    run_foreign_callback([&] {
+        if (const auto host = host_.lock()) {
+            video_->on_event(event, param1);
+        }
+    });
     return S_OK;
 }
 

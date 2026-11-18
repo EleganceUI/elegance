@@ -10,6 +10,8 @@
 #include "platform/sdl/native.h"
 #include "platform/windows/shell.h"
 
+#include "core/ui_tasks.h"
+
 #include <elg/events.h>
 #include <elg/platform.h>
 
@@ -48,19 +50,24 @@ HWND hwnd_of(SDL_Window* window) {
 
 constexpr UINT_PTR kSubclassId = 0x454C47; // "ELG"
 
+// Windows calls it: nothing may escape it (ELGSPEC-0002.R10).
 LRESULT CALLBACK subclass_procedure(HWND window, UINT message, WPARAM wparam, LPARAM lparam, UINT_PTR, DWORD_PTR) {
     static const UINT taskbar_button_created = RegisterWindowMessageW(L"TaskbarButtonCreated");
-    if (message == WM_COMMAND && HIWORD(wparam) == 0 && lparam == 0 && windows::menu_command(LOWORD(wparam))) {
-        return 0;
-    }
-    if (message == taskbar_button_created) {
-        windows::taskbar_button_created(window);
-    } else if (message == WM_DWMCOLORIZATIONCOLORCHANGED ||
-               (message == WM_SETTINGCHANGE && lparam &&
-                lstrcmpW(reinterpret_cast<const wchar_t*>(lparam), L"ImmersiveColorSet") == 0)) {
-        windows::accent_changed();
-    }
-    return DefSubclassProc(window, message, wparam, lparam);
+    bool handled = false;
+    run_foreign_callback([&] {
+        if (message == WM_COMMAND && HIWORD(wparam) == 0 && lparam == 0 && windows::menu_command(LOWORD(wparam))) {
+            handled = true;
+            return;
+        }
+        if (message == taskbar_button_created) {
+            windows::taskbar_button_created(window);
+        } else if (message == WM_DWMCOLORIZATIONCOLORCHANGED ||
+                   (message == WM_SETTINGCHANGE && lparam &&
+                    lstrcmpW(reinterpret_cast<const wchar_t*>(lparam), L"ImmersiveColorSet") == 0)) {
+            windows::accent_changed();
+        }
+    });
+    return handled ? 0 : DefSubclassProc(window, message, wparam, lparam);
 }
 
 } // namespace

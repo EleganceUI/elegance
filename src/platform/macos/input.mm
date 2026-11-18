@@ -4,6 +4,8 @@
 
 #include "platform/macos/input.h"
 
+#include "core/ui_tasks.h"
+
 #import <AppKit/AppKit.h>
 #include <Carbon/Carbon.h>
 
@@ -84,7 +86,10 @@ void* install_input_monitor(std::function<bool(const NativeInput&)> handle) {
         case NSEventTypeSmartMagnify: input.kind = NativeInput::Kind::two_finger_double_tap; break;
         default: return event;
         }
-        return handle(input) ? nil : event;
+        // AppKit calls this: nothing may escape it (ELGSPEC-0002.R10).
+        bool handled = false;
+        elg::detail::run_foreign_callback([&] { handled = handle(input); });
+        return handled ? nil : event;
     }];
     return (__bridge_retained void*)monitor;
 }

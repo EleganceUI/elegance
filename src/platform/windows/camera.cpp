@@ -299,7 +299,16 @@ public:
         }
         host_->set_error(std::string());
         host_->set_playing(true);
-        thread_ = std::jthread([this, weak = weak_host_](std::stop_token stop) { capture(stop, weak); });
+        thread_ = std::jthread([this, weak = weak_host_](std::stop_token stop) {
+            // What goes wrong there stops the camera, with its message, not the process.
+            try {
+                capture(stop, weak);
+            } catch (const std::exception& e) {
+                fail(weak, e.what());
+            } catch (...) {
+                fail(weak, "the camera stopped");
+            }
+        });
     }
     void stop() override {
         stop_capture();
@@ -614,18 +623,22 @@ private:
             STDMETHODIMP_(ULONG) AddRef() override { return 2; } // lives on the capture thread's stack
             STDMETHODIMP_(ULONG) Release() override { return 1; }
             STDMETHODIMP SampleCB(double, IMediaSample*) override { return S_OK; }
+            // DirectShow calls it, on its streaming thread: nothing may escape it (ELGSPEC-0002.R10).
             STDMETHODIMP BufferCB(double, BYTE* buffer, long length) override {
-                const LONG rows = std::abs(height);
-                if (subtype != MEDIASUBTYPE_RGB32) { // YUV is always stored top down, packed
-                    camera->publish_raw(buffer, length, subtype, static_cast<UINT32>(width), static_cast<UINT32>(rows));
-                    return S_OK;
-                }
-                if (length < width * rows * 4) {
-                    return S_OK;
-                }
-                const LONG pitch = height > 0 ? -width * 4 : width * 4;
-                const BYTE* first = height > 0 ? buffer + static_cast<std::size_t>(rows - 1) * width * 4 : buffer;
-                camera->publish(first, pitch, static_cast<UINT32>(width), static_cast<UINT32>(rows));
+                run_foreign_callback([&] {
+                    const LONG rows = std::abs(height);
+                    if (subtype != MEDIASUBTYPE_RGB32) { // YUV is always stored top down, packed
+                        camera->publish_raw(buffer, length, subtype, static_cast<UINT32>(width),
+                                            static_cast<UINT32>(rows));
+                        return;
+                    }
+                    if (length < width * rows * 4) {
+                        return;
+                    }
+                    const LONG pitch = height > 0 ? -width * 4 : width * 4;
+                    const BYTE* first = height > 0 ? buffer + static_cast<std::size_t>(rows - 1) * width * 4 : buffer;
+                    camera->publish(first, pitch, static_cast<UINT32>(width), static_cast<UINT32>(rows));
+                });
                 return S_OK;
             }
         } callback;

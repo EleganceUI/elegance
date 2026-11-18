@@ -148,10 +148,13 @@ public:
         const std::weak_ptr<FrameSourceHost> weak = weak_host_;
         AVFoundationVideo* const video = this;
         observer_ = [ElgVideoObserver new];
+        // Called by AVFoundation: nothing may escape them (ELGSPEC-0002.R10).
         observer_.onChange = ^(NSString* key_path) {
-            if (const auto alive = weak.lock()) {
-                video->on_change(key_path);
-            }
+          run_foreign_callback([&] {
+              if (const auto alive = weak.lock()) {
+                  video->on_change(key_path);
+              }
+          });
         };
         [item_ addObserver:observer_ forKeyPath:@"status" options:NSKeyValueObservingOptionInitial context:nullptr];
         [player_ addObserver:observer_
@@ -162,9 +165,11 @@ public:
         time_token_ = [player_ addPeriodicTimeObserverForInterval:CMTimeMake(1, 4)
                                                             queue:queue_
                                                        usingBlock:^(CMTime time) {
-                                                         const double now = seconds_of(time);
-                                                         post(weak, [now](FrameSourceHost& source) {
-                                                             source.set_time(now);
+                                                         run_foreign_callback([&] {
+                                                             const double now = seconds_of(time);
+                                                             post(weak, [now](FrameSourceHost& source) {
+                                                                 source.set_time(now);
+                                                             });
                                                          });
                                                        }];
 
@@ -175,18 +180,27 @@ public:
                                                            object:item_
                                                             queue:operations
                                                        usingBlock:^(NSNotification*) {
-                                                         post(weak, [video](FrameSourceHost& source) { video->on_end(source); });
+                                                         run_foreign_callback([&] {
+                                                             post(weak, [video](FrameSourceHost& source) {
+                                                                 video->on_end(source);
+                                                             });
+                                                         });
                                                        }]);
         notification_tokens_.push_back([center addObserverForName:AVPlayerItemFailedToPlayToEndTimeNotification
                                                            object:item_
                                                             queue:operations
                                                        usingBlock:^(NSNotification* note) {
-                                                         NSError* error = note.userInfo[AVPlayerItemFailedToPlayToEndTimeErrorKey];
-                                                         const std::string reason =
-                                                             error ? error.localizedDescription.UTF8String : "playback stopped";
-                                                         if (const auto alive = weak.lock()) {
-                                                             video->fail(std::format("can't play {}: {}", video->url_, reason));
-                                                         }
+                                                         run_foreign_callback([&] {
+                                                             NSError* error =
+                                                                 note.userInfo[AVPlayerItemFailedToPlayToEndTimeErrorKey];
+                                                             const std::string reason = error
+                                                                                            ? error.localizedDescription.UTF8String
+                                                                                            : "playback stopped";
+                                                             if (const auto alive = weak.lock()) {
+                                                                 video->fail(
+                                                                     std::format("can't play {}: {}", video->url_, reason));
+                                                             }
+                                                         });
                                                        }]);
     }
 
