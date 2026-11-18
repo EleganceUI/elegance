@@ -23,6 +23,7 @@
 #include <webgpu/webgpu_cpp.h>
 
 #include <cstring>
+#include <memory>
 #include <utility>
 
 namespace elg_tests {
@@ -139,12 +140,16 @@ Pixels PixelRenderer::draw(const DisplayList& list, int width, int height, float
     const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
     encoder.CopyTextureToBuffer(&source, &destination, &size);
     device.submit(encoder.Finish());
-    bool mapped = false;
-    objects_->instance.wait(buffer.MapAsync(wgpu::MapMode::Read, 0, descriptor.size, wgpu::CallbackMode::WaitAnyOnly,
-                                            [&](wgpu::MapAsyncStatus status, wgpu::StringView) {
-                                                mapped = status == wgpu::MapAsyncStatus::Success;
-                                            }));
-    if (!mapped) {
+    // Owned by the callback too: it may run after a wait that gave up. A minute: software GPUs
+    // under sanitizers take seconds over the largest frames, and over their first pipelines.
+    const auto mapped = std::make_shared<bool>(false);
+    const wgpu::Future future =
+        buffer.MapAsync(wgpu::MapMode::Read, 0, descriptor.size, wgpu::CallbackMode::WaitAnyOnly,
+                        [mapped](wgpu::MapAsyncStatus status, wgpu::StringView) {
+                            *mapped = status == wgpu::MapAsyncStatus::Success;
+                        });
+    constexpr std::uint64_t kTimeout = 60'000'000'000; // nanoseconds
+    if (objects_->instance.handle().WaitAny(future, kTimeout) != wgpu::WaitStatus::Success || !*mapped) {
         throw elg::GpuError("the test couldn't read the frame back");
     }
     const auto* bytes = static_cast<const std::uint8_t*>(buffer.GetConstMappedRange(0, descriptor.size));
