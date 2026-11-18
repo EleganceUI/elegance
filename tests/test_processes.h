@@ -30,8 +30,15 @@ inline bool process_ends(int pid, std::chrono::milliseconds timeout = std::chron
             return true;
         }
 #if defined(__linux__)
-        std::ifstream file(std::format("/proc/{}/stat", pid));
-        const std::string stat((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+        std::string stat;
+        try {
+            std::ifstream file(std::format("/proc/{}/stat", pid));
+            stat.assign(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+        } catch (const std::exception&) {
+            // Gone while its stat was read, which libstdc++ reports by throwing (ESRCH): kill()
+            // says so on the next turn.
+            continue;
+        }
         if (const auto name_end = stat.rfind(')'); name_end != std::string::npos && name_end + 2 < stat.size()) {
             const char state = stat[name_end + 2];
             if (state == 'Z' || state == 'X') {
