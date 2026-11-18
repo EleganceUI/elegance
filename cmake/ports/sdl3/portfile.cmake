@@ -6,6 +6,7 @@ vcpkg_from_github(
     HEAD_REF main
     PATCHES
         fix-freebsd.patch
+        100-close-file-dialogs.patch # Elegance: SDL_CloseFileDialogs() (cmake/ports/README.md)
 )
 
 string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "static" SDL_STATIC)
