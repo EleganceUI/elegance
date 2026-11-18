@@ -440,14 +440,15 @@ TEST_CASE("layers and path masks are planned no larger than the device's texture
     list.commands.emplace_back(detail::PathCommand{wide, {0, 0, 9000, 10}, 1, {}, {0, 0, 9000, 10},
                                                    ShapeStyle(Color::black), FillRule::non_zero});
 
-    const detail::FramePlan limited = detail::plan_frame(list, 100, 100, nullptr, 4096);
+    // A window wider than the device's textures: what shows of them is wider still.
+    const detail::FramePlan limited = detail::plan_frame(list, 6000, 100, nullptr, 4096);
     REQUIRE(limited.layers.size() == 1);
     REQUIRE(limited.paths.size() == 1);
     CHECK(limited.layers[0].width == 4096);
     CHECK(limited.paths[0].width == 4096);
 
     // A device with larger textures: 8192 at most still.
-    const detail::FramePlan large = detail::plan_frame(list, 100, 100, nullptr, 16384);
+    const detail::FramePlan large = detail::plan_frame(list, 9000, 100, nullptr, 16384);
     REQUIRE(large.layers.size() == 1);
     REQUIRE(large.paths.size() == 1);
     CHECK(large.layers[0].width == 8192);
