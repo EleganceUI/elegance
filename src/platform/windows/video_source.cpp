@@ -207,8 +207,11 @@ public:
 
     // --- Render thread ---
 
+    // It waits for the GPU's copy of the frame without the mutex, which the UI thread's controls
+    // take (ELGSPEC-0023.R6). Only this thread uses the D3D11 context, the query and the ring,
+    // which exist once the engine does.
     bool update() override {
-        std::lock_guard lock(mutex_);
+        std::unique_lock lock(mutex_);
         if (!ensure_engine()) {
             return false;
         }
@@ -231,16 +234,18 @@ public:
             return false;
         }
         if (!shares_textures_) {
-            return read_back(ring_[slot].texture.Get(), slot);
+            return read_back(ring_[slot].texture.Get(), slot, lock);
         }
         // WebGPU samples it next: the copy must be done. A failed query (the device was
         // removed) shows no new frame.
         context_->End(done_.Get());
         context_->Flush();
+        lock.unlock();
         HRESULT done = S_FALSE;
         while ((done = context_->GetData(done_.Get(), nullptr, 0, 0)) == S_FALSE) {
             SwitchToThread();
         }
+        lock.lock();
         if (FAILED(done)) {
             return false;
         }
@@ -518,20 +523,25 @@ private:
         return true;
     }
 
-    // With the mutex held. The renderer can't import the texture: copies the frame into memory,
-    // packed, for the renderer to upload.
-    bool read_back(ID3D11Texture2D* texture, int slot) {
+    // With `lock` (the mutex) held. The renderer can't import the texture: copies the frame into
+    // memory, packed, for the renderer to upload; Map() waits for the GPU's copy, without the lock.
+    bool read_back(ID3D11Texture2D* texture, int slot, std::unique_lock<std::mutex>& lock) {
         context_->CopyResource(staging_.Get(), texture);
+        const std::uint32_t width = ring_width_;
+        const std::uint32_t height = ring_height_;
+        lock.unlock();
         D3D11_MAPPED_SUBRESOURCE mapped{};
-        if (FAILED(context_->Map(staging_.Get(), 0, D3D11_MAP_READ, 0, &mapped))) { // waits for the copy
+        if (FAILED(context_->Map(staging_.Get(), 0, D3D11_MAP_READ, 0, &mapped))) {
+            lock.lock();
             return false;
         }
-        const std::size_t row = std::size_t{ring_width_} * 4;
-        auto pixels = std::make_shared<std::vector<std::uint8_t>>(row * ring_height_);
-        for (std::uint32_t y = 0; y < ring_height_; ++y) {
+        const std::size_t row = std::size_t{width} * 4;
+        auto pixels = std::make_shared<std::vector<std::uint8_t>>(row * height);
+        for (std::uint32_t y = 0; y < height; ++y) {
             std::memcpy(pixels->data() + row * y, static_cast<const std::uint8_t*>(mapped.pData) + std::size_t{mapped.RowPitch} * y, row);
         }
         context_->Unmap(staging_.Get(), 0);
+        lock.lock();
         pixels_ = std::move(pixels);
         ++frame_id_;
         current_ = slot;
