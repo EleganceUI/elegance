@@ -122,11 +122,15 @@ Apartment this_thread_apartment() {
 
 } // namespace
 
-TEST_CASE("an image decoded before the run leaves COM on the main thread to the run's OLE", "[.gpu][desktop]") {
-    // This thread, which Elegance didn't start, decodes an image: WIC works without COM being set
-    // up on it (ELGSPEC-0019.R1).
+TEST_CASE("media used before the run leaves COM on the main thread to the run's OLE", "[.gpu][desktop]") {
+    // This thread, which Elegance didn't start, decodes an image and lists audio devices and
+    // cameras: WIC, miniaudio and Media Foundation work without COM being set up on it
+    // (ELGSPEC-0019.R1).
     const std::vector<std::uint8_t> png = elg::test::black_png(4, 3);
     CHECK(detail::probe_image(png).width == 4);
+    (void)audio_output_devices();
+    (void)audio_input_devices();
+    (void)camera_devices();
     CHECK_FALSE(this_thread_apartment().explicit_setup);
 
     // So the run can set OLE up on it, in a single-threaded apartment (ELGSPEC-0019.R2).
