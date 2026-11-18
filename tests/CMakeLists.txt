@@ -10,6 +10,7 @@ include(Catch)
 
 add_executable(elegance_tests
         accessibility_tests.cpp
+        animated_layout_tests.cpp
         animation_tests.cpp
         app_error_tests.cpp
         app_thread_tests.cpp
@@ -18,6 +19,7 @@ add_executable(elegance_tests
         canvas_tests.cpp
         capture_phase_tests.cpp
         capture_tests.cpp
+        damage_tests.cpp
         desktop_tests.cpp
         environment_tests.cpp
         gpu_loss_tests.cpp
@@ -51,6 +53,8 @@ add_executable(elegance_tests
         os_tests.cpp
         progress_tests.cpp
         prop_argument_tests.cpp
+        paint_cache_tests.cpp
+        partial_drawing_tests.cpp
         render_pixels.cpp
         pointer_style_tests.cpp
         required_callback_tests.cpp

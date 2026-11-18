@@ -576,7 +576,7 @@ public:
                          dismissals(); // a user's dismissal re-runs this, whatever the binding does
                          return is_presented();
                      }),
-                     context, [target](bool presented) { target->set_presented(presented); });
+                     context, target, [target](bool presented) { target->set_presented(presented); });
         return element;
     }
 

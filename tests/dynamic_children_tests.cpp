@@ -85,6 +85,28 @@ TEST_CASE("a scroll position that outlives its scroll view and window does nothi
     position.scroll_to_top();
 }
 
+TEST_CASE("a scroll view places its content at an offset of whole pixels of the window", "[scroll]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    auto root = detail::lower(ScrollView(Rectangle().frame(20, 400)), {});
+    layout(*root);
+    EventHandler* handler = root->event_handler();
+    REQUIRE(handler);
+    // A trackpad's fine delta: 10.3 points down.
+    handler->scroll(ScrollEvent{.dy = 10.3f, .precise = true}, root->frame());
+    const auto content_y = [&](float scale) {
+        const detail::LayoutScaleScope pixels(scale);
+        layout(*root); // a scroll view arranges at every layout
+        detail::Element* content = hit(*root, {10, 50});
+        REQUIRE(content);
+        return content->frame().y;
+    };
+    CHECK(content_y(1) == -10);
+    CHECK(content_y(2) == -10.5f);   // 20.6 pixels: 21
+    CHECK(content_y(1.5f) == -10);   // 15.45 pixels: 15
+    CHECK(content_y(1.25f) == -10.4f); // 12.875 pixels: 13
+}
+
 TEST_CASE("only elements with a handler take focus whoever asks", "[focus]") {
     detail::Scope scope;
     const detail::Scope::Use use(scope);

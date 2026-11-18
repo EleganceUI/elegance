@@ -272,6 +272,10 @@ void check_ui_thread() {
 
 void track_reads(ReactiveNode& observer, const std::function<void()>& function) {
     Runtime::unlink_sources(&observer);
+    add_reads(observer, function);
+}
+
+void add_reads(ReactiveNode& observer, const std::function<void()>& function) {
     ReactiveNode* const previous = std::exchange(g_observer, &observer);
     const ScopeExit restore([previous] { g_observer = previous; });
     function();

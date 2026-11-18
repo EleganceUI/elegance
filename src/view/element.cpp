@@ -18,6 +18,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <span>
 #include <unordered_map>
 
 namespace elg::detail {
@@ -50,7 +51,227 @@ std::unordered_map<std::uint64_t, Element*>& elements_by_accessibility_id() {
 
 // --- Element ---
 
+// A child an element painted into its own list: it paints again itself, where its commands were.
+struct PaintedChild {
+    const Element* element;
+    std::size_t at;           // before which of the element's own commands
+    std::optional<Rect> cull; // what it was culled to, when not what the element was
+};
+
+struct Element::PaintRecord {
+    std::vector<DrawCommand> commands; // its own, in window points, as built
+    std::vector<PaintedChild> children;
+    Rect frame;                        // its frame then
+    float scale = 1;
+    std::uint64_t epoch = 0;
+    std::optional<Rect> cull;           // what it was culled to then
+    bool children_culled_apart = false; // some child's cull wasn't the element's (scroll views)
+};
+
+namespace {
+
+// An element's paint under way: what it builds itself, and the children it paints.
+struct PaintRecorder {
+    const DisplayList* list;
+    bool from_record;         // adding its record again: children only say how they changed
+    std::size_t next_own;     // where its next own commands start in the list
+    std::optional<Rect> cull; // what it's culled to
+    std::vector<DrawCommand> own;
+    std::vector<PaintedChild> children;
+    bool children_culled_apart = false;
+    bool changes = false;            // its drawing changes over time
+    bool children_animating = false; // the children in its list ask for frames
+    bool children_change = false;    // their drawing changes over time
+};
+
+thread_local std::vector<PaintRecorder*> g_painting;
+thread_local std::uint64_t g_paint_epoch = 0;
+thread_local bool g_fresh_paint = false;
+
+bool close(float a, float b) {
+    return std::abs(a - b) <= 1e-3f;
+}
+
+bool close(const std::optional<Rect>& a, const std::optional<Rect>& b) {
+    if (!a || !b) {
+        return a.has_value() == b.has_value();
+    }
+    return close(a->x, b->x) && close(a->y, b->y) && close(a->width, b->width) && close(a->height, b->height);
+}
+
+std::optional<Rect> moved(std::optional<Rect> r, float dx, float dy) {
+    if (r) {
+        r->x += dx;
+        r->y += dy;
+    }
+    return r;
+}
+
+// Tells the element painting around one that just painted (or was culled) how it went. One in
+// its list becomes part of its record. One in another list (an effect's scratch list, which it
+// copies into its own) makes its own drawing change whenever that one's does.
+void painted(const Element& element, DisplayList& list, std::size_t first, bool animating, bool changes) {
+    PaintRecorder* const around = g_painting.empty() ? nullptr : g_painting.back();
+    if (!around || around->list != &list) {
+        list.animating = list.animating || animating;
+        if (around) {
+            around->changes = around->changes || animating || changes;
+        }
+        return;
+    }
+    around->children_animating = around->children_animating || animating;
+    around->children_change = around->children_change || changes;
+    if (around->from_record) {
+        return;
+    }
+    around->own.insert(around->own.end(), list.commands.begin() + static_cast<std::ptrdiff_t>(around->next_own),
+                       list.commands.begin() + static_cast<std::ptrdiff_t>(first));
+    const bool culled_apart = !close(list.cull, around->cull);
+    around->children.push_back({&element, around->own.size(), culled_apart ? list.cull : std::nullopt});
+    around->children_culled_apart = around->children_culled_apart || culled_apart;
+    around->next_own = list.commands.size();
+}
+
+// Makes an element's recorder the current one while it paints, also when the paint throws.
+class Painting {
+public:
+    explicit Painting(PaintRecorder& recorder) { g_painting.push_back(&recorder); }
+    ~Painting() { g_painting.pop_back(); }
+    Painting(const Painting&) = delete;
+    Painting& operator=(const Painting&) = delete;
+    Painting(Painting&&) = delete;
+    Painting& operator=(Painting&&) = delete;
+};
+
+} // namespace
+
+void paint_changes_over_time() noexcept {
+    if (!g_painting.empty()) {
+        g_painting.back()->changes = true;
+    }
+}
+
+PaintScope::PaintScope(std::uint64_t epoch, bool fresh) noexcept
+    : previous_epoch_(std::exchange(g_paint_epoch, epoch)), previous_fresh_(std::exchange(g_fresh_paint, fresh)) {}
+
+PaintScope::~PaintScope() {
+    g_paint_epoch = previous_epoch_;
+    g_fresh_paint = previous_fresh_;
+}
+
+void Element::paint(DisplayList& list) const {
+    const bool frame_moves = frame_.animating();
+    const std::size_t first = list.commands.size();
+    // Out of sight (scrolled away): skipped, unless it may be on its way in.
+    if (list.cull && paint_bounds_ && cullable() && !overlaps(*paint_bounds_, *list.cull)) {
+        painted(*this, list, first, frame_moves || moving_, false);
+        return;
+    }
+    const bool animating_before = std::exchange(list.animating, false);
+    PaintRecorder recorder{
+        .list = &list, .from_record = repaints_from_record(list), .next_own = first, .cull = list.cull};
+    {
+        const Painting painting(recorder);
+        if (recorder.from_record) {
+            paint_from_record(list);
+        } else {
+            paint_impl(list);
+            if (focus_manager_) {
+                paint_focus_ring(list);
+            }
+        }
+    }
+    // What its own drawing asked for: frames for its animations.
+    const bool own_animating = list.animating;
+    list.animating = animating_before;
+    // A fresh paint (for comparison) leaves what the frames keep as it is.
+    if (!recorder.from_record && !g_fresh_paint) {
+        paint_changed_ = false;
+        if (own_animating || recorder.changes || list.probe) {
+            paint_record_.reset(); // built again next time
+        } else {
+            auto record = std::make_unique<PaintRecord>();
+            record->commands = std::move(recorder.own);
+            record->commands.insert(record->commands.end(),
+                                    list.commands.begin() + static_cast<std::ptrdiff_t>(recorder.next_own),
+                                    list.commands.end());
+            record->children = std::move(recorder.children);
+            record->frame = frame();
+            record->scale = list.scale;
+            record->epoch = g_paint_epoch;
+            record->cull = recorder.cull;
+            record->children_culled_apart = recorder.children_culled_apart;
+            paint_record_ = std::move(record);
+        }
+    }
+    const bool animating = frame_moves || own_animating || recorder.children_animating;
+    painted(*this, list, first, animating, own_animating || recorder.changes || recorder.children_change);
+}
+
+bool Element::repaints_from_record(const DisplayList& list) const {
+    if (!paint_record_ || paint_changed_ || g_fresh_paint) {
+        return false;
+    }
+    const PaintRecord& record = *paint_record_;
+    const Rect now = frame();
+    if (record.epoch != g_paint_epoch || record.scale != list.scale || now.width != record.frame.width ||
+        now.height != record.frame.height) {
+        return false;
+    }
+    // Moved by whole pixels of the window at most: what it snapped to pixels stays on them.
+    const auto whole = [&](float points) {
+        const float pixels = points * list.scale;
+        return close(pixels, std::round(pixels));
+    };
+    const float dx = now.x - record.frame.x;
+    const float dy = now.y - record.frame.y;
+    if (!whole(dx) || !whole(dy)) {
+        return false;
+    }
+    // Children culled to a part of their own (a scroll view's content): while what it's culled to
+    // is the same, moved with it, so is theirs.
+    return !record.children_culled_apart || close(list.cull, moved(record.cull, dx, dy));
+}
+
+void Element::paint_from_record(DisplayList& list) const {
+    const PaintRecord& record = *paint_record_;
+    const Rect now = frame();
+    const float dx = now.x - record.frame.x;
+    const float dy = now.y - record.frame.y;
+    std::size_t next = 0;
+    const auto own_until = [&](std::size_t end) {
+        const std::size_t first = list.commands.size();
+        list.commands.insert(list.commands.end(), record.commands.begin() + static_cast<std::ptrdiff_t>(next),
+                             record.commands.begin() + static_cast<std::ptrdiff_t>(end));
+        transform(std::span(list.commands).subspan(first), dx, dy, 1, {});
+        next = end;
+    };
+    for (const PaintedChild& child : record.children) {
+        own_until(child.at);
+        if (child.cull) {
+            const std::optional<Rect> outer = std::exchange(list.cull, moved(child.cull, dx, dy));
+            child.element->paint(list);
+            list.cull = outer;
+        } else {
+            child.element->paint(list);
+        }
+    }
+    own_until(record.commands.size());
+}
+
+void Element::invalidate_paint() noexcept {
+    for (Element* element = this; element; element = element->parent_) {
+        element->paint_changed_ = true;
+    }
+}
+
+Element::Element() = default;
+
 Element::~Element() {
+    // The elements around it may have painted it: they paint again, without it.
+    if (parent_) {
+        parent_->invalidate_paint();
+    }
     if (focus_manager_) {
         focus_manager_->forget(this); // also ends a .focused watch on this element
     }
@@ -105,13 +326,18 @@ Element* element_with_accessibility_id(std::uint64_t id) noexcept {
 }
 
 namespace {
-bool g_full_layout = false;
+float g_layout_scale = 1;
 } // namespace
 
-FullLayoutScope::FullLayoutScope(bool full) noexcept : previous_(std::exchange(g_full_layout, full)) {}
+LayoutScaleScope::LayoutScaleScope(float scale) noexcept
+    : previous_(std::exchange(g_layout_scale, scale > 0 ? scale : 1)) {}
 
-FullLayoutScope::~FullLayoutScope() {
-    g_full_layout = previous_;
+LayoutScaleScope::~LayoutScaleScope() {
+    g_layout_scale = previous_;
+}
+
+float layout_scale() noexcept {
+    return g_layout_scale;
 }
 
 void Element::invalidate_layout() noexcept {
@@ -134,9 +360,18 @@ void Element::place(Point position, ProposedSize proposal) {
     const Rect target{position.x, position.y, size.width, size.height};
     // Same place, same proposal, and nothing inside changed: everything inside is already where
     // it belongs. A small update in a large window lays out only what it touched.
-    if (placed_ && !needs_arrange_ && !always_arranges_inside_ && !moving_ && !g_full_layout &&
-        target == frame_.target() && last_proposal_ == proposal) {
-        return;
+    if (placed_ && !needs_arrange_ && target == frame_.target() && last_proposal_ == proposal) {
+        if (!always_arranges_inside_ && !moving_) {
+            return;
+        }
+        // Something inside moves (an animation) or arranges at every layout, and its layout
+        // doesn't follow from this one's: that is laid out again, this one keeps its own.
+        if (!arranges_each_layout()) {
+            moved_by_ = {};
+            place_children_again();
+            update_paint_bounds();
+            return;
+        }
     }
     // How far it moved, for exiting children to follow. A size change moves the origin too (an
     // emptied If in an overlay shrinks toward its alignment), but that isn't movement: then it
@@ -148,6 +383,13 @@ void Element::place(Point position, ProposedSize proposal) {
         moved_by_ = {target.x - previous.x, target.y - previous.y};
     } else {
         moved_by_ = parent_ ? parent_->moved_by_ : Point{};
+    }
+    // What it draws follows from how it's arranged: built again, unless it only moved (paint()
+    // moves what it built) or nothing changed for it. Elements arranged at every layout tell
+    // themselves what changed.
+    if (!placed_ || needs_arrange_ || last_proposal_ != proposal || previous.width != target.width ||
+        previous.height != target.height) {
+        invalidate_paint();
     }
     if (!placed_ || target != frame_.target()) {
         // An element appearing for the first time takes its frame at once; afterwards, a layout
@@ -167,6 +409,37 @@ void Element::place(Point position, ProposedSize proposal) {
     needs_arrange_ = false; // first: an invalidation during arrange holds for the next layout
     arrange(target, proposal);
     update_paint_bounds();
+}
+
+bool Element::arranges_each_layout() {
+    if (always_arranges()) {
+        return true;
+    }
+    bool arranges = false;
+    const auto visit = [&](const auto& self, Element& child) -> void {
+        if (!child.placed_ && child.flattened_by_layouts()) {
+            arranges = arranges || child.always_arranges();
+            child.for_each_child([&](Element& inner) { self(self, inner); });
+        }
+    };
+    for_each_child([&](Element& child) { visit(visit, child); });
+    return arranges;
+}
+
+void Element::place_children_again() {
+    const auto again = [](const auto& self, Element& child) -> void {
+        if (!child.placed_) {
+            if (child.flattened_by_layouts()) {
+                child.for_each_child([&](Element& inner) { self(self, inner); });
+            }
+            return;
+        }
+        if (child.last_proposal_) {
+            const Rect target = child.frame_.target();
+            child.place({target.x, target.y}, *child.last_proposal_);
+        }
+    };
+    for_each_child([&](Element& child) { again(again, child); });
 }
 
 void Element::notify_render_size(float scale) {
@@ -954,12 +1227,7 @@ void EffectElement::paint_impl(DisplayList& list) const {
     }
 
     // General path: render offscreen, then composite with the effects.
-    std::optional<Rect> bounds;
-    for (const DrawCommand& command : content.commands) {
-        if (const std::optional<Rect> b = draw_bounds(command)) {
-            bounds = bounds ? union_of(*bounds, *b) : *b;
-        }
-    }
+    const std::optional<Rect> bounds = draw_bounds(content.commands);
     if (!bounds) {
         return;
     }
@@ -996,12 +1264,7 @@ void DecorationElement::paint_impl(DisplayList& list) const {
         mask.scale = list.scale;
         decoration_->paint(mask);
         list.animating |= content.animating || mask.animating;
-        std::optional<Rect> bounds;
-        for (const DrawCommand& command : content.commands) {
-            if (const std::optional<Rect> b = draw_bounds(command)) {
-                bounds = bounds ? union_of(*bounds, *b) : *b;
-            }
-        }
+        const std::optional<Rect> bounds = draw_bounds(content.commands);
         if (!bounds) {
             return;
         }

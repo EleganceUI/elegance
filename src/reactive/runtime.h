@@ -17,6 +17,8 @@ class ReactiveNode;
 // in place of the ones it had. For reads made outside a run of the observer, such as a canvas's
 // drawing while it paints.
 void track_reads(ReactiveNode& observer, const std::function<void()>& function);
+// The same, keeping the dependencies `observer` had: what `function` reads is added to them.
+void add_reads(ReactiveNode& observer, const std::function<void()>& function);
 
 // Pins reactive state to the App's UI thread while it runs (nullopt: no restriction).
 void set_ui_thread(std::optional<std::thread::id> thread) noexcept;

@@ -25,9 +25,22 @@ bool FocusManager::focus(Element* element, bool visible, bool navigated) {
     }
     navigated_ = navigated;
     if (element == focused_) {
-        return std::exchange(visible_, visible) != visible;
+        if (std::exchange(visible_, visible) == visible) {
+            return false;
+        }
+        if (element) {
+            element->invalidate_paint(); // its ring shows or goes
+        }
+        return true;
     }
     Element* const previous = std::exchange(focused_, element);
+    // Both draw their focus rings, or not, again.
+    if (previous) {
+        previous->invalidate_paint();
+    }
+    if (element) {
+        element->invalidate_paint();
+    }
     visible_ = visible;
     set_text_input(element && element->event_handler()->accepts_text_input(),
                    element && element->secure_text_input());
@@ -152,8 +165,16 @@ PointerEvent local_event(PointerEvent event, const Element& element) {
 }
 
 // Delivers `event` to `element`'s handler, in its coordinates.
+// A handler that asks for a redraw changed what its element draws: the element paints again.
+EventResult drawn(Element& element, EventResult result) {
+    if (result.redraw) {
+        element.invalidate_paint();
+    }
+    return result;
+}
+
 EventResult deliver(const PointerEvent& event, Element& element) {
-    return element.event_handler()->pointer(local_event(event, element), element.frame());
+    return drawn(element, element.event_handler()->pointer(local_event(event, element), element.frame()));
 }
 
 double now_seconds() {
@@ -200,14 +221,14 @@ bool EventDispatcher::tick_unguarded() {
         if (hover.due >= 0 && hover.due <= now && !hover.over) {
             hover.reported = false;
             hover.due = -1;
-            redraw |= hover.element->event_handler()->hover(false).redraw;
+            redraw |= drawn(*hover.element, hover.element->event_handler()->hover(false)).redraw;
         }
     }
     for (Hover& hover : hovers_) {
         if (hover.due >= 0 && hover.due <= now && hover.over) {
             hover.reported = true;
             hover.due = -1;
-            redraw |= hover.element->event_handler()->hover(true).redraw;
+            redraw |= drawn(*hover.element, hover.element->event_handler()->hover(true)).redraw;
         }
     }
     // Forget elements the pointer is off that have nothing left to hear.
@@ -470,7 +491,7 @@ bool EventDispatcher::key_unguarded(const KeyEvent& event) {
         if (!handler || handler->phase() != phase) {
             return false;
         }
-        const EventResult result = handler->key(event);
+        const EventResult result = drawn(*element, handler->key(event));
         redraw |= result.redraw;
         return result.consumed;
     };
@@ -574,7 +595,7 @@ bool EventDispatcher::scroll_unguarded(ScrollEvent event) {
         if (!handler || handler->phase() != phase) {
             return false;
         }
-        const EventResult result = handler->scroll(event, element->frame());
+        const EventResult result = drawn(*element, handler->scroll(event, element->frame()));
         redraw |= result.redraw;
         if (result.consumed && !wheel_latched_) {
             wheel_latched_ = element;
@@ -605,7 +626,7 @@ bool gesture(Element*& latched, const std::vector<Element*>& path, const Event& 
         latched = nullptr;
         for (auto element : std::ranges::reverse_view(path)) {
             if (EventHandler* handler = element->event_handler()) {
-                const EventResult result = deliver(*handler, event);
+                const EventResult result = drawn(*element, deliver(*handler, event));
                 redraw |= result.redraw;
                 if (result.consumed) {
                     latched = element;
@@ -615,7 +636,7 @@ bool gesture(Element*& latched, const std::vector<Element*>& path, const Event& 
         }
     } else if (latched) {
         if (EventHandler* handler = latched->event_handler()) {
-            redraw = deliver(*handler, event).redraw;
+            redraw = drawn(*latched, deliver(*handler, event)).redraw;
         }
     }
     if (event.phase == GesturePhase::ended || event.phase == GesturePhase::cancelled) {
@@ -648,7 +669,7 @@ bool EventDispatcher::two_finger_double_tap_unguarded(Point location) {
     const std::vector<Element*> path = path_at(location);
     for (auto element : std::ranges::reverse_view(path)) {
         if (EventHandler* handler = element->event_handler()) {
-            const EventResult result = handler->two_finger_double_tap(location);
+            const EventResult result = drawn(*element, handler->two_finger_double_tap(location));
             redraw |= result.redraw;
             if (result.consumed) {
                 break;
@@ -672,7 +693,7 @@ bool EventDispatcher::text_input_unguarded(const TextInputEvent& event) {
         if (!handler || handler->phase() != phase) {
             return false;
         }
-        const EventResult result = handler->text_input(event);
+        const EventResult result = drawn(*element, handler->text_input(event));
         redraw |= result.redraw;
         return result.consumed;
     };
@@ -783,10 +804,12 @@ void EventDispatcher::leaving_unguarded(Element& subtree) {
         return true;
     });
     if (in(magnify_latched_)) {
-        std::exchange(magnify_latched_, nullptr)->event_handler()->magnify({.phase = GesturePhase::cancelled});
+        Element& latched = *std::exchange(magnify_latched_, nullptr);
+        drawn(latched, latched.event_handler()->magnify({.phase = GesturePhase::cancelled}));
     }
     if (in(rotate_latched_)) {
-        std::exchange(rotate_latched_, nullptr)->event_handler()->rotate({.phase = GesturePhase::cancelled});
+        Element& latched = *std::exchange(rotate_latched_, nullptr);
+        drawn(latched, latched.event_handler()->rotate({.phase = GesturePhase::cancelled}));
     }
     if (in(wheel_latched_)) {
         wheel_latched_ = nullptr;
@@ -796,7 +819,7 @@ void EventDispatcher::leaving_unguarded(Element& subtree) {
             return false;
         }
         if (hover.reported) {
-            hover.element->event_handler()->hover(false);
+            drawn(*hover.element, hover.element->event_handler()->hover(false));
         }
         return true;
     });
@@ -859,11 +882,15 @@ bool EventDispatcher::release_disabled_unguarded() {
         return true;
     });
     if (magnify_latched_ && disabled(magnify_latched_)) {
-        redraw |= magnify_latched_->disabled_handler()->magnify({.phase = GesturePhase::cancelled}).redraw;
+        redraw |= drawn(*magnify_latched_,
+                        magnify_latched_->disabled_handler()->magnify({.phase = GesturePhase::cancelled}))
+                      .redraw;
         magnify_latched_ = nullptr;
     }
     if (rotate_latched_ && disabled(rotate_latched_)) {
-        redraw |= rotate_latched_->disabled_handler()->rotate({.phase = GesturePhase::cancelled}).redraw;
+        redraw |= drawn(*rotate_latched_,
+                        rotate_latched_->disabled_handler()->rotate({.phase = GesturePhase::cancelled}))
+                      .redraw;
         rotate_latched_ = nullptr;
     }
     // Focus leaves a view that can't take it any more (disabled, or a control in a disabled view).

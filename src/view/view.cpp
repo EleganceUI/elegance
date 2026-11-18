@@ -123,7 +123,7 @@ public:
     [[nodiscard]] std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
         auto element = std::make_unique<BoundFrameElement>(alignment_, detail::lower(content_, context));
         BoundFrameElement* const target = element.get();
-        detail::bind(size_, context, [target](Size size) { target->set_size(size); });
+        detail::bind(size_, context, target, [target](Size size) { target->set_size(size); });
         return element;
     }
 
@@ -181,7 +181,7 @@ public:
     [[nodiscard]] std::unique_ptr<detail::Element> lower(const detail::LowerContext& context) const override {
         auto element = std::make_unique<BoundPaddingElement>(detail::lower(content_, context));
         BoundPaddingElement* const target = element.get();
-        detail::bind(insets_, context, [target](EdgeInsets insets) { target->set_insets(insets); });
+        detail::bind(insets_, context, target, [target](EdgeInsets insets) { target->set_insets(insets); });
         return element;
     }
 
@@ -929,7 +929,7 @@ std::unique_ptr<EventElement> make_event_element(std::unique_ptr<EventHandler> h
     join_focus(*element, context);
     if (!drags_window) {
         const EnvironmentValues environment = context.environment;
-        detail::bind(Prop<bool>([environment] { return !environment.get<DisabledKey>(); }), context,
+        detail::bind(Prop<bool>([environment] { return !environment.get<DisabledKey>(); }), context, element.get(),
                      [target = element.get()](bool enabled) { target->set_enabled(enabled); });
     }
     return element;
@@ -1033,31 +1033,31 @@ std::unique_ptr<Element> ModifiedNode::lower(const LowerContext& context) const 
         auto element = std::make_unique<EffectElement>(std::move(effects), detail::lower(content_, context));
         EffectElement* const target = element.get();
         if (blur) {
-            detail::bind(*blur, context, [target](float value, const Animation* animation) { target->set_blur(value, animation); });
+            detail::bind(*blur, context, target, [target](float value, const Animation* animation) { target->set_blur(value, animation); });
         }
         if (filter) {
-            detail::bind(filter->amount, context,
+            detail::bind(filter->amount, context, target,
                          [target](float value, const Animation* animation) { target->set_filter_amount(value, animation); });
-            detail::bind(filter->color, context,
+            detail::bind(filter->color, context, target,
                          [target](Color value, const Animation* animation) { target->set_filter_color(value, animation); });
         }
         if (rotation) {
-            detail::bind(*rotation, context,
+            detail::bind(*rotation, context, target,
                          [target](float value, const Animation* animation) { target->set_rotation(value, animation); });
         }
         if (scale_x) {
-            detail::bind(*scale_x, context,
+            detail::bind(*scale_x, context, target,
                          [target](float value, const Animation* animation) { target->set_scale_x(value, animation); });
         }
         if (scale_y) {
-            detail::bind(*scale_y, context,
+            detail::bind(*scale_y, context, target,
                          [target](float value, const Animation* animation) { target->set_scale_y(value, animation); });
         }
-        detail::bind(opacity, context, [target](float value, const Animation* animation) { target->set_opacity(value, animation); });
-        detail::bind(offset_x, context, [target](float value, const Animation* animation) { target->set_offset_x(value, animation); });
-        detail::bind(offset_y, context, [target](float value, const Animation* animation) { target->set_offset_y(value, animation); });
+        detail::bind(opacity, context, target, [target](float value, const Animation* animation) { target->set_opacity(value, animation); });
+        detail::bind(offset_x, context, target, [target](float value, const Animation* animation) { target->set_offset_x(value, animation); });
+        detail::bind(offset_y, context, target, [target](float value, const Animation* animation) { target->set_offset_y(value, animation); });
         if (z_index) {
-            detail::bind(*z_index, context, [target](float value) { target->set_z_index(value); });
+            detail::bind(*z_index, context, target, [target](float value) { target->set_z_index(value); });
         }
         return element;
     }
@@ -1096,16 +1096,16 @@ std::unique_ptr<Element> ShapeNode::lower(const LowerContext& context) const {
     auto element = std::make_unique<ShapeElement>(spec_);
     ShapeElement* const target = element.get();
     if (spec_.fill) {
-        detail::bind(*spec_.fill, context,
+        detail::bind(*spec_.fill, context, target,
              [target](ShapeStyle fill, const Animation* animation) { target->set_fill(std::move(fill), animation); });
     }
     if (spec_.stroke) {
-        detail::bind(spec_.stroke->color, context,
+        detail::bind(spec_.stroke->color, context, target,
              [target](Color color, const Animation* animation) { target->set_stroke_color(color, animation); });
     } else if (!spec_.fill) {
         // Unfilled, unstroked shapes use the environment's foreground.
         const EnvironmentValues environment = context.environment;
-        detail::bind(Prop<ShapeStyle>([environment] { return ShapeStyle(environment.get<ForegroundKey>()); }), context,
+        detail::bind(Prop<ShapeStyle>([environment] { return ShapeStyle(environment.get<ForegroundKey>()); }), context, target,
              [target](ShapeStyle fill, const Animation* animation) { target->set_fill(std::move(fill), animation); });
     }
     return element;
@@ -1125,10 +1125,10 @@ std::unique_ptr<Element> TextNode::lower(const LowerContext& context) const {
             return font.get().weight(weight.get());
         });
     }
-    detail::bind(font, context, [target](const Font& value) { target->set_font(value); });
-    detail::bind(content_, context, [target](const std::string& content) { target->set_content(content); });
+    detail::bind(font, context, target, [target](const Font& value) { target->set_font(value); });
+    detail::bind(content_, context, target, [target](const std::string& content) { target->set_content(content); });
     detail::bind(style_.color ? *style_.color : Prop<Color>([environment] { return environment.get<ForegroundKey>(); }),
-         context, [target](Color color, const Animation* animation) { target->set_color(color, animation); });
+         context, target, [target](Color color, const Animation* animation) { target->set_color(color, animation); });
     return element;
 }
 
@@ -1171,7 +1171,7 @@ public:
         const EnvironmentValues environment = context.environment;
         editor_->set_environment(environment);
         auto element = std::make_unique<TextEditorElement>(editor_);
-        detail::bind(Prop<Font>([environment] { return environment.get<FontKey>(); }), context,
+        detail::bind(Prop<Font>([environment] { return environment.get<FontKey>(); }), context, nullptr,
                      [editor = editor_](const Font& font) { editor->set_font(font); });
         return element;
     }
@@ -1188,20 +1188,20 @@ std::unique_ptr<Element> TextFieldNode::lower(const LowerContext& context) const
     const auto editor = std::make_shared<TextEditor>(*context.text, text_, options_.on_submit, context.services,
                                                      context.focus, environment, area_);
     editor->set_styler(options_.styler);
-    detail::bind(placeholder_, context, [editor](std::string placeholder) { editor->set_placeholder(std::move(placeholder)); });
+    detail::bind(placeholder_, context, nullptr, [editor](std::string placeholder) { editor->set_placeholder(std::move(placeholder)); });
     if (!area_) {
         // A field revealed or hidden while focused switches its text input (IME) with it.
-        detail::bind(options_.secure, context, [editor, focus = context.focus](bool secure) {
+        detail::bind(options_.secure, context, nullptr, [editor, focus = context.focus](bool secure) {
             editor->set_secure(secure);
             if (focus) {
                 focus->refresh_text_input();
             }
         });
-        detail::bind(options_.line_limit, context, [editor](int lines) { editor->set_line_limit(lines); });
+        detail::bind(options_.line_limit, context, nullptr, [editor](int lines) { editor->set_line_limit(lines); });
     }
     // The text follows the binding (when changed elsewhere). The font is bound where the style
     // places the field (TextEditorNode).
-    detail::bind(Prop<std::string>(text_), context,
+    detail::bind(Prop<std::string>(text_), context, nullptr,
          [editor](const std::string& value) { editor->set_text(value); });
 
     const State<bool> focused(false);
@@ -1236,8 +1236,8 @@ std::unique_ptr<Element> ScrollNode::lower(const LowerContext& context) const {
                                                    [environment] { return environment.color(ThemeColor::secondary); },
                                                    context.needs_frame);
     ScrollElement* const target = element.get();
-    detail::bind(options_.shows_indicators, context, [target](bool shows) { target->set_shows_indicators(shows); });
-    detail::bind(options_.sticks_to_end, context, [target](bool sticks) { target->set_sticks_to_end(sticks); });
+    detail::bind(options_.shows_indicators, context, target, [target](bool shows) { target->set_shows_indicators(shows); });
+    detail::bind(options_.sticks_to_end, context, target, [target](bool sticks) { target->set_sticks_to_end(sticks); });
     return element;
 }
 
@@ -1366,12 +1366,17 @@ std::unique_ptr<Element> SpacerNode::lower(const LowerContext& context) const {
 std::unique_ptr<Element> CanvasNode::lower(const LowerContext& context) const {
     // The canvas draws again when state its drawing read changes. The drawing reads while the
     // canvas paints, into an effect that only asks for a frame; that frame paints and reads again.
-    auto reads = std::make_shared<EffectNode>([needs_frame = context.needs_frame] {
+    auto canvas = std::make_shared<CanvasElement*>(nullptr);
+    auto reads = std::make_shared<EffectNode>([needs_frame = context.needs_frame, canvas] {
+        if (*canvas) {
+            (*canvas)->invalidate_paint();
+        }
         if (needs_frame) {
             *needs_frame = true;
         }
     });
     auto element = std::make_unique<CanvasElement>(draw_, reads);
+    *canvas = element.get();
     start_effect(std::move(reads));
     return element;
 }

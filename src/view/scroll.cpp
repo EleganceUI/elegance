@@ -130,6 +130,8 @@ Point ScrollElement::max_offset() const noexcept {
 }
 
 void ScrollElement::arrange(Rect bounds, ProposedSize) {
+    const Size viewport_before = viewport_.size();
+    const Size content_before = content_size_;
     viewport_ = bounds;
     const ProposedSize inner = content_proposal({bounds.width, bounds.height});
     content_size_ = content_->size_that_fits(inner);
@@ -189,11 +191,22 @@ void ScrollElement::arrange(Rect bounds, ProposedSize) {
 
     apply_request(); // a ScrollPosition call, now that sizes are known
 
-    // Starts at the top-leading corner along the scroll axes; centered across them.
+    // Starts at the top-leading corner along the scroll axes; centered across them. The offset
+    // is on whole pixels of the window (ELGSPEC-0029.R14): scrolled, the content draws the same
+    // pixels, moved.
+    const float scale = layout_scale();
+    const auto whole = [scale](float v) { return std::round(v * scale) / scale; };
     const Point offset = current_offset();
-    const float x = scrolls(Axis::horizontal) ? bounds.x - offset.x
+    drawn_offset_ = {whole(offset.x), whole(offset.y)};
+    // Its scroll bars follow the sizes and the offset.
+    const auto same = [](Size a, Size b) { return a.width == b.width && a.height == b.height; };
+    if (!same(viewport_before, viewport_.size()) || !same(content_before, content_size_) ||
+        std::exchange(arranged_offset_, offset) != offset) {
+        invalidate_paint();
+    }
+    const float x = scrolls(Axis::horizontal) ? bounds.x - drawn_offset_.x
                                               : bounds.x + (bounds.width - content_size_.width) / 2;
-    const float y = scrolls(Axis::vertical) ? bounds.y - offset.y
+    const float y = scrolls(Axis::vertical) ? bounds.y - drawn_offset_.y
                                             : bounds.y + (bounds.height - content_size_.height) / 2;
     content_->place({x, y}, inner);
 }
@@ -240,21 +253,41 @@ std::optional<Axis> ScrollElement::thumb_at(Point point) const {
     return std::nullopt;
 }
 
+// Around what shows of a scroll view's content, how far it's painted too, in pixels: two tiles of
+// the renderer's (ELGSPEC-0029.R13).
+constexpr float kPaintedMargin = 512;
+
 void ScrollElement::paint_impl(DisplayList& list) const {
-    list.commands.emplace_back(PushClipCommand{frame(), {}});
-    // Only what's in the viewport is painted.
-    const std::optional<Rect> outer = list.cull;
-    Rect visible = frame();
-    if (outer) {
-        const float x = std::max(visible.x, outer->x);
-        const float y = std::max(visible.y, outer->y);
-        visible = {x, y, std::max(0.f, std::min(visible.max_x(), outer->max_x()) - x),
-                   std::max(0.f, std::min(visible.max_y(), outer->max_y()) - y)};
+    // What it paints of its content: what shows, and a margin along the axes it scrolls, which
+    // the renderer may draw ahead of scrolling (ELGSPEC-0029.R13); within what shows of the list.
+    const Rect view = frame();
+    const float margin = kPaintedMargin / (list.scale > 0 ? list.scale : 1.f);
+    const float across = scrolls(Axis::horizontal) ? margin : 0.f;
+    const float along = scrolls(Axis::vertical) ? margin : 0.f;
+    Rect painted{view.x - across, view.y - along, view.width + 2 * across, view.height + 2 * along};
+    if (const std::optional<Rect>& outer = list.cull) {
+        const float x = std::max(painted.x, outer->x);
+        const float y = std::max(painted.y, outer->y);
+        painted = {x, y, std::max(0.f, std::min(painted.max_x(), outer->max_x()) - x),
+                   std::max(0.f, std::min(painted.max_y(), outer->max_y()) - y)};
     }
-    list.cull = visible;
-    content_->paint(list);
-    list.cull = outer;
-    list.commands.emplace_back(PopClipCommand{});
+    // The content in its own points, its top-left corner at (0, 0): scrolled, what it draws stays
+    // the same.
+    const Point origin{content_->frame().x, content_->frame().y};
+    DisplayList content;
+    content.scale = list.scale;
+    content.cull = painted;
+    content_->paint(content);
+    list.animating = list.animating || content.animating;
+    transform(content.commands, -origin.x, -origin.y, 1, {});
+    list.commands.emplace_back(PushScrollCommand{.id = accessibility_id(),
+                                                 .viewport = view,
+                                                 .origin = origin,
+                                                 .painted = {painted.x - origin.x, painted.y - origin.y,
+                                                             painted.width, painted.height}});
+    list.commands.insert(list.commands.end(), std::make_move_iterator(content.commands.begin()),
+                         std::make_move_iterator(content.commands.end()));
+    list.commands.emplace_back(PopScrollCommand{});
 
     if (offset_x_.animating() || offset_y_.animating() || indicators_.animating() || stretching()) {
         list.animating = true;
@@ -317,6 +350,7 @@ bool ScrollElement::anchor_shift(Axis axis, float delta) {
 
 void ScrollElement::show_indicators() {
     indicators_.set(1.f, nullptr);
+    invalidate_paint();
 }
 
 // Fades the bars out after a pause, unless the pointer is on the view or dragging a bar.
@@ -326,6 +360,7 @@ void ScrollElement::fade_indicators() {
     }
     static const Animation fade = Animation::ease_out(0.4).delay(0.8);
     indicators_.set(0.f, &fade);
+    invalidate_paint();
 }
 
 EventResult ScrollElement::scroll(const ScrollEvent& event, Rect) {
@@ -572,7 +607,7 @@ void ScrollElement::apply_request() {
         }
         if (found) {
             // Content coordinates: where the stack is now, plus the item's offset in it.
-            const float y = stack->frame().y - viewport_.y + offset_y_.current() + *found;
+            const float y = stack->frame().y - viewport_.y + drawn_offset_.y + *found;
             scroll_to({target_.x, y}, nullptr);
         }
         // Items above it get measured as they're built, moving it: aim again for a few layouts.
@@ -588,7 +623,7 @@ void ScrollElement::apply_request() {
 
 void ScrollElement::reveal(Rect rect) {
     // In content coordinates, as currently drawn.
-    const Point offset = current_offset();
+    const Point offset = drawn_offset_;
     const auto fit = [](float start, float length, float view, float current) {
         start -= kRevealMargin;
         length += 2 * kRevealMargin;

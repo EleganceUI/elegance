@@ -7,6 +7,7 @@
 #include "display/display_list.h"
 #include "view/path_cache.h"
 #include "view/animated.h"
+#include "view/element.h"
 
 #include <algorithm>
 
@@ -45,6 +46,7 @@ float GraphicsContext::scale() const noexcept {
 }
 
 double GraphicsContext::time() noexcept {
+    detail::paint_changes_over_time(); // what it draws with it isn't kept for the next frame
     return detail::frame_time();
 }
 

@@ -203,6 +203,7 @@ public:
         // The size arrives with the video's metadata.
         effect([target, source = source_, needs_frame = context.needs_frame] {
             target->set_size(source->size());
+            target->invalidate_paint();
             if (needs_frame) {
                 *needs_frame = true;
             }

@@ -42,24 +42,27 @@ struct Inspection {
     std::vector<std::pair<std::string, std::string>> properties;
 };
 
-// While alive, layout arranges every element, even ones nothing changed for (frames of windows
-// with animations running, whose elements move without being invalidated).
-class FullLayoutScope {
+// While alive, layout is for a window of `scale` pixels a point; otherwise for 1. Views that place
+// content on whole pixels of the window (scroll views) round with it.
+class LayoutScaleScope {
 public:
-    explicit FullLayoutScope(bool full) noexcept;
-    ~FullLayoutScope();
-    FullLayoutScope(const FullLayoutScope&) = delete;
-    FullLayoutScope& operator=(const FullLayoutScope&) = delete;
-    FullLayoutScope(FullLayoutScope&&) = delete;
-    FullLayoutScope& operator=(FullLayoutScope&&) = delete;
+    explicit LayoutScaleScope(float scale) noexcept;
+    ~LayoutScaleScope();
+    LayoutScaleScope(const LayoutScaleScope&) = delete;
+    LayoutScaleScope& operator=(const LayoutScaleScope&) = delete;
+    LayoutScaleScope(LayoutScaleScope&&) = delete;
+    LayoutScaleScope& operator=(LayoutScaleScope&&) = delete;
 
 private:
-    bool previous_;
+    float previous_;
 };
+
+// The scale of the window being laid out (LayoutScaleScope), in pixels a point.
+float layout_scale() noexcept;
 
 class Element {
 public:
-    Element() = default;
+    Element();
     Element(const Element&) = delete;
     Element(Element&&) = delete;
     Element& operator=(const Element&) = delete;
@@ -81,25 +84,23 @@ public:
     // Memoized per proposal until invalidate_layout().
     Size size_that_fits(ProposedSize proposal);
     // Sizes the element for `proposal`, positions it, and lays out its children. A changed frame
-    // eases to its new place during an animated update (design.md §9.5).
+    // eases to its new place during an animated update (design.md §9.5). When nothing changed for
+    // it, it keeps its layout: only what moves (animations) or arranges at every layout inside it
+    // is laid out again, from where it was placed (ELGSPEC-0029.R12).
     void place(Point position, ProposedSize proposal);
     // Post-layout, even with cached arrangement or culled painting (DPI can change independently).
     // Observers must queue work, not change the retained tree during this traversal.
     void notify_render_size(float scale);
-    void paint(DisplayList& list) const {
-        if (frame_.animating()) {
-            list.animating = true;
-        }
-        // Out of sight (scrolled away): skipped, unless it may be on its way in.
-        if (list.cull && paint_bounds_ && cullable() && !overlaps(*paint_bounds_, *list.cull)) {
-            list.animating |= moving_;
-            return;
-        }
-        paint_impl(list);
-        if (focus_manager_) {
-            paint_focus_ring(list);
-        }
-    }
+    // Paints it into `list`, unless it's out of sight there (list.cull). When nothing it draws
+    // changed since its last paint, and it moved by whole pixels at most, it adds the commands it
+    // built then, moved with it, without building them again (ELGSPEC-0029.R8); the children it
+    // painted paint again themselves. Otherwise it builds them, and keeps them unless they change
+    // over time (animations, paint_changes_over_time()).
+    void paint(DisplayList& list) const;
+    // Something it draws changed (a property, its state, what its layout worked out): its next
+    // paint builds its commands again, and so do those of the elements around it, which may draw
+    // with it (effects, the order of what's inside).
+    void invalidate_paint() noexcept;
 
     // Where the element is drawn now: its laid-out frame, or on the way there.
     Rect frame() const { return frame_.current(); }
@@ -180,6 +181,7 @@ public:
         for (Element* element = this; element; element = element->parent_) {
             element->needs_arrange_ = true;
         }
+        invalidate_paint(); // what it draws moved
     }
     // A value from View::layout_value on this element or the modifiers wrapping its content, by
     // its key's detail::key_id().
@@ -242,9 +244,18 @@ protected:
     virtual bool drawing_moves() const { return false; }
 
 private:
+    struct PaintRecord;
+    // Whether its last paint's commands can be added again, as they are or moved.
+    bool repaints_from_record(const DisplayList& list) const;
+    void paint_from_record(DisplayList& list) const;
     void paint_focus_ring(DisplayList& list) const;
     // After layout: paint_bounds_ and moving_ for this element and everything inside.
     void update_paint_bounds();
+    // Whether it arranges at every layout, itself or through the If/ForEach a layout flattens
+    // into it (pruning their exits).
+    bool arranges_each_layout();
+    // Places each child again where and as it was placed, without arranging.
+    void place_children_again();
     static bool overlaps(const Rect& a, const Rect& b) noexcept {
         return a.x < b.max_x() && b.x < a.max_x() && a.y < b.max_y() && b.y < a.max_y();
     }
@@ -265,6 +276,32 @@ private:
     Point moved_by_;                   // how far the last place() moved it (for exiting children)
     bool always_arranges_inside_ = false; // always_arranges(), here or anywhere inside
     mutable std::uint64_t accessibility_id_ = 0;
+    // What its last paint built, when it can be reused; and whether something it draws changed
+    // since (invalidate_paint()).
+    mutable std::unique_ptr<PaintRecord> paint_record_;
+    mutable bool paint_changed_ = true;
+};
+
+// While an element paints: what it draws changes over time without its being invalidated (a
+// caret blinking, a canvas reading the clock), so its commands aren't kept for the next frame.
+void paint_changes_over_time() noexcept;
+
+// While alive, paint() is for a window whose drawing started over `epoch` times: commands built
+// under another epoch are built again (the window's theme changed, its glyph atlas started over).
+// With `fresh`, every element builds its commands, and what elements keep stays as it is (tests
+// compare with it).
+class PaintScope {
+public:
+    explicit PaintScope(std::uint64_t epoch, bool fresh = false) noexcept;
+    ~PaintScope();
+    PaintScope(const PaintScope&) = delete;
+    PaintScope& operator=(const PaintScope&) = delete;
+    PaintScope(PaintScope&&) = delete;
+    PaintScope& operator=(PaintScope&&) = delete;
+
+private:
+    std::uint64_t previous_epoch_;
+    bool previous_fresh_;
 };
 
 // The element with this accessibility id (Element::accessibility_id), if it still exists: a
@@ -963,6 +1000,8 @@ private:
     std::unique_ptr<Element> content_;
     std::function<Color()> indicator_color_;
     Rect viewport_;     // from the last arrange
+    Point drawn_offset_; // where it placed the content then: the offset on whole window pixels
+    Point arranged_offset_; // the offset then, which its scroll bars show
     Size content_size_; // the content's ideal size there
     Point target_;      // where the offset is heading
     Animated<float> offset_x_{0.f};

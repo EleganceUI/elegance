@@ -277,9 +277,9 @@ public:
         auto element = std::make_unique<StyledTextElement>(*context.text, runs_, std::move(attachments));
         StyledTextElement* const target = element.get();
         // Color first: the font's reshape draws with it.
-        detail::bind(Prop<Color>([environment] { return environment.get<ForegroundKey>(); }), context,
+        detail::bind(Prop<Color>([environment] { return environment.get<ForegroundKey>(); }), context, target,
                      [target](Color color, const Animation*) { target->set_color(color); });
-        detail::bind(Prop<Font>([environment] { return environment.get<FontKey>(); }), context,
+        detail::bind(Prop<Font>([environment] { return environment.get<FontKey>(); }), context, target,
                      [target](const Font& font) { target->set_font(font); });
         return element;
     }

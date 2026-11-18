@@ -32,7 +32,7 @@ std::unique_ptr<Element> IfNode::lower(const LowerContext& context) const {
     auto fragment = std::make_unique<FragmentElement>(context);
     FragmentElement* const target = fragment.get();
     // Each branch has a fixed key, so re-evaluating to the same branch keeps its views.
-    detail::bind(condition_, context, [target, then_view = then_, else_view = else_](bool condition) {
+    detail::bind(condition_, context, target, [target, then_view = then_, else_view = else_](bool condition) {
         const View& branch = condition ? then_view : else_view;
         // An empty branch (View()) mounts nothing, so stacks don't space around it.
         if (!ViewAccess::node(branch)) {
@@ -88,6 +88,7 @@ FragmentElement::Child FragmentElement::mount(const ForEachItem& item, const Ani
 }
 
 void FragmentElement::set_items(const std::vector<ForEachItem>& items) {
+    invalidate_paint();
     // Changes animate during animated updates; the first set (the initial mount) never does.
     const Animation* const animation = initialized_ ? change_animation() : nullptr;
     initialized_ = true;

@@ -238,6 +238,7 @@ public:
         // Pixels arrive (or change) later: draw them then.
         effect([target, asset, needs_frame = context.needs_frame] {
             target->set_pixels(asset->pixels());
+            target->invalidate_paint();
             if (needs_frame) {
                 *needs_frame = true;
             }

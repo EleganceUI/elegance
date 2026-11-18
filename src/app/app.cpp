@@ -284,6 +284,13 @@ struct LiveWindow {
     // this window's scope.
     std::unique_ptr<Element> mount(TextSystem& text) {
         const Scope::Use use(*scope);
+        // State that elements read while they paint, which they don't track themselves (colors of
+        // the environment): when it changes, they all paint again.
+        paint_reads = std::make_shared<EffectNode>([this] {
+            ++paint_epoch;
+            dirty = true;
+        });
+        start_effect(paint_reads);
         const EnvironmentScope environment_scope(environment); // Environment<K>() in the content function
         View content = entry->content();
         if (entry->wrap) {
@@ -327,6 +334,12 @@ struct LiveWindow {
     LiveWindowServices services;
     FocusManager focus{&services}; // outlives the tree (elements let go of it when destroyed)
     std::unique_ptr<Scope> scope = std::make_unique<Scope>();
+    // Its elements keep what they paint from one frame to the next (ELGSPEC-0029.R8), until the
+    // epoch changes: what their paint read changed, the theme did, or the glyph atlas started
+    // over (its glyphs moved).
+    std::uint64_t paint_epoch = 0;
+    std::uint64_t atlas_layout = 0;
+    std::shared_ptr<EffectNode> paint_reads; // made by mount()
     std::unique_ptr<Element> root;
     PathCache paths; // what its canvases flattened, from one frame to the next
     EventDispatcher events{*root, focus};
@@ -366,14 +379,14 @@ WindowFrame build_frame(LiveWindow& live) {
     // (its size in points comes back from whole pixels).
     const Size size = live.fit ? live.fit->size : live.window.logical_size();
     const ProposedSize proposal{size.width, size.height};
-    // While animations run, things move without invalidating layout: lay out everything.
-    const FullLayoutScope full_layout(live.animating);
+    const LayoutScaleScope layout_scale(frame.scale);
     const Size fitted = live.root->size_that_fits(proposal);
     live.root->place(aligned_position({0, 0, size.width, size.height}, fitted, Alignment::center), proposal);
     live.root->notify_render_size(frame.scale);
     {
         const PathCache::Use paths(live.paths);
-        live.root->paint(frame.list);
+        const PaintScope paint(live.paint_epoch);
+        add_reads(*live.paint_reads, [&] { live.root->paint(frame.list); });
     }
     live.paths.end_frame();
     return frame;
@@ -872,6 +885,9 @@ int App::run() {
         const bool inspected = inspector && live.window.id() == inspector->target;
         const double build_start = inspected ? seconds_now() : 0;
         const std::uint64_t glyphs_requested = text.atlas.requested();
+        if (std::exchange(live.atlas_layout, text.atlas.layout()) != text.atlas.layout()) {
+            ++live.paint_epoch; // the glyphs the elements drew moved
+        }
         WindowFrame frame = build_frame(live);
         if (inspected) {
             const double now = seconds_now();
@@ -1561,6 +1577,7 @@ int App::run() {
             accent_color = platform::native::system_accent_color();
             for (const auto& live : windows) {
                 live->window.refresh_appearance();
+                ++live->paint_epoch; // so do the colors elements drew with
                 live->dirty = true; // the default window background follows the scheme
             }
             break;

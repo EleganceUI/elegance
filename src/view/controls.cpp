@@ -285,9 +285,9 @@ public:
             const Prop<std::array<float, 3>> range([options = options_](const EnvironmentValues& env) {
                 return std::array{options.min.get(env), options.max.get(env), options.step.get(env)};
             });
-            detail::bind(range, context, [target](std::array<float, 3> r) { target->set_range(r[0], r[1], r[2]); });
+            detail::bind(range, context, target, [target](std::array<float, 3> r) { target->set_range(r[0], r[1], r[2]); });
         }
-        detail::bind(Prop<float>(value_), context, [target](float value) { target->set_value(value); });
+        detail::bind(Prop<float>(value_), context, target, [target](float value) { target->set_value(value); });
         if (context.focus) {
             element->set_focus_manager(context.focus,
                                        [environment = context.environment] { return environment.get<TintKey>(); });
