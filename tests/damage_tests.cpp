@@ -1,0 +1,152 @@
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file, You can obtain one at
+// https://mozilla.org/MPL/2.0/.
+
+// Which part of a window a frame draws again: the damage between two frames' display lists
+// (ELGSPEC-0029.R4, R5).
+
+#include "display/display_list.h"
+#include "render/damage.h"
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <memory>
+#include <vector>
+
+using namespace elg;
+
+namespace {
+
+detail::RectCommand rect(Rect r, Color color = Color::black) {
+    return {.rect = r, .fill = ShapeStyle(color)};
+}
+
+std::vector<Rect> damage(const detail::DisplayList& before, const detail::DisplayList& now, std::uint32_t side = 200) {
+    return detail::damage_between(detail::footprints(before, side, side), detail::footprints(now, side, side));
+}
+
+// The bounding box of a damage region; empty when there's none.
+Rect box(const std::vector<Rect>& rects) {
+    if (rects.empty()) {
+        return {};
+    }
+    Rect out = rects.front();
+    for (const Rect& r : rects) {
+        out = detail::union_of(out, r);
+    }
+    return out;
+}
+
+detail::DisplayList list_of(std::vector<detail::DrawCommand> commands, float scale = 1) {
+    detail::DisplayList list;
+    list.scale = scale;
+    list.commands = std::move(commands);
+    return list;
+}
+
+} // namespace
+
+TEST_CASE("a frame that draws the same has no damage", "[damage]") {
+    const auto list = list_of({rect({0, 0, 200, 200}, Color::white), rect({10, 10, 20, 20})});
+    CHECK(damage(list, list).empty());
+}
+
+TEST_CASE("a changed command damages its bounds, a pixel around them for anti-aliasing", "[damage]") {
+    const auto before = list_of({rect({0, 0, 200, 200}, Color::white), rect({10, 10, 20, 20})});
+    SECTION("its color") {
+        const auto now = list_of({rect({0, 0, 200, 200}, Color::white), rect({10, 10, 20, 20}, Color::rgb(255, 0, 0))});
+        CHECK(box(damage(before, now)) == Rect{9, 9, 22, 22});
+    }
+    SECTION("its place: where it was and where it is") {
+        const auto now = list_of({rect({0, 0, 200, 200}, Color::white), rect({100, 10, 20, 20})});
+        const std::vector<Rect> rects = damage(before, now);
+        REQUIRE(rects.size() == 2);
+        CHECK(box(rects) == Rect{9, 9, 112, 22});
+    }
+    SECTION("a caret that blinks off: only where it was") {
+        const auto now = list_of({rect({0, 0, 200, 200}, Color::white)});
+        CHECK(damage(before, now) == std::vector<Rect>{{9, 9, 22, 22}});
+    }
+    SECTION("at a fractional place: rounded out to whole pixels") {
+        const auto now = list_of({rect({0, 0, 200, 200}, Color::white), rect({10.5f, 10.25f, 20, 20})});
+        CHECK(box(damage(before, now)) == Rect{9, 9, 23, 23});
+    }
+    SECTION("at a scale of 2") {
+        CHECK(box(damage(list_of(before.commands, 2), list_of({rect({0, 0, 200, 200}, Color::white)}, 2), 400)) ==
+              Rect{19, 19, 42, 42});
+    }
+}
+
+TEST_CASE("a command added before others damages only itself", "[damage]") {
+    const auto before = list_of({rect({0, 0, 10, 10}), rect({50, 50, 10, 10}), rect({100, 100, 10, 10})});
+    const auto now = list_of({rect({150, 0, 10, 10}), rect({0, 0, 10, 10}), rect({50, 50, 10, 10}),
+                              rect({100, 100, 10, 10})});
+    CHECK(damage(before, now) == std::vector<Rect>{{149, 0, 12, 11}});
+}
+
+TEST_CASE("commands that swap places in painter's order count as changed", "[damage]") {
+    const auto a = rect({0, 0, 50, 50}, Color::rgb(255, 0, 0));
+    const auto b = rect({25, 25, 50, 50}, Color::rgb(0, 0, 255));
+    CHECK_FALSE(damage(list_of({a, b}), list_of({b, a})).empty());
+}
+
+TEST_CASE("a command's bounds are those of its layers and clips", "[damage]") {
+    SECTION("cut by its clip") {
+        const auto before = list_of({detail::PushClipCommand{.rect = {0, 0, 50, 50}}, rect({40, 40, 100, 100}),
+                                     detail::PopClipCommand{}});
+        const auto now = list_of({detail::PushClipCommand{.rect = {0, 0, 50, 50}},
+                                   rect({40, 40, 100, 100}, Color::rgb(255, 0, 0)), detail::PopClipCommand{}});
+        CHECK(box(damage(before, now)) == Rect{39, 39, 11, 11});
+    }
+    SECTION("widened by its layer's blur") {
+        const detail::PushLayerCommand blurred{.bounds = {0, 0, 200, 200}, .blur = 10};
+        const auto before = list_of({blurred, rect({90, 90, 20, 20}), detail::PopLayerCommand{}});
+        const auto now = list_of({blurred, rect({90, 90, 20, 20}, Color::rgb(255, 0, 0)), detail::PopLayerCommand{}});
+        const Rect damaged = box(damage(before, now));
+        CHECK(damaged.x < 89 - 20); // 4 sigma (20 px) and more
+        CHECK(damaged.max_x() > 111 + 20);
+    }
+    SECTION("moved by its layer's transform") {
+        const detail::PushLayerCommand moved{.bounds = {0, 0, 50, 50},
+                                             .transform = detail::LayerTransform{1, 0, 0, 1, {0, 0}}};
+        detail::PushLayerCommand doubled = moved;
+        doubled.transform = detail::LayerTransform{2, 0, 0, 2, {0, 0}};
+        const auto before = list_of({doubled, rect({10, 10, 10, 10}), detail::PopLayerCommand{}});
+        const auto now = list_of({doubled, rect({10, 10, 10, 10}, Color::rgb(255, 0, 0)), detail::PopLayerCommand{}});
+        CHECK(box(damage(before, now)) == Rect{18, 18, 24, 24});
+    }
+}
+
+TEST_CASE("a layer's opacity damages the layer, not more", "[damage]") {
+    const auto content = rect({20, 20, 30, 30});
+    const auto before = list_of({rect({150, 150, 10, 10}), detail::PushLayerCommand{.bounds = {20, 20, 30, 30}},
+                                 content, detail::PopLayerCommand{}});
+    const auto now = list_of({rect({150, 150, 10, 10}),
+                              detail::PushLayerCommand{.bounds = {20, 20, 30, 30}, .opacity = 0.5f}, content,
+                              detail::PopLayerCommand{}});
+    CHECK(box(damage(before, now)) == Rect{19, 19, 32, 32});
+}
+
+TEST_CASE("a command moved into a layer counts as changed", "[damage]") {
+    const auto content = rect({20, 20, 30, 30});
+    const auto layer = detail::PushLayerCommand{.bounds = {20, 20, 30, 30}, .opacity = 0.5f};
+    const auto before = list_of({layer, detail::PopLayerCommand{}, content});
+    const auto now = list_of({layer, content, detail::PopLayerCommand{}});
+    CHECK(box(damage(before, now)) == Rect{19, 19, 32, 32});
+}
+
+TEST_CASE("damage under a backdrop blur damages all that it draws", "[damage]") {
+    const auto glass = detail::RectCommand{.rect = {0, 0, 100, 100}, .fill = ShapeStyle(BackdropFill{.blur = 10})};
+    const auto before = list_of({rect({0, 0, 200, 200}, Color::white), rect({150, 150, 10, 10}), glass});
+    SECTION("damage it reads") {
+        // A change behind the glass, within its blur's reach.
+        const auto now = list_of({rect({0, 0, 200, 200}, Color::white), rect({150, 150, 10, 10}),
+                                  rect({110, 50, 5, 5}), glass});
+        CHECK(box(damage(before, now)) == Rect{-0.f, 0, 116, 101});
+    }
+    SECTION("damage it doesn't read") {
+        const auto now = list_of({rect({0, 0, 200, 200}, Color::white), rect({150, 150, 10, 10}, Color::rgb(255, 0, 0)),
+                                  glass});
+        CHECK(box(damage(before, now)) == Rect{149, 149, 12, 12});
+    }
+}

@@ -18,6 +18,7 @@ add_executable(elegance_tests
         canvas_tests.cpp
         capture_phase_tests.cpp
         capture_tests.cpp
+        damage_tests.cpp
         desktop_tests.cpp
         environment_tests.cpp
         gpu_loss_tests.cpp
