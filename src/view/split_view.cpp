@@ -80,8 +80,20 @@ public:
     }
 
     const DividerLook& look() const noexcept { return look_; }
-    void set_divider_color(Color color) { look_.color = color; }
-    void set_active_divider_color(Color color) { look_.active = color; }
+    void set_divider_color(Color color) {
+        look_.color = color;
+        dividers_changed();
+    }
+    void set_active_divider_color(Color color) {
+        look_.active = color;
+        dividers_changed();
+    }
+    // The dividers draw with its look and where its panes are: they paint again.
+    void dividers_changed() {
+        for (const auto& divider : dividers_) {
+            divider->invalidate_paint();
+        }
+    }
 
     void inspect(Inspection& out) const override {
         out.name = axis_ == Axis::horizontal ? "HSplitView" : "VSplitView";
@@ -111,6 +123,14 @@ public:
         const float start = (axis_ == Axis::horizontal ? after.x : after.y) - look_.thickness;
         const float laid_out = axis_ == Axis::horizontal ? pane_rects_[index].max_x() : pane_rects_[index].max_y();
         return std::abs(end - laid_out) >= std::abs(start - laid_out) ? end : start;
+    }
+    // Whether that line is where its panes are laid out, not on its way there with them.
+    bool line_settled(std::size_t index) const {
+        if (index + 1 >= laid_out_.size() || index >= pane_rects_.size()) {
+            return true;
+        }
+        const float laid_out = axis_ == Axis::horizontal ? pane_rects_[index].max_x() : pane_rects_[index].max_y();
+        return line_position(index) == laid_out;
     }
 
     // Divider drags: the sizes the panes had when it began, then the pointer's offset since.
@@ -204,6 +224,9 @@ void SplitDividerElement::paint_impl(DisplayList& list) const {
     const bool active = hovered_ || dragging_;
     const float width = active ? look.active_thickness : look.thickness;
     const float middle = split_->line_position(index_) + look.thickness / 2;
+    if (!split_->line_settled(index_)) {
+        paint_changes_over_time(); // it follows panes easing to their frames
+    }
     const Color color = active ? look.active.opacity(dragging_ ? 0.9f : 0.6f) : look.color;
     if (width <= 0) {
         return;
@@ -340,6 +363,7 @@ void SplitElement::arrange(Rect bounds, ProposedSize) {
             position += look_.thickness;
         }
     }
+    dividers_changed();
 }
 
 void SplitElement::paint_impl(DisplayList& list) const {
@@ -421,10 +445,10 @@ public:
             axis_, std::move(children), pane_context,
             DividerLook{.thickness = std::max(options_.thickness, 0.f), .active_thickness = options_.active_thickness});
         SplitElement* const target = element.get();
-        detail::bind(options_.divider, context, [target](Color color) { target->set_divider_color(color); });
+        detail::bind(options_.divider, context, target, [target](Color color) { target->set_divider_color(color); });
         const Prop<Color> active = options_.active_divider.value_or(
             Prop<Color>([](const EnvironmentValues& env) { return env.get<TintKey>(); }));
-        detail::bind(active, context, [target](Color color) { target->set_active_divider_color(color); });
+        detail::bind(active, context, target, [target](Color color) { target->set_active_divider_color(color); });
         return element;
     }
 

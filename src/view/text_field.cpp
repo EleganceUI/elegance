@@ -467,10 +467,11 @@ Size TextEditor::measure(ProposedSize proposal) const {
     return {width, line_height * static_cast<float>(lines)};
 }
 
-void TextEditor::arranged(Rect frame) {
+bool TextEditor::arranged(Rect frame) {
     frame_ = frame;
     const float width = std::max(frame.width - kCaretWidth, 1.f);
-    if (!layout_width_ || *layout_width_ != width) {
+    const bool relaid = !layout_width_ || *layout_width_ != width;
+    if (relaid) {
         relayout(width);
     }
     const float line_height = shape_.line_height > 0 ? shape_.line_height : line_height_;
@@ -515,6 +516,14 @@ void TextEditor::arranged(Rect frame) {
             input_cursor_ = cursor;
             services_->set_text_input_area(area, cursor);
         }
+    }
+    const bool scrolled = std::exchange(drawn_scroll_, Point{scroll_x_, scroll_y_}) != Point{scroll_x_, scroll_y_};
+    return relaid || scrolled;
+}
+
+void TextEditor::drawing_changed() const {
+    if (element_) {
+        element_->invalidate_paint();
     }
 }
 
@@ -597,6 +606,7 @@ void TextEditor::paint(DisplayList& list, Rect frame) const {
     }
 
     if (focused_ && active && (caret_ == anchor_ || composing())) {
+        paint_changes_over_time(); // the caret blinks
         const double elapsed = std::max(frame_time() - blink_start_, 0.0);
         const auto phase = static_cast<long long>(elapsed / kBlinkHalfPeriod);
         if (phase % 2 == 0) {
@@ -674,6 +684,7 @@ bool TextFieldElement::accessibility_action(const AccessibilityAction& action) {
     if (action.kind != AccessibilityAction::Kind::set_value || (enabled_ && !untrack(enabled_))) {
         return false;
     }
+    editor_->drawing_changed();
     editor_->replace_all(action.text);
     return true;
 }
@@ -919,6 +930,7 @@ EventResult TextEditor::scroll(const ScrollEvent& event) {
 }
 
 void TextEditor::focus_changed(bool focused) {
+    drawing_changed();
     focused_ = focused;
     dragging_ = false;
     input_area_.reset();
@@ -955,7 +967,9 @@ bool TextFieldElement::focusable() const {
     return untrack(enabled_);
 }
 
+// What the editor draws follows the events it handles (its caret, its selection).
 EventResult TextFieldElement::pointer(const PointerEvent& event, Rect) {
+    editor_->drawing_changed();
     return editor_->pointer(event);
 }
 
@@ -972,10 +986,12 @@ EventResult TextFieldElement::key(const KeyEvent& event) {
     if (key_filter_ && key_filter_(event)) {
         return {.consumed = true, .redraw = true};
     }
+    editor_->drawing_changed();
     return editor_->key(event);
 }
 
 EventResult TextFieldElement::scroll(const ScrollEvent& event, Rect) {
+    editor_->drawing_changed();
     return editor_->scroll(event);
 }
 
@@ -986,6 +1002,7 @@ EventResult TextFieldElement::focus(bool focused) {
 }
 
 EventResult TextFieldElement::text_input(const TextInputEvent& event) {
+    editor_->drawing_changed();
     return editor_->text_input(event);
 }
 

@@ -186,6 +186,7 @@ NavigationStackElement::Page NavigationStackElement::mount(const ForEachItem& it
 }
 
 void NavigationStackElement::set_pages(const std::vector<ForEachItem>& items) {
+    invalidate_paint();
     // Restoring a path when the stack first mounts (a deep link) doesn't animate.
     const Animation* animation = nullptr;
     if (initialized_ && behavior_.transition != PageTransition::none) {

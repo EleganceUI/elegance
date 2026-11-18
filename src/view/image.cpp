@@ -472,9 +472,9 @@ public:
                          const Font font = environment.get<FontKey>();
                          return Font::custom(family, font.size(), font.weight());
                      }),
-                     context, [target](const Font& font) { target->set_font(font); });
+                     context, target, [target](const Font& font) { target->set_font(font); });
         target->set_content(glyph_);
-        detail::bind(Prop<Color>([environment] { return environment.get<ForegroundKey>(); }), context,
+        detail::bind(Prop<Color>([environment] { return environment.get<ForegroundKey>(); }), context, target,
                      [target](Color color, const Animation* animation) { target->set_color(color, animation); });
         return element;
     }

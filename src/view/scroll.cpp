@@ -130,6 +130,8 @@ Point ScrollElement::max_offset() const noexcept {
 }
 
 void ScrollElement::arrange(Rect bounds, ProposedSize) {
+    const Size viewport_before = viewport_.size();
+    const Size content_before = content_size_;
     viewport_ = bounds;
     const ProposedSize inner = content_proposal({bounds.width, bounds.height});
     content_size_ = content_->size_that_fits(inner);
@@ -196,6 +198,12 @@ void ScrollElement::arrange(Rect bounds, ProposedSize) {
     const auto whole = [scale](float v) { return std::round(v * scale) / scale; };
     const Point offset = current_offset();
     drawn_offset_ = {whole(offset.x), whole(offset.y)};
+    // Its scroll bars follow the sizes and the offset.
+    const auto same = [](Size a, Size b) { return a.width == b.width && a.height == b.height; };
+    if (!same(viewport_before, viewport_.size()) || !same(content_before, content_size_) ||
+        std::exchange(arranged_offset_, offset) != offset) {
+        invalidate_paint();
+    }
     const float x = scrolls(Axis::horizontal) ? bounds.x - drawn_offset_.x
                                               : bounds.x + (bounds.width - content_size_.width) / 2;
     const float y = scrolls(Axis::vertical) ? bounds.y - drawn_offset_.y
@@ -322,6 +330,7 @@ bool ScrollElement::anchor_shift(Axis axis, float delta) {
 
 void ScrollElement::show_indicators() {
     indicators_.set(1.f, nullptr);
+    invalidate_paint();
 }
 
 // Fades the bars out after a pause, unless the pointer is on the view or dragging a bar.
@@ -331,6 +340,7 @@ void ScrollElement::fade_indicators() {
     }
     static const Animation fade = Animation::ease_out(0.4).delay(0.8);
     indicators_.set(0.f, &fade);
+    invalidate_paint();
 }
 
 EventResult ScrollElement::scroll(const ScrollEvent& event, Rect) {

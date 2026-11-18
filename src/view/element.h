@@ -118,6 +118,10 @@ public:
             paint_focus_ring(list);
         }
     }
+    // Something it draws changed (a property, its state, what its layout worked out): its next
+    // paint builds its commands again, and so do those of the elements around it, which may draw
+    // with it (effects, the order of what's inside).
+    void invalidate_paint() noexcept;
 
     // Where the element is drawn now: its laid-out frame, or on the way there.
     Rect frame() const { return frame_.current(); }
@@ -198,6 +202,7 @@ public:
         for (Element* element = this; element; element = element->parent_) {
             element->needs_arrange_ = true;
         }
+        invalidate_paint(); // what it draws moved
     }
     // A value from View::layout_value on this element or the modifiers wrapping its content, by
     // its key's detail::key_id().
@@ -283,7 +288,13 @@ private:
     Point moved_by_;                   // how far the last place() moved it (for exiting children)
     bool always_arranges_inside_ = false; // always_arranges(), here or anywhere inside
     mutable std::uint64_t accessibility_id_ = 0;
+    // Whether something it draws changed since it last painted (invalidate_paint()).
+    mutable bool paint_changed_ = true;
 };
+
+// While an element paints: what it draws changes over time without its being invalidated (a
+// caret blinking, a canvas reading the clock), so its commands aren't kept for the next frame.
+void paint_changes_over_time() noexcept;
 
 // The element with this accessibility id (Element::accessibility_id), if it still exists: a
 // screen reader's request names elements by it. UI thread.
@@ -982,6 +993,7 @@ private:
     std::function<Color()> indicator_color_;
     Rect viewport_;     // from the last arrange
     Point drawn_offset_; // where it placed the content then: the offset on whole window pixels
+    Point arranged_offset_; // the offset then, which its scroll bars show
     Size content_size_; // the content's ideal size there
     Point target_;      // where the offset is heading
     Animated<float> offset_x_{0.f};

@@ -200,14 +200,14 @@ public:
     [[nodiscard]] std::unique_ptr<Element> lower(const LowerContext& context) const override {
         auto element = std::make_unique<IndicatorElement>(spec_);
         IndicatorElement* const target = element.get();
-        detail::bind(Prop<std::optional<float>>(fraction_), context,
+        detail::bind(Prop<std::optional<float>>(fraction_), context, target,
                      [target](std::optional<float> fraction, const Animation* animation) {
                          target->set_fraction(fraction, animation);
                      });
-        detail::bind(track_, context, [target](Color color) { target->set_track(color); });
+        detail::bind(track_, context, target, [target](Color color) { target->set_track(color); });
         const Prop<Color> fill =
             fill_.value_or(Prop<Color>([](const EnvironmentValues& env) { return env.get<TintKey>(); }));
-        detail::bind(fill, context, [target](Color color) { target->set_fill(color); });
+        detail::bind(fill, context, target, [target](Color color) { target->set_fill(color); });
         return element;
     }
 

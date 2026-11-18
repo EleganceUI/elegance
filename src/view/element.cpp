@@ -50,7 +50,19 @@ std::unordered_map<std::uint64_t, Element*>& elements_by_accessibility_id() {
 
 // --- Element ---
 
+void paint_changes_over_time() noexcept {}
+
+void Element::invalidate_paint() noexcept {
+    for (Element* element = this; element; element = element->parent_) {
+        element->paint_changed_ = true;
+    }
+}
+
 Element::~Element() {
+    // The elements around it may have painted it: they paint again, without it.
+    if (parent_) {
+        parent_->invalidate_paint();
+    }
     if (focus_manager_) {
         focus_manager_->forget(this); // also ends a .focused watch on this element
     }
@@ -160,6 +172,13 @@ void Element::place(Point position, ProposedSize proposal) {
         moved_by_ = {target.x - previous.x, target.y - previous.y};
     } else {
         moved_by_ = parent_ ? parent_->moved_by_ : Point{};
+    }
+    // What it draws follows from how it's arranged: built again, unless it only moved (paint()
+    // moves what it built) or nothing changed for it. Elements arranged at every layout tell
+    // themselves what changed.
+    if (!placed_ || needs_arrange_ || last_proposal_ != proposal || previous.width != target.width ||
+        previous.height != target.height) {
+        invalidate_paint();
     }
     if (!placed_ || target != frame_.target()) {
         // An element appearing for the first time takes its frame at once; afterwards, a layout

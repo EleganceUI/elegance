@@ -74,8 +74,11 @@ public:
     void attach(TextEditorElement* element) noexcept { element_ = element; }
     [[nodiscard]] TextEditorElement* attached() const noexcept { return element_; }
     [[nodiscard]] Size measure(ProposedSize proposal) const;
-    void arranged(Rect frame);
+    // Lays it out in `frame`; true when what it draws changed (its lines, how far it's scrolled).
+    bool arranged(Rect frame);
     void paint(DisplayList& list, Rect frame) const;
+    // What it draws changed (an event it handled, its focus): its element paints again.
+    void drawing_changed() const;
 
 private:
     struct Snapshot {
@@ -174,6 +177,7 @@ private:
     Rect frame_;
     float scroll_x_ = 0; // single line: when the text is wider than the field
     float scroll_y_ = 0; // multiline: when it has more lines than shown
+    Point drawn_scroll_; // (scroll_x_, scroll_y_) as the last layout left them
     // Where the caret was and how tall the field was when the caret was last scrolled into sight:
     // multiline fields follow the caret when either changes, and the wheel otherwise.
     std::size_t revealed_caret_ = std::string::npos;
@@ -206,11 +210,18 @@ public:
         }
     }
 
-    void text_changed() { invalidate_layout(); }
+    void text_changed() {
+        invalidate_layout();
+        invalidate_paint();
+    }
 
 protected:
     Size measure(ProposedSize proposal) override { return editor_->measure(proposal); }
-    void arrange(Rect bounds, ProposedSize) override { editor_->arranged(bounds); }
+    void arrange(Rect bounds, ProposedSize) override {
+        if (editor_->arranged(bounds)) {
+            invalidate_paint();
+        }
+    }
     void paint_impl(DisplayList& list) const override { editor_->paint(list, frame()); }
     bool hit_impl(Point point, std::vector<Element*>&) override;
 

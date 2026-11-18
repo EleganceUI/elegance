@@ -15,6 +15,7 @@
 #include <elg/views.h>
 
 #include <algorithm>
+#include <utility>
 #include <cmath>
 #include <limits>
 #include <map>
@@ -46,6 +47,7 @@ public:
     // destroyed (and rebuilt by the next layout if still in view). Items with a repeated key
     // each get their own row, as in ForEach, rebuilt on every change.
     void set_items(std::vector<ForEachItem> items) {
+        invalidate_paint();
         std::map<ItemKey, const ForEachItem*> by_key;
         std::vector<std::size_t> occurrences(items.size(), 0);
         std::map<ItemKey, std::size_t> seen;
@@ -289,7 +291,7 @@ void LazyStackElement::arrange(Rect bounds, ProposedSize) {
     std::map<RowKey, Row> kept;
     bool structure_changed = false;
     bool size_changed = false;
-    shown_.clear();
+    const std::vector<Shown> shown_before = std::exchange(shown_, {});
     double position = 0; // double, as in measure()
     for (std::size_t i = 0; i < items_.size(); ++i) {
         const ForEachItem& item = items_[i];
@@ -320,6 +322,12 @@ void LazyStackElement::arrange(Rect bounds, ProposedSize) {
             anchor_now = static_cast<float>(position);
         }
         position += static_cast<double>(size + spacing_);
+    }
+    // Other rows came into view (scrolling), or went: it paints them, and their separators.
+    if (!std::ranges::equal(shown_before, shown_, [](const Shown& a, const Shown& b) {
+            return a.element == b.element && a.index == b.index;
+        })) {
+        invalidate_paint();
     }
 
     // Scroll anchoring: rows above the one at the top of the view changed size (estimates became
@@ -393,7 +401,7 @@ public:
         auto element = std::make_unique<LazyStackElement>(axis_, alignment_, spacing_, std::move(inner), separators);
         LazyStackElement* const target = element.get();
         if (separators_) {
-            detail::bind(separators_->color, context, [target](Color color) { target->set_separator_color(color); });
+            detail::bind(separators_->color, context, target, [target](Color color) { target->set_separator_color(color); });
         }
         // Reading the items subscribes this effect; building items happens in layout.
         effect([target, items = std::move(items)] { target->set_items(items()); });

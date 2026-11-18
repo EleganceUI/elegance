@@ -87,8 +87,10 @@ std::unique_ptr<Element> lower(const View& view, const LowerContext& context);
 // Setters taking (value, const Animation*) are animatable: they get the animation of the update
 // that changed the value (an animated transaction's, or an implicit `.animation(...)`'s), or
 // nullptr to jump.
+// `paints`: the element whose drawing the value changes, which paints again after each change
+// (ELGSPEC-0029.R8); nullptr when the setter tells its element itself.
 template <class T, class Apply>
-void bind(const Prop<T>& prop, const LowerContext& context, Apply apply) {
+void bind(const Prop<T>& prop, const LowerContext& context, Element* paints, Apply apply) {
     constexpr bool animatable = std::invocable<Apply&, T, const Animation*>;
     if (const T* value = prop.static_value()) {
         if constexpr (animatable) {
@@ -103,7 +105,7 @@ void bind(const Prop<T>& prop, const LowerContext& context, Apply apply) {
     // The first value is where a new element starts, never animated: a view mounted inside
     // with_animation (a window opening) starts at its offset instead of sliding there from 0.
     effect([prop, apply = std::move(apply), environment = context.environment, needs_frame = context.needs_frame,
-            implicit = context.implicit_animation, first = std::make_shared<bool>(true)] {
+            implicit = context.implicit_animation, first = std::make_shared<bool>(true), paints] {
         T value = prop.get(environment);
         if constexpr (animatable) {
             const Animation* animation = current_animation();
@@ -116,6 +118,9 @@ void bind(const Prop<T>& prop, const LowerContext& context, Apply apply) {
             apply(std::move(value), animation);
         } else {
             apply(std::move(value));
+        }
+        if (paints) {
+            paints->invalidate_paint();
         }
         if (needs_frame) {
             *needs_frame = true;
