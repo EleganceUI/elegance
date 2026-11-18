@@ -112,6 +112,10 @@ int PixelRenderer::frames_presented() const {
     return objects_->target->frames_presented();
 }
 
+int PixelRenderer::tiles_drawn() const {
+    return objects_->target->tiles_drawn();
+}
+
 Pixels PixelRenderer::draw(const DisplayList& list, int width, int height, float scale) {
     WindowFrame frame;
     frame.window_id = 1;

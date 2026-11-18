@@ -13,6 +13,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <vector>
 
 using namespace elg;
 
@@ -192,5 +193,49 @@ TEST_CASE("blurs and shadows sample as many texels a pixel whatever their radius
         CHECK(*layer.blur_sigma / static_cast<float>(layer.blur_downsample) <= 12);
         CHECK(*layer.inner_shadow_sigma / static_cast<float>(layer.inner_shadow_downsample) <= 12);
         // NOLINTEND(bugprone-unchecked-optional-access)
+    }
+}
+
+TEST_CASE("a scroll view's content is drawn from tiles under what shows of it", "[render][tiles]") {
+    // A 100 x 150 viewport, its content scrolled 300 points, at a scale of 2: content pixels 600
+    // to 900 show, which tiles 2 and 3 of 256 pixels cover.
+    detail::DisplayList list;
+    list.scale = 2;
+    list.commands = {detail::PushScrollCommand{.id = 5, .viewport = {0, 0, 100, 150}, .origin = {0, -300}},
+                     detail::RectCommand{.rect = {0, 320, 100, 20}, .fill = ShapeStyle(Color::black)},
+                     detail::PopScrollCommand{}};
+    const auto tile_passes = [](const detail::FramePlan& plan) {
+        std::vector<Rect> drawn;
+        for (const detail::PlanPass& pass : plan.layers) {
+            if (pass.tile) {
+                drawn.push_back(pass.tile->content);
+            }
+        }
+        return drawn;
+    };
+    SECTION("drawn first when the window doesn't keep them") {
+        const detail::FramePlan plan = detail::plan_frame(list, 200, 300, nullptr, 8192, std::nullopt,
+                                                          [](std::uint64_t) { return false; });
+        CHECK(tile_passes(plan) == std::vector<Rect>{{0, 512, 256, 256}, {0, 768, 256, 256}});
+        CHECK(plan.tiles.size() == 2);
+    }
+    SECTION("only composited when it keeps them") {
+        const detail::FramePlan plan = detail::plan_frame(list, 200, 300, nullptr, 8192, std::nullopt,
+                                                          [](std::uint64_t) { return true; });
+        CHECK(tile_passes(plan).empty());
+        CHECK(plan.tiles.size() == 2);
+    }
+    SECTION("only those under the area drawn") {
+        const detail::FramePlan plan = detail::plan_frame(list, 200, 300, nullptr, 8192, Rect{0, 0, 200, 100},
+                                                          [](std::uint64_t) { return false; });
+        CHECK(tile_passes(plan) == std::vector<Rect>{{0, 512, 256, 256}});
+    }
+    SECTION("drawn directly when it reads what's behind it") {
+        list.commands.insert(list.commands.begin() + 2,
+                             detail::RectCommand{.rect = {0, 300, 100, 50}, .fill = ShapeStyle(BackdropFill{.blur = 4})});
+        const detail::FramePlan plan = detail::plan_frame(list, 200, 300, nullptr, 8192, std::nullopt,
+                                                          [](std::uint64_t) { return false; });
+        CHECK(tile_passes(plan).empty());
+        CHECK(plan.tiles.empty());
     }
 }

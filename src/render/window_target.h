@@ -58,6 +58,8 @@ public:
     void render(const WindowFrame& frame, const RenderResources& resources);
     // How many frames it presented: frames without damage aren't (ELGSPEC-0029.R7).
     [[nodiscard]] int frames_presented() const noexcept;
+    // How many tiles of scroll views it drew: kept tiles aren't drawn again (ELGSPEC-0029.R13).
+    [[nodiscard]] int tiles_drawn() const noexcept;
 
 private:
     // What it keeps across frames, and the recording of a frame with it.

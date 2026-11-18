@@ -102,6 +102,14 @@ void set_clip(QuadInstance& instance, const Clip& clip) {
     instance.clip_scissor = {clip.scissor.x, clip.scissor.y, clip.scissor.width, clip.scissor.height};
 }
 
+// Scroll view `id`'s tile (i, j), its content drawn into it at `phase` pixels and `scale`
+// pixels a point.
+std::uint64_t tile_key(std::uint64_t id, std::int64_t i, std::int64_t j, float phase_x, float phase_y, float scale) {
+    const std::array<std::int64_t, 3> place{static_cast<std::int64_t>(id), i, j};
+    const std::array<float, 3> pixels{phase_x, phase_y, scale};
+    return fnv1a(pixels.data(), sizeof(pixels), fnv1a(place.data(), sizeof(place)));
+}
+
 // A composite of a layer image: `rect` in pass pixels shows `texels` of it.
 QuadInstance layer_quad(const Rect& rect, const Rect& texels, float opacity, QuadKind kind = QuadKind::layer) {
     QuadInstance instance;
@@ -116,9 +124,10 @@ QuadInstance layer_quad(const Rect& rect, const Rect& texels, float opacity, Qua
 class Planner {
 public:
     Planner(const DisplayList& list, FramePlan& plan, std::uint32_t width, std::uint32_t height, PathHashes& paths,
-            std::uint32_t max_texture_side, std::optional<Rect> area)
+            std::uint32_t max_texture_side, std::optional<Rect> area,
+            const std::function<bool(std::uint64_t)>& kept_tiles)
         : list_(list), plan_(plan), paths_(paths), scale_(list.scale),
-          max_side_(std::max(1u, std::min(kMaxLayerSize, max_texture_side))), area_(area) {
+          max_side_(std::max(1u, std::min(kMaxLayerSize, max_texture_side))), area_(area), kept_tiles_(kept_tiles) {
         plan_.main.width = width;
         plan_.main.height = height;
     }
@@ -190,6 +199,7 @@ private:
         int image = -1;
         int video = -1;
         std::optional<PlanBackdrop> backdrop; // registered if the instance is drawn
+        int tile = -1;
     };
 
     void emit(PlanPass& pass, std::vector<QuadInstance>& out, QuadInstance instance, const Rect& extent,
@@ -210,10 +220,10 @@ private:
         PlanSegment* last = pass.segments.empty() ? nullptr : &pass.segments.back();
         // A mask ("destination-in") is never plain: merged into the segment before it, it would be
         // drawn as a fill.
-        const bool plain =
-            !how.mask && how.layer < 0 && how.path < 0 && how.image < 0 && how.video < 0 && backdrop < 0;
+        const bool plain = !how.mask && how.layer < 0 && how.path < 0 && how.image < 0 && how.video < 0 &&
+                           backdrop < 0 && how.tile < 0;
         const auto last_plain = [&] {
-            return last->layer < 0 && last->path < 0 && last->image < 0 && last->video < 0;
+            return last->layer < 0 && last->path < 0 && last->image < 0 && last->video < 0 && last->tile < 0;
         };
         if (last && last->first + last->count == index &&
             ((plain && last_plain() && !last->mask) || (how.image >= 0 && last->image == how.image) ||
@@ -221,7 +231,7 @@ private:
             ++last->count;
         } else {
             pass.segments.push_back(
-                {index, 1, how.layer, how.layer_image, how.path, how.mask, how.image, how.video, backdrop});
+                {index, 1, how.layer, how.layer_image, how.path, how.mask, how.image, how.video, backdrop, how.tile});
         }
     }
 
@@ -604,13 +614,96 @@ private:
     }
 
     // A scroll view's content, in its own points: drawn where its origin is, within its viewport.
-    // `index` goes from its PushScrollCommand to its PopScrollCommand.
+    // `index` goes from its PushScrollCommand to its PopScrollCommand. From tiles when the window
+    // keeps them (ELGSPEC-0029.R13): those under what shows of the viewport, composited, after
+    // passes that draw the ones it doesn't keep.
     void add_scroll(const PushScrollCommand& command, std::size_t& index, Point origin, PlanPass& pass,
                     std::vector<QuadInstance>& out, const Clip& clip, const Rect& visible) {
         const Clip viewport = push_clip(PushClipCommand{command.viewport, {}}, origin, clip);
         const Point content{origin.x - command.origin.x * scale_, origin.y - command.origin.y * scale_};
         ++index;
-        build(index, content, pass, out, visible, viewport);
+        if (!kept_tiles_ || reads_behind(index)) {
+            build(index, content, pass, out, visible, viewport);
+            return;
+        }
+        const std::size_t first = index;
+        skip_scroll(index);
+        const Rect shows = visible_through(visible, viewport);
+        if (!(shows.width > 0) || !(shows.height > 0)) {
+            return;
+        }
+        // The content's (0, 0) in the pass: tile (0, 0) starts at the whole pixel before it, and
+        // the tiles draw the content that far into their pixels (its phase).
+        const float base_x = std::floor(-content.x);
+        const float base_y = std::floor(-content.y);
+        const float phase_x = -content.x - base_x;
+        const float phase_y = -content.y - base_y;
+        const auto side = static_cast<float>(kTileSide);
+        const auto i0 = static_cast<std::int64_t>(std::floor((shows.x - base_x) / side));
+        const auto i1 = static_cast<std::int64_t>(std::ceil((shows.max_x() - base_x) / side));
+        const auto j0 = static_cast<std::int64_t>(std::floor((shows.y - base_y) / side));
+        const auto j1 = static_cast<std::int64_t>(std::ceil((shows.max_y() - base_y) / side));
+        for (std::int64_t j = j0; j < j1; ++j) {
+            for (std::int64_t i = i0; i < i1; ++i) {
+                const float x = static_cast<float>(i) * side;
+                const float y = static_cast<float>(j) * side;
+                const std::uint64_t key = tile_key(command.id, i, j, phase_x, phase_y, scale_);
+                if (!kept_tiles_(key)) {
+                    PlanPass tile;
+                    tile.width = kTileSide;
+                    tile.height = kTileSide;
+                    tile.tile = PlanTile{key, command.id, {x - phase_x, y - phase_y, side, side}};
+                    std::vector<QuadInstance> tile_out;
+                    std::size_t from = first;
+                    build(from, {x - phase_x, y - phase_y}, tile, tile_out, clear_extent({side, side}));
+                    plan_.layers.push_back(std::move(tile));
+                    layer_instances_.push_back(std::move(tile_out));
+                }
+                const auto tile_index = static_cast<int>(plan_.tiles.size());
+                plan_.tiles.push_back(key);
+                const Rect at{base_x + x, base_y + y, side, side};
+                QuadInstance composite = layer_quad(at, {0, 0, side, side}, 1);
+                composite.params[3] = 1; // texel for texel
+                emit(pass, out, composite, at, viewport, {.tile = tile_index});
+            }
+        }
+    }
+
+    // Whether the scroll's content from `index` (past its PushScrollCommand) reads what's drawn
+    // behind it: a backdrop blur or a blend mode, which in a tile would read only the tile.
+    [[nodiscard]] bool reads_behind(std::size_t index) const {
+        std::size_t depth = 1;
+        for (; index < list_.commands.size(); ++index) {
+            const DrawCommand& command = list_.commands[index];
+            const auto backdrop = [](const ShapeStyle& fill) {
+                return std::holds_alternative<BackdropFill>(fill.value());
+            };
+            const auto* rect = std::get_if<RectCommand>(&command);
+            const auto* path = std::get_if<PathCommand>(&command);
+            const auto* layer = std::get_if<PushLayerCommand>(&command);
+            if (std::holds_alternative<PushScrollCommand>(command)) {
+                ++depth;
+            } else if (std::holds_alternative<PopScrollCommand>(command) && --depth == 0) {
+                return false;
+            } else if ((rect && backdrop(rect->fill)) || (path && backdrop(path->fill)) ||
+                       (layer && layer->blend != BlendMode::normal)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Moves `index` from past a scroll's PushScrollCommand to its PopScrollCommand.
+    void skip_scroll(std::size_t& index) const {
+        std::size_t depth = 1;
+        for (; index < list_.commands.size(); ++index) {
+            const DrawCommand& command = list_.commands[index];
+            if (std::holds_alternative<PushScrollCommand>(command)) {
+                ++depth;
+            } else if (std::holds_alternative<PopScrollCommand>(command) && --depth == 0) {
+                return;
+            }
+        }
     }
 
     // Moves `index` from a layer's PushLayerCommand to its PopLayerCommand, past its content and
@@ -891,6 +984,7 @@ private:
     float scale_;
     std::uint32_t max_side_; // of layers and path masks
     std::optional<Rect> area_; // of the window, which alone it draws
+    const std::function<bool(std::uint64_t)>& kept_tiles_;
     std::vector<std::vector<QuadInstance>> layer_instances_;
 };
 
@@ -967,10 +1061,11 @@ void PathHashes::end_frame() {
 }
 
 FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t height, PathHashes* paths,
-                     std::uint32_t max_texture_side, std::optional<Rect> area) {
+                     std::uint32_t max_texture_side, std::optional<Rect> area,
+                     const std::function<bool(std::uint64_t)>& kept_tiles) {
     FramePlan plan;
     PathHashes once;
-    Planner(list, plan, width, height, paths ? *paths : once, max_texture_side, area).run();
+    Planner(list, plan, width, height, paths ? *paths : once, max_texture_side, area, kept_tiles).run();
     return plan;
 }
 

@@ -29,9 +29,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <format>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -108,6 +110,7 @@ public:
 
     void render(const WindowFrame& frame, const RenderResources& resources);
     [[nodiscard]] int frames_presented() const noexcept { return frames_presented_; }
+    [[nodiscard]] int tiles_drawn() const noexcept { return tiles_drawn_; }
 
 private:
     struct LayerGroups {
@@ -126,6 +129,13 @@ private:
         gpu::Buffer instances;
         gpu::Buffer stops;
         gpu::Buffer path_vertices;
+    };
+
+    // A scroll view's tiles: the footprints of the content they were drawn from (its pixels), and
+    // the tiles kept, by key, with what of the content each shows.
+    struct ScrollTiles {
+        std::vector<Footprint> content;
+        std::unordered_map<std::uint64_t, Rect> tiles;
     };
 
     // What the window showed in its last frame drawn: a frame that differs in it draws the whole
@@ -195,6 +205,10 @@ private:
     // A side of the window's image: the window's (in pixels), up to what the device's textures
     // allow.
     [[nodiscard]] std::uint32_t window_side(int pixels) const;
+    // Its scroll views' tiles for this frame: those under content that changed since they were
+    // drawn go, and so do all of a scroll view that's gone; a full redraw (render_settings())
+    // draws them all again (ELGSPEC-0029.R13).
+    void update_tiles(const DisplayList& list);
     [[nodiscard]] wgpu::BindGroup image_group(const RenderResources& resources, const wgpu::TextureView& view) const;
     RenderImage& pooled_image(ImageRole role, std::uint64_t index, wgpu::TextureFormat format, std::uint32_t width,
                               std::uint32_t height, std::uint32_t samples = 1,
@@ -216,6 +230,9 @@ private:
     std::vector<Footprint> previous_;
     std::optional<Shown> shown_;
     int frames_presented_ = 0;
+    // Its scroll views' tiles, by the scroll view's id (ELGSPEC-0029.R13).
+    std::unordered_map<std::uint64_t, ScrollTiles> scrolls_;
+    int tiles_drawn_ = 0;
     std::optional<RenderImage> empty_;    // bound where no second image is
     wgpu::BindGroup empty_group_;
 };
@@ -231,6 +248,10 @@ WindowTarget::~WindowTarget() = default;
 
 int WindowTarget::frames_presented() const noexcept {
     return state_->frames_presented();
+}
+
+int WindowTarget::tiles_drawn() const noexcept {
+    return state_->tiles_drawn();
 }
 
 void WindowTarget::render(const WindowFrame& frame, const RenderResources& resources) {
@@ -270,6 +291,7 @@ void WindowTarget::State::render(const WindowFrame& frame, const RenderResources
         damage = {window};
     }
     const std::vector<Rect> drawn = whole ? std::vector<Rect>{window} : drawn_area(damage);
+    update_tiles(frame.list);
 
     std::vector<std::uint64_t> acquired_videos;
     const wgpu::CommandBuffer commands = record(view, presenter_->view_format(), presenter_->width(),
@@ -281,6 +303,38 @@ void WindowTarget::State::render(const WindowFrame& frame, const RenderResources
     previous_ = std::move(now);
     shown_ = Shown{width, height, frame.list.scale, clear, presenter_->surfaces_made()};
     ++frames_presented_;
+}
+
+void WindowTarget::State::update_tiles(const DisplayList& list) {
+    const auto release = [&](ScrollTiles& scroll, const auto& which) {
+        std::erase_if(scroll.tiles, [&](const auto& tile) {
+            if (!which(tile.second)) {
+                return false;
+            }
+            images_.release({ImageRole::tile, tile.first});
+            return true;
+        });
+    };
+    const bool full = render_settings().full_redraw;
+    std::unordered_map<std::uint64_t, ScrollTiles> seen;
+    for (ScrollContent& content : scroll_contents(list, &path_hashes_)) {
+        const auto found = scrolls_.find(content.id);
+        ScrollTiles scroll = found != scrolls_.end() ? std::move(found->second) : ScrollTiles{};
+        const std::vector<Rect> changed = full ? std::vector<Rect>{} : damage_between(scroll.content, content.footprints);
+        release(scroll, [&](const Rect& shows) {
+            return full || std::ranges::any_of(changed, [&](const Rect& r) {
+                       return r.x < shows.max_x() && shows.x < r.max_x() && r.y < shows.max_y() && shows.y < r.max_y();
+                   });
+        });
+        scroll.content = std::move(content.footprints);
+        seen.insert_or_assign(content.id, std::move(scroll));
+    }
+    for (auto& [id, scroll] : scrolls_) {
+        if (!seen.contains(id)) {
+            release(scroll, [](const Rect&) { return true; });
+        }
+    }
+    scrolls_ = std::move(seen);
 }
 
 std::uint32_t WindowTarget::State::window_side(int pixels) const {
@@ -446,6 +500,13 @@ void WindowTarget::State::draw_pass(const wgpu::CommandEncoder& encoder, const P
             }
         } else if (segment.path >= 0) {
             image = groups.paths[static_cast<std::size_t>(segment.path)];
+        } else if (segment.tile >= 0) {
+            // Drawn by this plan, or kept: needed by this frame either way.
+            const auto* tile = images_.find({ImageRole::tile, plan.tiles[static_cast<std::size_t>(segment.tile)]});
+            image = tile ? tile->image.group : wgpu::BindGroup();
+            if (!image) {
+                continue;
+            }
         } else if (segment.layer >= 0) {
             const LayerGroups& layer = groups.layers[static_cast<std::size_t>(segment.layer)];
             switch (segment.layer_image) {
@@ -500,9 +561,12 @@ wgpu::CommandBuffer WindowTarget::State::record(const wgpu::TextureView& view, w
     while (plan_buffers_.size() < drawn.size()) {
         plan_buffers_.push_back(std::make_unique<PlanBuffers>(device_.handle()));
     }
+    const std::function<bool(std::uint64_t)> kept_tiles = [this](std::uint64_t key) {
+        return images_.contains({ImageRole::tile, key});
+    };
     for (std::size_t i = 0; i < drawn.size(); ++i) {
-        const FramePlan plan =
-            plan_frame(frame.list, width, height, &path_hashes_, device_.max_texture_side(), drawn[i]);
+        const FramePlan plan = plan_frame(frame.list, width, height, &path_hashes_, device_.max_texture_side(),
+                                          drawn[i], kept_tiles);
         // Only the rect's pixels: what draws there reaches no further (its anti-aliasing, the
         // clearing mask, which clears all it covers).
         target.scissor = drawn[i];
@@ -603,6 +667,20 @@ void WindowTarget::State::record_plan(const wgpu::CommandEncoder& encoder, const
     for (std::size_t i = 0; i < plan.layers.size(); ++i) {
         const PlanPass& layer = plan.layers[i];
         LayerGroups& layer_groups = groups.layers[i];
+        if (layer.tile) {
+            // A scroll view's tile: kept by its key, for the frames after this one too.
+            RenderImage tile(device_.handle(), kLayerFormat, layer.width, layer.height, 1, kLayerUsage);
+            draw_pass(encoder,
+                      {tile.texture(), tile.view(), kLayerFormat, layer.width, layer.height, wgpu::Color{0, 0, 0, 0},
+                       std::nullopt},
+                      layer, plan, groups, resources);
+            tile.group = image_group(resources, tile.view());
+            images_.store({ImageRole::tile, layer.tile->key}, std::move(tile),
+                          gpu::image_bytes(kLayerFormat, layer.width, layer.height, 1));
+            scrolls_[layer.tile->scroll].tiles.insert_or_assign(layer.tile->key, layer.tile->content);
+            ++tiles_drawn_;
+            continue;
+        }
 
         const RenderImage& content =
             pooled_image(ImageRole::layer, i, kLayerFormat, layer.width, layer.height, 1, kLayerUsage);

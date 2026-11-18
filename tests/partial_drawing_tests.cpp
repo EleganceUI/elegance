@@ -198,3 +198,41 @@ TEST_CASE("the damage tint shows each frame's damage, and nothing else", "[.gpu]
     CHECK(moved.at(60, 20)[0] > 0); // where it is: blue, tinted
     CHECK(moved.at(5, 50) == std::array<int, 4>{255, 255, 255, 255});
 }
+
+TEST_CASE("a scroll view scrolled draws only the tiles that come into view", "[.gpu][damage][tiles]") {
+    PixelRenderer partial;
+    if (!partial.draws()) {
+        SKIP("the GPU here draws nothing");
+    }
+    PixelRenderer whole;
+    // A 200 x 200 window, all of it a scroll view of rows 20 points tall: tiles are 256 pixels.
+    const auto list_at = [](float scrolled, bool changed) {
+        detail::DisplayList list;
+        list.clear_color = Color::white;
+        list.commands.emplace_back(
+            detail::PushScrollCommand{.id = 3, .viewport = {0, 0, 200, 200}, .origin = {0, -scrolled}});
+        for (int row = 0; row < 40; ++row) {
+            const float shade = row % 2 == 0 ? 0.2f : 0.8f;
+            list.commands.emplace_back(detail::RectCommand{.rect = {4, 20 * static_cast<float>(row) + 2, 192, 16},
+                                                           .radii = CornerRadii::all(4),
+                                                           .fill = row == 6 && changed ? fill(1, 0, 0)
+                                                                                       : fill(shade, shade, 1)});
+        }
+        list.commands.emplace_back(detail::PopScrollCommand{});
+        return list;
+    };
+    const auto frame = [&](float scrolled, bool changed) {
+        const detail::DisplayList list = list_at(scrolled, changed);
+        const Pixels drawn = partial.draw(list, 200, 200);
+        const Setting full(detail::render_settings().full_redraw, true);
+        CHECK(largest_difference(drawn, whole.draw(list, 200, 200)) <= 1);
+    };
+    frame(0, false); // content pixels 0 to 200: tile 0
+    CHECK(partial.tiles_drawn() == 1);
+    frame(100, false); // 100 to 300: tile 1 comes into view
+    CHECK(partial.tiles_drawn() == 2);
+    frame(50, false); // 50 to 250: tile 0 again, as kept
+    CHECK(partial.tiles_drawn() == 2);
+    frame(50, true); // a row in tile 0 changes: drawn again
+    CHECK(partial.tiles_drawn() == 3);
+}

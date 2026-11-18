@@ -10,6 +10,7 @@
 
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -40,6 +41,17 @@ struct PlanSegment {
     // >= 0: the instances read what the pass has drawn so far, snapshotted (FramePlan::backdrops)
     // just before them: blend modes and materials.
     int backdrop = -1;
+    int tile = -1; // >= 0: a composite of a scroll view's tile (FramePlan::tiles)
+};
+
+// The side of a scroll view's tiles, in pixels (ELGSPEC-0029.R13).
+inline constexpr std::uint32_t kTileSide = 256;
+
+// A tile of a scroll view's content: what it shows, and what identifies its pixels.
+struct PlanTile {
+    std::uint64_t key = 0;    // the scroll view's id, the tile's place, and the pixels' phase
+    std::uint64_t scroll = 0; // the scroll view's id
+    Rect content;             // what of the content it shows, in its pixels
 };
 
 // A path's coverage mask to render before the passes that use it (gpu::PathRenderer), unless a
@@ -125,6 +137,9 @@ struct PlanPass {
     // Some segment reads a backdrop: the pass is split there (the window then draws offscreen).
     bool reads_backdrop = false;
     std::vector<PlanSegment> segments;
+    // Set: the pass draws a tile (kTileSide pixels a side), which the window keeps by its key,
+    // instead of a layer.
+    std::optional<PlanTile> tile;
 };
 
 // A frame turned into GPU work, independent of any GPU object.
@@ -143,6 +158,8 @@ struct FramePlan {
     std::vector<std::shared_ptr<FrameSource>> videos;
     std::vector<std::optional<VideoFrame>> video_frames;
     std::vector<PlanBackdrop> backdrops;
+    // The tiles composited, by key: each is drawn by a pass in `layers`, or kept from before.
+    std::vector<std::uint64_t> tiles;
     // When the main pass reads a backdrop it draws offscreen; this instance copies the result to
     // the window.
     std::optional<std::uint32_t> blit_instance;
@@ -160,10 +177,14 @@ struct FramePlan {
 // `area` (window pixels): the plan draws the window only there, as if clipped to it, and its
 // layers only what that part needs (ELGSPEC-0029.R3). The window pass draws over what the window
 // holds, without clearing it.
+// `kept_tiles`: whether the window keeps a tile, by its key. Given, scroll views' content is drawn
+// from tiles: the tiles under what shows of it, drawn first unless kept (ELGSPEC-0029.R13).
+// Content that reads what's behind it (backdrop blurs, blend modes) is drawn directly.
 FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t height,
                      PathHashes* paths = nullptr,
                      std::uint32_t max_texture_side = std::numeric_limits<std::uint32_t>::max(),
-                     std::optional<Rect> area = std::nullopt);
+                     std::optional<Rect> area = std::nullopt,
+                     const std::function<bool(std::uint64_t)>& kept_tiles = {});
 
 } // namespace elg::detail
 

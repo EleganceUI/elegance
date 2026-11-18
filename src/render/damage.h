@@ -42,6 +42,18 @@ struct Footprint {
 std::vector<Footprint> footprints(const DisplayList& list, std::uint32_t width, std::uint32_t height,
                                   PathHashes* paths = nullptr);
 
+// A scroll view's content (ELGSPEC-0029.R13): what's between its PushScrollCommand, at `push`
+// in the list, and its PopScrollCommand, as footprints in the content's own pixels.
+struct ScrollContent {
+    std::uint64_t id = 0;
+    std::size_t push = 0;
+    std::vector<Footprint> footprints;
+};
+
+// The content of each scroll view in `list`, nested ones too, in the order of their
+// PushScrollCommands. Paths count as in footprints().
+std::vector<ScrollContent> scroll_contents(const DisplayList& list, PathHashes* paths = nullptr);
+
 // The damage region from the frame of `before` to the frame of `now`: the bounds, in both frames,
 // of the commands added, removed or changed, a command that moved in painter's order among them;
 // then, while it overlaps what an effect of `now` reads, that effect's bounds too.

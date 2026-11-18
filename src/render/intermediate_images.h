@@ -37,6 +37,7 @@ enum class ImageRole : std::uint8_t {
     path_samples,      // a path mask's multisampled coverage
     path_stencil,      // a path mask's multisampled stencil
     path_mask,         // a path's coverage mask, by PlanPath::key
+    tile,              // a scroll view's tile, by PlanTile::key
 };
 
 // One image: its role and, where a role has several, which.

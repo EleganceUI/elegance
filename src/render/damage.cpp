@@ -139,16 +139,16 @@ struct Level {
 
 class Walker {
 public:
-    Walker(const DisplayList& list, std::uint32_t width, std::uint32_t height, PathHashes& paths)
-        : list_(list), paths_(paths), scale_(list.scale),
-          window_{0, 0, static_cast<float>(width), static_cast<float>(height)} {
+    // `commands` at `scale` pixels a point, within `window` (pixels).
+    Walker(std::span<const DrawCommand> commands, float scale, Rect window, PathHashes& paths)
+        : commands_(commands), paths_(paths), scale_(scale), window_(window) {
         levels_.push_back({.clips = {window_}, .contexts = {14695981039346656037ull}});
     }
 
     std::vector<Footprint> run() {
         std::vector<Footprint> out;
-        out.reserve(list_.commands.size());
-        for (const DrawCommand& command : list_.commands) {
+        out.reserve(commands_.size());
+        for (const DrawCommand& command : commands_) {
             out.push_back(visit(command));
         }
         return out;
@@ -346,12 +346,14 @@ private:
         return print;
     }
 
+public:
     static Rect window_unbounded() {
         constexpr float kFar = 1e7f;
         return {-kFar, -kFar, 2 * kFar, 2 * kFar};
     }
 
-    const DisplayList& list_;
+private:
+    std::span<const DrawCommand> commands_;
     PathHashes& paths_;
     float scale_;
     Rect window_;
@@ -443,7 +445,33 @@ void match(std::span<const Footprint> a, std::span<const Footprint> b, std::vect
 std::vector<Footprint> footprints(const DisplayList& list, std::uint32_t width, std::uint32_t height,
                                   PathHashes* paths) {
     PathHashes once;
-    return Walker(list, width, height, paths ? *paths : once).run();
+    const Rect window{0, 0, static_cast<float>(width), static_cast<float>(height)};
+    return Walker(list.commands, list.scale, window, paths ? *paths : once).run();
+}
+
+std::vector<ScrollContent> scroll_contents(const DisplayList& list, PathHashes* paths) {
+    PathHashes once;
+    std::vector<ScrollContent> contents;
+    const std::span<const DrawCommand> commands = list.commands;
+    for (std::size_t i = 0; i < commands.size(); ++i) {
+        const auto* scroll = std::get_if<PushScrollCommand>(&commands[i]);
+        if (!scroll) {
+            continue;
+        }
+        std::size_t end = i + 1;
+        for (int depth = 1; end < commands.size(); ++end) {
+            if (std::holds_alternative<PushScrollCommand>(commands[end])) {
+                ++depth;
+            } else if (std::holds_alternative<PopScrollCommand>(commands[end]) && --depth == 0) {
+                break;
+            }
+        }
+        contents.push_back({scroll->id, i,
+                            Walker(commands.subspan(i + 1, end - i - 1), list.scale, Walker::window_unbounded(),
+                                   paths ? *paths : once)
+                                .run()});
+    }
+    return contents;
 }
 
 std::vector<Rect> damage_between(std::span<const Footprint> before, std::span<const Footprint> now) {
