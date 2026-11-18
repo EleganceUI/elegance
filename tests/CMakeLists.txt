@@ -10,6 +10,7 @@ include(Catch)
 
 add_executable(elegance_tests
         accessibility_tests.cpp
+        animated_layout_tests.cpp
         animation_tests.cpp
         app_error_tests.cpp
         app_thread_tests.cpp

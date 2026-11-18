@@ -326,15 +326,8 @@ Element* element_with_accessibility_id(std::uint64_t id) noexcept {
 }
 
 namespace {
-bool g_full_layout = false;
 float g_layout_scale = 1;
 } // namespace
-
-FullLayoutScope::FullLayoutScope(bool full) noexcept : previous_(std::exchange(g_full_layout, full)) {}
-
-FullLayoutScope::~FullLayoutScope() {
-    g_full_layout = previous_;
-}
 
 LayoutScaleScope::LayoutScaleScope(float scale) noexcept
     : previous_(std::exchange(g_layout_scale, scale > 0 ? scale : 1)) {}
@@ -367,9 +360,18 @@ void Element::place(Point position, ProposedSize proposal) {
     const Rect target{position.x, position.y, size.width, size.height};
     // Same place, same proposal, and nothing inside changed: everything inside is already where
     // it belongs. A small update in a large window lays out only what it touched.
-    if (placed_ && !needs_arrange_ && !always_arranges_inside_ && !moving_ && !g_full_layout &&
-        target == frame_.target() && last_proposal_ == proposal) {
-        return;
+    if (placed_ && !needs_arrange_ && target == frame_.target() && last_proposal_ == proposal) {
+        if (!always_arranges_inside_ && !moving_) {
+            return;
+        }
+        // Something inside moves (an animation) or arranges at every layout, and its layout
+        // doesn't follow from this one's: that is laid out again, this one keeps its own.
+        if (!arranges_each_layout()) {
+            moved_by_ = {};
+            place_children_again();
+            update_paint_bounds();
+            return;
+        }
     }
     // How far it moved, for exiting children to follow. A size change moves the origin too (an
     // emptied If in an overlay shrinks toward its alignment), but that isn't movement: then it
@@ -407,6 +409,37 @@ void Element::place(Point position, ProposedSize proposal) {
     needs_arrange_ = false; // first: an invalidation during arrange holds for the next layout
     arrange(target, proposal);
     update_paint_bounds();
+}
+
+bool Element::arranges_each_layout() {
+    if (always_arranges()) {
+        return true;
+    }
+    bool arranges = false;
+    const auto visit = [&](const auto& self, Element& child) -> void {
+        if (!child.placed_ && child.flattened_by_layouts()) {
+            arranges = arranges || child.always_arranges();
+            child.for_each_child([&](Element& inner) { self(self, inner); });
+        }
+    };
+    for_each_child([&](Element& child) { visit(visit, child); });
+    return arranges;
+}
+
+void Element::place_children_again() {
+    const auto again = [](const auto& self, Element& child) -> void {
+        if (!child.placed_) {
+            if (child.flattened_by_layouts()) {
+                child.for_each_child([&](Element& inner) { self(self, inner); });
+            }
+            return;
+        }
+        if (child.last_proposal_) {
+            const Rect target = child.frame_.target();
+            child.place({target.x, target.y}, *child.last_proposal_);
+        }
+    };
+    for_each_child([&](Element& child) { again(again, child); });
 }
 
 void Element::notify_render_size(float scale) {

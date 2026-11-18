@@ -42,21 +42,6 @@ struct Inspection {
     std::vector<std::pair<std::string, std::string>> properties;
 };
 
-// While alive, layout arranges every element, even ones nothing changed for (frames of windows
-// with animations running, whose elements move without being invalidated).
-class FullLayoutScope {
-public:
-    explicit FullLayoutScope(bool full) noexcept;
-    ~FullLayoutScope();
-    FullLayoutScope(const FullLayoutScope&) = delete;
-    FullLayoutScope& operator=(const FullLayoutScope&) = delete;
-    FullLayoutScope(FullLayoutScope&&) = delete;
-    FullLayoutScope& operator=(FullLayoutScope&&) = delete;
-
-private:
-    bool previous_;
-};
-
 // While alive, layout is for a window of `scale` pixels a point; otherwise for 1. Views that place
 // content on whole pixels of the window (scroll views) round with it.
 class LayoutScaleScope {
@@ -99,7 +84,9 @@ public:
     // Memoized per proposal until invalidate_layout().
     Size size_that_fits(ProposedSize proposal);
     // Sizes the element for `proposal`, positions it, and lays out its children. A changed frame
-    // eases to its new place during an animated update (design.md §9.5).
+    // eases to its new place during an animated update (design.md §9.5). When nothing changed for
+    // it, it keeps its layout: only what moves (animations) or arranges at every layout inside it
+    // is laid out again, from where it was placed (ELGSPEC-0029.R12).
     void place(Point position, ProposedSize proposal);
     // Post-layout, even with cached arrangement or culled painting (DPI can change independently).
     // Observers must queue work, not change the retained tree during this traversal.
@@ -264,6 +251,11 @@ private:
     void paint_focus_ring(DisplayList& list) const;
     // After layout: paint_bounds_ and moving_ for this element and everything inside.
     void update_paint_bounds();
+    // Whether it arranges at every layout, itself or through the If/ForEach a layout flattens
+    // into it (pruning their exits).
+    bool arranges_each_layout();
+    // Places each child again where and as it was placed, without arranging.
+    void place_children_again();
     static bool overlaps(const Rect& a, const Rect& b) noexcept {
         return a.x < b.max_x() && b.x < a.max_x() && a.y < b.max_y() && b.y < a.max_y();
     }
