@@ -189,11 +189,16 @@ void ScrollElement::arrange(Rect bounds, ProposedSize) {
 
     apply_request(); // a ScrollPosition call, now that sizes are known
 
-    // Starts at the top-leading corner along the scroll axes; centered across them.
+    // Starts at the top-leading corner along the scroll axes; centered across them. The offset
+    // is on whole pixels of the window (ELGSPEC-0029.R14): scrolled, the content draws the same
+    // pixels, moved.
+    const float scale = layout_scale();
+    const auto whole = [scale](float v) { return std::round(v * scale) / scale; };
     const Point offset = current_offset();
-    const float x = scrolls(Axis::horizontal) ? bounds.x - offset.x
+    drawn_offset_ = {whole(offset.x), whole(offset.y)};
+    const float x = scrolls(Axis::horizontal) ? bounds.x - drawn_offset_.x
                                               : bounds.x + (bounds.width - content_size_.width) / 2;
-    const float y = scrolls(Axis::vertical) ? bounds.y - offset.y
+    const float y = scrolls(Axis::vertical) ? bounds.y - drawn_offset_.y
                                             : bounds.y + (bounds.height - content_size_.height) / 2;
     content_->place({x, y}, inner);
 }
@@ -572,7 +577,7 @@ void ScrollElement::apply_request() {
         }
         if (found) {
             // Content coordinates: where the stack is now, plus the item's offset in it.
-            const float y = stack->frame().y - viewport_.y + offset_y_.current() + *found;
+            const float y = stack->frame().y - viewport_.y + drawn_offset_.y + *found;
             scroll_to({target_.x, y}, nullptr);
         }
         // Items above it get measured as they're built, moving it: aim again for a few layouts.
@@ -588,7 +593,7 @@ void ScrollElement::apply_request() {
 
 void ScrollElement::reveal(Rect rect) {
     // In content coordinates, as currently drawn.
-    const Point offset = current_offset();
+    const Point offset = drawn_offset_;
     const auto fit = [](float start, float length, float view, float current) {
         start -= kRevealMargin;
         length += 2 * kRevealMargin;

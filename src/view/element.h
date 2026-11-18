@@ -57,6 +57,24 @@ private:
     bool previous_;
 };
 
+// While alive, layout is for a window of `scale` pixels a point; otherwise for 1. Views that place
+// content on whole pixels of the window (scroll views) round with it.
+class LayoutScaleScope {
+public:
+    explicit LayoutScaleScope(float scale) noexcept;
+    ~LayoutScaleScope();
+    LayoutScaleScope(const LayoutScaleScope&) = delete;
+    LayoutScaleScope& operator=(const LayoutScaleScope&) = delete;
+    LayoutScaleScope(LayoutScaleScope&&) = delete;
+    LayoutScaleScope& operator=(LayoutScaleScope&&) = delete;
+
+private:
+    float previous_;
+};
+
+// The scale of the window being laid out (LayoutScaleScope), in pixels a point.
+float layout_scale() noexcept;
+
 class Element {
 public:
     Element() = default;
@@ -963,6 +981,7 @@ private:
     std::unique_ptr<Element> content_;
     std::function<Color()> indicator_color_;
     Rect viewport_;     // from the last arrange
+    Point drawn_offset_; // where it placed the content then: the offset on whole window pixels
     Size content_size_; // the content's ideal size there
     Point target_;      // where the offset is heading
     Animated<float> offset_x_{0.f};

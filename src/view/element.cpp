@@ -106,12 +106,24 @@ Element* element_with_accessibility_id(std::uint64_t id) noexcept {
 
 namespace {
 bool g_full_layout = false;
+float g_layout_scale = 1;
 } // namespace
 
 FullLayoutScope::FullLayoutScope(bool full) noexcept : previous_(std::exchange(g_full_layout, full)) {}
 
 FullLayoutScope::~FullLayoutScope() {
     g_full_layout = previous_;
+}
+
+LayoutScaleScope::LayoutScaleScope(float scale) noexcept
+    : previous_(std::exchange(g_layout_scale, scale > 0 ? scale : 1)) {}
+
+LayoutScaleScope::~LayoutScaleScope() {
+    g_layout_scale = previous_;
+}
+
+float layout_scale() noexcept {
+    return g_layout_scale;
 }
 
 void Element::invalidate_layout() noexcept {
