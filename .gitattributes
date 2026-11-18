@@ -4,3 +4,6 @@
 *.otf binary
 # The fuzzers' seed inputs, byte for byte (HTTP responses keep their CR LF).
 fuzz/corpus/** binary
+# vcpkg's ports, byte for byte, as vcpkg's own repository keeps them: checked out with CR LF, a
+# patch's blank context lines no longer apply.
+cmake/ports/** -text
