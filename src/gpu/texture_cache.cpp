@@ -11,9 +11,15 @@
 #include <webgpu/webgpu_cpp.h>
 
 #include <algorithm>
+#include <array>
 #include <bit>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <span>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace elg::detail::gpu {
 
@@ -24,6 +30,53 @@ constexpr char kMipmapWgsl[] =
     ;
 
 constexpr wgpu::TextureFormat kFormat = wgpu::TextureFormat::RGBA8UnormSrgb; // sampling yields linear color
+
+// For each alpha and 8-bit sRGB value: the sRGB encoding of the value's linear light times the
+// alpha. A texture of such texels samples, through its sRGB view, as premultiplied linear color,
+// which its sampler and mipmaps then filter: a transparent texel adds no color around it
+// (ELGSPEC-0024.R1).
+const std::array<std::array<std::uint8_t, 256>, 256>& premultiplying() {
+    static const auto table = [] {
+        const auto to_linear = [](double v) { return v <= 0.04045 ? v / 12.92 : std::pow((v + 0.055) / 1.055, 2.4); };
+        const auto to_srgb = [](double v) {
+            return v <= 0.0031308 ? v * 12.92 : 1.055 * std::pow(v, 1 / 2.4) - 0.055;
+        };
+        std::array<std::array<std::uint8_t, 256>, 256> values{};
+        for (std::size_t alpha = 0; alpha < 256; ++alpha) {
+            for (std::size_t value = 0; value < 256; ++value) {
+                const double linear = to_linear(static_cast<double>(value) / 255) * static_cast<double>(alpha) / 255;
+                values[alpha][value] = static_cast<std::uint8_t>(std::lround(to_srgb(linear) * 255));
+            }
+        }
+        return values;
+    }();
+    return table;
+}
+
+// `rgba` (straight alpha) premultiplied as premultiplying() says; empty when it's opaque, which
+// needs no change.
+std::vector<std::uint8_t> premultiplied(std::span<const std::uint8_t> rgba) {
+    bool opaque = true;
+    for (std::size_t i = 3; i < rgba.size(); i += 4) {
+        if (rgba[i] != 255) {
+            opaque = false;
+            break;
+        }
+    }
+    if (opaque) {
+        return {};
+    }
+    const auto& table = premultiplying();
+    std::vector<std::uint8_t> out(rgba.size());
+    for (std::size_t i = 0; i + 3 < rgba.size(); i += 4) {
+        const auto& row = table[rgba[i + 3]];
+        out[i] = row[rgba[i]];
+        out[i + 1] = row[rgba[i + 1]];
+        out[i + 2] = row[rgba[i + 2]];
+        out[i + 3] = rgba[i + 3];
+    }
+    return out;
+}
 
 } // namespace
 
@@ -111,7 +164,9 @@ wgpu::BindGroup TextureCache::acquire(const wgpu::CommandEncoder& encoder, const
     layout.bytesPerRow = image.width * 4;
     layout.rowsPerImage = image.height;
     const wgpu::Extent3D size{image.width, image.height, 1};
-    device_.queue().WriteTexture(&destination, image.rgba.data(), image.rgba.size(), &layout, &size);
+    const std::vector<std::uint8_t> converted = premultiplied(image.rgba);
+    const std::span<const std::uint8_t> texels = converted.empty() ? image.rgba : std::span(converted);
+    device_.queue().WriteTexture(&destination, texels.data(), texels.size(), &layout, &size);
     generate_mips(encoder, texture.texture, levels);
 
     texture.use.bytes = decoded_texture_bytes(image.width, image.height);

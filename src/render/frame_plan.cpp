@@ -484,7 +484,8 @@ private:
         instance.rect = {r.x, r.y, r.width, r.height};
         instance.shape = {command.uv.x, command.uv.y, command.uv.max_x(), command.uv.max_y()};
         instance.color = {0, 0, 0, std::clamp(command.opacity, 0.f, 1.f)};
-        instance.params = {0, static_cast<float>(QuadKind::image), 0, 0};
+        // Video frames and GPU images have straight alpha: the shader premultiplies it to filter them.
+        instance.params = {1, static_cast<float>(QuadKind::image), 0, 0};
         emit(pass, out, instance, r, clip, {.video = index});
     }
 

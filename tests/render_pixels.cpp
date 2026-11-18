@@ -103,6 +103,10 @@ bool PixelRenderer::draws() const {
     return objects_->device.backend() != wgpu::BackendType::Null;
 }
 
+const wgpu::Device& PixelRenderer::device() const {
+    return objects_->device.handle();
+}
+
 Pixels PixelRenderer::draw(const DisplayList& list, int width, int height, float scale) {
     WindowFrame frame;
     frame.window_id = 1;

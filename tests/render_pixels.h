@@ -10,6 +10,8 @@
 
 #include "display/display_list.h"
 
+#include <webgpu/webgpu_cpp.h>
+
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -37,6 +39,8 @@ public:
 
     // Whether its GPU draws: Dawn's Null backend (no GPU here) draws nothing.
     [[nodiscard]] bool draws() const;
+    // The device it draws with, for textures of the test's.
+    [[nodiscard]] const wgpu::Device& device() const;
 
     // Draws `list` into a `width` x `height` image, at `scale` pixels a point, and reads it back.
     Pixels draw(const elg::detail::DisplayList& list, int width, int height, float scale = 1);

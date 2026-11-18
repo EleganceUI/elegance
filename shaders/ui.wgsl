@@ -62,7 +62,10 @@ const kLayer = 2.0;
 const kLayerShadow = 3.0; // a layer's blurred alpha (R8): uv = texels, color = shadow
 const kBoxShadow = 4.0;   // analytic blurred rounded rect: extra.y = sigma
 const kPath = 5.0;        // a path's coverage mask (R8): uv = texels; fill as for rects
-const kImage = 6.0;       // a raster image (sRGB, straight alpha): uv normalized, color.a = opacity
+// An image: uv normalized, color.a = opacity. A raster image's texture holds premultiplied color
+// (sRGB-encoded), so its sampler and mipmaps filter it as such; params.x = 1: a video frame or GPU
+// image, whose straight alpha this shader premultiplies texel by texel before filtering.
+const kImage = 6.0;
 // Analytic shadow inside a rounded rect: shape = radii, extra.y = sigma, border_color.xy = offset,
 // params.x = spread.
 const kInnerShadow = 7.0;
@@ -290,6 +293,28 @@ fn sample_texels(texels: vec2f) -> vec4f {
     return textureSampleLevel(image, image_sampler, texels / vec2f(textureDimensions(image)), 0.0);
 }
 
+// A straight-alpha image at `uv`, filtered bilinearly with premultiplied alpha: a transparent
+// texel's color adds nothing to the pixels around it (ELGSPEC-0024.R1). Clamped at the edges, as
+// the sampler is.
+fn sample_straight(uv: vec2f) -> vec4f {
+    let size = vec2i(textureDimensions(image));
+    let p = uv * vec2f(size) - 0.5;
+    let base = floor(p);
+    let f = p - base;
+    let last = size - 1;
+    let i0 = clamp(vec2i(base), vec2i(0), last);
+    let i1 = clamp(vec2i(base) + 1, vec2i(0), last);
+    let t00 = premultiplied(textureLoad(image, vec2i(i0.x, i0.y), 0));
+    let t10 = premultiplied(textureLoad(image, vec2i(i1.x, i0.y), 0));
+    let t01 = premultiplied(textureLoad(image, vec2i(i0.x, i1.y), 0));
+    let t11 = premultiplied(textureLoad(image, vec2i(i1.x, i1.y), 0));
+    return mix(mix(t00, t10, f.x), mix(t01, t11, f.x), f.y);
+}
+
+fn premultiplied(straight: vec4f) -> vec4f {
+    return vec4f(straight.rgb * straight.a, straight.a);
+}
+
 fn shade_glyph(in: Varyings) -> vec4f {
     let field = textureSampleLevel(image, image_sampler, in.uv, 0.0);
     // 0.5 is the glyph edge; scale the field's units to screen pixels for a 1px AA ramp.
@@ -504,8 +529,12 @@ fn fs_main(in: Varyings) -> @location(0) vec4f {
     } else if (kind == kPath) {
         color = fill_color(in) * sample_texels(in.uv).r;
     } else if (kind == kImage) {
-        let texel = textureSampleGrad(image, image_sampler, in.uv, uv_dx, uv_dy); // linear (sRGB texture), straight alpha
-        color = vec4f(texel.rgb * texel.a, texel.a) * in.color.a;
+        if (in.params.x > 0.5) {
+            color = sample_straight(in.uv) * in.color.a;
+        } else {
+            // Linear (sRGB texture) and premultiplied, mipmaps too.
+            color = textureSampleGrad(image, image_sampler, in.uv, uv_dx, uv_dy) * in.color.a;
+        }
     } else if (kind == kInnerShadow) {
         color = shade_inner_shadow(in);
     } else if (kind == kLayerInnerShadow) {
