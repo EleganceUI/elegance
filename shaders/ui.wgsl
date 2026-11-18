@@ -57,7 +57,9 @@ struct Varyings {
 const kRect = 0.0;        // rounded rect: shape = radii, fill (params.z paint), border
 const kGlyph = 1.0;       // MSDF glyph: uv = atlas uv, params.x = distance range in px
 // A layer's texture: uv = texels, color.a = opacity, params.x = color matrix index + 1 (0: none),
-// params.z = blend mode (0: normal), border_color.xy = the backdrop snapshot's origin (blending).
+// params.z = blend mode (0: normal), border_color.xy = the backdrop snapshot's origin (blending),
+// params.w = 1: texel for texel, unfiltered (a copy at whole pixels, exact however the uv is
+// interpolated).
 const kLayer = 2.0;
 const kLayerShadow = 3.0; // a layer's blurred alpha (R8): uv = texels, color = shadow
 const kBoxShadow = 4.0;   // analytic blurred rounded rect: extra.y = sigma
@@ -508,7 +510,12 @@ fn blend(source: vec4f, in: Varyings) -> vec4f {
 }
 
 fn shade_layer(in: Varyings) -> vec4f {
-    var color = sample_texels(in.uv);
+    var color: vec4f;
+    if (in.params.w > 0.5) {
+        color = textureLoad(image, vec2i(floor(in.uv)), 0);
+    } else {
+        color = sample_texels(in.uv);
+    }
     if (in.params.x > 0.0) {
         color = apply_matrix(color, i32(in.params.x) - 1);
     }

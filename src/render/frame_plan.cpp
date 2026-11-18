@@ -96,12 +96,29 @@ std::uint64_t fnv1a(const void* data, std::size_t size, std::uint64_t hash = 146
     return hash;
 }
 
+void set_clip(QuadInstance& instance, const Clip& clip) {
+    instance.clip_rect = {clip.rect.x, clip.rect.y, clip.rect.width, clip.rect.height};
+    instance.clip_radii = {clip.radii.top_left, clip.radii.top_right, clip.radii.bottom_right, clip.radii.bottom_left};
+    instance.clip_scissor = {clip.scissor.x, clip.scissor.y, clip.scissor.width, clip.scissor.height};
+}
+
+// A composite of a layer image: `rect` in pass pixels shows `texels` of it.
+QuadInstance layer_quad(const Rect& rect, const Rect& texels, float opacity, QuadKind kind = QuadKind::layer) {
+    QuadInstance instance;
+    instance.rect = {rect.x, rect.y, rect.width, rect.height};
+    instance.shape = {texels.x, texels.y, texels.max_x(), texels.max_y()};
+    instance.color = {0, 0, 0, std::clamp(opacity, 0.f, 1.f)};
+    instance.params = {0, static_cast<float>(kind), 0, 0};
+    instance.gradient = {1, 0, 0, 1}; // no transform
+    return instance;
+}
+
 class Planner {
 public:
     Planner(const DisplayList& list, FramePlan& plan, std::uint32_t width, std::uint32_t height, PathHashes& paths,
-            std::uint32_t max_texture_side)
+            std::uint32_t max_texture_side, std::optional<Rect> area)
         : list_(list), plan_(plan), paths_(paths), scale_(list.scale),
-          max_side_(std::max(1u, std::min(kMaxLayerSize, max_texture_side))) {
+          max_side_(std::max(1u, std::min(kMaxLayerSize, max_texture_side))), area_(area) {
         plan_.main.width = width;
         plan_.main.height = height;
     }
@@ -110,7 +127,26 @@ public:
         std::vector<QuadInstance> main_instances;
         std::size_t index = 0;
         const Rect window{0, 0, static_cast<float>(plan_.main.width), static_cast<float>(plan_.main.height)};
-        build(index, {0, 0}, plan_.main, main_instances, window);
+        // Only the area, when there is one: as a clip around everything, which the shader also
+        // keeps every pixel within.
+        Clip root;
+        if (area_) {
+            root.scissor = intersect(window, *area_);
+            root.active = true;
+        }
+        if (area_) {
+            // What the window held there goes: the area is drawn again from its background. (A
+            // mask that keeps nothing, then the background over it, so a clear background works.)
+            QuadInstance clear;
+            clear.rect = {root.scissor.x, root.scissor.y, root.scissor.width, root.scissor.height};
+            clear.params = {0, static_cast<float>(QuadKind::rect), static_cast<float>(PaintKind::solid), 0};
+            emit(plan_.main, main_instances, clear, root.scissor, root, {.mask = true});
+            clear.color = to_linear_premultiplied(list_.clear_color);
+            if (clear.color[3] > 0) {
+                emit(plan_.main, main_instances, clear, root.scissor, root, {});
+            }
+        }
+        build(index, {0, 0}, plan_.main, main_instances, area_ ? root.scissor : window, root);
 
         // One instance buffer: layers first, in render order, then the main pass.
         for (std::size_t i = 0; i < plan_.layers.size(); ++i) {
@@ -144,25 +180,6 @@ private:
     // Converts a rect in window points to pixels relative to the current pass's origin.
     [[nodiscard]] Rect to_pixels(const Rect& r, Point origin) const {
         return {r.x * scale_ - origin.x, r.y * scale_ - origin.y, r.width * scale_, r.height * scale_};
-    }
-
-    static void set_clip(QuadInstance& instance, const Clip& clip) {
-        instance.clip_rect = {clip.rect.x, clip.rect.y, clip.rect.width, clip.rect.height};
-        instance.clip_radii = {clip.radii.top_left, clip.radii.top_right, clip.radii.bottom_right,
-                               clip.radii.bottom_left};
-        instance.clip_scissor = {clip.scissor.x, clip.scissor.y, clip.scissor.width, clip.scissor.height};
-    }
-
-    // A composite of a layer image: `rect` in pass pixels shows `texels` of it.
-    static QuadInstance layer_quad(const Rect& rect, const Rect& texels, float opacity,
-                                   QuadKind kind = QuadKind::layer) {
-        QuadInstance instance;
-        instance.rect = {rect.x, rect.y, rect.width, rect.height};
-        instance.shape = {texels.x, texels.y, texels.max_x(), texels.max_y()};
-        instance.color = {0, 0, 0, std::clamp(opacity, 0.f, 1.f)};
-        instance.params = {0, static_cast<float>(kind), 0, 0};
-        instance.gradient = {1, 0, 0, 1}; // no transform
-        return instance;
     }
 
     struct Emit {
@@ -823,8 +840,8 @@ private:
     // LayerMaskCommand, or the end. `origin` is the pass's top-left corner in window pixels.
     // `visible`: the part of the pass that can show, in its pixels.
     void build(std::size_t& index, Point origin, PlanPass& pass, std::vector<QuadInstance>& out,
-               const Rect& visible) {
-        std::vector<Clip> clips{Clip{}};
+               const Rect& visible, const Clip& root = Clip{}) {
+        std::vector<Clip> clips{root};
         for (; index < list_.commands.size(); ++index) {
             const DrawCommand& command = list_.commands[index];
             if (std::holds_alternative<PopLayerCommand>(command) || std::holds_alternative<LayerMaskCommand>(command)) {
@@ -860,10 +877,30 @@ private:
     PathHashes& paths_;
     float scale_;
     std::uint32_t max_side_; // of layers and path masks
+    std::optional<Rect> area_; // of the window, which alone it draws
     std::vector<std::vector<QuadInstance>> layer_instances_;
 };
 
 } // namespace
+
+std::vector<QuadInstance> window_overlay(std::uint32_t width, std::uint32_t height, std::span<const Rect> tinted) {
+    const Rect window{0, 0, static_cast<float>(width), static_cast<float>(height)};
+    std::vector<QuadInstance> instances{layer_quad(window, window, 1)};
+    instances[0].params[3] = 1; // a copy: texel for texel
+    // Magenta, a quarter opaque: shows over light content and dark alike.
+    const std::array<float, 4> tint = to_linear_premultiplied(Color{1, 0, 1, 0.25f});
+    for (const Rect& r : tinted) {
+        QuadInstance instance;
+        instance.rect = {r.x, r.y, r.width, r.height};
+        instance.color = tint;
+        instance.params = {0, static_cast<float>(QuadKind::rect), static_cast<float>(PaintKind::solid), 0};
+        instances.push_back(instance);
+    }
+    for (QuadInstance& instance : instances) {
+        set_clip(instance, Clip{});
+    }
+    return instances;
+}
 
 float blur_reach(float sigma) {
     return std::ceil(kBlurSigmas * sigma) + 2 + static_cast<float>(downsample_for(sigma));
@@ -917,11 +954,11 @@ void PathHashes::end_frame() {
 }
 
 FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t height, PathHashes* paths,
-                     std::uint32_t max_texture_side) {
+                     std::uint32_t max_texture_side, std::optional<Rect> area) {
     FramePlan plan;
     PathHashes once;
     PathHashes& hashes = paths ? *paths : once;
-    Planner(list, plan, width, height, hashes, max_texture_side).run();
+    Planner(list, plan, width, height, hashes, max_texture_side, area).run();
     hashes.end_frame();
     return plan;
 }

@@ -13,6 +13,7 @@
 #include <limits>
 #include <memory>
 #include <optional>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -63,6 +64,11 @@ void append_path_fan(const PlanPath& path, std::vector<std::array<float, 2>>& ve
 // How far, in pixels, a blur of `sigma` pixels reads and draws around what it blurs: 4 sigma, its
 // edge texels, and a texel at the resolution it runs at.
 float blur_reach(float sigma);
+
+// What shows a window's kept image (the first instance, a layer composite of the image group) on
+// the `width` x `height` window, then tints `tinted` (the damage, ELGSPEC-0029.R11).
+std::vector<gpu::QuadInstance> window_overlay(std::uint32_t width, std::uint32_t height,
+                                              std::span<const Rect> tinted);
 
 // What planning remembers of the paths a window drew in its previous frame: by polygon set,
 // their content hash and fan size, so that a path drawn again is not hashed again. The sets
@@ -151,9 +157,13 @@ struct FramePlan {
 // window, through their clips, and what their effects reach from around that (blurs, shadows);
 // content of which nothing shows gets none. They are at most 8192 pixels, and `max_texture_side`
 // (the device's), on a side.
+// `area` (window pixels): the plan draws the window only there, as if clipped to it, and its
+// layers only what that part needs (ELGSPEC-0029.R3). The window pass draws over what the window
+// holds, without clearing it.
 FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t height,
                      PathHashes* paths = nullptr,
-                     std::uint32_t max_texture_side = std::numeric_limits<std::uint32_t>::max());
+                     std::uint32_t max_texture_side = std::numeric_limits<std::uint32_t>::max(),
+                     std::optional<Rect> area = std::nullopt);
 
 } // namespace elg::detail
 
