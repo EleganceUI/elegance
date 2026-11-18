@@ -298,7 +298,7 @@ void WindowTarget::State::render(const WindowFrame& frame, const RenderResources
                                                 presenter_->height(), drawn, damage, frame, resources, acquired_videos);
     device_.submit(commands);
     resources.videos.release(acquired_videos); // back to the decoder
-    presenter_->end_frame(false);
+    presenter_->end_frame(false, drawn);
     device_.tick();
     previous_ = std::move(now);
     shown_ = Shown{width, height, frame.list.scale, clear, presenter_->surfaces_made()};

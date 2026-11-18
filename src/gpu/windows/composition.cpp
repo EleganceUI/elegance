@@ -18,12 +18,15 @@
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <exception>
 #include <format>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace elg::detail::gpu {
 
@@ -222,13 +225,13 @@ wgpu::TextureView CompositionTarget::begin_frame(std::uint32_t width, std::uint3
     return begin_access();
 }
 
-void CompositionTarget::end_frame(bool /*reads_backdrops*/) {
+void CompositionTarget::end_frame(bool /*reads_backdrops*/, std::span<const Rect> drawn) {
     if (!impl_->context4) {
         // Without shared fences: the rendering must be finished before Direct3D copies the
         // image, and the copy before WebGPU renders into it again.
         end_access();
         device_.wait_idle();
-        present();
+        present(drawn);
         wait_for_copy();
         return;
     }
@@ -240,7 +243,7 @@ void CompositionTarget::end_frame(bool /*reads_backdrops*/) {
         check_hr(impl_->context4->Wait(opened(state.fences[i]), state.signaledValues[i]),
                  "have Direct3D wait for the rendering");
     }
-    present();
+    present(drawn);
     check_hr(impl_->context4->Signal(impl_->copied.Get(), ++impl_->copied_value), "signal the composition copy");
     impl_->context->Flush();
 }
@@ -382,6 +385,7 @@ bool CompositionTarget::prepare(std::uint32_t width, std::uint32_t height) {
     destroy_image();
     width_ = width;
     height_ = height;
+    presented_ = false; // new or resized buffers: the next frame is shown whole
 
     // The composition swapchain: premultiplied alpha, which DWM blends with what's behind.
     if (!impl_->swapchain) {
@@ -468,15 +472,39 @@ bool CompositionTarget::prepare(std::uint32_t width, std::uint32_t height) {
     return true;
 }
 
-void CompositionTarget::present() {
+void CompositionTarget::present(std::span<const Rect> drawn) {
     ComPtr<ID3D11Texture2D> back_buffer;
     check_hr(impl_->swapchain->GetBuffer(0, IID_PPV_ARGS(&back_buffer)), "get the composition back buffer");
+    // The whole image: outside the drawn parts, the flip model's back buffer must hold what the
+    // last frame showed, which the image (the window's kept image) still does.
     impl_->context->CopyResource(back_buffer.Get(), impl_->shared.Get());
+    // Only the drawn parts are new, which DWM composes again (ELGSPEC-0029.R10): whole pixels,
+    // within the image. None (the whole image) for the first frame these buffers show.
+    std::vector<RECT> dirty;
+    if (presented_) {
+        for (const Rect& rect : drawn) {
+            const RECT pixels{
+                std::clamp(static_cast<LONG>(std::floor(rect.x)), LONG{0}, static_cast<LONG>(width_)),
+                std::clamp(static_cast<LONG>(std::floor(rect.y)), LONG{0}, static_cast<LONG>(height_)),
+                std::clamp(static_cast<LONG>(std::ceil(rect.x + rect.width)), LONG{0}, static_cast<LONG>(width_)),
+                std::clamp(static_cast<LONG>(std::ceil(rect.y + rect.height)), LONG{0}, static_cast<LONG>(height_))};
+            if (pixels.right > pixels.left && pixels.bottom > pixels.top) {
+                dirty.push_back(pixels);
+            }
+        }
+        if (dirty.empty()) {
+            dirty.push_back(RECT{0, 0, 1, 1}); // nothing new to show: the least DXGI takes
+        }
+    }
+    DXGI_PRESENT_PARAMETERS parameters{};
+    parameters.DirtyRectsCount = static_cast<UINT>(dirty.size());
+    parameters.pDirtyRects = dirty.empty() ? nullptr : dirty.data();
     // Sync interval 1: shown at the next vblank, and the frame-latency object wait_until_ready()
     // waits on is signaled only as queued frames reach the screen, so animation runs at the
     // display's rate. With 0 that object is signaled as soon as the present is queued, and an
     // animating window renders as fast as the GPU allows (hundreds of frames a second).
-    check_hr(impl_->swapchain->Present(1, 0), "present to the composition swapchain");
+    check_hr(impl_->swapchain->Present1(1, 0, &parameters), "present to the composition swapchain");
+    presented_ = true;
 }
 
 void CompositionTarget::wait_for_copy() {

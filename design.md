@@ -1652,6 +1652,9 @@ Separate render thread from day one (decided).
       on the GPU (ELGSPEC-0023.R5). The present uses sync interval 1: with 0 the waitable is
       signaled as soon as the present is queued, and an animating window rendered ~900 fps on a
       75 Hz display (~50% GPU).
+    - Each frame is presented with `Present1`, the area it drew as the dirty rects, so DWM
+      composes only that again (ELGSPEC-0029.R10). The whole image is still copied into the back
+      buffer, which the flip model needs to match the last frame outside them.
     - `ELG_PRESENT=surface` restores WebGPU surfaces for opaque windows.
     - `ELG_PRESENT=swapchain`, or RenderDoc being attached (`renderdoc.dll` loaded), puts every
       window on a WebGPU surface and creates no Direct3D objects of its own. RenderDoc can't capture

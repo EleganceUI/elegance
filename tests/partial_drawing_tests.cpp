@@ -175,6 +175,34 @@ TEST_CASE("a frame in which nothing changed is neither drawn nor presented", "[.
     CHECK(renderer.frames_presented() == 2);
 }
 
+TEST_CASE("a frame presents the area it drew", "[.gpu][damage]") {
+    PixelRenderer renderer;
+    if (!renderer.draws()) {
+        SKIP("the GPU here draws nothing");
+    }
+    detail::DisplayList list;
+    list.clear_color = Color::white;
+    list.commands.emplace_back(detail::RectCommand{.rect = {10, 10, 20, 20}, .fill = fill(0, 0, 1)});
+    // The first frame draws the whole window.
+    renderer.draw(list, 100, 100);
+    REQUIRE(renderer.presented_area().size() == 1);
+    CHECK(renderer.presented_area()[0].x == 0);
+    CHECK(renderer.presented_area()[0].width == 100);
+    CHECK(renderer.presented_area()[0].height == 100);
+
+    // Then only where the rect was and is: the presenter gets that much (ELGSPEC-0029.R10).
+    std::get<detail::RectCommand>(list.commands[0]).rect.x = 50;
+    renderer.draw(list, 100, 100);
+    const std::vector<Rect> presented = renderer.presented_area();
+    REQUIRE_FALSE(presented.empty());
+    float area = 0;
+    for (const Rect& rect : presented) {
+        area += rect.width * rect.height;
+        CHECK(rect.y + rect.height <= 40); // nothing below the rect's rows (and their edges)
+    }
+    CHECK(area < 100.f * 100.f / 2); // well under the window's
+}
+
 TEST_CASE("the damage tint shows each frame's damage, and nothing else", "[.gpu][damage]") {
     PixelRenderer renderer;
     if (!renderer.draws()) {

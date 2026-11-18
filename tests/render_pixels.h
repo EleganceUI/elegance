@@ -47,6 +47,8 @@ public:
     Pixels draw(const elg::detail::DisplayList& list, int width, int height, float scale = 1);
     // How many of those frames were drawn and presented: not those in which nothing changed.
     [[nodiscard]] int frames_presented() const;
+    // The parts of the image the last frame presented drew (pixels), as its presenter got them.
+    [[nodiscard]] std::vector<elg::Rect> presented_area() const;
     // How many tiles of scroll views it drew: not those it kept.
     [[nodiscard]] int tiles_drawn() const;
 

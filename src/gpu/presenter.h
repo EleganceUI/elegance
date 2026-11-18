@@ -8,9 +8,12 @@
 #include "gpu/surface_source.h"
 #include "gpu/webgpu_types.h"
 
+#include <elg/geometry.h>
+
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <span>
 
 namespace elg::detail::gpu {
 
@@ -42,8 +45,10 @@ public:
     [[nodiscard]] virtual wgpu::Texture copy_source() const = 0;
     // Shows the frame rendered into the image, once its commands were submitted.
     // `reads_backdrops`: the frame read backdrops, which later frames then read from the image
-    // directly if the presenter can make it copyable.
-    virtual void end_frame(bool reads_backdrops) = 0;
+    // directly if the presenter can make it copyable. `drawn`: the parts of the image the frame
+    // drew (pixels); the rest is as the last frame left it. A presenter that can show only those
+    // parts does (ELGSPEC-0029.R10).
+    virtual void end_frame(bool reads_backdrops, std::span<const Rect> drawn) = 0;
     // How many surfaces it made for the window, if it presents through them: a new one has none
     // of what the window showed (ELGSPEC-0029.R6).
     [[nodiscard]] virtual std::uint64_t surfaces_made() const noexcept { return 0; }

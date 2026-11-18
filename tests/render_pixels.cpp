@@ -58,15 +58,19 @@ public:
     [[nodiscard]] std::uint32_t width() const noexcept override { return width_; }
     [[nodiscard]] std::uint32_t height() const noexcept override { return height_; }
     [[nodiscard]] wgpu::Texture copy_source() const override { return texture_; }
-    void end_frame(bool /*reads_backdrops*/) override {}
+    void end_frame(bool /*reads_backdrops*/, std::span<const elg::Rect> drawn) override {
+        presented_.assign(drawn.begin(), drawn.end());
+    }
 
     [[nodiscard]] const wgpu::Texture& texture() const noexcept { return texture_; }
+    [[nodiscard]] const std::vector<elg::Rect>& presented() const noexcept { return presented_; }
 
 private:
     const gpu::Device& device_;
     wgpu::Texture texture_;
     std::uint32_t width_ = 0;
     std::uint32_t height_ = 0;
+    std::vector<elg::Rect> presented_;
 };
 
 } // namespace
@@ -110,6 +114,10 @@ const wgpu::Device& PixelRenderer::device() const {
 
 int PixelRenderer::frames_presented() const {
     return objects_->target->frames_presented();
+}
+
+std::vector<elg::Rect> PixelRenderer::presented_area() const {
+    return objects_->presenter->presented();
 }
 
 int PixelRenderer::tiles_drawn() const {

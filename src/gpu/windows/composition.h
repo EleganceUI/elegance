@@ -48,7 +48,8 @@ public:
     // Has Direct3D copy the frame into the swapchain once the GPU has rendered it, and show it. With
     // shared fences, neither the copy nor the next frame's rendering waits here: each waits for the
     // other on the GPU (ELGSPEC-0023.R5). Without, it waits for the GPU here.
-    void end_frame(bool reads_backdrops) override;
+    // `drawn` is what the swapchain presents as changed (Present1's dirty rects).
+    void end_frame(bool reads_backdrops, std::span<const Rect> drawn) override;
     // Backdrops aren't read from the shared image: windows that read them draw offscreen.
     [[nodiscard]] wgpu::Texture copy_source() const override { return wgpu::Texture(); }
     [[nodiscard]] wgpu::TextureFormat view_format() const noexcept override {
@@ -85,9 +86,9 @@ private:
     void wait_until_ready(unsigned timeout_ms);
     // The color shown where no frame covers the window yet (opaque windows; sRGB).
     void set_background(const std::array<float, 4>& srgb);
-    // Copies the image into the swapchain and shows it: Direct3D's context must wait for the
-    // rendering first (on the GPU, or the render thread for it).
-    void present();
+    // Copies the image into the swapchain and shows it, `drawn` as the changed part: Direct3D's
+    // context must wait for the rendering first (on the GPU, or the render thread for it).
+    void present(std::span<const Rect> drawn);
     // Without shared fences: waits until Direct3D's copy into the swapchain is done.
     void wait_for_copy();
 
@@ -97,6 +98,7 @@ private:
     std::unique_ptr<Impl> impl_;
     std::uint32_t width_ = 0;
     std::uint32_t height_ = 0;
+    bool presented_ = false; // the swapchain's images, as they are now, showed a frame
     bool transparent_;
     std::optional<std::array<float, 4>> background_;
 };
