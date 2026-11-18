@@ -639,6 +639,9 @@ int App::run() {
     const ScopeExit forget_accent([] { g_accent_color = nullptr; });
 
     std::vector<std::unique_ptr<LiveWindow>> windows;
+    // Before the windows go, which file dialogs may be attached to: the dialogs still open close,
+    // and their callbacks go uncalled (ELGSPEC-0018.R4).
+    const ScopeExit close_dialogs([] { platform::close_file_dialogs(); });
     const auto find_window = [&](std::uint32_t id) {
         return std::ranges::find_if(windows, [&](const auto& live) { return live->window.id() == id; });
     };

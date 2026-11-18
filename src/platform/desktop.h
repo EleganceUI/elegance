@@ -18,6 +18,10 @@ namespace elg::detail::platform {
 // TrayIcons the app still holds then do nothing, and call nothing when they're destroyed.
 void remove_tray_icons();
 
+// Ends the file dialogs still open as a run ends (ELGSPEC-0018.R4): their `done` callbacks are
+// destroyed without being called, then the dialogs close. UI thread, while the windows exist.
+void close_file_dialogs();
+
 // Throws elg::UsageError, naming `what`, when no App runs: what the desktop functions check first.
 void require_app(const char* what);
 

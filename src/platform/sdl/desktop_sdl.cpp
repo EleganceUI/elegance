@@ -22,7 +22,11 @@
 #include <algorithm>
 #include <cmath>
 #include <format>
+#include <cstdint>
+#include <functional>
 #include <list>
+#include <map>
+#include <memory>
 #include <mutex>
 #include <vector>
 
@@ -79,22 +83,48 @@ struct DialogRequest {
     }
 };
 
-// Called by SDL, maybe on another thread, once the dialog closes.
-void SDLCALL dialog_closed(void* userdata, const char* const* files, int) {
-    auto* request = static_cast<DialogRequest*>(userdata);
-    std::vector<fs::path> chosen;
-    if (files) {
-        for (const char* const* file = files; *file; ++file) {
-            chosen.push_back(from_utf8(*file));
-        }
-    } else {
-        log_warning("file dialog: {}", SDL_GetError());
+// The dialogs open, by the id SDL hands back: SDL may read a request's filters until it calls
+// dialog_closed(), on any thread. A run that ends destroys their `done` callbacks first.
+std::mutex g_dialogs_mutex;
+std::map<std::uintptr_t, std::unique_ptr<DialogRequest>> g_dialogs;
+std::uintptr_t g_next_dialog = 1;
+
+// Shows a dialog for `request` with `show`, which gets its id as SDL's userdata.
+void show_dialog(std::unique_ptr<DialogRequest> request, const std::function<void(DialogRequest&, void*)>& show) {
+    DialogRequest& shown = *request;
+    std::uintptr_t id = 0;
+    {
+        const std::scoped_lock lock(g_dialogs_mutex);
+        id = g_next_dialog++;
+        g_dialogs.emplace(id, std::move(request));
     }
-    detail::post_ui_task([request, chosen = std::move(chosen)] {
-        std::unique_ptr<DialogRequest> owned(request);
-        if (owned->done) {
-            owned->done(chosen);
+    show(shown, reinterpret_cast<void*>(id)); // NOLINT(performance-no-int-to-ptr): an id, not a pointer
+}
+
+// Called by SDL, maybe on another thread, once the dialog closes: `done` runs on the UI thread,
+// unless the run ended (then it's gone already). Nothing may escape it (ELGSPEC-0002.R10).
+void SDLCALL dialog_closed(void* userdata, const char* const* files, int) {
+    detail::run_foreign_callback([&] {
+        std::unique_ptr<DialogRequest> request;
+        {
+            const std::scoped_lock lock(g_dialogs_mutex);
+            if (const auto found = g_dialogs.find(reinterpret_cast<std::uintptr_t>(userdata)); found != g_dialogs.end()) {
+                request = std::move(found->second);
+                g_dialogs.erase(found);
+            }
         }
+        if (!request || !request->done) {
+            return;
+        }
+        std::vector<fs::path> chosen;
+        if (files) {
+            for (const char* const* file = files; *file; ++file) {
+                chosen.push_back(from_utf8(*file));
+            }
+        } else {
+            log_warning("file dialog: {}", SDL_GetError());
+        }
+        detail::post_ui_task([done = std::move(request->done), chosen = std::move(chosen)] { done(chosen); });
     });
 }
 
@@ -106,10 +136,11 @@ void choose_files(const OpenFilesOptions& options, std::function<void(std::vecto
     request->set_filters(options.filters);
     request->location = utf8(options.directory);
     request->done = std::move(done);
-    DialogRequest* raw = request.release();
-    SDL_ShowOpenFileDialog(dialog_closed, raw, SDL_GetKeyboardFocus(), raw->filters.data(),
-                           static_cast<int>(raw->filters.size()), raw->location.empty() ? nullptr : raw->location.c_str(),
-                           options.multiple);
+    show_dialog(std::move(request), [&](DialogRequest& shown, void* id) {
+        SDL_ShowOpenFileDialog(dialog_closed, id, SDL_GetKeyboardFocus(), shown.filters.data(),
+                               static_cast<int>(shown.filters.size()),
+                               shown.location.empty() ? nullptr : shown.location.c_str(), options.multiple);
+    });
 }
 
 void choose_save_file(const SaveFileOptions& options, std::function<void(std::optional<fs::path>)> done) {
@@ -123,9 +154,11 @@ void choose_save_file(const SaveFileOptions& options, std::function<void(std::op
             done(files.empty() ? std::nullopt : std::optional(files.front()));
         }
     };
-    DialogRequest* raw = request.release();
-    SDL_ShowSaveFileDialog(dialog_closed, raw, SDL_GetKeyboardFocus(), raw->filters.data(),
-                           static_cast<int>(raw->filters.size()), raw->location.empty() ? nullptr : raw->location.c_str());
+    show_dialog(std::move(request), [](DialogRequest& shown, void* id) {
+        SDL_ShowSaveFileDialog(dialog_closed, id, SDL_GetKeyboardFocus(), shown.filters.data(),
+                               static_cast<int>(shown.filters.size()),
+                               shown.location.empty() ? nullptr : shown.location.c_str());
+    });
 }
 
 void choose_folders(const ChooseFolderOptions& options, std::function<void(std::vector<fs::path>)> done) {
@@ -133,9 +166,25 @@ void choose_folders(const ChooseFolderOptions& options, std::function<void(std::
     auto request = std::make_unique<DialogRequest>();
     request->location = utf8(options.directory);
     request->done = std::move(done);
-    DialogRequest* raw = request.release();
-    SDL_ShowOpenFolderDialog(dialog_closed, raw, SDL_GetKeyboardFocus(),
-                             raw->location.empty() ? nullptr : raw->location.c_str(), options.multiple);
+    show_dialog(std::move(request), [&](DialogRequest& shown, void* id) {
+        SDL_ShowOpenFolderDialog(dialog_closed, id, SDL_GetKeyboardFocus(),
+                                 shown.location.empty() ? nullptr : shown.location.c_str(), options.multiple);
+    });
+}
+
+void detail::platform::close_file_dialogs() {
+    // Destroyed here, on the UI thread, without being called: the run is over.
+    std::vector<std::function<void(std::vector<fs::path>)>> abandoned;
+    {
+        const std::scoped_lock lock(g_dialogs_mutex);
+        for (const auto& [id, request] : g_dialogs) {
+            abandoned.push_back(std::move(request->done));
+        }
+    }
+    abandoned.clear();
+    // Each closed dialog calls dialog_closed(), which frees its request. A dialog that doesn't
+    // close keeps its request until it does: SDL may still read its filters.
+    SDL_CloseFileDialogs();
 }
 
 // --- Notifications ---
