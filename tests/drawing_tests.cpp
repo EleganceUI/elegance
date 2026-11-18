@@ -215,7 +215,8 @@ double gaussian_share(double c, double lo, double hi, double sigma) {
     if (first == last) {
         return (hi - lo) * gaussian_between(c, first, first + 1, sigma);
     }
-    return (first + 1 - lo) * gaussian_between(c, first, first + 1, sigma) + gaussian_between(c, first + 1, last, sigma) +
+    return (first + 1 - lo) * gaussian_between(c, first, first + 1, sigma) +
+           gaussian_between(c, first + 1, last, sigma) +
            (hi - last) * gaussian_between(c, last, last + 1, sigma);
 }
 
@@ -270,8 +271,17 @@ TEST_CASE("blurs and shadows are Gaussian blurs of half their radius times the s
     // Radius in points and the window's scale; sigma = radius * scale / 2 pixels, from none and
     // less than a pixel, where the pixels' squares count most, to the widest, which run at 1/32
     // the resolution.
-    const auto [radius, scale] = GENERATE(table<float, float>(
-        {{0, 1}, {0.5f, 1}, {1, 1}, {1, 2}, {3, 1}, {20, 1}, {60, 1}, {100, 2}, {200, 2}}));
+    const auto [radius, scale] = GENERATE(table<float, float>({
+        {0.f, 1.f},
+        {0.5f, 1.f},
+        {1.f, 1.f},
+        {1.f, 2.f},
+        {3.f, 1.f},
+        {20.f, 1.f},
+        {60.f, 1.f},
+        {100.f, 2.f},
+        {200.f, 2.f},
+    }));
     const double sigma = static_cast<double>(radius * scale) / 2;
     const auto margin = static_cast<float>(std::ceil(4 * sigma) + 8);
     const float side = 100;                        // the rect's, in points
@@ -312,7 +322,8 @@ TEST_CASE("blurs and shadows are Gaussian blurs of half their radius times the s
               4);
     }
     SECTION("an analytic box shadow") {
-        list.commands.emplace_back(detail::BoxShadowCommand{.rect = rect, .color = Color::black, .blur_radius = radius});
+        list.commands.emplace_back(
+            detail::BoxShadowCommand{.rect = rect, .color = Color::black, .blur_radius = radius});
         const Pixels pixels = renderer.draw(list, size, size, scale);
         CHECK(largest_difference(pixels, [&](int x, int y) { return 1 - blurred_cover(pixels_rect, sigma, x, y); }) <=
               4);
