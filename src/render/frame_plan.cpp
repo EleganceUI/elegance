@@ -282,7 +282,7 @@ private:
     void add_backdrop(const BackdropFill& backdrop_fill, QuadInstance instance, const Rect& extent, PlanPass& pass,
                       std::vector<QuadInstance>& out, const Clip& clip, int path) {
         const float sigma = std::max(0.f, backdrop_fill.blur * scale_ / 2);
-        const float reach = std::ceil(kBlurSigmas * sigma) + 2 + static_cast<float>(downsample_for(sigma));
+        const float reach = blur_reach(sigma);
         const Rect bounds{0, 0, static_cast<float>(pass.width), static_cast<float>(pass.height)};
         const Rect wanted = intersect(extent.inset(-reach), bounds);
         const float x0 = std::floor(wanted.x);
@@ -644,10 +644,7 @@ private:
             const float y0 = std::min(a.y, b.y);
             return Rect{x0, y0, std::max(a.max_x(), b.max_x()) - x0, std::max(a.max_y(), b.max_y()) - y0};
         };
-        // As far as a blur reads: kBlurSigmas sigmas, its edge texels, and a texel at its resolution.
-        const auto reach = [](float sigma) {
-            return std::ceil(kBlurSigmas * sigma) + 2 + static_cast<float>(downsample_for(sigma));
-        };
+        const auto reach = blur_reach;
         Rect needed = v;
         if (blur_sigma) {
             needed = unite(needed, v.inset(-reach(*blur_sigma)));
@@ -867,6 +864,10 @@ private:
 };
 
 } // namespace
+
+float blur_reach(float sigma) {
+    return std::ceil(kBlurSigmas * sigma) + 2 + static_cast<float>(downsample_for(sigma));
+}
 
 void append_path_fan(const PlanPath& path, std::vector<std::array<float, 2>>& vertices) {
     const float k = path.scale;

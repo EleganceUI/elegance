@@ -206,16 +206,17 @@ std::optional<Rect> draw_bounds(const DrawCommand& command) {
                           [](const ImageCommand& c) -> std::optional<Rect> { return c.rect; },
                           [](const VideoCommand& c) -> std::optional<Rect> { return c.rect; },
                           [](const BoxShadowCommand& c) -> std::optional<Rect> {
-                              // The Gaussian is negligible beyond three sigma.
-                              return c.rect.inset(-1.5f * c.blur_radius - 1);
+                              // As far as it's drawn: 4 sigma, and a pixel.
+                              return c.rect.inset(-2 * c.blur_radius - 1);
                           },
                           [](const InnerShadowCommand& c) -> std::optional<Rect> { return c.rect; },
                           [](const PushLayerCommand& c) -> std::optional<Rect> {
-                              Rect bounds = c.bounds.inset(-1.5f * c.blur);
+                              // Blurs reach 4 sigma, twice their radius.
+                              Rect bounds = c.bounds.inset(-2 * c.blur);
                               if (c.shadow) {
                                   const Rect shadow{c.bounds.x + c.shadow->x, c.bounds.y + c.shadow->y,
                                                     c.bounds.width, c.bounds.height};
-                                  bounds = union_of(bounds, shadow.inset(-1.5f * c.shadow->radius - 1));
+                                  bounds = union_of(bounds, shadow.inset(-2 * c.shadow->radius - 1));
                               }
                               return c.transform ? transformed_bounds(*c.transform, bounds) : bounds;
                           },
