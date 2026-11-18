@@ -33,16 +33,16 @@ int process_id() noexcept;
 // Starts `command` in the system's shell, as a child process, its standard error joined to its
 // standard output, and returns a handle to it, or nullptr if it can't be started. On Linux and
 // macOS the shell leads a process group of its own, which every process it starts joins, and
-// reads its standard input from /dev/null.
+// reads its standard input from /dev/null. On Windows cmd.exe runs it in a job object of its own,
+// which every process it starts joins, with NUL as its standard input.
 void* start_command(const std::string& command);
 // Reads the command's output into `buffer`, waiting until there's some: how many bytes were read,
 // 0 once the output has ended (every process that could write it has exited) or end_command() was
 // called.
 std::size_t read_command_output(void* command, std::span<char> buffer);
-// Linux and macOS: kills the command's process group, its shell and what that started, without
-// waiting for them; a read_command_output() waiting on another thread returns 0. Any thread, until
-// finish_command(), but not at the same time as it. Windows: does nothing, so the command runs
-// until it exits.
+// Kills the command's process group (Linux and macOS) or job (Windows): its shell and what that
+// started, without waiting for them; a read_command_output() waiting on another thread returns 0.
+// Any thread, until finish_command(), but not at the same time as it.
 void end_command(void* command) noexcept;
 // Waits for the shell to exit and frees the handle: the shell's exit status, or -1 if it didn't
 // exit by itself (end_command() killed it).

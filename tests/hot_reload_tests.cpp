@@ -290,6 +290,36 @@ TEST_CASE("a host destroyed while its module builds ends the build at once, and 
     CHECK(elg_tests::process_ends(sleep));
     detail::run_ui_tasks(); // what the build's thread posted for the host that's gone
 }
+#else
+TEST_CASE("a host destroyed while its module builds ends the build at once, and what the build started",
+          "[hot-reload]") {
+    using namespace std::chrono_literals;
+    const TemporaryDirectory folder;
+    const fs::path started = folder.path / "started";
+    // The module isn't built yet, so the host builds it right away. The build says it started,
+    // then a shell it starts holds the build's output open for 30 seconds.
+    HotReloadOptions options;
+    options.module = folder.path / "views";
+    options.build_command = std::format("type nul > \"{}\" & cmd /d /c ping -n 30 127.0.0.1 >nul", started.string());
+    auto mounted = std::make_unique<Mounted>(HotReload(options));
+
+    // The UI thread goes on while the build runs.
+    const auto deadline = std::chrono::steady_clock::now() + 20s;
+    while (!fs::exists(started) && std::chrono::steady_clock::now() < deadline) {
+        mounted->update();
+        std::this_thread::sleep_for(10ms);
+    }
+    REQUIRE(fs::exists(started));
+    mounted->update();
+    CHECK(mounted->shows("Building…"));
+
+    // As a closed window's views go, so does the host that they hold: the build's job ends, and
+    // with it the shell holding the output, or the host would wait for it.
+    const auto stopping = std::chrono::steady_clock::now();
+    mounted.reset();
+    CHECK(std::chrono::steady_clock::now() - stopping < 2s);
+    detail::run_ui_tasks(); // what the build's thread posted for the host that's gone
+}
 #endif
 
 TEST_CASE("a reload starts the module's state again, and keeps the host's", "[hot-reload]") {

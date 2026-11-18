@@ -114,6 +114,28 @@ TEST_CASE("ending a shell command kills what it started, and a read waiting for 
     CHECK(std::chrono::steady_clock::now() - ending < std::chrono::seconds(2));
     CHECK(elg_tests::process_ends(sleep));
 }
+#else
+TEST_CASE("ending a shell command ends what it started, and a read waiting for its output returns", "[os]") {
+    // The inner shell holds the output open while its ping runs: the read can only return once
+    // every process holding it is gone, as the job they're in ends them.
+    detail::ChildProcess process("echo started & cmd /d /c ping -n 30 127.0.0.1 >nul");
+    std::string line;
+    std::array<char, 64> buffer{};
+    while (!line.contains("started")) {
+        const std::size_t read = process.read(buffer);
+        REQUIRE(read > 0);
+        line.append(buffer.data(), read);
+    }
+    const auto ending = std::chrono::steady_clock::now();
+    std::jthread ender([&process] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        process.end();
+    });
+    CHECK(process.read(buffer) == 0);
+    ender.join();
+    CHECK(process.wait() == -1);
+    CHECK(std::chrono::steady_clock::now() - ending < std::chrono::seconds(2));
+}
 #endif
 
 TEST_CASE("the image cache is in the user's cache folder, by the program's name", "[os]") {
