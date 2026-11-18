@@ -48,8 +48,11 @@ public:
     // decoding, composition) must run on the same adapter.
     [[nodiscard]] std::optional<std::array<std::uint8_t, 8>> luid() const noexcept { return luid_; }
 
-    // Submits `commands`, then throws elg::GpuError if the device was lost or ran out of memory.
+    // Submits `commands`, then throws DeviceLost if the device was lost, or elg::GpuError if it ran
+    // out of memory.
     void submit(const wgpu::CommandBuffer& commands) const;
+    // Throws DeviceLost if the device was lost, or elg::GpuError if it ran out of memory.
+    void check() const;
     // Blocks until everything submitted so far has finished.
     void wait_idle() const;
     // Runs pending callbacks and lets Dawn release finished work. Once per frame.
@@ -63,7 +66,6 @@ private:
     struct Objects;
     // Errors reported by callbacks, which may run on Dawn's threads: checked by submit().
     struct Errors;
-    void check() const;
 
     const Instance& instance_;
     std::shared_ptr<Errors> errors_;

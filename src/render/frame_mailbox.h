@@ -41,6 +41,9 @@ struct RemoveWindowCommand {
 // New glyphs for the atlas texture. Posted before any frame that draws them.
 struct AtlasUploadCommand {
     std::vector<GlyphUpload> uploads;
+    // The atlas's layout they're for (GlyphAtlas::layout()): those of a new one replace the
+    // glyphs of the one before.
+    std::uint64_t layout = 0;
 };
 
 // A window was hidden or minimized (`visible` false), or shown again. Windows start visible.

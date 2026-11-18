@@ -136,9 +136,12 @@ TEST_CASE("a full glyph atlas starts over after the frame instead of dropping gl
         }
     }
     REQUIRE(atlas.find_or_add(face, *probe) == nullptr);
+    CHECK(atlas.layout() == 0);
 
-    // After the frame (its uploads taken), the atlas starts over and asks for a new frame.
+    // After the frame (its uploads taken), the atlas starts over and asks for a new frame. The
+    // uploads from then on are for a new layout, which replaces the old one's glyphs.
     atlas.take_uploads();
+    CHECK(atlas.layout() == 1);
     CHECK(atlas.has_uploads());
     CHECK(atlas.find_or_add(face, *probe) != nullptr);
     // NOLINTEND(bugprone-unchecked-optional-access)

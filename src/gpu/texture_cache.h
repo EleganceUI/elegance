@@ -44,7 +44,8 @@ struct ImagePixels {
 };
 
 // Images' GPU textures (design.md §13.3), shared by every window: sRGB RGBA with a full mip
-// chain, so photos drawn small stay smooth. A texture is uploaded the first time a frame draws
+// chain, so photos drawn small stay smooth. Their color is premultiplied (each texel's linear
+// color times its alpha, sRGB-encoded), so that they're filtered, and their mips made, as such. A texture is uploaded the first time a frame draws
 // its image (its mips rendered in that frame's commands), and released as kDecodedImagePolicy
 // says once frames stop drawing it. Render thread only.
 class TextureCache {

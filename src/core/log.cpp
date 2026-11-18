@@ -4,6 +4,7 @@
 
 #include "core/log.h"
 
+#include <atomic>
 #include <cstdio>
 #include <deque>
 #include <mutex>
@@ -17,6 +18,7 @@ constexpr std::size_t kHistorySize = 200;
 
 std::mutex g_mutex;
 std::deque<std::string> g_history;
+std::atomic<InternalErrorObserver> g_internal_error_observer{nullptr};
 
 std::string_view level_name(LogLevel level) {
     switch (level) {
@@ -49,6 +51,17 @@ void log_message(LogLevel level, std::string message) {
 std::vector<std::string> recent_log_lines() {
     const std::lock_guard lock(g_mutex);
     return {g_history.begin(), g_history.end()};
+}
+
+void log_internal_error(std::string message) {
+    if (const InternalErrorObserver observer = g_internal_error_observer.load()) {
+        observer(message);
+    }
+    log_message(LogLevel::error, std::move(message));
+}
+
+InternalErrorObserver set_internal_error_observer(InternalErrorObserver observer) noexcept {
+    return g_internal_error_observer.exchange(observer);
 }
 
 } // namespace elg::detail

@@ -15,11 +15,13 @@ namespace elg::detail::gpu {
 class Device;
 
 // One direction of a separable Gaussian blur, and a box downsample ahead of wide blurs
-// (shaders/blur.wgsl). Single-channel blurs (R8) make shadows; color blurs (sRGB RGBA, like
-// layers) make blurred layers and backdrops.
+// (shaders/blur.wgsl). Single-channel blurs make shadows; color blurs (linear, premultiplied)
+// make blurred layers and backdrops. Both in 16-bit floats: 8 bits of alpha would put steps of
+// up to 13/255 into a near-opaque blur's sRGB pixels over a light background, and the result
+// must stay within 4/255 of a Gaussian blur (ELGSPEC-0024.R2).
 class BlurRenderer {
 public:
-    // R8Unorm and RGBA8UnormSrgb (defined with WebGPU's values in the source file).
+    // R16Float and RGBA16Float (defined with WebGPU's values in the source file).
     static const wgpu::TextureFormat kFormat;
     static const wgpu::TextureFormat kColorFormat;
     // What a pass reads from its source: a single channel into kFormat, or color into
@@ -38,13 +40,14 @@ public:
     // is the same size. `clamp_edges`: outside it repeats its edge instead of being transparent.
     void blur(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& source, std::uint32_t width,
               std::uint32_t height, bool horizontal, float sigma, Channel channel, bool clamp_edges = false);
-    // Color: each target texel averages `factor` x `factor` source texels of the `width` x `height`
-    // source region (the target covers it rounded up).
+    // Each target texel averages `factor` x `factor` source texels of the `width` x `height` source
+    // region (the target covers it rounded up): color into a color target, or what `channel` takes
+    // of each texel (alpha, red, 1 - alpha) into a single-channel one.
     void downsample(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& source, std::uint32_t width,
-                    std::uint32_t height, std::uint32_t factor, bool clamp_edges);
+                    std::uint32_t height, std::uint32_t factor, bool clamp_edges, Channel channel = Channel::color);
 
 private:
-    struct Pipelines; // single-channel, color, downsample
+    struct Pipelines; // single-channel and color: blurs and downsamples
     std::unique_ptr<Pipelines> pipelines_;
 };
 

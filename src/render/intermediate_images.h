@@ -25,7 +25,9 @@ enum class ImageRole : std::uint8_t {
     shadow,            // a layer's blurred shadow, by shadow
     inner_horizontal,  // an inner shadow's first blur pass, by inner shadow
     inner_shadow,      // a layer's blurred inner shadow, by inner shadow
-    color_down,        // a color blur's downsampled input, by blur
+    shadow_down,       // a layer shadow's downsampled alpha, by shadow and level
+    inner_down,        // an inner shadow's downsampled inverse alpha, by inner shadow and level
+    color_down,        // a color blur's downsampled input, by blur and level
     color_horizontal,  // a color blur's first pass, by blur
     color_blurred,     // a color blur's result, by blur
     backdrop_copy,     // a backdrop copied out of a layer

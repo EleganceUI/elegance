@@ -4,9 +4,6 @@
 
 #include "gpu/device.h"
 
-#ifndef NDEBUG
-#include "core/crash.h"
-#endif
 #include "core/log.h"
 #include "core/os_backend.h"
 #include "gpu/instance.h"
@@ -36,7 +33,8 @@ static_assert(wgpu::BackendType{} == wgpu::BackendType::Undefined); // Device::b
 
 struct Device::Errors {
     std::mutex mutex;
-    std::string fatal; // device lost or out of memory: the next submit() throws it
+    std::string lost;  // why the device was lost: the next submit() throws DeviceLost
+    std::string fatal; // out of memory: the next submit() throws GpuError
 
     // Dawn's repeatable uncaptured-error callback cannot own a capturing lambda. Look up a
     // shared state by the callback's device instead of passing a dangling Errors* as userdata.
@@ -179,8 +177,7 @@ Device::Device(const Instance& instance)
                     return; // our own shutdown
                 }
                 const std::lock_guard lock(errors->mutex);
-                errors->fatal = std::format("the GPU device was lost ({}); device loss recovery is not implemented yet",
-                                            std::string_view(message));
+                errors->lost = std::format("the GPU device was lost ({})", std::string_view(message));
             } catch (...) {
                 // Swallowed: a C callback; even allocation failures must not unwind through Dawn.
             }
@@ -198,12 +195,9 @@ Device::Device(const Instance& instance)
                     errors->fatal = std::format("the GPU ran out of memory: {}", std::string_view(message));
                     return;
                 }
-#ifdef NDEBUG
-                log_error("webgpu: {}", std::string_view(message));
-#else
-                // Every GPU object belongs to the framework, so a validation error is our bug.
-                internal_error(std::format("WebGPU error: {}", std::string_view(message)));
-#endif
+                // Every GPU object belongs to the framework, so a validation error is our bug; it
+                // shows in the log in every build, and fails the test that caused it.
+                log_internal_error(std::format("webgpu: {}", std::string_view(message)));
             } catch (...) {
                 // Swallowed: a C callback; nothing may unwind through Dawn.
             }
@@ -299,6 +293,9 @@ bool Device::has_feature(wgpu::FeatureName feature) const {
 
 void Device::check() const {
     const std::lock_guard lock(errors_->mutex);
+    if (!errors_->lost.empty()) {
+        throw DeviceLost(errors_->lost);
+    }
     if (!errors_->fatal.empty()) {
         throw GpuError(errors_->fatal);
     }

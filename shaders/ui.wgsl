@@ -62,12 +62,16 @@ const kLayer = 2.0;
 const kLayerShadow = 3.0; // a layer's blurred alpha (R8): uv = texels, color = shadow
 const kBoxShadow = 4.0;   // analytic blurred rounded rect: extra.y = sigma
 const kPath = 5.0;        // a path's coverage mask (R8): uv = texels; fill as for rects
-const kImage = 6.0;       // a raster image (sRGB, straight alpha): uv normalized, color.a = opacity
+// An image: uv normalized, color.a = opacity. A raster image's texture holds premultiplied color
+// (sRGB-encoded), so its sampler and mipmaps filter it as such; params.x = 1: a video frame or GPU
+// image, whose straight alpha this shader premultiplies texel by texel before filtering.
+const kImage = 6.0;
 // Analytic shadow inside a rounded rect: shape = radii, extra.y = sigma, border_color.xy = offset,
 // params.x = spread.
 const kInnerShadow = 7.0;
 // A layer's inner shadow: its blurred inverse alpha (R8, group 0) where its content (group 2) is;
-// uv = texels, color = shadow, border_color.xy = offset.
+// uv = texels, color = shadow, border_color.xy = offset, border_color.z = 1 / the blurred image's
+// downsampling.
 const kLayerInnerShadow = 8.0;
 // Layer kinds (kLayer, kLayerShadow, kLayerInnerShadow) turn and scale: gradient = (a, b, c, d)
 // with x' = a x + c y, y' = b x + d y, about extra.zw.
@@ -97,7 +101,7 @@ fn vs_main(@builtin(vertex_index) vertex: u32, in: Instance) -> Varyings {
     if (in.params.y == kRect || in.params.y == kInnerShadow) {
         margin = 1.0;
     } else if (in.params.y == kBoxShadow) {
-        margin = 3.0 * in.extra.y + 1.0;
+        margin = 4.0 * in.extra.y + 1.0; // as far as the Gaussian reaches
     }
 
     let half_size = in.rect.zw * 0.5;
@@ -290,6 +294,28 @@ fn sample_texels(texels: vec2f) -> vec4f {
     return textureSampleLevel(image, image_sampler, texels / vec2f(textureDimensions(image)), 0.0);
 }
 
+// A straight-alpha image at `uv`, filtered bilinearly with premultiplied alpha: a transparent
+// texel's color adds nothing to the pixels around it (ELGSPEC-0024.R1). Clamped at the edges, as
+// the sampler is.
+fn sample_straight(uv: vec2f) -> vec4f {
+    let size = vec2i(textureDimensions(image));
+    let p = uv * vec2f(size) - 0.5;
+    let base = floor(p);
+    let f = p - base;
+    let last = size - 1;
+    let i0 = clamp(vec2i(base), vec2i(0), last);
+    let i1 = clamp(vec2i(base) + 1, vec2i(0), last);
+    let t00 = premultiplied(textureLoad(image, vec2i(i0.x, i0.y), 0));
+    let t10 = premultiplied(textureLoad(image, vec2i(i1.x, i0.y), 0));
+    let t01 = premultiplied(textureLoad(image, vec2i(i0.x, i1.y), 0));
+    let t11 = premultiplied(textureLoad(image, vec2i(i1.x, i1.y), 0));
+    return mix(mix(t00, t10, f.x), mix(t01, t11, f.x), f.y);
+}
+
+fn premultiplied(straight: vec4f) -> vec4f {
+    return vec4f(straight.rgb * straight.a, straight.a);
+}
+
 fn shade_glyph(in: Varyings) -> vec4f {
     let field = textureSampleLevel(image, image_sampler, in.uv, 0.0);
     // 0.5 is the glyph edge; scale the field's units to screen pixels for a 1px AA ramp.
@@ -299,39 +325,66 @@ fn shade_glyph(in: Varyings) -> vec4f {
     return in.color * coverage;
 }
 
-// --- Analytic rounded-rect shadow (Evan Wallace, "Fast rounded rectangle shadows") ---
+// --- Analytic rounded-rect shadow (after Evan Wallace, "Fast rounded rectangle shadows") ---
 
+// erf, within 1.5e-7 (Abramowitz and Stegun 7.1.26).
 fn erf2(v: vec2f) -> vec2f {
     let s = sign(v);
     let a = abs(v);
-    var x = 1.0 + (0.278393 + (0.230389 + 0.078108 * (a * a)) * a) * a;
-    x *= x;
-    return s - s / (x * x);
+    let t = 1.0 / (1.0 + 0.3275911 * a);
+    let poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+    return s * (1.0 - poly * exp(-a * a));
+}
+
+// The share of a Gaussian of `sigma` around `c` that lies between `lo` and `hi`.
+fn gaussian_between(c: f32, lo: f32, hi: f32, sigma: f32) -> f32 {
+    let e = erf2(vec2f(hi - c, lo - c) * (sqrt(0.5) / sigma));
+    return 0.5 * (e.x - e.y);
+}
+
+// Along one axis, at the pixel centered at `c` (window pixels): [lo, hi] as its pixels cover it,
+// each pixel a square, blurred by a Gaussian of `sigma` (ELGSPEC-0024.R2). The pixels at its
+// edges are covered in part, those between in full; with a sigma of 0, it's the pixel's own
+// coverage.
+fn square_share(c: f32, lo: f32, hi: f32, sigma: f32) -> f32 {
+    if (hi <= lo) {
+        return 0.0;
+    }
+    let first = floor(lo);
+    let last = floor(hi);
+    if (first == last) {
+        return (hi - lo) * gaussian_between(c, first, first + 1.0, sigma);
+    }
+    return (first + 1.0 - lo) * gaussian_between(c, first, first + 1.0, sigma) +
+           gaussian_between(c, first + 1.0, last, sigma) + (hi - last) * gaussian_between(c, last, last + 1.0, sigma);
 }
 
 fn gaussian(x: f32, sigma: f32) -> f32 {
-    let pi = 3.141592653589793;
-    return exp(-(x * x) / (2.0 * sigma * sigma)) / (sqrt(2.0 * pi) * sigma);
+    return exp(-(x * x) / (2.0 * sigma * sigma)) / (2.5066282746310002 * sigma);
 }
 
-fn rounded_box_shadow_x(x: f32, y: f32, sigma: f32, corner: f32, half_size: vec2f) -> f32 {
-    let delta = min(half_size.y - corner - abs(y), 0.0);
-    let curved = half_size.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
-    let integral = 0.5 + 0.5 * erf2((x + vec2f(-curved, curved)) * (sqrt(0.5) / sigma));
-    return integral.y - integral.x;
-}
-
-fn rounded_box_shadow(point: vec2f, half_size: vec2f, sigma: f32, corner: f32) -> f32 {
-    let low = point.y - half_size.y;
-    let high = point.y + half_size.y;
-    let start = clamp(-3.0 * sigma, low, high);
-    let end = clamp(3.0 * sigma, low, high);
-    let step_size = (end - start) / 4.0;
-    var y = start + step_size * 0.5;
+// The Gaussian blur, of `sigma`, of a rounded rect centered at `center`, at the pixel at
+// `position` (both in window pixels): exact for a plain rect, whose shares across and down
+// multiply; with corners, summed down at 16 rows within 4 sigma, each row's share across exact.
+fn rounded_box_shadow(position: vec2f, center: vec2f, half_size: vec2f, sigma: f32, corner: f32) -> f32 {
+    if (corner <= 0.0) {
+        return square_share(position.x, center.x - half_size.x, center.x + half_size.x, sigma) *
+               square_share(position.y, center.y - half_size.y, center.y + half_size.y, sigma);
+    }
+    let point = position - center;
+    let reach = 4.0 * sigma + 0.5;
+    let start = clamp(-reach, point.y - half_size.y, point.y + half_size.y);
+    let end = clamp(reach, point.y - half_size.y, point.y + half_size.y);
+    let step_size = (end - start) / 16.0;
+    var t = start + step_size * 0.5;
     var value = 0.0;
-    for (var i = 0; i < 4; i++) {
-        value += rounded_box_shadow_x(point.x, point.y - y, sigma, corner, half_size) * gaussian(y, sigma) * step_size;
-        y += step_size;
+    for (var i = 0; i < 16; i++) {
+        let y = point.y - t; // the row, from the center
+        let delta = min(half_size.y - corner - abs(y), 0.0);
+        let half_width = half_size.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
+        let across = square_share(position.x, center.x - half_width, center.x + half_width, sigma);
+        value += across * gaussian(t, max(sigma, 0.25)) * step_size;
+        t += step_size;
     }
     return value;
 }
@@ -341,19 +394,22 @@ fn max_radius(radii: vec4f) -> f32 {
 }
 
 fn shade_box_shadow(in: Varyings) -> vec4f {
-    let sigma = max(in.extra.y, 0.5);
+    let sigma = max(in.extra.y, 1e-4);
     let corner = min(max_radius(in.shape), min(in.half_size.x, in.half_size.y));
-    return in.color * rounded_box_shadow(in.local, in.half_size, sigma, corner);
+    let position = in.position.xy;
+    return in.color * rounded_box_shadow(position, position - in.local, in.half_size, sigma, corner);
 }
 
 // Inside the shape, the part a blurred copy of it (moved, shrunk by the spread) doesn't light.
 fn shade_inner_shadow(in: Varyings) -> vec4f {
     let inside = clamp(0.5 - rounded_box_distance(in.local, in.half_size, in.shape), 0.0, 1.0);
-    let sigma = max(in.extra.y, 0.5);
+    let sigma = max(in.extra.y, 1e-4);
     let spread = in.params.x;
     let half_size = max(in.half_size - spread, vec2f(0.0));
     let corner = clamp(max_radius(in.shape) - spread, 0.0, min(half_size.x, half_size.y));
-    let lit = rounded_box_shadow(in.local - in.border_color.xy, half_size, sigma, corner);
+    // The blurred copy is moved by the offset; the pixels stay where they are.
+    let position = in.position.xy;
+    let lit = rounded_box_shadow(position, position - in.local + in.border_color.xy, half_size, sigma, corner);
     return in.color * (1.0 - clamp(lit, 0.0, 1.0)) * inside;
 }
 
@@ -464,7 +520,7 @@ fn shade_layer(in: Varyings) -> vec4f {
 }
 
 fn shade_layer_inner_shadow(in: Varyings) -> vec4f {
-    let shadow = sample_texels(in.uv - in.border_color.xy).r;
+    let shadow = sample_texels((in.uv - in.border_color.xy) * in.border_color.z).r; // z: 1 / downsampling
     let content = textureSampleLevel(second, second_sampler, in.uv / vec2f(textureDimensions(second)), 0.0).a;
     return in.color * shadow * content;
 }
@@ -504,8 +560,12 @@ fn fs_main(in: Varyings) -> @location(0) vec4f {
     } else if (kind == kPath) {
         color = fill_color(in) * sample_texels(in.uv).r;
     } else if (kind == kImage) {
-        let texel = textureSampleGrad(image, image_sampler, in.uv, uv_dx, uv_dy); // linear (sRGB texture), straight alpha
-        color = vec4f(texel.rgb * texel.a, texel.a) * in.color.a;
+        if (in.params.x > 0.5) {
+            color = sample_straight(in.uv) * in.color.a;
+        } else {
+            // Linear (sRGB texture) and premultiplied, mipmaps too.
+            color = textureSampleGrad(image, image_sampler, in.uv, uv_dx, uv_dy) * in.color.a;
+        }
     } else if (kind == kInnerShadow) {
         color = shade_inner_shadow(in);
     } else if (kind == kLayerInnerShadow) {

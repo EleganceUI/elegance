@@ -2,9 +2,23 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// What every run of the tests needs before Catch2 starts.
+// What every run of the tests needs before Catch2 starts, and the tests' main().
 
 #include "no_error_dialogs.h"
+
+#include "core/log.h"
+
+#include <catch2/catch_session.hpp>
+#include <catch2/catch_test_case_info.hpp>
+#include <catch2/reporters/catch_reporter_event_listener.hpp>
+#include <catch2/reporters/catch_reporter_registrars.hpp>
+
+#include <atomic>
+#include <cstdio>
+#include <mutex>
+#include <print>
+#include <string>
+#include <vector>
 
 namespace {
 
@@ -14,4 +28,60 @@ const bool g_no_dialogs = [] {
     return true;
 }();
 
+// Bugs Elegance carried on after (WebGPU validation errors) during the current test, from any
+// thread: they fail the test.
+std::mutex g_mutex;
+std::vector<std::string> g_internal_errors;
+std::atomic<bool> g_failed{false};
+
+void observe(std::string_view message) noexcept {
+    try {
+        const std::lock_guard lock(g_mutex);
+        g_internal_errors.emplace_back(message);
+    } catch (...) {
+        g_failed = true; // not even recorded: the run still fails
+    }
+}
+
+const bool g_observing = [] {
+    elg::detail::set_internal_error_observer(&observe);
+    return true;
+}();
+
+// Catch2 counts a test's assertions before listeners hear it ended, so a test with such an error
+// fails through the run's exit code; ctest runs each test on its own, so that test fails.
+class InternalErrors final : public Catch::EventListenerBase {
+public:
+    using EventListenerBase::EventListenerBase;
+
+    void testCaseStarting(const Catch::TestCaseInfo&) override {
+        const std::lock_guard lock(g_mutex);
+        g_internal_errors.clear();
+    }
+
+    void testCaseEnded(const Catch::TestCaseStats& stats) override {
+        std::vector<std::string> errors;
+        {
+            const std::lock_guard lock(g_mutex);
+            errors.swap(g_internal_errors);
+        }
+        if (errors.empty()) {
+            return;
+        }
+        g_failed = true;
+        std::println(stderr, "FAILED: \"{}\" had {} internal error(s) of Elegance:", stats.testInfo->name,
+                     errors.size());
+        for (const std::string& error : errors) {
+            std::println(stderr, "    {}", error);
+        }
+    }
+};
+
 } // namespace
+
+CATCH_REGISTER_LISTENER(InternalErrors)
+
+int main(int argc, char* argv[]) {
+    const int result = Catch::Session().run(argc, argv);
+    return result != 0 ? result : (g_failed ? 1 : 0);
+}

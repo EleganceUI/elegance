@@ -7,6 +7,7 @@
 
 #include <format>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace elg::detail {
@@ -18,6 +19,17 @@ void log_message(LogLevel level, std::string message);
 
 // The most recent log lines, oldest first.
 std::vector<std::string> recent_log_lines();
+
+// A bug in Elegance that it carries on after, such as a WebGPU validation error: logged at error
+// level, in every build, and handed to the observer, if one is set. Thread-safe.
+void log_internal_error(std::string message);
+
+// Called with each message of log_internal_error(), on the thread that logs it. Tests set one, to
+// fail the test the bug happened in.
+using InternalErrorObserver = void (*)(std::string_view message) noexcept;
+
+// Sets the observer (null: none), and returns the one before. Thread-safe.
+InternalErrorObserver set_internal_error_observer(InternalErrorObserver observer) noexcept;
 
 template <class... Args>
 void log_debug(std::format_string<Args...> fmt, Args&&... args) {

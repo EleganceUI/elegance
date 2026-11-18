@@ -11,8 +11,8 @@
 
 namespace elg::detail::gpu {
 
-const wgpu::TextureFormat BlurRenderer::kFormat = wgpu::TextureFormat::R8Unorm;
-const wgpu::TextureFormat BlurRenderer::kColorFormat = wgpu::TextureFormat::RGBA8UnormSrgb;
+const wgpu::TextureFormat BlurRenderer::kFormat = wgpu::TextureFormat::R16Float;
+const wgpu::TextureFormat BlurRenderer::kColorFormat = wgpu::TextureFormat::RGBA16Float;
 
 namespace {
 
@@ -35,6 +35,7 @@ struct BlurRenderer::Pipelines {
     wgpu::RenderPipeline single;
     wgpu::RenderPipeline color;
     wgpu::RenderPipeline downsample;
+    wgpu::RenderPipeline downsample_single;
 };
 
 BlurRenderer::BlurRenderer(const Device& device, const wgpu::BindGroupLayout& image_layout)
@@ -70,6 +71,7 @@ BlurRenderer::BlurRenderer(const Device& device, const wgpu::BindGroupLayout& im
     pipelines_->single = pipeline(kFormat, "fs_main", "blur");
     pipelines_->color = pipeline(kColorFormat, "fs_main", "blur (color)");
     pipelines_->downsample = pipeline(kColorFormat, "fs_downsample", "downsample");
+    pipelines_->downsample_single = pipeline(kFormat, "fs_downsample", "downsample (single)");
 }
 
 BlurRenderer::~BlurRenderer() = default;
@@ -91,15 +93,16 @@ void BlurRenderer::blur(const wgpu::RenderPassEncoder& pass, const wgpu::BindGro
 }
 
 void BlurRenderer::downsample(const wgpu::RenderPassEncoder& pass, const wgpu::BindGroup& source,
-                              std::uint32_t width, std::uint32_t height, std::uint32_t factor, bool clamp_edges) {
+                              std::uint32_t width, std::uint32_t height, std::uint32_t factor, bool clamp_edges,
+                              Channel channel) {
     const std::uint32_t target_width = (width + factor - 1) / factor;
     const std::uint32_t target_height = (height + factor - 1) / factor;
-    pass.SetPipeline(pipelines_->downsample);
+    pass.SetPipeline(channel == Channel::color ? pipelines_->downsample : pipelines_->downsample_single);
     pass.SetBindGroup(0, source);
     const Immediates immediates{{static_cast<float>(width), static_cast<float>(height)},
                                 {0, 0},
                                 0,
-                                static_cast<float>(Channel::color),
+                                static_cast<float>(channel),
                                 clamp_edges ? 1.f : 0.f,
                                 static_cast<float>(factor)};
     pass.SetImmediates(0, &immediates, sizeof(immediates));

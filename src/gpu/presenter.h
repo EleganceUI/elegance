@@ -5,6 +5,7 @@
 #ifndef ELG_GPU_PRESENTER_H
 #define ELG_GPU_PRESENTER_H
 
+#include "gpu/surface_source.h"
 #include "gpu/webgpu_types.h"
 
 #include <array>
@@ -45,10 +46,11 @@ public:
     virtual void end_frame(bool reads_backdrops) = 0;
 };
 
-// The presenter for a window with `surface`, transparent or not. `native_window` (an HWND on
-// Windows) lets it present through the platform's compositor, which can show transparency. Each
-// platform has its own (gpu/windows/composition.cpp; gpu/presenter.cpp elsewhere).
-std::unique_ptr<Presenter> create_presenter(const Device& device, wgpu::Surface surface, bool transparent,
+// The presenter for a window whose surface WebGPU makes from `surface`, transparent or not.
+// `native_window` (an HWND on Windows) lets it present through the platform's compositor, which
+// can show transparency. Each platform has its own (gpu/windows/composition.cpp;
+// gpu/presenter.cpp elsewhere).
+std::unique_ptr<Presenter> create_presenter(const Device& device, const SurfaceSource& surface, bool transparent,
                                             void* native_window);
 
 } // namespace elg::detail::gpu

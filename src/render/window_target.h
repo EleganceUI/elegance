@@ -5,6 +5,7 @@
 #ifndef ELG_RENDER_WINDOW_TARGET_H
 #define ELG_RENDER_WINDOW_TARGET_H
 
+#include "gpu/surface_source.h"
 #include "gpu/webgpu_types.h"
 #include "render/frame_mailbox.h"
 
@@ -16,6 +17,7 @@ namespace gpu {
 class BlurRenderer;
 class Device;
 class PathRenderer;
+class Presenter;
 class QuadRenderer;
 class TextureCache;
 } // namespace gpu
@@ -41,8 +43,10 @@ class WindowTarget {
 public:
     // `native_window` (an HWND on Windows) lets windows present through the platform
     // compositor, which can show transparency (WebGPU surfaces there can't).
-    WindowTarget(const gpu::Device& device, wgpu::Surface surface, bool transparent = false,
+    WindowTarget(const gpu::Device& device, const gpu::SurfaceSource& surface, bool transparent = false,
                  void* native_window = nullptr);
+    // Draws into `presenter` (tests draw into offscreen images).
+    WindowTarget(const gpu::Device& device, std::unique_ptr<gpu::Presenter> presenter);
     ~WindowTarget();
 
     WindowTarget(const WindowTarget&) = delete;

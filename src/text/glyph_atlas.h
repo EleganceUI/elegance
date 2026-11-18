@@ -59,6 +59,9 @@ public:
     // Whether glyphs finished since take_uploads(), or the atlas started over (windows showing
     // text need a frame).
     bool has_uploads() const;
+    // Counts how often the atlas started over: the uploads take_uploads() returns are for the
+    // layout of the count before the call. The atlas's texture holds the glyphs of one layout.
+    std::uint64_t layout() const;
     // Called on a worker thread whenever a glyph finishes (e.g. to wake the event loop).
     void set_on_ready(std::function<void()> on_ready);
     // Waits until every requested glyph is generated, or `timeout` passes; true when done.
