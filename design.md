@@ -278,7 +278,10 @@ drag & drop, IME composition, cursors, native file dialogs, multi-window, and th
   - At the end of the frame the image is released to `VK_QUEUE_FAMILY_EXTERNAL` in GENERAL
     layout; the fence is waited, then D3D11 copies it into a `CreateSwapChainForComposition`
     swapchain (premultiplied alpha) on a DirectComposition visual over the HWND.
-  - A D3D event query keeps the next frame from overwriting the texture mid-copy.
+  - Shared fences order the two APIs on the GPU: D3D11 waits for the rendering's fence before
+    copying, and signals its own, which the next frame's rendering waits for. Where D3D11 can't
+    share fences (before Windows 10 1703), the render thread waits for the GPU, and a D3D event
+    query keeps the next frame from overwriting the texture mid-copy.
   - Opaque windows, and other platforms (premultiplied composite alpha where offered), keep
     the plain Vulkan swapchain.
   - If the interop is missing, the window falls back to opaque with a warning.
@@ -1644,9 +1647,11 @@ Separate render thread from day one (decided).
     - A late frame stays anchored top-left over a background layer in the window's clear color:
       a 1×1 surface scaled to cover the window.
     - Opaque windows use `DXGI_ALPHA_MODE_IGNORE`.
-    - Frames are paced by a frame-latency waitable swapchain (latency 1) instead of a blocking
-      present. The present uses sync interval 1: with 0 the waitable is signaled as soon as the
-      present is queued, and an animating window rendered ~900 fps on a 75 Hz display (~50% GPU).
+    - Frames are paced by a frame-latency waitable swapchain (latency 2, three buffers) instead
+      of a blocking present, so the render thread encodes a frame while the previous one is still
+      on the GPU (ELGSPEC-0023.R5). The present uses sync interval 1: with 0 the waitable is
+      signaled as soon as the present is queued, and an animating window rendered ~900 fps on a
+      75 Hz display (~50% GPU).
     - `ELG_PRESENT=surface` restores WebGPU surfaces for opaque windows.
     - `ELG_PRESENT=swapchain`, or RenderDoc being attached (`renderdoc.dll` loaded), puts every
       window on a WebGPU surface and creates no Direct3D objects of its own. RenderDoc can't capture

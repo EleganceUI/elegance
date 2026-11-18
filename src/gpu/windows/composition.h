@@ -18,6 +18,8 @@
 #include <memory>
 #include <optional>
 
+struct ID3D11Fence; // d3d11_3.h
+
 namespace elg::detail::gpu {
 
 // How windows present on Windows (design.md §4.1): through DirectComposition. We render into a
@@ -43,7 +45,9 @@ public:
     // `background` shows where no frame covers the window yet (opaque windows).
     wgpu::TextureView begin_frame(std::uint32_t width, std::uint32_t height,
                                   const std::array<float, 4>& background) override;
-    // Waits for the GPU to finish the frame, which Direct3D then copies.
+    // Has Direct3D copy the frame into the swapchain once the GPU has rendered it, and show it. With
+    // shared fences, neither the copy nor the next frame's rendering waits here: each waits for the
+    // other on the GPU (ELGSPEC-0023.R5). Without, it waits for the GPU here.
     void end_frame(bool reads_backdrops) override;
     // Backdrops aren't read from the shared image: windows that read them draw offscreen.
     [[nodiscard]] wgpu::Texture copy_source() const override { return wgpu::Texture(); }
@@ -63,17 +67,29 @@ private:
     bool prepare(std::uint32_t width, std::uint32_t height);
 
     // Begins WebGPU's access to the shared image and returns the view to render into (sRGB,
-    // premultiplied alpha). end_access() once the frame's rendering is submitted.
+    // premultiplied alpha); with shared fences, its rendering waits for Direct3D's last copy from
+    // it. end_access() once the frame's rendering is submitted: false if WebGPU refused, else
+    // `state` has the fences its rendering signals.
     wgpu::TextureView begin_access();
+    bool end_access(wgpu::SharedTextureMemoryEndAccessState& state) noexcept;
     void end_access() noexcept;
 
+    // Sets up the fences Direct3D and WebGPU wait for each other with: false if either can't
+    // share them (then the render thread waits).
+    bool share_fences();
+    // The Direct3D side of a fence WebGPU's rendering signals, opened the first time.
+    ID3D11Fence* opened(const wgpu::SharedFence& fence);
+
     // Waits (up to `timeout_ms`) until the compositor is ready for another frame: paces frames
-    // to the display without queueing them.
+    // to the display, with at most two queued.
     void wait_until_ready(unsigned timeout_ms);
     // The color shown where no frame covers the window yet (opaque windows; sRGB).
     void set_background(const std::array<float, 4>& srgb);
-    // Call once the rendering into the image has finished (Device::wait_idle()): shows it.
+    // Copies the image into the swapchain and shows it: Direct3D's context must wait for the
+    // rendering first (on the GPU, or the render thread for it).
     void present();
+    // Without shared fences: waits until Direct3D's copy into the swapchain is done.
+    void wait_for_copy();
 
     void destroy_image() noexcept;
 
