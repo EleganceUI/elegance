@@ -160,7 +160,8 @@ def link_arguments(static):
         elif kind == "lib" and value.startswith("lib/"):
             arguments.append(str(static / value))
         elif kind == "lib" and sys.platform == "win32":
-            arguments.append(value)
+            # A system library, by its name (dwmapi) or its file's (user32.lib).
+            arguments.append(value if value.lower().endswith(".lib") else f"{value}.lib")
         elif kind == "lib":
             arguments.append(f"-l{value}")
     return arguments
