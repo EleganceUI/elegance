@@ -1551,6 +1551,10 @@ int App::run() {
                 case platform::EventType::window_focus_gained: state.active = true; break;
                 default: state.active = false; break;
                 }
+                if ((*it)->accessibility && (event.type == platform::EventType::window_focus_gained ||
+                                             event.type == platform::EventType::window_focus_lost)) {
+                    (*it)->accessibility->window_focused(event.type == platform::EventType::window_focus_gained);
+                }
             }
             check_popup_focus = check_popup_focus || event.type == platform::EventType::window_focus_lost;
             if (event.type == platform::EventType::window_focus_gained ||

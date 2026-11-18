@@ -19,9 +19,10 @@ struct AccessRequest {
     AccessibilityAction action;
 };
 
-// Connects one window to the platform's accessibility API (design.md §12) through AccessKit.
-// It stays dormant, costing nothing, until assistive technology asks for the window's tree; from
-// then on update() sends the tree after each frame. Without AccessKit in the build it does nothing.
+// Connects one window to the platform's screen readers (design.md §12, ELGSPEC-0020.R1) through
+// AccessKit: UI Automation on Windows, NSAccessibility on macOS, AT-SPI on Linux. It stays
+// dormant, costing nothing, until assistive technology asks for the window's tree; from then on
+// update() sends what changed after each frame. Without AccessKit in the build it does nothing.
 class AccessibilityAdapter {
 public:
     struct Callbacks {
@@ -33,7 +34,7 @@ public:
         std::function<void(const AccessRequest&)> request;
     };
 
-    // `native_window`: the HWND on Windows. UI thread.
+    // `native_window`: the HWND on Windows, the NSWindow on macOS; unused on Linux. UI thread.
     AccessibilityAdapter(void* native_window, const Callbacks& callbacks);
     ~AccessibilityAdapter();
 
@@ -44,6 +45,8 @@ public:
 
     // Sends the current tree if assistive technology is listening. UI thread.
     void update();
+    // The window gained or lost the keyboard focus. UI thread.
+    void window_focused(bool focused);
 
     struct Impl;
 
