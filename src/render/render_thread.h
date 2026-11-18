@@ -9,6 +9,7 @@
 
 #include <elg/move_only_function.h>
 
+#include <atomic>
 #include <exception>
 #include <functional>
 #include <future>
@@ -17,8 +18,14 @@
 
 namespace elg::detail {
 
+namespace gpu {
+class Instance;
+}
+
 // Owns the WebGPU instance, the device, and every GPU resource, window surfaces included;
 // consumes work from the FrameMailbox (design.md §15). The UI thread never touches GPU objects.
+// When the device is lost, it starts over on a new one, which draws every window again
+// (ELGSPEC-0025.R4); only when no new device can be made does an error stop it.
 class RenderThread {
 public:
     // Starts the thread and blocks until the GPU is initialized; rethrows initialization
@@ -35,13 +42,26 @@ public:
     // The elg::Error (or std::bad_alloc) that stopped the thread, if any.
     std::exception_ptr error() const;
 
+    // For tests: how many devices it made (1, and one more per lost device), and how many frames
+    // of windows it drew.
+    [[nodiscard]] int devices_made() const noexcept { return devices_made_.load(); }
+    [[nodiscard]] int frames_drawn() const noexcept { return frames_drawn_.load(); }
+
 private:
+    // What a new device starts from: what the UI thread sent that outlives a device.
+    struct Kept;
+
     void run(std::promise<void> ready) noexcept;
+    // Draws with a device of its own until the mailbox closes; throws gpu::DeviceLost when the
+    // device is lost. The first device signals `ready` once it can draw (`started`).
+    void draw(const gpu::Instance& instance, Kept& kept, std::promise<void>& ready, bool& started);
 
     FrameMailbox& mailbox_;
     MoveOnlyFunction<void()> on_error_;
     mutable std::mutex error_mutex_;
     std::exception_ptr error_;
+    std::atomic<int> devices_made_{0};
+    std::atomic<int> frames_drawn_{0};
     std::thread thread_;
 };
 

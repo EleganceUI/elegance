@@ -20,6 +20,7 @@ add_executable(elegance_tests
         capture_tests.cpp
         desktop_tests.cpp
         environment_tests.cpp
+        gpu_loss_tests.cpp
         gpu_memory_tests.cpp
         gpu_image_tests.cpp
         grid_tests.cpp
@@ -27,7 +28,6 @@ add_executable(elegance_tests
         layout_value_tests.cpp
         leaving_tests.cpp
         lifecycle_tests.cpp
-        lost_surface_tests.cpp
         click_tests.cpp
         raw_input_tests.cpp
         gesture_tests.cpp

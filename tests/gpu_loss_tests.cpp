@@ -2,13 +2,17 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// A window whose surface is lost gets a new one, which its next frame is drawn on
-// (ELGSPEC-0025.R1).
+// Lost surfaces and devices: a window whose surface is lost gets a new one, which its next frame
+// is drawn on (ELGSPEC-0025.R1); a lost device is made again, and every window drawn again on the
+// new one (ELGSPEC-0025.R4).
 
 #include "gpu/device.h"
 #include "gpu/instance.h"
+#include "gpu/render_device.h"
 #include "gpu/swapchain.h"
 #include "platform/platform.h"
+#include "render/frame_mailbox.h"
+#include "render/render_thread.h"
 
 #include <elg/app.h>
 
@@ -16,7 +20,10 @@
 
 #include <webgpu/webgpu_cpp.h>
 
+#include <atomic>
+#include <chrono>
 #include <cstdint>
+#include <memory>
 
 namespace {
 
@@ -81,4 +88,38 @@ TEST_CASE("a window whose surface was lost draws its next frame on a new one", "
     CHECK(swapchain.surfaces_made() == 2);
     CHECK(draw_frame(device, swapchain, width, height));
     CHECK(swapchain.surfaces_made() == 2);
+}
+
+TEST_CASE("a lost device is made again and every window is drawn again on the new one", "[.gpu]") {
+    using namespace std::chrono_literals;
+    const std::unique_ptr<platform::Platform> platform = platform::create_platform();
+    elg::WindowDesc desc;
+    desc.title = "lost device";
+    desc.width = 64;
+    desc.height = 64;
+    const std::unique_ptr<platform::Window> window = platform::create_window(desc);
+    const platform::PixelSize size = window->pixel_size();
+
+    FrameMailbox mailbox;
+    std::atomic<int> stopped{0};
+    const RenderThread renderer(mailbox, [&] { ++stopped; });
+    mailbox.post(AddWindowCommand{.window_id = 1, .surface = gpu_surface(window->surface_source())});
+    const WindowFrame frame{.window_id = 1, .pixel_width = size.width, .pixel_height = size.height, .scale = 1};
+    REQUIRE(mailbox.wait_until_done(mailbox.post(frame), 5s));
+    REQUIRE(renderer.frames_drawn() == 1);
+
+    const std::shared_ptr<gpu::RenderDevice> lost = gpu::render_device();
+    REQUIRE(lost);
+    lost->device.ForceLoss(wgpu::DeviceLostReason::Unknown, "lost on purpose");
+    // This frame finds the device lost: a new one draws the window again, from this frame.
+    REQUIRE(mailbox.wait_until_done(mailbox.post(frame), 10s));
+    CHECK(renderer.devices_made() == 2);
+    CHECK(renderer.frames_drawn() == 2);
+    CHECK(gpu::render_device() != lost); // GPU images publish to the new one
+    CHECK_FALSE(lost->active);
+
+    REQUIRE(mailbox.wait_until_done(mailbox.post(frame), 5s));
+    CHECK(renderer.frames_drawn() == 3);
+    CHECK(renderer.error() == nullptr);
+    CHECK(stopped == 0);
 }

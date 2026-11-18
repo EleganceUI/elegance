@@ -909,8 +909,9 @@ int App::run() {
         if (text.atlas.requested() != glyphs_requested) {
             text.atlas.wait_idle(kGlyphFrameHold);
         }
+        const std::uint64_t layout = text.atlas.layout(); // what the uploads taken now are for
         if (std::vector<GlyphUpload> uploads = text.atlas.take_uploads(); !uploads.empty()) {
-            mailbox.post(AtlasUploadCommand{std::move(uploads)});
+            mailbox.post(AtlasUploadCommand{std::move(uploads), layout});
         }
         live.last_frame = mailbox.post(std::move(frame));
         return live.last_frame;

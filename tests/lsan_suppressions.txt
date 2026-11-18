@@ -1,3 +1,5 @@
 # LeakSanitizer suppressions for the unit tests: third-party code only.
 # fontconfig keeps its configuration and font caches for the life of the process.
 leak:libfontconfig.so
+# libdbus, which SDL uses once a window opens, keeps a buffer it allocated.
+leak:libdbus-1.so

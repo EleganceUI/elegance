@@ -460,6 +460,11 @@ bool GlyphAtlas::has_uploads() const {
     return !uploads_.empty() || started_over_;
 }
 
+std::uint64_t GlyphAtlas::layout() const {
+    const std::lock_guard lock(mutex_);
+    return generation_;
+}
+
 void GlyphAtlas::start_over() {
     if (!reported_full_) {
         log_warning("the glyph atlas is full; it starts over, and glyphs are placed again as they're drawn");

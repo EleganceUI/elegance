@@ -188,7 +188,9 @@ wgpu::TextureView Swapchain::acquire() {
         // Gone for good: a new surface (begin_frame()).
         lost_ = true;
         return nullptr;
-    default: throw_gpu_error("get the window's next image");
+    default:
+        device_.check(); // a lost device is started over, not an error
+        throw_gpu_error("get the window's next image");
     }
     texture_ = texture.texture;
     wgpu::TextureViewDescriptor view;
