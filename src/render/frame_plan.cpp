@@ -185,7 +185,10 @@ private:
             pass.reads_backdrop = true;
         }
         PlanSegment* last = pass.segments.empty() ? nullptr : &pass.segments.back();
-        const bool plain = how.layer < 0 && how.path < 0 && how.image < 0 && how.video < 0 && backdrop < 0;
+        // A mask ("destination-in") is never plain: merged into the segment before it, it would be
+        // drawn as a fill.
+        const bool plain =
+            !how.mask && how.layer < 0 && how.path < 0 && how.image < 0 && how.video < 0 && backdrop < 0;
         const auto last_plain = [&] {
             return last->layer < 0 && last->path < 0 && last->image < 0 && last->video < 0;
         };
@@ -337,10 +340,27 @@ private:
     // a quad over the whole pass keeps only what the coverage covers.
     void add_path(const PathCommand& command, Point origin, PlanPass& pass, std::vector<QuadInstance>& out,
                   const Clip& clip, std::optional<Size> mask_pass = std::nullopt) {
+        // A mask that covers no pixel keeps nothing of the pass (ELGSPEC-0024.R4): a path with no
+        // area, a shape scaled to zero, or one at a position that isn't finite.
+        const auto keep_nothing = [&](Size size) {
+            QuadInstance clear;
+            clear.rect = {0, 0, size.width, size.height};
+            clear.params = {0, static_cast<float>(QuadKind::rect), static_cast<float>(PaintKind::solid), 0};
+            emit(pass, out, clear, clear_extent(size), Clip{}, {.mask = true});
+        };
         if (!command.polygons || command.polygons->empty()) {
+            if (mask_pass) {
+                keep_nothing(*mask_pass);
+            }
             return;
         }
         const Rect bounds = to_pixels(command.window_bounds(), origin);
+        if (!(bounds.width > 0) || !(bounds.height > 0)) { // no area, or not finite
+            if (mask_pass) {
+                keep_nothing(*mask_pass);
+            }
+            return;
+        }
         const float x0 = std::floor(bounds.x) - 1;
         const float y0 = std::floor(bounds.y) - 1;
         const float x1 = std::ceil(bounds.max_x()) + 1;
@@ -378,12 +398,9 @@ private:
         const std::array<std::uint32_t, 3> shape{path.width, path.height,
                                                   command.rule == FillRule::even_odd ? 1u : 0u};
         path.key = fnv1a(shape.data(), sizeof(shape), fnv1a(placement.data(), sizeof(placement), hash.content));
-        if (mask_pass && (hash.vertex_count == 0 || area.width < 1 || area.height < 1)) {
-            // Nothing is covered: clear the whole pass.
-            QuadInstance clear;
-            clear.rect = {0, 0, mask_pass->width, mask_pass->height};
-            clear.params = {0, static_cast<float>(QuadKind::rect), static_cast<float>(PaintKind::solid), 0};
-            emit(pass, out, clear, clear_extent(*mask_pass), Clip{}, {.mask = true});
+        // Written so that NaN is caught too.
+        if (mask_pass && (hash.vertex_count == 0 || !(area.width >= 1) || !(area.height >= 1))) {
+            keep_nothing(*mask_pass);
             return;
         }
         if (hash.vertex_count == 0) {
