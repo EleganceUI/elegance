@@ -48,7 +48,7 @@ jobs:
             VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
             PRESETS: ${{ matrix.presets }}
             UBSAN_OPTIONS: print_stacktrace=1
-            TSAN_OPTIONS: second_deadlock_stack=1
+            TSAN_OPTIONS: second_deadlock_stack=1:suppressions=${{ github.workspace }}/tests/tsan_suppressions.txt
         steps:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 

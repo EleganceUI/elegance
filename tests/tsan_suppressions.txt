@@ -1,0 +1,5 @@
+# ThreadSanitizer suppressions for the unit tests: third-party code only. The TSan CI job passes
+# them in TSAN_OPTIONS (.github/workflows/linux.yml).
+# AccessKit's AT-SPI adapter is Rust built without TSan: its own synchronization (Rust's standard
+# library, async-executor) is invisible to TSan, so what its threads free looks like a race.
+race:accesskit
