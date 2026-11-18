@@ -43,6 +43,10 @@ protected:
 // device's validation of the import with no lock held.
 std::uint32_t import_external_image(const ElgGpuImageFrame& frame, std::shared_ptr<ExternalImage>& image);
 
+// Whether `image` was imported into the renderer's device that runs now: false once that device
+// was lost. Any thread.
+bool in_current_device(const ExternalImage& image);
+
 } // namespace elg::detail::gpu
 
 #endif // ELG_GPU_EXTERNAL_IMAGE_H

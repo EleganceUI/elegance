@@ -19,6 +19,9 @@ namespace elg::detail {
 // Kind::external frame, or nullopt if it can't be. Any thread.
 bool imports_native_frames();
 std::optional<VideoFrame> import_native_frame(const VideoFrame& frame);
+// Whether `frame`, which import_native_frame() made, is in the renderer's device: false once that
+// device was lost. Any thread.
+bool imported_frame_current(const VideoFrame& frame);
 
 } // namespace elg::detail
 

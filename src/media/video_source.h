@@ -26,6 +26,7 @@ std::optional<RenderAdapter> render_adapter();
 struct NativeFrameImporter {
     bool (*imports_native_frames)() = nullptr;
     std::optional<VideoFrame> (*import_native_frame)(const VideoFrame& frame) = nullptr;
+    bool (*imported_frame_current)(const VideoFrame& frame) = nullptr;
 };
 void set_native_frame_importer(NativeFrameImporter importer);
 

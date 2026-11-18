@@ -54,6 +54,9 @@ public:
     // Render thread: `frame` (Kind::native) imported into the renderer's device, as the frame to
     // draw (Kind::external); nullopt if it can't be.
     [[nodiscard]] virtual std::optional<VideoFrame> import_native_frame(const VideoFrame& frame) = 0;
+    // Render thread: whether `frame`, which import_native_frame() made, is in the running
+    // renderer's device: false once that device was lost, when it draws nothing (ELGSPEC-0025.R4).
+    [[nodiscard]] virtual bool imported_frame_current(const VideoFrame& frame) const = 0;
     // An image decoded as Media decodes them (media/image_decode.h): for cameras that send JPEG
     // frames. Throws elg::ResourceError if it can't be.
     [[nodiscard]] virtual std::shared_ptr<const DecodedImage> decode_image(

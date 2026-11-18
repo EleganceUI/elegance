@@ -411,4 +411,13 @@ std::uint32_t import_external_image(const ElgGpuImageFrame& frame, std::shared_p
     return status;
 }
 
+bool in_current_device(const ExternalImage& image) {
+    const std::shared_ptr<RenderDevice> device = render_device();
+    if (!device) {
+        return false;
+    }
+    const std::lock_guard lock(device->mutex);
+    return device->active && device->device.Get() == image.device().Get();
+}
+
 } // namespace elg::detail::gpu

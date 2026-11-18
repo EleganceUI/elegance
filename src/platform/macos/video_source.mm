@@ -121,6 +121,9 @@ public:
         for (ObjcObject token : notification_tokens_) {
             [[NSNotificationCenter defaultCenter] removeObserver:token];
         }
+        if (last_buffer_) {
+            CVPixelBufferRelease(last_buffer_);
+        }
     }
 
     // Its ticker wakes the render thread for each new frame (check_for_frame()).
@@ -279,35 +282,17 @@ public:
         }
         const CMTime now = [output itemTimeForHostTime:CACurrentMediaTime()];
         if (![output hasNewPixelBufferForItemTime:now]) {
-            return false;
+            return show_again();
         }
         CVPixelBufferRef buffer = [output copyPixelBufferForItemTime:now itemTimeForDisplay:nullptr];
         if (!buffer) {
             return false;
         }
-        if (imports_ && !copies_) {
-            std::optional<VideoFrame> imported =
-                host_->import_native_frame(native_frame(buffer, host_->source_id()));
-            if (imported) {
-                CVPixelBufferRelease(buffer);
-                std::lock_guard lock(mutex_);
-                current_ = std::move(imported);
-                return true;
-            }
-            // The device went away or refused it: copy from now on.
-            log_warning("video: can't share frames with the renderer; copying them instead");
-            copies_ = true;
-            std::lock_guard lock(mutex_);
-            current_.reset(); // until the first copy
+        if (last_buffer_) {
+            CVPixelBufferRelease(last_buffer_);
         }
-        std::optional<VideoFrame> frame = macos::pack_pixel_buffer(buffer, host_->source_id());
-        CVPixelBufferRelease(buffer);
-        if (!frame) {
-            return false;
-        }
-        std::lock_guard lock(mutex_);
-        current_ = std::move(frame);
-        return true;
+        last_buffer_ = buffer; // kept: shown again in a new device, if this one is lost
+        return show(buffer);
     }
 
     std::optional<VideoFrame> current() const override {
@@ -316,6 +301,46 @@ public:
     }
 
 private:
+    // Render thread: `buffer` as the frame to draw: imported into the renderer's device when it
+    // can, else copied. An import that fails is tried again with the next frame (the device it
+    // failed in may be gone by then).
+    bool show(CVPixelBufferRef buffer) {
+        if (imports_ && host_->imports_native_frames()) {
+            if (std::optional<VideoFrame> imported = host_->import_native_frame(native_frame(buffer, host_->source_id()))) {
+                std::lock_guard lock(mutex_);
+                current_ = std::move(imported);
+                return true;
+            }
+            if (!copies_) {
+                log_warning("video: can't share a frame with the renderer; copying it instead");
+                copies_ = true; // said once
+            }
+        }
+        std::optional<VideoFrame> frame = macos::pack_pixel_buffer(buffer, host_->source_id());
+        if (!frame) {
+            return false;
+        }
+        std::lock_guard lock(mutex_);
+        current_ = std::move(frame);
+        return true;
+    }
+
+    // Render thread: the frame shown was imported into a device that's since been lost, where it
+    // draws nothing: shown again from its pixel buffer, in the device that's running now
+    // (ELGSPEC-0025.R4), as a paused video makes no new one. True if so.
+    bool show_again() {
+        if (!last_buffer_) {
+            return false;
+        }
+        {
+            std::lock_guard lock(mutex_);
+            if (!current_ || current_->kind != VideoFrame::Kind::external || host_->imported_frame_current(*current_)) {
+                return false;
+            }
+        }
+        return show(last_buffer_);
+    }
+
     // The ticker, on the video's queue: wakes the render thread once for each new frame, which
     // update() takes.
     void check_for_frame() {
@@ -413,10 +438,11 @@ private:
     ElgVideoObserver* observer_ = nil;
     ObjcObject time_token_ = nil;
     std::vector<ObjcObject> notification_tokens_;
-    // Zero-copy frames: the renderer imports them (set by open()). copies_: an import failed, and
-    // frames are copied from then on (render thread).
+    // Zero-copy frames: the renderer imports them (set by open()). copies_: an import failed,
+    // which was logged (render thread).
     bool imports_ = false;
     bool copies_ = false;
+    CVPixelBufferRef last_buffer_ = nullptr; // the newest frame's (render thread), retained
     mutable std::mutex mutex_;
     std::optional<VideoFrame> current_;
 };

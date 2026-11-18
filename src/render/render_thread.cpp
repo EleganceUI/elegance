@@ -101,7 +101,7 @@ void RenderThread::run(std::promise<void> ready) noexcept {
     try {
         // Decoders that make frames in GPU memory hand them to this renderer's device, once it
         // exists and while it runs.
-        set_native_frame_importer({&imports_native_frames, &import_native_frame});
+        set_native_frame_importer({&imports_native_frames, &import_native_frame, &imported_frame_current});
         const gpu::Instance instance;
         Kept kept;
         // Devices lost in a row before they drew anything: a GPU that loses every new device

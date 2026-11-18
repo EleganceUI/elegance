@@ -47,6 +47,7 @@ public:
     [[nodiscard]] std::optional<RenderAdapter> render_adapter() const override;
     [[nodiscard]] bool imports_native_frames() const override;
     [[nodiscard]] std::optional<VideoFrame> import_native_frame(const VideoFrame& frame) override;
+    [[nodiscard]] bool imported_frame_current(const VideoFrame& frame) const override;
     [[nodiscard]] std::shared_ptr<const DecodedImage> decode_image(
         std::span<const std::uint8_t> data) const override;
 
