@@ -71,8 +71,8 @@ private:
 } // namespace
 
 std::array<int, 4> Pixels::at(int x, int y) const {
-    const auto at = [](int v) { return static_cast<std::size_t>(v); };
-    const std::size_t i = (at(y) * at(width) + at(x)) * 4;
+    const auto count = [](int v) { return static_cast<std::size_t>(v); };
+    const std::size_t i = (count(y) * count(width) + count(x)) * 4;
     return {rgba[i], rgba[i + 1], rgba[i + 2], rgba[i + 3]};
 }
 
