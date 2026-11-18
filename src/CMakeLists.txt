@@ -295,8 +295,8 @@ elg_add_shaders(elegance_render ${PROJECT_SOURCE_DIR}/shaders/video_convert.wgsl
 elg_layer(platform
         SOURCES platform/sdl/accessibility_adapter.cpp platform/sdl/desktop_sdl.cpp platform/sdl/menu_bar.cpp
                 platform/sdl/platform_sdl.cpp platform/sdl/system_text.cpp
-        WINDOWS platform/windows/appearance.cpp platform/windows/dock.cpp platform/windows/menu_bar.cpp
-                platform/windows/native.cpp platform/windows/notifications.cpp
+        WINDOWS platform/windows/app_id.cpp platform/windows/appearance.cpp platform/windows/dock.cpp
+                platform/windows/menu_bar.cpp platform/windows/native.cpp platform/windows/notifications.cpp
         APPLE platform/macos/appearance.mm platform/macos/dock.mm platform/macos/input.mm platform/macos/menu_bar.mm
               platform/macos/native.cpp platform/macos/notifications.mm platform/macos/title_bar.mm
         LINUX platform/linux/appearance.cpp platform/linux/dock.cpp platform/linux/glib_thread.cpp
