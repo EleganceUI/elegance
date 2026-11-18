@@ -137,6 +137,12 @@ void remove_input_monitor(void* monitor) {
     macos::remove_input_monitor(monitor);
 }
 
+bool begin_run() {
+    return false; // nothing to set up
+}
+
+void end_run(bool) noexcept {}
+
 } // namespace native
 
 void wait_for_compositor() {}

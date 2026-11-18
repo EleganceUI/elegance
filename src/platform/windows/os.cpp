@@ -6,6 +6,7 @@
 // stack functions aren't needed here.
 
 #include "core/os_backend.h"
+#include "platform/windows/com.h"
 
 #include <elg/error.h>
 
@@ -181,6 +182,14 @@ void end_elegance_thread(bool begun) noexcept {
     if (begun) {
         CoUninitialize();
     }
+}
+
+HRESULT keep_multithreaded_apartment() noexcept {
+    static const HRESULT kept = [] {
+        CO_MTA_USAGE_COOKIE cookie = nullptr;
+        return CoIncrementMTAUsage(&cookie); // never decremented: kept until the process ends
+    }();
+    return kept;
 }
 
 bool threads_end_before_static_destruction() noexcept {

@@ -69,6 +69,9 @@ add_executable(elegance_tests
         test_setup.cpp
 )
 target_link_libraries(elegance_tests PRIVATE Elegance::Elegance Catch2::Catch2 Boost::beast OpenSSL::SSL)
+if (WIN32)
+    target_link_libraries(elegance_tests PRIVATE ole32) # desktop_tests.cpp asks COM for apartments
+endif ()
 target_include_directories(elegance_tests PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/apps/common)
 target_include_directories(elegance_tests SYSTEM PRIVATE
         $<TARGET_PROPERTY:dawn::webgpu_dawn,INTERFACE_INCLUDE_DIRECTORIES>)

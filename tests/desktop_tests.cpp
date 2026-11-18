@@ -5,13 +5,17 @@
 // Desktop integration (design.md §13.4). The dialogs, notifications, and tray need a running App
 // (and a person to click), so these check the rules around them.
 
+#include "test_images.h"
 #include "test_processes.h"
+
+#include "media/image_decode.h"
 
 #include <elg/elegance.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <format>
@@ -22,6 +26,11 @@
 #include <string>
 #include <type_traits>
 #include <vector>
+
+#if defined(_WIN32)
+#include <windows.h>
+#include <objbase.h>
+#endif
 
 using namespace elg;
 
@@ -88,6 +97,51 @@ TEST_CASE("a file dialog still open when the run ends closes, and its callback g
     // NOLINTEND(concurrency-mt-unsafe)
     std::error_code ignored;
     std::filesystem::remove_all(folder, ignored);
+}
+#endif
+
+#if defined(_WIN32)
+namespace {
+
+// Whether COM is set up on this thread in a single-threaded apartment (OLE's), or, either way, set
+// up explicitly at all (rather than not, or only as part of the process's multithreaded apartment).
+struct Apartment {
+    bool single_threaded = false;
+    bool explicit_setup = false;
+};
+
+Apartment this_thread_apartment() {
+    APTTYPE type{};
+    APTTYPEQUALIFIER qualifier{};
+    if (FAILED(CoGetApartmentType(&type, &qualifier))) {
+        return {}; // CO_E_NOTINITIALIZED: nothing set COM up anywhere
+    }
+    const bool single = type == APTTYPE_STA || type == APTTYPE_MAINSTA;
+    return {single, single || qualifier != APTTYPEQUALIFIER_IMPLICIT_MTA};
+}
+
+} // namespace
+
+TEST_CASE("an image decoded before the run leaves COM on the main thread to the run's OLE", "[.gpu][desktop]") {
+    // This thread, which Elegance didn't start, decodes an image: WIC works without COM being set
+    // up on it (ELGSPEC-0019.R1).
+    const std::vector<std::uint8_t> png = elg::test::black_png(4, 3);
+    CHECK(detail::probe_image(png).width == 4);
+    CHECK_FALSE(this_thread_apartment().explicit_setup);
+
+    // So the run can set OLE up on it, in a single-threaded apartment (ELGSPEC-0019.R2).
+    Apartment during;
+    App app;
+    app.window({.title = "com", .width = 100, .height = 100}, [&] {
+        return Text("x").on_appear([&] {
+            during = this_thread_apartment();
+            CHECK(detail::probe_image(png).height == 3); // decoding in that apartment works too
+            app.quit();
+        });
+    });
+    app.run();
+    CHECK(during.single_threaded);
+    CHECK_FALSE(this_thread_apartment().explicit_setup); // only for the run
 }
 #endif
 

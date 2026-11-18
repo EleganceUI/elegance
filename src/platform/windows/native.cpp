@@ -10,6 +10,7 @@
 #include "platform/sdl/native.h"
 #include "platform/windows/shell.h"
 
+#include "core/log.h"
 #include "core/ui_tasks.h"
 
 #include <elg/events.h>
@@ -18,10 +19,12 @@
 #include <SDL3/SDL.h>
 
 #include <windows.h>
+#include <ole2.h>
 #include <commctrl.h>
 #include <dwmapi.h>
 #include <imm.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <system_error>
 
@@ -145,6 +148,28 @@ void* install_input_monitor(const InputSink&) {
 }
 
 void remove_input_monitor(void*) {}
+
+// SDL's drag and drop, the clipboard and the shell's dialogs need OLE on the UI thread
+// (ELGSPEC-0019.R2). Elegance sets COM up on no other thread it didn't start, so only the app can
+// have put this one in another apartment.
+bool begin_run() {
+    const HRESULT result = OleInitialize(nullptr);
+    if (FAILED(result)) {
+        log_warning("App::run: OLE can't be set up on this thread (HRESULT {:#010x}), so drag and drop, the "
+                    "clipboard and file dialogs may not work: did the app set COM up on it in the "
+                    "multithreaded apartment?",
+                    static_cast<std::uint32_t>(result));
+        return false;
+    }
+    return true;
+}
+
+void end_run(bool begun) noexcept {
+    windows::release_taskbar(); // made in this apartment
+    if (begun) {
+        OleUninitialize();
+    }
+}
 
 } // namespace native
 

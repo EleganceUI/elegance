@@ -83,6 +83,12 @@ void appearance_changed(SDL_Window* window, WindowParts& parts);
 void watch_appearance();
 void unwatch_appearance();
 
+// Sets the UI thread up for a run, before SDL starts (Windows: OLE, in a single-threaded
+// apartment, ELGSPEC-0019.R1): true if end_run() has something to undo. A failure is logged.
+bool begin_run();
+// Undoes begin_run(), after SDL quits, and lets go of what the run made in its apartment.
+void end_run(bool begun) noexcept;
+
 } // namespace elg::detail::platform::native
 
 #endif // ELG_PLATFORM_SDL_NATIVE_H

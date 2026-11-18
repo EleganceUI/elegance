@@ -7,6 +7,7 @@
 // access in Settings > Privacy; when it's denied, error() says so.
 
 #include "media/video_backend.h"
+#include "platform/windows/com.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
@@ -60,10 +61,11 @@ std::wstring widen(const std::string& text) {
     return out;
 }
 
+// Media Foundation, started once per process, on whichever thread first lists or opens a camera:
+// COM in that thread's apartment, or, where nothing set it up, the multithreaded one.
 void start_mf() {
     static const bool started = [] {
-        CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        return SUCCEEDED(MFStartup(MF_VERSION, MFSTARTUP_FULL));
+        return SUCCEEDED(os::keep_multithreaded_apartment()) && SUCCEEDED(MFStartup(MF_VERSION, MFSTARTUP_FULL));
     }();
     (void)started;
 }

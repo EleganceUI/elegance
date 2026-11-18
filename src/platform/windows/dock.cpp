@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -33,19 +34,26 @@ std::optional<std::string> g_badge;
 std::optional<double> g_fraction;
 ProgressState g_state = ProgressState::normal;
 
+// The taskbar's COM object, made the first time in a run, on the UI thread, in the apartment
+// App::run sets up there, and let go of as the run ends (release_taskbar()).
+ComPtr<ITaskbarList3> g_taskbar;
+bool g_taskbar_unavailable = false; // in this run
+
 ITaskbarList3* taskbar() {
-    static ComPtr<ITaskbarList3> list = [] {
-        const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        (void)com; // already initialized (SDL's OLE drag and drop): fine either way
+    if (!g_taskbar && !g_taskbar_unavailable) {
         ComPtr<ITaskbarList3> created;
-        if (FAILED(CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&created))) ||
-            FAILED(created->HrInit())) {
-            log_warning("taskbar: not available");
-            return ComPtr<ITaskbarList3>();
+        HRESULT result = CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&created));
+        if (SUCCEEDED(result)) {
+            result = created->HrInit();
         }
-        return created;
-    }();
-    return list.Get();
+        if (FAILED(result)) {
+            log_warning("taskbar: not available (HRESULT {:#010x})", static_cast<std::uint32_t>(result));
+            g_taskbar_unavailable = true;
+        } else {
+            g_taskbar = created;
+        }
+    }
+    return g_taskbar.Get();
 }
 
 // The app's top-level windows (not menus or tooltips).
@@ -172,6 +180,11 @@ void show_badge(ITaskbarList3* list, HWND window) {
 } // namespace
 
 namespace windows {
+
+void release_taskbar() noexcept {
+    g_taskbar.Reset();
+    g_taskbar_unavailable = false;
+}
 
 void taskbar_button_created(HWND window) {
     if (ITaskbarList3* list = taskbar()) {

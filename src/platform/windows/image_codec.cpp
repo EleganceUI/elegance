@@ -5,6 +5,7 @@
 // Images on Windows (media/image_codec_backend.h): the Windows Imaging Component.
 
 #include "media/image_codec_backend.h"
+#include "platform/windows/com.h"
 
 #include <elg/error.h>
 
@@ -29,26 +30,25 @@ void check_hr(HRESULT result, std::string_view what) {
     }
 }
 
-// WIC is apartment-agnostic for decoding; each thread initializes COM once.
-IWICImagingFactory* factory() {
-    thread_local ComPtr<IWICImagingFactory> instance = [] {
-        const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        (void)com; // S_FALSE / RPC_E_CHANGED_MODE: COM is already set up on this thread
-        ComPtr<IWICImagingFactory> created;
-        check_hr(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&created)),
-                 "start the Windows Imaging Component");
-        return created;
-    }();
-    return instance.Get();
+// A WIC factory for one image, in the calling thread's apartment: the one the app or Elegance set
+// up, or, where nothing did, the multithreaded apartment (keep_multithreaded_apartment()). Made
+// for each image, as a thread's apartment can change between them (App::run sets OLE up on its
+// thread for the run).
+ComPtr<IWICImagingFactory> factory() {
+    check_hr(os::keep_multithreaded_apartment(), "use COM");
+    ComPtr<IWICImagingFactory> created;
+    check_hr(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&created)),
+             "start the Windows Imaging Component");
+    return created;
 }
 
-ComPtr<IWICBitmapFrameDecode> first_frame(std::span<const std::uint8_t> data) {
+ComPtr<IWICBitmapFrameDecode> first_frame(IWICImagingFactory* wic, std::span<const std::uint8_t> data) {
     ComPtr<IWICStream> stream;
-    check_hr(factory()->CreateStream(&stream), "create an image stream");
+    check_hr(wic->CreateStream(&stream), "create an image stream");
     check_hr(stream->InitializeFromMemory(const_cast<BYTE*>(data.data()), static_cast<DWORD>(data.size())),
              "read the image");
     ComPtr<IWICBitmapDecoder> decoder;
-    const HRESULT found = factory()->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnDemand, &decoder);
+    const HRESULT found = wic->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnDemand, &decoder);
     if (FAILED(found)) {
         throw ResourceError("not an image format this system can decode");
     }
@@ -80,7 +80,7 @@ int exif_orientation(IWICBitmapFrameDecode* frame) {
 } // namespace
 
 StoredImageInfo platform_probe_image(std::span<const std::uint8_t> data) {
-    const ComPtr<IWICBitmapFrameDecode> frame = first_frame(data);
+    const ComPtr<IWICBitmapFrameDecode> frame = first_frame(factory().Get(), data);
     UINT width = 0;
     UINT height = 0;
     check_hr(frame->GetSize(&width, &height), "read the image's size");
@@ -88,7 +88,8 @@ StoredImageInfo platform_probe_image(std::span<const std::uint8_t> data) {
 }
 
 int platform_decode_image(std::span<const std::uint8_t> data, std::uint32_t max_size, DecodedImage& image) {
-    const ComPtr<IWICBitmapFrameDecode> frame = first_frame(data);
+    const ComPtr<IWICImagingFactory> wic = factory();
+    const ComPtr<IWICBitmapFrameDecode> frame = first_frame(wic.Get(), data);
     const int orientation = exif_orientation(frame.Get());
     UINT width = 0;
     UINT height = 0;
@@ -99,14 +100,14 @@ int platform_decode_image(std::span<const std::uint8_t> data, std::uint32_t max_
         const UINT scaled_w = std::max(1u, static_cast<UINT>(width * k));
         const UINT scaled_h = std::max(1u, static_cast<UINT>(height * k));
         ComPtr<IWICBitmapScaler> scaler;
-        check_hr(factory()->CreateBitmapScaler(&scaler), "create an image scaler");
+        check_hr(wic->CreateBitmapScaler(&scaler), "create an image scaler");
         check_hr(scaler->Initialize(source.Get(), scaled_w, scaled_h, WICBitmapInterpolationModeFant), "scale the image");
         source = scaler;
         width = scaled_w;
         height = scaled_h;
     }
     ComPtr<IWICFormatConverter> converter;
-    check_hr(factory()->CreateFormatConverter(&converter), "create an image converter");
+    check_hr(wic->CreateFormatConverter(&converter), "create an image converter");
     check_hr(converter->Initialize(source.Get(), GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, nullptr, 0,
                                    WICBitmapPaletteTypeCustom),
              "convert the image to RGBA");
@@ -120,8 +121,7 @@ int platform_decode_image(std::span<const std::uint8_t> data, std::uint32_t max_
 
 std::optional<std::vector<unsigned char>> encode_png(std::span<const std::uint8_t> bgra, std::uint32_t width,
                                                      std::uint32_t height) {
-    // The decoders' factory, which initializes COM on this thread first (as nothing may have).
-    IWICImagingFactory* wic = nullptr;
+    ComPtr<IWICImagingFactory> wic;
     try {
         wic = factory();
     } catch (const ResourceError&) {

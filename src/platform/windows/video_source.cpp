@@ -6,6 +6,7 @@
 // frame-server mode, rendering each new frame into a ring of D3D11 textures shared with WebGPU.
 
 #include "media/video_backend.h"
+#include "platform/windows/com.h"
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
@@ -33,12 +34,11 @@ namespace {
 
 using Microsoft::WRL::ComPtr;
 
-// Media Foundation, started once per process.
+// Media Foundation, started once per process, on whichever thread first plays a video: COM in
+// that thread's apartment, or, where nothing set it up, the multithreaded one.
 bool start_media_foundation() {
     static const bool started = [] {
-        const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        (void)com;
-        return SUCCEEDED(MFStartup(MF_VERSION, MFSTARTUP_FULL));
+        return SUCCEEDED(os::keep_multithreaded_apartment()) && SUCCEEDED(MFStartup(MF_VERSION, MFSTARTUP_FULL));
     }();
     return started;
 }
