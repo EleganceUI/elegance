@@ -234,10 +234,9 @@ jobs:
 
             # The installed packages (ELGSPEC-0007.R17): the shared library exports only the C API, and
             # the static package keeps its C++ standard library to itself (on Linux, where it holds it)
-            # or links the system's (macOS); link_check.cpp links with it and runs, with the C++
-            # compiler's standard library, and on Linux with Clang's libc++ (installed above) too.
+            # or links the system's (macOS and Windows); link_check.cpp links with it and runs, with
+            # the C++ compiler's standard library, and on Linux with Clang's libc++ (installed above) too.
             - name: Package check
-              if: runner.os != 'Windows'
               run: python3 tools/c-package-check.py dist dist-static
 
             - name: Package

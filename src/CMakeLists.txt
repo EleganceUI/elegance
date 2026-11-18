@@ -102,14 +102,16 @@ if (ELG_BUILD_SHARED)
     # What generate_export_header() tests for the library's own sources: ELG_API exports.
     target_compile_definitions(elegance_settings INTERFACE elegance_EXPORTS)
 elseif (ELG_STATIC_EXPORTS)
-    # Linked into a shared library that re-exports ELG_API (the Rust bindings' prebuilt library).
+    # Linked into the C library (c/CMakeLists.txt), which exports the C API alone (ELGSPEC-0007.R17).
     # The generated header leaves ELG_API empty for a static library unless it's already defined.
+    # On Linux and macOS ELG_API is visible and the C library's link filters it to elg_*; MSVC has
+    # no such filter, so there only the C functions (ELG_C_FUNCTION) are exported.
     if (MSVC)
-        set(elg_api_definition "ELG_API=__declspec(dllexport)")
+        set(elg_api_definition "ELG_API=" "ELG_C_FUNCTION=__declspec(dllexport)")
     else ()
         set(elg_api_definition "ELG_API=__attribute__((visibility(\"default\")))")
     endif ()
-    target_compile_definitions(elegance_settings INTERFACE "${elg_api_definition}")
+    target_compile_definitions(elegance_settings INTERFACE ${elg_api_definition})
 else ()
     target_compile_definitions(elegance_settings INTERFACE ELG_STATIC_DEFINE)
 endif ()
@@ -376,6 +378,12 @@ target_include_directories(elegance PUBLIC
 # touch those members, so MSVC's C4251 warning about them is noise; this scopes it away without
 # disabling it in app code.
 set(ELG_EXPORT_EXTRA [=[
+/* Elegance's own C functions (elg_*, elg/gpu_image.h): exported where ELG_API is, and by the C
+   library, which exports nothing else. */
+#ifndef ELG_C_FUNCTION
+#define ELG_C_FUNCTION ELG_API
+#endif
+
 #if defined(_MSC_VER)
 #define ELG_PRIVATE_MEMBERS_BEGIN __pragma(warning(push)) __pragma(warning(disable : 4251))
 #define ELG_PRIVATE_MEMBERS_END __pragma(warning(pop))
@@ -391,7 +399,7 @@ generate_export_header(elegance
         CUSTOM_CONTENT_FROM_VARIABLE ELG_EXPORT_EXTRA
 )
 if (NOT ELG_BUILD_SHARED AND ELG_STATIC_EXPORTS)
-    target_compile_definitions(elegance PUBLIC "${elg_api_definition}")
+    target_compile_definitions(elegance PUBLIC ${elg_api_definition})
 elseif (NOT ELG_BUILD_SHARED)
     target_compile_definitions(elegance PUBLIC ELG_STATIC_DEFINE)
     # What linking it takes, for builds outside CMake (the Rust bindings), written at the end.
