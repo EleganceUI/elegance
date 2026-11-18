@@ -18,7 +18,9 @@
 #import <QuartzCore/QuartzCore.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <format>
 #include <functional>
@@ -102,6 +104,10 @@ public:
     AVFoundationVideo& operator=(AVFoundationVideo&&) = delete;
 
     ~AVFoundationVideo() override {
+        if (ticker_) {
+            dispatch_source_cancel(ticker_);
+            dispatch_sync(queue_, ^{}); // a check running now ends first: it uses this
+        }
         if (player_) {
             [player_ pause];
             if (time_token_) {
@@ -117,8 +123,8 @@ public:
         }
     }
 
-    // The render thread looks for frames while it plays.
-    [[nodiscard]] bool wakes_for_frames() const noexcept override { return false; }
+    // Its ticker wakes the render thread for each new frame (check_for_frame()).
+    [[nodiscard]] bool wakes_for_frames() const noexcept override { return true; }
 
     void open(const std::shared_ptr<FrameSourceHost>& host) override {
         host_ = host.get();
@@ -139,6 +145,16 @@ public:
             attributes = native_buffer_attributes();
         }
         output_ = [[AVPlayerItemVideoOutput alloc] initWithPixelBufferAttributes:attributes];
+        // AVFoundation says a new frame is due only when asked: the ticker asks, on the video's
+        // queue, every 4 ms while it plays and every 100 ms while it doesn't (a seek shows a frame
+        // too), and wakes the render thread only when one is (ELGSPEC-0027.R4).
+        ticker_ = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, queue_);
+        AVFoundationVideo* const checking = this; // the destructor cancels the ticker first
+        dispatch_source_set_event_handler(ticker_, ^{
+          run_foreign_callback([checking] { checking->check_for_frame(); });
+        });
+        pace(false);
+        dispatch_resume(ticker_);
         item_ = [AVPlayerItem playerItemWithURL:url];
         [item_ addOutput:output_];
         player_ = [AVPlayer playerWithPlayerItem:item_];
@@ -216,6 +232,7 @@ public:
         [player_ play];
         host_->set_playing(true);
         host_->set_playing_now(true);
+        pace(true);
     }
 
     void pause() override {
@@ -224,6 +241,7 @@ public:
         }
         host_->set_playing(false);
         host_->set_playing_now(false);
+        pace(false);
     }
 
     void seek(double seconds) override {
@@ -254,6 +272,7 @@ public:
     // --- Render thread ---
 
     bool update() override {
+        notified_ = false; // what the ticker found is taken now, or gone
         AVPlayerItemVideoOutput* output = output_;
         if (!output) {
             return false;
@@ -297,6 +316,28 @@ public:
     }
 
 private:
+    // The ticker, on the video's queue: wakes the render thread once for each new frame, which
+    // update() takes.
+    void check_for_frame() {
+        AVPlayerItemVideoOutput* output = output_;
+        if (!output || notified_) {
+            return;
+        }
+        if ([output hasNewPixelBufferForItemTime:[output itemTimeForHostTime:CACurrentMediaTime()]]) {
+            notified_ = true;
+            host_->notify_new_frame();
+        }
+    }
+
+    // How often the ticker asks: often while the video plays. Any thread.
+    void pace(bool playing) {
+        if (!ticker_) {
+            return;
+        }
+        const std::uint64_t interval = (playing ? 4 : 100) * NSEC_PER_MSEC;
+        dispatch_source_set_timer(ticker_, dispatch_time(DISPATCH_TIME_NOW, 0), interval, NSEC_PER_MSEC);
+    }
+
     // Runs `action` with the host on the UI thread, unless the source is gone by then (the engine
     // lives as long as its source).
     template <typename Action>
@@ -339,6 +380,7 @@ private:
         } else if ([key_path isEqualToString:@"timeControlStatus"]) {
             const bool now_playing = player_.timeControlStatus != AVPlayerTimeControlStatusPaused;
             host_->set_playing_now(now_playing);
+            pace(now_playing);
             const double at = seconds_of(player_.currentTime);
             post(weak, [now_playing, at](FrameSourceHost& source) {
                 source.set_playing(now_playing);
@@ -363,6 +405,8 @@ private:
     FrameSourceHost* host_ = nullptr; // set by open(); outlives the engine
     std::weak_ptr<FrameSourceHost> weak_host_; // for the callbacks and what's posted to the UI thread
     dispatch_queue_t queue_ = nil;
+    dispatch_source_t ticker_ = nil; // check_for_frame()
+    std::atomic<bool> notified_{false}; // the ticker woke the render thread for a frame update() hasn't taken
     AVPlayer* player_ = nil;
     AVPlayerItem* item_ = nil;
     AVPlayerItemVideoOutput* output_ = nil;

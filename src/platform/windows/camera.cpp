@@ -300,8 +300,8 @@ public:
 
     ~MediaFoundationCamera() override { stop_capture(); }
 
-    // The render thread looks for frames while it captures.
-    [[nodiscard]] bool wakes_for_frames() const noexcept override { return false; }
+    // Each frame captured wakes the render thread (set_frame()).
+    [[nodiscard]] bool wakes_for_frames() const noexcept override { return true; }
 
     void open(const std::shared_ptr<FrameSourceHost>& host) override {
         host_ = host.get();
@@ -864,12 +864,15 @@ public:
 private:
     void set_frame(std::shared_ptr<const std::vector<std::uint8_t>> pixels, const GUID& subtype, UINT32 width,
                    UINT32 height) {
-        std::lock_guard lock(frame_mutex_);
-        frame_ = std::move(pixels);
-        frame_width_ = width;
-        frame_height_ = height;
-        frame_subtype_ = subtype;
-        ++frame_number_;
+        {
+            std::lock_guard lock(frame_mutex_);
+            frame_ = std::move(pixels);
+            frame_width_ = width;
+            frame_height_ = height;
+            frame_subtype_ = subtype;
+            ++frame_number_;
+        }
+        host_->notify_new_frame(); // a new frame, and only then, wakes the render thread (ELGSPEC-0027.R4)
     }
 
     CameraRequest options_;

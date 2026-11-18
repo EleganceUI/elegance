@@ -9,17 +9,21 @@
 #include "platform/windows/com.h"
 
 #include "core/log.h"
+#include "core/threads.h"
 #include "core/ui_tasks.h"
 
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <format>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 #include <windows.h>
 #include <d3d11_4.h>
@@ -97,6 +101,7 @@ public:
     MediaFoundationVideo& operator=(MediaFoundationVideo&&) = delete;
 
     ~MediaFoundationVideo() override {
+        ticker_ = std::jthread(); // stops it, and waits: it calls into the engine
         std::lock_guard lock(mutex_);
         if (engine_) {
             if (const HRESULT result = engine_->Shutdown(); FAILED(result)) {
@@ -111,8 +116,8 @@ public:
         }
     }
 
-    // The render thread looks for frames while it plays.
-    [[nodiscard]] bool wakes_for_frames() const noexcept override { return false; }
+    // Its ticker wakes the render thread for each new frame (tick()).
+    [[nodiscard]] bool wakes_for_frames() const noexcept override { return true; }
 
     // The engine itself is made once the renderer's adapter is known (ensure_engine()).
     void open(const std::shared_ptr<FrameSourceHost>& host) override {
@@ -215,9 +220,8 @@ public:
         if (!ensure_engine()) {
             return false;
         }
-        LONGLONG pts = 0;
-        if (engine_->OnVideoStreamTick(&pts) != S_OK) {
-            return false; // no new frame
+        if (!frame_ready_.exchange(false)) {
+            return false; // no new frame (tick())
         }
         DWORD width = 0;
         DWORD height = 0;
@@ -407,7 +411,30 @@ private:
         if (FAILED(result)) {
             report(result, "set up");
         }
+        ticker_ = std::jthread([this](const std::stop_token& stop) { tick(stop); });
         return true;
+    }
+
+    // The ticker's thread: Media Foundation says when a new frame is due only when asked
+    // (OnVideoStreamTick, which takes it), so this asks, every 4 ms while the video plays and every
+    // 100 ms while it doesn't (a seek shows a frame too), and wakes the render thread only when one
+    // is: the render thread doesn't look for frames itself (ELGSPEC-0027.R4). update() transfers
+    // it. From the engine's creation to its destruction.
+    void tick(const std::stop_token& stop) {
+        const ThreadSetup thread_setup; // Media Foundation's COM
+        std::mutex sleeping;
+        std::condition_variable_any wake;
+        std::unique_lock lock(sleeping);
+        while (!stop.stop_requested()) {
+            IMFMediaEngine* const engine = engine_raw_.load();
+            LONGLONG due = 0;
+            if (engine && !frame_ready_.load() && engine->OnVideoStreamTick(&due) == S_OK) {
+                frame_ready_ = true;
+                run_foreign_callback([this] { host_->notify_new_frame(); });
+            }
+            const auto interval = host_->is_playing_now() ? std::chrono::milliseconds(4) : std::chrono::milliseconds(100);
+            wake.wait_for(lock, stop, interval, [] { return false; });
+        }
     }
 
     // A call into the engine failed: logged, and the player's error() on the UI thread. Any
@@ -558,6 +585,8 @@ private:
     ComPtr<IMFDXGIDeviceManager> manager_;
     ComPtr<IMFMediaEngine> engine_;
     std::atomic<IMFMediaEngine*> engine_raw_{nullptr}; // set once; for the event callback
+    std::atomic<bool> frame_ready_{false}; // tick() found a frame, which update() hasn't taken
+    std::jthread ticker_;                  // tick(), once the engine exists
     bool failed_ = false;
     bool want_playing_ = false;
     float want_volume_ = 1.f;
