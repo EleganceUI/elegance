@@ -261,6 +261,7 @@ View IconCards() {
 // a layout value starts a new row before a child.
 struct RowBreak {
     using Value = bool;
+    static constexpr std::string_view name = "sandbox.row_break";
     static bool default_value() { return false; }
 };
 

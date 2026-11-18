@@ -1,9 +1,9 @@
 # The prebuilt C library: the C API (c/*.cpp) and a static Elegance, with all of Elegance's
-# dependencies, in one shared library that exports only the C API (shim.h and ELG_API's C
-# functions). Language bindings link it with no C++ compiler, CMake, or vcpkg: CI
-# (.github/workflows/c-api.yml) builds it per target for each commit on main and attaches it to a
-# prerelease tagged c-<first 12 hex digits of the commit>, and elegance-rs's build script downloads
-# the one for the commit it pins.
+# dependencies, in one shared library that exports only the C API (the functions its C header,
+# include/elg-c/elegance.h, declares). Language bindings link it with no C++ compiler, CMake, or
+# vcpkg: CI (.github/workflows/c-api.yml) builds it per target for each commit on main and attaches
+# it to a prerelease tagged c-<first 12 hex digits of the commit>, and elegance-rs's build script
+# downloads the one for the commit it pins.
 #
 #   cmake -S c -B build/c -G Ninja -DCMAKE_BUILD_TYPE=Release \
 #         -DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake \
@@ -70,6 +70,7 @@ if (ELG_C_STATIC)
     target_link_libraries(elegance_c_api PRIVATE elegance)
     elegance_c_api_warnings(elegance_c_api)
     add_executable(elegance_c_link_check link_check.cpp)
+    target_include_directories(elegance_c_link_check PRIVATE include)
     target_link_libraries(elegance_c_link_check PRIVATE elegance_c_api)
     if (MSVC)
         target_compile_definitions(elegance_c_api PRIVATE NOMINMAX)
@@ -77,12 +78,37 @@ if (ELG_C_STATIC)
     endif ()
 
     set(package "${CMAKE_CURRENT_BINARY_DIR}/package")
+    # Linux: the C++ standard library the package is built with, and its unwinder, which the package
+    # holds (package-static.cmake): libc++'s with -stdlib=libc++, libstdc++'s otherwise.
     set(cxx_stdlib "")
     if (CMAKE_SYSTEM_NAME STREQUAL "Linux")
-        execute_process(COMMAND ${CMAKE_CXX_COMPILER} -print-file-name=libstdc++.a
-                        OUTPUT_VARIABLE cxx_stdlib OUTPUT_STRIP_TRAILING_WHITESPACE)
+        separate_arguments(cxx_flags UNIX_COMMAND "${CMAKE_CXX_FLAGS}")
+        if (CMAKE_CXX_FLAGS MATCHES "-stdlib=libc\\+\\+")
+            set(runtime libc++.a libc++abi.a libunwind.a libc++experimental.a)
+        else ()
+            set(runtime libstdc++.a libgcc_eh.a)
+        endif ()
+        foreach (archive IN LISTS runtime)
+            execute_process(COMMAND ${CMAKE_CXX_COMPILER} ${cxx_flags} -print-file-name=${archive}
+                            OUTPUT_VARIABLE path OUTPUT_STRIP_TRAILING_WHITESPACE)
+            if (IS_ABSOLUTE "${path}" AND EXISTS "${path}")
+                list(APPEND cxx_stdlib "${path}")
+            elseif (NOT archive STREQUAL "libc++experimental.a")
+                message(FATAL_ERROR "The static package holds ${archive}, which ${CMAKE_CXX_COMPILER} can't find")
+            endif ()
+        endforeach ()
+        list(JOIN cxx_stdlib "|" cxx_stdlib)
+        # Rebinds GCC's GNU unique symbols, for objcopy to make them local (unique-to-global.py).
+        find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        set(python "${Python3_EXECUTABLE}")
     endif ()
     find_program(ELG_LIBTOOL libtool)
+    # GNU ld, which gives common symbols space in a relocatable link (package-static.cmake); lld
+    # doesn't.
+    find_program(ELG_GNU_LD NAMES ld.bfd)
+    if (NOT ELG_GNU_LD)
+        set(ELG_GNU_LD "${CMAKE_LINKER}")
+    endif ()
     add_custom_command(
             OUTPUT "${package}/elegance-link.txt"
             COMMAND ${CMAKE_COMMAND}
@@ -92,16 +118,21 @@ if (ELG_C_STATIC)
                     "-DSYSTEM=${CMAKE_SYSTEM_NAME}"
                     "-DAR=${CMAKE_AR}"
                     "-DLIBTOOL=${ELG_LIBTOOL}"
+                    "-DLD=${ELG_GNU_LD}"
+                    "-DOBJCOPY=${CMAKE_OBJCOPY}"
+                    "-DNM=${CMAKE_NM}"
                     "-DCXX_STDLIB=${cxx_stdlib}"
+                    "-DPYTHON=${python}"
                     -P "${CMAKE_CURRENT_SOURCE_DIR}/package-static.cmake"
             DEPENDS elegance_c_api elegance "${CMAKE_CURRENT_SOURCE_DIR}/package-static.cmake"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/unique-to-global.py"
                     "${CMAKE_CURRENT_BINARY_DIR}/elegance/elegance-link.txt"
             COMMENT "Merging the static package"
             VERBATIM)
     add_custom_target(elegance_c ALL DEPENDS "${package}/elegance-link.txt")
 
     install(DIRECTORY "${package}/" DESTINATION .)
-    install(FILES shim.h DESTINATION include/elg-c)
+    install(FILES include/elg-c/elegance.h DESTINATION include/elg-c)
     install(FILES "${ELEGANCE_ROOT}/LICENSE" DESTINATION . RENAME LICENSE-elegance)
     return()
 endif ()
@@ -109,6 +140,7 @@ endif ()
 add_library(elegance_c SHARED ${C_API_SOURCES})
 elegance_c_api_warnings(elegance_c)
 add_executable(elegance_c_link_check link_check.cpp)
+target_include_directories(elegance_c_link_check PRIVATE include)
 target_link_libraries(elegance_c_link_check PRIVATE elegance_c)
 # The whole archive, so ELG_API functions the C API doesn't call (elg_gpu_image_*) are exported too.
 target_link_libraries(elegance_c PRIVATE "$<LINK_LIBRARY:WHOLE_ARCHIVE,elegance>")
@@ -139,7 +171,7 @@ install(TARGETS elegance_c
         RUNTIME DESTINATION lib
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib)
-install(FILES shim.h DESTINATION include/elg-c)
+install(FILES include/elg-c/elegance.h DESTINATION include/elg-c)
 # Dawn's Direct3D 12 backend loads the DirectX shader compiler at run time.
 if (WIN32)
     install(FILES

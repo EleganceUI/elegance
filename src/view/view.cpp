@@ -735,7 +735,7 @@ bool LayoutChild::is_spacer() const noexcept {
     return element_->is_spacer();
 }
 
-const void* LayoutChild::layout_value(const std::type_info& key) const {
+const void* LayoutChild::layout_value(std::uint64_t key) const {
     return element_->find_layout_value(key);
 }
 

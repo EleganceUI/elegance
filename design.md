@@ -1788,8 +1788,8 @@ Separate render thread from day one (decided).
 
 **M3: Environment & Animation**
 - [x] Environment (`elg/environment.h`): `EnvironmentValues` is a persistent map of typed keys
-  with stable string names; every value is a reactive argument. `Environment<Key>()` reads a key
-  while views are built, and `.environment<Key>(value)` sets one.
+  with stable string names, kept as a hash of the name; every value is a reactive argument.
+  `Environment<Key>()` reads a key while views are built, and `.environment<Key>(value)` sets one.
   - Built-in keys: font, foreground, tint, color scheme, theme, disabled, button style.
 - [x] Themes (`elg/theme.h`): `Theme` with light and dark `ColorTokens`. `ThemeColor` tokens
   work anywhere a color does and resolve where they're used. Windows follow the system light/dark
@@ -2166,17 +2166,20 @@ Separate render thread from day one (decided).
       layout. It's kept across measure, place and frames.
     - Called without framework storage (by another layout), it builds a temporary cache.
   - Layout values: `view.layout_value<Key>(value)` and `LayoutChild::value<Key>()`, where a key
-    is a type with `Value` and `default_value()`.
+    is a type with `Value`, `name` and `default_value()`, told apart by a hash of its name.
     - Carried by a layout-transparent `LayoutValueModifier<Key>`.
     - Found through the modifiers wrapping a child (effects, decorations, events, transitions),
       never inside nested layouts.
   - Sandbox: `FlowLayout` (wrapping tags) uses both, with a `RowBreak` value.
 - [x] Hot reload and previews (§9.6), reset-on-reload:
   - `elg/hot_reload.h`:
-    - `ELG_MODULE(root)` exports `elg_module_entry` (an ABI version, the root view and the
-      module's previews).
+    - `ELG_MODULE(root)` exports `elg_module_entry`: an ABI version, whether there's a root
+      view, the module's previews, and a function and context that build the module's own views
+      by index (a Rust module's entry from the C API has its module as the context). The host
+      copies what it needs of the entry.
     - `ELG_PREVIEW("Name") { ... }` registers into a per-module list (an inline function's
-      static, so each DLL has its own).
+      static). `elegance_views_module()` builds modules with hidden symbols and exports only
+      `elg_module_entry`, so each module and each load of one has its own.
     - `HotReload({.module, .build_command, .watch, .show})` is a window's content.
   - A reload is a `ForEach` over a one-item "generation" list, so the existing machinery
     unmounts the old tree (its scope and effects) and mounts the new module's views. No new
@@ -2185,12 +2188,16 @@ Separate render thread from day one (decided).
     the file. The previous module stays loaded while its views fade out; older ones unload.
     Modules still loaded at exit are left loaded.
   - A watcher thread polls the watched folders every 250 ms.
-    - A change runs the build command (output captured).
+    - A change runs the build command (output captured) as a child process (`core/child_process.h`).
+      On Linux and macOS its shell leads a process group of its own; destroying the host (its
+      window closing, the app quitting) kills that group and doesn't wait for the build.
     - A new module file (from our build or an IDE's) reloads once it has settled.
     - Results reach the UI thread through `post_ui_task` (a queue the App drains each loop
       iteration, with a wake).
   - A status badge shows "Building…", the first compiler error (file, line, message) or
-    "Reloaded (N ms)". A failed build keeps the last good views.
+    "Reloaded (N ms)". A failed build keeps the last good views, and a panel over the bottom
+    shows the build's whole output, one line per row of a lazy stack, until a build or a load
+    succeeds (Hide hides it until the next failure).
   - CMake: `elegance_views_module(target sources...)` and
     `elegance_hot_reload(host MODULE views [WATCH ...])`. The latter generates
     `<host>_hot_reload.h` with `elg_hot_reload_options()`. On Windows the rebuild runs through a

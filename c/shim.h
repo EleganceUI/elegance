@@ -15,11 +15,17 @@
 //
 // Ownership: an `elg::View*` (and Text*, Shape*, ...) argument named `take_*` or passed in an
 // array is consumed. `const T*` arguments are borrowed. Returned pointers are owned by the caller.
+//
+// Threads: a function is for the UI thread unless its doc says "Callable from any thread". Called
+// on another thread while an App runs, it fails with a UsageError, and what it consumes is
+// released on the UI thread.
 
 #ifndef ELG_RUST_SHIM_H
 #define ELG_RUST_SHIM_H
 
 #include <elg/elegance.h>
+
+#include "layout_fields.h"
 
 #include <array>
 #include <cstddef>
@@ -28,9 +34,11 @@
 #include <filesystem>
 #include <format>
 #include <functional>
+#include <initializer_list>
 #include <memory>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -381,9 +389,41 @@ struct ElgImageSource {
     uint32_t max_side;
 };
 
+/// An elg::Theme: its light colors, then its dark ones (17 each, in elg::ColorTokens' order), then
+/// its blur radii (7, in elg::BlurTokens' order).
+struct ElgTheme {
+    ElgColor colors[34]; ///< `light`, then `dark`.
+    float blur[7];       ///< `blur`.
+};
+
+/// An elg::LayoutChild, which a custom layout gets an array of: one pointer, Elegance's, only for
+/// passing back to the C API.
+struct ElgLayoutChild {
+    void* element; ///< Elegance's.
+};
+
 } // extern "C"
 
+// The C structs that stand for C++ ones are laid out as those are, so they convert in place.
+static_assert(sizeof(ElgTheme) == sizeof(elg::Theme) && alignof(ElgTheme) == alignof(elg::Theme));
+static_assert(offsetof(ElgTheme, blur) == offsetof(elg::Theme, blur));
+static_assert(sizeof(ElgLayoutChild) == sizeof(elg::LayoutChild) && alignof(ElgLayoutChild) == alignof(elg::LayoutChild));
+
 namespace elg_shim {
+
+// The C++ objects that ElgTheme and ElgLayoutChild stand for.
+inline const elg::Theme& cpp_theme(const ElgTheme& theme) {
+    return *reinterpret_cast<const elg::Theme*>(&theme);
+}
+inline elg::Theme& cpp_theme(ElgTheme& theme) {
+    return *reinterpret_cast<elg::Theme*>(&theme);
+}
+inline const elg::LayoutChild* cpp_children(const ElgLayoutChild* children) {
+    return reinterpret_cast<const elg::LayoutChild*>(children);
+}
+inline const ElgLayoutChild* c_children(const elg::LayoutChild* children) {
+    return reinterpret_cast<const ElgLayoutChild*>(children);
+}
 
 // Thrown through Elegance when a Rust closure panicked; the panic payload stays on the Rust side.
 struct RustPanic final : std::exception {
@@ -793,7 +833,7 @@ struct PropValue<elg::PointerStyle> {
 };
 template <>
 struct PropValue<elg::Theme> {
-    static elg::Theme from(const void* v) { return *static_cast<const elg::Theme*>(v); }
+    static elg::Theme from(const void* v) { return cpp_theme(*static_cast<const ElgTheme*>(v)); }
 };
 template <>
 struct PropValue<elg::HoverDelay> {
@@ -878,13 +918,41 @@ inline std::vector<elg::View> take_all(ViewArray& array) {
     return result;
 }
 
+// What a C API call consumed but didn't take over, moved out of the call's arguments to be
+// released together: closures to drop, and handles to free.
+struct Leftovers {
+    std::vector<ElgClosure> closures;
+    std::vector<std::pair<void*, void (*)(void*) noexcept>> objects; // each with what frees it
+
+    [[nodiscard]] bool empty() const noexcept { return closures.empty() && objects.empty(); }
+    void release() noexcept {
+        for (ElgClosure& closure : closures) {
+            elg_shim::release(closure);
+        }
+        for (const auto& [object, free] : objects) {
+            free(object);
+        }
+        closures.clear();
+        objects.clear();
+    }
+};
+
+// Whether this thread isn't the UI thread of a running App: there, what a call consumed is released
+// on the UI thread instead, as closures and handles given to it belong there.
+bool off_ui_thread() noexcept;
+// Releases `leftovers` on the UI thread: handed over to it between its events (or as its run ends),
+// since this is another thread of a running App.
+void release_on_ui_thread(Leftovers&& leftovers) noexcept;
+
 // Releases, when a C API call returns or throws, what the call consumes but hasn't taken over:
 // closures (also a prop's), handles (`take_*`) and arrays of view handles. share(), required(),
 // hold(), prop(), own(), take() and take_all() clear what they take over, so each is released
-// exactly once.
-// Declare it first, inside ELG_TRY, naming every consumed argument (by-value copies of options
-// structs that hold closures, too):
+// exactly once. Off the UI thread of a running App, what's left is released on the UI thread.
+// Declare it first, before ELG_TRY (after the copies it guards, which mustn't throw), naming every
+// consumed argument (by-value copies of options structs that hold closures, too), so that it
+// releases them however the call ends, also when ELG_TRY fails it:
 //   const Consumed consumed(take_label, on_click, title);
+//   ELG_TRY
 template <size_t N>
 class Consumed {
 public:
@@ -892,6 +960,17 @@ public:
         requires(sizeof...(T) == N)
     explicit Consumed(T&... items) noexcept : items_{item(items)...} {}
     ~Consumed() {
+        if (off_ui_thread()) {
+            Leftovers leftovers;
+            try {
+                for (const Item& item : items_) {
+                    item.move_to(item.target, leftovers);
+                }
+            } catch (...) {
+                // Swallowed: out of memory, so what wasn't moved is released here, below, rather than not at all.
+            }
+            release_on_ui_thread(std::move(leftovers));
+        }
         for (const Item& item : items_) {
             item.release(item.target);
         }
@@ -905,22 +984,48 @@ private:
     struct Item {
         void* target;
         void (*release)(void*) noexcept;
+        // Moves what's left of the argument into `leftovers` (clearing it), or throws std::bad_alloc.
+        void (*move_to)(void*, Leftovers&);
     };
     static Item item(ElgClosure& closure) noexcept {
-        return {&closure, [](void* p) noexcept { elg_shim::release(*static_cast<ElgClosure*>(p)); }};
+        return {&closure, [](void* p) noexcept { elg_shim::release(*static_cast<ElgClosure*>(p)); },
+                [](void* p, Leftovers& leftovers) {
+                    auto& c = *static_cast<ElgClosure*>(p);
+                    if (c.drop) {
+                        leftovers.closures.push_back(c);
+                    }
+                    c = {};
+                }};
     }
     static Item item(ElgProp& prop) noexcept { return item(prop.fn); }
     static Item item(ViewArray& array) noexcept {
-        return {&array, [](void* p) noexcept {
+        return {&array,
+                [](void* p) noexcept {
                     auto& a = *static_cast<ViewArray*>(p);
                     for (; a.taken < a.count; ++a.taken) {
                         delete a.views[a.taken];
+                    }
+                },
+                [](void* p, Leftovers& leftovers) {
+                    auto& a = *static_cast<ViewArray*>(p);
+                    for (; a.taken < a.count; ++a.taken) {
+                        leftovers.objects.emplace_back(a.views[a.taken],
+                                                       [](void* view) noexcept { delete static_cast<elg::View*>(view); });
                     }
                 }};
     }
     template <class H>
     static Item item(H*& handle) noexcept {
-        return {static_cast<void*>(&handle), [](void* p) noexcept { delete std::exchange(*static_cast<H**>(p), nullptr); }};
+        return {static_cast<void*>(&handle),
+                [](void* p) noexcept { delete std::exchange(*static_cast<H**>(p), nullptr); },
+                [](void* p, Leftovers& leftovers) {
+                    H*& h = *static_cast<H**>(p);
+                    if (h) {
+                        leftovers.objects.emplace_back(const_cast<std::remove_const_t<H>*>(h),
+                                                       [](void* object) noexcept { delete static_cast<H*>(object); });
+                    }
+                    h = nullptr;
+                }};
     }
 
     std::array<Item, N> items_;
@@ -943,22 +1048,47 @@ struct RustComponent {
 
 // Records the current exception for elg_take_error().
 void capture_error() noexcept;
+// Throws a UsageError naming `function` when it's called off the UI thread of a running App.
+void require_ui_thread(const char* function);
 // The kind of `error`, numbered as elg_take_error() numbers them, and its message.
 int32_t error_kind(const std::exception_ptr& error, std::string& message) noexcept;
 
 // --- ABI layout ---
 
-// One line, "name size align", of an elg_layouts_* function: elegance-sys's layout test compares
-// each C struct with its Rust declaration.
-inline void layout(ElgStrSink out, void* ctx, const char* name, size_t size, size_t align) {
-    sink(out, ctx, std::string(name) + ' ' + std::to_string(size) + ' ' + std::to_string(align) + '\n');
+// A field of a struct, as layout() reports it.
+struct FieldLayout {
+    const char* name;
+    size_t offset;
+};
+
+// One line of an elg_layouts_* function: "name size align", then " field:offset" for each field,
+// in order. elegance-sys's layout test compares each struct with its Rust declaration, and the C
+// tests with the C header's.
+inline void layout(ElgStrSink out, void* ctx, const char* name, size_t size, size_t align,
+                   std::initializer_list<FieldLayout> fields) {
+    std::string line = std::format("{} {} {}", name, size, align);
+    for (const FieldLayout& field : fields) {
+        line += std::format(" {}:{}", field.name, field.offset);
+    }
+    line += '\n';
+    sink(out, ctx, line);
 }
 
 } // namespace elg_shim
 
-#define ELG_LAYOUT(T) ::elg_shim::layout(out, ctx, #T, sizeof(T), alignof(T))
+// Reports struct T (in an elg_layouts_* function): its size, alignment and fields, which
+// layout_fields.h lists for every struct that crosses the API.
+#define ELG_FIELD_LAYOUT(T, field) ::elg_shim::FieldLayout{#field, offsetof(T, field)},
+#define ELG_LAYOUT(T) \
+    ::elg_shim::layout(out, ctx, #T, sizeof(T), alignof(T), {ELG_FIELDS_##T(ELG_FIELD_LAYOUT)})
 
-#define ELG_TRY try {
+// Starts a C API function's try block, which ends with ELG_CATCH or ELG_CATCH_VOID. ELG_TRY, for
+// a function of the UI thread, fails the call with a UsageError off the UI thread of a running
+// App; ELG_TRY_ANY_THREAD is for one whose doc says "Callable from any thread".
+#define ELG_TRY                                \
+    try {                                      \
+        ::elg_shim::require_ui_thread(__func__);
+#define ELG_TRY_ANY_THREAD try {
 #define ELG_CATCH(fallback)               \
     }                                     \
     catch (...) {                         \

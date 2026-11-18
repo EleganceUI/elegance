@@ -114,7 +114,7 @@ semaphore set shared_mutex source_location span spanstream sstream stack stacktr
 stop_token streambuf string string_view strstream syncstream system_error thread tuple type_traits
 typeindex typeinfo unordered_map unordered_set utility valarray variant vector version
 assert.h ctype.h errno.h float.h inttypes.h limits.h locale.h math.h setjmp.h signal.h stdarg.h
-stddef.h stdint.h stdio.h stdlib.h string.h time.h uchar.h wchar.h wctype.h
+stdbool.h stddef.h stdint.h stdio.h stdlib.h string.h time.h uchar.h wchar.h wctype.h
 cxxabi.h
 """.split())  # cxxabi.h: the C++ runtime's (GCC's and Clang's), used under a compiler test
 
@@ -144,15 +144,16 @@ THIRD_PARTY = [
                 r"gst/|glib\.h|glib/|gio/|gobject/|"
                 r"[A-Z]\w*/[A-Z]\w*\.h$|objc/|"  # Apple's frameworks: Name/Name.h
                 r"mach/|mach-o/|dlfcn\.h|unistd\.h|sys/|pthread\.h|fcntl\.h|spawn\.h|signal\.h|poll\.h|"
-                r"execinfo\.h|linux/|asm/|"
+                r"execinfo\.h|crt_externs\.h|linux/|asm/|"
                 r"fontconfig/|X11/|wayland-)"),
      "operating-system libraries", PLATFORM),
 ]
 
 
 def third_party(header):
-    """(library name, allowed layers) for a third-party header, or None for a standard one."""
-    if header in STANDARD or header.startswith("elg/"):
+    """(library name, allowed layers) for a third-party header, or None for a standard one or
+    Elegance's own (its public headers, and the C API's, elg-c/)."""
+    if header in STANDARD or header.startswith("elg/") or header.startswith("elg-c/"):
         return None
     for pattern, name, layers in THIRD_PARTY:
         if pattern.match(header):
@@ -519,6 +520,8 @@ def check_c_api(path, found):
             continue
         if kind == "<" and (header in STANDARD or header.startswith("elg/")):
             continue
+        if kind == "<" and (ROOT / "c" / "include" / header).is_file():
+            continue  # the C API's header (elg-c/)
         report(path, line, f"includes {header}, which is neither public nor the C API's own", "ELGSPEC-0001.R8")
 
 

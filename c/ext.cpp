@@ -6,7 +6,9 @@
 
 #include "shim.h"
 
+#include <cstdint>
 #include <exception>
+#include <string_view>
 
 using namespace elg;
 using namespace elg_shim;
@@ -21,7 +23,7 @@ struct ElgLayoutCall {
     int32_t op;
     ElgProposedSize proposal;    ///< Ops 0 and 1: the size the parent proposes.
     ElgRect bounds;              ///< Op 1: where the children go, with the size reported for `proposal`.
-    const LayoutChild* children; ///< Ops 0 and 1: the children, valid during the call.
+    const ElgLayoutChild* children; ///< Ops 0 and 1: the children, valid during the call.
     size_t count;                ///< Number of `children`.
     /// Ops 0 and 1: the view's cache storage, for the elg_layout_cache_* functions, valid during the
     /// call; null: uncached.
@@ -59,13 +61,13 @@ public:
 
 private:
     Size size(ProposedSize proposal, Rect, std::span<const LayoutChild> children, LayoutCache* cache) const {
-        ElgLayoutCall call{0, c_proposed(proposal), {}, children.data(), children.size(), cache};
+        ElgLayoutCall call{0, c_proposed(proposal), {}, c_children(children.data()), children.size(), cache};
         ElgSize result{};
         f_->call(&call, &result);
         return {result.width, result.height};
     }
     void place(Rect bounds, ProposedSize proposal, std::span<const LayoutChild> children, LayoutCache* cache) const {
-        ElgLayoutCall call{1, c_proposed(proposal), c_rect(bounds), children.data(), children.size(), cache};
+        ElgLayoutCall call{1, c_proposed(proposal), c_rect(bounds), c_children(children.data()), children.size(), cache};
         f_->call(&call, nullptr);
     }
 
@@ -82,9 +84,9 @@ private:
 /// @param count Number of `children`.
 /// @return The container, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_rust_layout_view(ElgClosure layout, View** children, size_t count) {
-    ELG_TRY
     ViewArray views{children, count};
     const Consumed consumed(layout, views);
+    ELG_TRY
     const RustLayout rust_layout(required(layout, "layout"));
     return out(rust_layout(take_all(views)));
     ELG_CATCH(nullptr)
@@ -109,8 +111,8 @@ ELG_EXPORT void* elg_layout_cache_get(const LayoutCache* cache) {
 /// @param owner Consumed closure that's never called: its `data` is the cache, and its `drop` runs
 ///   when it's replaced or the view goes away.
 ELG_EXPORT void elg_layout_cache_set(LayoutCache* cache, ElgClosure owner) {
-    ELG_TRY
     const Consumed consumed(owner);
+    ELG_TRY
     cache->value = std::const_pointer_cast<RustFn>(hold(owner));
     ELG_CATCH_VOID
 }
@@ -139,9 +141,9 @@ ELG_EXPORT void elg_layout_cache_set_stale(LayoutCache* cache, bool stale) {
 ///   (borrowed).
 /// @param proposal The proposed size.
 /// @return The child's size in points, or zero on failure.
-ELG_EXPORT ElgSize elg_layout_child_size_that_fits(const LayoutChild* child, ElgProposedSize proposal) {
+ELG_EXPORT ElgSize elg_layout_child_size_that_fits(const ElgLayoutChild* child, ElgProposedSize proposal) {
     ELG_TRY
-    const Size s = child->size_that_fits(proposed(proposal));
+    const Size s = cpp_children(child)->size_that_fits(proposed(proposal));
     return {s.width, s.height};
     ELG_CATCH(ElgSize{})
 }
@@ -152,27 +154,27 @@ ELG_EXPORT ElgSize elg_layout_child_size_that_fits(const LayoutChild* child, Elg
 ///   (borrowed).
 /// @param position Where its top-left corner goes, in points.
 /// @param proposal The proposed size.
-ELG_EXPORT void elg_layout_child_place(const LayoutChild* child, ElgPoint position, ElgProposedSize proposal) {
+ELG_EXPORT void elg_layout_child_place(const ElgLayoutChild* child, ElgPoint position, ElgProposedSize proposal) {
     ELG_TRY
-    child->place(point(position), proposed(proposal));
+    cpp_children(child)->place(point(position), proposed(proposal));
     ELG_CATCH_VOID
 }
 /// Wraps `LayoutChild::layout_priority()`.
 ///
 /// @param child A child (borrowed).
 /// @return The child's layout priority. 0 on failure.
-ELG_EXPORT float elg_layout_child_priority(const LayoutChild* child) {
+ELG_EXPORT float elg_layout_child_priority(const ElgLayoutChild* child) {
     ELG_TRY
-    return child->layout_priority();
+    return cpp_children(child)->layout_priority();
     ELG_CATCH(0)
 }
 /// Wraps `LayoutChild::is_spacer()`.
 ///
 /// @param child A child (borrowed).
 /// @return true if the child is a Spacer. False on failure.
-ELG_EXPORT bool elg_layout_child_is_spacer(const LayoutChild* child) {
+ELG_EXPORT bool elg_layout_child_is_spacer(const ElgLayoutChild* child) {
     ELG_TRY
-    return child->is_spacer();
+    return cpp_children(child)->is_spacer();
     ELG_CATCH(false)
 }
 
@@ -189,14 +191,15 @@ struct RustLayoutValue {
 
 struct RustLayoutKey {
     using Value = RustLayoutValue;
+    static constexpr std::string_view name = "elg.rust_layout_value";
     static RustLayoutValue default_value() { return {}; }
 };
 
 class RustLayoutValueModifier final : public LayoutValueModifierBase {
 public:
     explicit RustLayoutValueModifier(SharedFn owner) : owner_(std::move(owner)), value_{owner_->data()} {}
-    [[nodiscard]] const void* value_for(const std::type_info& key) const noexcept override {
-        if (key != typeid(RustLayoutKey)) {
+    [[nodiscard]] const void* value_for(std::uint64_t key) const noexcept override {
+        if (key != elg::detail::key_id(RustLayoutKey::name)) {
             return nullptr;
         }
         bool matches = false;
@@ -231,8 +234,8 @@ private:
 ///   usage error.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_layout_value(const View* v, ElgClosure owner) {
-    ELG_TRY
     const Consumed consumed(owner);
+    ELG_TRY
     return out(v->modifier(RustLayoutValueModifier(required(owner, "owner"))));
     ELG_CATCH(nullptr)
 }
@@ -243,9 +246,9 @@ ELG_EXPORT View* elg_mod_rust_layout_value(const View* v, ElgClosure owner) {
 /// @param child A child (borrowed).
 /// @return The `data` of the elg_mod_rust_layout_value() closure that matched, owned by its view;
 ///   null if none did, or on failure.
-ELG_EXPORT const void* elg_layout_child_rust_value(const LayoutChild* child) {
+ELG_EXPORT const void* elg_layout_child_rust_value(const ElgLayoutChild* child) {
     ELG_TRY
-    return child->value<RustLayoutKey>().data;
+    return cpp_children(child)->value<RustLayoutKey>().data;
     ELG_CATCH(nullptr)
 }
 
@@ -278,8 +281,8 @@ private:
 ///   usage error.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_view_modifier(const View* v, ElgClosure body) {
-    ELG_TRY
     const Consumed consumed(body);
+    ELG_TRY
     return out(v->modifier(RustViewModifier(required(body, "body"))));
     ELG_CATCH(nullptr)
 }
@@ -290,7 +293,7 @@ struct ElgLayoutModifierCall {
     int32_t op; ///< 0: size_that_fits (ret ElgSize*), 1: place, 2: layout_priority (ret ElgOptLen*)
     ElgProposedSize proposal;   ///< Ops 0 and 1: the size the parent proposes.
     ElgRect bounds;             ///< Op 1: where the view goes, with the size reported for `proposal`.
-    const LayoutChild* content; ///< Ops 0 and 1: the wrapped content, valid during the call; op 2: null.
+    const ElgLayoutChild* content; ///< Ops 0 and 1: the wrapped content, valid during the call; op 2: null.
 };
 
 namespace {
@@ -300,13 +303,13 @@ public:
     explicit RustLayoutModifier(SharedFn f) : f_(std::move(f)) {}
 
     [[nodiscard]] Size size_that_fits(ProposedSize proposal, const LayoutChild& content) const override {
-        ElgLayoutModifierCall call{0, c_proposed(proposal), {}, &content};
+        ElgLayoutModifierCall call{0, c_proposed(proposal), {}, c_children(&content)};
         ElgSize result{};
         f_->call(&call, &result);
         return {result.width, result.height};
     }
     void place(Rect bounds, ProposedSize proposal, const LayoutChild& content) const override {
-        ElgLayoutModifierCall call{1, c_proposed(proposal), c_rect(bounds), &content};
+        ElgLayoutModifierCall call{1, c_proposed(proposal), c_rect(bounds), c_children(&content)};
         f_->call(&call, nullptr);
     }
     [[nodiscard]] std::optional<float> layout_priority() const override {
@@ -370,8 +373,8 @@ private:
 ///   layout_priority, `has` false keeps the content's own. Required: none is a usage error.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_layout_modifier(const View* v, ElgClosure layout) {
-    ELG_TRY
     const Consumed consumed(layout);
+    ELG_TRY
     return out(v->modifier(RustLayoutModifier(required(layout, "layout"))));
     ELG_CATCH(nullptr)
 }
@@ -386,8 +389,8 @@ ELG_EXPORT View* elg_mod_rust_layout_modifier(const View* v, ElgClosure layout) 
 /// @param a How the decoration is aligned with the content.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_decoration_modifier(const View* v, ElgClosure decoration, int32_t placement, ElgAlignment a) {
-    ELG_TRY
     const Consumed consumed(decoration);
+    ELG_TRY
     return out(v->modifier(RustDecorationModifier(required(decoration, "decoration"),
                                                   static_cast<DecorationModifier::Placement>(placement), alignment(a))));
     ELG_CATCH(nullptr)
@@ -400,8 +403,8 @@ ELG_EXPORT View* elg_mod_rust_decoration_modifier(const View* v, ElgClosure deco
 ///   functions; ret: null. Required: none is a usage error.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_environment_modifier(const View* v, ElgClosure apply) {
-    ELG_TRY
     const Consumed consumed(apply);
+    ELG_TRY
     return out(v->modifier(RustEnvironmentModifier(required(apply, "apply"))));
     ELG_CATCH(nullptr)
 }
@@ -413,8 +416,8 @@ ELG_EXPORT View* elg_mod_rust_environment_modifier(const View* v, ElgClosure app
 ///   ret: null. Required: none is a usage error.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_effect_modifier(const View* v, ElgClosure apply) {
-    ELG_TRY
     const Consumed consumed(apply);
+    ELG_TRY
     return out(v->modifier(RustEffectModifier(required(apply, "apply"))));
     ELG_CATCH(nullptr)
 }
@@ -440,8 +443,8 @@ ELG_EXPORT void elg_effects_set_clip_shape(Effects* e, const Shape* shape) {
 /// @param e The effects (borrowed).
 /// @param opacity The opacity, 0 to 1: an ElgProp of float.
 ELG_EXPORT void elg_effects_set_opacity(Effects* e, ElgProp opacity) {
-    ELG_TRY
     const Consumed consumed(opacity);
+    ELG_TRY
     e->opacity = prop<float>(opacity);
     ELG_CATCH_VOID
 }
@@ -465,8 +468,8 @@ ELG_EXPORT void elg_effects_set_shadow(Effects* e, const ElgShadow* s) {
 /// @param x Horizontal offset in points: an ElgProp of float.
 /// @param y Vertical offset in points: an ElgProp of float.
 ELG_EXPORT void elg_effects_set_offset(Effects* e, ElgProp x, ElgProp y) {
-    ELG_TRY
     const Consumed consumed(x, y);
+    ELG_TRY
     e->offset_x = prop<float>(x);
     e->offset_y = prop<float>(y);
     ELG_CATCH_VOID
@@ -476,9 +479,9 @@ ELG_EXPORT void elg_effects_set_offset(Effects* e, ElgProp x, ElgProp y) {
 /// @param e The effects (borrowed).
 /// @param z The z index: an ElgProp of float; null: unset.
 ELG_EXPORT void elg_effects_set_z_index(Effects* e, const ElgProp* z) {
-    ELG_TRY
     ElgProp value = z ? *z : ElgProp{};
     const Consumed consumed(value);
+    ELG_TRY
     if (z) {
         e->z_index = prop<float>(value);
     } else {
@@ -520,9 +523,9 @@ ELG_EXPORT void elg_effects_set_inner_shadow(Effects* e, const ElgShadow* s) {
 /// @param opaque Whether the content fills its bounds: its edges then stay sharp instead of fading
 ///   out.
 ELG_EXPORT void elg_effects_set_blur(Effects* e, const ElgProp* radius, bool opaque) {
-    ELG_TRY
     ElgProp value = radius ? *radius : ElgProp{};
     const Consumed consumed(value);
+    ELG_TRY
     if (radius) {
         e->blur = prop<float>(value);
     } else {
@@ -542,8 +545,8 @@ ELG_EXPORT void elg_effects_set_blur(Effects* e, const ElgProp* radius, bool opa
 /// @param c An ElgProp of elg::Color, for multiply only. Ignored, and its closure dropped, when
 ///   `kind` < 0.
 ELG_EXPORT void elg_effects_set_color_filter(Effects* e, int32_t kind, ElgProp amount, ElgProp c) {
-    ELG_TRY
     const Consumed consumed(amount, c);
+    ELG_TRY
     if (kind < 0) {
         e->color_filter.reset();
         return;
@@ -599,9 +602,9 @@ ELG_EXPORT void elg_effects_set_compositing_group(Effects* e, bool group) {
 /// @param e The effects (borrowed).
 /// @param degrees Clockwise, as an ElgProp of float; null: unset.
 ELG_EXPORT void elg_effects_set_rotation(Effects* e, const ElgProp* degrees) {
-    ELG_TRY
     ElgProp value = degrees ? *degrees : ElgProp{};
     const Consumed consumed(value);
+    ELG_TRY
     if (degrees) {
         e->rotation = prop<float>(value);
     } else {
@@ -616,10 +619,10 @@ ELG_EXPORT void elg_effects_set_rotation(Effects* e, const ElgProp* degrees) {
 /// @param x Horizontal scale (1: as is), as an ElgProp of float; null: unset.
 /// @param y Vertical scale, as an ElgProp of float; null: unset.
 ELG_EXPORT void elg_effects_set_scale(Effects* e, const ElgProp* x, const ElgProp* y) {
-    ELG_TRY
     ElgProp horizontal = x ? *x : ElgProp{};
     ElgProp vertical = y ? *y : ElgProp{};
     const Consumed consumed(horizontal, vertical);
+    ELG_TRY
     if (x) {
         e->scale_x = prop<float>(horizontal);
     } else {
@@ -823,16 +826,16 @@ private:
 ///   `ElgEventCall*`; its ret: what the call's `op` says. Required: none is a usage error.
 /// @return The modified view, owned by the caller, or nullptr on failure.
 ELG_EXPORT View* elg_mod_rust_event_modifier(const View* v, ElgClosure make_handler) {
-    ELG_TRY
     const Consumed consumed(make_handler);
+    ELG_TRY
     return out(v->modifier(RustEventModifier(required(make_handler, "make_handler"))));
     ELG_CATCH(nullptr)
 }
 
 // --- ABI layout ---
 
-/// Describes the layout of this file's structs, for elegance-sys's layout test: one line per
-/// struct, "name size align".
+/// Describes the layout of this file's structs, for a binding's layout test: one line per struct,
+/// "name size align", then " field:offset" for each of its fields, in order.
 ///
 /// @param out Receives each line.
 /// @param ctx Passed to `out`.

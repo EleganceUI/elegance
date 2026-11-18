@@ -31,7 +31,7 @@ public:
     float z_index() const noexcept override { return content_->z_index(); }
     bool is_spacer() const noexcept override { return content_->is_spacer(); }
     void for_each_child(const std::function<void(Element&)>& visit) override { visit(*content_); }
-    const void* find_layout_value(const std::type_info& key) const noexcept override {
+    const void* find_layout_value(std::uint64_t key) const noexcept override {
         return content_->find_layout_value(key);
     }
     void inspect(Inspection& out) const override {

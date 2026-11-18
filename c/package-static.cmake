@@ -6,7 +6,8 @@
 # library and Elegance's link manifest (cmake/ElgLinkManifest.cmake) into the static package:
 #
 #   OUT/lib/libelegance_c.a     the C API, Elegance, and every static dependency, merged
-#                               (elegance_c.lib with MSVC)
+#                               (elegance_c.lib with MSVC); on Linux, as one object with the
+#                               C++ standard library, whose symbols but the C API's are local
 #   OUT/lib/...                 the shared libraries apps need at run time (AccessKit's)
 #   OUT/elegance-link.txt       what linking the archive takes, with paths relative to OUT:
 #
@@ -19,8 +20,9 @@
 # until nothing new resolves, so the link order of the dependencies stops mattering.
 #
 # Inputs: MANIFEST, C_API (the C API's static library), OUT, SYSTEM (CMAKE_SYSTEM_NAME), AR
-# (CMAKE_AR: ar, or lib.exe with MSVC), LIBTOOL (Apple's), CXX_STDLIB (Linux: libstdc++.a, merged
-# in so apps need no newer libstdc++ than the system's).
+# (CMAKE_AR: ar, or lib.exe with MSVC), LIBTOOL (Apple's); on Linux, LD, OBJCOPY and NM (CMake's),
+# PYTHON (Python 3), and CXX_STDLIB: the archives of the C++ standard library and its unwinder,
+# separated by `|`.
 
 foreach (var MANIFEST C_API OUT SYSTEM AR)
     if (NOT DEFINED ${var})
@@ -134,28 +136,46 @@ elseif (SYSTEM STREQUAL "Windows")
     execute_process(COMMAND "${AR}" /NOLOGO "/OUT:${output}" "@${OUT}/archives.rsp" COMMAND_ERROR_IS_FATAL ANY)
     file(REMOVE "${OUT}/archives.rsp")
 else ()
-    set(output "${OUT}/lib/libelegance_c.a")
-    if (CXX_STDLIB)
-        list(APPEND archives "${CXX_STDLIB}")
-        list(REMOVE_DUPLICATES archives)
-    endif ()
-    list(APPEND lines "lib m" "lib dl" "lib pthread")
-    # ar's MRI scripts merge archives member by member, keeping members that share a name. The
-    # MRI parser splits paths at characters such as `+` (libstdc++.a), so it reads each archive
-    # through a link with a plain name.
-    set(links "${OUT}/merge")
-    file(MAKE_DIRECTORY "${links}")
-    set(script "CREATE ${output}\n")
-    set(index 0)
-    foreach (archive IN LISTS archives)
-        file(CREATE_LINK "${archive}" "${links}/${index}.a" SYMBOLIC COPY_ON_ERROR)
-        string(APPEND script "ADDLIB ${links}/${index}.a\n")
-        math(EXPR index "${index} + 1")
+    # One relocatable object in an archive: what the C API reaches of Elegance, its static
+    # dependencies, and the C++ standard library it was built with and that library's unwinder
+    # (CXX_STDLIB), with every symbol but the C API's local. An app then links it with its own C++
+    # standard library, or another copy of this one, and the two never meet. Its COMDAT groups
+    # become plain sections, so the linker doesn't keep the app's copy of an inline function in
+    # place of the package's.
+    foreach (var LD OBJCOPY NM PYTHON)
+        if (NOT ${var})
+            message(FATAL_ERROR "package-static.cmake: ${var} is not set")
+        endif ()
     endforeach ()
-    string(APPEND script "SAVE\nEND\n")
-    file(WRITE "${OUT}/merge.mri" "${script}")
-    execute_process(COMMAND "${AR}" -M INPUT_FILE "${OUT}/merge.mri" COMMAND_ERROR_IS_FATAL ANY)
-    file(REMOVE_RECURSE "${OUT}/merge.mri" "${links}")
+    set(output "${OUT}/lib/libelegance_c.a")
+    string(REPLACE "|" ";" runtime "${CXX_STDLIB}")
+    list(APPEND archives ${runtime})
+    list(REMOVE_DUPLICATES archives)
+    list(APPEND lines "lib m" "lib dl" "lib pthread")
+    # Its roots: the C API's functions, and Elegance's own elg_* ones (elg/gpu_image.h). And
+    # __cxa_pure_virtual, which libstdc++'s own objects refer to weakly, so that nothing would
+    # bring it in: then the app's C++ standard library would define it.
+    set(roots "-u" "__cxa_pure_virtual")
+    foreach (archive IN LISTS archives)
+        execute_process(COMMAND "${NM}" -g --defined-only "${archive}" OUTPUT_VARIABLE defined ERROR_QUIET)
+        string(REGEX MATCHALL " [TDBR] elg_[A-Za-z0-9_]+" found "${defined}")
+        foreach (symbol IN LISTS found)
+            string(REGEX REPLACE "^ [TDBR] " "" symbol "${symbol}")
+            list(APPEND roots "-u" "${symbol}")
+        endforeach ()
+    endforeach ()
+    set(object "${OUT}/elegance_c.o")
+    # Common symbols get space (-d), so that they too can be made local.
+    execute_process(COMMAND "${LD}" -r --force-group-allocation -d -o "${object}" ${roots} --start-group ${archives}
+                            --end-group
+                    COMMAND_ERROR_IS_FATAL ANY)
+    # GCC's GNU unique symbols, which objcopy leaves global, become plain global ones it localizes.
+    execute_process(COMMAND "${PYTHON}" "${CMAKE_CURRENT_LIST_DIR}/unique-to-global.py" "${object}"
+                    COMMAND_ERROR_IS_FATAL ANY)
+    execute_process(COMMAND "${OBJCOPY}" --wildcard "--keep-global-symbol=elg_*" "${object}" COMMAND_ERROR_IS_FATAL ANY)
+    file(REMOVE "${output}")
+    execute_process(COMMAND "${AR}" rcs "${output}" "${object}" COMMAND_ERROR_IS_FATAL ANY)
+    file(REMOVE "${object}")
 endif ()
 
 get_filename_component(output_name "${output}" NAME)

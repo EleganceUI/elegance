@@ -5,6 +5,8 @@
 #ifndef ELG_CORE_UI_TASKS_H
 #define ELG_CORE_UI_TASKS_H
 
+#include <elg/export.h>
+
 #include <exception>
 #include <functional>
 #include <memory>
@@ -48,8 +50,9 @@ void run_foreign_callback(F&& work) noexcept {
 // the object to the UI thread, which destroys it between events (waking its loop). Outside a run
 // the main thread takes the UI thread's place: other threads hand it the object, and it destroys
 // what it was handed the next time it releases one itself, or when the next run starts releasing.
-// Thread-safe.
-void release_on_ui_thread(void* object, void (*destroy)(void*) noexcept) noexcept;
+// Thread-safe. Exported for bindings, which elg/app.h declares it for.
+// NOLINTNEXTLINE(readability-redundant-declaration): Core doesn't include the App's public header
+ELG_API void release_on_ui_thread(void* object, void (*destroy)(void*) noexcept) noexcept;
 
 template <class T>
 struct ReleaseOnUiThread {

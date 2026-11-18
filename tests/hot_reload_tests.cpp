@@ -1,0 +1,355 @@
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file, You can obtain one at
+// https://mozilla.org/MPL/2.0/.
+
+// Hot reload: views modules, their entries, and the host that loads them (HotReload()). The
+// modules (tests/hot_reload) are built with elegance_views_module(), as an app's are; only shared
+// builds have them.
+
+#include "core/dynamic_library.h"
+#include "core/ui_tasks.h"
+#include "hot_reload/probe.h"
+#include "test_processes.h"
+#include "text/text_system.h"
+#include "view/element.h"
+#include "view/view_node.h"
+
+#include <elg/hot_reload.h>
+#include <elg/modifiers/environment.h>
+#include <elg/reactive.h>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <algorithm>
+#include <chrono>
+#include <filesystem>
+#include <format>
+#include <fstream>
+#include <functional>
+#include <memory>
+#include <random>
+#include <string>
+#include <string_view>
+#include <system_error>
+#include <thread>
+#include <vector>
+
+#if !defined(_WIN32)
+#include <dlfcn.h>
+#endif
+
+using namespace elg;
+namespace fs = std::filesystem;
+
+namespace {
+
+// A fresh folder for copies of the modules, removed afterwards. Each load is of a copy of its own,
+// as the host's are: the dynamic linker would hand out the library already loaded from a file.
+struct TemporaryDirectory {
+    fs::path path;
+    TemporaryDirectory() {
+        std::random_device random;
+        path = fs::temp_directory_path() / std::format("elg-hot-reload-test-{:x}", random());
+        fs::create_directories(path);
+    }
+    TemporaryDirectory(const TemporaryDirectory&) = delete;
+    TemporaryDirectory(TemporaryDirectory&&) = delete;
+    TemporaryDirectory& operator=(const TemporaryDirectory&) = delete;
+    TemporaryDirectory& operator=(TemporaryDirectory&&) = delete;
+    ~TemporaryDirectory() {
+        std::error_code ignored;
+        fs::remove_all(path, ignored);
+    }
+
+    // A copy of `module`, as `name` (with the module's extension).
+    [[nodiscard]] fs::path copy(const fs::path& module, const std::string& name) const {
+        const fs::path to = path / (name + module.extension().string());
+        fs::copy_file(module, to);
+        return to;
+    }
+};
+
+using EntryFunction = const ModuleEntry* (*)();
+
+const ModuleEntry& entry_of(void* entry_function) {
+    REQUIRE(entry_function);
+    const ModuleEntry* entry = reinterpret_cast<EntryFunction>(entry_function)();
+    REQUIRE(entry);
+    REQUIRE(entry->abi == module_abi);
+    return *entry;
+}
+
+detail::TextSystem& text_system() {
+    static detail::TextSystem system;
+    return system;
+}
+
+// The texts that `root` and the elements inside it show.
+std::vector<std::string> texts(detail::Element& root) {
+    std::vector<std::string> found;
+    const auto visit = [&](this const auto& self, detail::Element& element) -> void {
+        detail::Inspection inspection;
+        element.inspect(inspection);
+        if (inspection.name == "Text") {
+            found.push_back(inspection.detail);
+        }
+        element.for_each_child([&](detail::Element& child) { self(child); });
+    };
+    visit(root);
+    return found;
+}
+
+// The texts a view shows.
+std::vector<std::string> texts(const View& view) {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const auto root = detail::lower(view, {.text = &text_system()});
+    return texts(*root);
+}
+
+// A view mounted with a scope of its own, as a window's content is.
+struct Mounted {
+    explicit Mounted(const View& view) : root(detail::lower(view, {.text = &text_system()})) {}
+    detail::Scope scope;
+    detail::Scope::Use use{scope};
+    std::unique_ptr<detail::Element> root;
+
+    // Runs what other threads posted to the UI thread and the effects that changed, then lays
+    // the views out in an 800 x 600 window.
+    void update() const {
+        detail::run_ui_tasks();
+        detail::flush_effects();
+        (void)root->size_that_fits({800.f, 600.f});
+        root->place({}, {800.f, 600.f});
+    }
+    // Updates until `done()`, for up to 20 s: whether it got there.
+    [[nodiscard]] bool update_until(const std::function<bool()>& done) const {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+        while (true) {
+            update();
+            if (done()) {
+                return true;
+            }
+            if (std::chrono::steady_clock::now() >= deadline) {
+                return false;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+    }
+    [[nodiscard]] bool shows(const std::string& text) const { return std::ranges::contains(texts(*root), text); }
+};
+
+// Writes `module` over `to`, as a build does, with a newer time than the file had.
+void build_into(const fs::path& module, const fs::path& to) {
+    const fs::file_time_type before = fs::last_write_time(to);
+    fs::copy_file(module, to, fs::copy_options::overwrite_existing);
+    fs::last_write_time(to, std::max(fs::last_write_time(to), before + std::chrono::seconds(1)));
+}
+
+std::vector<std::string> preview_names(const ModuleEntry& entry) {
+    std::vector<std::string> names;
+    if (entry.previews) {
+        for (const PreviewEntry& preview : *entry.previews) {
+            names.emplace_back(preview.name);
+        }
+    }
+    return names;
+}
+
+} // namespace
+
+TEST_CASE("each load of a module lists only its own previews, though another load's symbols are global",
+          "[hot-reload]") {
+    const TemporaryDirectory folder;
+    // The first load's symbols go where the dynamic linker looks first for every later load's,
+    // as it does for STB_GNU_UNIQUE symbols (GCC's inline statics): a module exporting its
+    // preview registry would share the first load's.
+#if defined(_WIN32)
+    const detail::DynamicLibrary first(folder.copy(ELG_TEST_FIRST_MODULE, "first"));
+    const ModuleEntry& first_entry = entry_of(first.symbol("elg_module_entry"));
+#else
+    void* const first = dlopen(folder.copy(ELG_TEST_FIRST_MODULE, "first").c_str(), RTLD_NOW | RTLD_GLOBAL);
+    REQUIRE(first);
+    const ModuleEntry& first_entry = entry_of(dlsym(first, "elg_module_entry"));
+#endif
+    const detail::DynamicLibrary again(folder.copy(ELG_TEST_FIRST_MODULE, "again"));
+    const detail::DynamicLibrary second(folder.copy(ELG_TEST_SECOND_MODULE, "second"));
+    const ModuleEntry& again_entry = entry_of(again.symbol("elg_module_entry"));
+    const ModuleEntry& second_entry = entry_of(second.symbol("elg_module_entry"));
+
+    CHECK(preview_names(first_entry) == std::vector<std::string>{"first: one", "first: two"});
+    // Its statics were initialized for this load: its registry has its previews once.
+    CHECK(preview_names(again_entry) == std::vector<std::string>{"first: one", "first: two"});
+    CHECK(again_entry.previews != first_entry.previews);
+    CHECK(preview_names(second_entry) == std::vector<std::string>{"second: one"});
+    // Nothing but the entry is exported (the Itanium ABI's name of detail::module_views()).
+    CHECK_FALSE(again.symbol("_ZN3elg6detail12module_viewsEv"));
+#if !defined(_WIN32)
+    dlclose(first);
+#endif
+}
+
+TEST_CASE("each module's entry builds that module's views", "[hot-reload]") {
+    const TemporaryDirectory folder;
+    const detail::DynamicLibrary first(folder.copy(ELG_TEST_FIRST_MODULE, "first"));
+    const detail::DynamicLibrary second(folder.copy(ELG_TEST_SECOND_MODULE, "second"));
+    const ModuleEntry& first_entry = entry_of(first.symbol("elg_module_entry"));
+    const ModuleEntry& second_entry = entry_of(second.symbol("elg_module_entry"));
+    REQUIRE(first_entry.has_root);
+    REQUIRE(second_entry.has_root);
+    CHECK(texts(first_entry.build(first_entry.context, -1)) == std::vector<std::string>{"first root 0"});
+    CHECK(texts(second_entry.build(second_entry.context, -1)) == std::vector<std::string>{"second root 0"});
+    CHECK(texts(first_entry.build(first_entry.context, 1)) == std::vector<std::string>{"first: two"});
+    CHECK(texts(second_entry.build(second_entry.context, 0)) == std::vector<std::string>{"second: one"});
+}
+
+TEST_CASE("a load that succeeds unmounts the views of the load before it, and mounts its own", "[hot-reload]") {
+    const TemporaryDirectory folder;
+    const fs::path module = folder.copy(ELG_TEST_FIRST_MODULE, "views");
+    HotReloadOptions options;
+    options.module = module;
+    const auto probe = std::make_shared<elg_tests::Probe>();
+    const Mounted mounted(HotReload(options).environment<elg_tests::ProbeKey>(probe));
+    REQUIRE(mounted.shows("first root 0"));
+    CHECK(probe->events == std::vector<std::string>{"first root mounted"});
+
+    build_into(ELG_TEST_SECOND_MODULE, module);
+    REQUIRE(mounted.update_until([&] { return mounted.shows("second root 0"); }));
+    CHECK_FALSE(mounted.shows("first root 0"));
+    std::vector<std::string> events = probe->events;
+    std::ranges::sort(events);
+    CHECK(events == std::vector<std::string>{"first root mounted", "first root unmounted", "second root mounted"});
+}
+
+TEST_CASE("a build that fails keeps the views, and shows all its output until a load succeeds", "[hot-reload]") {
+    const TemporaryDirectory folder;
+    const fs::path module = folder.copy(ELG_TEST_FIRST_MODULE, "views");
+    const fs::path sources = folder.path / "sources";
+    fs::create_directories(sources);
+    std::ofstream(sources / "views.cpp") << "1";
+    HotReloadOptions options;
+    options.module = module;
+    options.build_command = "echo views.cpp:3:1: error: expected a view&& echo the next line of the output&& exit 1";
+    options.watch = {sources};
+    const auto probe = std::make_shared<elg_tests::Probe>();
+    const Mounted mounted(HotReload(options).environment<elg_tests::ProbeKey>(probe));
+    REQUIRE(mounted.shows("first root 0"));
+    probe->increment();
+    mounted.update();
+    REQUIRE(mounted.shows("first root 1"));
+
+    // A source changes, so the host builds, and the build fails.
+    std::ofstream(sources / "views.cpp") << "2";
+    fs::last_write_time(sources / "views.cpp", fs::last_write_time(sources / "views.cpp") + std::chrono::seconds(1));
+    REQUIRE(mounted.update_until([&] { return mounted.shows("the next line of the output"); }));
+    CHECK(mounted.shows("The build failed"));
+    CHECK(mounted.shows("views.cpp:3:1: error: expected a view"));
+    CHECK(mounted.shows("first root 1")); // the same views, with their state
+    CHECK(probe->events == std::vector<std::string>{"first root mounted"});
+
+    // The next load: the output goes.
+    build_into(ELG_TEST_SECOND_MODULE, module);
+    REQUIRE(mounted.update_until([&] { return mounted.shows("second root 0"); }));
+    CHECK_FALSE(mounted.shows("the next line of the output"));
+    CHECK_FALSE(mounted.shows("The build failed"));
+}
+
+#if !defined(_WIN32)
+TEST_CASE("a host destroyed while its module builds ends the build at once, and what the build started",
+          "[hot-reload]") {
+    using namespace std::chrono_literals;
+    const TemporaryDirectory folder;
+    const fs::path ids = folder.path / "build-ids";
+    // The module isn't built yet, so the host builds it right away. The build's shell starts a
+    // sleep, which holds the build's output open, writes their process ids, and waits for it.
+    HotReloadOptions options;
+    options.module = folder.path / "views";
+    options.build_command = std::format("sleep 30 & echo $$ $! > '{0}.part' && mv '{0}.part' '{0}'; wait", ids.string());
+    auto mounted = std::make_unique<Mounted>(HotReload(options));
+
+    // The UI thread goes on while the build runs.
+    const auto deadline = std::chrono::steady_clock::now() + 20s;
+    while (!fs::exists(ids) && std::chrono::steady_clock::now() < deadline) {
+        mounted->update();
+        std::this_thread::sleep_for(10ms);
+    }
+    REQUIRE(fs::exists(ids));
+    int shell = 0;
+    int sleep = 0;
+    std::ifstream(ids) >> shell >> sleep;
+    REQUIRE(shell > 0);
+    REQUIRE(sleep > 0);
+    mounted->update();
+    CHECK(mounted->shows("Building…"));
+
+    // As a closed window's views go, so does the host that they hold.
+    const auto stopping = std::chrono::steady_clock::now();
+    mounted.reset();
+    CHECK(std::chrono::steady_clock::now() - stopping < 2s);
+    CHECK(elg_tests::process_ends(shell));
+    CHECK(elg_tests::process_ends(sleep));
+    detail::run_ui_tasks(); // what the build's thread posted for the host that's gone
+}
+#endif
+
+TEST_CASE("a reload starts the module's state again, and keeps the host's", "[hot-reload]") {
+    const TemporaryDirectory folder;
+    const fs::path module = folder.copy(ELG_TEST_FIRST_MODULE, "views");
+    HotReloadOptions options;
+    options.module = module;
+    const auto probe = std::make_shared<elg_tests::Probe>();
+    const Mounted mounted(HotReload(options).environment<elg_tests::ProbeKey>(probe));
+    REQUIRE(mounted.shows("first root 0"));
+    probe->increment();
+    probe->host_count = 5;
+    mounted.update();
+    REQUIRE(mounted.shows("first root 1"));
+    REQUIRE(mounted.shows("host 5"));
+
+    build_into(ELG_TEST_FIRST_MODULE, module); // the same module, built again
+    REQUIRE(mounted.update_until([&] { return probe->events.size() == 3; }));
+    std::vector<std::string> events = probe->events;
+    std::ranges::sort(events);
+    CHECK(events == std::vector<std::string>{"first root mounted", "first root mounted", "first root unmounted"});
+    CHECK(mounted.shows("first root 0")); // the module's state, from its initial value
+    CHECK(mounted.shows("host 5"));       // the host's, as it was
+}
+
+namespace {
+
+// Whether any text `mounted` shows contains `part`.
+bool shows_part(const Mounted& mounted, std::string_view part) {
+    return std::ranges::any_of(texts(*mounted.root), [part](const std::string& text) { return text.contains(part); });
+}
+
+} // namespace
+
+TEST_CASE("a load built against other Elegance headers isn't mounted, and asks for a restart", "[hot-reload]") {
+    const TemporaryDirectory folder;
+    const fs::path module = folder.copy(ELG_TEST_FIRST_MODULE, "views");
+    HotReloadOptions options;
+    options.module = module;
+    const auto probe = std::make_shared<elg_tests::Probe>();
+    const Mounted mounted(HotReload(options).environment<elg_tests::ProbeKey>(probe));
+    REQUIRE(mounted.shows("first root 0"));
+
+    build_into(ELG_TEST_CHANGED_MODULE, module);
+    REQUIRE(mounted.update_until([&] { return shows_part(mounted, "Restart the app to load views"); }));
+    CHECK(mounted.shows("first root 0")); // what it showed
+    CHECK_FALSE(shows_part(mounted, "changed root"));
+    CHECK(probe->events == std::vector<std::string>{"first root mounted"});
+}
+
+TEST_CASE("a load whose app hash isn't the host's isn't mounted, and asks for a restart", "[hot-reload]") {
+    STATIC_CHECK(layout_hash<int, double>() != layout_hash<double, int>());
+    STATIC_CHECK(layout_hash<int>() == layout_hash<unsigned>());
+    const TemporaryDirectory folder;
+    const fs::path module = folder.copy(ELG_TEST_FIRST_MODULE, "views"); // ELG_MODULE: no app hash
+    HotReloadOptions options;
+    options.module = module;
+    options.app_hash = layout_hash<elg_tests::Probe>();
+    const auto probe = std::make_shared<elg_tests::Probe>();
+    const Mounted mounted(HotReload(options).environment<elg_tests::ProbeKey>(probe));
+    REQUIRE(mounted.update_until([&] { return shows_part(mounted, "Restart the app to load views"); }));
+    CHECK(probe->events.empty());
+}

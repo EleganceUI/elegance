@@ -24,6 +24,7 @@ add_executable(elegance_tests
         gpu_image_tests.cpp
         grid_tests.cpp
         hover_tests.cpp
+        layout_value_tests.cpp
         leaving_tests.cpp
         lifecycle_tests.cpp
         click_tests.cpp
@@ -89,6 +90,20 @@ if (MSVC)
     target_compile_options(elegance_tests PRIVATE /utf-8)
 endif ()
 
+# Hot reload, which needs a shared Elegance: views modules built as an app's are, for the tests to
+# load.
+if (ELG_BUILD_SHARED)
+    elegance_views_module(hot_reload_first hot_reload/first_module.cpp)
+    elegance_views_module(hot_reload_second hot_reload/second_module.cpp)
+    elegance_views_module(hot_reload_changed hot_reload/changed_module.cpp)
+    target_sources(elegance_tests PRIVATE hot_reload_tests.cpp)
+    add_dependencies(elegance_tests hot_reload_first hot_reload_second hot_reload_changed)
+    target_compile_definitions(elegance_tests PRIVATE
+            ELG_TEST_FIRST_MODULE="$<TARGET_FILE:hot_reload_first>"
+            ELG_TEST_SECOND_MODULE="$<TARGET_FILE:hot_reload_second>"
+            ELG_TEST_CHANGED_MODULE="$<TARGET_FILE:hot_reload_changed>")
+endif ()
+
 # Under LeakSanitizer: fontconfig (loaded from the system on Linux) keeps its caches until exit.
 # A test that hangs fails after two minutes, by name, instead of holding the run until CI gives up.
 catch_discover_tests(elegance_tests PROPERTIES TIMEOUT 120 ENVIRONMENT_MODIFICATION
@@ -112,17 +127,22 @@ function(elg_layer_tests layer)
                          "LSAN_OPTIONS=string_append::suppressions=${CMAKE_CURRENT_SOURCE_DIR}/lsan_suppressions.txt")
 endfunction()
 
-elg_layer_tests(core ui_release_tests.cpp ui_task_tests.cpp)
-elg_layer_tests(geometry path_tests.cpp)
-elg_layer_tests(reactive reactive_tests.cpp)
-elg_layer_tests(animation)
-elg_layer_tests(text glyph_atlas_tests.cpp)
-elg_layer_tests(media sample_ring_tests.cpp)
-elg_layer_tests(net)
-elg_layer_tests(display)
-elg_layer_tests(gpu render_device_lifetime_tests.cpp)
-elg_layer_tests(render frame_source_tests.cpp)
-elg_layer_tests(platform menu_bar_tests.cpp)
+# Not in a shared build on Windows: there a layer's object files are compiled to export Elegance's
+# classes, and an exported class has all its inline members, and its vtable, in every object file
+# that includes it, whichever layer they refer to. Windows' static build has them.
+if (NOT (WIN32 AND ELG_BUILD_SHARED))
+    elg_layer_tests(core ui_release_tests.cpp ui_task_tests.cpp)
+    elg_layer_tests(geometry path_tests.cpp)
+    elg_layer_tests(reactive reactive_tests.cpp)
+    elg_layer_tests(animation)
+    elg_layer_tests(text glyph_atlas_tests.cpp)
+    elg_layer_tests(media sample_ring_tests.cpp)
+    elg_layer_tests(net)
+    elg_layer_tests(display)
+    elg_layer_tests(gpu render_device_lifetime_tests.cpp)
+    elg_layer_tests(render frame_source_tests.cpp)
+    elg_layer_tests(platform menu_bar_tests.cpp)
+endif ()
 
 # Compile the public FFI surface as real C, not merely as C++ with extern "C" declarations.
 enable_language(C)
@@ -130,6 +150,30 @@ add_executable(gpu_image_c_smoke gpu_image_c_smoke.c)
 set_target_properties(gpu_image_c_smoke PROPERTIES LINKER_LANGUAGE CXX C_STANDARD 11)
 target_link_libraries(gpu_image_c_smoke PRIVATE Elegance::Elegance)
 add_test(NAME gpu_image_c_smoke COMMAND gpu_image_c_smoke)
+
+# The C API tested from C (ELGSPEC-0007.R16): its header (c/include/elg-c/elegance.h, ELGSPEC-0007.R14)
+# compiled as C11, in a program that refers to every function it declares (c_api_functions.c), compares
+# every struct's layout with the library's (c_api_layouts.c, ELGSPEC-0007.R12), and links with the
+# library. c_api_c_support.cpp gives the C tests what the C API doesn't: a UI thread, a scope,
+# another thread.
+if (TARGET elegance_c_api)
+    add_executable(c_api_c_tests c_api_c_tests.c c_api_functions.c c_api_layouts.c c_api_c_support.cpp)
+    set_target_properties(c_api_c_tests PROPERTIES LINKER_LANGUAGE CXX C_STANDARD 11 C_STANDARD_REQUIRED ON
+                                                   C_EXTENSIONS OFF)
+    target_include_directories(c_api_c_tests PRIVATE ${PROJECT_SOURCE_DIR}/c/include ${PROJECT_SOURCE_DIR}/src)
+    target_link_libraries(c_api_c_tests PRIVATE elegance_c_api Elegance::Elegance)
+    if (elg_dawn_type STREQUAL "SHARED_LIBRARY")
+        target_link_libraries(c_api_c_tests PRIVATE dawn::webgpu_dawn)
+    endif ()
+    if (MSVC)
+        target_compile_options(c_api_c_tests PRIVATE /W4 $<$<BOOL:${ELG_WARNINGS_AS_ERRORS}>:/WX>)
+    else ()
+        target_compile_options(c_api_c_tests PRIVATE -Wall -Wextra -Wpedantic $<$<BOOL:${ELG_WARNINGS_AS_ERRORS}>:-Werror>)
+    endif ()
+    add_test(NAME c_api_c_tests COMMAND c_api_c_tests)
+    set_tests_properties(c_api_c_tests PROPERTIES TIMEOUT 120 ENVIRONMENT_MODIFICATION
+                         "LSAN_OPTIONS=string_append::suppressions=${CMAKE_CURRENT_SOURCE_DIR}/lsan_suppressions.txt")
+endif ()
 
 # The layers' folders, dependencies, backend interfaces, OS code and includes (ELGSPEC-0001.R10):
 # fails, naming the file, what it includes and the requirement, when any include breaks

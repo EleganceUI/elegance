@@ -1561,10 +1561,16 @@ public:
     }
 
     /// A value for the parent layout to read with LayoutChild::value<Key>() (custom layouts,
-    /// elg/layout.h). A key is a type with a `Value` type and a `default_value()`:
+    /// elg/layout.h). A key is a type with a `Value` type, a `name` and a `default_value()`;
+    /// keys are told apart by their name, which must be stable and unique, as an environment
+    /// key's is:
     ///
     /// @code
-    /// struct Rank { using Value = int; static int default_value() { return 0; } };
+    /// struct Rank {
+    ///     using Value = int;
+    ///     static constexpr std::string_view name = "myapp.rank";
+    ///     static int default_value() { return 0; }
+    /// };
     /// Text("Gold").layout_value<Rank>(1)
     /// @endcode
     ///

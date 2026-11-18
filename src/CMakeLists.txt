@@ -81,6 +81,23 @@ target_include_directories(elegance_settings INTERFACE
         ${CMAKE_CURRENT_BINARY_DIR}/generated
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
+
+# <elg/headers_hash.h>: a hash of the public headers, which a views module's entry carries and
+# HotReload() compares with the one Elegance was compiled with. The build writes it again when a
+# header changes (only if the hash did), before anything that links Elegance is compiled.
+file(GLOB_RECURSE elg_public_headers CONFIGURE_DEPENDS "${PROJECT_SOURCE_DIR}/include/elg/*.h")
+set(elg_headers_hash_stamp "${CMAKE_CURRENT_BINARY_DIR}/generated/headers_hash.stamp")
+add_custom_command(
+        OUTPUT "${elg_headers_hash_stamp}"
+        BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/generated/elg/headers_hash.h"
+        COMMAND ${CMAKE_COMMAND} "-DROOT=${PROJECT_SOURCE_DIR}"
+                "-DHEADER=${CMAKE_CURRENT_BINARY_DIR}/generated/elg/headers_hash.h" "-DSTAMP=${elg_headers_hash_stamp}"
+                -P "${PROJECT_SOURCE_DIR}/cmake/ElgHeadersHash.cmake"
+        DEPENDS ${elg_public_headers} "${PROJECT_SOURCE_DIR}/cmake/ElgHeadersHash.cmake"
+        COMMENT "Hashing Elegance's public headers"
+        VERBATIM)
+add_custom_target(elegance_headers_hash DEPENDS "${elg_headers_hash_stamp}")
+add_dependencies(elegance_settings elegance_headers_hash)
 if (ELG_BUILD_SHARED)
     # What generate_export_header() tests for the library's own sources: ELG_API exports.
     target_compile_definitions(elegance_settings INTERFACE elegance_EXPORTS)
@@ -218,7 +235,8 @@ elg_layer(core_os
         LINUX platform/linux/os.cpp
         LIBRARIES SDL3::SDL3)
 elg_layer(core
-        SOURCES core/app_errors.cpp core/crash.cpp core/dynamic_library.cpp core/error.cpp core/log.cpp
+        SOURCES core/app_errors.cpp core/child_process.cpp core/crash.cpp core/dynamic_library.cpp core/error.cpp
+                core/log.cpp
                 core/ui_tasks.cpp core/utf8.cpp core/version.cpp
         DEPENDS core_os)
 target_compile_definitions(elegance_core PRIVATE ELG_VERSION_STRING="${PROJECT_VERSION}")
@@ -245,7 +263,9 @@ elg_layer(media
         SOURCES media/audio.cpp media/audio_stream.cpp media/camera.cpp media/frame_source.cpp media/image_decode.cpp
                 media/miniaudio.cpp media/recorder.cpp media/video_feed.cpp media/video_source.cpp
         DEPENDS core geometry reactive media_os)
-target_include_directories(elegance_media PRIVATE "${MINIAUDIO_INCLUDE_DIR}")
+# A system folder, so that miniaudio.h is held to no warnings of ours: on macOS, nothing else this
+# layer uses adds vcpkg's include folder as one.
+target_include_directories(elegance_media SYSTEM PRIVATE "${MINIAUDIO_INCLUDE_DIR}")
 
 elg_layer(net_os
         WINDOWS platform/windows/net.cpp platform/windows/proxy.cpp

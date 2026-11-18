@@ -4,10 +4,12 @@
 
 // Hot reload (design.md §9.6): a views module is loaded from a copy, its content is the single
 // item of a ForEach keyed by the module's generation, so a reload unmounts the old tree (and
-// disposes its scope) and mounts the new module's views, like any other ForEach change.
+// disposes its scope) and mounts the new module's views, like any other ForEach change. Builds
+// run as child processes, which a stop request (the host going) ends at once.
 
 #include <elg/hot_reload.h>
 
+#include "core/child_process.h"
 #include "core/dynamic_library.h"
 #include "core/log.h"
 #include "core/os_backend.h"
@@ -16,21 +18,27 @@
 #include <elg/error.h>
 #include <elg/reactive.h>
 #include <elg/shapes.h>
+#include <elg/styles.h>
 #include <elg/text.h>
 #include <elg/theme.h>
 #include <elg/views.h>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
-#include <cstdio>
+#include <cstdint>
 #include <format>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <stop_token>
+#include <string>
 #include <thread>
 #include <utility>
+#include <vector>
 
 namespace elg::detail {
 
@@ -47,9 +55,14 @@ struct Status {
     bool operator==(const Status&) const = default;
 };
 
+// A load, with what the host uses of its entry, copied: the entry and its strings are in the
+// module's memory.
 struct LoadedModule {
     std::unique_ptr<DynamicLibrary> library;
-    const ModuleEntry* entry = nullptr;
+    bool has_root = false;
+    View (*build)(const void* context, std::int32_t index) = nullptr;
+    const void* context = nullptr;
+    std::vector<std::string> previews; // their names, by index
 };
 
 // Last-write times of every file under the watched paths.
@@ -80,21 +93,26 @@ std::optional<fs::file_time_type> modified(const fs::path& file) {
     return error ? std::nullopt : std::optional(time);
 }
 
-// Runs `command` through the shell; returns its exit code and output (stdout and stderr).
-std::pair<int, std::string> run(const std::string& command) {
-    std::string output;
-    std::FILE* pipe = os::open_command_pipe(command);
-    if (!pipe) {
+// Runs `command` through the shell, as a child process; returns its exit code and output (stdout
+// and stderr). A stop request ends it, and what it started, without waiting for them (-1).
+std::pair<int, std::string> run(const std::string& command, const std::stop_token& stop) {
+    std::optional<ChildProcess> process;
+    try {
+        process.emplace(command);
+    } catch (const std::exception&) {
         return {-1, "couldn't start the build command"};
     }
-    char buffer[4096];
-    // No lock is held here: with libstdc++, the analyzer misses the unlock in ModuleHost::watch's
-    // interruptible sleep (a condition_variable_any).
-    // NOLINTNEXTLINE(clang-analyzer-unix.BlockInCriticalSection): see above
-    while (std::fgets(buffer, sizeof(buffer), pipe)) {
-        output += buffer;
+    std::string output;
+    {
+        // Runs on the thread that asks to stop, or here if one already has. Leaving this block
+        // waits for it to return, so it never runs during wait().
+        const std::stop_callback end(stop, [&process]() noexcept { process->end(); });
+        std::array<char, 4096> buffer{};
+        while (const std::size_t read = process->read(buffer)) {
+            output.append(buffer.data(), read);
+        }
     }
-    return {os::close_command_pipe(pipe), std::move(output)};
+    return {process->wait(), std::move(output)};
 }
 
 // The first line of build output that reports an error, for the status badge.
@@ -116,7 +134,34 @@ std::string first_error(const std::string& output) {
         }
         start = end + 1;
     }
-    return "the build failed (see the console)";
+    return "the build failed";
+}
+
+// A line of build output, for the output panel.
+struct OutputLine {
+    std::size_t index = 0;
+    std::string text;
+    bool operator==(const OutputLine&) const = default;
+};
+
+// `output`'s lines, without carriage returns and the empty lines at its end.
+std::vector<OutputLine> output_lines(const std::string& output) {
+    std::vector<OutputLine> lines;
+    std::size_t start = 0;
+    while (start < output.size()) {
+        std::size_t end = output.find('\n', start);
+        if (end == std::string::npos) {
+            end = output.size();
+        }
+        std::string text = output.substr(start, end - start);
+        std::erase(text, '\r');
+        lines.push_back({lines.size(), std::move(text)});
+        start = end + 1;
+    }
+    while (!lines.empty() && lines.back().text.find_first_not_of(" \t") == std::string::npos) {
+        lines.pop_back();
+    }
+    return lines;
 }
 
 class ModuleHost : public std::enable_shared_from_this<ModuleHost> {
@@ -141,8 +186,9 @@ public:
         if (watcher_.joinable()) {
             watcher_.join();
         }
-        // Loaded modules stay loaded: elements built from them may still be torn down after this,
-        // and their code still run (see load()).
+        // request_stop() ended a build that was running (run()'s stop callback; on Linux and
+        // macOS), so the join doesn't wait for it. Loaded modules stay loaded: elements built from
+        // them may still be torn down after this, and their code still run (see load()).
         for (LoadedModule& module : modules_) {
             [[maybe_unused]] auto* leaked = module.library.release();
         }
@@ -195,7 +241,25 @@ public:
                 throw ResourceError(std::format("{} was built against another Elegance version",
                                                 options_.module.filename().string()));
             }
-            modules_.push_back({std::move(library), entry});
+            // What the host and the module both use: Elegance, compiled from headers that hash to
+            // headers_hash, and the app's own shared types, which it hashes on both sides.
+            if (entry->elegance_hash != headers_hash) {
+                throw ResourceError(std::format("Restart the app to load {}: it was built against Elegance headers "
+                                                "that changed after the app started",
+                                                options_.module.filename().string()));
+            }
+            if (entry->app_hash != options_.app_hash) {
+                throw ResourceError(std::format("Restart the app to load {}: it changed types the app shares with it",
+                                                options_.module.filename().string()));
+            }
+            LoadedModule module{.library = std::move(library), .has_root = entry->has_root, .build = entry->build,
+                                .context = entry->context};
+            if (entry->previews) {
+                for (const PreviewEntry& preview : *entry->previews) {
+                    module.previews.emplace_back(preview.name ? preview.name : "Preview");
+                }
+            }
+            modules_.push_back(std::move(module));
         } catch (const std::exception& error) {
             log_warning("hot reload: {}", error.what());
             status_ = Status{Phase::failed, error.what()};
@@ -203,13 +267,7 @@ public:
         }
         loaded_time_ = *time;
 
-        // Previews, copied: their names live in the module.
-        std::vector<std::string> names;
-        if (const std::vector<PreviewEntry>* previews = modules_.back().entry->previews) {
-            for (const PreviewEntry& preview : *previews) {
-                names.emplace_back(preview.name ? preview.name : "Preview");
-            }
-        }
+        std::vector<std::string> names = modules_.back().previews;
         if (std::ranges::find(names, selected_.peek()) == names.end()) {
             selected_ = names.empty() ? std::string() : names.front();
         }
@@ -229,6 +287,7 @@ public:
         } else {
             status_ = Status{};
         }
+        build_output_ = std::vector<OutputLine>();
     }
 
     void set_status(Status status) const { status_ = std::move(status); }
@@ -243,23 +302,22 @@ public:
         if (modules_.empty()) {
             return Text("Waiting for the views module…").foreground_style(ThemeColor::secondary);
         }
-        const ModuleEntry& entry = *modules_.back().entry;
+        const LoadedModule& module = modules_.back();
         if (options_.show == HotReloadShow::root) {
-            if (!entry.root) {
+            if (!module.has_root) {
                 return Text("This module has no root view (ELG_MODULE(nullptr)); open it in the preview host")
                     .foreground_style(ThemeColor::secondary);
             }
-            return entry.root();
+            return module.build(module.context, -1);
         }
         return preview_browser();
     }
 
     View preview(const std::string& name) const {
-        if (!modules_.empty() && modules_.back().entry->previews) {
-            for (const PreviewEntry& preview : *modules_.back().entry->previews) {
-                if (name == (preview.name ? preview.name : "Preview")) {
-                    return preview.body();
-                }
+        if (!modules_.empty()) {
+            const LoadedModule& module = modules_.back();
+            if (const auto found = std::ranges::find(module.previews, name); found != module.previews.end()) {
+                return module.build(module.context, static_cast<std::int32_t>(found - module.previews.begin()));
             }
         }
         return Text("No previews in this module; add ELG_PREVIEW(\"Name\") { ... }")
@@ -268,6 +326,9 @@ public:
 
     State<std::int64_t> generation_{0};
     State<Status> status_{Status{}};
+    // The output of the build that failed last, shown until a build or a load succeeds; empty:
+    // none to show.
+    State<std::vector<OutputLine>> build_output_{std::vector<OutputLine>()};
     State<std::vector<std::string>> preview_names_{std::vector<std::string>()};
     State<std::string> selected_{std::string()};
 
@@ -312,15 +373,25 @@ private:
             });
         };
         const auto build = [&] {
+            if (stop.stop_requested()) {
+                return;
+            }
             post([](ModuleHost& host) { host.set_status({Phase::building, "Building…"}); });
             const auto started = Clock::now();
-            auto [code, output] = run(options.build_command);
+            auto [code, output] = run(options.build_command, stop);
             const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count();
+            if (stop.stop_requested()) {
+                return; // ended: the host is going
+            }
             if (code != 0) {
                 log_warning("hot reload: the build failed ({} ms):\n{}", ms, output);
-                post([message = first_error(output)](ModuleHost& host) { host.set_status({Phase::failed, message}); });
+                post([message = first_error(output), lines = output_lines(output)](ModuleHost& host) {
+                    host.set_status({Phase::failed, message});
+                    host.build_output_ = lines;
+                });
             } else {
                 log_debug("hot reload: built in {} ms", ms);
+                post([](ModuleHost& host) { host.build_output_ = std::vector<OutputLine>(); });
             }
         };
 
@@ -331,21 +402,22 @@ private:
         }
         std::mutex mutex;
         std::condition_variable_any sleeper;
-        while (!stop.stop_requested()) {
-            {
-                std::unique_lock lock(mutex);
-                sleeper.wait_for(lock, stop, std::chrono::milliseconds(250), [] { return false; });
-            }
-            if (stop.stop_requested()) {
-                break;
-            }
+        // Sleeps unless a stop is requested: false if one was.
+        const auto sleep = [&](std::chrono::milliseconds duration) {
+            std::unique_lock lock(mutex);
+            sleeper.wait_for(lock, stop, duration, [] { return false; });
+            return !stop.stop_requested();
+        };
+        while (sleep(std::chrono::milliseconds(250))) {
             post([](ModuleHost& host) { host.clear_status_if_due(); });
 
             // Sources changed: rebuild (the new module file is picked up below).
             if (!options.build_command.empty()) {
                 const std::map<fs::path, fs::file_time_type> now = scan(options.watch);
                 if (now != sources) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(150)); // editors save in steps
+                    if (!sleep(std::chrono::milliseconds(150))) { // editors save in steps
+                        break;
+                    }
                     sources = scan(options.watch);
                     build();
                 }
@@ -397,6 +469,29 @@ View StatusBadge(const std::shared_ptr<ModuleHost>& host) {
         .padding(14);
 }
 
+// The output of the build that failed last, in a panel over the bottom of the content that
+// scrolls, while there is one; Hide hides it until the next build fails.
+View BuildOutput(const std::shared_ptr<ModuleHost>& host) {
+    const View header = HStack({.spacing = 8}, Circle().fill(Color::hex(0xED8796)).frame(8, 8),
+                               Text("The build failed").font(Font::headline), Spacer(),
+                               Button("Hide", [host] { host->build_output_ = std::vector<OutputLine>(); })
+                                   .button_style(BorderedButtonStyle{}));
+    const View lines = ScrollView(
+        LazyVStack({.alignment = HorizontalAlignment::leading, .spacing = 0},
+                   ForEach([host] { return host->build_output_(); }, &OutputLine::index, [](const OutputLine& line) {
+                       return Text(line.text.empty() ? std::string(" ") : line.text)
+                           .font(Font::footnote)
+                           .frame(FlexibleFrameOptions{.max_width = infinity, .alignment = Alignment::leading});
+                   })));
+    const View panel = VStack({.alignment = HorizontalAlignment::leading, .spacing = 10}, header,
+                              lines.frame(FlexibleFrameOptions{.max_width = infinity, .max_height = 240}))
+                           .padding(14)
+                           .background(RoundedRectangle(12).fill(ThemeColor::surface_raised))
+                           .shadow({.color = Color::black.opacity(0.25f), .radius = 8, .y = 2})
+                           .padding(EdgeInsets{.top = 0, .leading = 14, .bottom = 14, .trailing = 14});
+    return If([host] { return !host->build_output_().empty(); }, panel);
+}
+
 } // namespace
 
 } // namespace elg::detail
@@ -410,7 +505,8 @@ View HotReload(HotReloadOptions options) {
                                  [host](std::int64_t) { return host->content(); });
     return ZStack({.alignment = Alignment::bottom_trailing},
                   ZStack(content).frame(FlexibleFrameOptions{.max_width = infinity, .max_height = infinity}),
-                  detail::StatusBadge(host));
+                  VStack({.alignment = HorizontalAlignment::trailing, .spacing = 0}, detail::StatusBadge(host),
+                         detail::BuildOutput(host)));
 }
 
 } // namespace elg

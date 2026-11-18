@@ -9,15 +9,22 @@
 #include "shim.h"
 
 #include "core/app_errors.h"
+#include "core/ui_tasks.h"
+#include "reactive/runtime.h"
 #include "test_images.h"
 #include "text/text_system.h"
+#include "view/element.h"
 #include "view/view_node.h"
+
+#include <elg/hot_reload.h>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
+#include <format>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 using elg::Animation;
@@ -25,13 +32,29 @@ using elg::App;
 using elg::AppCode;
 using elg::Binding;
 using elg::ErrorAction;
+using elg::ModuleEntry;
 using elg::Text;
 using elg::View;
 namespace detail = elg::detail;
 
+// elg_rust_module_entry()'s preview, as views.cpp declares it (ElgPreviewDesc).
+struct PreviewDesc {
+    ElgStr name;
+    ElgStr file;
+    int32_t line;
+};
+
 extern "C" {
 int32_t elg_take_error(ElgStrSink out, void* ctx);
 uint32_t elg_abi_version();
+const char* elg_version();
+void elg_check_ui_thread();
+uint64_t elg_signal_new(ElgClosure owner);
+uint64_t elg_computed_new(ElgClosure compute);
+void elg_node_track(uint64_t node);
+void elg_node_notify(uint64_t node);
+elg::VideoFeed* elg_video_feed_new();
+void elg_video_feed_free(elg::VideoFeed* feed);
 View* elg_empty_view();
 App* elg_app_new();
 void elg_app_free(App* app);
@@ -60,6 +83,8 @@ View* elg_text_to_view(const Text* text);
 void elg_text_free(Text* text);
 void elg_string_assign(std::string* target, ElgStr value);
 View* elg_image(const ElgImageSource* source);
+const ModuleEntry* elg_rust_module_entry(bool has_root, const PreviewDesc* previews, size_t count,
+                                         bool (*build)(int32_t index, View* ret), uint64_t app_hash);
 }
 
 namespace {
@@ -106,6 +131,32 @@ ElgProp static_bool(Counts& counts) {
 // The calling thread's error kind, cleared (0: none).
 int32_t take_error() {
     return elg_take_error([](void*, const char*, size_t) {}, nullptr);
+}
+
+detail::TextSystem& text_system() {
+    static detail::TextSystem system;
+    return system;
+}
+
+// What a view that is a Text shows.
+std::string text_of(const View& view) {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const auto element = detail::lower(view, {.text = &text_system()});
+    detail::Inspection inspection;
+    element->inspect(inspection);
+    return inspection.detail;
+}
+
+// Two Rust modules' build functions (ElgModuleBuild), each naming its module and the view's index.
+bool build_first(int32_t index, View* ret) {
+    *ret = Text(std::format("first {}", index));
+    return true;
+}
+
+bool build_second(int32_t index, View* ret) {
+    *ret = Text(std::format("second {}", index));
+    return true;
 }
 
 } // namespace
@@ -245,6 +296,36 @@ TEST_CASE("an image source's pixel limit comes through the C API, and 0 is the d
     CHECK(width(source) == 64);
 }
 
+TEST_CASE("each Rust module's entry builds that module's views, however many previews it has", "[c-api][hot-reload]") {
+    std::vector<std::string> names;
+    names.reserve(300);
+    for (int i = 0; i < 300; ++i) {
+        names.push_back(std::format("preview {}", i));
+    }
+    std::vector<PreviewDesc> previews;
+    previews.reserve(names.size());
+    for (const std::string& name : names) {
+        previews.push_back({.name = {name.data(), name.size()}, .file = {"views.rs", 8}, .line = 1});
+    }
+    const ModuleEntry* first = elg_rust_module_entry(true, previews.data(), previews.size(), build_first, 0);
+    const ModuleEntry* second = elg_rust_module_entry(false, previews.data(), 1, build_second, 7);
+    REQUIRE(first);
+    REQUIRE(second);
+    CHECK(first != second);
+    CHECK(first->elegance_hash == elg::detail::headers_hash);
+    CHECK(first->app_hash == 0);
+    CHECK(second->app_hash == 7);
+    CHECK(first->has_root);
+    CHECK_FALSE(second->has_root);
+    REQUIRE(first->previews->size() == 300);
+    CHECK(std::string((*first->previews)[299].name) == "preview 299");
+    CHECK(second->previews->size() == 1);
+    // The module registered first still builds its own views, after the second registered.
+    CHECK(text_of(first->build(first->context, -1)) == "first -1");
+    CHECK(text_of(first->build(first->context, 299)) == "first 299");
+    CHECK(text_of(second->build(second->context, 0)) == "second 0");
+}
+
 TEST_CASE("the C API reports its ABI version", "[c-api]") {
     CHECK(elg_abi_version() >= 1);
 }
@@ -282,4 +363,118 @@ TEST_CASE("while an App runs, a panicking component body is reported, not the en
     detail::end_app_errors();
     CHECK(codes == std::vector<int>{static_cast<int>(AppCode::body)});
     elg_view_free(view);
+}
+
+TEST_CASE("what a call consumed but didn't take over, on another thread of a running App, is released on "
+          "the UI thread",
+          "[c-api][threads]") {
+    detail::set_ui_thread(std::this_thread::get_id()); // as App::run does
+    detail::begin_ui_releases();
+    Counts button_counts;
+    View* const button = elg_button(elg_empty_view(), closure(button_counts)); // made on the UI thread
+    REQUIRE(button);
+    Counts counts;
+    std::thread([&] {
+        ElgClosure unused = closure(counts);
+        View* take_view = button;
+        const elg_shim::Consumed consumed(unused, take_view);
+    }).join();
+    CHECK(counts.drops == 0); // waiting for the UI thread
+    CHECK(button_counts.drops == 0);
+    CHECK(detail::run_ui_releases());
+    CHECK(counts.drops == 1);
+    CHECK(button_counts.drops == 1); // the view went, and the action it kept
+    detail::end_ui_releases();
+    detail::set_ui_thread(std::nullopt);
+}
+
+TEST_CASE("while an App runs, a function of the UI thread fails on another thread, and releases what it "
+          "consumed on the UI thread",
+          "[c-api][threads]") {
+    detail::set_ui_thread(std::this_thread::get_id()); // as App::run does
+    detail::begin_ui_releases();
+    // What the other thread saw: each call's result and error.
+    struct Seen {
+        bool view_made = true;
+        int32_t view_error = 0;
+        std::string view_message;
+        bool button_made = true;
+        int32_t button_error = 0;
+        int drops_there = -1;
+        int32_t check_error = 0;
+        bool feed_made = false;
+        bool version_read = false;
+        int32_t any_thread_error = -1;
+    } seen;
+    const auto take = [](std::string& message) {
+        return elg_take_error(
+            [](void* ctx, const char* ptr, size_t len) { static_cast<std::string*>(ctx)->assign(ptr, len); }, &message);
+    };
+    Counts counts;
+    View* const label = elg_empty_view(); // made on the UI thread
+    REQUIRE(label);
+    std::thread([&] {
+        std::string ignored;
+        seen.view_made = elg_empty_view() != nullptr;
+        seen.view_error = take(seen.view_message);
+        seen.button_made = elg_button(label, closure(counts)) != nullptr;
+        seen.button_error = take(ignored);
+        seen.drops_there = counts.drops;
+        elg_check_ui_thread();
+        seen.check_error = take(ignored);
+        elg::VideoFeed* const feed = elg_video_feed_new(); // callable from any thread
+        seen.feed_made = feed != nullptr;
+        elg_video_feed_free(feed);
+        seen.version_read = elg_version() != nullptr;
+        seen.any_thread_error = take(ignored);
+    }).join();
+    CHECK_FALSE(seen.view_made);
+    CHECK(seen.view_error == 2); // a usage error
+    CHECK(seen.view_message.starts_with("elg_empty_view() was called off the UI thread"));
+    CHECK_FALSE(seen.button_made);
+    CHECK(seen.button_error == 2);
+    CHECK(seen.drops_there == 0); // its closure (and label) wait for the UI thread
+    CHECK(seen.check_error == 2);
+    CHECK(seen.feed_made);
+    CHECK(seen.version_read);
+    CHECK(seen.any_thread_error == 0);
+    CHECK(detail::run_ui_releases());
+    CHECK(counts.drops == 1);
+    detail::end_ui_releases();
+    detail::set_ui_thread(std::nullopt);
+}
+
+TEST_CASE("a handle to reactive state that has ended is a usage error, also once its slot is reused",
+          "[c-api][reactive]") {
+    Counts first;
+    Counts second;
+    std::uint64_t ended = 0;
+    {
+        detail::Scope scope;
+        const detail::Scope::Use use(scope);
+        ended = elg_signal_new(closure(first));
+        REQUIRE(ended != 0);
+        elg_node_notify(ended);
+        CHECK(take_error() == 0);
+    } // the scope ends, and the node with it
+    CHECK(first.drops == 1);
+    elg_node_track(ended);
+    CHECK(take_error() == 2);
+    {
+        detail::Scope scope;
+        const detail::Scope::Use use(scope);
+        const std::uint64_t reused = elg_signal_new(closure(second)); // most likely in the ended one's slot
+        REQUIRE(reused != 0);
+        CHECK(reused != ended);
+        elg_node_notify(ended);
+        CHECK(take_error() == 2);
+        elg_node_track(reused);
+        CHECK(take_error() == 0);
+        const std::uint64_t computed = elg_computed_new(closure(second));
+        REQUIRE(computed != 0);
+        elg_node_track(computed);
+        CHECK(take_error() == 0);
+    }
+    elg_node_track(0); // no handle at all
+    CHECK(take_error() == 2);
 }
