@@ -135,9 +135,10 @@ endif ()
 # The OS's own libraries, which the platform folders' code calls (each layer's backend is in them).
 if (WIN32)
     # dwmapi: rounded corners and backdrops; comctl32: window subclassing; d3d11/dxgi/dcomp:
-    # transparent windows; the rest: images, video, cameras, certificates, proxies, the shell.
+    # transparent windows; runtimeobject: WinRT (toasts); the rest: images, video, cameras,
+    # certificates, proxies, the shell.
     target_link_libraries(elegance_settings INTERFACE dwmapi comctl32 d3d11 dxgi dcomp windowscodecs ole32 propsys
-            mfplat mfuuid mf mfreadwrite strmiids oleaut32 shell32 crypt32 imm32 winhttp)
+            mfplat mfuuid mf mfreadwrite strmiids oleaut32 shell32 crypt32 imm32 winhttp runtimeobject)
 endif ()
 if (APPLE)
     target_link_libraries(elegance_settings INTERFACE

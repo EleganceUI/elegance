@@ -137,8 +137,8 @@ THIRD_PARTY = [
     # What those graphics APIs build on, which their interop code in src/gpu/<os>/ (R5) uses too.
     (re.compile(r"^(windows\.h|Foundation/|CoreFoundation/|objc/)"),
      "the operating system's base headers", GPU_INTEROP),
-    (re.compile(r"^(windows\.h|win\w+\.h|shl\w*\.h|shobjidl\w*\.h|objbase\.h|combaseapi\.h|ole\w*\.h|"
-                r"mf\w*\.h|propvarutil\.h|wincrypt\.h|winhttp\.h|dwmapi\.h|uxtheme\.h|tlhelp32\.h|"
+    (re.compile(r"^(windows\.h|win\w+\.h|windows\.[\w.]+\.h|roapi\.h|shl\w*\.h|shobjidl\w*\.h|objbase\.h|"
+                r"combaseapi\.h|ole\w*\.h|mf\w*\.h|propvarutil\.h|wincrypt\.h|winhttp\.h|dwmapi\.h|uxtheme\.h|tlhelp32\.h|"
                 r"knownfolders\.h|psapi\.h|dbghelp\.h|dshow\.h|commctrl\.h|imm\.h|shellapi\.h|process\.h|"
                 r"io\.h|direct\.h|objidl\.h|unknwn\.h|"
                 r"gst/|glib\.h|glib/|gio/|gobject/|"

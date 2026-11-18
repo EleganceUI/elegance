@@ -1448,11 +1448,14 @@ it covers them).
     path, so tree changes mid-drag are safe.
   - Dragging out of the app is a follow-up.
 - **Notifications:** `notify({.title, .body, .on_click})`.
-  - Windows: a shell notification icon (a message-only window and `Shell_NotifyIcon` with
-    `NIF_INFO`), shown as a toast with the app's icon and kept in the notification center.
-    Clicks come back through `NIN_BALLOONUSERCLICK`.
-  - Proper WinRT toasts (actions, images) need an AppUserModelID and a Start-menu shortcut, so
-    they're a follow-up for packaged apps.
+  - Windows: WinRT toasts (`ToastNotificationManager`), kept in the notification center. Each
+    is tagged, and its `Activated` event runs its own click handler; `Dismissed` (unless it timed
+    out into the notification center) and `Failed` let go of it.
+  - Windows shows toasts only for an AppUserModelID that a Start menu shortcut carries. An app
+    that set its own keeps it (its installer's shortcut carries it). Any other gets
+    `Elegance.App.<exe name>` and, the first time it notifies, `<exe name>.lnk` in the person's
+    Start menu, unless a shortcut by that name is another program's.
+  - Toasts with actions and images are a follow-up.
   - macOS: `UNUserNotificationCenter` (it asks for permission the first time).
   - Linux: `org.freedesktop.Notifications` over D-Bus (GIO), with `desktop-entry` set to the app's
     id. Clicks come back as `ActionInvoked`. Without GIO in the build, they're logged.
