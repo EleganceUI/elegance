@@ -999,9 +999,10 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
 - Expose a semantic tree (roles, names, states, actions) to the OS screen readers
   (UIA / AT-SPI / NSAccessibility).
 - **Decided:** **AccessKit** through its C API (`accesskit-c`), rather than writing three backends.
-  - CMake downloads the official prebuilt release (pinned version and SHA-256) and links it
-    statically (`ELG_ACCESSIBILITY`, on by default). Building Elegance needs no Rust toolchain.
-    MIT / Apache-2.0.
+  - vcpkg installs it (the `accesskit-c` overlay port, `cmake/ports`): the official release's
+    prebuilt libraries, or, where it has none (Linux on ARM64), libraries built from its Rust
+    sources with cargo. Elegance links the static one (`ELG_ACCESSIBILITY`, on by default), or the
+    shared one for Rust apps (`ELG_ACCESSKIT_SHARED`). MIT / Apache-2.0.
 - Built-in components ship with correct roles. Keyboard navigation works everywhere, and
   `prefers-reduced-motion` and high-contrast settings are respected.
 
@@ -1025,8 +1026,14 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
   `_element` (combine children into one element, labeled with their text) and `_action`. They
   apply to the element they wrap, or the nearest one inside with a role; around several children
   they form a group.
-- **The tree is built on demand:** AccessKit's Windows subclassing adapter hooks the window's
-  `WM_GETOBJECT` and stays dormant until a screen reader asks.
+- **The tree is built on demand,** by each platform's AccessKit adapter
+  (`src/platform/sdl/accessibility_adapter.cpp`), which stays dormant until a screen reader asks:
+  - Windows (UI Automation): the subclassing adapter hooks the window's `WM_GETOBJECT`.
+  - macOS (NSAccessibility): the subclassing adapter on the window's `NSWindow`, with a focus
+    forwarder on SDL's window class.
+  - Linux (AT-SPI, under X11 and Wayland): the Unix adapter, whose activation comes on its own
+    thread; when it can't hand over the tree there, the UI thread sends it whole. An AT-SPI bus
+    that isn't there doesn't hold up the window.
   - Once active, the whole tree is rebuilt from current values after each frame and sent, and
     AccessKit diffs it. No bookkeeping to keep in sync, and nothing at all while no screen
     reader is listening (idle CPU stays 0).
@@ -2227,9 +2234,8 @@ Separate render thread from day one (decided).
 - [x] Accessibility (§12): AccessKit on Windows (UI Automation); element semantics for every
   built-in view; `.accessibility_*` modifiers; on-demand tree with actions. Verified through UI
   Automation and tested.
+- [x] Accessibility on macOS (NSAccessibility) and Linux (AT-SPI), through AccessKit's adapters.
 - [ ] Accessibility follow-ups:
-  - macOS (NSAccessibility) and Linux (AT-SPI) adapters. AccessKit has them; they need the
-    platform window handles.
   - Popups and menus as their own trees (menu, menu item roles).
   - Live regions (announcements).
   - Text selection and caret (text runs) for fields.
