@@ -84,6 +84,16 @@ TEST_CASE("a command added before others damages only itself", "[damage]") {
     CHECK(damage(before, now) == std::vector<Rect>{{149, 0, 12, 11}});
 }
 
+TEST_CASE("a path counts by its points, not by the set that holds them", "[damage]") {
+    const auto path = [](std::vector<Point> points) {
+        const auto polygons = std::make_shared<const detail::Polygons>(detail::Polygons{std::move(points)});
+        return detail::PathCommand{polygons, {0, 0, 20, 20}, 1, {10, 10}, {10, 10, 20, 20}, ShapeStyle(Color::black)};
+    };
+    const auto before = list_of({path({{0, 0}, {20, 0}, {0, 20}})});
+    CHECK(damage(before, list_of({path({{0, 0}, {20, 0}, {0, 20}})})).empty());
+    CHECK(box(damage(before, list_of({path({{0, 0}, {20, 0}, {20, 20}})}))) == Rect{9, 9, 22, 22});
+}
+
 TEST_CASE("commands that swap places in painter's order count as changed", "[damage]") {
     const auto a = rect({0, 0, 50, 50}, Color::rgb(255, 0, 0));
     const auto b = rect({25, 25, 50, 50}, Color::rgb(0, 0, 255));

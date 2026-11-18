@@ -78,9 +78,9 @@ public:
     }
     Hasher& add(const Shadow& s) { return add(s.color).add(s.radius).add(s.x).add(s.y).add(s.spread); }
     Hasher& add(const LayerTransform& t) { return add(t.a).add(t.b).add(t.c).add(t.d).add(t.pivot); }
-    Hasher& add(const PathCommand& c) {
-        // The polygons by identity: a path drawn again unchanged keeps its polygons.
-        add(static_cast<const void*>(c.polygons.get())).add(c.bounds).add(c.scale).add(c.offset);
+    // The polygons by their points, from `paths`: hashed once while the same set is drawn.
+    Hasher& add(const PathCommand& c, PathHashes& paths) {
+        add(c.polygons ? paths.get(c.polygons).content : 0).add(c.bounds).add(c.scale).add(c.offset);
         return add(c.paint_frame).add(c.fill).add(c.rule);
     }
 
@@ -138,8 +138,9 @@ struct Level {
 
 class Walker {
 public:
-    Walker(const DisplayList& list, std::uint32_t width, std::uint32_t height)
-        : list_(list), scale_(list.scale), window_{0, 0, static_cast<float>(width), static_cast<float>(height)} {
+    Walker(const DisplayList& list, std::uint32_t width, std::uint32_t height, PathHashes& paths)
+        : list_(list), paths_(paths), scale_(list.scale),
+          window_{0, 0, static_cast<float>(width), static_cast<float>(height)} {
         levels_.push_back({.clips = {window_}, .contexts = {14695981039346656037ull}});
     }
 
@@ -227,7 +228,7 @@ private:
                     return shape(key.value(), c.rect, nullptr);
                 },
                 [&](const PathCommand& c) {
-                    key.add(c);
+                    key.add(c, paths_);
                     return shape(key.value(), c.window_bounds(), &c.fill);
                 },
                 [&](const ImageCommand& c) {
@@ -290,7 +291,7 @@ private:
             key.bytes(c.color_matrix->data(), sizeof(*c.color_matrix));
         }
         if (c.mask) {
-            key.add(*c.mask);
+            key.add(*c.mask, paths_);
         }
 
         // Its content is in the window's coordinates before its transform: the clips around it
@@ -329,6 +330,7 @@ private:
     }
 
     const DisplayList& list_;
+    PathHashes& paths_;
     float scale_;
     Rect window_;
     std::vector<Level> levels_;
@@ -416,8 +418,10 @@ void match(std::span<const Footprint> a, std::span<const Footprint> b, std::vect
 
 } // namespace
 
-std::vector<Footprint> footprints(const DisplayList& list, std::uint32_t width, std::uint32_t height) {
-    return Walker(list, width, height).run();
+std::vector<Footprint> footprints(const DisplayList& list, std::uint32_t width, std::uint32_t height,
+                                  PathHashes* paths) {
+    PathHashes once;
+    return Walker(list, width, height, paths ? *paths : once).run();
 }
 
 std::vector<Rect> damage_between(std::span<const Footprint> before, std::span<const Footprint> now) {

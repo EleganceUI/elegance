@@ -20,6 +20,8 @@
 
 namespace elg::detail {
 
+class PathHashes;
+
 // What a draw command draws in a frame, and where.
 struct Footprint {
     // What it draws: its content, and the layers and clips around it.
@@ -35,8 +37,10 @@ struct Footprint {
 };
 
 // The footprints of a frame's commands, in painter's order, for a window of `width` x `height`
-// pixels.
-std::vector<Footprint> footprints(const DisplayList& list, std::uint32_t width, std::uint32_t height);
+// pixels. Paths count by their points: `paths` is the window's, kept across its frames, whose
+// caller ends each frame of them; null hashes them for this call alone.
+std::vector<Footprint> footprints(const DisplayList& list, std::uint32_t width, std::uint32_t height,
+                                  PathHashes* paths = nullptr);
 
 // The damage region from the frame of `before` to the frame of `now`: the bounds, in both frames,
 // of the commands added, removed or changed, a command that moved in painter's order among them;
