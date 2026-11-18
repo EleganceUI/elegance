@@ -101,13 +101,23 @@ void RenderThread::run(std::promise<void> ready) noexcept {
         set_native_frame_importer({&imports_native_frames, &import_native_frame});
         const gpu::Instance instance;
         Kept kept;
+        // Devices lost in a row before they drew anything: a GPU that loses every new device
+        // can't draw, as if none could be made.
+        constexpr int kMaxFruitlessDevices = 3;
+        int fruitless = 0;
         for (;;) {
+            const int drawn = frames_drawn_.load();
             try {
                 draw(instance, kept, ready, started);
                 break; // the mailbox closed
             } catch (const gpu::DeviceLost& lost) {
                 if (!started) {
                     throw; // the first device: the app doesn't start
+                }
+                fruitless = frames_drawn_.load() == drawn ? fruitless + 1 : 0;
+                if (fruitless >= kMaxFruitlessDevices) {
+                    throw GpuError(std::format("{}: {} devices in a row were lost before they drew anything",
+                                               lost.what(), kMaxFruitlessDevices));
                 }
                 // A new device, or a GpuError when none can be made.
                 log_warning("{}: drawing with a new device", lost.what());

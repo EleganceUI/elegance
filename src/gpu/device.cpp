@@ -268,11 +268,22 @@ Device::~Device() {
         const std::lock_guard lock(states.mutex);
         states.devices.erase(objects_->device.Get());
     }
+    bool lost = false;
+    {
+        const std::lock_guard lock(errors_->mutex);
+        lost = !errors_->lost.empty();
+    }
     const std::lock_guard lock(published_->mutex);
     published_->active = false;
-    // Do not eagerly Destroy(): imported frames may still need to export completion
-    // fences. Dawn references held by those frames and submitted work own the remaining
-    // lifetime; releasing the renderer's references is not a GPU-completion assertion.
+    // Do not eagerly Destroy() a working device: imported frames may still need to export
+    // completion fences. Dawn references held by those frames and submitted work own the
+    // remaining lifetime; releasing the renderer's references is not a GPU-completion assertion.
+    // A lost device has nothing left to finish: it's destroyed now, which releases what it made
+    // whoever else still holds it, the windows' swapchains among them. A window has one
+    // swapchain at a time on Windows, so the next device can then make its own.
+    if (lost) {
+        objects_->device.Destroy();
+    }
 }
 
 const wgpu::Device& Device::handle() const noexcept {

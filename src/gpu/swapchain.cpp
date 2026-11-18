@@ -63,11 +63,21 @@ Swapchain::Swapchain(const Device& device, const SurfaceSource& source, bool tra
 }
 
 void Swapchain::make_surface() {
-    // The lost surface goes first: the window has one at a time.
-    if (surface_ && width_ != 0) {
-        surface_.Unconfigure();
+    // The lost surface goes first, its native swapchain with it: the window has one at a time
+    // (Windows refuses a second one). Dawn defers destroying it until the GPU is past it, so it's
+    // made to now, as ~Swapchain() does.
+    if (surface_) {
+        if (width_ != 0) {
+            surface_.Unconfigure();
+        }
+        surface_ = nullptr;
+        // Not configured from here on, whatever fails below: ~Swapchain() leaves it so.
+        width_ = 0;
+        height_ = 0;
+        stale_ = true;
+        copyable_ = false;
+        device_.finish_deferred(); // on a lost device, throws DeviceLost: the renderer starts over
     }
-    surface_ = nullptr;
     surface_ = device_.instance().create_surface(source_);
     ++surfaces_made_;
     wgpu::SurfaceCapabilities caps;
