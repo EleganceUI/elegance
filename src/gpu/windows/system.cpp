@@ -85,7 +85,11 @@ std::optional<std::array<std::uint8_t, 8>> adapter_luid(std::uint32_t vendor, st
         return std::nullopt;
     }
     Microsoft::WRL::ComPtr<IDXGIAdapter1> adapter;
-    for (UINT i = 0; factory->EnumAdapters1(i, &adapter) != DXGI_ERROR_NOT_FOUND; ++i) {
+    for (UINT i = 0;; ++i) {
+        const HRESULT found = factory->EnumAdapters1(i, &adapter);
+        if (FAILED(found)) {
+            return std::nullopt; // DXGI_ERROR_NOT_FOUND: no more adapters
+        }
         DXGI_ADAPTER_DESC1 desc{};
         if (SUCCEEDED(adapter->GetDesc1(&desc)) && desc.VendorId == vendor && desc.DeviceId == device) {
             std::array<std::uint8_t, 8> luid{};
@@ -94,7 +98,6 @@ std::optional<std::array<std::uint8_t, 8>> adapter_luid(std::uint32_t vendor, st
             return luid;
         }
     }
-    return std::nullopt;
 }
 
 } // namespace elg::detail::gpu

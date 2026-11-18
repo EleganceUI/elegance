@@ -312,7 +312,11 @@ bool CompositionTarget::prepare(std::uint32_t width, std::uint32_t height) {
                  "create a composition swapchain");
         ComPtr<IDXGISwapChain2> swapchain2;
         if (SUCCEEDED(impl_->swapchain.As(&swapchain2))) {
-            swapchain2->SetMaximumFrameLatency(1);
+            // Refused, frames queue up to DXGI's default latency: still shown, a little later.
+            if (const HRESULT limited = swapchain2->SetMaximumFrameLatency(1); FAILED(limited)) {
+                log_warning("GPU: the composition swapchain keeps its own frame latency (HRESULT 0x{:08x})",
+                            static_cast<unsigned long>(limited));
+            }
             impl_->ready = swapchain2->GetFrameLatencyWaitableObject();
         }
         check_hr(impl_->visual->SetContent(impl_->swapchain.Get()), "show the swapchain");
@@ -380,11 +384,14 @@ void CompositionTarget::present() {
     // as fast as the GPU allows (hundreds of frames a second). Latency stays at one frame: the wait
     // returns at a vblank, and the frame rendered right after it shows at the next.
     check_hr(impl_->swapchain->Present(1, 0), "present to the composition swapchain");
-    // WebGPU renders into the shared texture again next frame: let the copy finish first.
+    // WebGPU renders into the shared texture again next frame: let the copy finish first. A query
+    // that fails (a removed device) can't say it did.
     impl_->context->End(impl_->done.Get());
-    while (impl_->context->GetData(impl_->done.Get(), nullptr, 0, 0) == S_FALSE) {
+    HRESULT done = S_FALSE;
+    while ((done = impl_->context->GetData(impl_->done.Get(), nullptr, 0, 0)) == S_FALSE) {
         SwitchToThread();
     }
+    check_hr(done, "wait for the copy to the composition swapchain");
 }
 
 } // namespace elg::detail::gpu
