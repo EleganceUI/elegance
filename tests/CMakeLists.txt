@@ -42,6 +42,7 @@ add_executable(elegance_tests
         fetch_tests.cpp
         image_decode_tests.cpp
         image_tests.cpp
+        internal_error_tests.cpp
         navigation_tests.cpp
         number_input_tests.cpp
         os_tests.cpp
@@ -59,7 +60,7 @@ add_executable(elegance_tests
         video_tests.cpp
         test_setup.cpp
 )
-target_link_libraries(elegance_tests PRIVATE Elegance::Elegance Catch2::Catch2WithMain Boost::beast OpenSSL::SSL)
+target_link_libraries(elegance_tests PRIVATE Elegance::Elegance Catch2::Catch2 Boost::beast OpenSSL::SSL)
 target_include_directories(elegance_tests PRIVATE ${PROJECT_SOURCE_DIR}/src ${PROJECT_SOURCE_DIR}/apps/common)
 target_include_directories(elegance_tests SYSTEM PRIVATE
         $<TARGET_PROPERTY:dawn::webgpu_dawn,INTERFACE_INCLUDE_DIRECTORIES>)
@@ -108,6 +109,10 @@ endif ()
 # A test that hangs fails after two minutes, by name, instead of holding the run until CI gives up.
 catch_discover_tests(elegance_tests PROPERTIES TIMEOUT 120 ENVIRONMENT_MODIFICATION
                      "LSAN_OPTIONS=string_append::suppressions=${CMAKE_CURRENT_SOURCE_DIR}/lsan_suppressions.txt")
+# A bug Elegance carries on after, such as a WebGPU validation error, fails its test
+# (ELGSPEC-0025.R3): the run of a test that logs one, and fails no assertion, fails.
+add_test(NAME internal_error_fails_its_test COMMAND elegance_tests "[.internal-error]")
+set_tests_properties(internal_error_fails_its_test PROPERTIES WILL_FAIL TRUE TIMEOUT 120)
 
 # Each layer's own tests, linked with that layer and the layers below it only, as object files
 # (ELGSPEC-0001.R9): they build without the layers above it. So must the layer itself, since every
@@ -117,7 +122,7 @@ function(elg_layer_tests layer)
     set(target elegance_${layer}_tests)
     add_executable(${target} test_setup.cpp ${ARGN})
     get_target_property(objects elegance_${layer} ELG_OBJECTS)
-    target_link_libraries(${target} PRIVATE ${objects} Catch2::Catch2WithMain)
+    target_link_libraries(${target} PRIVATE ${objects} Catch2::Catch2)
     target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)
     elegance_warnings(${target})
     if (MSVC)

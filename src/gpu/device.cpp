@@ -4,9 +4,6 @@
 
 #include "gpu/device.h"
 
-#ifndef NDEBUG
-#include "core/crash.h"
-#endif
 #include "core/log.h"
 #include "core/os_backend.h"
 #include "gpu/instance.h"
@@ -198,12 +195,9 @@ Device::Device(const Instance& instance)
                     errors->fatal = std::format("the GPU ran out of memory: {}", std::string_view(message));
                     return;
                 }
-#ifdef NDEBUG
-                log_error("webgpu: {}", std::string_view(message));
-#else
-                // Every GPU object belongs to the framework, so a validation error is our bug.
-                internal_error(std::format("WebGPU error: {}", std::string_view(message)));
-#endif
+                // Every GPU object belongs to the framework, so a validation error is our bug; it
+                // shows in the log in every build, and fails the test that caused it.
+                log_internal_error(std::format("webgpu: {}", std::string_view(message)));
             } catch (...) {
                 // Swallowed: a C callback; nothing may unwind through Dawn.
             }
