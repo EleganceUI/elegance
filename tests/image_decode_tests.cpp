@@ -6,6 +6,7 @@
 // asked for, and EXIF orientation.
 
 #include "media/image_decode.h"
+#include "media/recorded_orientation.h"
 #include "media/image_codec_backend.h"
 
 #include "core/log.h"
@@ -27,6 +28,7 @@
 #include <initializer_list>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <variant>
 #include <vector>
@@ -135,8 +137,7 @@ TEST_CASE("a JPEG's EXIF orientation turns its upright size", "[image]") {
     CHECK(upright.height == 2);
 }
 
-// Linux reads the EXIF orientation itself (from JPEG and PNG files); the other platforms' codecs
-// are tested there.
+// What Linux's codec does: the other platforms' codecs are tested there.
 #if defined(__linux__)
 
 TEST_CASE("scaling down averages each share of the image, colors weighted by alpha", "[image]") {
@@ -210,6 +211,11 @@ TEST_CASE("decoding turns a JPEG upright", "[image]") {
     CHECK(turned->rgba.size() == std::size_t{2} * 3 * 4);
 }
 
+#endif
+
+// Whatever the codec, a file shows the way it records (ELGSPEC-0005.R6): what a codec doesn't
+// read, Elegance does.
+
 TEST_CASE("decoding turns a PNG upright by its eXIf chunk", "[image]") {
     // 2 x 2, stored as   red   green      (BGRA)
     //                    blue  white
@@ -263,4 +269,45 @@ TEST_CASE("a PNG's eXIf orientation turns its upright size", "[image]") {
     CHECK(detail::probe_image(with_png_exif(png, {})).width == 3);
 }
 
-#endif
+TEST_CASE("the orientation a file records is read from JPEG, PNG and WebP files", "[image]") {
+    CHECK(detail::recorded_orientation(jpeg_file(6)) == 6);
+    CHECK(detail::recorded_orientation(with_png_orientation(black_png(3, 2), 8)) == 8);
+    // A WebP file: RIFF, then a VP8L chunk (not read), then an EXIF chunk of odd length, so padded.
+    const auto webp = [](const std::vector<std::uint8_t>& exif) {
+        std::vector<std::uint8_t> chunks;
+        const auto chunk = [&](std::string_view type, const std::vector<std::uint8_t>& data) {
+            chunks.insert(chunks.end(), type.begin(), type.end());
+            for (int shift = 0; shift < 32; shift += 8) {
+                chunks.push_back(static_cast<std::uint8_t>(data.size() >> shift));
+            }
+            chunks.insert(chunks.end(), data.begin(), data.end());
+            if (data.size() % 2 == 1) {
+                chunks.push_back(0);
+            }
+        };
+        chunk("VP8L", {0x2F, 0, 0, 0, 0});
+        chunk("EXIF", exif);
+        std::vector<std::uint8_t> file{'R', 'I', 'F', 'F'};
+        const std::size_t size = chunks.size() + 4;
+        for (int shift = 0; shift < 32; shift += 8) {
+            file.push_back(static_cast<std::uint8_t>(size >> shift));
+        }
+        file.insert(file.end(), {'W', 'E', 'B', 'P'});
+        file.insert(file.end(), chunks.begin(), chunks.end());
+        return file;
+    };
+    std::vector<std::uint8_t> exif = exif_orientation(6);
+    exif.push_back(0); // odd: 27 bytes
+    CHECK(detail::recorded_orientation(webp(exif)) == 6);
+    std::vector<std::uint8_t> prefixed{'E', 'x', 'i', 'f', 0, 0}; // as some writers store it
+    const std::vector<std::uint8_t> turned = exif_orientation(3);
+    prefixed.insert(prefixed.end(), turned.begin(), turned.end());
+    CHECK(detail::recorded_orientation(webp(prefixed)) == 3);
+    // Cut short, or not EXIF: none.
+    std::vector<std::uint8_t> cut = webp(exif_orientation(6));
+    cut.resize(cut.size() - 10);
+    CHECK(detail::recorded_orientation(cut) == 1);
+    CHECK(detail::recorded_orientation(webp({'M', 'M', 0, 42})) == 1);
+    CHECK(detail::recorded_orientation(std::vector<std::uint8_t>{'R', 'I', 'F', 'F'}) == 1);
+}
+

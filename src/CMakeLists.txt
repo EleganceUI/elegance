@@ -262,7 +262,7 @@ elg_layer(media_os
               platform/macos/video_source.mm
         LINUX platform/linux/camera.cpp platform/linux/image_codec.cpp platform/linux/video_source.cpp)
 elg_layer(media
-        SOURCES media/audio.cpp media/audio_stream.cpp media/camera.cpp media/frame_source.cpp media/image_decode.cpp
+        SOURCES media/audio.cpp media/audio_stream.cpp media/camera.cpp media/frame_source.cpp media/image_decode.cpp media/recorded_orientation.cpp
                 media/miniaudio.cpp media/recorder.cpp media/video_feed.cpp media/video_source.cpp
         DEPENDS core geometry reactive media_os)
 # A system folder, so that miniaudio.h is held to no warnings of ours: on macOS, nothing else this

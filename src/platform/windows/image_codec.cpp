@@ -57,19 +57,21 @@ ComPtr<IWICBitmapFrameDecode> first_frame(std::span<const std::uint8_t> data) {
     return frame;
 }
 
-// The EXIF orientation (1 when absent): JPEG and TIFF keep it in different places.
+// The EXIF orientation that WIC reports (1 when absent): JPEG and TIFF keep it in different places;
+// HEIF's is a property of its frame, WICHeifOrientation, numbered the same. The media layer reads
+// what WIC doesn't (PNG's eXIf, WebP's EXIF).
 int exif_orientation(IWICBitmapFrameDecode* frame) {
-    ComPtr<IWICMetadataQueryReader> reader;
-    if (FAILED(frame->GetMetadataQueryReader(&reader))) {
-        return 1;
-    }
-    for (const wchar_t* query : {L"/app1/ifd/{ushort=274}", L"/ifd/{ushort=274}"}) {
-        PROPVARIANT value;
-        PropVariantInit(&value);
-        if (SUCCEEDED(reader->GetMetadataByName(query, &value))) {
-            const int orientation = value.vt == VT_UI2 ? value.uiVal : 1;
-            PropVariantClear(&value);
-            return orientation;
+    if (ComPtr<IWICMetadataQueryReader> reader; SUCCEEDED(frame->GetMetadataQueryReader(&reader))) {
+        for (const wchar_t* query : {L"/app1/ifd/{ushort=274}", L"/ifd/{ushort=274}", L"/heifProps/{ushort=1}"}) {
+            PROPVARIANT value;
+            PropVariantInit(&value);
+            if (SUCCEEDED(reader->GetMetadataByName(query, &value))) {
+                const int orientation = value.vt == VT_UI2 && value.uiVal >= 1 && value.uiVal <= 8 ? value.uiVal : 1;
+                PropVariantClear(&value);
+                if (orientation != 1) {
+                    return orientation;
+                }
+            }
         }
     }
     return 1;
