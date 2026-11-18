@@ -1,0 +1,28 @@
+# AccessKit's C library (Elegance's overlay port, cmake/ports/accesskit-c): accesskit-c::static
+# and accesskit-c::shared, both installed whatever the triplet's linkage.
+get_filename_component(_accesskit_prefix "${CMAKE_CURRENT_LIST_DIR}/../.." ABSOLUTE)
+
+if (NOT TARGET accesskit-c::static)
+    add_library(accesskit-c::static STATIC IMPORTED)
+    set_target_properties(accesskit-c::static PROPERTIES
+        IMPORTED_LOCATION "${_accesskit_prefix}/lib/@static_installed@"
+        INTERFACE_INCLUDE_DIRECTORIES "${_accesskit_prefix}/include")
+    # What Rust's standard library links with on the platform.
+    target_link_libraries(accesskit-c::static INTERFACE @static_libraries@)
+endif ()
+
+if (NOT TARGET accesskit-c::shared)
+    add_library(accesskit-c::shared SHARED IMPORTED)
+    if (WIN32)
+        set_target_properties(accesskit-c::shared PROPERTIES
+            IMPORTED_IMPLIB "${_accesskit_prefix}/lib/accesskit.lib"
+            IMPORTED_LOCATION "${_accesskit_prefix}/bin/@shared_name@")
+    else ()
+        set_target_properties(accesskit-c::shared PROPERTIES
+            IMPORTED_LOCATION "${_accesskit_prefix}/lib/@shared_name@")
+    endif ()
+    set_target_properties(accesskit-c::shared PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${_accesskit_prefix}/include")
+endif ()
+
+unset(_accesskit_prefix)

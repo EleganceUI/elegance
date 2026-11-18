@@ -20,33 +20,18 @@ find_package(OpenSSL REQUIRED)
 # miniaudio is a single header (design.md §13.3).
 find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
 
-# Accessibility (design.md §12): AccessKit's official prebuilt C library (MIT / Apache-2.0),
-# linked statically, so building Elegance needs no Rust toolchain.
-if (ELG_ACCESSIBILITY)
-    include(FetchContent)
-    FetchContent_Declare(accesskit_c
-        URL https://github.com/AccessKit/accesskit-c/releases/download/0.23.1/accesskit-c-0.23.1.zip
-        URL_HASH SHA256=35b7ca8a6f1e038b5da35e1e9e5a0adaed9bfcf21e1496d29598fbbadcc7043f
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-        SOURCE_SUBDIR no-cmake-here) # use the prebuilt libraries, don't build it
-    FetchContent_MakeAvailable(accesskit_c)
-    # Sets ACCESSKIT_LIBRARIES_DIR. Not every platform has prebuilt libraries (Linux on ARM64 doesn't).
-    include("${accesskit_c_SOURCE_DIR}/accesskit.cmake")
-    if (NOT IS_DIRECTORY "${ACCESSKIT_LIBRARIES_DIR}")
-        message(WARNING "AccessKit has no prebuilt library for this platform (${ACCESSKIT_LIBRARIES_DIR}): "
-                        "building without screen reader support. Set ELG_ACCESSIBILITY=OFF to silence this.")
-        set(ELG_ACCESSIBILITY OFF)
-    endif ()
-endif ()
+# Accessibility (design.md §12): AccessKit's C library (MIT / Apache-2.0), from vcpkg (the
+# accesskit-c overlay port, cmake/ports). Global: the macOS bundle step (EleganceApplication.cmake)
+# looks for its shared library from the app's folder.
 set(elg_accesskit "")
 if (ELG_ACCESSIBILITY)
-    include("${accesskit_c_SOURCE_DIR}/accesskit-config.cmake")
+    find_package(accesskit-c CONFIG REQUIRED GLOBAL)
     # Its static library is a Rust staticlib with its own Rust standard library, which clashes with
     # a Rust app's own (the Rust bindings link a static Elegance with ELG_ACCESSKIT_SHARED).
     if (ELG_ACCESSKIT_SHARED)
-        set(elg_accesskit accesskit-shared)
+        set(elg_accesskit accesskit-c::shared)
     else ()
-        set(elg_accesskit accesskit-static)
+        set(elg_accesskit accesskit-c::static)
     endif ()
 endif ()
 

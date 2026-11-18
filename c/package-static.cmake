@@ -83,7 +83,7 @@ foreach (entry IN LISTS entries)
 
     if (kind STREQUAL "static")
         get_filename_component(stem "${value}" NAME_WE)
-        if (stem MATCHES "^(lib)?accesskit$")
+        if (stem MATCHES "^(lib)?accesskit(-static)?$")
             message(FATAL_ERROR "AccessKit's static library is a Rust staticlib with its own Rust standard "
                                 "library, which would clash with a Rust app's: configure with ELG_ACCESSKIT_SHARED")
         endif ()

@@ -114,6 +114,20 @@ jobs:
                   echo "CC=gcc-14" >> "$GITHUB_ENV"
                   echo "CXX=g++-14" >> "$GITHUB_ENV"
 
+            # AccessKit ships no prebuilt library for Linux on ARM64, so its vcpkg port
+            # (cmake/ports/accesskit-c) builds one with cargo, which needs Rust 1.87 or later.
+            - name: Install Rust (Linux arm64)
+              if: runner.os == 'Linux' && runner.arch == 'ARM64'
+              run: |
+                  if ! command -v rustup >/dev/null; then
+                    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+                    echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+                    export PATH="$HOME/.cargo/bin:$PATH"
+                  fi
+                  rustup toolchain install stable --profile minimal
+                  rustup default stable
+                  cargo --version
+
             # Xcode 16's libc++ lacks std::jthread / std::stop_token.
             - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90 # v1.7.0
               if: runner.os == 'macOS'

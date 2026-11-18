@@ -86,6 +86,20 @@ jobs:
                   pipx install 'cmake>=4.3'
                   cmake --version
 
+            # AccessKit ships no prebuilt library for Linux on ARM64, so its vcpkg port
+            # (cmake/ports/accesskit-c) builds one with cargo, which needs Rust 1.87 or later.
+            - name: Install Rust (Linux arm64)
+              if: runner.os == 'Linux' && runner.arch == 'ARM64'
+              run: |
+                  if ! command -v rustup >/dev/null; then
+                    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain none
+                    echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+                    export PATH="$HOME/.cargo/bin:$PATH"
+                  fi
+                  rustup toolchain install stable --profile minimal
+                  rustup default stable
+                  cargo --version
+
             - name: Set up vcpkg
               run: |
                   git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
