@@ -107,6 +107,10 @@ const wgpu::Device& PixelRenderer::device() const {
     return objects_->device.handle();
 }
 
+int PixelRenderer::frames_presented() const {
+    return objects_->target->frames_presented();
+}
+
 Pixels PixelRenderer::draw(const DisplayList& list, int width, int height, float scale) {
     WindowFrame frame;
     frame.window_id = 1;

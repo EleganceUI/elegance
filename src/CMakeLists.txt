@@ -297,7 +297,7 @@ elg_add_shaders(elegance_gpu
 
 elg_layer(render
         SOURCES render/damage.cpp render/frame_mailbox.cpp render/frame_plan.cpp render/frame_sources.cpp
-                render/gpu_image.cpp
+                render/gpu_image.cpp render/render_settings.cpp
                 render/render_thread.cpp render/video_textures.cpp render/window_target.cpp
         DEPENDS core geometry display gpu text media
         LIBRARIES dawn::webgpu_dawn)

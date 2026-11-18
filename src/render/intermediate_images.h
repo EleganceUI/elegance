@@ -33,6 +33,7 @@ enum class ImageRole : std::uint8_t {
     backdrop_copy,     // a backdrop copied out of a layer
     window_copy,       // a backdrop copied out of the window's image (in its format)
     window,            // the window, drawn offscreen
+    kept,              // the window's last frame drawn, which the next one draws over
     path_samples,      // a path mask's multisampled coverage
     path_stencil,      // a path mask's multisampled stencil
     path_mask,         // a path's coverage mask, by PlanPath::key

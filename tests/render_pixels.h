@@ -43,7 +43,10 @@ public:
     [[nodiscard]] const wgpu::Device& device() const;
 
     // Draws `list` into a `width` x `height` image, at `scale` pixels a point, and reads it back.
+    // Each draws over the last one, as a window's frames do: only what changed is drawn again.
     Pixels draw(const elg::detail::DisplayList& list, int width, int height, float scale = 1);
+    // How many of those frames were drawn and presented: not those in which nothing changed.
+    [[nodiscard]] int frames_presented() const;
 
 private:
     struct Objects;

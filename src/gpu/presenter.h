@@ -44,6 +44,9 @@ public:
     // `reads_backdrops`: the frame read backdrops, which later frames then read from the image
     // directly if the presenter can make it copyable.
     virtual void end_frame(bool reads_backdrops) = 0;
+    // How many surfaces it made for the window, if it presents through them: a new one has none
+    // of what the window showed (ELGSPEC-0029.R6).
+    [[nodiscard]] virtual std::uint64_t surfaces_made() const noexcept { return 0; }
 };
 
 // The presenter for a window whose surface WebGPU makes from `surface`, transparent or not.

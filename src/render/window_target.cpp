@@ -15,13 +15,16 @@
 #include "gpu/texture_cache.h"
 #include "gpu/webgpu.h"
 #include "render/color_space.h"
+#include "render/damage.h"
 #include "render/frame_plan.h"
 #include "render/intermediate_images.h"
+#include "render/render_settings.h"
 #include "render/video_textures.h"
 
 #include <webgpu/webgpu_cpp.h>
 
 #include <algorithm>
+#include <cmath>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -104,6 +107,7 @@ public:
     State(const gpu::Device& device, std::unique_ptr<gpu::Presenter> presenter);
 
     void render(const WindowFrame& frame, const RenderResources& resources);
+    [[nodiscard]] int frames_presented() const noexcept { return frames_presented_; }
 
 private:
     struct LayerGroups {
@@ -113,30 +117,44 @@ private:
         wgpu::BindGroup inner_shadow;
     };
 
-    // Where a frame goes: the presenter's image. `texture` is set when it can be copied from:
-    // backdrops are then read from it directly, instead of the window drawing offscreen and
-    // being copied over.
-    struct DrawTarget {
-        wgpu::TextureView view;
-        wgpu::TextureFormat format{};
-        std::uint32_t width = 0;
-        std::uint32_t height = 0;
-        wgpu::Texture texture;
+    // The buffers a plan of the frame writes: one set per drawn rect, since every write to a
+    // buffer lands before the frame's commands run.
+    struct PlanBuffers {
+        explicit PlanBuffers(const wgpu::Device& device)
+            : instances(device, wgpu::BufferUsage::Vertex), stops(device, wgpu::BufferUsage::Storage),
+              path_vertices(device, wgpu::BufferUsage::Vertex) {}
+        gpu::Buffer instances;
+        gpu::Buffer stops;
+        gpu::Buffer path_vertices;
     };
 
-    // What a pass draws into. `texture` is set when it can be copied from (layers, the offscreen
-    // window image): only such passes can read backdrops.
+    // What the window showed in its last frame drawn: a frame that differs in it draws the whole
+    // window again (ELGSPEC-0029.R6).
+    struct Shown {
+        std::uint32_t width = 0;
+        std::uint32_t height = 0;
+        float scale = 0;
+        Color clear;
+        std::uint64_t surfaces = 0; // the presenter's surfaces made
+        bool operator==(const Shown&) const = default;
+    };
+
+    // What a pass draws into. `texture` is set when it can be copied from (layers, the window's
+    // kept image): only such passes can read backdrops. `clear`: what it's cleared to first;
+    // none: it's drawn over what it holds. `scissor` (whole pixels): the only part drawn, when set.
     struct PassTarget {
         wgpu::Texture texture;
         wgpu::TextureView view;
         wgpu::TextureFormat format{};
         std::uint32_t width = 0;
         std::uint32_t height = 0;
-        wgpu::Color clear;
+        std::optional<wgpu::Color> clear;
+        std::optional<Rect> scissor;
     };
 
     // The images and groups a frame's passes sample.
     struct FrameGroups {
+        wgpu::Buffer instances;
         wgpu::BindGroup stops;
         std::vector<LayerGroups> layers;
         std::vector<wgpu::BindGroup> paths;
@@ -144,10 +162,18 @@ private:
         std::vector<wgpu::BindGroup> videos;
     };
 
-    // Records the frame. `acquired_videos` collects the shared video textures it samples, to
-    // release once it's submitted.
-    wgpu::CommandBuffer record(const DrawTarget& target, const WindowFrame& frame, const RenderResources& resources,
+    // Records the frame: each of the `drawn` rects planned and drawn over the window's kept image,
+    // then the kept image onto the window's `view`, with the `damage` tinted when that's on.
+    // `acquired_videos` collects the shared video textures it samples, to release once it's
+    // submitted.
+    wgpu::CommandBuffer record(const wgpu::TextureView& view, wgpu::TextureFormat format, std::uint32_t width,
+                               std::uint32_t height, std::span<const Rect> drawn, std::span<const Rect> damage,
+                               const WindowFrame& frame, const RenderResources& resources,
                                std::vector<std::uint64_t>& acquired_videos);
+    // Records the plan of one drawn rect into `target`, the kept image.
+    void record_plan(const wgpu::CommandEncoder& encoder, const FramePlan& plan, PlanBuffers& buffers,
+                     const PassTarget& target, const RenderResources& resources,
+                     std::vector<std::uint64_t>& acquired_videos);
     // Records a pass, split wherever its instances read a backdrop.
     void draw_pass(const wgpu::CommandEncoder& encoder, const PassTarget& target, const PlanPass& plan_pass,
                    const FramePlan& plan, const FrameGroups& groups, const RenderResources& resources);
@@ -183,10 +209,13 @@ private:
     std::vector<std::array<float, 2>> path_fans_; // of the masks a frame renders
     std::unique_ptr<gpu::Presenter> presenter_;
     wgpu::Sampler sampler_; // for sampling layers
-    gpu::Buffer instances_;
-    gpu::Buffer stops_;
-    gpu::Buffer path_vertices_;
-    bool window_reads_backdrops_ = false; // the last frame recorded did
+    std::vector<std::unique_ptr<PlanBuffers>> plan_buffers_; // per drawn rect
+    gpu::Buffer overlay_; // the kept image onto the window, and the damage tint
+    // The window's last frame drawn, which its kept image holds: its commands' footprints, and
+    // what it showed.
+    std::vector<Footprint> previous_;
+    std::optional<Shown> shown_;
+    int frames_presented_ = 0;
     std::optional<RenderImage> empty_;    // bound where no second image is
     wgpu::BindGroup empty_group_;
 };
@@ -200,32 +229,58 @@ WindowTarget::WindowTarget(const gpu::Device& device, std::unique_ptr<gpu::Prese
 
 WindowTarget::~WindowTarget() = default;
 
+int WindowTarget::frames_presented() const noexcept {
+    return state_->frames_presented();
+}
+
 void WindowTarget::render(const WindowFrame& frame, const RenderResources& resources) {
     state_->render(frame, resources);
 }
 
 WindowTarget::State::State(const gpu::Device& device, std::unique_ptr<gpu::Presenter> presenter)
     : device_(device), presenter_(std::move(presenter)),
-      sampler_(gpu::create_linear_sampler(device.handle())), instances_(device.handle(), wgpu::BufferUsage::Vertex),
-      stops_(device.handle(), wgpu::BufferUsage::Storage), path_vertices_(device.handle(), wgpu::BufferUsage::Vertex) {
+      sampler_(gpu::create_linear_sampler(device.handle())), overlay_(device.handle(), wgpu::BufferUsage::Vertex) {
 }
 
 void WindowTarget::State::render(const WindowFrame& frame, const RenderResources& resources) {
+    const std::uint32_t width = window_side(frame.pixel_width);
+    const std::uint32_t height = window_side(frame.pixel_height);
     const Color clear = frame.list.clear_color;
-    const wgpu::TextureView view = presenter_->begin_frame(
-        window_side(frame.pixel_width), window_side(frame.pixel_height), {clear.r, clear.g, clear.b, 1});
-    if (!view) {
-        return; // minimized, or skipped
+    // What changed since the last frame drawn, which the kept image holds; all of it when that's
+    // no longer what the window shows (ELGSPEC-0029.R6).
+    std::vector<Footprint> now = footprints(frame.list, width, height, &path_hashes_);
+    const Shown shown{width, height, frame.list.scale, clear, presenter_->surfaces_made()};
+    const Rect window{0, 0, static_cast<float>(width), static_cast<float>(height)};
+    bool whole = shown_ != shown || !images_.contains({ImageRole::kept, 0}) || render_settings().full_redraw;
+    std::vector<Rect> damage = whole ? std::vector<Rect>{window} : damage_between(previous_, now);
+    if (damage.empty()) {
+        // Nothing changed: nothing is drawn or presented (ELGSPEC-0029.R7). The device is still
+        // looked at, so that its loss shows without a frame to draw.
+        path_hashes_.end_frame();
+        device_.tick();
+        return;
     }
+    const wgpu::TextureView view = presenter_->begin_frame(width, height, {clear.r, clear.g, clear.b, 1});
+    if (!view) {
+        path_hashes_.end_frame();
+        return; // minimized, or skipped: the kept image still holds the last frame drawn
+    }
+    if (presenter_->surfaces_made() != shown.surfaces && !whole) {
+        whole = true; // a new surface, made just now
+        damage = {window};
+    }
+    const std::vector<Rect> drawn = whole ? std::vector<Rect>{window} : drawn_area(damage);
 
     std::vector<std::uint64_t> acquired_videos;
-    const wgpu::CommandBuffer commands = record({view, presenter_->view_format(), presenter_->width(),
-                                                 presenter_->height(), presenter_->copy_source()},
-                                                frame, resources, acquired_videos);
+    const wgpu::CommandBuffer commands = record(view, presenter_->view_format(), presenter_->width(),
+                                                presenter_->height(), drawn, damage, frame, resources, acquired_videos);
     device_.submit(commands);
     resources.videos.release(acquired_videos); // back to the decoder
-    presenter_->end_frame(window_reads_backdrops_);
+    presenter_->end_frame(false);
     device_.tick();
+    previous_ = std::move(now);
+    shown_ = Shown{width, height, frame.list.scale, clear, presenter_->surfaces_made()};
+    ++frames_presented_;
 }
 
 std::uint32_t WindowTarget::State::window_side(int pixels) const {
@@ -350,10 +405,22 @@ void WindowTarget::State::draw_pass(const wgpu::CommandEncoder& encoder, const P
     gpu::QuadRenderer& quads = resources.quads;
     wgpu::BindGroup second = empty_group(resources);
     wgpu::RenderPassEncoder pass;
-    const auto begin = [&](bool clear) {
-        pass = begin_pass(encoder, target.view, clear ? std::optional(target.clear) : std::nullopt, "pass");
-        quads.begin(pass, target.format, target.width, target.height, instances_.handle(), resources.atlas,
-                    groups.stops, second);
+    const auto begin = [&](bool first) {
+        pass = begin_pass(encoder, target.view, first ? target.clear : std::nullopt, "pass");
+        quads.begin(pass, target.format, target.width, target.height, groups.instances, resources.atlas, groups.stops,
+                    second);
+        if (target.scissor) {
+            // Rounded out, and in the target, as WebGPU requires.
+            const auto edge = [](float v, std::uint32_t side) {
+                return static_cast<std::uint32_t>(std::clamp(v, 0.f, static_cast<float>(side)));
+            };
+            const Rect& s = *target.scissor;
+            const std::uint32_t x0 = edge(std::floor(s.x), target.width);
+            const std::uint32_t y0 = edge(std::floor(s.y), target.height);
+            const std::uint32_t x1 = edge(std::ceil(s.max_x()), target.width);
+            const std::uint32_t y1 = edge(std::ceil(s.max_y()), target.height);
+            pass.SetScissorRect(x0, y0, std::max(x0, x1) - x0, std::max(y0, y1) - y0);
+        }
     };
     begin(true);
     for (const PlanSegment& segment : plan_pass.segments) {
@@ -415,20 +482,62 @@ void WindowTarget::State::draw_pass(const wgpu::CommandEncoder& encoder, const P
     pass.End();
 }
 
-wgpu::CommandBuffer WindowTarget::State::record(const DrawTarget& target, const WindowFrame& frame,
+wgpu::CommandBuffer WindowTarget::State::record(const wgpu::TextureView& view, wgpu::TextureFormat format,
+                                                std::uint32_t width, std::uint32_t height, std::span<const Rect> drawn,
+                                                std::span<const Rect> damage, const WindowFrame& frame,
                                                 const RenderResources& resources,
                                                 std::vector<std::uint64_t>& acquired_videos) {
     const gpu::CacheClock::time_point now = gpu::CacheClock::now();
     images_.begin_frame(now);
-    const FramePlan plan =
-        plan_frame(frame.list, target.width, target.height, &path_hashes_, device_.max_texture_side());
-    instances_.write(std::as_bytes(std::span(plan.instances)));
-    stops_.write(std::as_bytes(std::span(plan.stops)));
-
+    resources.textures.begin_frame(now);
+    resources.videos.begin_frame(now);
     const wgpu::CommandEncoder encoder = device_.handle().CreateCommandEncoder();
+
+    // The window's kept image, which holds its last frame drawn: each drawn rect is drawn over it,
+    // as a plan of its own (ELGSPEC-0029.R3). It's needed by every frame (ELGSPEC-0029.R9).
+    const RenderImage& kept = pooled_image(ImageRole::kept, 0, kLayerFormat, width, height, 1, kLayerUsage);
+    PassTarget target{kept.texture(), kept.view(), kLayerFormat, width, height, std::nullopt, std::nullopt};
+    while (plan_buffers_.size() < drawn.size()) {
+        plan_buffers_.push_back(std::make_unique<PlanBuffers>(device_.handle()));
+    }
+    for (std::size_t i = 0; i < drawn.size(); ++i) {
+        const FramePlan plan =
+            plan_frame(frame.list, width, height, &path_hashes_, device_.max_texture_side(), drawn[i]);
+        // Only the rect's pixels: what draws there reaches no further (its anti-aliasing, the
+        // clearing mask, which clears all it covers).
+        target.scissor = drawn[i];
+        record_plan(encoder, plan, *plan_buffers_[i], target, resources, acquired_videos);
+    }
+    path_hashes_.end_frame();
+    resources.textures.end_frame();
+    resources.videos.end_frame();
+
+    // The kept image onto the window, and the damage tinted (ELGSPEC-0029.R11).
+    const std::vector<gpu::QuadInstance> overlay =
+        window_overlay(width, height, render_settings().show_damage ? damage : std::span<const Rect>());
+    overlay_.write(std::as_bytes(std::span(overlay)));
+    const wgpu::RenderPassEncoder pass = begin_pass(encoder, view, wgpu::Color{0, 0, 0, 0}, "window");
+    resources.quads.begin(pass, format, width, height, overlay_.handle(), image_group(resources, kept.view()),
+                          resources.quads.stops_group(plan_buffers_[0]->stops.handle()), empty_group(resources));
+    resources.quads.draw(pass, 0, static_cast<std::uint32_t>(overlay.size()));
+    pass.End();
+    // Releases what this frame didn't use, as kIntermediateImagePolicy says. (WebGPU keeps an
+    // image alive for frames still on the GPU, so releasing one is always safe.)
+    images_.end_frame();
+    return encoder.Finish();
+}
+
+void WindowTarget::State::record_plan(const wgpu::CommandEncoder& encoder, const FramePlan& plan,
+                                      PlanBuffers& buffers, const PassTarget& target,
+                                      const RenderResources& resources,
+                                      std::vector<std::uint64_t>& acquired_videos) {
+    buffers.instances.write(std::as_bytes(std::span(plan.instances)));
+    buffers.stops.write(std::as_bytes(std::span(plan.stops)));
+
     FrameGroups groups;
+    groups.instances = buffers.instances.handle();
     // Gradient stops and color matrices for every pass.
-    groups.stops = resources.quads.stops_group(stops_.handle());
+    groups.stops = resources.quads.stops_group(buffers.stops.handle());
 
     // Path coverage masks first: any pass may fill through them. Masks with the same content as
     // in an earlier frame are reused, so only new ones are triangulated and uploaded, then
@@ -449,7 +558,7 @@ wgpu::CommandBuffer WindowTarget::State::record(const DrawTarget& target, const 
         }
     }
     if (!new_masks.empty()) {
-        path_vertices_.write(std::as_bytes(std::span(path_fans_)));
+        buffers.path_vertices.write(std::as_bytes(std::span(path_fans_)));
     }
     for (const NewMask& new_mask : new_masks) {
         const PlanPath& path = plan.paths[new_mask.path];
@@ -463,7 +572,7 @@ wgpu::CommandBuffer WindowTarget::State::record(const DrawTarget& target, const 
                          gpu::PathRenderer::kSamples, wgpu::TextureUsage::RenderAttachment);
         RenderImage image(device_.handle(), gpu::PathRenderer::kMaskFormat, path.width, path.height);
         resources.paths.render(encoder, samples.view(), stencil.view(), image.view(), path.width, path.height,
-                               path_vertices_.handle(), new_mask.first_vertex, new_mask.vertex_count, path.even_odd);
+                               buffers.path_vertices.handle(), new_mask.first_vertex, new_mask.vertex_count, path.even_odd);
         image.group = image_group(resources, image.view());
         images_.store({ImageRole::path_mask, path.key}, std::move(image),
                       gpu::image_bytes(gpu::PathRenderer::kMaskFormat, path.width, path.height, 1));
@@ -474,21 +583,17 @@ wgpu::CommandBuffer WindowTarget::State::record(const DrawTarget& target, const 
     }
 
     // Images: uploaded (with their mips) the first time a frame draws them.
-    resources.textures.begin_frame(now);
     groups.images.reserve(plan.images.size());
     for (const auto& image : plan.images) {
         groups.images.push_back(
             resources.textures.acquire(encoder, {image->id, image->width, image->height, image->rgba}));
     }
-    resources.textures.end_frame();
 
     // Sample the same snapshots that determined the picture geometry.
-    resources.videos.begin_frame(now);
     for (const auto& video_frame : plan.video_frames) {
         groups.videos.push_back(video_frame ? resources.videos.acquire(encoder, *video_frame, acquired_videos)
                                             : wgpu::BindGroup());
     }
-    resources.videos.end_frame();
 
     // Offscreen layers first, innermost first; each may also be blurred, and get a two-pass
     // blurred shadow and inner shadow.
@@ -501,7 +606,9 @@ wgpu::CommandBuffer WindowTarget::State::record(const DrawTarget& target, const 
 
         const RenderImage& content =
             pooled_image(ImageRole::layer, i, kLayerFormat, layer.width, layer.height, 1, kLayerUsage);
-        draw_pass(encoder, {content.texture(), content.view(), kLayerFormat, layer.width, layer.height, {0, 0, 0, 0}},
+        draw_pass(encoder,
+                  {content.texture(), content.view(), kLayerFormat, layer.width, layer.height, wgpu::Color{0, 0, 0, 0},
+                   std::nullopt},
                   layer, plan, groups, resources);
         layer_groups.raw = image_group(resources, content.view());
         layer_groups.content = layer_groups.raw;
@@ -524,33 +631,8 @@ wgpu::CommandBuffer WindowTarget::State::record(const DrawTarget& target, const 
         }
     }
 
-    // The window itself. Its previous contents are discarded (cleared). When it reads backdrops
-    // and its image can't be copied from, it draws offscreen, then onto the window.
-    const auto clear = to_linear_premultiplied(frame.list.clear_color);
-    const wgpu::Color clear_color{static_cast<double>(clear[0]), static_cast<double>(clear[1]),
-                                          static_cast<double>(clear[2]), static_cast<double>(clear[3])};
-    window_reads_backdrops_ = plan.blit_instance.has_value();
-    if (plan.blit_instance && !target.texture) {
-        const RenderImage& image =
-            pooled_image(ImageRole::window, 0, kLayerFormat, target.width, target.height, 1, kLayerUsage);
-        draw_pass(encoder, {image.texture(), image.view(), kLayerFormat, target.width, target.height, clear_color},
-                  plan.main, plan, groups, resources);
-        const wgpu::RenderPassEncoder pass = begin_pass(encoder, target.view, clear_color, "window");
-        resources.quads.begin(pass, target.format, target.width, target.height, instances_.handle(),
-                              image_group(resources, image.view()), groups.stops, empty_group(resources));
-        resources.quads.draw(pass, *plan.blit_instance, 1);
-        pass.End();
-    } else {
-        if (target.texture) {
-            images_.release({ImageRole::window, 0}); // drawn directly from now on
-        }
-        draw_pass(encoder, {target.texture, target.view, target.format, target.width, target.height, clear_color},
-                  plan.main, plan, groups, resources);
-    }
-    // Releases what this frame didn't use, as kIntermediateImagePolicy says. (WebGPU keeps an
-    // image alive for frames still on the GPU, so releasing one is always safe.)
-    images_.end_frame();
-    return encoder.Finish();
+    // The drawn rect itself, over what the kept image holds.
+    draw_pass(encoder, target, plan.main, plan, groups, resources);
 }
 
 } // namespace elg::detail

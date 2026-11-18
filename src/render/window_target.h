@@ -56,6 +56,8 @@ public:
 
     // Renders and presents the frame. Does nothing while the window is minimized.
     void render(const WindowFrame& frame, const RenderResources& resources);
+    // How many frames it presented: frames without damage aren't (ELGSPEC-0029.R7).
+    [[nodiscard]] int frames_presented() const noexcept;
 
 private:
     // What it keeps across frames, and the recording of a frame with it.

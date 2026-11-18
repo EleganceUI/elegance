@@ -305,26 +305,32 @@ detail::DisplayList path_at(const std::shared_ptr<const detail::Polygons>& polyg
 TEST_CASE("a path drawn again unchanged is not hashed again", "[gpu-memory]") {
     const auto square = std::make_shared<const detail::Polygons>(detail::Polygons{{{0, 0}, {10, 0}, {10, 10}, {0, 10}}});
     detail::PathHashes hashes;
-    const detail::FramePlan first = detail::plan_frame(path_at(square, 5), 100, 100, &hashes);
+    // A frame of the window: its plan, then the end of its frame of paths.
+    const auto frame = [&](const detail::DisplayList& list) {
+        detail::FramePlan plan = detail::plan_frame(list, 100, 100, &hashes);
+        hashes.end_frame();
+        return plan;
+    };
+    const detail::FramePlan first = frame(path_at(square, 5));
     REQUIRE(first.paths.size() == 1);
     CHECK(hashes.hashed() == 1);
 
     // Moved by whole pixels in the next frame: the same mask, from what the first frame hashed.
-    const detail::FramePlan moved = detail::plan_frame(path_at(square, 7), 100, 100, &hashes);
+    const detail::FramePlan moved = frame(path_at(square, 7));
     REQUIRE(moved.paths.size() == 1);
     CHECK(hashes.hashed() == 1);
     CHECK(moved.paths[0].key == first.paths[0].key);
     // Half a pixel further: another mask.
-    CHECK(detail::plan_frame(path_at(square, 7.5f), 100, 100, &hashes).paths.at(0).key != first.paths[0].key);
+    CHECK(frame(path_at(square, 7.5f)).paths.at(0).key != first.paths[0].key);
     CHECK(hashes.hashed() == 1);
 
     // The same points in a set of their own: hashed, the same mask.
     const auto copy = std::make_shared<const detail::Polygons>(*square);
-    CHECK(detail::plan_frame(path_at(copy, 5), 100, 100, &hashes).paths.at(0).key == first.paths[0].key);
+    CHECK(frame(path_at(copy, 5)).paths.at(0).key == first.paths[0].key);
     CHECK(hashes.hashed() == 2);
 
     // That frame didn't draw the square: it is hashed again.
-    detail::plan_frame(path_at(square, 5), 100, 100, &hashes);
+    frame(path_at(square, 5));
     CHECK(hashes.hashed() == 3);
 }
 

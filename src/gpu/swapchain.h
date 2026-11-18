@@ -46,7 +46,7 @@ public:
     [[nodiscard]] std::uint32_t height() const noexcept override { return height_; }
 
     // How many surfaces it made for the window: 1, and one more each time one was lost.
-    [[nodiscard]] int surfaces_made() const noexcept { return surfaces_made_; }
+    [[nodiscard]] std::uint64_t surfaces_made() const noexcept override { return surfaces_made_; }
     // For tests: the next image it asks the surface for comes back as lost.
     void lose_surface_for_testing() noexcept { lose_next_ = true; }
 
@@ -70,7 +70,7 @@ private:
     SurfaceSource source_;
     bool transparent_;
     wgpu::Surface surface_;
-    int surfaces_made_ = 0;
+    std::uint64_t surfaces_made_ = 0;
     bool lost_ = false;      // the surface was lost: begin_frame() makes a new one
     bool lose_next_ = false; // lose_surface_for_testing()
     wgpu::TextureFormat format_ = wgpu::TextureFormat::Undefined;

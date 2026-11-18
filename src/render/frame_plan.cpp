@@ -957,9 +957,7 @@ FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t
                      std::uint32_t max_texture_side, std::optional<Rect> area) {
     FramePlan plan;
     PathHashes once;
-    PathHashes& hashes = paths ? *paths : once;
-    Planner(list, plan, width, height, hashes, max_texture_side, area).run();
-    hashes.end_frame();
+    Planner(list, plan, width, height, paths ? *paths : once, max_texture_side, area).run();
     return plan;
 }
 
