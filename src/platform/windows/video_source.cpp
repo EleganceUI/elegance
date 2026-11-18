@@ -47,6 +47,13 @@ std::string hr_text(HRESULT result) {
     return std::format("HRESULT 0x{:08x}", static_cast<unsigned long>(result));
 }
 
+// Throws, saying `what` failed, when `result` is a failure: setting the engine up.
+void check(HRESULT result, std::string_view what) {
+    if (FAILED(result)) {
+        throw std::runtime_error(std::format("can't {} ({})", what, hr_text(result)));
+    }
+}
+
 class MediaFoundationVideo;
 
 // The engine's event callback (on Media Foundation's threads). Holds the source weakly: while it
@@ -92,7 +99,9 @@ public:
     ~MediaFoundationVideo() override {
         std::lock_guard lock(mutex_);
         if (engine_) {
-            engine_->Shutdown();
+            if (const HRESULT result = engine_->Shutdown(); FAILED(result)) {
+                log_warning("video: can't shut {} down ({})", url_, hr_text(result));
+            }
             engine_raw_ = nullptr;
         }
         for (Slot& slot : ring_) {
@@ -113,25 +122,34 @@ public:
 
     // --- UI thread ---
 
+    // Each call the engine refuses is the player's error(), and leaves its state as it was.
+
     void play() override {
         std::lock_guard lock(mutex_);
-        want_playing_ = true;
         if (ensure_engine()) {
-            if (engine_->IsEnded()) {
-                engine_->SetCurrentTime(0);
+            HRESULT result = engine_->IsEnded() ? engine_->SetCurrentTime(0) : S_OK;
+            if (SUCCEEDED(result)) {
+                result = engine_->Play();
             }
-            engine_->Play();
+            if (FAILED(result)) {
+                report(result, "play");
+                return;
+            }
         }
+        want_playing_ = true;
         host_->set_playing(true);
         host_->set_playing_now(true);
     }
 
     void pause() override {
         std::lock_guard lock(mutex_);
-        want_playing_ = false;
         if (ensure_engine()) {
-            engine_->Pause();
+            if (const HRESULT result = engine_->Pause(); FAILED(result)) {
+                report(result, "pause");
+                return;
+            }
         }
+        want_playing_ = false;
         host_->set_playing(false);
         host_->set_playing_now(false);
     }
@@ -139,10 +157,13 @@ public:
     void seek(double seconds) override {
         std::lock_guard lock(mutex_);
         seconds = std::max(0.0, seconds);
-        pending_seek_ = seconds;
         if (ensure_engine()) {
-            engine_->SetCurrentTime(seconds);
-            pending_seek_.reset();
+            if (const HRESULT result = engine_->SetCurrentTime(seconds); FAILED(result)) {
+                report(result, "seek in");
+                return;
+            }
+        } else {
+            pending_seek_ = seconds;
         }
         host_->set_time(seconds);
     }
@@ -150,28 +171,37 @@ public:
     void set_volume(float value) override {
         std::lock_guard lock(mutex_);
         value = std::clamp(value, 0.f, 1.f);
-        want_volume_ = value;
         if (ensure_engine()) {
-            engine_->SetVolume(value);
+            if (const HRESULT result = engine_->SetVolume(value); FAILED(result)) {
+                report(result, "change the volume of");
+                return;
+            }
         }
+        want_volume_ = value;
         host_->set_volume(value);
     }
 
     void set_muted(bool value) override {
         std::lock_guard lock(mutex_);
-        want_muted_ = value;
         if (ensure_engine()) {
-            engine_->SetMuted(value);
+            if (const HRESULT result = engine_->SetMuted(value); FAILED(result)) {
+                report(result, value ? "mute" : "unmute");
+                return;
+            }
         }
+        want_muted_ = value;
         host_->set_muted(value);
     }
 
     void set_looping(bool value) override {
         std::lock_guard lock(mutex_);
-        want_looping_ = value;
         if (ensure_engine()) {
-            engine_->SetLoop(value);
+            if (const HRESULT result = engine_->SetLoop(value); FAILED(result)) {
+                report(result, "loop");
+                return;
+            }
         }
+        want_looping_ = value;
         host_->set_looping(value);
     }
 
@@ -203,11 +233,16 @@ public:
         if (!shares_textures_) {
             return read_back(ring_[slot].texture.Get(), slot);
         }
-        // WebGPU samples it next: the copy must be done.
+        // WebGPU samples it next: the copy must be done. A failed query (the device was
+        // removed) shows no new frame.
         context_->End(done_.Get());
         context_->Flush();
-        while (context_->GetData(done_.Get(), nullptr, 0, 0) == S_FALSE) {
+        HRESULT done = S_FALSE;
+        while ((done = context_->GetData(done_.Get(), nullptr, 0, 0)) == S_FALSE) {
             SwitchToThread();
+        }
+        if (FAILED(done)) {
+            return false;
         }
         current_ = slot;
         return true;
@@ -257,7 +292,10 @@ public:
             const double length = engine->GetDuration();
             DWORD w = 0;
             DWORD h = 0;
-            engine->GetNativeVideoSize(&w, &h);
+            if (FAILED(engine->GetNativeVideoSize(&w, &h))) {
+                w = 0; // no size yet (audio only, or not known): a later frame's size applies
+                h = 0;
+            }
             post([length, w, h](FrameSourceHost& host) {
                 host.set_duration(std::isfinite(length) ? length : 0.0);
                 host.set_size(static_cast<float>(w), static_cast<float>(h));
@@ -328,6 +366,13 @@ private:
             create_engine(adapter->luid);
         } catch (const std::exception& failure) {
             failed_ = true;
+            if (engine_) { // made, but it couldn't load the video
+                engine_raw_ = nullptr;
+                if (const HRESULT result = engine_->Shutdown(); FAILED(result)) {
+                    log_warning("video: can't shut {} down ({})", url_, hr_text(result));
+                }
+                engine_.Reset();
+            }
             const std::string message = failure.what();
             log_warning("video: {}", message);
             post_ui_task([weak = weak_host_, message] {
@@ -338,26 +383,41 @@ private:
             return false;
         }
         // Apply what was asked for before the engine existed: from copies, since this may run on
-        // the render thread, and the states belong to the UI thread.
-        engine_->SetVolume(want_volume_);
-        engine_->SetMuted(want_muted_);
-        engine_->SetLoop(want_looping_);
-        if (pending_seek_) {
-            engine_->SetCurrentTime(*pending_seek_);
-            pending_seek_.reset();
+        // the render thread, and the states belong to the UI thread. What the engine refuses is
+        // the player's error.
+        HRESULT result = engine_->SetVolume(want_volume_);
+        if (SUCCEEDED(result)) {
+            result = engine_->SetMuted(want_muted_);
         }
-        if (want_playing_) {
-            engine_->Play();
+        if (SUCCEEDED(result)) {
+            result = engine_->SetLoop(want_looping_);
+        }
+        if (SUCCEEDED(result) && pending_seek_) {
+            result = engine_->SetCurrentTime(*pending_seek_);
+        }
+        pending_seek_.reset();
+        if (SUCCEEDED(result) && want_playing_) {
+            result = engine_->Play();
+        }
+        if (FAILED(result)) {
+            report(result, "set up");
         }
         return true;
     }
 
-    void create_engine(const std::array<std::uint8_t, 8>& adapter_luid) {
-        const auto check = [](HRESULT result, std::string_view what) {
-            if (FAILED(result)) {
-                throw std::runtime_error(std::format("can't {} ({})", what, hr_text(result)));
+    // A call into the engine failed: logged, and the player's error() on the UI thread. Any
+    // thread, with the mutex held.
+    void report(HRESULT result, std::string_view what) {
+        const std::string message = std::format("can't {} {} ({})", what, url_, hr_text(result));
+        log_warning("video: {}", message);
+        post_ui_task([weak = weak_host_, message] {
+            if (const auto host = weak.lock()) {
+                host->set_error(message);
             }
-        };
+        });
+    }
+
+    void create_engine(const std::array<std::uint8_t, 8>& adapter_luid) {
         if (!start_media_foundation()) {
             throw std::runtime_error("Media Foundation isn't available (Windows N editions need the Media Feature Pack)");
         }
@@ -389,10 +449,12 @@ private:
         ComPtr<IMFAttributes> attributes;
         check(MFCreateAttributes(&attributes, 3), "create media engine attributes");
         auto* notify = new EngineNotify(this, weak_host_);
-        attributes->SetUnknown(MF_MEDIA_ENGINE_CALLBACK, notify);
+        const HRESULT held = attributes->SetUnknown(MF_MEDIA_ENGINE_CALLBACK, notify);
         notify->Release(); // the attributes and the engine hold it
-        attributes->SetUnknown(MF_MEDIA_ENGINE_DXGI_MANAGER, manager_.Get());
-        attributes->SetUINT32(MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM);
+        check(held, "hear the media engine's events");
+        check(attributes->SetUnknown(MF_MEDIA_ENGINE_DXGI_MANAGER, manager_.Get()), "give the media engine the GPU");
+        check(attributes->SetUINT32(MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM),
+              "ask the media engine for BGRA frames");
         check(engine_factory->CreateInstance(0, attributes.Get(), &engine_), "create the media engine");
         engine_raw_ = engine_.Get();
 
@@ -404,8 +466,8 @@ private:
         const HRESULT set = engine_->SetSource(source);
         SysFreeString(source);
         check(set, "open the video");
-        engine_->SetPreload(MF_MEDIA_ENGINE_PRELOAD_AUTOMATIC);
-        engine_->Load();
+        check(engine_->SetPreload(MF_MEDIA_ENGINE_PRELOAD_AUTOMATIC), "preload the video");
+        check(engine_->Load(), "load the video");
     }
 
     // With the mutex held: the shared textures, at the video's size.
