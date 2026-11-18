@@ -1,8 +1,9 @@
-# AccessKit's C library, from its release archive: the prebuilt libraries it ships for the target,
-# or, where it ships none (Linux on ARM64), built from the Rust sources in the same archive, which
-# takes cargo (Rust 1.87 or later). Both the static and the shared library are installed, whatever
-# the triplet's linkage: a static Elegance links the shared one into Rust apps, whose own Rust
-# standard library would clash with the one in the static library (ELG_ACCESSKIT_SHARED).
+# AccessKit's C library, from its release archive: the prebuilt libraries it ships for the target
+# (on Linux, the shared one linked here from the static one: see below), or, where it ships none
+# (Linux on ARM64), built from the Rust sources in the same archive, which takes cargo (Rust 1.87
+# or later). Both the static and the shared library are installed, whatever the triplet's
+# linkage: a static Elegance links the shared one into Rust apps, whose own Rust standard library
+# would clash with the one in the static library (ELG_ACCESSKIT_SHARED).
 vcpkg_download_distfile(ARCHIVE
     URLS "https://github.com/AccessKit/accesskit-c/releases/download/${VERSION}/accesskit-c-${VERSION}.zip"
     FILENAME "accesskit-c-${VERSION}.zip"
@@ -44,7 +45,27 @@ else ()
     set(static_libraries -static-libgcc m)
 endif ()
 
-if (IS_DIRECTORY "${prebuilt}")
+if (IS_DIRECTORY "${prebuilt}" AND VCPKG_TARGET_IS_LINUX)
+    # The prebuilt shared library needs glibc 2.39, for two functions Rust's standard library uses
+    # only where they exist (weak references, pidfd_spawnp and pidfd_getpid); the static one names
+    # no glibc version. So the shared library is linked here from the static one: it then needs
+    # only what the build machine's glibc has. It exports AccessKit's functions alone, as the
+    # prebuilt one does, and links what Rust's standard library needs on Linux.
+    vcpkg_cmake_get_vars(cmake_vars)
+    include("${cmake_vars}")
+    set(static_dir "${prebuilt}/static")
+    set(shared_dir "${CURRENT_BUILDTREES_DIR}/${TARGET_TRIPLET}-rel")
+    file(MAKE_DIRECTORY "${shared_dir}")
+    file(WRITE "${shared_dir}/exports.map" "{\n  global: accesskit_*;\n  local: *;\n};\n")
+    vcpkg_execute_required_process(
+        COMMAND "${VCPKG_DETECTED_CMAKE_C_COMPILER}" -shared -o "${shared_dir}/${shared_name}"
+                -Wl,--whole-archive "${static_dir}/${static_name}" -Wl,--no-whole-archive
+                "-Wl,--version-script=${shared_dir}/exports.map" -Wl,--gc-sections
+                -lgcc_s -lutil -lrt -lpthread -lm -ldl -lc
+        WORKING_DIRECTORY "${shared_dir}"
+        LOGNAME "link-shared-${TARGET_TRIPLET}"
+    )
+elseif (IS_DIRECTORY "${prebuilt}")
     set(static_dir "${prebuilt}/static")
     set(shared_dir "${prebuilt}/shared")
 else ()

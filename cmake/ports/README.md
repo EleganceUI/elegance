@@ -7,11 +7,12 @@ vcpkg port at vcpkg.json's builtin-baseline, plus Elegance's patches.
 - **accesskit-c**: AccessKit's C library (screen readers, design.md §12), which vcpkg has no port
   for. It installs the prebuilt libraries of AccessKit's release archive, or builds them from the
   archive's Rust sources with cargo where there are none (Linux on ARM64, which then needs Rust 1.87
-  or later). Both its static and its shared library are installed whatever the triplet's linkage,
-  as `accesskit-c::static` and `accesskit-c::shared`: Rust apps link the shared one
-  (`ELG_ACCESSKIT_SHARED`). On Windows the static library is `accesskit-static.lib`, as the import
-  library takes `accesskit.lib`. Not upstream: no vcpkg port exists. To update AccessKit, change the
-  version and SHA512 in the port, or drop the overlay once vcpkg has a port.
+  or later). On Linux it links the shared library from the prebuilt static one, as the prebuilt
+  shared one needs glibc 2.39. Both its static and its shared library are installed whatever the
+  triplet's linkage, as `accesskit-c::static` and `accesskit-c::shared`: Rust apps link the shared
+  one (`ELG_ACCESSKIT_SHARED`). On Windows the static library is `accesskit-static.lib`, as the
+  import library takes `accesskit.lib`. Not upstream: no vcpkg port exists. To update AccessKit,
+  change the version and SHA512 in the port, or drop the overlay once vcpkg has a port.
 - **dawn**: `010-vulkan-honor-alpha-mode.patch` makes Dawn's Vulkan backend create swapchains with
   the requested composite alpha mode instead of always opaque (dawn:286), so transparent windows
   (menus, tooltips, popovers) are transparent on Linux. When updating the baseline, copy vcpkg's
