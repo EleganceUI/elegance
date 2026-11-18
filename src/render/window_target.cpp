@@ -298,12 +298,14 @@ wgpu::BindGroup WindowTarget::State::blur(const wgpu::CommandEncoder& encoder, c
         height = half_height;
         next();
     }
-    // The downsampling's boxes and the bilinear filtering that scales the result back up blur too:
-    // about factor^2 / 4 of variance, in pixels. The kernel, at the lower resolution, adds the rest.
+    // The blur is that of the source's pixels as squares, of sigma^2 + 1/12 variance in pixels.
+    // At the lower resolution, the downsampling's boxes, the kernel's squares and the bilinear
+    // filtering that scales the result back up add about factor^2 / 3 of it; the kernel's sigma
+    // adds the rest.
     float texel_sigma = sigma;
     if (factor > 1) {
         const auto f = static_cast<float>(factor);
-        texel_sigma = std::sqrt(std::max(sigma * sigma - f * f / 4 + 1.f / 12, 0.25f * f * f)) / f;
+        texel_sigma = std::sqrt(std::max(sigma * sigma + 1.f / 6 - f * f / 3, 0.25f * f * f)) / f;
     }
     const RenderImage& horizontal = pooled_image(roles.horizontal, slot, roles.format, width, height);
     render_offscreen(encoder, horizontal, roles.label, [&](const wgpu::RenderPassEncoder& pass) {

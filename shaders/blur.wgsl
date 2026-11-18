@@ -26,6 +26,21 @@ var<immediate> pc: Immediates;
 
 const kMaxRadius = 64;
 
+// erf, within 1.5e-7 (Abramowitz and Stegun 7.1.26).
+fn erf(x: f32) -> f32 {
+    let a = abs(x);
+    let t = 1.0 / (1.0 + 0.3275911 * a);
+    let poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + t * 1.061405429))));
+    return sign(x) * (1.0 - poly * exp(-a * a));
+}
+
+// The share of a Gaussian of `sigma` texels over the texel `offset` texels from the center: the
+// source's texels are squares (ELGSPEC-0024.R2), so a sigma of 0 leaves them as they are.
+fn texel_weight(offset: f32, sigma: f32) -> f32 {
+    let k = 0.7071067811865476 / sigma;
+    return 0.5 * (erf((offset + 0.5) * k) - erf((offset - 0.5) * k));
+}
+
 // A single triangle covering the viewport.
 @vertex
 fn vs_main(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
@@ -82,23 +97,23 @@ fn read_pair(texel: vec2f, offset: f32, step: f32, wa: f32, wb: f32) -> vec4f {
 @fragment
 fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let texel = floor(position.xy); // the target texel; the source is the same size
-    let sigma = max(pc.sigma, 0.5);
+    let sigma = max(pc.sigma, 1e-4);
     // 4 sigma: beyond lies less than 1/30000 of the Gaussian. Wide blurs run downsampled, so that
     // sigma stays within 12 texels and the radius within kMaxRadius.
     let radius = min(i32(ceil(4.0 * sigma)), kMaxRadius);
-    let weight = 0.5 / (sigma * sigma);
-    var sum = read(texel); // the center, weight 1
-    var weights = 1.0;
+    let center = texel_weight(0.0, sigma);
+    var sum = center * read(texel);
+    var weights = center;
     // Out from the center on both sides: taps (1, 2), (3, 4), ..., the last one alone when
     // `radius` is odd.
     for (var i = 1; i <= radius; i += 2) {
-        let wa = exp(-weight * f32(i * i));
+        let wa = texel_weight(f32(i), sigma);
         if (i == radius) {
             let d = pc.direction * f32(i);
             sum += wa * (read(texel + d) + read(texel - d));
             weights += 2.0 * wa;
         } else {
-            let wb = exp(-weight * f32((i + 1) * (i + 1)));
+            let wb = texel_weight(f32(i + 1), sigma);
             sum += read_pair(texel, f32(i), 1.0, wa, wb) + read_pair(texel, -f32(i), -1.0, wa, wb);
             weights += 2.0 * (wa + wb);
         }

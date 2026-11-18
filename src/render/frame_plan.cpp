@@ -281,7 +281,7 @@ private:
     // `instance` has the shape; a border is drawn over it in its own color.
     void add_backdrop(const BackdropFill& backdrop_fill, QuadInstance instance, const Rect& extent, PlanPass& pass,
                       std::vector<QuadInstance>& out, const Clip& clip, int path) {
-        const float sigma = std::max(0.5f, backdrop_fill.blur * scale_ / 2);
+        const float sigma = std::max(0.f, backdrop_fill.blur * scale_ / 2);
         const float reach = std::ceil(kBlurSigmas * sigma) + 2 + static_cast<float>(downsample_for(sigma));
         const Rect bounds{0, 0, static_cast<float>(pass.width), static_cast<float>(pass.height)};
         const Rect wanted = intersect(extent.inset(-reach), bounds);
@@ -539,7 +539,7 @@ private:
     void add_box_shadow(const BoxShadowCommand& command, Point origin, PlanPass& pass,
                         std::vector<QuadInstance>& out, const Clip& clip) {
         const Rect r = to_pixels(command.rect, origin);
-        const float sigma = std::max(0.5f, command.blur_radius * scale_ / 2);
+        const float sigma = std::max(0.f, command.blur_radius * scale_ / 2);
         QuadInstance instance;
         instance.rect = {r.x, r.y, r.width, r.height};
         instance.shape = scaled_radii(command.radii, scale_, r.width, r.height);
@@ -552,7 +552,7 @@ private:
     void add_inner_shadow(const InnerShadowCommand& command, Point origin, PlanPass& pass,
                           std::vector<QuadInstance>& out, const Clip& clip) {
         const Rect r = to_pixels(command.rect, origin);
-        const float sigma = std::max(0.5f, command.blur_radius * scale_ / 2);
+        const float sigma = std::max(0.f, command.blur_radius * scale_ / 2);
         QuadInstance instance;
         instance.rect = {r.x, r.y, r.width, r.height};
         instance.shape = scaled_radii(command.radii, scale_, r.width, r.height);
@@ -669,12 +669,13 @@ private:
     // that (ELGSPEC-0024.R5, R6); a layer of which nothing shows gets none.
     void add_layer(const PushLayerCommand& command, std::size_t& index, Point origin, PlanPass& pass,
                    std::vector<QuadInstance>& out, const Clip& clip, const Rect& visible) {
-        const float sigma = command.shadow ? std::max(0.5f, command.shadow->radius * scale_ / 2) : 0.f;
+        // Sigmas in pixels: half the radius, at the window's scale; 0 leaves the content as it is.
+        const float sigma = command.shadow ? std::max(0.f, command.shadow->radius * scale_ / 2) : 0.f;
         // Room around the content for anti-aliasing and the blurs.
         float margin = command.shadow ? std::ceil(kBlurSigmas * sigma) + 2 : 1;
         std::optional<float> blur_sigma;
         if (command.blur > 0) {
-            blur_sigma = std::max(0.5f, command.blur * scale_ / 2);
+            blur_sigma = command.blur * scale_ / 2;
             if (!command.blur_opaque) {
                 margin = std::max(margin, std::ceil(kBlurSigmas * *blur_sigma) + 2);
             }
@@ -688,7 +689,7 @@ private:
         }
         const std::uint32_t blur_downsample = blur_sigma ? downsample_for(*blur_sigma) : 1;
         const std::optional<float> inner_sigma =
-            command.inner_shadow ? std::optional(std::max(0.5f, command.inner_shadow->radius * scale_ / 2))
+            command.inner_shadow ? std::optional(std::max(0.f, command.inner_shadow->radius * scale_ / 2))
                                  : std::nullopt;
         const std::optional<Rect> needed =
             needed_region(command, visible_through(visible, clip), transform, sigma, blur_sigma, inner_sigma);

@@ -336,38 +336,55 @@ fn erf2(v: vec2f) -> vec2f {
     return s * (1.0 - poly * exp(-a * a));
 }
 
-fn gaussian(x: f32, sigma: f32) -> f32 {
-    let pi = 3.141592653589793;
-    return exp(-(x * x) / (2.0 * sigma * sigma)) / (sqrt(2.0 * pi) * sigma);
+// The share of a Gaussian of `sigma` around `c` that lies between `lo` and `hi`.
+fn gaussian_between(c: f32, lo: f32, hi: f32, sigma: f32) -> f32 {
+    let e = erf2(vec2f(hi - c, lo - c) * (sqrt(0.5) / sigma));
+    return 0.5 * (e.x - e.y);
 }
 
-fn rounded_box_shadow_x(x: f32, y: f32, sigma: f32, corner: f32, half_size: vec2f) -> f32 {
-    let delta = min(half_size.y - corner - abs(y), 0.0);
-    let curved = half_size.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
-    let integral = 0.5 + 0.5 * erf2((x + vec2f(-curved, curved)) * (sqrt(0.5) / sigma));
-    return integral.y - integral.x;
-}
-
-// The Gaussian blur, of `sigma`, of a rounded rect at `point` from its center: exact for a plain
-// rect (the blurs across and down multiply); with corners, summed down the rect at 16 points
-// within 4 sigma, of the exact blur across each row.
-fn rounded_box_shadow(point: vec2f, half_size: vec2f, sigma: f32, corner: f32) -> f32 {
-    if (corner <= 0.0) {
-        let across = 0.5 * erf2((point + half_size) * (sqrt(0.5) / sigma));
-        let to = 0.5 * erf2((point - half_size) * (sqrt(0.5) / sigma));
-        let shares = across - to;
-        return shares.x * shares.y;
+// Along one axis, at the pixel centered at `c` (window pixels): [lo, hi] as its pixels cover it,
+// each pixel a square, blurred by a Gaussian of `sigma` (ELGSPEC-0024.R2). The pixels at its
+// edges are covered in part, those between in full; with a sigma of 0, it's the pixel's own
+// coverage.
+fn square_share(c: f32, lo: f32, hi: f32, sigma: f32) -> f32 {
+    if (hi <= lo) {
+        return 0.0;
     }
-    let low = point.y - half_size.y;
-    let high = point.y + half_size.y;
-    let start = clamp(-4.0 * sigma, low, high);
-    let end = clamp(4.0 * sigma, low, high);
+    let first = floor(lo);
+    let last = floor(hi);
+    if (first == last) {
+        return (hi - lo) * gaussian_between(c, first, first + 1.0, sigma);
+    }
+    return (first + 1.0 - lo) * gaussian_between(c, first, first + 1.0, sigma) +
+           gaussian_between(c, first + 1.0, last, sigma) + (hi - last) * gaussian_between(c, last, last + 1.0, sigma);
+}
+
+fn gaussian(x: f32, sigma: f32) -> f32 {
+    return exp(-(x * x) / (2.0 * sigma * sigma)) / (2.5066282746310002 * sigma);
+}
+
+// The Gaussian blur, of `sigma`, of a rounded rect centered at `center`, at the pixel at
+// `position` (both in window pixels): exact for a plain rect, whose shares across and down
+// multiply; with corners, summed down at 16 rows within 4 sigma, each row's share across exact.
+fn rounded_box_shadow(position: vec2f, center: vec2f, half_size: vec2f, sigma: f32, corner: f32) -> f32 {
+    if (corner <= 0.0) {
+        return square_share(position.x, center.x - half_size.x, center.x + half_size.x, sigma) *
+               square_share(position.y, center.y - half_size.y, center.y + half_size.y, sigma);
+    }
+    let point = position - center;
+    let reach = 4.0 * sigma + 0.5;
+    let start = clamp(-reach, point.y - half_size.y, point.y + half_size.y);
+    let end = clamp(reach, point.y - half_size.y, point.y + half_size.y);
     let step_size = (end - start) / 16.0;
-    var y = start + step_size * 0.5;
+    var t = start + step_size * 0.5;
     var value = 0.0;
     for (var i = 0; i < 16; i++) {
-        value += rounded_box_shadow_x(point.x, point.y - y, sigma, corner, half_size) * gaussian(y, sigma) * step_size;
-        y += step_size;
+        let y = point.y - t; // the row, from the center
+        let delta = min(half_size.y - corner - abs(y), 0.0);
+        let half_width = half_size.x - corner + sqrt(max(0.0, corner * corner - delta * delta));
+        let across = square_share(position.x, center.x - half_width, center.x + half_width, sigma);
+        value += across * gaussian(t, max(sigma, 0.25)) * step_size;
+        t += step_size;
     }
     return value;
 }
@@ -377,19 +394,22 @@ fn max_radius(radii: vec4f) -> f32 {
 }
 
 fn shade_box_shadow(in: Varyings) -> vec4f {
-    let sigma = max(in.extra.y, 0.5);
+    let sigma = max(in.extra.y, 1e-4);
     let corner = min(max_radius(in.shape), min(in.half_size.x, in.half_size.y));
-    return in.color * rounded_box_shadow(in.local, in.half_size, sigma, corner);
+    let position = in.position.xy;
+    return in.color * rounded_box_shadow(position, position - in.local, in.half_size, sigma, corner);
 }
 
 // Inside the shape, the part a blurred copy of it (moved, shrunk by the spread) doesn't light.
 fn shade_inner_shadow(in: Varyings) -> vec4f {
     let inside = clamp(0.5 - rounded_box_distance(in.local, in.half_size, in.shape), 0.0, 1.0);
-    let sigma = max(in.extra.y, 0.5);
+    let sigma = max(in.extra.y, 1e-4);
     let spread = in.params.x;
     let half_size = max(in.half_size - spread, vec2f(0.0));
     let corner = clamp(max_radius(in.shape) - spread, 0.0, min(half_size.x, half_size.y));
-    let lit = rounded_box_shadow(in.local - in.border_color.xy, half_size, sigma, corner);
+    // The blurred copy is moved by the offset; the pixels stay where they are.
+    let position = in.position.xy;
+    let lit = rounded_box_shadow(position, position - in.local + in.border_color.xy, half_size, sigma, corner);
     return in.color * (1.0 - clamp(lit, 0.0, 1.0)) * inside;
 }
 

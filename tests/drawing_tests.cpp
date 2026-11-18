@@ -197,11 +197,26 @@ TEST_CASE("images are filtered with premultiplied alpha", "[.gpu][filtering]") {
 
 namespace {
 
-// The share of a Gaussian of `sigma` pixels that falls between `from` and `to`, from a pixel's
-// center.
-double gaussian_share(double center, double from, double to, double sigma) {
-    const auto below = [&](double x) { return 0.5 * std::erfc(-(x - center) / (sigma * std::numbers::sqrt2)); };
-    return below(to) - below(from);
+// The share of a Gaussian of `sigma` around `c` between `lo` and `hi` (with a sigma of 0, whether
+// `c` lies between them).
+double gaussian_between(double c, double lo, double hi, double sigma) {
+    if (sigma <= 0) {
+        return c > lo && c < hi ? 1 : 0;
+    }
+    const auto below = [&](double x) { return 0.5 * std::erfc(-(x - c) / (sigma * std::numbers::sqrt2)); };
+    return below(hi) - below(lo);
+}
+
+// Along one axis, at the pixel centered at `c`: [lo, hi] as the pixels cover it, each pixel a
+// square, blurred by a Gaussian of `sigma`. Its edge pixels are covered in part.
+double gaussian_share(double c, double lo, double hi, double sigma) {
+    const double first = std::floor(lo);
+    const double last = std::floor(hi);
+    if (first == last) {
+        return (hi - lo) * gaussian_between(c, first, first + 1, sigma);
+    }
+    return (first + 1 - lo) * gaussian_between(c, first, first + 1, sigma) + gaussian_between(c, first + 1, last, sigma) +
+           (hi - last) * gaussian_between(c, last, last + 1, sigma);
 }
 
 int to_srgb_byte(double linear) {
@@ -209,7 +224,8 @@ int to_srgb_byte(double linear) {
     return static_cast<int>(std::lround(std::clamp(v, 0.0, 1.0) * 255));
 }
 
-// How a black `rect` (pixels) blurred as a Gaussian of `sigma` pixels covers the pixel (x, y).
+// How a black `rect` (pixels), its pixels blurred as a Gaussian of `sigma` pixels, covers the
+// pixel (x, y).
 double blurred_cover(const Rect& rect, double sigma, int x, int y) {
     const auto d = [](float v) { return static_cast<double>(v); };
     return gaussian_share(x + 0.5, d(rect.x), d(rect.max_x()), sigma) *
@@ -251,15 +267,18 @@ TEST_CASE("blurs and shadows are Gaussian blurs of half their radius times the s
     if (!renderer.draws()) {
         SKIP("the GPU here draws nothing");
     }
-    // Radius in points and the window's scale; sigma = radius * scale / 2 pixels. The widest run
-    // at 1/32 the resolution.
-    const auto [radius, scale] = GENERATE(table<float, float>({{3, 1}, {20, 1}, {60, 1}, {100, 2}, {200, 2}}));
+    // Radius in points and the window's scale; sigma = radius * scale / 2 pixels, from none and
+    // less than a pixel, where the pixels' squares count most, to the widest, which run at 1/32
+    // the resolution.
+    const auto [radius, scale] = GENERATE(table<float, float>(
+        {{0, 1}, {0.5f, 1}, {1, 1}, {1, 2}, {3, 1}, {20, 1}, {60, 1}, {100, 2}, {200, 2}}));
     const double sigma = static_cast<double>(radius * scale) / 2;
     const auto margin = static_cast<float>(std::ceil(4 * sigma) + 8);
     const float side = 100;                        // the rect's, in points
     const auto size = static_cast<int>(std::ceil(side * scale + 2 * margin));
-    const Rect rect{margin / scale, margin / scale, side, side};             // points
-    const Rect pixels_rect{margin, margin, side * scale, side * scale};      // pixels
+    // On the pixel grid: its pixels are the rect itself, which any anti-aliasing draws alike.
+    const Rect pixels_rect{margin, margin, side * scale, side * scale}; // pixels
+    const Rect rect{pixels_rect.x / scale, pixels_rect.y / scale, side, side};       // points
     INFO("radius " << radius << " at scale " << scale);
 
     detail::DisplayList list;
@@ -279,11 +298,8 @@ TEST_CASE("blurs and shadows are Gaussian blurs of half their radius times the s
         list.commands.emplace_back(detail::PopLayerCommand{});
         const Pixels pixels = renderer.draw(list, size, size, scale);
         CHECK(largest_difference(pixels, [&](int x, int y) {
-                  const auto px = static_cast<float>(x);
-                  const auto py = static_cast<float>(y);
-                  const bool inside = px >= pixels_rect.x && px < pixels_rect.max_x() && py >= pixels_rect.y &&
-                                      py < pixels_rect.max_y();
-                  return inside ? 0 : 1 - blurred_cover(pixels_rect, sigma, x, y);
+                  // The content, over the shadow: what the content leaves of it shows.
+                  return (1 - blurred_cover(pixels_rect, 0, x, y)) * (1 - blurred_cover(pixels_rect, sigma, x, y));
               }) <= 4);
     }
     SECTION("a backdrop blur") {
