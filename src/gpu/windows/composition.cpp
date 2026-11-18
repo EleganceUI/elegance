@@ -63,7 +63,7 @@ bool wants_composition(const Device& device, bool transparent, void* native_wind
 
 } // namespace
 
-std::unique_ptr<Presenter> create_presenter(const Device& device, wgpu::Surface surface, bool transparent,
+std::unique_ptr<Presenter> create_presenter(const Device& device, const SurfaceSource& surface, bool transparent,
                                             void* native_window) {
     // Every window presents through DirectComposition (no stretched frames while resizing, and
     // transparency), unless wants_composition() says otherwise.
@@ -85,7 +85,7 @@ std::unique_ptr<Presenter> create_presenter(const Device& device, wgpu::Surface 
     if (composition) {
         return composition;
     }
-    return std::make_unique<Swapchain>(device, std::move(surface), transparent);
+    return std::make_unique<Swapchain>(device, surface, transparent);
 }
 
 struct CompositionTarget::Impl {

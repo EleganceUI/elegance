@@ -122,8 +122,8 @@ void RenderThread::run(std::promise<void> ready) noexcept {
                                [&](const AddWindowCommand& add) {
                                    windows.emplace(add.window_id,
                                                    std::make_unique<WindowTarget>(
-                                                       device, instance.create_surface(add.surface),
-                                                       add.transparent, add.native_window));
+                                                       device, add.surface, add.transparent,
+                                                       add.native_window));
                                },
                                [&](const RemoveWindowCommand& remove) {
                                    windows.erase(remove.window_id);

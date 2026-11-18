@@ -7,6 +7,7 @@
 
 #include "gpu/device.h"
 #include "gpu/presenter.h"
+#include "gpu/surface_source.h"
 #include "gpu/webgpu.h"
 
 #include <webgpu/webgpu_cpp.h>
@@ -17,12 +18,13 @@
 namespace elg::detail::gpu {
 
 // A window's surface, configured as a swapchain: 8-bit images rendered through sRGB views,
-// presented with FIFO (vsync).
+// presented with FIFO (vsync). When the surface is lost, it makes the window a new one from
+// `source`, and the frame goes on with it (ELGSPEC-0025.R1).
 class Swapchain final : public Presenter {
 public:
     // `transparent`: the window shows through where the image's alpha is below 1 (needs a
     // compositor that blends; otherwise it stays opaque).
-    Swapchain(const Device& device, wgpu::Surface surface, bool transparent = false);
+    Swapchain(const Device& device, const SurfaceSource& source, bool transparent = false);
     ~Swapchain() override;
 
     Swapchain(const Swapchain&) = delete;
@@ -43,7 +45,14 @@ public:
     [[nodiscard]] std::uint32_t width() const noexcept override { return width_; }
     [[nodiscard]] std::uint32_t height() const noexcept override { return height_; }
 
+    // How many surfaces it made for the window: 1, and one more each time one was lost.
+    [[nodiscard]] int surfaces_made() const noexcept { return surfaces_made_; }
+    // For tests: the next image it asks the surface for comes back as lost.
+    void lose_surface_for_testing() noexcept { lose_next_ = true; }
+
 private:
+    // A new surface for the window, with the formats and alpha modes it offers.
+    void make_surface();
     // (Re)configures the surface if it's stale or the window's size changed. Returns false when
     // the window has no area (e.g. minimized); there is nothing to present then.
     bool prepare(std::uint32_t width, std::uint32_t height);
@@ -58,7 +67,12 @@ private:
     void request_copy_source();
 
     const Device& device_;
+    SurfaceSource source_;
+    bool transparent_;
     wgpu::Surface surface_;
+    int surfaces_made_ = 0;
+    bool lost_ = false;      // the surface was lost: begin_frame() makes a new one
+    bool lose_next_ = false; // lose_surface_for_testing()
     wgpu::TextureFormat format_ = wgpu::TextureFormat::Undefined;
     wgpu::TextureFormat view_format_ = wgpu::TextureFormat::Undefined;
     wgpu::CompositeAlphaMode alpha_ = wgpu::CompositeAlphaMode::Auto;

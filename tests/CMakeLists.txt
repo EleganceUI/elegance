@@ -27,6 +27,7 @@ add_executable(elegance_tests
         layout_value_tests.cpp
         leaving_tests.cpp
         lifecycle_tests.cpp
+        lost_surface_tests.cpp
         click_tests.cpp
         raw_input_tests.cpp
         gesture_tests.cpp

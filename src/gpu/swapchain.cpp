@@ -5,6 +5,7 @@
 #include "gpu/swapchain.h"
 
 #include "core/log.h"
+#include "gpu/instance.h"
 
 #include <elg/error.h>
 
@@ -53,19 +54,35 @@ wgpu::CompositeAlphaMode choose_alpha(std::span<const wgpu::CompositeAlphaMode> 
 
 } // namespace
 
-Swapchain::Swapchain(const Device& device, wgpu::Surface surface, bool transparent)
-    : device_(device), surface_(std::move(surface)) {
-    wgpu::SurfaceCapabilities caps;
-    if (surface_.GetCapabilities(device.adapter(), &caps) != wgpu::Status::Success) {
-        throw GpuError(std::format("the GPU \"{}\" can't present to the window", device.name()));
-    }
-    format_ = choose_format({caps.formats, caps.formatCount});
-    view_format_ = srgb_variant(format_);
-    alpha_ = choose_alpha({caps.alphaModes, caps.alphaModeCount}, transparent);
-    can_copy_ = (caps.usages & wgpu::TextureUsage::CopySrc) == wgpu::TextureUsage::CopySrc;
+Swapchain::Swapchain(const Device& device, const SurfaceSource& source, bool transparent)
+    : device_(device), source_(source), transparent_(transparent) {
+    make_surface();
     if (transparent) {
         log_debug("transparent surface: alpha mode {}", static_cast<unsigned>(alpha_));
     }
+}
+
+void Swapchain::make_surface() {
+    // The lost surface goes first: the window has one at a time.
+    if (surface_ && width_ != 0) {
+        surface_.Unconfigure();
+    }
+    surface_ = nullptr;
+    surface_ = device_.instance().create_surface(source_);
+    ++surfaces_made_;
+    wgpu::SurfaceCapabilities caps;
+    if (surface_.GetCapabilities(device_.adapter(), &caps) != wgpu::Status::Success) {
+        throw GpuError(std::format("the GPU \"{}\" can't present to the window", device_.name()));
+    }
+    format_ = choose_format({caps.formats, caps.formatCount});
+    view_format_ = srgb_variant(format_);
+    alpha_ = choose_alpha({caps.alphaModes, caps.alphaModeCount}, transparent_);
+    can_copy_ = (caps.usages & wgpu::TextureUsage::CopySrc) == wgpu::TextureUsage::CopySrc;
+    width_ = 0;
+    height_ = 0;
+    stale_ = true;
+    copyable_ = false;
+    lost_ = false;
 }
 
 Swapchain::~Swapchain() {
@@ -91,7 +108,12 @@ wgpu::TextureView Swapchain::begin_frame(std::uint32_t width, std::uint32_t heig
     }
     wgpu::TextureView view = acquire();
     if (!view) {
-        // Out of date: reconfigured, then once more; still resizing if that fails too.
+        // Out of date: reconfigured, then once more; still resizing if that fails too. Lost: the
+        // window gets a new surface, which this frame is drawn on.
+        if (lost_) {
+            log_info("the window's surface was lost: drawing on a new one");
+            make_surface();
+        }
         if (!prepare(width, height)) {
             return nullptr;
         }
@@ -147,6 +169,11 @@ void Swapchain::request_copy_source() {
 wgpu::TextureView Swapchain::acquire() {
     wgpu::SurfaceTexture texture;
     surface_.GetCurrentTexture(&texture);
+    if (lose_next_) {
+        lose_next_ = false;
+        texture = {};
+        texture.status = wgpu::SurfaceGetCurrentTextureStatus::Lost;
+    }
     switch (texture.status) {
     case wgpu::SurfaceGetCurrentTextureStatus::SuccessOptimal: break;
     case wgpu::SurfaceGetCurrentTextureStatus::SuccessSuboptimal:
@@ -154,9 +181,12 @@ wgpu::TextureView Swapchain::acquire() {
         break;
     case wgpu::SurfaceGetCurrentTextureStatus::Timeout:
     case wgpu::SurfaceGetCurrentTextureStatus::Outdated:
-    case wgpu::SurfaceGetCurrentTextureStatus::Lost:
-        // Resizing, or the surface went away for a moment: reconfigure, skip this frame.
+        // Resizing, or the window system was busy: reconfigure, try again.
         stale_ = true;
+        return nullptr;
+    case wgpu::SurfaceGetCurrentTextureStatus::Lost:
+        // Gone for good: a new surface (begin_frame()).
+        lost_ = true;
         return nullptr;
     default: throw_gpu_error("get the window's next image");
     }

@@ -5,6 +5,7 @@
 #ifndef ELG_RENDER_WINDOW_TARGET_H
 #define ELG_RENDER_WINDOW_TARGET_H
 
+#include "gpu/surface_source.h"
 #include "gpu/webgpu_types.h"
 #include "render/frame_mailbox.h"
 
@@ -41,7 +42,7 @@ class WindowTarget {
 public:
     // `native_window` (an HWND on Windows) lets windows present through the platform
     // compositor, which can show transparency (WebGPU surfaces there can't).
-    WindowTarget(const gpu::Device& device, wgpu::Surface surface, bool transparent = false,
+    WindowTarget(const gpu::Device& device, const gpu::SurfaceSource& surface, bool transparent = false,
                  void* native_window = nullptr);
     ~WindowTarget();
 

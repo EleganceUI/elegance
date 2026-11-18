@@ -101,7 +101,7 @@ void render_offscreen(const wgpu::CommandEncoder& encoder, const RenderImage& ta
 
 class WindowTarget::State {
 public:
-    State(const gpu::Device& device, wgpu::Surface surface, bool transparent, void* native_window);
+    State(const gpu::Device& device, const gpu::SurfaceSource& surface, bool transparent, void* native_window);
 
     void render(const WindowFrame& frame, const RenderResources& resources);
 
@@ -185,8 +185,9 @@ private:
     wgpu::BindGroup empty_group_;
 };
 
-WindowTarget::WindowTarget(const gpu::Device& device, wgpu::Surface surface, bool transparent, void* native_window)
-    : state_(std::make_unique<State>(device, std::move(surface), transparent, native_window)) {}
+WindowTarget::WindowTarget(const gpu::Device& device, const gpu::SurfaceSource& surface, bool transparent,
+                           void* native_window)
+    : state_(std::make_unique<State>(device, surface, transparent, native_window)) {}
 
 WindowTarget::~WindowTarget() = default;
 
@@ -194,8 +195,9 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
     state_->render(frame, resources);
 }
 
-WindowTarget::State::State(const gpu::Device& device, wgpu::Surface surface, bool transparent, void* native_window)
-    : device_(device), presenter_(gpu::create_presenter(device, std::move(surface), transparent, native_window)),
+WindowTarget::State::State(const gpu::Device& device, const gpu::SurfaceSource& surface, bool transparent,
+                           void* native_window)
+    : device_(device), presenter_(gpu::create_presenter(device, surface, transparent, native_window)),
       sampler_(gpu::create_linear_sampler(device.handle())), instances_(device.handle(), wgpu::BufferUsage::Vertex),
       stops_(device.handle(), wgpu::BufferUsage::Storage), path_vertices_(device.handle(), wgpu::BufferUsage::Vertex) {
     ELG_DEBUG_ASSERT(kLayerFormat == gpu::BlurRenderer::kColorFormat, "layers and color blurs differ in format");

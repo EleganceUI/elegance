@@ -10,13 +10,12 @@
 #include "gpu/swapchain.h"
 
 #include <memory>
-#include <utility>
 
 namespace elg::detail::gpu {
 
-std::unique_ptr<Presenter> create_presenter(const Device& device, wgpu::Surface surface, bool transparent,
+std::unique_ptr<Presenter> create_presenter(const Device& device, const SurfaceSource& surface, bool transparent,
                                             void* /*native_window*/) {
-    return std::make_unique<Swapchain>(device, std::move(surface), transparent);
+    return std::make_unique<Swapchain>(device, surface, transparent);
 }
 
 } // namespace elg::detail::gpu
