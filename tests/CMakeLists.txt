@@ -52,6 +52,7 @@ add_executable(elegance_tests
         os_tests.cpp
         progress_tests.cpp
         prop_argument_tests.cpp
+        paint_cache_tests.cpp
         partial_drawing_tests.cpp
         render_pixels.cpp
         pointer_style_tests.cpp

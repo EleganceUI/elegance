@@ -68,7 +68,7 @@ ShapeStyle with_opacity(const ShapeStyle& style, float opacity) {
                       style.value());
 }
 
-void transform(std::vector<DrawCommand>& commands, float dx, float dy, float scale, Point origin) {
+void transform(std::span<DrawCommand> commands, float dx, float dy, float scale, Point origin) {
     if (dx == 0 && dy == 0 && scale == 1) {
         return;
     }

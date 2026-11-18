@@ -18,6 +18,7 @@
 #include <array>
 #include <memory>
 #include <optional>
+#include <span>
 #include <variant>
 #include <vector>
 
@@ -169,7 +170,7 @@ ShapeStyle with_opacity(const ShapeStyle& style, float opacity);
 std::optional<Rect> draw_bounds(const DrawCommand& command);
 Rect union_of(const Rect& a, const Rect& b);
 // Moves commands by (dx, dy) and scales them by `scale` around `origin` (transitions).
-void transform(std::vector<DrawCommand>& commands, float dx, float dy, float scale, Point origin);
+void transform(std::span<DrawCommand> commands, float dx, float dy, float scale, Point origin);
 // Appends `content` faded to `opacity` as a group: an alpha multiply for a single shape, an
 // offscreen layer otherwise.
 void append_faded(DisplayList& list, DisplayList&& content, float opacity);

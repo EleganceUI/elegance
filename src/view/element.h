@@ -77,7 +77,7 @@ float layout_scale() noexcept;
 
 class Element {
 public:
-    Element() = default;
+    Element();
     Element(const Element&) = delete;
     Element(Element&&) = delete;
     Element& operator=(const Element&) = delete;
@@ -104,20 +104,12 @@ public:
     // Post-layout, even with cached arrangement or culled painting (DPI can change independently).
     // Observers must queue work, not change the retained tree during this traversal.
     void notify_render_size(float scale);
-    void paint(DisplayList& list) const {
-        if (frame_.animating()) {
-            list.animating = true;
-        }
-        // Out of sight (scrolled away): skipped, unless it may be on its way in.
-        if (list.cull && paint_bounds_ && cullable() && !overlaps(*paint_bounds_, *list.cull)) {
-            list.animating |= moving_;
-            return;
-        }
-        paint_impl(list);
-        if (focus_manager_) {
-            paint_focus_ring(list);
-        }
-    }
+    // Paints it into `list`, unless it's out of sight there (list.cull). When nothing it draws
+    // changed since its last paint, and it moved by whole pixels at most, it adds the commands it
+    // built then, moved with it, without building them again (ELGSPEC-0029.R8); the children it
+    // painted paint again themselves. Otherwise it builds them, and keeps them unless they change
+    // over time (animations, paint_changes_over_time()).
+    void paint(DisplayList& list) const;
     // Something it draws changed (a property, its state, what its layout worked out): its next
     // paint builds its commands again, and so do those of the elements around it, which may draw
     // with it (effects, the order of what's inside).
@@ -265,6 +257,10 @@ protected:
     virtual bool drawing_moves() const { return false; }
 
 private:
+    struct PaintRecord;
+    // Whether its last paint's commands can be added again, as they are or moved.
+    bool repaints_from_record(const DisplayList& list) const;
+    void paint_from_record(DisplayList& list) const;
     void paint_focus_ring(DisplayList& list) const;
     // After layout: paint_bounds_ and moving_ for this element and everything inside.
     void update_paint_bounds();
@@ -288,13 +284,33 @@ private:
     Point moved_by_;                   // how far the last place() moved it (for exiting children)
     bool always_arranges_inside_ = false; // always_arranges(), here or anywhere inside
     mutable std::uint64_t accessibility_id_ = 0;
-    // Whether something it draws changed since it last painted (invalidate_paint()).
+    // What its last paint built, when it can be reused; and whether something it draws changed
+    // since (invalidate_paint()).
+    mutable std::unique_ptr<PaintRecord> paint_record_;
     mutable bool paint_changed_ = true;
 };
 
 // While an element paints: what it draws changes over time without its being invalidated (a
 // caret blinking, a canvas reading the clock), so its commands aren't kept for the next frame.
 void paint_changes_over_time() noexcept;
+
+// While alive, paint() is for a window whose drawing started over `epoch` times: commands built
+// under another epoch are built again (the window's theme changed, its glyph atlas started over).
+// With `fresh`, every element builds its commands, and what elements keep stays as it is (tests
+// compare with it).
+class PaintScope {
+public:
+    explicit PaintScope(std::uint64_t epoch, bool fresh = false) noexcept;
+    ~PaintScope();
+    PaintScope(const PaintScope&) = delete;
+    PaintScope& operator=(const PaintScope&) = delete;
+    PaintScope(PaintScope&&) = delete;
+    PaintScope& operator=(PaintScope&&) = delete;
+
+private:
+    std::uint64_t previous_epoch_;
+    bool previous_fresh_;
+};
 
 // The element with this accessibility id (Element::accessibility_id), if it still exists: a
 // screen reader's request names elements by it. UI thread.

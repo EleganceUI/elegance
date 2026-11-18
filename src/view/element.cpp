@@ -18,6 +18,7 @@
 #include <cmath>
 #include <limits>
 #include <numbers>
+#include <span>
 #include <unordered_map>
 
 namespace elg::detail {
@@ -50,13 +51,221 @@ std::unordered_map<std::uint64_t, Element*>& elements_by_accessibility_id() {
 
 // --- Element ---
 
-void paint_changes_over_time() noexcept {}
+// A child an element painted into its own list: it paints again itself, where its commands were.
+struct PaintedChild {
+    const Element* element;
+    std::size_t at;           // before which of the element's own commands
+    std::optional<Rect> cull; // what it was culled to, when not what the element was
+};
+
+struct Element::PaintRecord {
+    std::vector<DrawCommand> commands; // its own, in window points, as built
+    std::vector<PaintedChild> children;
+    Rect frame;                        // its frame then
+    float scale = 1;
+    std::uint64_t epoch = 0;
+    std::optional<Rect> cull;           // what it was culled to then
+    bool children_culled_apart = false; // some child's cull wasn't the element's (scroll views)
+};
+
+namespace {
+
+// An element's paint under way: what it builds itself, and the children it paints.
+struct PaintRecorder {
+    const DisplayList* list;
+    bool from_record;         // adding its record again: children only say how they changed
+    std::size_t next_own;     // where its next own commands start in the list
+    std::optional<Rect> cull; // what it's culled to
+    std::vector<DrawCommand> own;
+    std::vector<PaintedChild> children;
+    bool children_culled_apart = false;
+    bool changes = false;            // its drawing changes over time
+    bool children_animating = false; // the children in its list ask for frames
+    bool children_change = false;    // their drawing changes over time
+};
+
+thread_local std::vector<PaintRecorder*> g_painting;
+thread_local std::uint64_t g_paint_epoch = 0;
+thread_local bool g_fresh_paint = false;
+
+bool close(float a, float b) {
+    return std::abs(a - b) <= 1e-3f;
+}
+
+bool close(const std::optional<Rect>& a, const std::optional<Rect>& b) {
+    if (!a || !b) {
+        return a.has_value() == b.has_value();
+    }
+    return close(a->x, b->x) && close(a->y, b->y) && close(a->width, b->width) && close(a->height, b->height);
+}
+
+std::optional<Rect> moved(std::optional<Rect> r, float dx, float dy) {
+    if (r) {
+        r->x += dx;
+        r->y += dy;
+    }
+    return r;
+}
+
+// Tells the element painting around one that just painted (or was culled) how it went. One in
+// its list becomes part of its record. One in another list (an effect's scratch list, which it
+// copies into its own) makes its own drawing change whenever that one's does.
+void painted(const Element& element, DisplayList& list, std::size_t first, bool animating, bool changes) {
+    PaintRecorder* const around = g_painting.empty() ? nullptr : g_painting.back();
+    if (!around || around->list != &list) {
+        list.animating = list.animating || animating;
+        if (around) {
+            around->changes = around->changes || animating || changes;
+        }
+        return;
+    }
+    around->children_animating = around->children_animating || animating;
+    around->children_change = around->children_change || changes;
+    if (around->from_record) {
+        return;
+    }
+    around->own.insert(around->own.end(), list.commands.begin() + static_cast<std::ptrdiff_t>(around->next_own),
+                       list.commands.begin() + static_cast<std::ptrdiff_t>(first));
+    const bool culled_apart = !close(list.cull, around->cull);
+    around->children.push_back({&element, around->own.size(), culled_apart ? list.cull : std::nullopt});
+    around->children_culled_apart = around->children_culled_apart || culled_apart;
+    around->next_own = list.commands.size();
+}
+
+// Makes an element's recorder the current one while it paints, also when the paint throws.
+class Painting {
+public:
+    explicit Painting(PaintRecorder& recorder) { g_painting.push_back(&recorder); }
+    ~Painting() { g_painting.pop_back(); }
+    Painting(const Painting&) = delete;
+    Painting& operator=(const Painting&) = delete;
+    Painting(Painting&&) = delete;
+    Painting& operator=(Painting&&) = delete;
+};
+
+} // namespace
+
+void paint_changes_over_time() noexcept {
+    if (!g_painting.empty()) {
+        g_painting.back()->changes = true;
+    }
+}
+
+PaintScope::PaintScope(std::uint64_t epoch, bool fresh) noexcept
+    : previous_epoch_(std::exchange(g_paint_epoch, epoch)), previous_fresh_(std::exchange(g_fresh_paint, fresh)) {}
+
+PaintScope::~PaintScope() {
+    g_paint_epoch = previous_epoch_;
+    g_fresh_paint = previous_fresh_;
+}
+
+void Element::paint(DisplayList& list) const {
+    const bool frame_moves = frame_.animating();
+    const std::size_t first = list.commands.size();
+    // Out of sight (scrolled away): skipped, unless it may be on its way in.
+    if (list.cull && paint_bounds_ && cullable() && !overlaps(*paint_bounds_, *list.cull)) {
+        painted(*this, list, first, frame_moves || moving_, false);
+        return;
+    }
+    const bool animating_before = std::exchange(list.animating, false);
+    PaintRecorder recorder{
+        .list = &list, .from_record = repaints_from_record(list), .next_own = first, .cull = list.cull};
+    {
+        const Painting painting(recorder);
+        if (recorder.from_record) {
+            paint_from_record(list);
+        } else {
+            paint_impl(list);
+            if (focus_manager_) {
+                paint_focus_ring(list);
+            }
+        }
+    }
+    // What its own drawing asked for: frames for its animations.
+    const bool own_animating = list.animating;
+    list.animating = animating_before;
+    // A fresh paint (for comparison) leaves what the frames keep as it is.
+    if (!recorder.from_record && !g_fresh_paint) {
+        paint_changed_ = false;
+        if (own_animating || recorder.changes || list.probe) {
+            paint_record_.reset(); // built again next time
+        } else {
+            auto record = std::make_unique<PaintRecord>();
+            record->commands = std::move(recorder.own);
+            record->commands.insert(record->commands.end(),
+                                    list.commands.begin() + static_cast<std::ptrdiff_t>(recorder.next_own),
+                                    list.commands.end());
+            record->children = std::move(recorder.children);
+            record->frame = frame();
+            record->scale = list.scale;
+            record->epoch = g_paint_epoch;
+            record->cull = recorder.cull;
+            record->children_culled_apart = recorder.children_culled_apart;
+            paint_record_ = std::move(record);
+        }
+    }
+    const bool animating = frame_moves || own_animating || recorder.children_animating;
+    painted(*this, list, first, animating, own_animating || recorder.changes || recorder.children_change);
+}
+
+bool Element::repaints_from_record(const DisplayList& list) const {
+    if (!paint_record_ || paint_changed_ || g_fresh_paint) {
+        return false;
+    }
+    const PaintRecord& record = *paint_record_;
+    const Rect now = frame();
+    if (record.epoch != g_paint_epoch || record.scale != list.scale || now.width != record.frame.width ||
+        now.height != record.frame.height) {
+        return false;
+    }
+    // Moved by whole pixels of the window at most: what it snapped to pixels stays on them.
+    const auto whole = [&](float points) {
+        const float pixels = points * list.scale;
+        return close(pixels, std::round(pixels));
+    };
+    const float dx = now.x - record.frame.x;
+    const float dy = now.y - record.frame.y;
+    if (!whole(dx) || !whole(dy)) {
+        return false;
+    }
+    // Children culled to a part of their own (a scroll view's content): while what it's culled to
+    // is the same, moved with it, so is theirs.
+    return !record.children_culled_apart || close(list.cull, moved(record.cull, dx, dy));
+}
+
+void Element::paint_from_record(DisplayList& list) const {
+    const PaintRecord& record = *paint_record_;
+    const Rect now = frame();
+    const float dx = now.x - record.frame.x;
+    const float dy = now.y - record.frame.y;
+    std::size_t next = 0;
+    const auto own_until = [&](std::size_t end) {
+        const std::size_t first = list.commands.size();
+        list.commands.insert(list.commands.end(), record.commands.begin() + static_cast<std::ptrdiff_t>(next),
+                             record.commands.begin() + static_cast<std::ptrdiff_t>(end));
+        transform(std::span(list.commands).subspan(first), dx, dy, 1, {});
+        next = end;
+    };
+    for (const PaintedChild& child : record.children) {
+        own_until(child.at);
+        if (child.cull) {
+            const std::optional<Rect> outer = std::exchange(list.cull, moved(child.cull, dx, dy));
+            child.element->paint(list);
+            list.cull = outer;
+        } else {
+            child.element->paint(list);
+        }
+    }
+    own_until(record.commands.size());
+}
 
 void Element::invalidate_paint() noexcept {
     for (Element* element = this; element; element = element->parent_) {
         element->paint_changed_ = true;
     }
 }
+
+Element::Element() = default;
 
 Element::~Element() {
     // The elements around it may have painted it: they paint again, without it.
