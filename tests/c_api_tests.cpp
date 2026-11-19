@@ -11,6 +11,7 @@
 #include "core/app_errors.h"
 #include "core/ui_tasks.h"
 #include "reactive/runtime.h"
+#include "reactive/timers.h"
 #include "test_images.h"
 #include "text/text_system.h"
 #include "view/element.h"
@@ -31,8 +32,11 @@ using elg::Animation;
 using elg::App;
 using elg::AppCode;
 using elg::Binding;
+using elg::ColorScheme;
+using elg::EnvironmentValues;
 using elg::ErrorAction;
 using elg::ModuleEntry;
+using elg::Rectangle;
 using elg::Text;
 using elg::View;
 namespace detail = elg::detail;
@@ -85,6 +89,13 @@ void elg_string_assign(std::string* target, ElgStr value);
 View* elg_image(const ElgImageSource* source);
 const ModuleEntry* elg_rust_module_entry(bool has_root, const PreviewDesc* previews, size_t count,
                                          bool (*build)(int32_t index, View* ret), uint64_t app_hash);
+View* elg_mod_on_appear(const View* v, ElgClosure on_appear);
+View* elg_mod_on_disappear(const View* v, ElgClosure on_disappear);
+Text* elg_text_selectable(const Text* text, ElgProp selectable);
+EnvironmentValues* elg_env_new();
+void elg_env_free(EnvironmentValues* environment);
+int32_t elg_env_color_scheme(const EnvironmentValues* environment);
+bool elg_system_accent_color(ElgColor* color);
 }
 
 namespace {
@@ -477,4 +488,67 @@ TEST_CASE("a handle to reactive state that has ended is a usage error, also once
     }
     elg_node_track(0); // no handle at all
     CHECK(take_error() == 2);
+}
+
+TEST_CASE("elg_mod_on_appear and elg_mod_on_disappear run their actions once each, and take none", "[c-api][lifecycle]") {
+    detail::clear_lifecycle_actions();
+    Counts appear;
+    Counts gone;
+    {
+        detail::Scope scope;
+        const detail::Scope::Use use(scope);
+        const View base = Rectangle();
+        View* appearing = elg_mod_on_appear(&base, closure(appear));
+        REQUIRE(appearing);
+        View* both = elg_mod_on_disappear(appearing, closure(gone));
+        REQUIRE(both);
+        elg_view_free(appearing);
+        const elg::State<bool> shown(true);
+        const auto root = detail::lower(elg::VStack(elg::If([shown] { return shown(); }, *both)), {});
+        elg_view_free(both);
+        CHECK(detail::run_lifecycle_actions());
+        CHECK(appear.calls == 1);
+        CHECK(gone.calls == 0);
+        shown.set(false);
+        detail::flush_effects();
+        detail::run_lifecycle_actions();
+        CHECK(gone.calls == 1);
+    }
+    CHECK(appear.drops == 1);
+    CHECK(gone.drops == 1);
+
+    // None: no action, and the closure is still dropped.
+    Counts unused;
+    const View base = Rectangle();
+    View* plain = elg_mod_on_appear(&base, none(unused));
+    REQUIRE(plain);
+    CHECK(take_error() == 0);
+    elg_view_free(plain);
+    CHECK(unused.drops == 1);
+    detail::clear_lifecycle_actions();
+}
+
+TEST_CASE("elg_text_selectable keeps the text and takes its prop", "[c-api][selectable-text]") {
+    Counts counts;
+    const Text text("hello");
+    Text* selectable = elg_text_selectable(&text, static_bool(counts));
+    REQUIRE(selectable);
+    CHECK(take_error() == 0);
+    CHECK(text_of(*selectable) == "hello");
+    elg_text_free(selectable);
+    CHECK(counts.drops == 1);
+}
+
+TEST_CASE("elg_env_new is an empty environment, and elg_system_accent_color doesn't fail", "[c-api][environment]") {
+    EnvironmentValues* environment = elg_env_new();
+    REQUIRE(environment);
+    CHECK(elg_env_color_scheme(environment) == static_cast<int32_t>(ColorScheme::light));
+    elg_env_free(environment);
+
+    ElgColor color{};
+    const bool has_accent = elg_system_accent_color(&color);
+    CHECK(take_error() == 0);
+    if (!has_accent) {
+        CHECK(color.r == 0.f); // left as it was
+    }
 }

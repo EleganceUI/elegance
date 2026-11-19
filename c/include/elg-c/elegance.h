@@ -1339,6 +1339,11 @@ void elg_binding_f64_free(ElgBindingF64* binding);
 ///   when no views are being built.
 ElgEnvironmentValues* elg_env_current(void);
 
+/// An empty environment (`EnvironmentValues()`): every key reads its default.
+///
+/// @return The environment, owned by the caller (elg_env_free()). Null on failure.
+ElgEnvironmentValues* elg_env_new(void);
+
 /// Copies an environment (cheap: copies share their entries).
 ///
 /// @param environment The environment (borrowed).
@@ -1379,6 +1384,14 @@ int32_t elg_env_color_scheme(const ElgEnvironmentValues* environment);
 /// @param environment The environment (borrowed).
 /// @param result Receives the theme (borrowed); left as it was on failure.
 void elg_env_theme(const ElgEnvironmentValues* environment, ElgTheme* result);
+
+/// Wraps `system_accent_color()`: the accent color the person chose in the system's settings.
+/// Reactive while an App runs (a tracked read, on the UI thread); without one, it asks the system
+/// each time.
+///
+/// @param color Receives the color when there is one; left as it was otherwise.
+/// @return Whether the system has an accent color; false on failure.
+bool elg_system_accent_color(ElgColor* color);
 
 /// Reads the environment's foreground (ForegroundKey): the color of text and unfilled shapes. A
 /// tracked read.
@@ -2275,6 +2288,15 @@ ElgText* elg_text_line_limit(const ElgText* text, int32_t lines);
 /// @return `text` with that alignment (a new Text, owned by the caller), or null on failure.
 ElgText* elg_text_multiline_alignment(const ElgText* text, int32_t alignment);
 
+/// Wraps `Text::selectable()`: the person using the app can select the text with the pointer, and
+/// copy it.
+///
+/// @param text The text (borrowed).
+/// @param selectable A bool prop: whether it can be selected.
+/// @return `text`, selectable while `selectable` is true (a new Text, owned by the caller), or null on
+///   failure.
+ElgText* elg_text_selectable(const ElgText* text, ElgProp selectable);
+
 /// Wraps `StyledText()`: text made of runs in different weights, colors and highlights, wrapping like Text.
 ///
 /// @param runs The runs (borrowed; their closures and attachments are taken over).
@@ -3003,6 +3025,22 @@ ElgView* elg_mod_on_click(const ElgView* v, ElgClosure on_click, int32_t button,
 /// @param on_activate The action. No args. Required: none is a usage error.
 /// @return `v` with the action (a new view, owned by the caller), or null on failure.
 ElgView* elg_mod_on_activate(const ElgView* v, ElgClosure on_activate);
+
+/// Wraps `View::on_appear()`: runs the action once the view is added (its window opened, an If or
+/// ForEach showed it, or a lazy stack built it), on the UI thread, before that update is drawn.
+///
+/// @param v The view (borrowed).
+/// @param on_appear The action. No args. May be none: nothing runs.
+/// @return `v` with the action (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_appear(const ElgView* v, ElgClosure on_appear);
+
+/// Wraps `View::on_disappear()`: runs the action once a view that appeared is gone (after its exit
+/// transition, or when its window closed), on the UI thread.
+///
+/// @param v The view (borrowed).
+/// @param on_disappear The action. No args. May be none: nothing runs.
+/// @return `v` with the action (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_disappear(const ElgView* v, ElgClosure on_disappear);
 
 /// Wraps `View::on_size_change()`: called after the first layout and whenever the view's size in pixels
 /// changes, including with the display scale. Runs on the UI thread, before paint.

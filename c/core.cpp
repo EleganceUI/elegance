@@ -643,6 +643,15 @@ ELG_EXPORT EnvironmentValues* elg_env_current() {
     ELG_CATCH(nullptr)
 }
 
+/// An empty environment (`EnvironmentValues()`): every key reads its default.
+///
+/// @return The environment, owned by the caller (elg_env_free()). Null on failure.
+ELG_EXPORT EnvironmentValues* elg_env_new() {
+    ELG_TRY
+    return new EnvironmentValues();
+    ELG_CATCH(nullptr)
+}
+
 /// Copies an environment (cheap: copies share their entries).
 ///
 /// @param environment The environment (borrowed).
@@ -711,6 +720,22 @@ ELG_EXPORT void elg_env_theme(const EnvironmentValues* environment, ElgTheme* re
     ELG_TRY
     cpp_theme(*result) = environment->get<ThemeKey>();
     ELG_CATCH_VOID
+}
+
+/// Wraps `system_accent_color()`: the accent color the person chose in the system's settings.
+/// Reactive while an App runs (a tracked read, on the UI thread); without one, it asks the system
+/// each time.
+///
+/// @param color Receives the color when there is one; left as it was otherwise.
+/// @return Whether the system has an accent color; false on failure.
+ELG_EXPORT bool elg_system_accent_color(ElgColor* color) {
+    ELG_TRY
+    const std::optional<Color> accent = system_accent_color();
+    if (accent) {
+        *color = c_color(*accent);
+    }
+    return accent.has_value();
+    ELG_CATCH(false)
 }
 
 /// Reads the environment's foreground (ForegroundKey): the color of text and unfilled shapes. A
