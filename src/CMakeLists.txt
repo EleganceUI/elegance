@@ -20,33 +20,18 @@ find_package(OpenSSL REQUIRED)
 # miniaudio is a single header (design.md §13.3).
 find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
 
-# Accessibility (design.md §12): AccessKit's official prebuilt C library (MIT / Apache-2.0),
-# linked statically, so building Elegance needs no Rust toolchain.
-if (ELG_ACCESSIBILITY)
-    include(FetchContent)
-    FetchContent_Declare(accesskit_c
-        URL https://github.com/AccessKit/accesskit-c/releases/download/0.23.1/accesskit-c-0.23.1.zip
-        URL_HASH SHA256=35b7ca8a6f1e038b5da35e1e9e5a0adaed9bfcf21e1496d29598fbbadcc7043f
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-        SOURCE_SUBDIR no-cmake-here) # use the prebuilt libraries, don't build it
-    FetchContent_MakeAvailable(accesskit_c)
-    # Sets ACCESSKIT_LIBRARIES_DIR. Not every platform has prebuilt libraries (Linux on ARM64 doesn't).
-    include("${accesskit_c_SOURCE_DIR}/accesskit.cmake")
-    if (NOT IS_DIRECTORY "${ACCESSKIT_LIBRARIES_DIR}")
-        message(WARNING "AccessKit has no prebuilt library for this platform (${ACCESSKIT_LIBRARIES_DIR}): "
-                        "building without screen reader support. Set ELG_ACCESSIBILITY=OFF to silence this.")
-        set(ELG_ACCESSIBILITY OFF)
-    endif ()
-endif ()
+# Accessibility (design.md §12): AccessKit's C library (MIT / Apache-2.0), from vcpkg (the
+# accesskit-c overlay port, cmake/ports). Global: the macOS bundle step (EleganceApplication.cmake)
+# looks for its shared library from the app's folder.
 set(elg_accesskit "")
 if (ELG_ACCESSIBILITY)
-    include("${accesskit_c_SOURCE_DIR}/accesskit-config.cmake")
+    find_package(accesskit-c CONFIG REQUIRED GLOBAL)
     # Its static library is a Rust staticlib with its own Rust standard library, which clashes with
     # a Rust app's own (the Rust bindings link a static Elegance with ELG_ACCESSKIT_SHARED).
     if (ELG_ACCESSKIT_SHARED)
-        set(elg_accesskit accesskit-shared)
+        set(elg_accesskit accesskit-c::shared)
     else ()
-        set(elg_accesskit accesskit-static)
+        set(elg_accesskit accesskit-c::static)
     endif ()
 endif ()
 
@@ -102,14 +87,16 @@ if (ELG_BUILD_SHARED)
     # What generate_export_header() tests for the library's own sources: ELG_API exports.
     target_compile_definitions(elegance_settings INTERFACE elegance_EXPORTS)
 elseif (ELG_STATIC_EXPORTS)
-    # Linked into a shared library that re-exports ELG_API (the Rust bindings' prebuilt library).
+    # Linked into the C library (c/CMakeLists.txt), which exports the C API alone (ELGSPEC-0007.R17).
     # The generated header leaves ELG_API empty for a static library unless it's already defined.
+    # On Linux and macOS ELG_API is visible and the C library's link filters it to elg_*; MSVC has
+    # no such filter, so there only the C functions (ELG_C_FUNCTION) are exported.
     if (MSVC)
-        set(elg_api_definition "ELG_API=__declspec(dllexport)")
+        set(elg_api_definition "ELG_API=" "ELG_C_FUNCTION=__declspec(dllexport)")
     else ()
         set(elg_api_definition "ELG_API=__attribute__((visibility(\"default\")))")
     endif ()
-    target_compile_definitions(elegance_settings INTERFACE "${elg_api_definition}")
+    target_compile_definitions(elegance_settings INTERFACE ${elg_api_definition})
 else ()
     target_compile_definitions(elegance_settings INTERFACE ELG_STATIC_DEFINE)
 endif ()
@@ -148,9 +135,10 @@ endif ()
 # The OS's own libraries, which the platform folders' code calls (each layer's backend is in them).
 if (WIN32)
     # dwmapi: rounded corners and backdrops; comctl32: window subclassing; d3d11/dxgi/dcomp:
-    # transparent windows; the rest: images, video, cameras, certificates, proxies, the shell.
+    # transparent windows; runtimeobject: WinRT (toasts); the rest: images, video, cameras,
+    # certificates, proxies, the shell.
     target_link_libraries(elegance_settings INTERFACE dwmapi comctl32 d3d11 dxgi dcomp windowscodecs ole32 propsys
-            mfplat mfuuid mf mfreadwrite strmiids oleaut32 shell32 crypt32 imm32 winhttp)
+            mfplat mfuuid mf mfreadwrite strmiids oleaut32 shell32 crypt32 imm32 winhttp runtimeobject)
 endif ()
 if (APPLE)
     target_link_libraries(elegance_settings INTERFACE
@@ -236,8 +224,7 @@ elg_layer(core_os
         LIBRARIES SDL3::SDL3)
 elg_layer(core
         SOURCES core/app_errors.cpp core/child_process.cpp core/crash.cpp core/dynamic_library.cpp core/error.cpp
-                core/log.cpp
-                core/ui_tasks.cpp core/utf8.cpp core/version.cpp
+                core/log.cpp core/threads.cpp core/ui_tasks.cpp core/utf8.cpp core/version.cpp
         DEPENDS core_os)
 target_compile_definitions(elegance_core PRIVATE ELG_VERSION_STRING="${PROJECT_VERSION}")
 elg_layer(geometry SOURCES geometry/path.cpp DEPENDS core)
@@ -260,7 +247,7 @@ elg_layer(media_os
               platform/macos/video_source.mm
         LINUX platform/linux/camera.cpp platform/linux/image_codec.cpp platform/linux/video_source.cpp)
 elg_layer(media
-        SOURCES media/audio.cpp media/audio_stream.cpp media/camera.cpp media/frame_source.cpp media/image_decode.cpp
+        SOURCES media/audio.cpp media/audio_setup.cpp media/audio_stream.cpp media/camera.cpp media/frame_source.cpp media/image_decode.cpp media/recorded_orientation.cpp
                 media/miniaudio.cpp media/recorder.cpp media/video_feed.cpp media/video_source.cpp
         DEPENDS core geometry reactive media_os)
 # A system folder, so that miniaudio.h is held to no warnings of ours: on macOS, nothing else this
@@ -308,8 +295,8 @@ elg_add_shaders(elegance_render ${PROJECT_SOURCE_DIR}/shaders/video_convert.wgsl
 elg_layer(platform
         SOURCES platform/sdl/accessibility_adapter.cpp platform/sdl/desktop_sdl.cpp platform/sdl/menu_bar.cpp
                 platform/sdl/platform_sdl.cpp platform/sdl/system_text.cpp
-        WINDOWS platform/windows/appearance.cpp platform/windows/dock.cpp platform/windows/menu_bar.cpp
-                platform/windows/native.cpp platform/windows/notifications.cpp
+        WINDOWS platform/windows/app_id.cpp platform/windows/appearance.cpp platform/windows/dock.cpp
+                platform/windows/menu_bar.cpp platform/windows/native.cpp platform/windows/notifications.cpp
         APPLE platform/macos/appearance.mm platform/macos/dock.mm platform/macos/input.mm platform/macos/menu_bar.mm
               platform/macos/native.cpp platform/macos/notifications.mm platform/macos/title_bar.mm
         LINUX platform/linux/appearance.cpp platform/linux/dock.cpp platform/linux/glib_thread.cpp
@@ -376,6 +363,12 @@ target_include_directories(elegance PUBLIC
 # touch those members, so MSVC's C4251 warning about them is noise; this scopes it away without
 # disabling it in app code.
 set(ELG_EXPORT_EXTRA [=[
+/* Elegance's own C functions (elg_*, elg/gpu_image.h): exported where ELG_API is, and by the C
+   library, which exports nothing else. */
+#ifndef ELG_C_FUNCTION
+#define ELG_C_FUNCTION ELG_API
+#endif
+
 #if defined(_MSC_VER)
 #define ELG_PRIVATE_MEMBERS_BEGIN __pragma(warning(push)) __pragma(warning(disable : 4251))
 #define ELG_PRIVATE_MEMBERS_END __pragma(warning(pop))
@@ -391,7 +384,7 @@ generate_export_header(elegance
         CUSTOM_CONTENT_FROM_VARIABLE ELG_EXPORT_EXTRA
 )
 if (NOT ELG_BUILD_SHARED AND ELG_STATIC_EXPORTS)
-    target_compile_definitions(elegance PUBLIC "${elg_api_definition}")
+    target_compile_definitions(elegance PUBLIC ${elg_api_definition})
 elseif (NOT ELG_BUILD_SHARED)
     target_compile_definitions(elegance PUBLIC ELG_STATIC_DEFINE)
     # What linking it takes, for builds outside CMake (the Rust bindings), written at the end.

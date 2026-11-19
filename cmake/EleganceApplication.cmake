@@ -22,8 +22,8 @@ function(elegance_application target)
                 "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/EleganceBundle.cmake"
                 "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/EleganceApplication.plist.in")
         set(search_dirs "$<TARGET_FILE_DIR:Elegance::Elegance>")
-        if (TARGET accesskit-shared)
-            list(APPEND search_dirs "$<TARGET_FILE_DIR:accesskit-shared>")
+        if (TARGET accesskit-c::shared)
+            list(APPEND search_dirs "$<TARGET_FILE_DIR:accesskit-c::shared>")
         endif ()
         add_custom_command(TARGET ${target} POST_BUILD
                 COMMAND "${CMAKE_COMMAND}"

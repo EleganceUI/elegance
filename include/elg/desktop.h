@@ -92,6 +92,13 @@ struct Notification {
 };
 
 /// Shows a system notification (Windows: a toast, also kept in the notification center).
+/// Clicking it runs its own `on_click`, while the App runs.
+///
+/// On Windows, toasts show under the app's AppUserModelID, which Windows wants a Start menu
+/// shortcut to carry. An app that set its own (SetCurrentProcessExplicitAppUserModelID) needs
+/// such a shortcut, as its installer makes. Any other app gets an id made from its executable's
+/// name, and the first time it notifies, a shortcut to the executable in the person's Start menu,
+/// named after it.
 ///
 /// @param notification What it says, and what clicking it does.
 /// @throws UsageError When no App is running.

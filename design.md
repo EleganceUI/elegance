@@ -278,7 +278,10 @@ drag & drop, IME composition, cursors, native file dialogs, multi-window, and th
   - At the end of the frame the image is released to `VK_QUEUE_FAMILY_EXTERNAL` in GENERAL
     layout; the fence is waited, then D3D11 copies it into a `CreateSwapChainForComposition`
     swapchain (premultiplied alpha) on a DirectComposition visual over the HWND.
-  - A D3D event query keeps the next frame from overwriting the texture mid-copy.
+  - Shared fences order the two APIs on the GPU: D3D11 waits for the rendering's fence before
+    copying, and signals its own, which the next frame's rendering waits for. Where D3D11 can't
+    share fences (before Windows 10 1703), the render thread waits for the GPU, and a D3D event
+    query keeps the next frame from overwriting the texture mid-copy.
   - Opaque windows, and other platforms (premultiplied composite alpha where offered), keep
     the plain Vulkan swapchain.
   - If the interop is missing, the window falls back to opaque with a warning.
@@ -996,9 +999,10 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
 - Expose a semantic tree (roles, names, states, actions) to the OS screen readers
   (UIA / AT-SPI / NSAccessibility).
 - **Decided:** **AccessKit** through its C API (`accesskit-c`), rather than writing three backends.
-  - CMake downloads the official prebuilt release (pinned version and SHA-256) and links it
-    statically (`ELG_ACCESSIBILITY`, on by default). Building Elegance needs no Rust toolchain.
-    MIT / Apache-2.0.
+  - vcpkg installs it (the `accesskit-c` overlay port, `cmake/ports`): the official release's
+    prebuilt libraries, or, where it has none (Linux on ARM64), libraries built from its Rust
+    sources with cargo. Elegance links the static one (`ELG_ACCESSIBILITY`, on by default), or the
+    shared one for Rust apps (`ELG_ACCESSKIT_SHARED`). MIT / Apache-2.0.
 - Built-in components ship with correct roles. Keyboard navigation works everywhere, and
   `prefers-reduced-motion` and high-contrast settings are respected.
 
@@ -1022,8 +1026,14 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
   `_element` (combine children into one element, labeled with their text) and `_action`. They
   apply to the element they wrap, or the nearest one inside with a role; around several children
   they form a group.
-- **The tree is built on demand:** AccessKit's Windows subclassing adapter hooks the window's
-  `WM_GETOBJECT` and stays dormant until a screen reader asks.
+- **The tree is built on demand,** by each platform's AccessKit adapter
+  (`src/platform/sdl/accessibility_adapter.cpp`), which stays dormant until a screen reader asks:
+  - Windows (UI Automation): the subclassing adapter hooks the window's `WM_GETOBJECT`.
+  - macOS (NSAccessibility): the subclassing adapter on the window's `NSWindow`, with a focus
+    forwarder on SDL's window class.
+  - Linux (AT-SPI, under X11 and Wayland): the Unix adapter, whose activation comes on its own
+    thread; when it can't hand over the tree there, the UI thread sends it whole. An AT-SPI bus
+    that isn't there doesn't hold up the window.
   - Once active, the whole tree is rebuilt from current values after each frame and sent, and
     AccessKit diffs it. No bookkeeping to keep in sync, and nothing at all while no screen
     reader is listening (idle CPU stays 0).
@@ -1448,11 +1458,14 @@ it covers them).
     path, so tree changes mid-drag are safe.
   - Dragging out of the app is a follow-up.
 - **Notifications:** `notify({.title, .body, .on_click})`.
-  - Windows: a shell notification icon (a message-only window and `Shell_NotifyIcon` with
-    `NIF_INFO`), shown as a toast with the app's icon and kept in the notification center.
-    Clicks come back through `NIN_BALLOONUSERCLICK`.
-  - Proper WinRT toasts (actions, images) need an AppUserModelID and a Start-menu shortcut, so
-    they're a follow-up for packaged apps.
+  - Windows: WinRT toasts (`ToastNotificationManager`), kept in the notification center. Each
+    is tagged, and its `Activated` event runs its own click handler; `Dismissed` (unless it timed
+    out into the notification center) and `Failed` let go of it.
+  - Windows shows toasts only for an AppUserModelID that a Start menu shortcut carries. An app
+    that set its own keeps it (its installer's shortcut carries it). Any other gets
+    `Elegance.App.<exe name>` and, the first time it notifies, `<exe name>.lnk` in the person's
+    Start menu, unless a shortcut by that name is another program's.
+  - Toasts with actions and images are a follow-up.
   - macOS: `UNUserNotificationCenter` (it asks for permission the first time).
   - Linux: `org.freedesktop.Notifications` over D-Bus (GIO), with `desktop-entry` set to the app's
     id. Clicks come back as `ActionInvoked`. Without GIO in the build, they're logged.
@@ -1641,9 +1654,14 @@ Separate render thread from day one (decided).
     - A late frame stays anchored top-left over a background layer in the window's clear color:
       a 1×1 surface scaled to cover the window.
     - Opaque windows use `DXGI_ALPHA_MODE_IGNORE`.
-    - Frames are paced by a frame-latency waitable swapchain (latency 1) instead of a blocking
-      present. The present uses sync interval 1: with 0 the waitable is signaled as soon as the
-      present is queued, and an animating window rendered ~900 fps on a 75 Hz display (~50% GPU).
+    - Frames are paced by a frame-latency waitable swapchain (latency 2, three buffers) instead
+      of a blocking present, so the render thread encodes a frame while the previous one is still
+      on the GPU (ELGSPEC-0023.R5). The present uses sync interval 1: with 0 the waitable is
+      signaled as soon as the present is queued, and an animating window rendered ~900 fps on a
+      75 Hz display (~50% GPU).
+    - Each frame is presented with `Present1`, the area it drew as the dirty rects, so DWM
+      composes only that again (ELGSPEC-0029.R10). The whole image is still copied into the back
+      buffer, which the flip model needs to match the last frame outside them.
     - `ELG_PRESENT=surface` restores WebGPU surfaces for opaque windows.
     - `ELG_PRESENT=swapchain`, or RenderDoc being attached (`renderdoc.dll` loaded), puts every
       window on a WebGPU surface and creates no Direct3D objects of its own. RenderDoc can't capture
@@ -2216,9 +2234,8 @@ Separate render thread from day one (decided).
 - [x] Accessibility (§12): AccessKit on Windows (UI Automation); element semantics for every
   built-in view; `.accessibility_*` modifiers; on-demand tree with actions. Verified through UI
   Automation and tested.
+- [x] Accessibility on macOS (NSAccessibility) and Linux (AT-SPI), through AccessKit's adapters.
 - [ ] Accessibility follow-ups:
-  - macOS (NSAccessibility) and Linux (AT-SPI) adapters. AccessKit has them; they need the
-    platform window handles.
   - Popups and menus as their own trees (menu, menu item roles).
   - Live regions (announcements).
   - Text selection and caret (text runs) for fields.

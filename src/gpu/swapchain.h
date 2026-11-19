@@ -38,8 +38,9 @@ public:
     // The acquired image when it can be copied from, else null.
     [[nodiscard]] wgpu::Texture copy_source() const override { return copyable_ ? texture_ : wgpu::Texture(); }
     // Once a frame read backdrops, the next ones read them straight from the window's images
-    // when the surface allows: no offscreen window, no full-window copy.
-    void end_frame(bool reads_backdrops) override;
+    // when the surface allows: no offscreen window, no full-window copy. A WebGPU surface presents
+    // its whole image: it takes no drawn area.
+    void end_frame(bool reads_backdrops, std::span<const Rect> drawn) override;
 
     [[nodiscard]] wgpu::TextureFormat view_format() const noexcept override { return view_format_; }
     [[nodiscard]] std::uint32_t width() const noexcept override { return width_; }

@@ -46,18 +46,21 @@ std::map<std::string, std::function<void()>> g_clicks;
              withCompletionHandler:(void (^)(void))completionHandler {
     (void)center;
     if ([response.actionIdentifier isEqualToString:UNNotificationDefaultActionIdentifier]) {
-        const std::string identifier = response.notification.request.identifier.UTF8String;
-        std::function<void()> click;
-        {
-            std::lock_guard lock(g_clicks_mutex);
-            if (const auto found = g_clicks.find(identifier); found != g_clicks.end()) {
-                click = std::move(found->second);
-                g_clicks.erase(found);
+        // Called by the system: nothing may escape it (ELGSPEC-0002.R10).
+        elg::detail::run_foreign_callback([&] {
+            const std::string identifier = response.notification.request.identifier.UTF8String;
+            std::function<void()> click;
+            {
+                std::lock_guard lock(g_clicks_mutex);
+                if (const auto found = g_clicks.find(identifier); found != g_clicks.end()) {
+                    click = std::move(found->second);
+                    g_clicks.erase(found);
+                }
             }
-        }
-        if (click) {
-            elg::detail::post_ui_task(std::move(click));
-        }
+            if (click) {
+                elg::detail::post_ui_task(std::move(click));
+            }
+        });
     }
     completionHandler();
 }
@@ -102,15 +105,19 @@ void show_notification(const Notification& notification) {
     [center requestAuthorizationWithOptions:UNAuthorizationOptionAlert | UNAuthorizationOptionSound
                           completionHandler:^(BOOL granted, NSError* error) {
                             if (!granted) {
-                                log_warning("notify: notifications are off for this app{}",
-                                            error ? std::string(": ") + error.localizedDescription.UTF8String
-                                                  : std::string());
+                                run_foreign_callback([&] {
+                                    log_warning("notify: notifications are off for this app{}",
+                                                error ? std::string(": ") + error.localizedDescription.UTF8String
+                                                      : std::string());
+                                });
                                 return;
                             }
                             [center addNotificationRequest:request
                                      withCompletionHandler:^(NSError* failure) {
                                        if (failure) {
-                                           log_warning("notify: {}", failure.localizedDescription.UTF8String);
+                                           run_foreign_callback([&] {
+                                               log_warning("notify: {}", failure.localizedDescription.UTF8String);
+                                           });
                                        }
                                      }];
                           }];

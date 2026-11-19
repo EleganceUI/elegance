@@ -8,6 +8,7 @@
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
+#include "media/audio_setup.h"
 #include "media/sample_ring.h"
 
 #include <elg/reactive.h>
@@ -74,11 +75,15 @@ struct AudioStreamState {
     AudioStreamState& operator=(const AudioStreamState&) = delete;
     AudioStreamState& operator=(AudioStreamState&&) = delete;
     ~AudioStreamState() {
-        if (device_ready) {
-            ma_device_uninit(&device);
-        }
-        if (context_ready) {
-            ma_context_uninit(&context);
+        if (device_ready || context_ready) {
+            on_audio_setup_thread([this] {
+                if (device_ready) {
+                    ma_device_uninit(&device);
+                }
+                if (context_ready) {
+                    ma_context_uninit(&context);
+                }
+            });
         }
     }
 
@@ -113,10 +118,22 @@ struct AudioStreamState {
         }
     }
 
+    // The device, with its context, made on the audio set-up thread (audio_setup.h). Else the
+    // reason is error().
     bool open() {
-        if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS) {
-            error = std::string("audio output isn't available");
+        std::string failure;
+        on_audio_setup_thread([&] { failure = open_device(); });
+        if (!failure.empty()) {
+            error = failure;
             return false;
+        }
+        return true;
+    }
+
+    // On the audio set-up thread: what went wrong, or nothing.
+    std::string open_device() {
+        if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS) {
+            return "audio output isn't available";
         }
         context_ready = true;
         ma_device_config config = ma_device_config_init(ma_device_type_playback);
@@ -129,18 +146,16 @@ struct AudioStreamState {
         if (!options.device_id.empty()) {
             id = find_output(context, options.device_id);
             if (!id) {
-                error = std::string("that output isn't connected");
-                return false;
+                return "that output isn't connected";
             }
             config.playback.pDeviceID = &*id;
         }
         if (ma_device_init(&context, &config, &device) != MA_SUCCESS) {
-            error = std::string("can't open the audio output");
-            log_warning("AudioStream: {}", error.peek());
-            return false;
+            log_warning("AudioStream: can't open the audio output");
+            return "can't open the audio output";
         }
         device_ready = true;
-        return true;
+        return {};
     }
 };
 
@@ -150,18 +165,20 @@ namespace elg {
 
 std::vector<AudioDevice> audio_output_devices() {
     std::vector<AudioDevice> devices;
-    ma_context context;
-    if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS) {
-        return devices;
-    }
-    ma_device_info* infos = nullptr;
-    ma_uint32 count = 0;
-    if (ma_context_get_devices(&context, &infos, &count, nullptr, nullptr) == MA_SUCCESS) {
-        for (ma_uint32 i = 0; i < count; ++i) {
-            devices.push_back({detail::device_hex(&infos[i].id, sizeof(ma_device_id)), infos[i].name, infos[i].isDefault != 0});
+    detail::on_audio_setup_thread([&] { // where miniaudio may set COM up
+        ma_context context;
+        if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS) {
+            return;
         }
-    }
-    ma_context_uninit(&context);
+        ma_device_info* infos = nullptr;
+        ma_uint32 count = 0;
+        if (ma_context_get_devices(&context, &infos, &count, nullptr, nullptr) == MA_SUCCESS) {
+            for (ma_uint32 i = 0; i < count; ++i) {
+                devices.push_back({detail::device_hex(&infos[i].id, sizeof(ma_device_id)), infos[i].name, infos[i].isDefault != 0});
+            }
+        }
+        ma_context_uninit(&context);
+    });
     return devices;
 }
 

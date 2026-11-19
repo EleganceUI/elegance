@@ -1,0 +1,15 @@
+{
+  "name": "accesskit-c",
+  "version": "0.23.1",
+  "description": "AccessKit's C API: accessibility trees exposed to the screen readers of Windows (UI Automation), macOS (NSAccessibility) and Linux (AT-SPI)",
+  "homepage": "https://github.com/AccessKit/accesskit-c",
+  "license": "MIT OR Apache-2.0",
+  "supports": "(windows & !uwp & !mingw) | osx | linux",
+  "dependencies": [
+    {
+      "name": "vcpkg-cmake-get-vars",
+      "host": true,
+      "platform": "linux"
+    }
+  ]
+}

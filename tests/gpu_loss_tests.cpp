@@ -60,7 +60,7 @@ bool draw_frame(const gpu::Device& device, gpu::Swapchain& swapchain, std::uint3
     const wgpu::CommandEncoder encoder = device.handle().CreateCommandEncoder();
     encoder.BeginRenderPass(&pass).End();
     device.submit(encoder.Finish());
-    swapchain.end_frame(false);
+    swapchain.end_frame(false, {});
     return true;
 }
 

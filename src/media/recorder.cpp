@@ -8,6 +8,7 @@
 
 #include "core/log.h"
 #include "core/ui_tasks.h"
+#include "media/audio_setup.h"
 #include "media/sample_ring.h"
 
 #include <elg/error.h>
@@ -90,11 +91,15 @@ struct RecorderState {
     RecorderState& operator=(RecorderState&&) = delete;
     ~RecorderState() {
         stop_updates();
-        if (device_ready) {
-            ma_device_uninit(&device);
-        }
-        if (context_ready) {
-            ma_context_uninit(&context);
+        if (device_ready || context_ready) {
+            on_audio_setup_thread([this] {
+                if (device_ready) {
+                    ma_device_uninit(&device);
+                }
+                if (context_ready) {
+                    ma_context_uninit(&context);
+                }
+            });
         }
     }
 
@@ -177,14 +182,26 @@ struct RecorderState {
         }
     }
 
+    // The device, with its context, made on the audio set-up thread (audio_setup.h). Else the
+    // reason is error().
     bool open() {
+        std::string failure;
+        on_audio_setup_thread([&] { failure = open_device(); });
+        if (!failure.empty()) {
+            error = failure;
+            return false;
+        }
+        return true;
+    }
+
+    // On the audio set-up thread: what went wrong, or nothing.
+    std::string open_device() {
         if (device_ready) {
-            return true;
+            return {};
         }
         if (!context_ready) {
             if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS) {
-                error = std::string("audio input isn't available");
-                return false;
+                return "audio input isn't available";
             }
             context_ready = true;
         }
@@ -198,18 +215,16 @@ struct RecorderState {
         if (!options.device_id.empty()) {
             id = find_input(context, options.device_id);
             if (!id) {
-                error = std::string("that microphone isn't connected");
-                return false;
+                return "that microphone isn't connected";
             }
             config.capture.pDeviceID = &*id;
         }
         if (ma_device_init(&context, &config, &device) != MA_SUCCESS) {
-            error = std::string("can't open the microphone (is access allowed in Settings > Privacy?)");
-            log_warning("AudioRecorder: {}", error.peek());
-            return false;
+            log_warning("AudioRecorder: can't open the microphone");
+            return "can't open the microphone (is access allowed in Settings > Privacy?)";
         }
         device_ready = true;
-        return true;
+        return {};
     }
 };
 
@@ -253,18 +268,20 @@ namespace elg {
 
 std::vector<AudioDevice> audio_input_devices() {
     std::vector<AudioDevice> devices;
-    ma_context context;
-    if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS) {
-        return devices;
-    }
-    ma_device_info* infos = nullptr;
-    ma_uint32 count = 0;
-    if (ma_context_get_devices(&context, nullptr, nullptr, &infos, &count) == MA_SUCCESS) {
-        for (ma_uint32 i = 0; i < count; ++i) {
-            devices.push_back({detail::hex(&infos[i].id, sizeof(ma_device_id)), infos[i].name, infos[i].isDefault != 0});
+    detail::on_audio_setup_thread([&] { // where miniaudio may set COM up
+        ma_context context;
+        if (ma_context_init(nullptr, 0, nullptr, &context) != MA_SUCCESS) {
+            return;
         }
-    }
-    ma_context_uninit(&context);
+        ma_device_info* infos = nullptr;
+        ma_uint32 count = 0;
+        if (ma_context_get_devices(&context, nullptr, nullptr, &infos, &count) == MA_SUCCESS) {
+            for (ma_uint32 i = 0; i < count; ++i) {
+                devices.push_back({detail::hex(&infos[i].id, sizeof(ma_device_id)), infos[i].name, infos[i].isDefault != 0});
+            }
+        }
+        ma_context_uninit(&context);
+    });
     return devices;
 }
 

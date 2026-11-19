@@ -34,7 +34,7 @@
     (void)output;
     (void)connection;
     if (CVPixelBufferRef buffer = CMSampleBufferGetImageBuffer(sampleBuffer); buffer && self.onFrame) {
-        self.onFrame(buffer);
+        self.onFrame(buffer); // which lets nothing escape (ELGSPEC-0002.R10)
     }
 }
 @end
@@ -90,8 +90,8 @@ public:
         delegate_.onFrame = nil;
     }
 
-    // The render thread looks for frames while it captures.
-    [[nodiscard]] bool wakes_for_frames() const noexcept override { return false; }
+    // Each frame captured wakes the render thread (on_frame()): none, none.
+    [[nodiscard]] bool wakes_for_frames() const noexcept override { return true; }
 
     void open(const std::shared_ptr<FrameSourceHost>& host) override {
         host_ = host.get();
@@ -115,16 +115,18 @@ public:
             // macOS asks the person; the answer comes on an arbitrary queue.
             [AVCaptureDevice requestAccessForMediaType:AVMediaTypeVideo
                                      completionHandler:^(BOOL granted) {
-                                       post_ui_task([weak, camera, granted] {
-                                           const auto host = weak.lock();
-                                           if (!host || !host->playing()) {
-                                               return;
-                                           }
-                                           if (granted) {
-                                               camera->start_session();
-                                           } else {
-                                               camera->fail(denied_message());
-                                           }
+                                       run_foreign_callback([&] {
+                                           post_ui_task([weak, camera, granted] {
+                                               const auto host = weak.lock();
+                                               if (!host || !host->playing()) {
+                                                   return;
+                                               }
+                                               if (granted) {
+                                                   camera->start_session();
+                                               } else {
+                                                   camera->fail(denied_message());
+                                               }
+                                           });
                                        });
                                      }];
             break;
@@ -222,9 +224,11 @@ private:
         const std::weak_ptr<FrameSourceHost> weak = weak_host_;
         AVFoundationCamera* const camera = this;
         delegate_.onFrame = ^(CVPixelBufferRef buffer) {
-          if (const auto alive = weak.lock()) {
-              camera->on_frame(buffer);
-          }
+          run_foreign_callback([&] {
+              if (const auto alive = weak.lock()) {
+                  camera->on_frame(buffer);
+              }
+          });
         };
         [output setSampleBufferDelegate:delegate_ queue:queue_];
         if (![session canAddOutput:output]) {
@@ -239,13 +243,15 @@ private:
                                                               object:session
                                                                queue:nil
                                                           usingBlock:^(NSNotification* note) {
-                                                            NSError* failure = note.userInfo[AVCaptureSessionErrorKey];
-                                                            if (const auto alive = weak.lock()) {
-                                                                camera->fail(std::format(
-                                                                    "the camera stopped: {}",
-                                                                    failure ? text_of(failure.localizedDescription)
-                                                                            : std::string("unknown error")));
-                                                            }
+                                                            run_foreign_callback([&] {
+                                                                NSError* failure = note.userInfo[AVCaptureSessionErrorKey];
+                                                                if (const auto alive = weak.lock()) {
+                                                                    camera->fail(std::format(
+                                                                        "the camera stopped: {}",
+                                                                        failure ? text_of(failure.localizedDescription)
+                                                                                : std::string("unknown error")));
+                                                                }
+                                                            });
                                                           }];
         session_ = session;
         log_info("camera: {} ({})", text_of(device.localizedName), text_of(device.uniqueID));
@@ -292,6 +298,7 @@ private:
             current_ = std::move(frame);
             ++frame_number_;
         }
+        host_->notify_new_frame(); // a new frame, and only then, wakes the render thread (ELGSPEC-0027.R4)
         if (resized) {
             post_ui_task([weak = weak_host_, frame_width, frame_height] {
                 if (const auto host = weak.lock()) {

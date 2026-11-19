@@ -6,19 +6,24 @@
 // frame-server mode, rendering each new frame into a ring of D3D11 textures shared with WebGPU.
 
 #include "media/video_backend.h"
+#include "platform/windows/com.h"
 
 #include "core/log.h"
+#include "core/threads.h"
 #include "core/ui_tasks.h"
 
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <format>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 #include <windows.h>
 #include <d3d11_4.h>
@@ -33,18 +38,24 @@ namespace {
 
 using Microsoft::WRL::ComPtr;
 
-// Media Foundation, started once per process.
+// Media Foundation, started once per process, on whichever thread first plays a video: COM in
+// that thread's apartment, or, where nothing set it up, the multithreaded one.
 bool start_media_foundation() {
     static const bool started = [] {
-        const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        (void)com;
-        return SUCCEEDED(MFStartup(MF_VERSION, MFSTARTUP_FULL));
+        return SUCCEEDED(os::keep_multithreaded_apartment()) && SUCCEEDED(MFStartup(MF_VERSION, MFSTARTUP_FULL));
     }();
     return started;
 }
 
 std::string hr_text(HRESULT result) {
     return std::format("HRESULT 0x{:08x}", static_cast<unsigned long>(result));
+}
+
+// Throws, saying `what` failed, when `result` is a failure: setting the engine up.
+void check(HRESULT result, std::string_view what) {
+    if (FAILED(result)) {
+        throw std::runtime_error(std::format("can't {} ({})", what, hr_text(result)));
+    }
 }
 
 class MediaFoundationVideo;
@@ -90,9 +101,12 @@ public:
     MediaFoundationVideo& operator=(MediaFoundationVideo&&) = delete;
 
     ~MediaFoundationVideo() override {
+        ticker_ = std::jthread(); // stops it, and waits: it calls into the engine
         std::lock_guard lock(mutex_);
         if (engine_) {
-            engine_->Shutdown();
+            if (const HRESULT result = engine_->Shutdown(); FAILED(result)) {
+                log_warning("video: can't shut {} down ({})", url_, hr_text(result));
+            }
             engine_raw_ = nullptr;
         }
         for (Slot& slot : ring_) {
@@ -102,8 +116,8 @@ public:
         }
     }
 
-    // The render thread looks for frames while it plays.
-    [[nodiscard]] bool wakes_for_frames() const noexcept override { return false; }
+    // Its ticker wakes the render thread for each new frame (tick()).
+    [[nodiscard]] bool wakes_for_frames() const noexcept override { return true; }
 
     // The engine itself is made once the renderer's adapter is known (ensure_engine()).
     void open(const std::shared_ptr<FrameSourceHost>& host) override {
@@ -113,25 +127,34 @@ public:
 
     // --- UI thread ---
 
+    // Each call the engine refuses is the player's error(), and leaves its state as it was.
+
     void play() override {
         std::lock_guard lock(mutex_);
-        want_playing_ = true;
         if (ensure_engine()) {
-            if (engine_->IsEnded()) {
-                engine_->SetCurrentTime(0);
+            HRESULT result = engine_->IsEnded() ? engine_->SetCurrentTime(0) : S_OK;
+            if (SUCCEEDED(result)) {
+                result = engine_->Play();
             }
-            engine_->Play();
+            if (FAILED(result)) {
+                report(result, "play");
+                return;
+            }
         }
+        want_playing_ = true;
         host_->set_playing(true);
         host_->set_playing_now(true);
     }
 
     void pause() override {
         std::lock_guard lock(mutex_);
-        want_playing_ = false;
         if (ensure_engine()) {
-            engine_->Pause();
+            if (const HRESULT result = engine_->Pause(); FAILED(result)) {
+                report(result, "pause");
+                return;
+            }
         }
+        want_playing_ = false;
         host_->set_playing(false);
         host_->set_playing_now(false);
     }
@@ -139,10 +162,13 @@ public:
     void seek(double seconds) override {
         std::lock_guard lock(mutex_);
         seconds = std::max(0.0, seconds);
-        pending_seek_ = seconds;
         if (ensure_engine()) {
-            engine_->SetCurrentTime(seconds);
-            pending_seek_.reset();
+            if (const HRESULT result = engine_->SetCurrentTime(seconds); FAILED(result)) {
+                report(result, "seek in");
+                return;
+            }
+        } else {
+            pending_seek_ = seconds;
         }
         host_->set_time(seconds);
     }
@@ -150,41 +176,52 @@ public:
     void set_volume(float value) override {
         std::lock_guard lock(mutex_);
         value = std::clamp(value, 0.f, 1.f);
-        want_volume_ = value;
         if (ensure_engine()) {
-            engine_->SetVolume(value);
+            if (const HRESULT result = engine_->SetVolume(value); FAILED(result)) {
+                report(result, "change the volume of");
+                return;
+            }
         }
+        want_volume_ = value;
         host_->set_volume(value);
     }
 
     void set_muted(bool value) override {
         std::lock_guard lock(mutex_);
-        want_muted_ = value;
         if (ensure_engine()) {
-            engine_->SetMuted(value);
+            if (const HRESULT result = engine_->SetMuted(value); FAILED(result)) {
+                report(result, value ? "mute" : "unmute");
+                return;
+            }
         }
+        want_muted_ = value;
         host_->set_muted(value);
     }
 
     void set_looping(bool value) override {
         std::lock_guard lock(mutex_);
-        want_looping_ = value;
         if (ensure_engine()) {
-            engine_->SetLoop(value);
+            if (const HRESULT result = engine_->SetLoop(value); FAILED(result)) {
+                report(result, "loop");
+                return;
+            }
         }
+        want_looping_ = value;
         host_->set_looping(value);
     }
 
     // --- Render thread ---
 
+    // It waits for the GPU's copy of the frame without the mutex, which the UI thread's controls
+    // take (ELGSPEC-0023.R6). Only this thread uses the D3D11 context, the query and the ring,
+    // which exist once the engine does.
     bool update() override {
-        std::lock_guard lock(mutex_);
+        std::unique_lock lock(mutex_);
         if (!ensure_engine()) {
             return false;
         }
-        LONGLONG pts = 0;
-        if (engine_->OnVideoStreamTick(&pts) != S_OK) {
-            return false; // no new frame
+        if (!frame_ready_.exchange(false)) {
+            return false; // no new frame (tick())
         }
         DWORD width = 0;
         DWORD height = 0;
@@ -201,13 +238,20 @@ public:
             return false;
         }
         if (!shares_textures_) {
-            return read_back(ring_[slot].texture.Get(), slot);
+            return read_back(ring_[slot].texture.Get(), slot, lock);
         }
-        // WebGPU samples it next: the copy must be done.
+        // WebGPU samples it next: the copy must be done. A failed query (the device was
+        // removed) shows no new frame.
         context_->End(done_.Get());
         context_->Flush();
-        while (context_->GetData(done_.Get(), nullptr, 0, 0) == S_FALSE) {
+        lock.unlock();
+        HRESULT done = S_FALSE;
+        while ((done = context_->GetData(done_.Get(), nullptr, 0, 0)) == S_FALSE) {
             SwitchToThread();
+        }
+        lock.lock();
+        if (FAILED(done)) {
+            return false;
         }
         current_ = slot;
         return true;
@@ -257,7 +301,10 @@ public:
             const double length = engine->GetDuration();
             DWORD w = 0;
             DWORD h = 0;
-            engine->GetNativeVideoSize(&w, &h);
+            if (FAILED(engine->GetNativeVideoSize(&w, &h))) {
+                w = 0; // no size yet (audio only, or not known): a later frame's size applies
+                h = 0;
+            }
             post([length, w, h](FrameSourceHost& host) {
                 host.set_duration(std::isfinite(length) ? length : 0.0);
                 host.set_size(static_cast<float>(w), static_cast<float>(h));
@@ -328,6 +375,13 @@ private:
             create_engine(adapter->luid);
         } catch (const std::exception& failure) {
             failed_ = true;
+            if (engine_) { // made, but it couldn't load the video
+                engine_raw_ = nullptr;
+                if (const HRESULT result = engine_->Shutdown(); FAILED(result)) {
+                    log_warning("video: can't shut {} down ({})", url_, hr_text(result));
+                }
+                engine_.Reset();
+            }
             const std::string message = failure.what();
             log_warning("video: {}", message);
             post_ui_task([weak = weak_host_, message] {
@@ -338,26 +392,64 @@ private:
             return false;
         }
         // Apply what was asked for before the engine existed: from copies, since this may run on
-        // the render thread, and the states belong to the UI thread.
-        engine_->SetVolume(want_volume_);
-        engine_->SetMuted(want_muted_);
-        engine_->SetLoop(want_looping_);
-        if (pending_seek_) {
-            engine_->SetCurrentTime(*pending_seek_);
-            pending_seek_.reset();
+        // the render thread, and the states belong to the UI thread. What the engine refuses is
+        // the player's error.
+        HRESULT result = engine_->SetVolume(want_volume_);
+        if (SUCCEEDED(result)) {
+            result = engine_->SetMuted(want_muted_);
         }
-        if (want_playing_) {
-            engine_->Play();
+        if (SUCCEEDED(result)) {
+            result = engine_->SetLoop(want_looping_);
         }
+        if (SUCCEEDED(result) && pending_seek_) {
+            result = engine_->SetCurrentTime(*pending_seek_);
+        }
+        pending_seek_.reset();
+        if (SUCCEEDED(result) && want_playing_) {
+            result = engine_->Play();
+        }
+        if (FAILED(result)) {
+            report(result, "set up");
+        }
+        ticker_ = std::jthread([this](const std::stop_token& stop) { tick(stop); });
         return true;
     }
 
-    void create_engine(const std::array<std::uint8_t, 8>& adapter_luid) {
-        const auto check = [](HRESULT result, std::string_view what) {
-            if (FAILED(result)) {
-                throw std::runtime_error(std::format("can't {} ({})", what, hr_text(result)));
+    // The ticker's thread: Media Foundation says when a new frame is due only when asked
+    // (OnVideoStreamTick, which takes it), so this asks, every 4 ms while the video plays and every
+    // 100 ms while it doesn't (a seek shows a frame too), and wakes the render thread only when one
+    // is: the render thread doesn't look for frames itself (ELGSPEC-0027.R4). update() transfers
+    // it. From the engine's creation to its destruction.
+    void tick(const std::stop_token& stop) {
+        const ThreadSetup thread_setup; // Media Foundation's COM
+        std::mutex sleeping;
+        std::condition_variable_any wake;
+        std::unique_lock lock(sleeping);
+        while (!stop.stop_requested()) {
+            IMFMediaEngine* const engine = engine_raw_.load();
+            LONGLONG due = 0;
+            if (engine && !frame_ready_.load() && engine->OnVideoStreamTick(&due) == S_OK) {
+                frame_ready_ = true;
+                run_foreign_callback([this] { host_->notify_new_frame(); });
             }
-        };
+            const auto interval = host_->is_playing_now() ? std::chrono::milliseconds(4) : std::chrono::milliseconds(100);
+            wake.wait_for(lock, stop, interval, [] { return false; });
+        }
+    }
+
+    // A call into the engine failed: logged, and the player's error() on the UI thread. Any
+    // thread, with the mutex held.
+    void report(HRESULT result, std::string_view what) {
+        const std::string message = std::format("can't {} {} ({})", what, url_, hr_text(result));
+        log_warning("video: {}", message);
+        post_ui_task([weak = weak_host_, message] {
+            if (const auto host = weak.lock()) {
+                host->set_error(message);
+            }
+        });
+    }
+
+    void create_engine(const std::array<std::uint8_t, 8>& adapter_luid) {
         if (!start_media_foundation()) {
             throw std::runtime_error("Media Foundation isn't available (Windows N editions need the Media Feature Pack)");
         }
@@ -389,10 +481,12 @@ private:
         ComPtr<IMFAttributes> attributes;
         check(MFCreateAttributes(&attributes, 3), "create media engine attributes");
         auto* notify = new EngineNotify(this, weak_host_);
-        attributes->SetUnknown(MF_MEDIA_ENGINE_CALLBACK, notify);
+        const HRESULT held = attributes->SetUnknown(MF_MEDIA_ENGINE_CALLBACK, notify);
         notify->Release(); // the attributes and the engine hold it
-        attributes->SetUnknown(MF_MEDIA_ENGINE_DXGI_MANAGER, manager_.Get());
-        attributes->SetUINT32(MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM);
+        check(held, "hear the media engine's events");
+        check(attributes->SetUnknown(MF_MEDIA_ENGINE_DXGI_MANAGER, manager_.Get()), "give the media engine the GPU");
+        check(attributes->SetUINT32(MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM),
+              "ask the media engine for BGRA frames");
         check(engine_factory->CreateInstance(0, attributes.Get(), &engine_), "create the media engine");
         engine_raw_ = engine_.Get();
 
@@ -404,8 +498,8 @@ private:
         const HRESULT set = engine_->SetSource(source);
         SysFreeString(source);
         check(set, "open the video");
-        engine_->SetPreload(MF_MEDIA_ENGINE_PRELOAD_AUTOMATIC);
-        engine_->Load();
+        check(engine_->SetPreload(MF_MEDIA_ENGINE_PRELOAD_AUTOMATIC), "preload the video");
+        check(engine_->Load(), "load the video");
     }
 
     // With the mutex held: the shared textures, at the video's size.
@@ -456,20 +550,25 @@ private:
         return true;
     }
 
-    // With the mutex held. The renderer can't import the texture: copies the frame into memory,
-    // packed, for the renderer to upload.
-    bool read_back(ID3D11Texture2D* texture, int slot) {
+    // With `lock` (the mutex) held. The renderer can't import the texture: copies the frame into
+    // memory, packed, for the renderer to upload; Map() waits for the GPU's copy, without the lock.
+    bool read_back(ID3D11Texture2D* texture, int slot, std::unique_lock<std::mutex>& lock) {
         context_->CopyResource(staging_.Get(), texture);
+        const std::uint32_t width = ring_width_;
+        const std::uint32_t height = ring_height_;
+        lock.unlock();
         D3D11_MAPPED_SUBRESOURCE mapped{};
-        if (FAILED(context_->Map(staging_.Get(), 0, D3D11_MAP_READ, 0, &mapped))) { // waits for the copy
+        if (FAILED(context_->Map(staging_.Get(), 0, D3D11_MAP_READ, 0, &mapped))) {
+            lock.lock();
             return false;
         }
-        const std::size_t row = std::size_t{ring_width_} * 4;
-        auto pixels = std::make_shared<std::vector<std::uint8_t>>(row * ring_height_);
-        for (std::uint32_t y = 0; y < ring_height_; ++y) {
+        const std::size_t row = std::size_t{width} * 4;
+        auto pixels = std::make_shared<std::vector<std::uint8_t>>(row * height);
+        for (std::uint32_t y = 0; y < height; ++y) {
             std::memcpy(pixels->data() + row * y, static_cast<const std::uint8_t*>(mapped.pData) + std::size_t{mapped.RowPitch} * y, row);
         }
         context_->Unmap(staging_.Get(), 0);
+        lock.lock();
         pixels_ = std::move(pixels);
         ++frame_id_;
         current_ = slot;
@@ -486,6 +585,8 @@ private:
     ComPtr<IMFDXGIDeviceManager> manager_;
     ComPtr<IMFMediaEngine> engine_;
     std::atomic<IMFMediaEngine*> engine_raw_{nullptr}; // set once; for the event callback
+    std::atomic<bool> frame_ready_{false}; // tick() found a frame, which update() hasn't taken
+    std::jthread ticker_;                  // tick(), once the engine exists
     bool failed_ = false;
     bool want_playing_ = false;
     float want_volume_ = 1.f;
@@ -503,10 +604,13 @@ private:
     std::uint64_t frame_id_ = 0;
 };
 
+// Media Foundation calls it, on its threads: nothing may escape it (ELGSPEC-0002.R10).
 STDMETHODIMP EngineNotify::EventNotify(DWORD event, DWORD_PTR param1, DWORD) {
-    if (const auto host = host_.lock()) {
-        video_->on_event(event, param1);
-    }
+    run_foreign_callback([&] {
+        if (const auto host = host_.lock()) {
+            video_->on_event(event, param1);
+        }
+    });
     return S_OK;
 }
 

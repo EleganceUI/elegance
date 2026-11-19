@@ -639,6 +639,9 @@ int App::run() {
     const ScopeExit forget_accent([] { g_accent_color = nullptr; });
 
     std::vector<std::unique_ptr<LiveWindow>> windows;
+    // Before the windows go, which file dialogs may be attached to: the dialogs still open close,
+    // and their callbacks go uncalled (ELGSPEC-0018.R4).
+    const ScopeExit close_dialogs([] { platform::close_file_dialogs(); });
     const auto find_window = [&](std::uint32_t id) {
         return std::ranges::find_if(windows, [&](const auto& live) { return live->window.id() == id; });
     };
@@ -1550,6 +1553,10 @@ int App::run() {
                 case platform::EventType::window_restored: state.maximized = false; break;
                 case platform::EventType::window_focus_gained: state.active = true; break;
                 default: state.active = false; break;
+                }
+                if ((*it)->accessibility && (event.type == platform::EventType::window_focus_gained ||
+                                             event.type == platform::EventType::window_focus_lost)) {
+                    (*it)->accessibility->window_focused(event.type == platform::EventType::window_focus_gained);
                 }
             }
             check_popup_focus = check_popup_focus || event.type == platform::EventType::window_focus_lost;

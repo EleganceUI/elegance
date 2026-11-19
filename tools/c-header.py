@@ -349,15 +349,16 @@ def collect_functions(path, types):
 # --- The header ---
 
 def gpu_image_part():
-    """The C part of include/elg/gpu_image.h, between its extern "C" braces, without ELG_API."""
+    """The C part of include/elg/gpu_image.h, between its extern "C" braces, without ELG_C_FUNCTION
+    (which exports them from the C library, ELG_API from a shared Elegance)."""
     text = GPU_IMAGE.read_text(encoding="utf-8")
     match = re.search(r'#ifdef __cplusplus\nextern "C" \{\n#endif\n(.*?)\n#ifdef __cplusplus\n\} // extern "C"', text,
                       re.S)
     if not match:
         raise Failure(f"{GPU_IMAGE.relative_to(ROOT)}: can't find its C part")
     part = match[1].strip("\n")
-    names = re.findall(r"^ELG_API [^(]*?\b(elg_\w+)\(", part, re.M)
-    return part.replace("ELG_API ", ""), names
+    names = re.findall(r"^ELG_C_FUNCTION [^(]*?\b(elg_\w+)\(", part, re.M)
+    return part.replace("ELG_C_FUNCTION ", ""), names
 
 
 def constants():

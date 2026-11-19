@@ -1,0 +1,6 @@
+accesskit-c provides CMake targets:
+
+    find_package(accesskit-c CONFIG REQUIRED)
+    # Its static library, or its shared one (for an app with Rust code of its own):
+    target_link_libraries(main PRIVATE accesskit-c::static)
+    target_link_libraries(main PRIVATE accesskit-c::shared)

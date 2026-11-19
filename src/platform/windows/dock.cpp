@@ -19,8 +19,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace elg::detail::platform {
@@ -33,19 +35,27 @@ std::optional<std::string> g_badge;
 std::optional<double> g_fraction;
 ProgressState g_state = ProgressState::normal;
 
+// The taskbar's COM object, made the first time in a run, on the UI thread, in the apartment
+// App::run sets up there, and let go of as the run ends (release_taskbar()).
+ComPtr<ITaskbarList3> g_taskbar;
+bool g_taskbar_unavailable = false; // in this run
+bool g_taskbar_refused = false;     // a call failed in this run, which was logged
+
 ITaskbarList3* taskbar() {
-    static ComPtr<ITaskbarList3> list = [] {
-        const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        (void)com; // already initialized (SDL's OLE drag and drop): fine either way
+    if (!g_taskbar && !g_taskbar_unavailable) {
         ComPtr<ITaskbarList3> created;
-        if (FAILED(CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&created))) ||
-            FAILED(created->HrInit())) {
-            log_warning("taskbar: not available");
-            return ComPtr<ITaskbarList3>();
+        HRESULT result = CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&created));
+        if (SUCCEEDED(result)) {
+            result = created->HrInit();
         }
-        return created;
-    }();
-    return list.Get();
+        if (FAILED(result)) {
+            log_warning("taskbar: not available (HRESULT {:#010x})", static_cast<std::uint32_t>(result));
+            g_taskbar_unavailable = true;
+        } else {
+            g_taskbar = created;
+        }
+    }
+    return g_taskbar.Get();
 }
 
 // The app's top-level windows (not menus or tooltips).
@@ -142,29 +152,44 @@ HICON badge_icon(const std::wstring& text, int size) {
     return result;
 }
 
+// A taskbar call's result. The progress and the badge have no error to report (set_progress()
+// and set_badge() return nothing), and the taskbar may refuse them for a while (Explorer
+// restarting): the first refusal in a run is logged.
+void shown(HRESULT result, std::string_view what) {
+    if (FAILED(result) && !g_taskbar_refused) {
+        g_taskbar_refused = true;
+        log_warning("taskbar: can't show the {} (HRESULT {:#010x})", what, static_cast<std::uint32_t>(result));
+    }
+}
+
 void show_progress(ITaskbarList3* list, HWND window) {
     if (!g_fraction) {
-        list->SetProgressState(window, TBPF_NOPROGRESS);
+        shown(list->SetProgressState(window, TBPF_NOPROGRESS), "progress");
         return;
     }
+    TBPFLAG state = TBPF_NORMAL;
     switch (g_state) {
-    case ProgressState::indeterminate: list->SetProgressState(window, TBPF_INDETERMINATE); return;
-    case ProgressState::paused: list->SetProgressState(window, TBPF_PAUSED); break;
-    case ProgressState::error: list->SetProgressState(window, TBPF_ERROR); break;
-    case ProgressState::normal: list->SetProgressState(window, TBPF_NORMAL); break;
+    case ProgressState::indeterminate: state = TBPF_INDETERMINATE; break;
+    case ProgressState::paused: state = TBPF_PAUSED; break;
+    case ProgressState::error: state = TBPF_ERROR; break;
+    case ProgressState::normal: state = TBPF_NORMAL; break;
     }
-    list->SetProgressValue(window, static_cast<ULONGLONG>(std::lround(*g_fraction * 1000)), 1000);
+    HRESULT result = list->SetProgressState(window, state);
+    if (SUCCEEDED(result) && state != TBPF_INDETERMINATE) {
+        result = list->SetProgressValue(window, static_cast<ULONGLONG>(std::lround(*g_fraction * 1000)), 1000);
+    }
+    shown(result, "progress");
 }
 
 void show_badge(ITaskbarList3* list, HWND window) {
     if (!g_badge || g_badge->empty()) {
-        list->SetOverlayIcon(window, nullptr, nullptr);
+        shown(list->SetOverlayIcon(window, nullptr, nullptr), "badge");
         return;
     }
     const std::wstring text = widen(*g_badge);
     const int size = std::max(16, GetSystemMetrics(SM_CXSMICON) * 2);
     if (HICON icon = badge_icon(text, size)) {
-        list->SetOverlayIcon(window, icon, text.c_str()); // the taskbar keeps a copy
+        shown(list->SetOverlayIcon(window, icon, text.c_str()), "badge"); // the taskbar keeps a copy
         DestroyIcon(icon);
     }
 }
@@ -172,6 +197,12 @@ void show_badge(ITaskbarList3* list, HWND window) {
 } // namespace
 
 namespace windows {
+
+void release_taskbar() noexcept {
+    g_taskbar.Reset();
+    g_taskbar_unavailable = false;
+    g_taskbar_refused = false;
+}
 
 void taskbar_button_created(HWND window) {
     if (ITaskbarList3* list = taskbar()) {

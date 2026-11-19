@@ -112,12 +112,12 @@ typedef struct ElgGpuImageFrame {
 ///   row first (views flip them).
 /// @return The image, owned by the caller (free it with elg_gpu_image_destroy()), or null when an
 ///   argument is invalid or allocation fails.
-ELG_API ElgGpuImage* elg_gpu_image_create(uint32_t width, uint32_t height, uint32_t origin);
+ELG_C_FUNCTION ElgGpuImage* elg_gpu_image_create(uint32_t width, uint32_t height, uint32_t origin);
 /// Frees the handle. Not a drain: views showing the image keep its last frame, and release
 /// callbacks still come.
 ///
 /// @param image The image, or null (nothing happens). Must not be in use by another thread.
-ELG_API void elg_gpu_image_destroy(ElgGpuImage* image);
+ELG_C_FUNCTION void elg_gpu_image_destroy(ElgGpuImage* image);
 /// Thread-safe against publish/clear on a LIVE handle, not against destroy. Synchronous import;
 /// returns a status above. On failure ownership stays with caller, no callback and no reads;
 /// the previous frame and natural size remain unchanged.
@@ -152,12 +152,12 @@ ELG_API void elg_gpu_image_destroy(ElgGpuImage* image);
 /// @param frame The frame; borrowed for the call (its handles until the release callback).
 /// @return ELG_GPU_IMAGE_OK when the frame was accepted, else the reason it wasn't:
 ///   INVALID_ARGUMENT, DEVICE_UNAVAILABLE, UNSUPPORTED, IMPORT_FAILED or INTERNAL_ERROR.
-ELG_API uint32_t elg_gpu_image_publish(ElgGpuImage* image, const ElgGpuImageFrame* frame);
+ELG_C_FUNCTION uint32_t elg_gpu_image_publish(ElgGpuImage* image, const ElgGpuImageFrame* frame);
 /// Stops showing the current frame (it's released once nothing draws it). The natural size stays.
 /// Thread-safe like elg_gpu_image_publish().
 ///
 /// @param image The image, or null (nothing happens).
-ELG_API void elg_gpu_image_clear(ElgGpuImage* image);
+ELG_C_FUNCTION void elg_gpu_image_clear(ElgGpuImage* image);
 
 #ifdef __cplusplus
 } // extern "C"

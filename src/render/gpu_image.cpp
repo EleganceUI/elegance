@@ -48,6 +48,10 @@ std::optional<VideoFrame> import_native_frame(const VideoFrame& native) {
     return frame;
 }
 
+bool imported_frame_current(const VideoFrame& frame) {
+    return frame.external && gpu::in_current_device(*frame.external);
+}
+
 
 // A GPU image's frames: the last published one, until it's cleared. Publishing and clearing wake
 // the render thread: it never looks for frames on its own.

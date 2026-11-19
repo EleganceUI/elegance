@@ -7,8 +7,10 @@
 // access in Settings > Privacy; when it's denied, error() says so.
 
 #include "media/video_backend.h"
+#include "platform/windows/com.h"
 
 #include "core/log.h"
+#include "core/scope_exit.h"
 #include "core/ui_tasks.h"
 
 #include <elg/error.h>
@@ -16,6 +18,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <format>
 #include <functional>
@@ -25,6 +28,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -60,12 +64,22 @@ std::wstring widen(const std::string& text) {
     return out;
 }
 
-void start_mf() {
+// Media Foundation, started once per process, on whichever thread first lists or opens a camera:
+// COM in that thread's apartment, or, where nothing set it up, the multithreaded one. False if
+// it isn't available (Windows N editions without the Media Feature Pack).
+bool start_mf() {
     static const bool started = [] {
-        CoInitializeEx(nullptr, COINIT_MULTITHREADED);
-        return SUCCEEDED(MFStartup(MF_VERSION, MFSTARTUP_FULL));
+        return SUCCEEDED(os::keep_multithreaded_apartment()) && SUCCEEDED(MFStartup(MF_VERSION, MFSTARTUP_FULL));
     }();
-    (void)started;
+    return started;
+}
+
+// A call whose failure leaves nothing to report (clean-up, or a preference the camera may refuse):
+// only logged.
+void log_failure(HRESULT result, std::string_view what) {
+    if (FAILED(result)) {
+        log_info("Camera: can't {} (HRESULT {:#010x})", what, static_cast<std::uint32_t>(result));
+    }
 }
 
 // --- DirectShow, for cameras Media Foundation doesn't see (virtual cameras on Windows 10: OBS,
@@ -219,7 +233,8 @@ std::vector<std::pair<std::string, ComPtr<IMoniker>>> enumerate_directshow() {
     std::vector<std::pair<std::string, ComPtr<IMoniker>>> devices;
     ComPtr<ICreateDevEnum> enumerator;
     ComPtr<IEnumMoniker> monikers;
-    if (FAILED(CoCreateInstance(CLSID_SystemDeviceEnum, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&enumerator))) ||
+    if (FAILED(os::keep_multithreaded_apartment()) || // for a thread without COM (camera_devices())
+        FAILED(CoCreateInstance(CLSID_SystemDeviceEnum, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&enumerator))) ||
         enumerator->CreateClassEnumerator(CLSID_VideoInputDeviceCategory, &monikers, 0) != S_OK) {
         return devices;
     }
@@ -232,7 +247,7 @@ std::vector<std::pair<std::string, ComPtr<IMoniker>>> enumerate_directshow() {
             if (SUCCEEDED(properties->Read(L"FriendlyName", &name, nullptr)) && name.vt == VT_BSTR) {
                 devices.emplace_back(narrow(name.bstrVal, SysStringLen(name.bstrVal)), moniker);
             }
-            VariantClear(&name);
+            log_failure(VariantClear(&name), "free a camera's name");
         }
         moniker.Reset();
     }
@@ -241,8 +256,10 @@ std::vector<std::pair<std::string, ComPtr<IMoniker>>> enumerate_directshow() {
 
 // The cameras Media Foundation sees, as activation objects.
 std::vector<ComPtr<IMFActivate>> enumerate_cameras() {
-    start_mf();
     std::vector<ComPtr<IMFActivate>> cameras;
+    if (!start_mf()) {
+        return cameras; // DirectShow's may still be there
+    }
     ComPtr<IMFAttributes> attributes;
     if (FAILED(MFCreateAttributes(&attributes, 1)) ||
         FAILED(attributes->SetGUID(MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE, MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID))) {
@@ -283,8 +300,8 @@ public:
 
     ~MediaFoundationCamera() override { stop_capture(); }
 
-    // The render thread looks for frames while it captures.
-    [[nodiscard]] bool wakes_for_frames() const noexcept override { return false; }
+    // Each frame captured wakes the render thread (set_frame()).
+    [[nodiscard]] bool wakes_for_frames() const noexcept override { return true; }
 
     void open(const std::shared_ptr<FrameSourceHost>& host) override {
         host_ = host.get();
@@ -299,7 +316,30 @@ public:
         }
         host_->set_error(std::string());
         host_->set_playing(true);
-        thread_ = std::jthread([this, weak = weak_host_](std::stop_token stop) { capture(stop, weak); });
+        thread_ = std::jthread([this, weak = weak_host_](std::stop_token stop) {
+            // A single-threaded apartment with a message loop (capture_directshow): DirectShow
+            // filters that are apartment-threaded, like OBS's virtual camera, only deliver frames
+            // then. Undone as the thread ends, after capture() let go of its objects
+            // (ELGSPEC-0019.R3).
+            const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+            const ScopeExit uninitialize([com] {
+                if (SUCCEEDED(com)) {
+                    CoUninitialize();
+                }
+            });
+            if (FAILED(com)) {
+                fail(weak, std::format("the camera couldn't be opened (HRESULT {:#010x})", static_cast<std::uint32_t>(com)));
+                return;
+            }
+            // What goes wrong there stops the camera, with its message, not the process.
+            try {
+                capture(stop, weak);
+            } catch (const std::exception& e) {
+                fail(weak, e.what());
+            } catch (...) {
+                fail(weak, "the camera stopped");
+            }
+        });
     }
     void stop() override {
         stop_capture();
@@ -390,14 +430,15 @@ private:
 
     // The capture thread. `weak`: the host, for what's posted to the UI thread.
     void capture(std::stop_token stop, std::weak_ptr<FrameSourceHost> weak) {
-        // A single-threaded apartment with a message loop (capture_directshow): DirectShow filters
-        // that are apartment-threaded, like OBS's virtual camera, only deliver frames then.
-        CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
-        start_mf();
+        const bool media_foundation = start_mf();
         std::vector<ComPtr<IMFActivate>> cameras = enumerate_cameras();
         // DirectShow: asked for by id, or the only cameras there are.
         if (options_.device_id.starts_with(kDirectShowPrefix) || (options_.device_id.empty() && cameras.empty())) {
             capture_directshow(stop, weak);
+            return;
+        }
+        if (!media_foundation) {
+            fail(weak, "Media Foundation isn't available (Windows N editions need the Media Feature Pack)");
             return;
         }
         IMFActivate* chosen = nullptr;
@@ -420,11 +461,11 @@ private:
             return;
         }
         ComPtr<IMFAttributes> attributes;
-        MFCreateAttributes(&attributes, 1);
-        attributes->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, TRUE); // converts formats for us
         ComPtr<IMFSourceReader> reader;
-        if (FAILED(MFCreateSourceReaderFromMediaSource(source.Get(), attributes.Get(), &reader))) {
-            source->Shutdown();
+        if (FAILED(MFCreateAttributes(&attributes, 1)) ||
+            FAILED(attributes->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, TRUE)) || // converts formats
+            FAILED(MFCreateSourceReaderFromMediaSource(source.Get(), attributes.Get(), &reader))) {
+            log_failure(source->Shutdown(), "close the camera");
             fail(weak, "the camera's video couldn't be read");
             return;
         }
@@ -433,26 +474,32 @@ private:
         bool output_set = false;
         for (const GUID& subtype : {MFVideoFormat_NV12, MFVideoFormat_RGB32}) {
             ComPtr<IMFMediaType> output;
-            MFCreateMediaType(&output);
-            output->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-            output->SetGUID(MF_MT_SUBTYPE, subtype);
-            if (SUCCEEDED(reader->SetCurrentMediaType(kVideoStream, nullptr, output.Get()))) {
+            if (SUCCEEDED(MFCreateMediaType(&output)) && SUCCEEDED(output->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video)) &&
+                SUCCEEDED(output->SetGUID(MF_MT_SUBTYPE, subtype)) &&
+                SUCCEEDED(reader->SetCurrentMediaType(kVideoStream, nullptr, output.Get()))) {
                 output_set = true;
                 break;
             }
         }
         if (!output_set) {
-            source->Shutdown();
+            log_failure(source->Shutdown(), "close the camera");
             fail(weak, "the camera's format can't be converted");
             return;
         }
+        // The frames' size and format, which store() reads them by.
         ComPtr<IMFMediaType> current;
-        reader->GetCurrentMediaType(kVideoStream, &current);
         UINT32 width = 0;
         UINT32 height = 0;
-        MFGetAttributeSize(current.Get(), MF_MT_FRAME_SIZE, &width, &height);
-        GUID subtype = MFVideoFormat_RGB32;
-        current->GetGUID(MF_MT_SUBTYPE, &subtype);
+        GUID subtype{};
+        if (FAILED(reader->GetCurrentMediaType(kVideoStream, &current)) ||
+            FAILED(MFGetAttributeSize(current.Get(), MF_MT_FRAME_SIZE, &width, &height)) || width == 0 || height == 0 ||
+            FAILED(current->GetGUID(MF_MT_SUBTYPE, &subtype)) ||
+            (subtype != MFVideoFormat_NV12 && subtype != MFVideoFormat_RGB32)) {
+            reader.Reset();
+            log_failure(source->Shutdown(), "close the camera");
+            fail(weak, "the camera didn't say its frame size and format");
+            return;
+        }
         post_ui_task([weak, width, height] {
             if (const auto self = weak.lock()) {
                 self->set_size(static_cast<float>(width), static_cast<float>(height));
@@ -484,7 +531,7 @@ private:
         }
         host_->set_playing_now(false);
         reader.Reset();
-        source->Shutdown();
+        log_failure(source->Shutdown(), "close the camera");
     }
 
     // The same through a DirectShow graph: camera -> Sample Grabber (RGB32) -> Null Renderer.
@@ -520,9 +567,11 @@ private:
             fail(weak, "the camera couldn't be opened");
             return;
         }
-        graph->AddFilter(source.Get(), L"Camera");
-        graph->AddFilter(grabber_filter.Get(), L"Grabber");
-        graph->AddFilter(sink.Get(), L"Sink");
+        if (FAILED(graph->AddFilter(source.Get(), L"Camera")) || FAILED(graph->AddFilter(grabber_filter.Get(), L"Grabber")) ||
+            FAILED(graph->AddFilter(sink.Get(), L"Sink"))) {
+            fail(weak, "the camera couldn't be opened");
+            return;
+        }
 
         // The camera's closest format to the requested size, in a format we can take as is.
         GUID chosen_subtype = MEDIASUBTYPE_RGB32;
@@ -530,7 +579,9 @@ private:
         if (SUCCEEDED(builder->FindInterface(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video, source.Get(), IID_PPV_ARGS(&config)))) {
             int count = 0;
             int caps_size = 0;
-            config->GetNumberOfCapabilities(&count, &caps_size);
+            if (FAILED(config->GetNumberOfCapabilities(&count, &caps_size))) {
+                count = 0; // the camera's own format then
+            }
             std::vector<BYTE> caps(static_cast<std::size_t>(std::max(caps_size, 0)));
             AM_MEDIA_TYPE* best = nullptr;
             double best_score = 1e300;
@@ -561,8 +612,9 @@ private:
                 }
             }
             if (best) {
-                config->SetFormat(best);
-                chosen_subtype = best->subtype;
+                if (SUCCEEDED(config->SetFormat(best))) { // else its own format, converted to RGB32
+                    chosen_subtype = best->subtype;
+                }
                 free_media_type(*best);
                 CoTaskMemFree(best);
             }
@@ -572,16 +624,18 @@ private:
         want.majortype = MEDIATYPE_Video;
         want.subtype = chosen_subtype;
         want.formattype = FORMAT_VideoInfo;
-        grabber->SetMediaType(&want);
-        grabber->SetOneShot(FALSE);
-        grabber->SetBufferSamples(FALSE);
-        if (FAILED(builder->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video, source.Get(), grabber_filter.Get(),
+        if (FAILED(grabber->SetMediaType(&want)) || FAILED(grabber->SetOneShot(FALSE)) ||
+            FAILED(grabber->SetBufferSamples(FALSE)) ||
+            FAILED(builder->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video, source.Get(), grabber_filter.Get(),
                                          sink.Get()))) {
             fail(weak, "the camera's video can't be converted");
             return;
         }
         AM_MEDIA_TYPE connected{};
-        grabber->GetConnectedMediaType(&connected);
+        if (FAILED(grabber->GetConnectedMediaType(&connected))) {
+            fail(weak, "the camera didn't say its frame size");
+            return;
+        }
         const GUID subtype = connected.subtype;
         LONG width = 0;
         LONG height = 0;
@@ -596,54 +650,92 @@ private:
             return;
         }
 
-        // Frames arrive on DirectShow's streaming thread.
-        struct Callback final : ISampleGrabberCB {
-            MediaFoundationCamera* camera;
-            LONG width;
-            LONG height;
-            GUID subtype;
-            std::vector<std::uint8_t> pixels;
+        // Frames arrive on DirectShow's streaming thread. Reference counted, as the grabber holds
+        // it: until detach(), it hands them to this camera; after, to nothing, whatever the graph
+        // still does.
+        class Callback final : public ISampleGrabberCB {
+        public:
+            Callback(MediaFoundationCamera* camera, LONG width, LONG height, GUID subtype)
+                : camera_(camera), width_(width), height_(height), subtype_(subtype) {}
+            Callback(const Callback&) = delete;
+            Callback& operator=(const Callback&) = delete;
+            Callback(Callback&&) = delete;
+            Callback& operator=(Callback&&) = delete;
+            virtual ~Callback() = default;
+
             STDMETHODIMP QueryInterface(REFIID riid, void** object) override {
+                if (!object) {
+                    return E_POINTER;
+                }
                 if (riid == __uuidof(IUnknown) || riid == __uuidof(ISampleGrabberCB)) {
                     *object = static_cast<ISampleGrabberCB*>(this);
+                    AddRef();
                     return S_OK;
                 }
                 *object = nullptr;
                 return E_NOINTERFACE;
             }
-            STDMETHODIMP_(ULONG) AddRef() override { return 2; } // lives on the capture thread's stack
-            STDMETHODIMP_(ULONG) Release() override { return 1; }
+            STDMETHODIMP_(ULONG) AddRef() override { return ++references_; }
+            STDMETHODIMP_(ULONG) Release() override {
+                const ULONG left = --references_;
+                if (left == 0) {
+                    delete this;
+                }
+                return left;
+            }
             STDMETHODIMP SampleCB(double, IMediaSample*) override { return S_OK; }
+            // DirectShow calls it, on its streaming thread: nothing may escape it (ELGSPEC-0002.R10).
             STDMETHODIMP BufferCB(double, BYTE* buffer, long length) override {
-                const LONG rows = std::abs(height);
-                if (subtype != MEDIASUBTYPE_RGB32) { // YUV is always stored top down, packed
-                    camera->publish_raw(buffer, length, subtype, static_cast<UINT32>(width), static_cast<UINT32>(rows));
-                    return S_OK;
-                }
-                if (length < width * rows * 4) {
-                    return S_OK;
-                }
-                const LONG pitch = height > 0 ? -width * 4 : width * 4;
-                const BYTE* first = height > 0 ? buffer + static_cast<std::size_t>(rows - 1) * width * 4 : buffer;
-                camera->publish(first, pitch, static_cast<UINT32>(width), static_cast<UINT32>(rows));
+                run_foreign_callback([&] {
+                    const std::lock_guard lock(mutex_);
+                    if (!camera_) {
+                        return;
+                    }
+                    const LONG rows = std::abs(height_);
+                    if (subtype_ != MEDIASUBTYPE_RGB32) { // YUV is always stored top down, packed
+                        camera_->publish_raw(buffer, length, subtype_, static_cast<UINT32>(width_),
+                                             static_cast<UINT32>(rows));
+                        return;
+                    }
+                    if (length < width_ * rows * 4) {
+                        return;
+                    }
+                    const LONG pitch = height_ > 0 ? -width_ * 4 : width_ * 4;
+                    const BYTE* first = height_ > 0 ? buffer + static_cast<std::size_t>(rows - 1) * width_ * 4 : buffer;
+                    camera_->publish(first, pitch, static_cast<UINT32>(width_), static_cast<UINT32>(rows));
+                });
                 return S_OK;
             }
-        } callback;
-        callback.camera = this;
-        callback.width = width;
-        callback.height = height;
-        callback.subtype = subtype;
-        grabber->SetCallback(&callback, 1);
+            // Once a frame being handed over is done: no frame reaches the camera after this.
+            void detach() {
+                const std::lock_guard lock(mutex_);
+                camera_ = nullptr;
+            }
+
+        private:
+            std::atomic<ULONG> references_{1};
+            std::mutex mutex_;
+            MediaFoundationCamera* camera_;
+            LONG width_;
+            LONG height_;
+            GUID subtype_;
+        };
+        ComPtr<Callback> callback;
+        callback.Attach(new Callback(this, width, height, subtype));
+        if (FAILED(grabber->SetCallback(callback.Get(), 1))) {
+            fail(weak, "the camera couldn't be opened");
+            return;
+        }
 
         // No reference clock: frames go through as they come, instead of the Null Renderer
         // holding each until its presentation time (which stalls some cameras' streams).
         if (ComPtr<IMediaFilter> filter; SUCCEEDED(graph.As(&filter))) {
-            filter->SetSyncSource(nullptr);
+            log_failure(filter->SetSyncSource(nullptr), "run the camera without a clock");
         }
         ComPtr<IMediaControl> control;
-        graph.As(&control);
-        if (!control || FAILED(control->Run())) {
-            grabber->SetCallback(nullptr, 1);
+        if (FAILED(graph.As(&control)) || FAILED(control->Run())) {
+            callback->detach();
+            log_failure(grabber->SetCallback(nullptr, 1), "detach the camera's frames");
             fail(weak, "the camera couldn't start (is another app using it?)");
             return;
         }
@@ -663,8 +755,9 @@ private:
                 DispatchMessageW(&message);
             }
         }
-        control->Stop();
-        grabber->SetCallback(nullptr, 1);
+        callback->detach(); // first: a graph that doesn't stop calls into nothing
+        log_failure(control->Stop(), "stop the camera");
+        log_failure(grabber->SetCallback(nullptr, 1), "detach the camera's frames");
         host_->set_playing_now(false);
     }
 
@@ -682,8 +775,13 @@ private:
             UINT32 h = 0;
             UINT32 num = 0;
             UINT32 den = 1;
-            MFGetAttributeSize(type.Get(), MF_MT_FRAME_SIZE, &w, &h);
-            MFGetAttributeRatio(type.Get(), MF_MT_FRAME_RATE, &num, &den);
+            if (FAILED(MFGetAttributeSize(type.Get(), MF_MT_FRAME_SIZE, &w, &h))) {
+                continue; // a mode without a size isn't one to choose
+            }
+            if (FAILED(MFGetAttributeRatio(type.Get(), MF_MT_FRAME_RATE, &num, &den))) {
+                num = 0; // its frame rate unknown: ranked as the slowest
+                den = 1;
+            }
             const double fps = den ? static_cast<double>(num) / den : 0;
             const double size_error = std::abs(static_cast<double>(w) * h - static_cast<double>(options_.width) * options_.height);
             const double score = size_error / 1e4 + (w < options_.width ? 1e3 : 0) - fps;
@@ -693,7 +791,7 @@ private:
             }
         }
         if (best) {
-            reader->SetCurrentMediaType(kVideoStream, nullptr, best.Get());
+            log_failure(reader->SetCurrentMediaType(kVideoStream, nullptr, best.Get()), "choose the camera's mode");
         }
     }
 
@@ -711,13 +809,20 @@ private:
             if (FAILED(buffer->Lock(&data, nullptr, &length))) {
                 return;
             }
+            // Packed rows: as many as the format reads (NV12's chroma rows after its luma).
+            const std::size_t rows = nv12 ? height + (height + 1) / 2 : height;
+            const std::size_t last_row = nv12 ? (width + 1) / 2 * 2 : std::size_t{width} * 4;
+            if (rows == 0 || length < static_cast<std::size_t>(pitch) * (rows - 1) + last_row) {
+                log_failure(buffer->Unlock(), "unlock a frame");
+                return;
+            }
         }
         if (nv12) {
             publish_nv12(data, pitch, width, height);
         } else {
             publish(data, pitch, width, height);
         }
-        locked2d ? buffer2d->Unlock2D() : buffer->Unlock();
+        log_failure(locked2d ? buffer2d->Unlock2D() : buffer->Unlock(), "unlock a frame");
     }
 
 public:
@@ -759,12 +864,15 @@ public:
 private:
     void set_frame(std::shared_ptr<const std::vector<std::uint8_t>> pixels, const GUID& subtype, UINT32 width,
                    UINT32 height) {
-        std::lock_guard lock(frame_mutex_);
-        frame_ = std::move(pixels);
-        frame_width_ = width;
-        frame_height_ = height;
-        frame_subtype_ = subtype;
-        ++frame_number_;
+        {
+            std::lock_guard lock(frame_mutex_);
+            frame_ = std::move(pixels);
+            frame_width_ = width;
+            frame_height_ = height;
+            frame_subtype_ = subtype;
+            ++frame_number_;
+        }
+        host_->notify_new_frame(); // a new frame, and only then, wakes the render thread (ELGSPEC-0027.R4)
     }
 
     CameraRequest options_;

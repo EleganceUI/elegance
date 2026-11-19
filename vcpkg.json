@@ -35,7 +35,8 @@
       "name": "stb",
       "platform": "!windows & !osx"
     },
-    "sdl3"
+    "sdl3",
+    "accesskit-c"
   ],
   "features": {
     "tests": {

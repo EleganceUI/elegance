@@ -149,6 +149,11 @@ std::optional<VideoFrame> SourceHost::import_native_frame(const VideoFrame& fram
     return importer.import_native_frame ? importer.import_native_frame(frame) : std::nullopt;
 }
 
+bool SourceHost::imported_frame_current(const VideoFrame& frame) const {
+    const NativeFrameImporter importer = native_frame_importer();
+    return importer.imported_frame_current && importer.imported_frame_current(frame);
+}
+
 std::shared_ptr<const DecodedImage> SourceHost::decode_image(std::span<const std::uint8_t> data) const {
     return detail::decode_image(data);
 }

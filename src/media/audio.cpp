@@ -9,7 +9,9 @@
 
 #include "core/log.h"
 #include "core/os_backend.h"
+#include "core/threads.h"
 #include "core/ui_tasks.h"
+#include "media/audio_setup.h"
 
 #include <elg/error.h>
 
@@ -56,7 +58,9 @@ public:
 
     ma_engine* get() {
         std::call_once(started_, [this] {
-            if (ma_engine_init(nullptr, &engine_) == MA_SUCCESS) {
+            bool made = false;
+            on_audio_setup_thread([&] { made = ma_engine_init(nullptr, &engine_) == MA_SUCCESS; });
+            if (made) {
                 ready_ = true;
                 log_debug("audio: {} Hz, {} channels", ma_engine_get_sample_rate(&engine_),
                           ma_engine_get_channels(&engine_));
@@ -74,7 +78,7 @@ public:
     AudioEngine& operator=(AudioEngine&&) = delete;
     ~AudioEngine() {
         if (ready_) {
-            ma_engine_uninit(&engine_);
+            on_audio_setup_thread([this] { ma_engine_uninit(&engine_); });
         }
     }
 
@@ -282,6 +286,7 @@ public:
 
 private:
     void run(const std::stop_token& stop) {
+        const ThreadSetup thread_setup; // miniaudio's output uses COM on Windows (WASAPI)
         bool was_playing = false;
         while (!stop.stop_requested()) {
             std::vector<std::weak_ptr<AudioPlayerState>> playing;

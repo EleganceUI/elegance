@@ -8,6 +8,8 @@
 
 #include "platform/sdl/native.h"
 
+#include "core/ui_tasks.h"
+
 #import <AppKit/AppKit.h>
 
 #include <map>
@@ -21,7 +23,8 @@
 @implementation ElgMenuTarget
 - (void)choose:(NSMenuItem*)sender {
     if (self.command && *self.command) {
-        (*self.command)(static_cast<std::uint32_t>(sender.tag));
+        // AppKit calls this: nothing may escape it (ELGSPEC-0002.R10).
+        elg::detail::run_foreign_callback([&] { (*self.command)(static_cast<std::uint32_t>(sender.tag)); });
     }
 }
 @end

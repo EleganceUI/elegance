@@ -8,6 +8,7 @@
 #include "media/image_decode.h"
 
 #include "media/image_codec_backend.h"
+#include "media/recorded_orientation.h"
 
 #include <elg/error.h>
 
@@ -68,9 +69,16 @@ void orient(DecodedImage& image, int orientation) {
     image.height = out_h;
 }
 
+// The codec's orientation, else the one the file records that the codec didn't read
+// (ELGSPEC-0005.R6): the same file then shows the same way on every platform.
+int orientation_of(int reported, std::span<const std::uint8_t> data) {
+    return reported >= 2 && reported <= 8 ? reported : recorded_orientation(data);
+}
+
 // The size and orientation of an image within `limits`.
 StoredImageInfo probe_within(std::span<const std::uint8_t> data, const ImageLimits& limits) {
-    const StoredImageInfo info = platform_probe_image(data);
+    StoredImageInfo info = platform_probe_image(data);
+    info.orientation = orientation_of(info.orientation, data);
     if (std::uint64_t{info.width} * info.height > limits.max_pixels) {
         throw ResourceError(std::format("the image is {} x {} pixels, more than the {} an image may have", info.width,
                                         info.height, limits.max_pixels));
@@ -98,7 +106,7 @@ std::shared_ptr<const DecodedImage> decode_image(std::span<const std::uint8_t> d
     auto image = std::make_shared<DecodedImage>();
     image->id = g_next_id.fetch_add(1);
     const int orientation = platform_decode_image(data, std::min(limits.max_side, max_texture_side()), *image);
-    orient(*image, orientation);
+    orient(*image, orientation_of(orientation, data));
     return image;
 }
 

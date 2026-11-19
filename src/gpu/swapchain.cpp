@@ -132,7 +132,7 @@ wgpu::TextureView Swapchain::begin_frame(std::uint32_t width, std::uint32_t heig
     return view;
 }
 
-void Swapchain::end_frame(bool reads_backdrops) {
+void Swapchain::end_frame(bool reads_backdrops, std::span<const Rect> /*drawn*/) {
     present();
     if (reads_backdrops) {
         request_copy_source();

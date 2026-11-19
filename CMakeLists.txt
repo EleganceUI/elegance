@@ -123,7 +123,7 @@ option(ELG_BUILD_SANDBOX "Build the sandbox test app"         ${PROJECT_IS_TOP_L
 option(ELG_ICONS         "Embed the built-in icon set (Phosphor, MIT): regular, bold, fill (~1.4 MB)" ON)
 option(ELG_ICONS_EXTRA_WEIGHTS "Also embed Phosphor's thin, light, and duotone styles (~1.6 MB)" ON)
 option(ELG_BUILD_TESTS   "Build the unit tests (needs the vcpkg \"tests\" feature)" ${PROJECT_IS_TOP_LEVEL})
-option(ELG_ACCESSIBILITY "Screen reader support through AccessKit (downloads its prebuilt C library)" ON)
+option(ELG_ACCESSIBILITY "Screen reader support through AccessKit (vcpkg's accesskit-c)" ON)
 option(ELG_ACCESSKIT_SHARED "Link AccessKit's shared library instead of its static one (needed by Rust apps)" OFF)
 option(ELG_STATIC_EXPORTS "Static build only: keep ELG_API exported, for linking into a shared library that re-exports it"
        OFF)

@@ -95,6 +95,22 @@ public:
 private:
     Event translate(const SDL_Event& event);
 
+    // The UI thread's set-up for the run (native::begin_run()): made first and undone last, around
+    // SDL's whole life, and undone too if the constructor throws.
+    class RunSetup {
+    public:
+        RunSetup() : begun_(native::begin_run()) {}
+        ~RunSetup() { native::end_run(begun_); }
+        RunSetup(const RunSetup&) = delete;
+        RunSetup& operator=(const RunSetup&) = delete;
+        RunSetup(RunSetup&&) = delete;
+        RunSetup& operator=(RunSetup&&) = delete;
+
+    private:
+        bool begun_;
+    };
+    RunSetup run_setup_;
+
     std::uint32_t wake_event_ = 0;
     // Events taken from the OS directly (macOS trackpads), queued in order with SDL's: each one
     // pushes an SDL event of this type, which takes the next from native_events_.

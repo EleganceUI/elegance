@@ -173,6 +173,12 @@ bool threads_end_before_static_destruction() noexcept {
     return false;
 }
 
+bool begin_elegance_thread() noexcept {
+    return false; // nothing to set up
+}
+
+void end_elegance_thread(bool) noexcept {}
+
 bool debugger_present() noexcept {
     int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid()};
     kinfo_proc info{};

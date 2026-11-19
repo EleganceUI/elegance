@@ -6,6 +6,8 @@
 
 #include "gpu/render_device.h"
 
+#include "core/threads.h"
+
 #include <elg/gpu_image.h>
 
 #include <condition_variable>
@@ -48,6 +50,7 @@ public:
     }
 private:
     void run() {
+        const ThreadSetup thread_setup; // retiring an image may release Direct3D objects (COM)
         for (;;) {
             std::function<void()> job;
             {
@@ -406,6 +409,15 @@ std::uint32_t import_external_image(const ElgGpuImageFrame& frame, std::shared_p
         image = std::move(external);
     }
     return status;
+}
+
+bool in_current_device(const ExternalImage& image) {
+    const std::shared_ptr<RenderDevice> device = render_device();
+    if (!device) {
+        return false;
+    }
+    const std::lock_guard lock(device->mutex);
+    return device->active && device->device.Get() == image.device().Get();
 }
 
 } // namespace elg::detail::gpu

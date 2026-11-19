@@ -9,6 +9,7 @@
 #include "view/raster_image.h"
 
 #include "core/log.h"
+#include "core/threads.h"
 #include "core/ui_tasks.h"
 #include "media/image_decode.h"
 #include "view/view_node.h"
@@ -71,6 +72,7 @@ public:
 
 private:
     void run(const std::stop_token& stop) {
+        const ThreadSetup thread_setup; // decoding uses COM on Windows (WIC)
         while (true) {
             std::function<void()> task;
             {

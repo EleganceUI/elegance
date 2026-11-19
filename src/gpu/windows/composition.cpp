@@ -8,22 +8,26 @@
 
 #include "core/log.h"
 #include "core/os_backend.h"
+#include "gpu/instance.h"
 #include "gpu/swapchain.h"
 
 #include <elg/error.h>
 
 #include <windows.h> // the build defines WIN32_LEAN_AND_MEAN and NOMINMAX
-#include <d3d11_1.h>
+#include <d3d11_4.h>
 #include <dcomp.h>
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstring>
 #include <exception>
 #include <format>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace elg::detail::gpu {
 
@@ -34,10 +38,27 @@ namespace {
 // The longest a composition frame waits for the display to be ready (it's a hint for pacing).
 constexpr unsigned kReadyTimeoutMs = 50;
 
+// Throws when `result` is a failure: DeviceLost when Direct3D's device was removed or reset, so
+// the renderer starts over with a new device, and new composition swapchains for its windows
+// (ELGSPEC-0025.R1, R4); else elg::GpuError.
 void check_hr(HRESULT result, std::string_view what) {
-    if (FAILED(result)) {
-        throw GpuError(std::format("failed to {} (HRESULT 0x{:08x})", what, static_cast<unsigned long>(result)));
+    if (SUCCEEDED(result)) {
+        return;
     }
+    const std::string message =
+        std::format("failed to {} (HRESULT 0x{:08x})", what, static_cast<unsigned long>(result));
+    if (result == DXGI_ERROR_DEVICE_REMOVED || result == DXGI_ERROR_DEVICE_RESET || result == DXGI_ERROR_DEVICE_HUNG ||
+        result == DXGI_ERROR_DRIVER_INTERNAL_ERROR) {
+        throw DeviceLost(std::format("the window's Direct3D 11 device was lost: {}", message));
+    }
+    throw GpuError(message);
+}
+
+// A WebGPU call on the shared texture failed: DeviceLost if the device is gone (tick() says), else
+// elg::GpuError.
+[[noreturn]] void webgpu_failed(const Device& device, std::string_view what) {
+    device.tick();
+    throw_gpu_error(what);
 }
 
 // Whether a window presents through DirectComposition instead of its WebGPU surface.
@@ -71,6 +92,8 @@ std::unique_ptr<Presenter> create_presenter(const Device& device, const SurfaceS
     if (wants_composition(device, transparent, native_window)) {
         try {
             composition = std::make_unique<CompositionTarget>(device, native_window, transparent);
+        } catch (const DeviceLost&) {
+            throw; // the renderer starts over, with composition again
         } catch (const std::exception& error) {
             log_warning("window falls back to a WebGPU surface: {}", error.what());
         }
@@ -93,6 +116,18 @@ struct CompositionTarget::Impl {
     ComPtr<ID3D11Device> d3d;
     ComPtr<ID3D11DeviceContext> context;
     ComPtr<ID3D11Query> done; // signaled when the copy into the swapchain has executed
+
+    // Shared fences (share_fences()), or none: then the render thread waits for the GPU.
+    ComPtr<ID3D11Device5> d3d5;
+    ComPtr<ID3D11DeviceContext4> context4;
+    // Direct3D's: signaled with `copied_value` once a frame's copy is done. WebGPU's rendering into
+    // the image waits for it.
+    ComPtr<ID3D11Fence> copied;
+    wgpu::SharedFence copied_shared;
+    std::uint64_t copied_value = 0;
+    // WebGPU's, which its rendering signals, as Direct3D opened it (usually the same each frame).
+    wgpu::SharedFence rendered;
+    ComPtr<ID3D11Fence> rendered_d3d;
     ComPtr<IDXGISwapChain1> swapchain;
     HANDLE ready = nullptr; // the swapchain's frame-latency waitable object
     ComPtr<IDCompositionDevice> dcomp;
@@ -162,6 +197,9 @@ CompositionTarget::CompositionTarget(const Device& device, void* hwnd, bool tran
              "create a Direct3D 11 device");
     D3D11_QUERY_DESC query{D3D11_QUERY_EVENT, 0};
     check_hr(impl_->d3d->CreateQuery(&query, &impl_->done), "create a Direct3D query");
+    if (!share_fences()) {
+        log_info("GPU: this window's frames wait for the GPU: Direct3D 11 and WebGPU can't share fences here");
+    }
 
     ComPtr<IDXGIDevice> dxgi;
     check_hr(impl_->d3d.As(&dxgi), "get the DXGI device");
@@ -207,11 +245,76 @@ wgpu::TextureView CompositionTarget::begin_frame(std::uint32_t width, std::uint3
     return begin_access();
 }
 
-void CompositionTarget::end_frame(bool /*reads_backdrops*/) {
-    end_access();
-    // Direct3D copies the image next, so the rendering must be finished.
-    device_.wait_idle();
-    present();
+void CompositionTarget::end_frame(bool /*reads_backdrops*/, std::span<const Rect> drawn) {
+    if (!impl_->context4) {
+        // Without shared fences: the rendering must be finished before Direct3D copies the
+        // image, and the copy before WebGPU renders into it again.
+        end_access();
+        device_.wait_idle();
+        present(drawn);
+        wait_for_copy();
+        return;
+    }
+    wgpu::SharedTextureMemoryEndAccessState state;
+    if (!end_access(state) || state.fenceCount != state.signaledValueCount) {
+        webgpu_failed(device_, "end the frame's access to the shared texture");
+    }
+    for (std::size_t i = 0; i < state.fenceCount; ++i) {
+        check_hr(impl_->context4->Wait(opened(state.fences[i]), state.signaledValues[i]),
+                 "have Direct3D wait for the rendering");
+    }
+    present(drawn);
+    check_hr(impl_->context4->Signal(impl_->copied.Get(), ++impl_->copied_value), "signal the composition copy");
+    impl_->context->Flush();
+}
+
+bool CompositionTarget::share_fences() {
+    if (!device_.has_feature(wgpu::FeatureName::SharedFenceDXGISharedHandle)) {
+        return false;
+    }
+    ComPtr<ID3D11Device5> d3d5;
+    ComPtr<ID3D11DeviceContext4> context4;
+    ComPtr<ID3D11Fence> copied;
+    HANDLE handle = nullptr;
+    if (FAILED(impl_->d3d.As(&d3d5)) || FAILED(impl_->context.As(&context4)) || // Windows 10 1703 and later
+        FAILED(d3d5->CreateFence(0, D3D11_FENCE_FLAG_SHARED, IID_PPV_ARGS(&copied))) ||
+        FAILED(copied->CreateSharedHandle(nullptr, GENERIC_ALL, nullptr, &handle))) {
+        return false;
+    }
+    wgpu::SharedFenceDXGISharedHandleDescriptor shared;
+    shared.handle = handle;
+    wgpu::SharedFenceDescriptor descriptor;
+    descriptor.nextInChain = &shared;
+    descriptor.label = "composition copy";
+    wgpu::SharedFence imported = device_.handle().ImportSharedFence(&descriptor);
+    CloseHandle(handle); // importing a handle doesn't take ownership of it
+    if (!imported) {
+        return false;
+    }
+    impl_->d3d5 = std::move(d3d5);
+    impl_->context4 = std::move(context4);
+    impl_->copied = std::move(copied);
+    impl_->copied_shared = std::move(imported);
+    return true;
+}
+
+ID3D11Fence* CompositionTarget::opened(const wgpu::SharedFence& fence) {
+    if (impl_->rendered_d3d && fence.Get() == impl_->rendered.Get()) {
+        return impl_->rendered_d3d.Get();
+    }
+    wgpu::SharedFenceDXGISharedHandleExportInfo shared;
+    wgpu::SharedFenceExportInfo info;
+    info.nextInChain = &shared;
+    fence.ExportInfo(&info); // the handle stays the fence's
+    if (info.type != wgpu::SharedFenceType::DXGISharedHandle || !shared.handle) {
+        throw GpuError("the rendering's fence can't be shared with Direct3D 11");
+    }
+    ComPtr<ID3D11Fence> opened;
+    check_hr(impl_->d3d5->OpenSharedFence(static_cast<HANDLE>(shared.handle), IID_PPV_ARGS(&opened)),
+             "open the rendering's fence in Direct3D 11");
+    impl_->rendered = fence;
+    impl_->rendered_d3d = std::move(opened);
+    return impl_->rendered_d3d.Get();
 }
 
 void CompositionTarget::wait_until_ready(unsigned timeout_ms) {
@@ -258,24 +361,36 @@ void CompositionTarget::destroy_image() noexcept {
 }
 
 wgpu::TextureView CompositionTarget::begin_access() {
-    // Its previous contents don't matter: every frame clears it.
+    // Its previous contents don't matter: every frame clears it. Rendering into it waits for
+    // Direct3D's last copy from it, on the GPU.
     wgpu::SharedTextureMemoryBeginAccessDescriptor access;
     access.initialized = false;
+    if (impl_->context4 && impl_->copied_value > 0) {
+        access.fenceCount = 1;
+        access.fences = &impl_->copied_shared;
+        access.signaledValueCount = 1;
+        access.signaledValues = &impl_->copied_value;
+    }
     if (impl_->memory.BeginAccess(impl_->texture, &access) != wgpu::Status::Success) {
-        throw_gpu_error("access the shared texture");
+        webgpu_failed(device_, "access the shared texture");
     }
     impl_->accessing = true;
     return impl_->view;
 }
 
-void CompositionTarget::end_access() noexcept {
-    if (impl_->accessing) {
-        // Direct3D copies the texture only after the CPU waited for the rendering (present()),
-        // so the end state's fences aren't needed.
-        wgpu::SharedTextureMemoryEndAccessState state;
-        impl_->memory.EndAccess(impl_->texture, &state);
-        impl_->accessing = false;
+bool CompositionTarget::end_access(wgpu::SharedTextureMemoryEndAccessState& state) noexcept {
+    if (!impl_->accessing) {
+        return true;
     }
+    impl_->accessing = false;
+    return impl_->memory.EndAccess(impl_->texture, &state) == wgpu::Status::Success;
+}
+
+void CompositionTarget::end_access() noexcept {
+    // The end state's fences aren't needed: nothing copies this rendering (the image is going), or
+    // the render thread waits for it.
+    wgpu::SharedTextureMemoryEndAccessState state;
+    (void)end_access(state);
 }
 
 bool CompositionTarget::prepare(std::uint32_t width, std::uint32_t height) {
@@ -285,10 +400,12 @@ bool CompositionTarget::prepare(std::uint32_t width, std::uint32_t height) {
     if (impl_->texture && width == width_ && height == height_) {
         return true;
     }
-    // Nothing uses the old image: every frame waits for its rendering before presenting.
+    // The old image may still be in use by frames in flight: Direct3D and WebGPU keep it until
+    // they're done.
     destroy_image();
     width_ = width;
     height_ = height;
+    presented_ = false; // new or resized buffers: the next frame is shown whole
 
     // The composition swapchain: premultiplied alpha, which DWM blends with what's behind.
     if (!impl_->swapchain) {
@@ -304,7 +421,7 @@ bool CompositionTarget::prepare(std::uint32_t width, std::uint32_t height) {
         desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
         desc.SampleDesc.Count = 1;
         desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-        desc.BufferCount = 2;
+        desc.BufferCount = 3; // one shown, two queued (SetMaximumFrameLatency(2))
         desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
         desc.AlphaMode = transparent_ ? DXGI_ALPHA_MODE_PREMULTIPLIED : DXGI_ALPHA_MODE_IGNORE;
         desc.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
@@ -312,7 +429,12 @@ bool CompositionTarget::prepare(std::uint32_t width, std::uint32_t height) {
                  "create a composition swapchain");
         ComPtr<IDXGISwapChain2> swapchain2;
         if (SUCCEEDED(impl_->swapchain.As(&swapchain2))) {
-            swapchain2->SetMaximumFrameLatency(1);
+            // Two frames in flight (ELGSPEC-0023.R5). Refused, frames queue up to DXGI's default
+            // latency: still shown, a little later.
+            if (const HRESULT limited = swapchain2->SetMaximumFrameLatency(2); FAILED(limited)) {
+                log_warning("GPU: the composition swapchain keeps its own frame latency (HRESULT 0x{:08x})",
+                            static_cast<unsigned long>(limited));
+            }
             impl_->ready = swapchain2->GetFrameLatencyWaitableObject();
         }
         check_hr(impl_->visual->SetContent(impl_->swapchain.Get()), "show the swapchain");
@@ -352,7 +474,7 @@ bool CompositionTarget::prepare(std::uint32_t width, std::uint32_t height) {
     CloseHandle(handle); // importing an NT handle doesn't take ownership of it
     if (!impl_->memory) {
         destroy_image();
-        throw_gpu_error("import the shared texture");
+        webgpu_failed(device_, "import the shared texture");
     }
     const wgpu::TextureFormat sampled = view_format();
     wgpu::TextureDescriptor descriptor;
@@ -370,21 +492,50 @@ bool CompositionTarget::prepare(std::uint32_t width, std::uint32_t height) {
     return true;
 }
 
-void CompositionTarget::present() {
+void CompositionTarget::present(std::span<const Rect> drawn) {
     ComPtr<ID3D11Texture2D> back_buffer;
     check_hr(impl_->swapchain->GetBuffer(0, IID_PPV_ARGS(&back_buffer)), "get the composition back buffer");
+    // The whole image: outside the drawn parts, the flip model's back buffer must hold what the
+    // last frame showed, which the image (the window's kept image) still does.
     impl_->context->CopyResource(back_buffer.Get(), impl_->shared.Get());
+    // Only the drawn parts are new, which DWM composes again (ELGSPEC-0029.R10): whole pixels,
+    // within the image. None (the whole image) for the first frame these buffers show.
+    std::vector<RECT> dirty;
+    if (presented_) {
+        for (const Rect& rect : drawn) {
+            const RECT pixels{
+                std::clamp(static_cast<LONG>(std::floor(rect.x)), LONG{0}, static_cast<LONG>(width_)),
+                std::clamp(static_cast<LONG>(std::floor(rect.y)), LONG{0}, static_cast<LONG>(height_)),
+                std::clamp(static_cast<LONG>(std::ceil(rect.x + rect.width)), LONG{0}, static_cast<LONG>(width_)),
+                std::clamp(static_cast<LONG>(std::ceil(rect.y + rect.height)), LONG{0}, static_cast<LONG>(height_))};
+            if (pixels.right > pixels.left && pixels.bottom > pixels.top) {
+                dirty.push_back(pixels);
+            }
+        }
+        if (dirty.empty()) {
+            dirty.push_back(RECT{0, 0, 1, 1}); // nothing new to show: the least DXGI takes
+        }
+    }
+    DXGI_PRESENT_PARAMETERS parameters{};
+    parameters.DirtyRectsCount = static_cast<UINT>(dirty.size());
+    parameters.pDirtyRects = dirty.empty() ? nullptr : dirty.data();
     // Sync interval 1: shown at the next vblank, and the frame-latency object wait_until_ready()
-    // waits on is signaled only once it's on screen, so animation runs at the display's rate. With
-    // 0 that object is signaled as soon as the present is queued, and an animating window renders
-    // as fast as the GPU allows (hundreds of frames a second). Latency stays at one frame: the wait
-    // returns at a vblank, and the frame rendered right after it shows at the next.
-    check_hr(impl_->swapchain->Present(1, 0), "present to the composition swapchain");
-    // WebGPU renders into the shared texture again next frame: let the copy finish first.
+    // waits on is signaled only as queued frames reach the screen, so animation runs at the
+    // display's rate. With 0 that object is signaled as soon as the present is queued, and an
+    // animating window renders as fast as the GPU allows (hundreds of frames a second).
+    check_hr(impl_->swapchain->Present1(1, 0, &parameters), "present to the composition swapchain");
+    presented_ = true;
+}
+
+void CompositionTarget::wait_for_copy() {
+    // WebGPU renders into the shared texture again next frame: let the copy finish first. A query
+    // that fails (a removed device) can't say it did.
     impl_->context->End(impl_->done.Get());
-    while (impl_->context->GetData(impl_->done.Get(), nullptr, 0, 0) == S_FALSE) {
+    HRESULT done = S_FALSE;
+    while ((done = impl_->context->GetData(impl_->done.Get(), nullptr, 0, 0)) == S_FALSE) {
         SwitchToThread();
     }
+    check_hr(done, "wait for the copy to the composition swapchain");
 }
 
 } // namespace elg::detail::gpu

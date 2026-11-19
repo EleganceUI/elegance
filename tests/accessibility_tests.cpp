@@ -5,9 +5,13 @@
 // Accessibility modifiers (design.md §12). The tree itself is checked through Windows UI
 // Automation against the running sandbox (design.md, M5).
 
+#include "platform/accessibility_adapter.h"
+
 #include <elg/elegance.h>
 
 #include <catch2/catch_test_macros.hpp>
+
+#include <chrono>
 
 using namespace elg;
 
@@ -24,3 +28,27 @@ TEST_CASE("accessibility modifiers compose", "[accessibility]") {
 TEST_CASE("accessibility actions need a function", "[accessibility]") {
     CHECK_THROWS_AS(Text("x").accessibility_action({}), UsageError);
 }
+
+#if defined(__linux__)
+
+TEST_CASE("a window's screen reader support doesn't wait for a screen reader", "[accessibility]") {
+    // ELGSPEC-0020.R4: with no AT-SPI bus (none runs here), or one that doesn't answer, making a
+    // window's adapter, updating it and dropping it don't wait for the bus.
+    const detail::AccessTree tree;
+    int built = 0;
+    const auto start = std::chrono::steady_clock::now();
+    {
+        detail::AccessibilityAdapter adapter(nullptr, {.build = [&]() -> const detail::AccessTree& {
+                                                           ++built;
+                                                           return tree;
+                                                       },
+                                                       .scale = [] { return 1.f; },
+                                                       .request = {}});
+        adapter.window_focused(true);
+        adapter.update();
+    }
+    CHECK(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(100));
+    CHECK(built == 0); // no screen reader asked for the tree
+}
+
+#endif

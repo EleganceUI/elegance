@@ -69,8 +69,9 @@ SurfaceSource surface_source(SDL_Window*, const WindowParts& parts) {
     return source;
 }
 
-void* native_handle(SDL_Window*) {
-    return nullptr;
+void* native_handle(SDL_Window* window) {
+    // The NSWindow: screen readers reach the window through it (ELGSPEC-0020.R1).
+    return SDL_GetPointerProperty(SDL_GetWindowProperties(window), SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
 }
 
 Rect system_controls_frame(WindowParts& parts) {
@@ -135,6 +136,12 @@ void* install_input_monitor(const InputSink& push) {
 void remove_input_monitor(void* monitor) {
     macos::remove_input_monitor(monitor);
 }
+
+bool begin_run() {
+    return false; // nothing to set up
+}
+
+void end_run(bool) noexcept {}
 
 } // namespace native
 

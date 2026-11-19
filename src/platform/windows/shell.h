@@ -30,6 +30,9 @@ bool menu_command(WORD id);
 
 // dock.cpp: the taskbar button shows the progress and badge set before it existed.
 void taskbar_button_created(HWND window);
+// dock.cpp: lets go of the taskbar's COM object, which the run made on its UI thread, as the run
+// ends (native::end_run()); the next run makes another.
+void release_taskbar() noexcept;
 
 } // namespace elg::detail::platform::windows
 

@@ -6,6 +6,7 @@
 
 #include "core/crash.h"
 #include "core/log.h"
+#include "core/threads.h"
 #include "gpu/atlas_texture.h"
 #include "gpu/blur_renderer.h"
 #include "gpu/device.h"
@@ -82,6 +83,8 @@ struct RenderThread::Kept {
 };
 
 void RenderThread::run(std::promise<void> ready) noexcept {
+    // Presenting and video frames use COM on Windows (DXGI, DirectComposition, Media Foundation).
+    const ThreadSetup thread_setup;
     bool started = false;
     const auto fail = [&](const std::exception_ptr& error) {
         if (!started) {
@@ -98,7 +101,7 @@ void RenderThread::run(std::promise<void> ready) noexcept {
     try {
         // Decoders that make frames in GPU memory hand them to this renderer's device, once it
         // exists and while it runs.
-        set_native_frame_importer({&imports_native_frames, &import_native_frame});
+        set_native_frame_importer({&imports_native_frames, &import_native_frame, &imported_frame_current});
         const gpu::Instance instance;
         Kept kept;
         // Devices lost in a row before they drew anything: a GPU that loses every new device

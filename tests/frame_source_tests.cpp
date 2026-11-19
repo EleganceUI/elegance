@@ -8,6 +8,7 @@
 
 #include "core/ui_tasks.h"
 #include "media/media_access.h"
+#include "media/video_backend.h"
 #include "media/video_source.h"
 #include "render/frame_sources.h"
 
@@ -192,6 +193,16 @@ TEST_CASE("an idle window with a GPU image doesn't wake the render thread", "[vi
         CHECK(counter.wakes() == 0);
     }
     elg_gpu_image_destroy(image);
+}
+
+TEST_CASE("the system's video engine wakes the render thread for its frames", "[video][frames]") {
+    // Rather than the render thread looking for frames every few milliseconds while a video plays
+    // (ELGSPEC-0027.R4). Made, not opened: it reads nothing.
+    auto engine = detail::create_video_engine("clip.mp4");
+    if (!engine) {
+        SKIP(engine.error());
+    }
+    CHECK((*engine)->wakes_for_frames());
 }
 
 TEST_CASE("a video feed wakes the render thread for each frame while a window shows it", "[video][frames]") {
