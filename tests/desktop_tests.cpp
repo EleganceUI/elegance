@@ -60,7 +60,8 @@ TEST_CASE("a file dialog still open when the run ends closes, and its callback g
     std::filesystem::permissions(folder / "zenity", std::filesystem::perms::owner_all);
     // Before the App starts any thread, and back as it was once they've ended.
     // NOLINTBEGIN(concurrency-mt-unsafe)
-    const std::string path = std::getenv("PATH") ? std::getenv("PATH") : "";
+    const char* const inherited = std::getenv("PATH");
+    const std::string path = inherited ? inherited : "";
     setenv("PATH", (folder.string() + ":" + path).c_str(), 1);
     setenv("SDL_FILE_DIALOG_DRIVER", "zenity", 1);
     // NOLINTEND(concurrency-mt-unsafe)
