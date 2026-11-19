@@ -223,6 +223,7 @@ public:
 
         LowerContext inner = context;
         inner.environment.set<RowSelectedKey>(Prop<bool>([selected] { return selected(); }));
+        inner.in_control = true; // the row takes presses
         const RowConfiguration configuration{
             .content = content_,
             .axis = selection->axis,

@@ -764,18 +764,18 @@ View TextCards() {
 
     return HStack({.alignment = VerticalAlignment::top, .spacing = 24},
                   VStack({.alignment = HorizontalAlignment::leading, .spacing = 8},
-                         Text("Wrapping").font(Font::headline),
-                         Text(story))
+                         Text("Wrapping (selectable)").font(Font::headline),
+                         Text(story).selectable())
                       .frame({.max_width = infinity, .alignment = Alignment::top_leading})
                       .apply(sandbox::card),
                   VStack({.alignment = HorizontalAlignment::leading, .spacing = 8},
                          Text("line_limit(2)").font(Font::headline),
-                         Text(story).line_limit(2).foreground_style(ThemeColor::secondary))
+                         Text(story).line_limit(2).foreground_style(ThemeColor::secondary).selectable())
                       .frame({.max_width = infinity, .alignment = Alignment::top_leading})
                       .apply(sandbox::card),
                   VStack({.spacing = 6},
                          Text("Aa").font(Font::system(56, Weight::light)),
-                         Text("Centered\nmulti-line").multiline_text_alignment(TextAlignment::center))
+                         Text("Centered\nmulti-line").multiline_text_alignment(TextAlignment::center).selectable())
                       .frame({.max_width = infinity})
                       .apply(sandbox::card));
 }

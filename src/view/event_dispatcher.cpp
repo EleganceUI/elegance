@@ -104,6 +104,13 @@ void FocusManager::notify_watches() {
     }
 }
 
+void FocusManager::select_text(TextElement* text) {
+    if (selected_text_ && selected_text_ != text) {
+        std::exchange(selected_text_, nullptr)->clear_selection();
+    }
+    selected_text_ = text;
+}
+
 void FocusManager::forget(const Element* element) noexcept {
     std::erase_if(watches_, [&](const Watch& watch) { return watch.scope == element; });
     if (focused_ == element) {
@@ -346,6 +353,11 @@ bool EventDispatcher::pointer_button_unguarded(PointerEvent::Kind kind, Point lo
     }
 
     if (kind == PointerEvent::Kind::down) {
+        // A press anywhere but on the selected Text clears its selection (ELGSPEC-0030.R6).
+        if (TextElement* selected = focus_->selected_text(); selected && std::ranges::find(path, selected) == path.end()) {
+            selected->clear_selection();
+            redraw = true;
+        }
         // Clicking focuses what was clicked (without a ring) or, on nothing focusable, clears focus.
         Element* target = nullptr;
         for (auto element : std::ranges::reverse_view(path)) {
@@ -503,6 +515,21 @@ bool EventDispatcher::key_unguarded(const KeyEvent& event) {
     for (Element* element : route) {
         if (offer(element, EventPhase::bubble)) {
             return redraw;
+        }
+    }
+    // Copy and Select All for the window's selected Text, after every handler, as the root's
+    // would (ELGSPEC-0030.R8, R10): Edit menu items send the same keys.
+    if (TextElement* selected = focus_->selected_text();
+        selected && event.kind == KeyEvent::Kind::down && event.modifiers == primary_modifier()) {
+        if (event.key == Key::c && selected->selection_start() != selected->selection_end()) {
+            if (WindowServices* services = focus_->services()) {
+                services->set_clipboard_text(selected->selected_text());
+            }
+            return true;
+        }
+        if (event.key == Key::a) {
+            selected->select_all();
+            return true;
         }
     }
     const bool plain_tab = event.kind == KeyEvent::Kind::down && event.key == Key::tab &&
@@ -784,6 +811,9 @@ void EventDispatcher::leaving_unguarded(Element& subtree) {
                               .window_location = last_location_};
     if (in(captured_)) {
         deliver(cancel, *std::exchange(captured_, nullptr));
+    }
+    if (TextElement* selected = focus_->selected_text(); in(selected)) {
+        selected->clear_selection(); // ELGSPEC-0030.R7
     }
     std::erase_if(watchers_, [&](const Watcher& watcher) {
         if (!in(watcher.element)) {

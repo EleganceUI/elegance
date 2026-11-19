@@ -42,6 +42,21 @@ public:
     // touching it.
     void forget(const Element* element) noexcept;
 
+    // The window's text input and clipboard (nullptr in tests that need neither).
+    [[nodiscard]] WindowServices* services() const noexcept { return services_; }
+
+    // The window's selected Text (ELGSPEC-0030.R2): the selectable text in which a press last
+    // started a selection, until that selection is cleared; nullptr when there's none.
+    [[nodiscard]] TextElement* selected_text() const noexcept { return selected_text_; }
+    // Makes `text` the selected Text, clearing the previous one's selection first.
+    void select_text(TextElement* text);
+    // `text`'s selection was cleared (or `text` is going): it isn't the selected Text any more.
+    void text_selection_cleared(const TextElement* text) noexcept {
+        if (selected_text_ == text) {
+            selected_text_ = nullptr;
+        }
+    }
+
     // The focused element's text input changed (a field became secure or stopped being).
     void refresh_text_input() noexcept {
         set_text_input(focused_ && focused_->event_handler()->accepts_text_input(),
@@ -77,6 +92,7 @@ private:
     bool text_input_ = false;
     bool secure_text_input_ = false;
     Element* focused_ = nullptr;
+    TextElement* selected_text_ = nullptr;
     bool visible_ = false;
     bool navigated_ = false;
 };

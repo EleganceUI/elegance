@@ -54,6 +54,10 @@ struct CaretStop {
 // The caret stops of laid-out text: one at each cluster's start and one at each line's end.
 std::vector<CaretStop> caret_stops(const StyledShape& shape, const TextLayoutResult& layout, float size,
                                    std::size_t text_size);
+// The same for paragraphs shaped on their own (shape_text()): `starts` are their first bytes in
+// the text.
+std::vector<CaretStop> caret_stops(const std::vector<ShapedParagraph>& paragraphs, const std::vector<std::size_t>& starts,
+                                   const TextLayoutResult& layout, float size, std::size_t text_size);
 
 // A run's font: `base` with the style's family, weight, and slant (styled_text.cpp).
 Font run_font(const Font& base, const RunStyle& style);

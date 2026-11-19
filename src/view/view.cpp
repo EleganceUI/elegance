@@ -998,8 +998,10 @@ void join_focus(Element& element, const LowerContext& context) {
 std::unique_ptr<ButtonElement> make_button_element(const View& body, std::function<void()> action, State<bool> pressed,
                                                    State<bool> hovered, const LowerContext& context) {
     const EnvironmentValues environment = context.environment;
+    LowerContext inner = context.nested();
+    inner.in_control = true;
     auto element = std::make_unique<ButtonElement>(
-        detail::lower(body, context.nested()), std::move(action), std::move(pressed), std::move(hovered),
+        detail::lower(body, inner), std::move(action), std::move(pressed), std::move(hovered),
         [environment] { return !environment.get<DisabledKey>(); });
     join_focus(*element, context);
     return element;
@@ -1061,8 +1063,20 @@ std::unique_ptr<Element> ModifiedNode::lower(const LowerContext& context) const 
         }
         return element;
     }
-    case ModifierProtocol::event:
-        return make_event_element(static_cast<const EventModifier&>(*modifier_).make_handler(), content_, context);
+    case ModifierProtocol::event: {
+        const auto& event = static_cast<const EventModifier&>(*modifier_);
+        LowerContext inner = context;
+        // on_click() and on_double_click() make a control of their content.
+        if (dynamic_cast<const ClickModifier*>(&event) != nullptr) {
+            inner.in_control = true;
+        }
+        // A pointer style given to a Text itself.
+        if (dynamic_cast<const PointerStyleModifier*>(&event) != nullptr &&
+            dynamic_cast<const TextNode*>(ViewAccess::node(content_).get()) != nullptr) {
+            inner.pointer_style_given = true;
+        }
+        return make_event_element(event.make_handler(), content_, inner);
+    }
     case ModifierProtocol::environment: {
         LowerContext inner = context;
         static_cast<const EnvironmentModifier&>(*modifier_).apply(inner.environment);
@@ -1129,6 +1143,17 @@ std::unique_ptr<Element> TextNode::lower(const LowerContext& context) const {
     detail::bind(content_, context, target, [target](const std::string& content) { target->set_content(content); });
     detail::bind(style_.color ? *style_.color : Prop<Color>([environment] { return environment.get<ForegroundKey>(); }),
          context, target, [target](Color color, const Animation* animation) { target->set_color(color, animation); });
+    if (style_.selectable && !context.in_control) {
+        target->make_selectable(context.focus);
+        if (context.pointer_style_given) {
+            target->yield_pointer_style();
+        }
+        detail::bind(*style_.selectable, context, target, [target](bool selectable) { target->set_selectable(selectable); });
+        detail::bind(Prop<Color>([environment] { return environment.get<TintKey>(); }), context, target,
+                     [target](Color tint) { target->set_selection_tint(tint); });
+        detail::bind(Prop<bool>([environment] { return !environment.get<DisabledKey>(); }), context, target,
+                     [target](bool enabled) { target->set_enabled(enabled); });
+    }
     return element;
 }
 
@@ -1321,7 +1346,9 @@ std::unique_ptr<Element> ActivateNode::lower(const LowerContext& context) const 
             action();
         }
     };
-    auto element = make_event_element(std::make_unique<ActivateHandler>(action, enabled), content_, context);
+    LowerContext inner = context;
+    inner.in_control = true;
+    auto element = make_event_element(std::make_unique<ActivateHandler>(action, enabled), content_, inner);
     return with_accessibility(std::move(element), std::move(semantics), environment);
 }
 

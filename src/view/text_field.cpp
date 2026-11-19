@@ -9,10 +9,10 @@
 #include "platform/platform.h"
 #include "view/glyph_draw.h"
 #include "text/styled_layout.h"
+#include "text/text_boundaries.h"
 #include "view/styled_draw.h"
 
 #include <algorithm>
-#include <cctype>
 #include <cmath>
 #include <limits>
 #include <string_view>
@@ -28,13 +28,6 @@ constexpr float kMinWidth = 40;
 
 bool contains(const Rect& rect, Point point) {
     return point.x >= rect.x && point.y >= rect.y && point.x < rect.max_x() && point.y < rect.max_y();
-}
-
-// Word characters for word movement and double-click: letters, digits, '_', and anything
-// non-ASCII (so words in other scripts hold together).
-bool is_word_byte(char c) {
-    const auto u = static_cast<unsigned char>(c);
-    return u >= 0x80 || std::isalnum(u) || c == '_';
 }
 
 // A single line: line breaks and tabs become spaces.
@@ -434,17 +427,9 @@ void TextEditor::select_word(std::size_t byte) {
         }
     }
     // The run of word (or of non-word) characters around `byte`.
-    const bool word = byte < text_.size() ? is_word_byte(text_[byte]) : byte > 0 && is_word_byte(text_[byte - 1]);
-    std::size_t begin = byte;
-    std::size_t end = byte;
-    while (begin > 0 && is_word_byte(text_[begin - 1]) == word && text_[begin - 1] != '\n') {
-        --begin;
-    }
-    while (end < text_.size() && is_word_byte(text_[end]) == word && text_[end] != '\n') {
-        ++end;
-    }
-    anchor_ = out_of_atomic(to_boundary(text_, begin), false);
-    caret_ = out_of_atomic(to_boundary(text_, end), true);
+    const auto [begin, end] = word_around(text_, byte);
+    anchor_ = out_of_atomic(begin, false);
+    caret_ = out_of_atomic(end, true);
 }
 
 Size TextEditor::measure(ProposedSize proposal) const {
@@ -542,7 +527,7 @@ void TextEditor::paint(DisplayList& list, Rect frame) const {
         const std::size_t s0 = to_shown(selection_start());
         const std::size_t s1 = to_shown(selection_end());
         Color selection = tint;
-        selection.a *= 0.35f;
+        selection.a *= kSelectionOpacity;
         for (std::size_t li = 0; li < layout_.lines.size(); ++li) {
             const CaretStop* first = nullptr;
             const CaretStop* last = nullptr;

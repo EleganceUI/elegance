@@ -44,6 +44,7 @@ add_executable(elegance_tests
         menu_style_tests.cpp
         selection_tests.cpp
         secure_text_input_tests.cpp
+        selectable_text_tests.cpp
         fetch_tests.cpp
         image_decode_tests.cpp
         image_tests.cpp
@@ -151,7 +152,7 @@ if (NOT (WIN32 AND ELG_BUILD_SHARED))
     elg_layer_tests(geometry path_tests.cpp)
     elg_layer_tests(reactive reactive_tests.cpp)
     elg_layer_tests(animation)
-    elg_layer_tests(text glyph_atlas_tests.cpp)
+    elg_layer_tests(text glyph_atlas_tests.cpp text_boundaries_tests.cpp)
     elg_layer_tests(media sample_ring_tests.cpp)
     elg_layer_tests(net)
     elg_layer_tests(display)
