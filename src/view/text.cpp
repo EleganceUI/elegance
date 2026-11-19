@@ -154,6 +154,7 @@ void TextElement::set_content(std::string_view content) {
     if (valid == content_) {
         return;
     }
+    clear_selection(); // of text that isn't there any more
     content_ = std::move(valid);
     snap_next_layout();
     if (face_) {
@@ -272,6 +273,16 @@ void TextElement::clear_selection() {
     if (shown) {
         invalidate_paint();
     }
+}
+
+std::string TextElement::selected_text() const {
+    return content_.substr(selection_start(), selection_end() - selection_start());
+}
+
+void TextElement::select_all() {
+    const std::vector<CaretStop>& all = stops();
+    select(all.front().byte, all.back().byte);
+    invalidate_paint();
 }
 
 EventHandler* TextElement::event_handler() noexcept {

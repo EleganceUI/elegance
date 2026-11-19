@@ -492,6 +492,10 @@ public:
     [[nodiscard]] std::size_t selection_end() const noexcept { return std::max(anchor_, end_); }
     // Empties the selection, which stops it being the window's selected Text.
     void clear_selection();
+    // The selected text, as the content has it.
+    [[nodiscard]] std::string selected_text() const;
+    // Selects all of the text that its lines show.
+    void select_all();
 
     EventHandler* event_handler() noexcept override;
     EventHandler* disabled_handler() noexcept override;

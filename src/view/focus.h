@@ -42,6 +42,9 @@ public:
     // touching it.
     void forget(const Element* element) noexcept;
 
+    // The window's text input and clipboard (nullptr in tests that need neither).
+    [[nodiscard]] WindowServices* services() const noexcept { return services_; }
+
     // The window's selected Text (ELGSPEC-0030.R2): the selectable text in which a press last
     // started a selection, until that selection is cleared; nullptr when there's none.
     [[nodiscard]] TextElement* selected_text() const noexcept { return selected_text_; }

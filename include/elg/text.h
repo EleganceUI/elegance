@@ -79,8 +79,12 @@ public:
     ///
     /// Pressing and dragging selects from where the press went down; a double click selects a
     /// word, a triple click a paragraph, and Shift+click extends the selection. The selection is
-    /// drawn in the tint, as a focused text field's is. The pointer is an I-beam over the text,
-    /// which doesn't take focus.
+    /// drawn in the tint, as a focused text field's is. The primary modifier with C (Copy) copies
+    /// it as plain text, and with A (Select All) selects all of the text, unless a view the key
+    /// reaches first takes it; Edit menu items with MenuRole::copy and MenuRole::select_all do the
+    /// same. A window has one selection: a press anywhere else clears it, and so do a change of
+    /// the text and the text becoming disabled, unselectable, or removed. The pointer is an I-beam
+    /// over the text, which doesn't take focus.
     ///
     /// @param selectable Whether it can be selected, static or reactive. The default is true.
     /// @return This text, selectable while `selectable` is true.

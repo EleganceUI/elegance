@@ -239,3 +239,120 @@ TEST_CASE("a selection in one Text clears another's", "[selectable-text]") {
     CHECK(selection_of(first) == Selection{0, 0});
     CHECK(window.focus.selected_text() == &second);
 }
+
+namespace {
+
+void press_key(const Window& window, Key key, KeyModifiers modifiers, bool* taken = nullptr) {
+    const bool consumed = window.events->key({.kind = KeyEvent::Kind::down, .key = key, .modifiers = modifiers});
+    if (taken) {
+        *taken = consumed;
+    }
+    window.events->key({.kind = KeyEvent::Kind::up, .key = key, .modifiers = modifiers});
+}
+
+void select_whole(const Window& window, const detail::TextElement& text) {
+    window.drag({text.frame().x + 0.5f, text.frame().y + 5}, {text.frame().max_x() + 10, text.frame().y + 5});
+}
+
+} // namespace
+
+TEST_CASE("a press anywhere else in the window clears the selection", "[selectable-text]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const Window window(Text("hello world").selectable());
+    const detail::TextElement& text = window.text();
+    select_whole(window, text);
+    REQUIRE(selection_of(text) == Selection{0, 11});
+
+    // A secondary press on it keeps it (for a context menu around it).
+    const Point on_it{text.frame().x + 5, text.frame().y + 5};
+    window.events->pointer_button(PointerEvent::Kind::down, on_it, MouseButton::right, 1, KeyModifiers::none);
+    window.events->pointer_button(PointerEvent::Kind::up, on_it, MouseButton::right, 1, KeyModifiers::none);
+    CHECK(selection_of(text) == Selection{0, 11});
+
+    // Any press elsewhere clears it.
+    window.events->pointer_button(PointerEvent::Kind::down, {290, 190}, MouseButton::right, 1, KeyModifiers::none);
+    window.events->pointer_button(PointerEvent::Kind::up, {290, 190}, MouseButton::right, 1, KeyModifiers::none);
+    CHECK(selection_of(text) == Selection{0, 0});
+    CHECK(window.focus.selected_text() == nullptr);
+}
+
+TEST_CASE("Copy puts the selected text on the clipboard, and Select All selects all of it", "[selectable-text]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    Window window(Text("hello world").selectable());
+    const detail::TextElement& text = window.text();
+    const float line = text.frame().height;
+
+    window.press(on_line(text, 2, 0, line), 2); // "hello"
+    bool taken = false;
+    press_key(window, Key::c, primary_modifier(), &taken);
+    CHECK(taken);
+    CHECK(window.services.clipboard == "hello");
+
+    press_key(window, Key::a, primary_modifier(), &taken);
+    CHECK(taken);
+    CHECK(selection_of(text) == Selection{0, 11});
+    press_key(window, Key::c, primary_modifier());
+    CHECK(window.services.clipboard == "hello world");
+
+    // With another modifier, or nothing selected, the keys go on.
+    window.services.clipboard.clear();
+    press_key(window, Key::c, primary_modifier() | KeyModifiers::shift, &taken);
+    CHECK_FALSE(taken);
+    window.press(on_line(text, 2, 0, line)); // a press alone: an empty selection
+    press_key(window, Key::c, primary_modifier(), &taken);
+    CHECK_FALSE(taken);
+    CHECK(window.services.clipboard.empty());
+}
+
+TEST_CASE("what's copied has the content's line breaks, not where it wraps", "[selectable-text]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const std::string content = "one two three four five six\nseven";
+    const Window window(Text(content).selectable().frame({.width = 80}));
+    const detail::TextElement& text = window.text();
+    REQUIRE(text.frame().height > 60); // wrapped onto several lines
+    window.press({text.frame().x + 2, text.frame().y + 2});
+    press_key(window, Key::a, primary_modifier());
+    press_key(window, Key::c, primary_modifier());
+    CHECK(window.services.clipboard == content);
+}
+
+TEST_CASE("a view that takes Copy first keeps it", "[selectable-text]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const State<std::string> typed;
+    Window window(VStack(Text("hello").selectable(), TextField("Field", typed.binding())));
+    const detail::TextElement& text = window.text();
+    select_whole(window, text);
+    REQUIRE(selection_of(text) == Selection{0, 5});
+
+    // A text field that has focus takes the primary modifier with C itself.
+    detail::Element* field = detail::FocusManager::first_focusable(*window.root);
+    REQUIRE(field);
+    window.focus.focus(field, true);
+    press_key(window, Key::c, primary_modifier());
+    CHECK(window.services.clipboard.empty());
+}
+
+TEST_CASE("a change of the text, or the Text leaving, clears its selection", "[selectable-text]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const State<std::string> content(std::string("hello world"));
+    const Window window(Text(Prop<std::string>([content] { return content(); })).selectable());
+    detail::TextElement& text = window.text();
+    select_whole(window, text);
+    REQUIRE(selection_of(text) == Selection{0, 11});
+
+    content.set("goodbye");
+    detail::flush_effects();
+    CHECK(selection_of(text) == Selection{0, 0});
+    CHECK(window.focus.selected_text() == nullptr);
+
+    select_whole(window, text);
+    REQUIRE(window.focus.selected_text() == &text);
+    window.events->leaving(text);
+    CHECK(selection_of(text) == Selection{0, 0});
+    CHECK(window.focus.selected_text() == nullptr);
+}
