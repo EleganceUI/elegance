@@ -49,7 +49,7 @@ OPAQUE = {
     "Effects": "ElgEffects", "Sound": "ElgSound", "AudioPlayer": "ElgAudioPlayer",
     "AudioStream": "ElgAudioStream", "AudioRecorder": "ElgAudioRecorder", "Camera": "ElgCamera",
     "VideoPlayer": "ElgVideoPlayer", "VideoFeed": "ElgVideoFeed", "TrayIcon": "ElgTrayIcon",
-    "ModuleEntry": "ElgModuleEntry",
+    "ModuleEntry": "ElgModuleEntry", "Timer": "ElgTimer",
     # Closures' results, written through the C API (elg_string_assign(), ...).
     "std::string": "ElgCppString", "Font": "ElgCppFont", "ShapeStyle": "ElgCppShapeStyle",
     "std::optional<float>": "ElgOptFloat", "std::vector<TextSpan>": "ElgTextSpans",

@@ -21,6 +21,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <cstdint>
 #include <format>
 #include <memory>
@@ -38,6 +39,7 @@ using elg::ErrorAction;
 using elg::ModuleEntry;
 using elg::Rectangle;
 using elg::Text;
+using elg::Timer;
 using elg::Transition;
 using elg::View;
 namespace detail = elg::detail;
@@ -108,6 +110,12 @@ struct ElgPose {
 Transition* elg_transition_scale(float from, ElgAlignment anchor);
 ElgPose elg_transition_pose(const Transition* transition, float progress, bool removal, ElgSize view_size);
 void elg_transition_free(Transition* transition);
+Timer* elg_timer_after(double seconds, ElgClosure action);
+Timer* elg_timer_every(double seconds, ElgClosure action);
+void elg_timer_cancel(const Timer* timer);
+bool elg_timer_active(const Timer* timer);
+Timer* elg_timer_clone(const Timer* timer);
+void elg_timer_free(Timer* timer);
 }
 
 namespace {
@@ -598,4 +606,46 @@ TEST_CASE("a transition's pose carries its anchor through the C API", "[c-api][a
     CHECK(pose.anchor_x == 0.f);
     CHECK(pose.anchor_y == 0.f);
     elg_transition_free(scale);
+}
+
+TEST_CASE("timers through the C API fire, cancel, and say whether they're active", "[c-api][timer]") {
+    constexpr double kFarFuture = 1e12; // "now" for running every timer due by then
+    detail::cancel_all_timers();
+    Counts once;
+    Counts repeated;
+    Timer* later = elg_timer_after(1, closure(once));
+    Timer* every = elg_timer_every(1, closure(repeated));
+    REQUIRE(later);
+    REQUIRE(every);
+    CHECK(elg_timer_active(later));
+    Timer* copy = elg_timer_clone(every);
+    elg_timer_free(every); // freeing a handle doesn't stop the timer
+    CHECK(elg_timer_active(copy));
+
+    detail::run_due_timers(kFarFuture);
+    CHECK(once.calls == 1);
+    CHECK(repeated.calls == 1);
+    CHECK_FALSE(elg_timer_active(later)); // fired
+    elg_timer_cancel(copy);
+    elg_timer_cancel(copy); // twice is fine
+    CHECK_FALSE(elg_timer_active(copy));
+    detail::run_due_timers(kFarFuture * 2);
+    CHECK(repeated.calls == 1);
+    elg_timer_free(later);
+    elg_timer_free(copy);
+    detail::cancel_all_timers();
+    CHECK(once.drops == 1);
+    CHECK(repeated.drops == 1);
+
+    // No action: never active. NaN: a usage error, which still drops the closure.
+    Counts unused;
+    Timer* idle = elg_timer_after(0, none(unused));
+    REQUIRE(idle);
+    CHECK_FALSE(elg_timer_active(idle));
+    elg_timer_free(idle);
+    CHECK(unused.drops == 1);
+    Counts rejected;
+    CHECK(elg_timer_every(std::nan(""), closure(rejected)) == nullptr);
+    CHECK(take_error() == 2);
+    CHECK(rejected.drops == 1);
 }

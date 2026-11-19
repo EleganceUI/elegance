@@ -1419,6 +1419,71 @@ ELG_EXPORT void elg_animation_free(Animation* animation) {
     ELG_CATCH_VOID
 }
 
+// --- Timers ---
+
+/// Wraps `after()`: runs `action` once, `seconds` from now (0: as soon as the current event is handled), on
+/// the UI thread. A timer started while views are built, or in on_appear, ends with that view.
+///
+/// @param seconds The delay; negative counts as 0. Positive infinity never runs the action. NaN is a usage
+///   error.
+/// @param action The action. No args. May be none: the timer is never active.
+/// @return The timer, owned by the caller (elg_timer_free(), which doesn't stop it). Null on failure.
+ELG_EXPORT Timer* elg_timer_after(double seconds, ElgClosure action) {
+    const Consumed consumed(action);
+    ELG_TRY
+    return new Timer(after(seconds, elg_shim::action(share(action))));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `every()`: runs `action` every `seconds` (at least a millisecond), the first time `seconds` from
+/// now, on the UI thread. Missed runs are skipped. A timer started while views are built, or in
+/// on_appear, ends with that view.
+///
+/// @param seconds The interval; less than a millisecond counts as a millisecond. Positive infinity never runs
+///   the action. NaN is a usage error.
+/// @param action The action. No args. May be none: the timer is never active.
+/// @return The timer, owned by the caller (elg_timer_free(), which doesn't stop it). Null on failure.
+ELG_EXPORT Timer* elg_timer_every(double seconds, ElgClosure action) {
+    const Consumed consumed(action);
+    ELG_TRY
+    return new Timer(every(seconds, elg_shim::action(share(action))));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `Timer::cancel()`: the action doesn't run again. Fine to call more than once.
+///
+/// @param timer The timer (borrowed).
+ELG_EXPORT void elg_timer_cancel(const Timer* timer) {
+    ELG_TRY
+    timer->cancel();
+    ELG_CATCH_VOID
+}
+/// Wraps `Timer::active()`: whether the timer is still going: not cancelled, its view still there, and for
+/// elg_timer_after(), not fired yet.
+///
+/// @param timer The timer (borrowed).
+/// @return true while it's going; false on failure.
+ELG_EXPORT bool elg_timer_active(const Timer* timer) {
+    ELG_TRY
+    return timer->active();
+    ELG_CATCH(false)
+}
+/// Copies a timer handle: both refer to the same timer.
+///
+/// @param timer The timer (borrowed).
+/// @return The copy, owned by the caller (elg_timer_free()). Null on failure.
+ELG_EXPORT Timer* elg_timer_clone(const Timer* timer) {
+    ELG_TRY
+    return new Timer(*timer);
+    ELG_CATCH(nullptr)
+}
+/// Frees a timer handle. The timer goes on running.
+///
+/// @param timer The timer (consumed); may be null.
+ELG_EXPORT void elg_timer_free(Timer* timer) {
+    const Consumed consumed(timer); // freed as the call ends
+    ELG_TRY
+    ELG_CATCH_VOID
+}
+
 // --- Transition ---
 
 /// A Transition::Pose: how a view looks partway through a transition.

@@ -145,6 +145,8 @@ typedef struct ElgTextFieldConfiguration ElgTextFieldConfiguration;
 typedef struct ElgTextFieldStyle ElgTextFieldStyle;
 /// A handle to a std::vector<TextSpan>.
 typedef struct ElgTextSpans ElgTextSpans;
+/// A handle to an elg::Timer.
+typedef struct ElgTimer ElgTimer;
 /// A handle to an elg::ToggleConfiguration.
 typedef struct ElgToggleConfiguration ElgToggleConfiguration;
 /// A handle to a std::shared_ptr<const ToggleStyle>.
@@ -1788,6 +1790,50 @@ ElgAnimation* elg_animation_clone(const ElgAnimation* animation);
 ///
 /// @param animation The animation (consumed); may be null.
 void elg_animation_free(ElgAnimation* animation);
+
+// --- Timers ---
+
+/// Wraps `after()`: runs `action` once, `seconds` from now (0: as soon as the current event is handled), on
+/// the UI thread. A timer started while views are built, or in on_appear, ends with that view.
+///
+/// @param seconds The delay; negative counts as 0. Positive infinity never runs the action. NaN is a usage
+///   error.
+/// @param action The action. No args. May be none: the timer is never active.
+/// @return The timer, owned by the caller (elg_timer_free(), which doesn't stop it). Null on failure.
+ElgTimer* elg_timer_after(double seconds, ElgClosure action);
+
+/// Wraps `every()`: runs `action` every `seconds` (at least a millisecond), the first time `seconds` from
+/// now, on the UI thread. Missed runs are skipped. A timer started while views are built, or in
+/// on_appear, ends with that view.
+///
+/// @param seconds The interval; less than a millisecond counts as a millisecond. Positive infinity never runs
+///   the action. NaN is a usage error.
+/// @param action The action. No args. May be none: the timer is never active.
+/// @return The timer, owned by the caller (elg_timer_free(), which doesn't stop it). Null on failure.
+ElgTimer* elg_timer_every(double seconds, ElgClosure action);
+
+/// Wraps `Timer::cancel()`: the action doesn't run again. Fine to call more than once.
+///
+/// @param timer The timer (borrowed).
+void elg_timer_cancel(const ElgTimer* timer);
+
+/// Wraps `Timer::active()`: whether the timer is still going: not cancelled, its view still there, and for
+/// elg_timer_after(), not fired yet.
+///
+/// @param timer The timer (borrowed).
+/// @return true while it's going; false on failure.
+bool elg_timer_active(const ElgTimer* timer);
+
+/// Copies a timer handle: both refer to the same timer.
+///
+/// @param timer The timer (borrowed).
+/// @return The copy, owned by the caller (elg_timer_free()). Null on failure.
+ElgTimer* elg_timer_clone(const ElgTimer* timer);
+
+/// Frees a timer handle. The timer goes on running.
+///
+/// @param timer The timer (consumed); may be null.
+void elg_timer_free(ElgTimer* timer);
 
 // --- Transition ---
 
