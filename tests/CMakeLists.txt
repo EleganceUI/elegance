@@ -44,6 +44,7 @@ add_executable(elegance_tests
         menu_style_tests.cpp
         selection_tests.cpp
         secure_text_input_tests.cpp
+        selectable_text_tests.cpp
         fetch_tests.cpp
         image_decode_tests.cpp
         image_tests.cpp

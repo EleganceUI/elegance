@@ -1129,6 +1129,14 @@ std::unique_ptr<Element> TextNode::lower(const LowerContext& context) const {
     detail::bind(content_, context, target, [target](const std::string& content) { target->set_content(content); });
     detail::bind(style_.color ? *style_.color : Prop<Color>([environment] { return environment.get<ForegroundKey>(); }),
          context, target, [target](Color color, const Animation* animation) { target->set_color(color, animation); });
+    if (style_.selectable) {
+        target->make_selectable(context.focus);
+        detail::bind(*style_.selectable, context, target, [target](bool selectable) { target->set_selectable(selectable); });
+        detail::bind(Prop<Color>([environment] { return environment.get<TintKey>(); }), context, target,
+                     [target](Color tint) { target->set_selection_tint(tint); });
+        detail::bind(Prop<bool>([environment] { return !environment.get<DisabledKey>(); }), context, target,
+                     [target](bool enabled) { target->set_enabled(enabled); });
+    }
     return element;
 }
 

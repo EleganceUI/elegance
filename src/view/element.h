@@ -10,6 +10,7 @@
 
 #include "display/display_list.h"
 #include "platform/access_tree.h"
+#include "text/styled_layout.h"
 #include "text/text_layout.h"
 #include "text/text_system.h"
 #include "view/animated.h"
@@ -24,6 +25,7 @@
 #include <elg/view.h>
 #include <elg/views.h>
 
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -429,21 +431,70 @@ private:
     ShapeHitArea hit_area_;
 };
 
+// What a .disabled() view's handler hears: hover, pointer moves over it, and scrolling, but no
+// presses, keys, text, trackpad gestures, focus, or pointer styles.
+class DisabledEventHandler final : public EventHandler {
+public:
+    explicit DisabledEventHandler(EventHandler& handler) noexcept : handler_(&handler) {}
+
+    EventResult pointer(const PointerEvent& event, Rect frame) override {
+        const bool passes = event.kind == PointerEvent::Kind::hover || event.kind == PointerEvent::Kind::cancel;
+        return passes ? handler_->pointer(event, frame) : EventResult{};
+    }
+    EventResult hover(bool inside) override { return handler_->hover(inside); }
+    EventResult scroll(const ScrollEvent& event, Rect frame) override { return handler_->scroll(event, frame); }
+    EventResult focus(bool focused) override { return handler_->focus(focused); }
+    [[nodiscard]] std::optional<HoverDelay> hover_delay() const override { return handler_->hover_delay(); }
+    [[nodiscard]] bool covers_frame() const override { return handler_->covers_frame(); }
+    [[nodiscard]] EventPhase phase() const override { return handler_->phase(); }
+
+private:
+    EventHandler* handler_;
+};
+
 struct TextStyle {
     std::optional<Prop<Font>> font;
     std::optional<Prop<Weight>> weight;
     std::optional<Prop<Color>> color;
     int line_limit = 0; // 0: unlimited
     TextAlignment alignment = TextAlignment::leading;
+    std::optional<Prop<bool>> selectable; // Text::selectable()
 };
 
-class TextElement final : public Element {
+// How opaque a selection's highlight is over the tint, in text fields and selectable Text.
+inline constexpr float kSelectionOpacity = 0.35f;
+
+class TextElement final : public Element, private EventHandler {
 public:
     void accessibility(AccessibilityInfo& out) const override;
     void inspect(Inspection& out) const override;
     // Font, content, and color are set with the setters (from static values or reactive
     // arguments), font first.
     TextElement(TextSystem& text, int line_limit, TextAlignment alignment);
+    ~TextElement() override;
+    TextElement(const TextElement&) = delete;
+    TextElement& operator=(const TextElement&) = delete;
+    TextElement(TextElement&&) = delete;
+    TextElement& operator=(TextElement&&) = delete;
+
+    // --- Selectable text (Text::selectable()) ---
+
+    // Gives it a handler that selects, in the window whose focus manager is `window` (which holds
+    // the window's selected Text): from then on, while set_selectable(true). nullptr: on its own.
+    void make_selectable(FocusManager* window);
+    void set_selectable(bool selectable);
+    // The color its selection is drawn in: the tint, at a text field's selection opacity.
+    void set_selection_tint(Color tint);
+    // Disabled: presses go past it (ELGSPEC-0009.R9).
+    void set_enabled(bool enabled);
+    // The selection, as bytes of the content: [start, end).
+    [[nodiscard]] std::size_t selection_start() const noexcept { return std::min(anchor_, end_); }
+    [[nodiscard]] std::size_t selection_end() const noexcept { return std::max(anchor_, end_); }
+    // Empties the selection, which stops it being the window's selected Text.
+    void clear_selection();
+
+    EventHandler* event_handler() noexcept override;
+    EventHandler* disabled_handler() noexcept override;
 
     // Loads the font (throws elg::ResourceError if it can't), reshapes, and invalidates layout.
     void set_font(const Font& font);
@@ -462,6 +513,23 @@ private:
     TextLayoutResult layout(ProposedSize proposal) const;
     // Recomputes the lines for the new text at the last proposal (see text.cpp).
     void relayout_now();
+    // Shapes the content into paragraphs (with each one's first byte).
+    void reshape();
+
+    // EventHandler: selecting with the pointer, and its shape.
+    EventResult pointer(const PointerEvent& event, Rect frame) override;
+    [[nodiscard]] PointerStyle pointer_style(Point location) const override;
+    // The caret stops of the arranged lines, as a text field's (computed when first needed).
+    [[nodiscard]] const std::vector<CaretStop>& stops() const;
+    // Where line `line` starts, from the frame's leading edge (its alignment).
+    [[nodiscard]] float line_offset(std::size_t line, float width) const;
+    // The position (a stop's byte) nearest `local`, a point in the frame.
+    [[nodiscard]] std::size_t position_at(Point local) const;
+    // The stop at or before `byte` (`up`: at or after it), so that a selection's ends are stops.
+    [[nodiscard]] std::size_t snapped(std::size_t byte, bool up) const;
+    // Selects from `anchor` to `end` (stops), and makes this the window's selected Text.
+    void select(std::size_t anchor, std::size_t end);
+    void paint_selection(DisplayList& list, Rect bounds) const;
 
     TextSystem* text_;
     const FontFace* face_ = nullptr;
@@ -473,10 +541,23 @@ private:
     float line_height_ = 0;
     std::string content_;
     std::vector<ShapedParagraph> paragraphs_;
+    std::vector<std::size_t> paragraph_starts_; // each paragraph's first byte in content_
     ShapedParagraph ellipsis_;
     float ellipsis_width_ = 0;
     TextLayoutResult arranged_;
     std::optional<ProposedSize> arranged_for_; // the proposal arranged_ is for, until text or font change
+    mutable std::optional<std::vector<CaretStop>> stops_; // for arranged_, until it changes
+
+    // Selectable text: whether it has the handler, and whether it selects now.
+    bool can_select_ = false;
+    bool selectable_ = false;
+    bool enabled_ = true;
+    FocusManager* window_ = nullptr;
+    Color selection_color_ = Color::clear;
+    std::size_t anchor_ = 0;
+    std::size_t end_ = 0;
+    bool dragging_ = false; // a press that started a selection is down
+    DisabledEventHandler disabled_{*this};
 };
 
 class SpacerElement final : public Element {
@@ -744,27 +825,6 @@ private:
     std::shared_ptr<const DecorationModifier> modifier_;
     std::unique_ptr<Element> content_;
     std::unique_ptr<Element> decoration_;
-};
-
-// What a .disabled() view's handler hears: hover, pointer moves over it, and scrolling, but no
-// presses, keys, text, trackpad gestures, focus, or pointer styles.
-class DisabledEventHandler final : public EventHandler {
-public:
-    explicit DisabledEventHandler(EventHandler& handler) noexcept : handler_(&handler) {}
-
-    EventResult pointer(const PointerEvent& event, Rect frame) override {
-        const bool passes = event.kind == PointerEvent::Kind::hover || event.kind == PointerEvent::Kind::cancel;
-        return passes ? handler_->pointer(event, frame) : EventResult{};
-    }
-    EventResult hover(bool inside) override { return handler_->hover(inside); }
-    EventResult scroll(const ScrollEvent& event, Rect frame) override { return handler_->scroll(event, frame); }
-    EventResult focus(bool focused) override { return handler_->focus(focused); }
-    [[nodiscard]] std::optional<HoverDelay> hover_delay() const override { return handler_->hover_delay(); }
-    [[nodiscard]] bool covers_frame() const override { return handler_->covers_frame(); }
-    [[nodiscard]] EventPhase phase() const override { return handler_->phase(); }
-
-private:
-    EventHandler* handler_;
 };
 
 // A view with an EventModifier: owns the handler; layout, paint, and hit testing pass through.

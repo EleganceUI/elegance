@@ -104,6 +104,13 @@ void FocusManager::notify_watches() {
     }
 }
 
+void FocusManager::select_text(TextElement* text) {
+    if (selected_text_ && selected_text_ != text) {
+        std::exchange(selected_text_, nullptr)->clear_selection();
+    }
+    selected_text_ = text;
+}
+
 void FocusManager::forget(const Element* element) noexcept {
     std::erase_if(watches_, [&](const Watch& watch) { return watch.scope == element; });
     if (focused_ == element) {

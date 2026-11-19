@@ -75,6 +75,16 @@ public:
     /// @param alignment Where each line goes within the text's frame. The default is leading.
     /// @return This text, with its lines aligned.
     [[nodiscard]] ELG_API Text multiline_text_alignment(TextAlignment alignment) const;
+    /// Lets the person using the app select the text with the pointer, and copy it.
+    ///
+    /// Pressing and dragging selects from where the press went down; a double click selects a
+    /// word, a triple click a paragraph, and Shift+click extends the selection. The selection is
+    /// drawn in the tint, as a focused text field's is. The pointer is an I-beam over the text,
+    /// which doesn't take focus.
+    ///
+    /// @param selectable Whether it can be selected, static or reactive. The default is true.
+    /// @return This text, selectable while `selectable` is true.
+    [[nodiscard]] ELG_API Text selectable(Prop<bool> selectable = true) const;
 
 private:
     friend struct detail::ViewAccess;

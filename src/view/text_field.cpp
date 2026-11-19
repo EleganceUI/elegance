@@ -527,7 +527,7 @@ void TextEditor::paint(DisplayList& list, Rect frame) const {
         const std::size_t s0 = to_shown(selection_start());
         const std::size_t s1 = to_shown(selection_end());
         Color selection = tint;
-        selection.a *= 0.35f;
+        selection.a *= kSelectionOpacity;
         for (std::size_t li = 0; li < layout_.lines.size(); ++li) {
             const CaretStop* first = nullptr;
             const CaretStop* last = nullptr;
