@@ -87,13 +87,18 @@ StyledShape shape_styled(std::string_view text, const std::vector<StyledRunSpec>
 
 std::vector<CaretStop> caret_stops(const StyledShape& shape, const TextLayoutResult& layout, float size,
                                    std::size_t text_size) {
+    return caret_stops(shape.paragraphs, shape.starts, layout, size, text_size);
+}
+
+std::vector<CaretStop> caret_stops(const std::vector<ShapedParagraph>& paragraphs, const std::vector<std::size_t>& starts,
+                                   const TextLayoutResult& layout, float size, std::size_t text_size) {
     std::vector<CaretStop> stops;
     for (std::size_t li = 0; li < layout.lines.size(); ++li) {
         const TextLine& line = layout.lines[li];
-        const ShapedParagraph& paragraph = shape.paragraphs[line.paragraph];
-        const std::size_t start = shape.starts[line.paragraph];
+        const ShapedParagraph& paragraph = paragraphs[line.paragraph];
+        const std::size_t start = starts[line.paragraph];
         const std::size_t paragraph_end =
-            line.paragraph + 1 < shape.starts.size() ? shape.starts[line.paragraph + 1] - 1 : text_size;
+            line.paragraph + 1 < starts.size() ? starts[line.paragraph + 1] - 1 : text_size;
         float x = 0;
         for (std::size_t g = line.begin; g < line.end; ++g) {
             const ShapedGlyph& glyph = paragraph.glyphs[g];

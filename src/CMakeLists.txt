@@ -237,7 +237,7 @@ elg_layer(text_os
         LINUX platform/linux/fonts.cpp)
 elg_layer(text
         SOURCES text/color_glyph.cpp text/font_library.cpp text/glyph_atlas.cpp text/glyph_cache.cpp
-                text/styled_layout.cpp text/text_layout.cpp
+                text/styled_layout.cpp text/text_boundaries.cpp text/text_layout.cpp
         DEPENDS core geometry reactive text_os
         LIBRARIES Freetype::Freetype harfbuzz::harfbuzz msdfgen::msdfgen-core)
 
