@@ -27,7 +27,7 @@ extern "C" {
 
 /// The ABI version this header declares: what elg_abi_version() returns for a library that
 /// matches it. A binding refuses to run with a library whose version differs.
-#define ELG_ABI_VERSION 3u
+#define ELG_ABI_VERSION 4u
 
 /// The kinds of error elg_take_error() returns.
 #define ELG_NO_ERROR 0
@@ -678,9 +678,10 @@ typedef struct ElgWindowDesc {
     bool fullscreen;
 } ElgWindowDesc;
 
-/// A Transition::Pose without its anchor: how a view looks partway through a transition.
+/// A Transition::Pose: how a view looks partway through a transition.
 typedef struct ElgPose {
     float opacity, scale, x, y; ///< Opacity and scale (1: as is), and the offset in points.
+    float anchor_x, anchor_y;   ///< What it scales around, as fractions of its frame (0.5: the middle).
 } ElgPose;
 
 /// The options of elg_text_field() (`TextFieldOptions`) and elg_text_area() (`TextAreaOptions`, which has no
@@ -1736,6 +1737,32 @@ ElgAnimation* elg_animation_custom(ElgClosure curve, double duration);
 ///   CSS: -0.1 begins where it would be 0.1 s in.
 /// @return The new animation, owned by the caller (elg_animation_free()). Null on failure.
 ElgAnimation* elg_animation_delay(const ElgAnimation* animation, double seconds);
+
+/// Wraps `Animation::timing_curve()`: a cubic Bézier through (0, 0), (x1, y1), (x2, y2) and (1, 1), like
+/// CSS's cubic-bezier().
+///
+/// @param x1 The first control point's time, 0 to 1 (clamped).
+/// @param y1 The first control point's progress; outside 0 to 1 overshoots.
+/// @param x2 The second control point's time, 0 to 1 (clamped).
+/// @param y2 The second control point's progress; outside 0 to 1 overshoots.
+/// @param duration Seconds; negative counts as 0 (no animation).
+/// @return The animation, owned by the caller (elg_animation_free()). Null on failure.
+ElgAnimation* elg_animation_timing_curve(double x1, double y1, double x2, double y2, double duration);
+
+/// Wraps `Animation::repeat_count()`: a copy of `animation` that plays `count` times.
+///
+/// @param animation The animation (borrowed).
+/// @param count How many times; less than 1 counts as 1.
+/// @param autoreverses Every other time runs backward, from the target to where it started.
+/// @return The new animation, owned by the caller (elg_animation_free()). Null on failure.
+ElgAnimation* elg_animation_repeat_count(const ElgAnimation* animation, int32_t count, bool autoreverses);
+
+/// Wraps `Animation::repeat_forever()`: a copy of `animation` that plays until it's replaced.
+///
+/// @param animation The animation (borrowed).
+/// @param autoreverses Every other time runs backward, from the target to where it started.
+/// @return The new animation, owned by the caller (elg_animation_free()). Null on failure.
+ElgAnimation* elg_animation_repeat_forever(const ElgAnimation* animation, bool autoreverses);
 
 /// Wraps `Animation::progress()`.
 ///

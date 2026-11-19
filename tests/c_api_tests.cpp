@@ -38,6 +38,7 @@ using elg::ErrorAction;
 using elg::ModuleEntry;
 using elg::Rectangle;
 using elg::Text;
+using elg::Transition;
 using elg::View;
 namespace detail = elg::detail;
 
@@ -96,6 +97,17 @@ EnvironmentValues* elg_env_new();
 void elg_env_free(EnvironmentValues* environment);
 int32_t elg_env_color_scheme(const EnvironmentValues* environment);
 bool elg_system_accent_color(ElgColor* color);
+Animation* elg_animation_linear(double duration);
+Animation* elg_animation_timing_curve(double x1, double y1, double x2, double y2, double duration);
+Animation* elg_animation_repeat_count(const Animation* animation, int32_t count, bool autoreverses);
+Animation* elg_animation_repeat_forever(const Animation* animation, bool autoreverses);
+bool elg_animation_finished(const Animation* animation, double seconds);
+struct ElgPose {
+    float opacity, scale, x, y, anchor_x, anchor_y;
+};
+Transition* elg_transition_scale(float from, ElgAlignment anchor);
+ElgPose elg_transition_pose(const Transition* transition, float progress, bool removal, ElgSize view_size);
+void elg_transition_free(Transition* transition);
 }
 
 namespace {
@@ -551,4 +563,39 @@ TEST_CASE("elg_env_new is an empty environment, and elg_system_accent_color does
     if (!has_accent) {
         CHECK(color.r == 0.f); // left as it was
     }
+}
+
+TEST_CASE("the C API's timing curves and repeats match the C++ API's", "[c-api][animation]") {
+    Animation* curve = elg_animation_timing_curve(0.55, 0.1, 0.45, 0.9, 1.4);
+    REQUIRE(curve);
+    const Animation expected = Animation::timing_curve(0.55, 0.1, 0.45, 0.9, 1.4);
+    for (const double t : {0.0, 0.3, 0.7, 1.4}) {
+        CHECK(elg_animation_progress(curve, t) == expected.progress(t));
+    }
+
+    Animation* linear = elg_animation_linear(1);
+    Animation* three = elg_animation_repeat_count(linear, 3, true);
+    Animation* forever = elg_animation_repeat_forever(linear, false);
+    REQUIRE(three);
+    REQUIRE(forever);
+    const Animation expected_three = Animation::linear(1).repeat_count(3, true);
+    for (const double t : {0.5, 1.5, 2.5}) {
+        CHECK(elg_animation_progress(three, t) == expected_three.progress(t));
+    }
+    CHECK_FALSE(elg_animation_finished(three, 2.5));
+    CHECK(elg_animation_finished(three, 3.5));
+    CHECK_FALSE(elg_animation_finished(forever, 1000));
+    for (Animation* animation : {curve, linear, three, forever}) {
+        elg_animation_free(animation);
+    }
+}
+
+TEST_CASE("a transition's pose carries its anchor through the C API", "[c-api][animation]") {
+    Transition* scale = elg_transition_scale(0.5f, ElgAlignment{.horizontal = 0, .vertical = 0});
+    REQUIRE(scale);
+    const ElgPose pose = elg_transition_pose(scale, 0, false, ElgSize{100, 100});
+    CHECK(pose.scale == 0.5f);
+    CHECK(pose.anchor_x == 0.f);
+    CHECK(pose.anchor_y == 0.f);
+    elg_transition_free(scale);
 }

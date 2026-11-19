@@ -1239,7 +1239,7 @@ ELG_EXPORT const char* elg_version() {
 
 // The C API's ABI version. It goes up by one whenever an exported function's signature, a struct
 // passed across the API, or the value of a documented constant changes.
-constexpr std::uint32_t kAbiVersion = 3;
+constexpr std::uint32_t kAbiVersion = 4;
 
 /// The C API's ABI version: a binding checks it when it loads the library, and refuses to run
 /// with a version it wasn't built for. It changes whenever an exported function's signature, a
@@ -1346,6 +1346,41 @@ ELG_EXPORT Animation* elg_animation_delay(const Animation* animation, double sec
     return new Animation(animation->delay(seconds));
     ELG_CATCH(nullptr)
 }
+/// Wraps `Animation::timing_curve()`: a cubic Bézier through (0, 0), (x1, y1), (x2, y2) and (1, 1), like
+/// CSS's cubic-bezier().
+///
+/// @param x1 The first control point's time, 0 to 1 (clamped).
+/// @param y1 The first control point's progress; outside 0 to 1 overshoots.
+/// @param x2 The second control point's time, 0 to 1 (clamped).
+/// @param y2 The second control point's progress; outside 0 to 1 overshoots.
+/// @param duration Seconds; negative counts as 0 (no animation).
+/// @return The animation, owned by the caller (elg_animation_free()). Null on failure.
+ELG_EXPORT Animation* elg_animation_timing_curve(double x1, double y1, double x2, double y2, double duration) {
+    ELG_TRY
+    return new Animation(Animation::timing_curve(x1, y1, x2, y2, duration));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `Animation::repeat_count()`: a copy of `animation` that plays `count` times.
+///
+/// @param animation The animation (borrowed).
+/// @param count How many times; less than 1 counts as 1.
+/// @param autoreverses Every other time runs backward, from the target to where it started.
+/// @return The new animation, owned by the caller (elg_animation_free()). Null on failure.
+ELG_EXPORT Animation* elg_animation_repeat_count(const Animation* animation, int32_t count, bool autoreverses) {
+    ELG_TRY
+    return new Animation(animation->repeat_count(count, autoreverses));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `Animation::repeat_forever()`: a copy of `animation` that plays until it's replaced.
+///
+/// @param animation The animation (borrowed).
+/// @param autoreverses Every other time runs backward, from the target to where it started.
+/// @return The new animation, owned by the caller (elg_animation_free()). Null on failure.
+ELG_EXPORT Animation* elg_animation_repeat_forever(const Animation* animation, bool autoreverses) {
+    ELG_TRY
+    return new Animation(animation->repeat_forever(autoreverses));
+    ELG_CATCH(nullptr)
+}
 /// Wraps `Animation::progress()`.
 ///
 /// @param animation The animation (borrowed).
@@ -1386,9 +1421,10 @@ ELG_EXPORT void elg_animation_free(Animation* animation) {
 
 // --- Transition ---
 
-/// A Transition::Pose without its anchor: how a view looks partway through a transition.
+/// A Transition::Pose: how a view looks partway through a transition.
 struct ElgPose {
     float opacity, scale, x, y; ///< Opacity and scale (1: as is), and the offset in points.
+    float anchor_x, anchor_y;   ///< What it scales around, as fractions of its frame (0.5: the middle).
 };
 
 /// Wraps `Transition::opacity()`: the view fades in and out.
@@ -1475,7 +1511,7 @@ ELG_EXPORT Transition* elg_transition_combined(const Transition* a, const Transi
 ELG_EXPORT ElgPose elg_transition_pose(const Transition* transition, float progress, bool removal, ElgSize view_size) {
     ELG_TRY
     const Transition::Pose pose = transition->pose(progress, removal, size(view_size));
-    return {pose.opacity, pose.scale, pose.x, pose.y};
+    return {pose.opacity, pose.scale, pose.x, pose.y, pose.anchor_x, pose.anchor_y};
     ELG_CATCH({})
 }
 /// Copies a transition.

@@ -48,7 +48,7 @@
 #define ELG_FIELDS_ElgTheme(X) X(ElgTheme, colors) X(ElgTheme, blur)
 #define ELG_FIELDS_ElgLayoutChild(X) X(ElgLayoutChild, element)
 #define ELG_FIELDS_ElgWindowDesc(X) X(ElgWindowDesc, title) X(ElgWindowDesc, width) X(ElgWindowDesc, height) X(ElgWindowDesc, resizable) X(ElgWindowDesc, has_min_size) X(ElgWindowDesc, min_size) X(ElgWindowDesc, has_background) X(ElgWindowDesc, background) X(ElgWindowDesc, title_bar) X(ElgWindowDesc, has_system_controls_position) X(ElgWindowDesc, system_controls_position) X(ElgWindowDesc, transparent) X(ElgWindowDesc, opacity) X(ElgWindowDesc, fullscreen)
-#define ELG_FIELDS_ElgPose(X) X(ElgPose, opacity) X(ElgPose, scale) X(ElgPose, x) X(ElgPose, y)
+#define ELG_FIELDS_ElgPose(X) X(ElgPose, opacity) X(ElgPose, scale) X(ElgPose, x) X(ElgPose, y) X(ElgPose, anchor_x) X(ElgPose, anchor_y)
 #define ELG_FIELDS_ElgTextFieldOptions(X) X(ElgTextFieldOptions, on_submit) X(ElgTextFieldOptions, secure) X(ElgTextFieldOptions, line_limit) X(ElgTextFieldOptions, styler) X(ElgTextFieldOptions, on_key)
 #define ELG_FIELDS_ElgNumberInputOptions(X) X(ElgNumberInputOptions, min) X(ElgNumberInputOptions, max) X(ElgNumberInputOptions, step) X(ElgNumberInputOptions, decimals) X(ElgNumberInputOptions, format) X(ElgNumberInputOptions, parse) X(ElgNumberInputOptions, live) X(ElgNumberInputOptions, shows_buttons) X(ElgNumberInputOptions, scrubs)
 #define ELG_FIELDS_ElgOptNumber(X) X(ElgOptNumber, has) X(ElgOptNumber, value)
