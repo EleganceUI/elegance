@@ -356,3 +356,51 @@ TEST_CASE("a change of the text, or the Text leaving, clears its selection", "[s
     CHECK(selection_of(text) == Selection{0, 0});
     CHECK(window.focus.selected_text() == nullptr);
 }
+
+TEST_CASE("inside a control, a selectable Text doesn't select: presses go to the control", "[selectable-text]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    int pressed = 0;
+    const auto press_middle = [](const Window& window) {
+        const Rect frame = window.text().frame();
+        window.drag({frame.x + 1, frame.y + 5}, {frame.max_x() - 1, frame.y + 5});
+    };
+
+    const Window button(Button(Text("Press").selectable(), [&] { ++pressed; }));
+    press_middle(button);
+    CHECK(pressed == 1);
+    CHECK(button.text().event_handler() == nullptr);
+    CHECK(button.focus.selected_text() == nullptr);
+
+    const Window clicked(Text("Click").selectable().on_click([&] { ++pressed; }));
+    press_middle(clicked);
+    CHECK(pressed == 2);
+    CHECK(clicked.text().event_handler() == nullptr);
+
+    const Window activated(Text("Activate").selectable().on_activate([&] { ++pressed; }));
+    press_middle(activated);
+    CHECK(pressed == 3);
+    CHECK(activated.text().event_handler() == nullptr);
+
+    const State<std::optional<int>> picked;
+    const Window rows(VStack(ForEach(std::vector<int>{1, 2}, [](int) { return Text("Row").selectable(); }))
+                          .selection(picked.binding()));
+    CHECK(rows.text().event_handler() == nullptr);
+    press_middle(rows);
+    CHECK(picked() == 1);
+}
+
+TEST_CASE("a pointer_style given to a selectable Text wins over its I-beam", "[selectable-text]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const Window styled(Text("styled").selectable().pointer_style(PointerStyle::crosshair));
+    const Rect frame = styled.text().frame();
+    styled.events->pointer_moved({frame.x + 5, frame.y + 5});
+    CHECK(styled.events->pointer_style() == PointerStyle::crosshair);
+
+    // One given to a view around it doesn't.
+    const Window around(VStack(Text("inside").selectable()).pointer_style(PointerStyle::crosshair));
+    const Rect inside = around.text().frame();
+    around.events->pointer_moved({inside.x + 5, inside.y + 5});
+    CHECK(around.events->pointer_style() == PointerStyle::text);
+}

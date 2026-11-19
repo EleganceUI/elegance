@@ -487,6 +487,8 @@ public:
     void set_selection_tint(Color tint);
     // Disabled: presses go past it (ELGSPEC-0009.R9).
     void set_enabled(bool enabled);
+    // A pointer_style() given to it decides the pointer, not its I-beam.
+    void yield_pointer_style() noexcept { yields_pointer_style_ = true; }
     // The selection, as bytes of the content: [start, end).
     [[nodiscard]] std::size_t selection_start() const noexcept { return std::min(anchor_, end_); }
     [[nodiscard]] std::size_t selection_end() const noexcept { return std::max(anchor_, end_); }
@@ -556,6 +558,7 @@ private:
     bool can_select_ = false;
     bool selectable_ = false;
     bool enabled_ = true;
+    bool yields_pointer_style_ = false;
     FocusManager* window_ = nullptr;
     Color selection_color_ = Color::clear;
     std::size_t anchor_ = 0;

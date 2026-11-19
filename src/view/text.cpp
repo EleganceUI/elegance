@@ -392,7 +392,7 @@ EventResult TextElement::pointer(const PointerEvent& event, Rect frame) {
 }
 
 PointerStyle TextElement::pointer_style(Point) const {
-    return selectable_ ? PointerStyle::text : PointerStyle::automatic;
+    return selectable_ && !yields_pointer_style_ ? PointerStyle::text : PointerStyle::automatic;
 }
 
 void TextElement::paint_selection(DisplayList& list, Rect bounds) const {

@@ -84,7 +84,10 @@ public:
     /// reaches first takes it; Edit menu items with MenuRole::copy and MenuRole::select_all do the
     /// same. A window has one selection: a press anywhere else clears it, and so do a change of
     /// the text and the text becoming disabled, unselectable, or removed. The pointer is an I-beam
-    /// over the text, which doesn't take focus.
+    /// over the text, unless a pointer_style() is given to the text itself. The text doesn't take
+    /// focus. Inside a button or another control (a toggle, a picker, a menu item, a selectable
+    /// row, or a view with on_click(), on_double_click() or on_activate()), it isn't selectable:
+    /// presses go to the control.
     ///
     /// @param selectable Whether it can be selected, static or reactive. The default is true.
     /// @return This text, selectable while `selectable` is true.

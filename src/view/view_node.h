@@ -52,6 +52,12 @@ struct LowerContext {
     // View::selection around the views being built, for the first stack over a ForEach inside
     // (claim_selection).
     std::shared_ptr<SelectionController> selection;
+    // Inside a control (a button, a toggle, a menu item, a selectable row, or a view with
+    // on_click() or on_activate()): a selectable Text there doesn't select (ELGSPEC-0030.R12).
+    bool in_control = false;
+    // The Text being built has a pointer_style() of its own, which wins over its I-beam
+    // (ELGSPEC-0030.R11). Set only for a Text that's the modifier's content.
+    bool pointer_style_given = false;
 
     // The context for a view that isn't a direct child of the current layout.
     [[nodiscard]] LowerContext nested() const {
