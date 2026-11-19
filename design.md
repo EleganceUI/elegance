@@ -985,10 +985,24 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
     - The candidate window is positioned through `SDL_SetTextInputArea`.
   - Printable keys are consumed so outer `on_key_press` handlers don't see typing.
   - The caret blinks using timed wakes (`WindowServices::wake_at`), not continuous rendering.
-  - Still to do: multi-line `TextEditor`, `SecureField`, selectable `Text`, a context menu
-    (cut/copy/paste, §13.1), and grapheme boundaries from ICU/UAX #29 (HarfBuzz clusters
-    approximate them).
-- Selectable static text.
+  - Still to do: multi-line `TextEditor`, `SecureField`, a context menu (cut/copy/paste, §13.1),
+    and grapheme boundaries from ICU/UAX #29 (HarfBuzz clusters approximate them).
+- **Selectable text** (`Text::selectable()`, ELGSPEC-0030): the text element gets a handler that
+  selects, positions being a text field's caret stops (`caret_stops()` on its shaped
+  paragraphs) on the line at the pointer's height, offset by the line's alignment.
+  - Drag selects; a double click selects `word_around()` the stop, a triple click
+    `paragraph_around()` it (`text/text_boundaries.h`, shared with text fields); Shift+click
+    extends. Ends snap to stops, so text a line limit cuts off isn't selected.
+  - The highlight is the tint at `kSelectionOpacity`, as in text fields. The pointer is the
+    I-beam, unless the Text has a `pointer_style()` of its own. The Text doesn't take focus.
+  - The window's `FocusManager` holds its selected Text: a selection in another, a press
+    anywhere else, a content change, the Text leaving, being disabled or unselectable clear it.
+    After every handler on a key's route, the primary modifier with C copies it and with A
+    selects all (Edit menu items send the same keys).
+  - Inside controls (`LowerContext::in_control`: buttons and what's built on them, `on_click`,
+    `on_activate`, selectable rows), a selectable Text doesn't select.
+  - Not yet: selecting across several Texts, `StyledText`, the keyboard, a context menu, and
+    telling screen readers about the selection.
 - **TODO**: A large-document strategy for code-editor-scale text (rope + virtualized lines)?
   Probably out of scope for v1.
 
@@ -1757,7 +1771,8 @@ Separate render thread from day one (decided).
 - [x] One UI pipeline (`shaders/ui.*`) for rects and glyphs, in painter's order, in one draw call
 - [ ] Text follow-ups: font fallback (emoji, CJK), bidi, UAX #14 line breaking, glyph generation
   on the worker pool, atlas eviction/pages, system font discovery (DirectWrite / CoreText /
-  fontconfig), variable font weights, rich text (`Text + Text`), selection
+  fontconfig), variable font weights, rich text (`Text + Text`), selection across several
+  Texts and in `StyledText` (one `Text`'s is done: `Text::selectable()`)
 - [ ] GPU paths (stencil-then-cover) for `Path` / custom shapes
 - [x] Hit testing (SwiftUI semantics: a view is hit where its content draws; stroke-only shapes
   on their line; clips respected; `content_shape`, `allows_hit_testing`)
