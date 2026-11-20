@@ -20,6 +20,7 @@
 #include "view/view_node.h"
 
 #include <elg/hot_reload.h>
+#include <elg/layout.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -28,6 +29,7 @@
 #include <format>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <variant>
@@ -169,6 +171,20 @@ View* elg_mod_on_key_capture(const View* v, ElgClosure on_key);
 View* elg_mod_rust_event_modifier(const View* v, ElgClosure make_handler);
 void elg_app_menu_bar(App* app, const ElgMenuBarItem* menus, size_t count);
 uint32_t elg_primary_modifier();
+View* elg_mod_layout_value_bool(const View* v, ElgStr name, bool value);
+bool elg_layout_child_value_bool(const ElgLayoutChild* child, ElgStr name, bool* value);
+View* elg_mod_layout_value_i32(const View* v, ElgStr name, int32_t value);
+bool elg_layout_child_value_i32(const ElgLayoutChild* child, ElgStr name, int32_t* value);
+View* elg_mod_layout_value_i64(const View* v, ElgStr name, int64_t value);
+bool elg_layout_child_value_i64(const ElgLayoutChild* child, ElgStr name, int64_t* value);
+View* elg_mod_layout_value_f32(const View* v, ElgStr name, float value);
+bool elg_layout_child_value_f32(const ElgLayoutChild* child, ElgStr name, float* value);
+View* elg_mod_layout_value_f64(const View* v, ElgStr name, double value);
+bool elg_layout_child_value_f64(const ElgLayoutChild* child, ElgStr name, double* value);
+View* elg_mod_layout_value_color(const View* v, ElgStr name, ElgColor value);
+bool elg_layout_child_value_color(const ElgLayoutChild* child, ElgStr name, ElgColor* value);
+View* elg_mod_layout_value_string(const View* v, ElgStr name, ElgStr value);
+bool elg_layout_child_value_string(const ElgLayoutChild* child, ElgStr name, ElgStrSink out, void* ctx);
 bool elg_env_get_named_bool(const EnvironmentValues* environment, ElgStr name, bool* value);
 void elg_env_set_named_bool(EnvironmentValues* environment, ElgStr name, ElgProp value);
 bool elg_env_get_named_i32(const EnvironmentValues* environment, ElgStr name, int32_t* value);
@@ -445,6 +461,69 @@ ElgProp static_prop(const C& value) {
 ElgStr name_of(std::string_view name) {
     return {name.data(), name.size()};
 }
+
+// What a custom layout read from its children through the C API.
+struct ChildValues {
+    bool has_rank = false;
+    int32_t rank = 0;
+    bool has_fraction = false;
+    float fraction = 0;
+    bool has_label = false;
+    std::string label;
+    bool flag = false;
+    int64_t big = 0;
+    double precise = 0;
+    ElgColor tint{};
+};
+
+struct ReadingByName final : elg::Layout {
+    explicit ReadingByName(std::shared_ptr<std::vector<ChildValues>> record) : seen(std::move(record)) {}
+    [[nodiscard]] elg::Size size_that_fits(elg::ProposedSize, std::span<const elg::LayoutChild> children) const override {
+        seen->clear();
+        for (const elg::LayoutChild& child : children) {
+            const ElgLayoutChild* c = elg_shim::c_children(&child);
+            ChildValues values;
+            values.has_rank = elg_layout_child_value_i32(c, name_of(RankKey::name), &values.rank);
+            values.has_fraction = elg_layout_child_value_f32(c, name_of(RankKey::name), &values.fraction);
+            values.has_label = elg_layout_child_value_string(c, name_of("test.label"),
+                                                             [](void* ctx, const char* ptr, size_t len) {
+                                                                 static_cast<std::string*>(ctx)->assign(ptr, len);
+                                                             },
+                                                             &values.label);
+            (void)elg_layout_child_value_bool(c, name_of("test.flag"), &values.flag);
+            (void)elg_layout_child_value_i64(c, name_of("test.big"), &values.big);
+            (void)elg_layout_child_value_f64(c, name_of("test.precise"), &values.precise);
+            (void)elg_layout_child_value_color(c, name_of("test.tint"), &values.tint);
+            seen->push_back(values);
+        }
+        return {};
+    }
+    void place_children(elg::Rect, elg::ProposedSize, std::span<const elg::LayoutChild>) const override {}
+
+    std::shared_ptr<std::vector<ChildValues>> seen;
+};
+
+// A C++ key whose value is an int, named like RankKey: what LayoutChild::value() reads.
+struct RankLayoutKey {
+    using Value = int;
+    static constexpr std::string_view name = "test.rank";
+    static int default_value() { return 0; }
+};
+
+// Reads RankLayoutKey with LayoutChild::value(), for values set from C.
+struct ReadingByKey final : elg::Layout {
+    explicit ReadingByKey(std::shared_ptr<std::vector<int>> record) : seen(std::move(record)) {}
+    [[nodiscard]] elg::Size size_that_fits(elg::ProposedSize, std::span<const elg::LayoutChild> children) const override {
+        seen->clear();
+        for (const elg::LayoutChild& child : children) {
+            seen->push_back(child.value<RankLayoutKey>());
+        }
+        return {};
+    }
+    void place_children(elg::Rect, elg::ProposedSize, std::span<const elg::LayoutChild>) const override {}
+
+    std::shared_ptr<std::vector<int>> seen;
+};
 
 } // namespace
 
@@ -1399,4 +1478,50 @@ TEST_CASE("environment keys are shared by name and value type between C++ and th
     CHECK(greeting == "hello");
     CHECK_FALSE(elg_env_get_named_string(environment, name_of("test.missing"), [](void*, const char*, size_t) {}, nullptr));
     elg_env_free(environment);
+}
+
+TEST_CASE("layout values are shared by name and value type between C++ and the C API", "[c-api][layout]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const View base = Rectangle();
+    View* ranked = elg_mod_layout_value_i32(&base, name_of(RankKey::name), 3);
+    View* fractional = elg_mod_layout_value_f32(&base, name_of(RankKey::name), 0.5f);
+    View* labeled = elg_mod_layout_value_string(&base, name_of("test.label"), name_of("gold"));
+    View* flagged = elg_mod_layout_value_bool(&base, name_of("test.flag"), true);
+    View* big = elg_mod_layout_value_i64(flagged, name_of("test.big"), int64_t{1} << 40);
+    View* precise = elg_mod_layout_value_f64(big, name_of("test.precise"), 0.125);
+    View* tinted = elg_mod_layout_value_color(precise, name_of("test.tint"), ElgColor{0, 1, 0, 1});
+    for (View* view : {ranked, fractional, labeled, flagged, big, precise, tinted}) {
+        REQUIRE(view);
+    }
+
+    // C reads what C and C++ set; another type of value under the same name reads as unset.
+    auto seen = std::make_shared<std::vector<ChildValues>>();
+    const auto root = detail::lower(ReadingByName(seen)(*ranked, *fractional, *labeled, *tinted,
+                                                        Rectangle().layout_value<RankLayoutKey>(9)),
+                                    {});
+    (void)root->size_that_fits({100.f, 100.f});
+    REQUIRE(seen->size() == 5);
+    CHECK((*seen)[0].has_rank);
+    CHECK((*seen)[0].rank == 3);
+    CHECK_FALSE((*seen)[0].has_fraction);
+    CHECK_FALSE((*seen)[1].has_rank);
+    CHECK((*seen)[1].fraction == 0.5f);
+    CHECK((*seen)[2].label == "gold");
+    CHECK((*seen)[3].flag);
+    CHECK((*seen)[3].big == int64_t{1} << 40);
+    CHECK((*seen)[3].precise == 0.125);
+    CHECK((*seen)[3].tint.g == 1.f);
+    CHECK((*seen)[4].rank == 9);
+
+    // C++ reads a value set from C with a key type of that name and value type.
+    auto ranks = std::make_shared<std::vector<int>>();
+    const auto by_key = detail::lower(ReadingByKey(ranks)(*ranked, *fractional), {});
+    (void)by_key->size_that_fits({100.f, 100.f});
+    CHECK(*ranks == std::vector<int>{3, 0});
+
+    for (View* view : {ranked, fractional, labeled, flagged, big, precise, tinted}) {
+        elg_view_free(view);
+    }
+    CHECK(take_error() == 0);
 }

@@ -252,6 +252,96 @@ ELG_EXPORT const void* elg_layout_child_rust_value(const ElgLayoutChild* child) 
     ELG_CATCH(nullptr)
 }
 
+// --- Layout values shared by name ---
+
+namespace {
+
+// A layout value for the key named `name` whose value is a T, as View::layout_value() carries one for a
+// key type with that name and value type.
+template <class T>
+class NamedLayoutValueModifier final : public LayoutValueModifierBase {
+public:
+    NamedLayoutValueModifier(std::string_view name, T value)
+        : key_(elg::detail::typed_key<T>(name)), value_(std::move(value)) {}
+    [[nodiscard]] const void* value_for(std::uint64_t key) const noexcept override {
+        return key == key_ ? &value_ : nullptr;
+    }
+
+private:
+    std::uint64_t key_;
+    T value_;
+};
+
+template <class T>
+T same_value(T value) {
+    return value;
+}
+
+} // namespace
+
+// NAMED_LAYOUT(suffix, T, CType, from_c, to_c) defines, for layout values shared across languages by name,
+// whose values are `T` (`CType` in C):
+//   elg_mod_layout_value_<suffix>(v, name, value): carries `value` for the key named `name` whose value is a
+//     <T>, for the parent layout to read, as View::layout_value() does for a key type with that name and
+//     value type. `v` is borrowed. Returns the modified view, owned by the caller, or null on failure.
+//   elg_layout_child_value_<suffix>(child, name, value): reads the child's value for the key named `name`
+//     whose value is a <T> (LayoutChild::value_named()), set through elg_mod_layout_value_<suffix>() or by a
+//     C++ key type with that name and value type. There's no default; a key of that name with a value of
+//     another type reads as unset. `child` is borrowed. Writes the value to `value` and returns true when
+//     the child has one; otherwise returns false, leaving `value` as it was (also on failure).
+// NOLINTBEGIN(bugprone-macro-parentheses)
+#define NAMED_LAYOUT(suffix, T, CType, from_c, to_c)                                                                \
+    ELG_EXPORT View* elg_mod_layout_value_##suffix(const View* v, ElgStr name, CType value) {                      \
+        ELG_TRY return out(v->modifier(NamedLayoutValueModifier<T>(std::string_view(name.ptr, name.len),          \
+                                                                   from_c(value))));                                \
+        ELG_CATCH(nullptr)                                                                                           \
+    }                                                                                                                \
+    ELG_EXPORT bool elg_layout_child_value_##suffix(const ElgLayoutChild* child, ElgStr name, CType* value) {       \
+        ELG_TRY const std::optional<T> found =                                                                       \
+            cpp_children(child)->value_named<T>(std::string_view(name.ptr, name.len));                               \
+        if (found) {                                                                                                 \
+            *value = to_c(*found);                                                                                   \
+        }                                                                                                            \
+        return found.has_value();                                                                                    \
+        ELG_CATCH(false)                                                                                             \
+    }
+// NOLINTEND(bugprone-macro-parentheses)
+
+NAMED_LAYOUT(bool, bool, bool, same_value, same_value)
+NAMED_LAYOUT(i32, int, int32_t, same_value, same_value)
+NAMED_LAYOUT(i64, std::int64_t, int64_t, same_value, same_value)
+NAMED_LAYOUT(f32, float, float, same_value, same_value)
+NAMED_LAYOUT(f64, double, double, same_value, same_value)
+NAMED_LAYOUT(color, Color, ElgColor, color, c_color)
+
+/// Like elg_mod_layout_value_bool(), for a key whose value is a string.
+///
+/// @param v The view to modify (borrowed).
+/// @param name The key's name.
+/// @param value The value (copied).
+/// @return The modified view, owned by the caller, or null on failure.
+ELG_EXPORT View* elg_mod_layout_value_string(const View* v, ElgStr name, ElgStr value) {
+    ELG_TRY
+    return out(v->modifier(NamedLayoutValueModifier<std::string>(std::string_view(name.ptr, name.len), str(value))));
+    ELG_CATCH(nullptr)
+}
+/// Like elg_layout_child_value_bool(), for a key whose value is a string (LayoutChild::value_named()).
+///
+/// @param child A child (borrowed).
+/// @param name The key's name.
+/// @param out Receives the value, valid during the call, when the child has one.
+/// @param ctx Passed to `out`.
+/// @return Whether the child has a value for the key; false on failure.
+ELG_EXPORT bool elg_layout_child_value_string(const ElgLayoutChild* child, ElgStr name, ElgStrSink out, void* ctx) {
+    ELG_TRY
+    const std::optional<std::string> found = cpp_children(child)->value_named<std::string>(std::string_view(name.ptr, name.len));
+    if (found) {
+        out(ctx, found->data(), found->size());
+    }
+    return found.has_value();
+    ELG_CATCH(false)
+}
+
 // --- Modifiers ---
 
 namespace {

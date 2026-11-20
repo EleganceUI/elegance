@@ -3869,6 +3869,97 @@ ElgView* elg_mod_rust_layout_value(const ElgView* v, ElgClosure owner);
 ///   null if none did, or on failure.
 const void* elg_layout_child_rust_value(const ElgLayoutChild* child);
 
+// --- Layout values shared by name ---
+
+/// Carries `value` for the key named `name` whose value is a bool, for the parent layout to read,
+/// as View::layout_value() does for a key type with that name and value type. `v` is borrowed.
+/// Returns the modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_bool(const ElgView* v, ElgStr name, bool value);
+
+/// Reads the child's value for the key named `name` whose value is a bool
+/// (LayoutChild::value_named()), set through elg_mod_layout_value_bool() or by a C++ key type with
+/// that name and value type. There's no default; a key of that name with a value of another type
+/// reads as unset. `child` is borrowed. Writes the value to `value` and returns true when the child
+/// has one; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_layout_child_value_bool(const ElgLayoutChild* child, ElgStr name, bool* value);
+
+/// Carries `value` for the key named `name` whose value is a int, for the parent layout to read, as
+/// View::layout_value() does for a key type with that name and value type. `v` is borrowed. Returns
+/// the modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_i32(const ElgView* v, ElgStr name, int32_t value);
+
+/// Reads the child's value for the key named `name` whose value is a int
+/// (LayoutChild::value_named()), set through elg_mod_layout_value_i32() or by a C++ key type with
+/// that name and value type. There's no default; a key of that name with a value of another type
+/// reads as unset. `child` is borrowed. Writes the value to `value` and returns true when the child
+/// has one; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_layout_child_value_i32(const ElgLayoutChild* child, ElgStr name, int32_t* value);
+
+/// Carries `value` for the key named `name` whose value is a std::int64_t, for the parent layout to
+/// read, as View::layout_value() does for a key type with that name and value type. `v` is
+/// borrowed. Returns the modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_i64(const ElgView* v, ElgStr name, int64_t value);
+
+/// Reads the child's value for the key named `name` whose value is a std::int64_t
+/// (LayoutChild::value_named()), set through elg_mod_layout_value_i64() or by a C++ key type with
+/// that name and value type. There's no default; a key of that name with a value of another type
+/// reads as unset. `child` is borrowed. Writes the value to `value` and returns true when the child
+/// has one; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_layout_child_value_i64(const ElgLayoutChild* child, ElgStr name, int64_t* value);
+
+/// Carries `value` for the key named `name` whose value is a float, for the parent layout to read,
+/// as View::layout_value() does for a key type with that name and value type. `v` is borrowed.
+/// Returns the modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_f32(const ElgView* v, ElgStr name, float value);
+
+/// Reads the child's value for the key named `name` whose value is a float
+/// (LayoutChild::value_named()), set through elg_mod_layout_value_f32() or by a C++ key type with
+/// that name and value type. There's no default; a key of that name with a value of another type
+/// reads as unset. `child` is borrowed. Writes the value to `value` and returns true when the child
+/// has one; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_layout_child_value_f32(const ElgLayoutChild* child, ElgStr name, float* value);
+
+/// Carries `value` for the key named `name` whose value is a double, for the parent layout to read,
+/// as View::layout_value() does for a key type with that name and value type. `v` is borrowed.
+/// Returns the modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_f64(const ElgView* v, ElgStr name, double value);
+
+/// Reads the child's value for the key named `name` whose value is a double
+/// (LayoutChild::value_named()), set through elg_mod_layout_value_f64() or by a C++ key type with
+/// that name and value type. There's no default; a key of that name with a value of another type
+/// reads as unset. `child` is borrowed. Writes the value to `value` and returns true when the child
+/// has one; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_layout_child_value_f64(const ElgLayoutChild* child, ElgStr name, double* value);
+
+/// Carries `value` for the key named `name` whose value is a Color, for the parent layout to read,
+/// as View::layout_value() does for a key type with that name and value type. `v` is borrowed.
+/// Returns the modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_color(const ElgView* v, ElgStr name, ElgColor value);
+
+/// Reads the child's value for the key named `name` whose value is a Color
+/// (LayoutChild::value_named()), set through elg_mod_layout_value_color() or by a C++ key type with
+/// that name and value type. There's no default; a key of that name with a value of another type
+/// reads as unset. `child` is borrowed. Writes the value to `value` and returns true when the child
+/// has one; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_layout_child_value_color(const ElgLayoutChild* child, ElgStr name, ElgColor* value);
+
+/// Like elg_mod_layout_value_bool(), for a key whose value is a string.
+///
+/// @param v The view to modify (borrowed).
+/// @param name The key's name.
+/// @param value The value (copied).
+/// @return The modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_string(const ElgView* v, ElgStr name, ElgStr value);
+
+/// Like elg_layout_child_value_bool(), for a key whose value is a string (LayoutChild::value_named()).
+///
+/// @param child A child (borrowed).
+/// @param name The key's name.
+/// @param out Receives the value, valid during the call, when the child has one.
+/// @param ctx Passed to `out`.
+/// @return Whether the child has a value for the key; false on failure.
+bool elg_layout_child_value_string(const ElgLayoutChild* child, ElgStr name, ElgStrSink out, void* ctx);
+
 // --- Modifiers ---
 
 /// An elg::ViewModifier implemented in Rust: `body` composes the content with other views and
