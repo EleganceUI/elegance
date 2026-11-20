@@ -643,6 +643,15 @@ ELG_EXPORT EnvironmentValues* elg_env_current() {
     ELG_CATCH(nullptr)
 }
 
+/// An empty environment (`EnvironmentValues()`): every key reads its default.
+///
+/// @return The environment, owned by the caller (elg_env_free()). Null on failure.
+ELG_EXPORT EnvironmentValues* elg_env_new() {
+    ELG_TRY
+    return new EnvironmentValues();
+    ELG_CATCH(nullptr)
+}
+
 /// Copies an environment (cheap: copies share their entries).
 ///
 /// @param environment The environment (borrowed).
@@ -711,6 +720,22 @@ ELG_EXPORT void elg_env_theme(const EnvironmentValues* environment, ElgTheme* re
     ELG_TRY
     cpp_theme(*result) = environment->get<ThemeKey>();
     ELG_CATCH_VOID
+}
+
+/// Wraps `system_accent_color()`: the accent color the person chose in the system's settings.
+/// Reactive while an App runs (a tracked read, on the UI thread); without one, it asks the system
+/// each time.
+///
+/// @param color Receives the color when there is one; left as it was otherwise.
+/// @return Whether the system has an accent color; false on failure.
+ELG_EXPORT bool elg_system_accent_color(ElgColor* color) {
+    ELG_TRY
+    const std::optional<Color> accent = system_accent_color();
+    if (accent) {
+        *color = c_color(*accent);
+    }
+    return accent.has_value();
+    ELG_CATCH(false)
 }
 
 /// Reads the environment's foreground (ForegroundKey): the color of text and unfilled shapes. A
@@ -1061,30 +1086,6 @@ ELG_EXPORT View* elg_window_controls(int32_t style, bool minimize, bool maximize
 
 // --- App ---
 
-/// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
-struct ElgWindowDesc {
-    ElgStr title;                      ///< The window's title.
-    int32_t width;                     ///< Initial width.
-    int32_t height;                    ///< Initial height.
-    bool resizable;                    ///< Whether the user can resize it.
-    bool has_min_size;                 ///< false: no minimum size.
-    ElgSize min_size;                  ///< Smallest size the user can resize to, if `has_min_size`.
-    /// false: the default background, the theme's (ThemeColor::background), or clear for
-    /// transparent windows.
-    bool has_background;
-    ElgColor background;               ///< Shown where no view draws, if `has_background`.
-    int32_t title_bar;                 ///< An elg::TitleBar: 0 system, 1 hidden, 2 integrated.
-    bool has_system_controls_position; ///< false: the system's window controls go where it puts them.
-    /// TitleBar::integrated on macOS: where the system's window controls go, as the first one's
-    /// top-left corner in points from the window's top-left corner.
-    ElgPoint system_controls_position;
-    bool transparent;                  ///< The desktop shows through where the content isn't opaque.
-    float opacity;                     ///< The whole window's opacity, 0 to 1.
-    /// Covers the whole display it opens on, without a frame. `width` and `height` are its size
-    /// when it leaves fullscreen.
-    bool fullscreen;
-};
-
 /// Wraps `App()`: owns the application's lifetime, windows, event loop, and render thread.
 ///
 /// @return The new app, owned by the caller (elg_app_free()), or nullptr on failure.
@@ -1113,24 +1114,7 @@ ELG_EXPORT void elg_app_free(App* app) {
 ELG_EXPORT void elg_app_window(App* app, const ElgWindowDesc* desc, ElgClosure content) {
     const Consumed consumed(content);
     ELG_TRY
-    WindowDesc window;
-    window.title = str(desc->title);
-    window.width = desc->width;
-    window.height = desc->height;
-    window.resizable = desc->resizable;
-    if (desc->has_min_size) {
-        window.min_size = size(desc->min_size);
-    }
-    if (desc->has_background) {
-        window.background = color(desc->background);
-    }
-    window.title_bar = static_cast<TitleBar>(desc->title_bar);
-    if (desc->has_system_controls_position) {
-        window.system_controls_position = point(desc->system_controls_position);
-    }
-    window.transparent = desc->transparent;
-    window.opacity = desc->opacity;
-    window.fullscreen = desc->fullscreen;
+    WindowDesc window = window_desc(*desc);
     const SharedFn f = required(content, "content");
     app->window(std::move(window), [f]() -> View {
         View result;
@@ -1214,7 +1198,7 @@ ELG_EXPORT const char* elg_version() {
 
 // The C API's ABI version. It goes up by one whenever an exported function's signature, a struct
 // passed across the API, or the value of a documented constant changes.
-constexpr std::uint32_t kAbiVersion = 3;
+constexpr std::uint32_t kAbiVersion = 4;
 
 /// The C API's ABI version: a binding checks it when it loads the library, and refuses to run
 /// with a version it wasn't built for. It changes whenever an exported function's signature, a
@@ -1321,6 +1305,41 @@ ELG_EXPORT Animation* elg_animation_delay(const Animation* animation, double sec
     return new Animation(animation->delay(seconds));
     ELG_CATCH(nullptr)
 }
+/// Wraps `Animation::timing_curve()`: a cubic Bézier through (0, 0), (x1, y1), (x2, y2) and (1, 1), like
+/// CSS's cubic-bezier().
+///
+/// @param x1 The first control point's time, 0 to 1 (clamped).
+/// @param y1 The first control point's progress; outside 0 to 1 overshoots.
+/// @param x2 The second control point's time, 0 to 1 (clamped).
+/// @param y2 The second control point's progress; outside 0 to 1 overshoots.
+/// @param duration Seconds; negative counts as 0 (no animation).
+/// @return The animation, owned by the caller (elg_animation_free()). Null on failure.
+ELG_EXPORT Animation* elg_animation_timing_curve(double x1, double y1, double x2, double y2, double duration) {
+    ELG_TRY
+    return new Animation(Animation::timing_curve(x1, y1, x2, y2, duration));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `Animation::repeat_count()`: a copy of `animation` that plays `count` times.
+///
+/// @param animation The animation (borrowed).
+/// @param count How many times; less than 1 counts as 1.
+/// @param autoreverses Every other time runs backward, from the target to where it started.
+/// @return The new animation, owned by the caller (elg_animation_free()). Null on failure.
+ELG_EXPORT Animation* elg_animation_repeat_count(const Animation* animation, int32_t count, bool autoreverses) {
+    ELG_TRY
+    return new Animation(animation->repeat_count(count, autoreverses));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `Animation::repeat_forever()`: a copy of `animation` that plays until it's replaced.
+///
+/// @param animation The animation (borrowed).
+/// @param autoreverses Every other time runs backward, from the target to where it started.
+/// @return The new animation, owned by the caller (elg_animation_free()). Null on failure.
+ELG_EXPORT Animation* elg_animation_repeat_forever(const Animation* animation, bool autoreverses) {
+    ELG_TRY
+    return new Animation(animation->repeat_forever(autoreverses));
+    ELG_CATCH(nullptr)
+}
 /// Wraps `Animation::progress()`.
 ///
 /// @param animation The animation (borrowed).
@@ -1359,11 +1378,77 @@ ELG_EXPORT void elg_animation_free(Animation* animation) {
     ELG_CATCH_VOID
 }
 
+// --- Timers ---
+
+/// Wraps `after()`: runs `action` once, `seconds` from now (0: as soon as the current event is handled), on
+/// the UI thread. A timer started while views are built, or in on_appear, ends with that view.
+///
+/// @param seconds The delay; negative counts as 0. Positive infinity never runs the action. NaN is a usage
+///   error.
+/// @param action The action. No args. May be none: the timer is never active.
+/// @return The timer, owned by the caller (elg_timer_free(), which doesn't stop it). Null on failure.
+ELG_EXPORT Timer* elg_timer_after(double seconds, ElgClosure action) {
+    const Consumed consumed(action);
+    ELG_TRY
+    return new Timer(after(seconds, elg_shim::action(share(action))));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `every()`: runs `action` every `seconds` (at least a millisecond), the first time `seconds` from
+/// now, on the UI thread. Missed runs are skipped. A timer started while views are built, or in
+/// on_appear, ends with that view.
+///
+/// @param seconds The interval; less than a millisecond counts as a millisecond. Positive infinity never runs
+///   the action. NaN is a usage error.
+/// @param action The action. No args. May be none: the timer is never active.
+/// @return The timer, owned by the caller (elg_timer_free(), which doesn't stop it). Null on failure.
+ELG_EXPORT Timer* elg_timer_every(double seconds, ElgClosure action) {
+    const Consumed consumed(action);
+    ELG_TRY
+    return new Timer(every(seconds, elg_shim::action(share(action))));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `Timer::cancel()`: the action doesn't run again. Fine to call more than once.
+///
+/// @param timer The timer (borrowed).
+ELG_EXPORT void elg_timer_cancel(const Timer* timer) {
+    ELG_TRY
+    timer->cancel();
+    ELG_CATCH_VOID
+}
+/// Wraps `Timer::active()`: whether the timer is still going: not cancelled, its view still there, and for
+/// elg_timer_after(), not fired yet.
+///
+/// @param timer The timer (borrowed).
+/// @return true while it's going; false on failure.
+ELG_EXPORT bool elg_timer_active(const Timer* timer) {
+    ELG_TRY
+    return timer->active();
+    ELG_CATCH(false)
+}
+/// Copies a timer handle: both refer to the same timer.
+///
+/// @param timer The timer (borrowed).
+/// @return The copy, owned by the caller (elg_timer_free()). Null on failure.
+ELG_EXPORT Timer* elg_timer_clone(const Timer* timer) {
+    ELG_TRY
+    return new Timer(*timer);
+    ELG_CATCH(nullptr)
+}
+/// Frees a timer handle. The timer goes on running.
+///
+/// @param timer The timer (consumed); may be null.
+ELG_EXPORT void elg_timer_free(Timer* timer) {
+    const Consumed consumed(timer); // freed as the call ends
+    ELG_TRY
+    ELG_CATCH_VOID
+}
+
 // --- Transition ---
 
-/// A Transition::Pose without its anchor: how a view looks partway through a transition.
+/// A Transition::Pose: how a view looks partway through a transition.
 struct ElgPose {
     float opacity, scale, x, y; ///< Opacity and scale (1: as is), and the offset in points.
+    float anchor_x, anchor_y;   ///< What it scales around, as fractions of its frame (0.5: the middle).
 };
 
 /// Wraps `Transition::opacity()`: the view fades in and out.
@@ -1450,7 +1535,7 @@ ELG_EXPORT Transition* elg_transition_combined(const Transition* a, const Transi
 ELG_EXPORT ElgPose elg_transition_pose(const Transition* transition, float progress, bool removal, ElgSize view_size) {
     ELG_TRY
     const Transition::Pose pose = transition->pose(progress, removal, size(view_size));
-    return {pose.opacity, pose.scale, pose.x, pose.y};
+    return {pose.opacity, pose.scale, pose.x, pose.y, pose.anchor_x, pose.anchor_y};
     ELG_CATCH({})
 }
 /// Copies a transition.

@@ -1079,6 +1079,19 @@ ELG_EXPORT Text* elg_text_multiline_alignment(const Text* text, int32_t alignmen
     return new Text(text->multiline_text_alignment(static_cast<TextAlignment>(alignment)));
     ELG_CATCH(nullptr)
 }
+/// Wraps `Text::selectable()`: the person using the app can select the text with the pointer, and
+/// copy it.
+///
+/// @param text The text (borrowed).
+/// @param selectable A bool prop: whether it can be selected.
+/// @return `text`, selectable while `selectable` is true (a new Text, owned by the caller), or null on
+///   failure.
+ELG_EXPORT Text* elg_text_selectable(const Text* text, ElgProp selectable) {
+    const Consumed consumed(selectable);
+    ELG_TRY
+    return new Text(text->selectable(prop<bool>(selectable)));
+    ELG_CATCH(nullptr)
+}
 
 /// One run of elg_styled_text() (`TextRun`).
 struct ElgTextRun {
@@ -1226,7 +1239,7 @@ ELG_EXPORT Shape* elg_custom_shape(ElgClosure path, int32_t fill_rule) {
 /// Wraps `Shape::fill()`.
 ///
 /// @param shape The shape (borrowed).
-/// @param style A ShapeStyle prop (ElgShapeStyle): a color or gradient.
+/// @param style A ShapeStyle prop (ElgShapeStyle): a color, a gradient, or a backdrop (kind 5).
 /// @return `shape` filled with `style` (a new Shape, owned by the caller), or null on failure.
 ELG_EXPORT Shape* elg_shape_fill(const Shape* shape, ElgProp style) {
     const Consumed consumed(style);
@@ -1868,11 +1881,11 @@ ELG_EXPORT void elg_font_assign(Font* target, const ElgFont* value) {
     ELG_CATCH_VOID
 }
 
-/// Writes a color or gradient into a closure's ShapeStyle result (the `ret` of a reactive ShapeStyle prop's
+/// Writes a color, gradient or backdrop into a closure's ShapeStyle result (the `ret` of a reactive ShapeStyle prop's
 /// closure).
 ///
 /// @param target The closure's `ret`.
-/// @param value The color or gradient (borrowed).
+/// @param value The color, gradient or backdrop (borrowed).
 ELG_EXPORT void elg_shape_style_assign(ShapeStyle* target, const ElgShapeStyle* value) {
     ELG_TRY
     *target = shape_style(*value);
@@ -2300,6 +2313,30 @@ ELG_EXPORT View* elg_mod_on_activate(const View* v, ElgClosure on_activate) {
     const Consumed consumed(on_activate);
     ELG_TRY
     return out(v->on_activate(action(required(on_activate, "on_activate"))));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `View::on_appear()`: runs the action once the view is added (its window opened, an If or
+/// ForEach showed it, or a lazy stack built it), on the UI thread, before that update is drawn.
+///
+/// @param v The view (borrowed).
+/// @param on_appear The action. No args. May be none: nothing runs.
+/// @return `v` with the action (a new view, owned by the caller), or null on failure.
+ELG_EXPORT View* elg_mod_on_appear(const View* v, ElgClosure on_appear) {
+    const Consumed consumed(on_appear);
+    ELG_TRY
+    return out(v->on_appear(action(share(on_appear))));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `View::on_disappear()`: runs the action once a view that appeared is gone (after its exit
+/// transition, or when its window closed), on the UI thread.
+///
+/// @param v The view (borrowed).
+/// @param on_disappear The action. No args. May be none: nothing runs.
+/// @return `v` with the action (a new view, owned by the caller), or null on failure.
+ELG_EXPORT View* elg_mod_on_disappear(const View* v, ElgClosure on_disappear) {
+    const Consumed consumed(on_disappear);
+    ELG_TRY
+    return out(v->on_disappear(action(share(on_disappear))));
     ELG_CATCH(nullptr)
 }
 /// Wraps `View::on_size_change()`: called after the first layout and whenever the view's size in pixels

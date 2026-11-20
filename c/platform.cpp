@@ -1060,6 +1060,42 @@ ELG_EXPORT void elg_notify(ElgStr title, ElgStr body, ElgClosure on_click) {
     ELG_CATCH_VOID
 }
 
+/// Wraps `set_badge()`: a short label on the app's icon, like an unread count (macOS: the Dock; Windows: a
+/// badge over the taskbar button; Linux: a number, where the launcher supports it). Call it on the UI
+/// thread of a running App; otherwise it records a UsageError.
+///
+/// @param text The label (borrowed); null removes it.
+ELG_EXPORT void elg_set_badge(const ElgStr* text) {
+    ELG_TRY
+    set_badge(text ? std::optional<std::string>(str(*text)) : std::nullopt);
+    ELG_CATCH_VOID
+}
+
+/// Wraps `set_progress()`: a progress bar on the app's icon. Call it on the UI thread of a running App;
+/// otherwise it records a UsageError.
+///
+/// @param has_fraction false removes the bar.
+/// @param fraction How far along, 0 to 1 (clamped; not finite counts as 0).
+/// @param state An elg::ProgressState: 0 normal, 1 paused, 2 error, 3 indeterminate. Other values are
+///   normal.
+ELG_EXPORT void elg_set_progress(bool has_fraction, double fraction, int32_t state) {
+    ELG_TRY
+    const ProgressState progress_state =
+        state >= 0 && state <= 3 ? static_cast<ProgressState>(state) : ProgressState::normal;
+    set_progress(has_fraction ? std::optional<double>(fraction) : std::nullopt, progress_state);
+    ELG_CATCH_VOID
+}
+
+/// Wraps `request_attention()`: while the app is in the background, the Dock icon bounces or the taskbar
+/// button flashes. Call it on the UI thread of a running App; otherwise it records a UsageError.
+///
+/// @param critical Keep asking until the app is active, rather than once.
+ELG_EXPORT void elg_request_attention(bool critical) {
+    ELG_TRY
+    request_attention(critical);
+    ELG_CATCH_VOID
+}
+
 /// An elg::TrayMenuItem: a command, a check box, a submenu, or a separator (an empty title). The
 /// function that takes the menu consumes its closures.
 struct ElgTrayMenuItem {

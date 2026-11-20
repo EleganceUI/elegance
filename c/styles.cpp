@@ -102,6 +102,18 @@ std::optional<Prop<Color>> optional_color(const ElgProp* given, ElgProp& p) {
     return given ? std::optional<Prop<Color>>(prop<Color>(p)) : std::nullopt;
 }
 
+// A style's popup motion, for its C getter: new transition and animation handles when it animates.
+bool motion_out(const PopupMotion& motion, Transition** transition, Animation** animation) {
+    if (!motion.animates()) {
+        return false;
+    }
+    auto copied_transition = std::make_unique<Transition>(*motion.transition());
+    auto copied_animation = std::make_unique<Animation>(*motion.animation());
+    *transition = copied_transition.release();
+    *animation = copied_animation.release();
+    return true;
+}
+
 } // namespace
 
 // Per style family: clone and free the handle, set it for a subtree, and copy a configuration.
@@ -173,6 +185,23 @@ std::optional<Prop<Color>> optional_color(const ElgProp* given, ElgProp& p) {
         ELG_CATCH(nullptr)                                                                                           \
     }
 
+// ENV_STYLE(name, Style) defines:
+//   elg_env_<name>_style(environment): reads the environment's style of this family (<Style>Key). The
+//     environment is borrowed. Returns the style, owned by the caller (elg_<name>_style_free()), or null on
+//     failure.
+//   elg_env_set_<name>_style(environment, style): sets the environment's style of this family (<Style>Key).
+//     Both are borrowed; the environment shares the style.
+#define ENV_STYLE(name, Style)                                                                                       \
+    ELG_EXPORT std::shared_ptr<const Style>* elg_env_##name##_style(const EnvironmentValues* environment) {         \
+        ELG_TRY return new std::shared_ptr<const Style>(environment->get<Style##Key>());                             \
+        ELG_CATCH(nullptr)                                                                                           \
+    }                                                                                                                \
+    ELG_EXPORT void elg_env_set_##name##_style(EnvironmentValues* environment,                                     \
+                                               const std::shared_ptr<const Style>* style) {                         \
+        ELG_TRY environment->set<Style##Key>(*style);                                                                \
+        ELG_CATCH_VOID                                                                                               \
+    }
+
 // NOLINTEND(bugprone-macro-parentheses)
 
 #define STATE(which, member)                                                                                         \
@@ -229,6 +258,22 @@ ELG_EXPORT bool elg_button_config_state(const ButtonConfiguration* c, int32_t wh
 STYLE_HANDLE(toggle, ToggleStyle)
 CONFIG_HANDLE(toggle, ToggleConfiguration)
 MAKE_BODY(toggle, ToggleStyle, ToggleConfiguration)
+
+/// Wraps `ToggleStyle::animation()`: how a toggle animates between its states.
+///
+/// @param style The style (borrowed).
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the style has
+///   one; left as it was otherwise.
+/// @return Whether the style animates; false on failure.
+ELG_EXPORT bool elg_toggle_style_animation(const std::shared_ptr<const ToggleStyle>* style, Animation** animation) {
+    ELG_TRY
+    const std::optional<Animation> animates = (*style)->animation();
+    if (animates) {
+        *animation = new Animation(*animates);
+    }
+    return animates.has_value();
+    ELG_CATCH(false)
+}
 
 /// A ToggleStyle implemented in Rust: its `make_body()` calls `make_body`.
 ///
@@ -318,8 +363,25 @@ ELG_EXPORT void elg_toggle_config_toggle(const ToggleConfiguration* c) {
 // --- Check boxes ---
 
 STYLE_HANDLE(checkbox, CheckboxStyle)
+ENV_STYLE(checkbox, CheckboxStyle)
 CONFIG_HANDLE(checkbox, CheckboxConfiguration)
 MAKE_BODY(checkbox, CheckboxStyle, CheckboxConfiguration)
+
+/// Wraps `CheckboxStyle::animation()`: how a checkbox animates between its states.
+///
+/// @param style The style (borrowed).
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the style has
+///   one; left as it was otherwise.
+/// @return Whether the style animates; false on failure.
+ELG_EXPORT bool elg_checkbox_style_animation(const std::shared_ptr<const CheckboxStyle>* style, Animation** animation) {
+    ELG_TRY
+    const std::optional<Animation> animates = (*style)->animation();
+    if (animates) {
+        *animation = new Animation(*animates);
+    }
+    return animates.has_value();
+    ELG_CATCH(false)
+}
 
 /// A CheckboxStyle implemented in Rust: its `make_body()` calls `make_body`.
 ///
@@ -419,6 +481,7 @@ ELG_EXPORT void elg_checkbox_config_toggle(const CheckboxConfiguration* c) {
 // --- Number inputs ---
 
 STYLE_HANDLE(number_input, NumberInputStyle)
+ENV_STYLE(number_input, NumberInputStyle)
 CONFIG_HANDLE(number_input, NumberInputConfiguration)
 MAKE_BODY(number_input, NumberInputStyle, NumberInputConfiguration)
 RUST_STYLE(number_input, NumberInputStyle, NumberInputConfiguration)
@@ -502,6 +565,7 @@ ELG_EXPORT void elg_number_input_config_action(const NumberInputConfiguration* c
 // --- Progress ---
 
 STYLE_HANDLE(progress, ProgressStyle)
+ENV_STYLE(progress, ProgressStyle)
 CONFIG_HANDLE(progress, ProgressConfiguration)
 MAKE_BODY(progress, ProgressStyle, ProgressConfiguration)
 RUST_STYLE(progress, ProgressStyle, ProgressConfiguration)
@@ -593,6 +657,7 @@ ELG_EXPORT bool elg_text_field_config_state(const TextFieldConfiguration* c, int
 // --- Pickers ---
 
 STYLE_HANDLE(picker, PickerStyle)
+ENV_STYLE(picker, PickerStyle)
 CONFIG_HANDLE(picker, PickerConfiguration)
 MAKE_BODY(picker, PickerStyle, PickerConfiguration)
 RUST_STYLE(picker, PickerStyle, PickerConfiguration)
@@ -655,6 +720,7 @@ ELG_EXPORT void elg_picker_config_select(const PickerConfiguration* c, size_t in
 // --- Sliders ---
 
 STYLE_HANDLE(slider, SliderStyle)
+ENV_STYLE(slider, SliderStyle)
 CONFIG_HANDLE(slider, SliderConfiguration)
 
 /// A SliderStyle implemented in Rust: three parts, which the slider places itself. Each builder runs once per
@@ -745,6 +811,7 @@ ELG_EXPORT bool elg_slider_config_state(const SliderConfiguration* c, int32_t wh
 // --- Navigation stacks ---
 
 STYLE_HANDLE(navigation_stack, NavigationStackStyle)
+ENV_STYLE(navigation_stack, NavigationStackStyle)
 CONFIG_HANDLE(navigation_stack, NavigationStackConfiguration)
 MAKE_BODY(navigation_stack, NavigationStackStyle, NavigationStackConfiguration)
 RUST_STYLE(navigation_stack, NavigationStackStyle, NavigationStackConfiguration)
@@ -825,8 +892,24 @@ ELG_EXPORT void elg_navigation_stack_config_back(const NavigationStackConfigurat
 // --- Popovers ---
 
 STYLE_HANDLE(popover, PopoverStyle)
+ENV_STYLE(popover, PopoverStyle)
 CONFIG_HANDLE(popover, PopoverConfiguration)
 MAKE_BODY(popover, PopoverStyle, PopoverConfiguration)
+
+/// Wraps `PopoverStyle::motion()`: how popovers of this style open and close.
+///
+/// @param style The style (borrowed).
+/// @param transition Receives the transition, owned by the caller (elg_transition_free()), when the motion
+///   animates; left as it was otherwise.
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the motion
+///   animates; left as it was otherwise.
+/// @return Whether the motion animates (false for PopupMotion::none()); false on failure.
+ELG_EXPORT bool elg_popover_style_motion(const std::shared_ptr<const PopoverStyle>* style, Transition** transition,
+                                        Animation** animation) {
+    ELG_TRY
+    return motion_out((*style)->motion(), transition, animation);
+    ELG_CATCH(false)
+}
 
 /// A PopoverStyle implemented in Rust: its `make_body()` calls `make_body`.
 ///
@@ -878,8 +961,24 @@ ELG_EXPORT bool elg_popover_config_is_padded(const PopoverConfiguration* c) {
 // --- Tooltips ---
 
 STYLE_HANDLE(tooltip, TooltipStyle)
+ENV_STYLE(tooltip, TooltipStyle)
 CONFIG_HANDLE(tooltip, TooltipConfiguration)
 MAKE_BODY(tooltip, TooltipStyle, TooltipConfiguration)
+
+/// Wraps `TooltipStyle::motion()`: how tooltips of this style open and close.
+///
+/// @param style The style (borrowed).
+/// @param transition Receives the transition, owned by the caller (elg_transition_free()), when the motion
+///   animates; left as it was otherwise.
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the motion
+///   animates; left as it was otherwise.
+/// @return Whether the motion animates (false for PopupMotion::none()); false on failure.
+ELG_EXPORT bool elg_tooltip_style_motion(const std::shared_ptr<const TooltipStyle>* style, Transition** transition,
+                                        Animation** animation) {
+    ELG_TRY
+    return motion_out((*style)->motion(), transition, animation);
+    ELG_CATCH(false)
+}
 
 /// A TooltipStyle implemented in Rust: its `make_body()` calls `make_body`.
 ///
@@ -921,9 +1020,25 @@ ELG_EXPORT View* elg_tooltip_config_content(const TooltipConfiguration* c) {
 // --- Menus ---
 
 STYLE_HANDLE(menu, MenuStyle)
+ENV_STYLE(menu, MenuStyle)
 CONFIG_HANDLE(menu, MenuConfiguration)
 CONFIG_HANDLE(menu_item, MenuItemConfiguration)
 MAKE_BODY(menu, MenuStyle, MenuConfiguration)
+
+/// Wraps `MenuStyle::motion()`: how menus of this style open and close.
+///
+/// @param style The style (borrowed).
+/// @param transition Receives the transition, owned by the caller (elg_transition_free()), when the motion
+///   animates; left as it was otherwise.
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the motion
+///   animates; left as it was otherwise.
+/// @return Whether the motion animates (false for PopupMotion::none()); false on failure.
+ELG_EXPORT bool elg_menu_style_motion(const std::shared_ptr<const MenuStyle>* style, Transition** transition,
+                                        Animation** animation) {
+    ELG_TRY
+    return motion_out((*style)->motion(), transition, animation);
+    ELG_CATCH(false)
+}
 
 /// A MenuStyle implemented in Rust: its `make_body()` and `make_item()` call `make_body` and `make_item`.
 ///
@@ -1009,6 +1124,7 @@ ELG_EXPORT bool elg_menu_item_config_state(const MenuItemConfiguration* c, int32
 // --- Selectable rows ---
 
 STYLE_HANDLE(row, RowStyle)
+ENV_STYLE(row, RowStyle)
 CONFIG_HANDLE(row, RowConfiguration)
 MAKE_BODY(row, RowStyle, RowConfiguration)
 RUST_STYLE(row, RowStyle, RowConfiguration)

@@ -165,13 +165,15 @@ struct ElgGradientStop {
     float location; ///< Where along the gradient, 0 to 1.
 };
 
-/// An elg::ShapeStyle: a color or a gradient. Points are unit points of the filled shape's bounds.
+/// An elg::ShapeStyle: a color, a gradient or a backdrop. Points are unit points of the filled shape's
+/// bounds.
 ///
 /// kind 0: color; 1: linear gradient from (x0, y0) to (x1, y1); 2: radial gradient around (x0, y0)
 /// from radius r0 to r1; 3: elliptical gradient around (x0, y0) from radius fraction r0 to r1;
-/// 4: angular gradient around (x0, y0) from angle r0 to r1 (degrees).
+/// 4: angular gradient around (x0, y0) from angle r0 to r1 (degrees); 5: a backdrop (elg::BackdropFill):
+/// what's drawn behind, blurred by `blur` points, then adjusted by `saturation`, `brightness` and `noise`.
 struct ElgShapeStyle {
-    int32_t kind;                 ///< 0 to 4, as above. Other values are a color.
+    int32_t kind;                 ///< 0 to 5, as above. Other values are a color.
     ElgColor color;               ///< Kind 0: the color.
     const ElgGradientStop* stops; ///< Gradients: the color stops, read during the call.
     size_t stop_count;            ///< Number of `stops`.
@@ -179,6 +181,9 @@ struct ElgShapeStyle {
     /// Kinds 2 to 4: the start and end radius in points (radial), as a fraction of the bounds' size
     /// (elliptical; 0.5 reaches the edges), or the angles in degrees, clockwise from trailing (angular).
     float r0, r1;
+    /// Kind 5: the blur radius in points, the saturation (1 keeps the colors), the brightness added to each
+    /// channel (-1 to 1), and the grain (0 to 1).
+    float blur, saturation, brightness, noise;
 };
 
 /// An elg::EdgeInsets, in points.
@@ -311,6 +316,33 @@ struct ElgEventResult {
     /// the handler then gets a cancel. For presses that are clicks; handlers that track the pointer
     /// themselves leave it false.
     bool cancellable;
+};
+
+/// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
+struct ElgWindowDesc {
+    ElgStr title;                      ///< The window's title.
+    int32_t width;                     ///< Initial width.
+    int32_t height;                    ///< Initial height.
+    bool resizable;                    ///< Whether the user can resize it.
+    bool has_min_size;                 ///< false: no minimum size.
+    ElgSize min_size;                  ///< Smallest size the user can resize to, if `has_min_size`.
+    /// false: the default background, the theme's (ThemeColor::background), or clear for
+    /// transparent windows.
+    bool has_background;
+    ElgColor background;               ///< Shown where no view draws, if `has_background`.
+    int32_t title_bar;                 ///< An elg::TitleBar: 0 system, 1 hidden, 2 integrated.
+    bool has_system_controls_position; ///< false: the system's window controls go where it puts them.
+    /// TitleBar::integrated on macOS: where the system's window controls go, as the first one's
+    /// top-left corner in points from the window's top-left corner.
+    ElgPoint system_controls_position;
+    bool transparent;                  ///< The desktop shows through where the content isn't opaque.
+    /// An elg::WindowMaterial behind the content: 0 none, 1 sidebar, 2 under_window, 3 mica, 4 acrylic. Other
+    /// values are none.
+    int32_t material;
+    float opacity;                     ///< The whole window's opacity, 0 to 1.
+    /// Covers the whole display it opens on, without a frame. `width` and `height` are its size
+    /// when it leaves fullscreen.
+    bool fullscreen;
 };
 
 /// elg::FloatingPlacement: edge (FloatingEdge), alignment (FloatingAlignment), and an optional
@@ -643,12 +675,37 @@ inline elg::ShapeStyle shape_style(const ElgShapeStyle& s) {
     case 2: return elg::RadialGradient(stops(s), elg::UnitPoint{s.x0, s.y0}, s.r0, s.r1);
     case 3: return elg::EllipticalGradient(stops(s), elg::UnitPoint{s.x0, s.y0}, s.r0, s.r1);
     case 4: return elg::AngularGradient(stops(s), elg::UnitPoint{s.x0, s.y0}, s.r0, s.r1);
+    case 5: return elg::BackdropFill{s.blur, s.saturation, s.brightness, s.noise};
     default: return color(s.color);
     }
 }
 
 inline elg::EdgeInsets edge_insets(ElgEdgeInsets i) {
     return {i.top, i.leading, i.bottom, i.trailing};
+}
+
+inline elg::WindowDesc window_desc(const ElgWindowDesc& d) {
+    elg::WindowDesc window;
+    window.title = str(d.title);
+    window.width = d.width;
+    window.height = d.height;
+    window.resizable = d.resizable;
+    if (d.has_min_size) {
+        window.min_size = size(d.min_size);
+    }
+    if (d.has_background) {
+        window.background = color(d.background);
+    }
+    window.title_bar = static_cast<elg::TitleBar>(d.title_bar);
+    if (d.has_system_controls_position) {
+        window.system_controls_position = point(d.system_controls_position);
+    }
+    window.transparent = d.transparent;
+    window.material = d.material >= 0 && d.material <= 4 ? static_cast<elg::WindowMaterial>(d.material)
+                                                         : elg::WindowMaterial::none;
+    window.opacity = d.opacity;
+    window.fullscreen = d.fullscreen;
+    return window;
 }
 
 inline elg::FloatingPlacement placement(const ElgFloatingPlacement& p) {

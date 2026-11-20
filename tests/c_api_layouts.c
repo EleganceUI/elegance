@@ -23,7 +23,7 @@ static const ElgFieldReference fields_ElgPoint[] = {{"x", offsetof(ElgPoint, x)}
 static const ElgFieldReference fields_ElgRect[] = {{"x", offsetof(ElgRect, x)}, {"y", offsetof(ElgRect, y)}, {"width", offsetof(ElgRect, width)}, {"height", offsetof(ElgRect, height)}};
 static const ElgFieldReference fields_ElgFont[] = {{"family", offsetof(ElgFont, family)}, {"size", offsetof(ElgFont, size)}, {"weight", offsetof(ElgFont, weight)}, {"italic", offsetof(ElgFont, italic)}};
 static const ElgFieldReference fields_ElgGradientStop[] = {{"color", offsetof(ElgGradientStop, color)}, {"location", offsetof(ElgGradientStop, location)}};
-static const ElgFieldReference fields_ElgShapeStyle[] = {{"kind", offsetof(ElgShapeStyle, kind)}, {"color", offsetof(ElgShapeStyle, color)}, {"stops", offsetof(ElgShapeStyle, stops)}, {"stop_count", offsetof(ElgShapeStyle, stop_count)}, {"x0", offsetof(ElgShapeStyle, x0)}, {"y0", offsetof(ElgShapeStyle, y0)}, {"x1", offsetof(ElgShapeStyle, x1)}, {"y1", offsetof(ElgShapeStyle, y1)}, {"r0", offsetof(ElgShapeStyle, r0)}, {"r1", offsetof(ElgShapeStyle, r1)}};
+static const ElgFieldReference fields_ElgShapeStyle[] = {{"kind", offsetof(ElgShapeStyle, kind)}, {"color", offsetof(ElgShapeStyle, color)}, {"stops", offsetof(ElgShapeStyle, stops)}, {"stop_count", offsetof(ElgShapeStyle, stop_count)}, {"x0", offsetof(ElgShapeStyle, x0)}, {"y0", offsetof(ElgShapeStyle, y0)}, {"x1", offsetof(ElgShapeStyle, x1)}, {"y1", offsetof(ElgShapeStyle, y1)}, {"r0", offsetof(ElgShapeStyle, r0)}, {"r1", offsetof(ElgShapeStyle, r1)}, {"blur", offsetof(ElgShapeStyle, blur)}, {"saturation", offsetof(ElgShapeStyle, saturation)}, {"brightness", offsetof(ElgShapeStyle, brightness)}, {"noise", offsetof(ElgShapeStyle, noise)}};
 static const ElgFieldReference fields_ElgEdgeInsets[] = {{"top", offsetof(ElgEdgeInsets, top)}, {"leading", offsetof(ElgEdgeInsets, leading)}, {"bottom", offsetof(ElgEdgeInsets, bottom)}, {"trailing", offsetof(ElgEdgeInsets, trailing)}};
 static const ElgFieldReference fields_ElgProp[] = {{"kind", offsetof(ElgProp, kind)}, {"theme", offsetof(ElgProp, theme)}, {"value", offsetof(ElgProp, value)}, {"fn", offsetof(ElgProp, fn)}};
 static const ElgFieldReference fields_ElgProposedSize[] = {{"has_width", offsetof(ElgProposedSize, has_width)}, {"width", offsetof(ElgProposedSize, width)}, {"has_height", offsetof(ElgProposedSize, has_height)}, {"height", offsetof(ElgProposedSize, height)}};
@@ -38,6 +38,7 @@ static const ElgFieldReference fields_ElgMagnifyEvent[] = {{"location", offsetof
 static const ElgFieldReference fields_ElgRotateEvent[] = {{"location", offsetof(ElgRotateEvent, location)}, {"degrees", offsetof(ElgRotateEvent, degrees)}, {"delta", offsetof(ElgRotateEvent, delta)}, {"phase", offsetof(ElgRotateEvent, phase)}};
 static const ElgFieldReference fields_ElgTextInputEvent[] = {{"kind", offsetof(ElgTextInputEvent, kind)}, {"text", offsetof(ElgTextInputEvent, text)}, {"cursor", offsetof(ElgTextInputEvent, cursor)}};
 static const ElgFieldReference fields_ElgEventResult[] = {{"consumed", offsetof(ElgEventResult, consumed)}, {"redraw", offsetof(ElgEventResult, redraw)}, {"cancellable", offsetof(ElgEventResult, cancellable)}};
+static const ElgFieldReference fields_ElgWindowDesc[] = {{"title", offsetof(ElgWindowDesc, title)}, {"width", offsetof(ElgWindowDesc, width)}, {"height", offsetof(ElgWindowDesc, height)}, {"resizable", offsetof(ElgWindowDesc, resizable)}, {"has_min_size", offsetof(ElgWindowDesc, has_min_size)}, {"min_size", offsetof(ElgWindowDesc, min_size)}, {"has_background", offsetof(ElgWindowDesc, has_background)}, {"background", offsetof(ElgWindowDesc, background)}, {"title_bar", offsetof(ElgWindowDesc, title_bar)}, {"has_system_controls_position", offsetof(ElgWindowDesc, has_system_controls_position)}, {"system_controls_position", offsetof(ElgWindowDesc, system_controls_position)}, {"transparent", offsetof(ElgWindowDesc, transparent)}, {"material", offsetof(ElgWindowDesc, material)}, {"opacity", offsetof(ElgWindowDesc, opacity)}, {"fullscreen", offsetof(ElgWindowDesc, fullscreen)}};
 static const ElgFieldReference fields_ElgFloatingPlacement[] = {{"edge", offsetof(ElgFloatingPlacement, edge)}, {"alignment", offsetof(ElgFloatingPlacement, alignment)}, {"spacing", offsetof(ElgFloatingPlacement, spacing)}, {"offset", offsetof(ElgFloatingPlacement, offset)}, {"has_position", offsetof(ElgFloatingPlacement, has_position)}, {"position", offsetof(ElgFloatingPlacement, position)}};
 static const ElgFieldReference fields_ElgPopupMotion[] = {{"has", offsetof(ElgPopupMotion, has)}, {"transition", offsetof(ElgPopupMotion, transition)}, {"animation", offsetof(ElgPopupMotion, animation)}};
 static const ElgFieldReference fields_ElgHoverDelay[] = {{"enter", offsetof(ElgHoverDelay, enter)}, {"exit", offsetof(ElgHoverDelay, exit)}};
@@ -47,8 +48,7 @@ static const ElgFieldReference fields_ElgRunStyle[] = {{"has_weight", offsetof(E
 static const ElgFieldReference fields_ElgImageSource[] = {{"system_name", offsetof(ElgImageSource, system_name)}, {"file", offsetof(ElgImageSource, file)}, {"data", offsetof(ElgImageSource, data)}, {"scale", offsetof(ElgImageSource, scale)}, {"max_pixels", offsetof(ElgImageSource, max_pixels)}, {"max_side", offsetof(ElgImageSource, max_side)}};
 static const ElgFieldReference fields_ElgTheme[] = {{"colors", offsetof(ElgTheme, colors)}, {"blur", offsetof(ElgTheme, blur)}};
 static const ElgFieldReference fields_ElgLayoutChild[] = {{"element", offsetof(ElgLayoutChild, element)}};
-static const ElgFieldReference fields_ElgWindowDesc[] = {{"title", offsetof(ElgWindowDesc, title)}, {"width", offsetof(ElgWindowDesc, width)}, {"height", offsetof(ElgWindowDesc, height)}, {"resizable", offsetof(ElgWindowDesc, resizable)}, {"has_min_size", offsetof(ElgWindowDesc, has_min_size)}, {"min_size", offsetof(ElgWindowDesc, min_size)}, {"has_background", offsetof(ElgWindowDesc, has_background)}, {"background", offsetof(ElgWindowDesc, background)}, {"title_bar", offsetof(ElgWindowDesc, title_bar)}, {"has_system_controls_position", offsetof(ElgWindowDesc, has_system_controls_position)}, {"system_controls_position", offsetof(ElgWindowDesc, system_controls_position)}, {"transparent", offsetof(ElgWindowDesc, transparent)}, {"opacity", offsetof(ElgWindowDesc, opacity)}, {"fullscreen", offsetof(ElgWindowDesc, fullscreen)}};
-static const ElgFieldReference fields_ElgPose[] = {{"opacity", offsetof(ElgPose, opacity)}, {"scale", offsetof(ElgPose, scale)}, {"x", offsetof(ElgPose, x)}, {"y", offsetof(ElgPose, y)}};
+static const ElgFieldReference fields_ElgPose[] = {{"opacity", offsetof(ElgPose, opacity)}, {"scale", offsetof(ElgPose, scale)}, {"x", offsetof(ElgPose, x)}, {"y", offsetof(ElgPose, y)}, {"anchor_x", offsetof(ElgPose, anchor_x)}, {"anchor_y", offsetof(ElgPose, anchor_y)}};
 static const ElgFieldReference fields_ElgTextFieldOptions[] = {{"on_submit", offsetof(ElgTextFieldOptions, on_submit)}, {"secure", offsetof(ElgTextFieldOptions, secure)}, {"line_limit", offsetof(ElgTextFieldOptions, line_limit)}, {"styler", offsetof(ElgTextFieldOptions, styler)}, {"on_key", offsetof(ElgTextFieldOptions, on_key)}};
 static const ElgFieldReference fields_ElgNumberInputOptions[] = {{"min", offsetof(ElgNumberInputOptions, min)}, {"max", offsetof(ElgNumberInputOptions, max)}, {"step", offsetof(ElgNumberInputOptions, step)}, {"decimals", offsetof(ElgNumberInputOptions, decimals)}, {"format", offsetof(ElgNumberInputOptions, format)}, {"parse", offsetof(ElgNumberInputOptions, parse)}, {"live", offsetof(ElgNumberInputOptions, live)}, {"shows_buttons", offsetof(ElgNumberInputOptions, shows_buttons)}, {"scrubs", offsetof(ElgNumberInputOptions, scrubs)}};
 static const ElgFieldReference fields_ElgOptNumber[] = {{"has", offsetof(ElgOptNumber, has)}, {"value", offsetof(ElgOptNumber, value)}};
@@ -110,7 +110,7 @@ const ElgLayoutReference elg_c_api_layouts[] = {
     {"ElgRect", sizeof(ElgRect), _Alignof(ElgRect), fields_ElgRect, 4},
     {"ElgFont", sizeof(ElgFont), _Alignof(ElgFont), fields_ElgFont, 4},
     {"ElgGradientStop", sizeof(ElgGradientStop), _Alignof(ElgGradientStop), fields_ElgGradientStop, 2},
-    {"ElgShapeStyle", sizeof(ElgShapeStyle), _Alignof(ElgShapeStyle), fields_ElgShapeStyle, 10},
+    {"ElgShapeStyle", sizeof(ElgShapeStyle), _Alignof(ElgShapeStyle), fields_ElgShapeStyle, 14},
     {"ElgEdgeInsets", sizeof(ElgEdgeInsets), _Alignof(ElgEdgeInsets), fields_ElgEdgeInsets, 4},
     {"ElgProp", sizeof(ElgProp), _Alignof(ElgProp), fields_ElgProp, 4},
     {"ElgProposedSize", sizeof(ElgProposedSize), _Alignof(ElgProposedSize), fields_ElgProposedSize, 4},
@@ -125,6 +125,7 @@ const ElgLayoutReference elg_c_api_layouts[] = {
     {"ElgRotateEvent", sizeof(ElgRotateEvent), _Alignof(ElgRotateEvent), fields_ElgRotateEvent, 4},
     {"ElgTextInputEvent", sizeof(ElgTextInputEvent), _Alignof(ElgTextInputEvent), fields_ElgTextInputEvent, 3},
     {"ElgEventResult", sizeof(ElgEventResult), _Alignof(ElgEventResult), fields_ElgEventResult, 3},
+    {"ElgWindowDesc", sizeof(ElgWindowDesc), _Alignof(ElgWindowDesc), fields_ElgWindowDesc, 15},
     {"ElgFloatingPlacement", sizeof(ElgFloatingPlacement), _Alignof(ElgFloatingPlacement), fields_ElgFloatingPlacement, 6},
     {"ElgPopupMotion", sizeof(ElgPopupMotion), _Alignof(ElgPopupMotion), fields_ElgPopupMotion, 3},
     {"ElgHoverDelay", sizeof(ElgHoverDelay), _Alignof(ElgHoverDelay), fields_ElgHoverDelay, 2},
@@ -134,8 +135,7 @@ const ElgLayoutReference elg_c_api_layouts[] = {
     {"ElgImageSource", sizeof(ElgImageSource), _Alignof(ElgImageSource), fields_ElgImageSource, 6},
     {"ElgTheme", sizeof(ElgTheme), _Alignof(ElgTheme), fields_ElgTheme, 2},
     {"ElgLayoutChild", sizeof(ElgLayoutChild), _Alignof(ElgLayoutChild), fields_ElgLayoutChild, 1},
-    {"ElgWindowDesc", sizeof(ElgWindowDesc), _Alignof(ElgWindowDesc), fields_ElgWindowDesc, 14},
-    {"ElgPose", sizeof(ElgPose), _Alignof(ElgPose), fields_ElgPose, 4},
+    {"ElgPose", sizeof(ElgPose), _Alignof(ElgPose), fields_ElgPose, 6},
     {"ElgTextFieldOptions", sizeof(ElgTextFieldOptions), _Alignof(ElgTextFieldOptions), fields_ElgTextFieldOptions, 5},
     {"ElgNumberInputOptions", sizeof(ElgNumberInputOptions), _Alignof(ElgNumberInputOptions), fields_ElgNumberInputOptions, 9},
     {"ElgOptNumber", sizeof(ElgOptNumber), _Alignof(ElgOptNumber), fields_ElgOptNumber, 2},

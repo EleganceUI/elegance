@@ -27,7 +27,7 @@ extern "C" {
 
 /// The ABI version this header declares: what elg_abi_version() returns for a library that
 /// matches it. A binding refuses to run with a library whose version differs.
-#define ELG_ABI_VERSION 3u
+#define ELG_ABI_VERSION 4u
 
 /// The kinds of error elg_take_error() returns.
 #define ELG_NO_ERROR 0
@@ -145,6 +145,8 @@ typedef struct ElgTextFieldConfiguration ElgTextFieldConfiguration;
 typedef struct ElgTextFieldStyle ElgTextFieldStyle;
 /// A handle to a std::vector<TextSpan>.
 typedef struct ElgTextSpans ElgTextSpans;
+/// A handle to an elg::Timer.
+typedef struct ElgTimer ElgTimer;
 /// A handle to an elg::ToggleConfiguration.
 typedef struct ElgToggleConfiguration ElgToggleConfiguration;
 /// A handle to a std::shared_ptr<const ToggleStyle>.
@@ -417,13 +419,15 @@ typedef struct ElgGradientStop {
     float location; ///< Where along the gradient, 0 to 1.
 } ElgGradientStop;
 
-/// An elg::ShapeStyle: a color or a gradient. Points are unit points of the filled shape's bounds.
+/// An elg::ShapeStyle: a color, a gradient or a backdrop. Points are unit points of the filled shape's
+/// bounds.
 ///
 /// kind 0: color; 1: linear gradient from (x0, y0) to (x1, y1); 2: radial gradient around (x0, y0)
 /// from radius r0 to r1; 3: elliptical gradient around (x0, y0) from radius fraction r0 to r1;
-/// 4: angular gradient around (x0, y0) from angle r0 to r1 (degrees).
+/// 4: angular gradient around (x0, y0) from angle r0 to r1 (degrees); 5: a backdrop (elg::BackdropFill):
+/// what's drawn behind, blurred by `blur` points, then adjusted by `saturation`, `brightness` and `noise`.
 typedef struct ElgShapeStyle {
-    int32_t kind;                 ///< 0 to 4, as above. Other values are a color.
+    int32_t kind;                 ///< 0 to 5, as above. Other values are a color.
     ElgColor color;               ///< Kind 0: the color.
     const ElgGradientStop* stops; ///< Gradients: the color stops, read during the call.
     size_t stop_count;            ///< Number of `stops`.
@@ -431,6 +435,9 @@ typedef struct ElgShapeStyle {
     /// Kinds 2 to 4: the start and end radius in points (radial), as a fraction of the bounds' size
     /// (elliptical; 0.5 reaches the edges), or the angles in degrees, clockwise from trailing (angular).
     float r0, r1;
+    /// Kind 5: the blur radius in points, the saturation (1 keeps the colors), the brightness added to each
+    /// channel (-1 to 1), and the grain (0 to 1).
+    float blur, saturation, brightness, noise;
 } ElgShapeStyle;
 
 /// An elg::EdgeInsets, in points.
@@ -565,6 +572,33 @@ typedef struct ElgEventResult {
     bool cancellable;
 } ElgEventResult;
 
+/// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
+typedef struct ElgWindowDesc {
+    ElgStr title;                      ///< The window's title.
+    int32_t width;                     ///< Initial width.
+    int32_t height;                    ///< Initial height.
+    bool resizable;                    ///< Whether the user can resize it.
+    bool has_min_size;                 ///< false: no minimum size.
+    ElgSize min_size;                  ///< Smallest size the user can resize to, if `has_min_size`.
+    /// false: the default background, the theme's (ThemeColor::background), or clear for
+    /// transparent windows.
+    bool has_background;
+    ElgColor background;               ///< Shown where no view draws, if `has_background`.
+    int32_t title_bar;                 ///< An elg::TitleBar: 0 system, 1 hidden, 2 integrated.
+    bool has_system_controls_position; ///< false: the system's window controls go where it puts them.
+    /// TitleBar::integrated on macOS: where the system's window controls go, as the first one's
+    /// top-left corner in points from the window's top-left corner.
+    ElgPoint system_controls_position;
+    bool transparent;                  ///< The desktop shows through where the content isn't opaque.
+    /// An elg::WindowMaterial behind the content: 0 none, 1 sidebar, 2 under_window, 3 mica, 4 acrylic. Other
+    /// values are none.
+    int32_t material;
+    float opacity;                     ///< The whole window's opacity, 0 to 1.
+    /// Covers the whole display it opens on, without a frame. `width` and `height` are its size
+    /// when it leaves fullscreen.
+    bool fullscreen;
+} ElgWindowDesc;
+
 /// elg::FloatingPlacement: edge (FloatingEdge), alignment (FloatingAlignment), and an optional
 /// position instead of an edge.
 typedef struct ElgFloatingPlacement {
@@ -654,33 +688,10 @@ typedef struct ElgLayoutChild {
     void* element; ///< Elegance's.
 } ElgLayoutChild;
 
-/// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
-typedef struct ElgWindowDesc {
-    ElgStr title;                      ///< The window's title.
-    int32_t width;                     ///< Initial width.
-    int32_t height;                    ///< Initial height.
-    bool resizable;                    ///< Whether the user can resize it.
-    bool has_min_size;                 ///< false: no minimum size.
-    ElgSize min_size;                  ///< Smallest size the user can resize to, if `has_min_size`.
-    /// false: the default background, the theme's (ThemeColor::background), or clear for
-    /// transparent windows.
-    bool has_background;
-    ElgColor background;               ///< Shown where no view draws, if `has_background`.
-    int32_t title_bar;                 ///< An elg::TitleBar: 0 system, 1 hidden, 2 integrated.
-    bool has_system_controls_position; ///< false: the system's window controls go where it puts them.
-    /// TitleBar::integrated on macOS: where the system's window controls go, as the first one's
-    /// top-left corner in points from the window's top-left corner.
-    ElgPoint system_controls_position;
-    bool transparent;                  ///< The desktop shows through where the content isn't opaque.
-    float opacity;                     ///< The whole window's opacity, 0 to 1.
-    /// Covers the whole display it opens on, without a frame. `width` and `height` are its size
-    /// when it leaves fullscreen.
-    bool fullscreen;
-} ElgWindowDesc;
-
-/// A Transition::Pose without its anchor: how a view looks partway through a transition.
+/// A Transition::Pose: how a view looks partway through a transition.
 typedef struct ElgPose {
     float opacity, scale, x, y; ///< Opacity and scale (1: as is), and the offset in points.
+    float anchor_x, anchor_y;   ///< What it scales around, as fractions of its frame (0.5: the middle).
 } ElgPose;
 
 /// The options of elg_text_field() (`TextFieldOptions`) and elg_text_area() (`TextAreaOptions`, which has no
@@ -1339,6 +1350,11 @@ void elg_binding_f64_free(ElgBindingF64* binding);
 ///   when no views are being built.
 ElgEnvironmentValues* elg_env_current(void);
 
+/// An empty environment (`EnvironmentValues()`): every key reads its default.
+///
+/// @return The environment, owned by the caller (elg_env_free()). Null on failure.
+ElgEnvironmentValues* elg_env_new(void);
+
 /// Copies an environment (cheap: copies share their entries).
 ///
 /// @param environment The environment (borrowed).
@@ -1379,6 +1395,14 @@ int32_t elg_env_color_scheme(const ElgEnvironmentValues* environment);
 /// @param environment The environment (borrowed).
 /// @param result Receives the theme (borrowed); left as it was on failure.
 void elg_env_theme(const ElgEnvironmentValues* environment, ElgTheme* result);
+
+/// Wraps `system_accent_color()`: the accent color the person chose in the system's settings.
+/// Reactive while an App runs (a tracked read, on the UI thread); without one, it asks the system
+/// each time.
+///
+/// @param color Receives the color when there is one; left as it was otherwise.
+/// @return Whether the system has an accent color; false on failure.
+bool elg_system_accent_color(ElgColor* color);
 
 /// Reads the environment's foreground (ForegroundKey): the color of text and unfilled shapes. A
 /// tracked read.
@@ -1724,6 +1748,32 @@ ElgAnimation* elg_animation_custom(ElgClosure curve, double duration);
 /// @return The new animation, owned by the caller (elg_animation_free()). Null on failure.
 ElgAnimation* elg_animation_delay(const ElgAnimation* animation, double seconds);
 
+/// Wraps `Animation::timing_curve()`: a cubic Bézier through (0, 0), (x1, y1), (x2, y2) and (1, 1), like
+/// CSS's cubic-bezier().
+///
+/// @param x1 The first control point's time, 0 to 1 (clamped).
+/// @param y1 The first control point's progress; outside 0 to 1 overshoots.
+/// @param x2 The second control point's time, 0 to 1 (clamped).
+/// @param y2 The second control point's progress; outside 0 to 1 overshoots.
+/// @param duration Seconds; negative counts as 0 (no animation).
+/// @return The animation, owned by the caller (elg_animation_free()). Null on failure.
+ElgAnimation* elg_animation_timing_curve(double x1, double y1, double x2, double y2, double duration);
+
+/// Wraps `Animation::repeat_count()`: a copy of `animation` that plays `count` times.
+///
+/// @param animation The animation (borrowed).
+/// @param count How many times; less than 1 counts as 1.
+/// @param autoreverses Every other time runs backward, from the target to where it started.
+/// @return The new animation, owned by the caller (elg_animation_free()). Null on failure.
+ElgAnimation* elg_animation_repeat_count(const ElgAnimation* animation, int32_t count, bool autoreverses);
+
+/// Wraps `Animation::repeat_forever()`: a copy of `animation` that plays until it's replaced.
+///
+/// @param animation The animation (borrowed).
+/// @param autoreverses Every other time runs backward, from the target to where it started.
+/// @return The new animation, owned by the caller (elg_animation_free()). Null on failure.
+ElgAnimation* elg_animation_repeat_forever(const ElgAnimation* animation, bool autoreverses);
+
 /// Wraps `Animation::progress()`.
 ///
 /// @param animation The animation (borrowed).
@@ -1748,6 +1798,50 @@ ElgAnimation* elg_animation_clone(const ElgAnimation* animation);
 ///
 /// @param animation The animation (consumed); may be null.
 void elg_animation_free(ElgAnimation* animation);
+
+// --- Timers ---
+
+/// Wraps `after()`: runs `action` once, `seconds` from now (0: as soon as the current event is handled), on
+/// the UI thread. A timer started while views are built, or in on_appear, ends with that view.
+///
+/// @param seconds The delay; negative counts as 0. Positive infinity never runs the action. NaN is a usage
+///   error.
+/// @param action The action. No args. May be none: the timer is never active.
+/// @return The timer, owned by the caller (elg_timer_free(), which doesn't stop it). Null on failure.
+ElgTimer* elg_timer_after(double seconds, ElgClosure action);
+
+/// Wraps `every()`: runs `action` every `seconds` (at least a millisecond), the first time `seconds` from
+/// now, on the UI thread. Missed runs are skipped. A timer started while views are built, or in
+/// on_appear, ends with that view.
+///
+/// @param seconds The interval; less than a millisecond counts as a millisecond. Positive infinity never runs
+///   the action. NaN is a usage error.
+/// @param action The action. No args. May be none: the timer is never active.
+/// @return The timer, owned by the caller (elg_timer_free(), which doesn't stop it). Null on failure.
+ElgTimer* elg_timer_every(double seconds, ElgClosure action);
+
+/// Wraps `Timer::cancel()`: the action doesn't run again. Fine to call more than once.
+///
+/// @param timer The timer (borrowed).
+void elg_timer_cancel(const ElgTimer* timer);
+
+/// Wraps `Timer::active()`: whether the timer is still going: not cancelled, its view still there, and for
+/// elg_timer_after(), not fired yet.
+///
+/// @param timer The timer (borrowed).
+/// @return true while it's going; false on failure.
+bool elg_timer_active(const ElgTimer* timer);
+
+/// Copies a timer handle: both refer to the same timer.
+///
+/// @param timer The timer (borrowed).
+/// @return The copy, owned by the caller (elg_timer_free()). Null on failure.
+ElgTimer* elg_timer_clone(const ElgTimer* timer);
+
+/// Frees a timer handle. The timer goes on running.
+///
+/// @param timer The timer (consumed); may be null.
+void elg_timer_free(ElgTimer* timer);
 
 // --- Transition ---
 
@@ -2275,6 +2369,15 @@ ElgText* elg_text_line_limit(const ElgText* text, int32_t lines);
 /// @return `text` with that alignment (a new Text, owned by the caller), or null on failure.
 ElgText* elg_text_multiline_alignment(const ElgText* text, int32_t alignment);
 
+/// Wraps `Text::selectable()`: the person using the app can select the text with the pointer, and
+/// copy it.
+///
+/// @param text The text (borrowed).
+/// @param selectable A bool prop: whether it can be selected.
+/// @return `text`, selectable while `selectable` is true (a new Text, owned by the caller), or null on
+///   failure.
+ElgText* elg_text_selectable(const ElgText* text, ElgProp selectable);
+
 /// Wraps `StyledText()`: text made of runs in different weights, colors and highlights, wrapping like Text.
 ///
 /// @param runs The runs (borrowed; their closures and attachments are taken over).
@@ -2345,7 +2448,7 @@ ElgShape* elg_custom_shape(ElgClosure path, int32_t fill_rule);
 /// Wraps `Shape::fill()`.
 ///
 /// @param shape The shape (borrowed).
-/// @param style A ShapeStyle prop (ElgShapeStyle): a color or gradient.
+/// @param style A ShapeStyle prop (ElgShapeStyle): a color, a gradient, or a backdrop (kind 5).
 /// @return `shape` filled with `style` (a new Shape, owned by the caller), or null on failure.
 ElgShape* elg_shape_fill(const ElgShape* shape, ElgProp style);
 
@@ -2726,11 +2829,11 @@ void elg_register_emoji_font(ElgStr file);
 /// @param value The font (borrowed).
 void elg_font_assign(ElgCppFont* target, const ElgFont* value);
 
-/// Writes a color or gradient into a closure's ShapeStyle result (the `ret` of a reactive ShapeStyle prop's
+/// Writes a color, gradient or backdrop into a closure's ShapeStyle result (the `ret` of a reactive ShapeStyle prop's
 /// closure).
 ///
 /// @param target The closure's `ret`.
-/// @param value The color or gradient (borrowed).
+/// @param value The color, gradient or backdrop (borrowed).
 void elg_shape_style_assign(ElgCppShapeStyle* target, const ElgShapeStyle* value);
 
 // --- View modifiers ---
@@ -3003,6 +3106,22 @@ ElgView* elg_mod_on_click(const ElgView* v, ElgClosure on_click, int32_t button,
 /// @param on_activate The action. No args. Required: none is a usage error.
 /// @return `v` with the action (a new view, owned by the caller), or null on failure.
 ElgView* elg_mod_on_activate(const ElgView* v, ElgClosure on_activate);
+
+/// Wraps `View::on_appear()`: runs the action once the view is added (its window opened, an If or
+/// ForEach showed it, or a lazy stack built it), on the UI thread, before that update is drawn.
+///
+/// @param v The view (borrowed).
+/// @param on_appear The action. No args. May be none: nothing runs.
+/// @return `v` with the action (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_appear(const ElgView* v, ElgClosure on_appear);
+
+/// Wraps `View::on_disappear()`: runs the action once a view that appeared is gone (after its exit
+/// transition, or when its window closed), on the UI thread.
+///
+/// @param v The view (borrowed).
+/// @param on_disappear The action. No args. May be none: nothing runs.
+/// @return `v` with the action (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_disappear(const ElgView* v, ElgClosure on_disappear);
 
 /// Wraps `View::on_size_change()`: called after the first layout and whenever the view's size in pixels
 /// changes, including with the display scale. Runs on the UI thread, before paint.
@@ -4392,6 +4511,28 @@ void elg_choose_folders(ElgStr directory, bool multiple, ElgClosure done);
 ///   notification is clicked; args and ret: null.
 void elg_notify(ElgStr title, ElgStr body, ElgClosure on_click);
 
+/// Wraps `set_badge()`: a short label on the app's icon, like an unread count (macOS: the Dock; Windows: a
+/// badge over the taskbar button; Linux: a number, where the launcher supports it). Call it on the UI
+/// thread of a running App; otherwise it records a UsageError.
+///
+/// @param text The label (borrowed); null removes it.
+void elg_set_badge(const ElgStr* text);
+
+/// Wraps `set_progress()`: a progress bar on the app's icon. Call it on the UI thread of a running App;
+/// otherwise it records a UsageError.
+///
+/// @param has_fraction false removes the bar.
+/// @param fraction How far along, 0 to 1 (clamped; not finite counts as 0).
+/// @param state An elg::ProgressState: 0 normal, 1 paused, 2 error, 3 indeterminate. Other values are
+///   normal.
+void elg_set_progress(bool has_fraction, double fraction, int32_t state);
+
+/// Wraps `request_attention()`: while the app is in the background, the Dock icon bounces or the taskbar
+/// button flashes. Call it on the UI thread of a running App; otherwise it records a UsageError.
+///
+/// @param critical Keep asking until the app is active, rather than once.
+void elg_request_attention(bool critical);
+
 /// Wraps `TrayIcon(TrayIconOptions)`: an icon in the system tray (Windows: the notification area)
 /// with a menu, shown while any copy lives. Call it while an App runs; otherwise it records a
 /// UsageError.
@@ -4519,6 +4660,14 @@ void elg_toggle_config_free(ElgToggleConfiguration* c);
 /// or null on failure.
 ElgView* elg_toggle_style_make_body(const ElgToggleStyle* s, const ElgToggleConfiguration* c);
 
+/// Wraps `ToggleStyle::animation()`: how a toggle animates between its states.
+///
+/// @param style The style (borrowed).
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the style has
+///   one; left as it was otherwise.
+/// @return Whether the style animates; false on failure.
+bool elg_toggle_style_animation(const ElgToggleStyle* style, ElgAnimation** animation);
+
 /// A ToggleStyle implemented in Rust: its `make_body()` calls `make_body`.
 ///
 /// @param make_body Builds a toggle's body, once per toggle as it's built. args: a heap copy of the
@@ -4567,6 +4716,14 @@ void elg_checkbox_style_free(ElgCheckboxStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_checkbox_style(const ElgView* v, const ElgCheckboxStyle* style);
 
+/// Reads the environment's style of this family (CheckboxStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_checkbox_style_free()), or null on failure.
+ElgCheckboxStyle* elg_env_checkbox_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (CheckboxStyleKey). Both are borrowed; the
+/// environment shares the style.
+void elg_env_set_checkbox_style(ElgEnvironmentValues* environment, const ElgCheckboxStyle* style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgCheckboxConfiguration* elg_checkbox_config_clone(const ElgCheckboxConfiguration* c);
@@ -4579,6 +4736,14 @@ void elg_checkbox_config_free(ElgCheckboxConfiguration* c);
 /// Environment<K>() is available. `s` and `c` are borrowed. Returns the body, owned by the caller,
 /// or null on failure.
 ElgView* elg_checkbox_style_make_body(const ElgCheckboxStyle* s, const ElgCheckboxConfiguration* c);
+
+/// Wraps `CheckboxStyle::animation()`: how a checkbox animates between its states.
+///
+/// @param style The style (borrowed).
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the style has
+///   one; left as it was otherwise.
+/// @return Whether the style animates; false on failure.
+bool elg_checkbox_style_animation(const ElgCheckboxStyle* style, ElgAnimation** animation);
 
 /// A CheckboxStyle implemented in Rust: its `make_body()` calls `make_body`.
 ///
@@ -4630,6 +4795,14 @@ void elg_number_input_style_free(ElgNumberInputStyle* s);
 /// *_style() modifiers do. Both are borrowed; the view keeps its own reference to the style.
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_number_input_style(const ElgView* v, const ElgNumberInputStyle* style);
+
+/// Reads the environment's style of this family (NumberInputStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_number_input_style_free()), or null on failure.
+ElgNumberInputStyle* elg_env_number_input_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (NumberInputStyleKey). Both are borrowed; the
+/// environment shares the style.
+void elg_env_set_number_input_style(ElgEnvironmentValues* environment, const ElgNumberInputStyle* style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -4693,6 +4866,14 @@ void elg_progress_style_free(ElgProgressStyle* s);
 /// *_style() modifiers do. Both are borrowed; the view keeps its own reference to the style.
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_progress_style(const ElgView* v, const ElgProgressStyle* style);
+
+/// Reads the environment's style of this family (ProgressStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_progress_style_free()), or null on failure.
+ElgProgressStyle* elg_env_progress_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (ProgressStyleKey). Both are borrowed; the
+/// environment shares the style.
+void elg_env_set_progress_style(ElgEnvironmentValues* environment, const ElgProgressStyle* style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -4799,6 +4980,14 @@ void elg_picker_style_free(ElgPickerStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_picker_style(const ElgView* v, const ElgPickerStyle* style);
 
+/// Reads the environment's style of this family (PickerStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_picker_style_free()), or null on failure.
+ElgPickerStyle* elg_env_picker_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (PickerStyleKey). Both are borrowed; the environment
+/// shares the style.
+void elg_env_set_picker_style(ElgEnvironmentValues* environment, const ElgPickerStyle* style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgPickerConfiguration* elg_picker_config_clone(const ElgPickerConfiguration* c);
@@ -4866,6 +5055,14 @@ void elg_slider_style_free(ElgSliderStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_slider_style(const ElgView* v, const ElgSliderStyle* style);
 
+/// Reads the environment's style of this family (SliderStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_slider_style_free()), or null on failure.
+ElgSliderStyle* elg_env_slider_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (SliderStyleKey). Both are borrowed; the environment
+/// shares the style.
+void elg_env_set_slider_style(ElgEnvironmentValues* environment, const ElgSliderStyle* style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgSliderConfiguration* elg_slider_config_clone(const ElgSliderConfiguration* c);
@@ -4929,6 +5126,15 @@ void elg_navigation_stack_style_free(ElgNavigationStackStyle* s);
 /// *_style() modifiers do. Both are borrowed; the view keeps its own reference to the style.
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_navigation_stack_style(const ElgView* v, const ElgNavigationStackStyle* style);
+
+/// Reads the environment's style of this family (NavigationStackStyleKey). The environment is
+/// borrowed. Returns the style, owned by the caller (elg_navigation_stack_style_free()), or null on
+/// failure.
+ElgNavigationStackStyle* elg_env_navigation_stack_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (NavigationStackStyleKey). Both are borrowed; the
+/// environment shares the style.
+void elg_env_set_navigation_stack_style(ElgEnvironmentValues* environment, const ElgNavigationStackStyle* style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -4997,6 +5203,14 @@ void elg_popover_style_free(ElgPopoverStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_popover_style(const ElgView* v, const ElgPopoverStyle* style);
 
+/// Reads the environment's style of this family (PopoverStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_popover_style_free()), or null on failure.
+ElgPopoverStyle* elg_env_popover_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (PopoverStyleKey). Both are borrowed; the
+/// environment shares the style.
+void elg_env_set_popover_style(ElgEnvironmentValues* environment, const ElgPopoverStyle* style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgPopoverConfiguration* elg_popover_config_clone(const ElgPopoverConfiguration* c);
@@ -5009,6 +5223,16 @@ void elg_popover_config_free(ElgPopoverConfiguration* c);
 /// Environment<K>() is available. `s` and `c` are borrowed. Returns the body, owned by the caller,
 /// or null on failure.
 ElgView* elg_popover_style_make_body(const ElgPopoverStyle* s, const ElgPopoverConfiguration* c);
+
+/// Wraps `PopoverStyle::motion()`: how popovers of this style open and close.
+///
+/// @param style The style (borrowed).
+/// @param transition Receives the transition, owned by the caller (elg_transition_free()), when the motion
+///   animates; left as it was otherwise.
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the motion
+///   animates; left as it was otherwise.
+/// @return Whether the motion animates (false for PopupMotion::none()); false on failure.
+bool elg_popover_style_motion(const ElgPopoverStyle* style, ElgTransition** transition, ElgAnimation** animation);
 
 /// A PopoverStyle implemented in Rust: its `make_body()` calls `make_body`.
 ///
@@ -5054,6 +5278,14 @@ void elg_tooltip_style_free(ElgTooltipStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_tooltip_style(const ElgView* v, const ElgTooltipStyle* style);
 
+/// Reads the environment's style of this family (TooltipStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_tooltip_style_free()), or null on failure.
+ElgTooltipStyle* elg_env_tooltip_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (TooltipStyleKey). Both are borrowed; the
+/// environment shares the style.
+void elg_env_set_tooltip_style(ElgEnvironmentValues* environment, const ElgTooltipStyle* style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgTooltipConfiguration* elg_tooltip_config_clone(const ElgTooltipConfiguration* c);
@@ -5066,6 +5298,16 @@ void elg_tooltip_config_free(ElgTooltipConfiguration* c);
 /// Environment<K>() is available. `s` and `c` are borrowed. Returns the body, owned by the caller,
 /// or null on failure.
 ElgView* elg_tooltip_style_make_body(const ElgTooltipStyle* s, const ElgTooltipConfiguration* c);
+
+/// Wraps `TooltipStyle::motion()`: how tooltips of this style open and close.
+///
+/// @param style The style (borrowed).
+/// @param transition Receives the transition, owned by the caller (elg_transition_free()), when the motion
+///   animates; left as it was otherwise.
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the motion
+///   animates; left as it was otherwise.
+/// @return Whether the motion animates (false for PopupMotion::none()); false on failure.
+bool elg_tooltip_style_motion(const ElgTooltipStyle* style, ElgTransition** transition, ElgAnimation** animation);
 
 /// A TooltipStyle implemented in Rust: its `make_body()` calls `make_body`.
 ///
@@ -5104,6 +5346,14 @@ void elg_menu_style_free(ElgMenuStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_menu_style(const ElgView* v, const ElgMenuStyle* style);
 
+/// Reads the environment's style of this family (MenuStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_menu_style_free()), or null on failure.
+ElgMenuStyle* elg_env_menu_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (MenuStyleKey). Both are borrowed; the environment
+/// shares the style.
+void elg_env_set_menu_style(ElgEnvironmentValues* environment, const ElgMenuStyle* style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgMenuConfiguration* elg_menu_config_clone(const ElgMenuConfiguration* c);
@@ -5123,6 +5373,16 @@ void elg_menu_item_config_free(ElgMenuItemConfiguration* c);
 /// Environment<K>() is available. `s` and `c` are borrowed. Returns the body, owned by the caller,
 /// or null on failure.
 ElgView* elg_menu_style_make_body(const ElgMenuStyle* s, const ElgMenuConfiguration* c);
+
+/// Wraps `MenuStyle::motion()`: how menus of this style open and close.
+///
+/// @param style The style (borrowed).
+/// @param transition Receives the transition, owned by the caller (elg_transition_free()), when the motion
+///   animates; left as it was otherwise.
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the motion
+///   animates; left as it was otherwise.
+/// @return Whether the motion animates (false for PopupMotion::none()); false on failure.
+bool elg_menu_style_motion(const ElgMenuStyle* style, ElgTransition** transition, ElgAnimation** animation);
 
 /// A MenuStyle implemented in Rust: its `make_body()` and `make_item()` call `make_body` and `make_item`.
 ///
@@ -5185,6 +5445,14 @@ void elg_row_style_free(ElgRowStyle* s);
 /// *_style() modifiers do. Both are borrowed; the view keeps its own reference to the style.
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_row_style(const ElgView* v, const ElgRowStyle* style);
+
+/// Reads the environment's style of this family (RowStyleKey). The environment is borrowed. Returns
+/// the style, owned by the caller (elg_row_style_free()), or null on failure.
+ElgRowStyle* elg_env_row_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (RowStyleKey). Both are borrowed; the environment
+/// shares the style.
+void elg_env_set_row_style(ElgEnvironmentValues* environment, const ElgRowStyle* style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.

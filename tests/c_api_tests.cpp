@@ -11,6 +11,7 @@
 #include "core/app_errors.h"
 #include "core/ui_tasks.h"
 #include "reactive/runtime.h"
+#include "reactive/timers.h"
 #include "test_images.h"
 #include "text/text_system.h"
 #include "view/element.h"
@@ -20,20 +21,28 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cmath>
 #include <cstdint>
 #include <format>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
+#include <variant>
 #include <vector>
 
 using elg::Animation;
 using elg::App;
 using elg::AppCode;
 using elg::Binding;
+using elg::ColorScheme;
+using elg::EnvironmentValues;
 using elg::ErrorAction;
 using elg::ModuleEntry;
+using elg::Rectangle;
 using elg::Text;
+using elg::Timer;
+using elg::Transition;
 using elg::View;
 namespace detail = elg::detail;
 
@@ -85,6 +94,71 @@ void elg_string_assign(std::string* target, ElgStr value);
 View* elg_image(const ElgImageSource* source);
 const ModuleEntry* elg_rust_module_entry(bool has_root, const PreviewDesc* previews, size_t count,
                                          bool (*build)(int32_t index, View* ret), uint64_t app_hash);
+View* elg_mod_on_appear(const View* v, ElgClosure on_appear);
+View* elg_mod_on_disappear(const View* v, ElgClosure on_disappear);
+Text* elg_text_selectable(const Text* text, ElgProp selectable);
+EnvironmentValues* elg_env_new();
+void elg_env_free(EnvironmentValues* environment);
+int32_t elg_env_color_scheme(const EnvironmentValues* environment);
+bool elg_system_accent_color(ElgColor* color);
+Animation* elg_animation_linear(double duration);
+Animation* elg_animation_timing_curve(double x1, double y1, double x2, double y2, double duration);
+Animation* elg_animation_repeat_count(const Animation* animation, int32_t count, bool autoreverses);
+Animation* elg_animation_repeat_forever(const Animation* animation, bool autoreverses);
+bool elg_animation_finished(const Animation* animation, double seconds);
+struct ElgPose {
+    float opacity, scale, x, y, anchor_x, anchor_y;
+};
+Transition* elg_transition_scale(float from, ElgAlignment anchor);
+ElgPose elg_transition_pose(const Transition* transition, float progress, bool removal, ElgSize view_size);
+void elg_transition_free(Transition* transition);
+Timer* elg_timer_after(double seconds, ElgClosure action);
+Timer* elg_timer_every(double seconds, ElgClosure action);
+void elg_timer_cancel(const Timer* timer);
+bool elg_timer_active(const Timer* timer);
+Timer* elg_timer_clone(const Timer* timer);
+void elg_timer_free(Timer* timer);
+std::shared_ptr<const elg::CheckboxStyle>* elg_env_checkbox_style(const EnvironmentValues* environment);
+void elg_env_set_checkbox_style(EnvironmentValues* environment, const std::shared_ptr<const elg::CheckboxStyle>* style);
+void elg_checkbox_style_free(std::shared_ptr<const elg::CheckboxStyle>* style);
+std::shared_ptr<const elg::NumberInputStyle>* elg_env_number_input_style(const EnvironmentValues* environment);
+void elg_env_set_number_input_style(EnvironmentValues* environment, const std::shared_ptr<const elg::NumberInputStyle>* style);
+void elg_number_input_style_free(std::shared_ptr<const elg::NumberInputStyle>* style);
+std::shared_ptr<const elg::ProgressStyle>* elg_env_progress_style(const EnvironmentValues* environment);
+void elg_env_set_progress_style(EnvironmentValues* environment, const std::shared_ptr<const elg::ProgressStyle>* style);
+void elg_progress_style_free(std::shared_ptr<const elg::ProgressStyle>* style);
+std::shared_ptr<const elg::PickerStyle>* elg_env_picker_style(const EnvironmentValues* environment);
+void elg_env_set_picker_style(EnvironmentValues* environment, const std::shared_ptr<const elg::PickerStyle>* style);
+void elg_picker_style_free(std::shared_ptr<const elg::PickerStyle>* style);
+std::shared_ptr<const elg::SliderStyle>* elg_env_slider_style(const EnvironmentValues* environment);
+void elg_env_set_slider_style(EnvironmentValues* environment, const std::shared_ptr<const elg::SliderStyle>* style);
+void elg_slider_style_free(std::shared_ptr<const elg::SliderStyle>* style);
+std::shared_ptr<const elg::NavigationStackStyle>* elg_env_navigation_stack_style(const EnvironmentValues* environment);
+void elg_env_set_navigation_stack_style(EnvironmentValues* environment, const std::shared_ptr<const elg::NavigationStackStyle>* style);
+void elg_navigation_stack_style_free(std::shared_ptr<const elg::NavigationStackStyle>* style);
+std::shared_ptr<const elg::PopoverStyle>* elg_env_popover_style(const EnvironmentValues* environment);
+void elg_env_set_popover_style(EnvironmentValues* environment, const std::shared_ptr<const elg::PopoverStyle>* style);
+void elg_popover_style_free(std::shared_ptr<const elg::PopoverStyle>* style);
+std::shared_ptr<const elg::TooltipStyle>* elg_env_tooltip_style(const EnvironmentValues* environment);
+void elg_env_set_tooltip_style(EnvironmentValues* environment, const std::shared_ptr<const elg::TooltipStyle>* style);
+void elg_tooltip_style_free(std::shared_ptr<const elg::TooltipStyle>* style);
+std::shared_ptr<const elg::MenuStyle>* elg_env_menu_style(const EnvironmentValues* environment);
+void elg_env_set_menu_style(EnvironmentValues* environment, const std::shared_ptr<const elg::MenuStyle>* style);
+void elg_menu_style_free(std::shared_ptr<const elg::MenuStyle>* style);
+std::shared_ptr<const elg::RowStyle>* elg_env_row_style(const EnvironmentValues* environment);
+void elg_env_set_row_style(EnvironmentValues* environment, const std::shared_ptr<const elg::RowStyle>* style);
+void elg_row_style_free(std::shared_ptr<const elg::RowStyle>* style);
+std::shared_ptr<const elg::ToggleStyle>* elg_env_toggle_style(const EnvironmentValues* environment);
+void elg_toggle_style_free(std::shared_ptr<const elg::ToggleStyle>* style);
+bool elg_toggle_style_animation(const std::shared_ptr<const elg::ToggleStyle>* style, Animation** animation);
+bool elg_checkbox_style_animation(const std::shared_ptr<const elg::CheckboxStyle>* style, Animation** animation);
+bool elg_popover_style_motion(const std::shared_ptr<const elg::PopoverStyle>* style, Transition** transition, Animation** animation);
+bool elg_tooltip_style_motion(const std::shared_ptr<const elg::TooltipStyle>* style, Transition** transition, Animation** animation);
+bool elg_menu_style_motion(const std::shared_ptr<const elg::MenuStyle>* style, Transition** transition, Animation** animation);
+void elg_shape_style_assign(elg::ShapeStyle* target, const ElgShapeStyle* value);
+void elg_set_badge(const ElgStr* text);
+void elg_set_progress(bool has_fraction, double fraction, int32_t state);
+void elg_request_attention(bool critical);
 }
 
 namespace {
@@ -158,6 +232,32 @@ bool build_second(int32_t index, View* ret) {
     *ret = Text(std::format("second {}", index));
     return true;
 }
+
+// Sets a style that isn't the default in a new environment, and reads it back.
+template <class Style, class Concrete>
+void check_env_style(std::shared_ptr<const Style>* (*get)(const EnvironmentValues*),
+                     void (*set)(EnvironmentValues*, const std::shared_ptr<const Style>*),
+                     void (*free_style)(std::shared_ptr<const Style>*)) {
+    EnvironmentValues* environment = elg_env_new();
+    REQUIRE(environment);
+    const std::shared_ptr<const Style> mine = std::make_shared<const Concrete>();
+    set(environment, &mine);
+    std::shared_ptr<const Style>* read = get(environment);
+    REQUIRE(read);
+    CHECK(read->get() == mine.get());
+    free_style(read);
+    elg_env_free(environment);
+    CHECK(take_error() == 0);
+}
+
+// A popover style that opens with a fade.
+class FadingPopoverStyle final : public elg::PopoverStyle {
+public:
+    [[nodiscard]] View make_body(const elg::PopoverConfiguration& popover) const override { return popover.content; }
+    [[nodiscard]] elg::PopupMotion motion() const override {
+        return {Transition::opacity(), Animation::linear(0.2)};
+    }
+};
 
 } // namespace
 
@@ -476,5 +576,256 @@ TEST_CASE("a handle to reactive state that has ended is a usage error, also once
         CHECK(take_error() == 0);
     }
     elg_node_track(0); // no handle at all
+    CHECK(take_error() == 2);
+}
+
+TEST_CASE("elg_mod_on_appear and elg_mod_on_disappear run their actions once each, and take none", "[c-api][lifecycle]") {
+    detail::clear_lifecycle_actions();
+    Counts appear;
+    Counts gone;
+    {
+        detail::Scope scope;
+        const detail::Scope::Use use(scope);
+        const View base = Rectangle();
+        View* appearing = elg_mod_on_appear(&base, closure(appear));
+        REQUIRE(appearing);
+        View* both = elg_mod_on_disappear(appearing, closure(gone));
+        REQUIRE(both);
+        elg_view_free(appearing);
+        const elg::State<bool> shown(true);
+        const auto root = detail::lower(elg::VStack(elg::If([shown] { return shown(); }, *both)), {});
+        elg_view_free(both);
+        CHECK(detail::run_lifecycle_actions());
+        CHECK(appear.calls == 1);
+        CHECK(gone.calls == 0);
+        shown.set(false);
+        detail::flush_effects();
+        detail::run_lifecycle_actions();
+        CHECK(gone.calls == 1);
+    }
+    CHECK(appear.drops == 1);
+    CHECK(gone.drops == 1);
+
+    // None: no action, and the closure is still dropped.
+    Counts unused;
+    const View base = Rectangle();
+    View* plain = elg_mod_on_appear(&base, none(unused));
+    REQUIRE(plain);
+    CHECK(take_error() == 0);
+    elg_view_free(plain);
+    CHECK(unused.drops == 1);
+    detail::clear_lifecycle_actions();
+}
+
+TEST_CASE("elg_text_selectable keeps the text and takes its prop", "[c-api][selectable-text]") {
+    Counts counts;
+    const Text text("hello");
+    Text* selectable = elg_text_selectable(&text, static_bool(counts));
+    REQUIRE(selectable);
+    CHECK(take_error() == 0);
+    CHECK(text_of(*selectable) == "hello");
+    elg_text_free(selectable);
+    CHECK(counts.drops == 1);
+}
+
+TEST_CASE("elg_env_new is an empty environment, and elg_system_accent_color doesn't fail", "[c-api][environment]") {
+    EnvironmentValues* environment = elg_env_new();
+    REQUIRE(environment);
+    CHECK(elg_env_color_scheme(environment) == static_cast<int32_t>(ColorScheme::light));
+    elg_env_free(environment);
+
+    ElgColor color{};
+    const bool has_accent = elg_system_accent_color(&color);
+    CHECK(take_error() == 0);
+    if (!has_accent) {
+        CHECK(color.r == 0.f); // left as it was
+    }
+}
+
+TEST_CASE("the C API's timing curves and repeats match the C++ API's", "[c-api][animation]") {
+    Animation* curve = elg_animation_timing_curve(0.55, 0.1, 0.45, 0.9, 1.4);
+    REQUIRE(curve);
+    const Animation expected = Animation::timing_curve(0.55, 0.1, 0.45, 0.9, 1.4);
+    for (const double t : {0.0, 0.3, 0.7, 1.4}) {
+        CHECK(elg_animation_progress(curve, t) == expected.progress(t));
+    }
+
+    Animation* linear = elg_animation_linear(1);
+    Animation* three = elg_animation_repeat_count(linear, 3, true);
+    Animation* forever = elg_animation_repeat_forever(linear, false);
+    REQUIRE(three);
+    REQUIRE(forever);
+    const Animation expected_three = Animation::linear(1).repeat_count(3, true);
+    for (const double t : {0.5, 1.5, 2.5}) {
+        CHECK(elg_animation_progress(three, t) == expected_three.progress(t));
+    }
+    CHECK_FALSE(elg_animation_finished(three, 2.5));
+    CHECK(elg_animation_finished(three, 3.5));
+    CHECK_FALSE(elg_animation_finished(forever, 1000));
+    for (Animation* animation : {curve, linear, three, forever}) {
+        elg_animation_free(animation);
+    }
+}
+
+TEST_CASE("a transition's pose carries its anchor through the C API", "[c-api][animation]") {
+    Transition* scale = elg_transition_scale(0.5f, ElgAlignment{.horizontal = 0, .vertical = 0});
+    REQUIRE(scale);
+    const ElgPose pose = elg_transition_pose(scale, 0, false, ElgSize{100, 100});
+    CHECK(pose.scale == 0.5f);
+    CHECK(pose.anchor_x == 0.f);
+    CHECK(pose.anchor_y == 0.f);
+    elg_transition_free(scale);
+}
+
+TEST_CASE("timers through the C API fire, cancel, and say whether they're active", "[c-api][timer]") {
+    constexpr double kFarFuture = 1e12; // "now" for running every timer due by then
+    detail::cancel_all_timers();
+    Counts once;
+    Counts repeated;
+    Timer* later = elg_timer_after(1, closure(once));
+    Timer* every = elg_timer_every(1, closure(repeated));
+    REQUIRE(later);
+    REQUIRE(every);
+    CHECK(elg_timer_active(later));
+    Timer* copy = elg_timer_clone(every);
+    elg_timer_free(every); // freeing a handle doesn't stop the timer
+    CHECK(elg_timer_active(copy));
+
+    detail::run_due_timers(kFarFuture);
+    CHECK(once.calls == 1);
+    CHECK(repeated.calls == 1);
+    CHECK_FALSE(elg_timer_active(later)); // fired
+    elg_timer_cancel(copy);
+    elg_timer_cancel(copy); // twice is fine
+    CHECK_FALSE(elg_timer_active(copy));
+    detail::run_due_timers(kFarFuture * 2);
+    CHECK(repeated.calls == 1);
+    elg_timer_free(later);
+    elg_timer_free(copy);
+    detail::cancel_all_timers();
+    CHECK(once.drops == 1);
+    CHECK(repeated.drops == 1);
+
+    // No action: never active. NaN: a usage error, which still drops the closure.
+    Counts unused;
+    Timer* idle = elg_timer_after(0, none(unused));
+    REQUIRE(idle);
+    CHECK_FALSE(elg_timer_active(idle));
+    elg_timer_free(idle);
+    CHECK(unused.drops == 1);
+    Counts rejected;
+    CHECK(elg_timer_every(std::nan(""), closure(rejected)) == nullptr);
+    CHECK(take_error() == 2);
+    CHECK(rejected.drops == 1);
+}
+
+TEST_CASE("the C API reads and sets every style of the environment", "[c-api][environment]") {
+    check_env_style<elg::CheckboxStyle, elg::BoxCheckboxStyle>(elg_env_checkbox_style, elg_env_set_checkbox_style,
+                                                               elg_checkbox_style_free);
+    check_env_style<elg::NumberInputStyle, elg::PlainNumberInputStyle>(
+        elg_env_number_input_style, elg_env_set_number_input_style, elg_number_input_style_free);
+    check_env_style<elg::ProgressStyle, elg::CircularProgressStyle>(elg_env_progress_style, elg_env_set_progress_style,
+                                                                    elg_progress_style_free);
+    check_env_style<elg::PickerStyle, elg::MenuPickerStyle>(elg_env_picker_style, elg_env_set_picker_style,
+                                                            elg_picker_style_free);
+    check_env_style<elg::SliderStyle, elg::KnobSliderStyle>(elg_env_slider_style, elg_env_set_slider_style,
+                                                            elg_slider_style_free);
+    check_env_style<elg::NavigationStackStyle, elg::PlainNavigationStackStyle>(
+        elg_env_navigation_stack_style, elg_env_set_navigation_stack_style, elg_navigation_stack_style_free);
+    check_env_style<elg::PopoverStyle, elg::PlainPopoverStyle>(elg_env_popover_style, elg_env_set_popover_style,
+                                                               elg_popover_style_free);
+    check_env_style<elg::TooltipStyle, elg::PlainTooltipStyle>(elg_env_tooltip_style, elg_env_set_tooltip_style,
+                                                               elg_tooltip_style_free);
+    check_env_style<elg::MenuStyle, elg::PlainMenuStyle>(elg_env_menu_style, elg_env_set_menu_style,
+                                                         elg_menu_style_free);
+    check_env_style<elg::RowStyle, elg::PlainRowStyle>(elg_env_row_style, elg_env_set_row_style, elg_row_style_free);
+}
+
+TEST_CASE("the C API reads the animations and motions of styles", "[c-api][environment]") {
+    EnvironmentValues* environment = elg_env_new();
+    REQUIRE(environment);
+
+    std::shared_ptr<const elg::ToggleStyle>* toggle = elg_env_toggle_style(environment);
+    std::shared_ptr<const elg::CheckboxStyle>* checkbox = elg_env_checkbox_style(environment);
+    REQUIRE(toggle);
+    REQUIRE(checkbox);
+    Animation* animation = nullptr;
+    const std::optional<Animation> toggle_expected = (*toggle)->animation();
+    const bool toggle_animates = elg_toggle_style_animation(toggle, &animation);
+    REQUIRE(toggle_animates == toggle_expected.has_value());
+    if (toggle_expected) {
+        CHECK(elg_animation_progress(animation, 0.1) == toggle_expected->progress(0.1));
+        elg_animation_free(animation);
+    }
+    animation = nullptr;
+    const bool checkbox_animates = elg_checkbox_style_animation(checkbox, &animation);
+    REQUIRE(checkbox_animates == (*checkbox)->animation().has_value());
+    if (checkbox_animates) {
+        elg_animation_free(animation);
+    }
+    elg_toggle_style_free(toggle);
+    elg_checkbox_style_free(checkbox);
+
+    // The built-in popup styles open at once; a style with a motion gives its transition and animation.
+    Transition* transition = nullptr;
+    animation = nullptr;
+    std::shared_ptr<const elg::TooltipStyle>* tooltip = elg_env_tooltip_style(environment);
+    std::shared_ptr<const elg::MenuStyle>* menu = elg_env_menu_style(environment);
+    REQUIRE(tooltip);
+    REQUIRE(menu);
+    CHECK_FALSE(elg_tooltip_style_motion(tooltip, &transition, &animation));
+    CHECK_FALSE(elg_menu_style_motion(menu, &transition, &animation));
+    CHECK(transition == nullptr);
+    elg_tooltip_style_free(tooltip);
+    elg_menu_style_free(menu);
+    const std::shared_ptr<const elg::PopoverStyle> fading = std::make_shared<const FadingPopoverStyle>();
+    REQUIRE(elg_popover_style_motion(&fading, &transition, &animation));
+    REQUIRE(transition);
+    REQUIRE(animation);
+    CHECK(elg_animation_progress(animation, 0.1) == Animation::linear(0.2).progress(0.1));
+    elg_transition_free(transition);
+    elg_animation_free(animation);
+    elg_env_free(environment);
+    CHECK(take_error() == 0);
+}
+
+TEST_CASE("a shape style of kind 5 is a backdrop", "[c-api][backdrop]") {
+    elg::ShapeStyle style(elg::Color::white);
+    const ElgShapeStyle backdrop{.kind = 5, .blur = 20, .saturation = 1.8f, .brightness = -0.1f, .noise = 0.02f};
+    elg_shape_style_assign(&style, &backdrop);
+    CHECK(take_error() == 0);
+    const auto* fill = std::get_if<elg::BackdropFill>(&style.value());
+    REQUIRE(fill);
+    CHECK(fill->blur == 20);
+    CHECK(fill->saturation == 1.8f);
+    CHECK(fill->brightness == -0.1f);
+    CHECK(fill->noise == 0.02f);
+}
+
+TEST_CASE("a window description's material comes through the C API", "[c-api][window]") {
+    ElgWindowDesc desc{};
+    desc.title = {"Window", 6};
+    desc.width = 400;
+    desc.height = 300;
+    desc.opacity = 1;
+    desc.material = 4;
+    CHECK(elg_shim::window_desc(desc).material == elg::WindowMaterial::acrylic);
+    desc.material = 2;
+    CHECK(elg_shim::window_desc(desc).material == elg::WindowMaterial::under_window);
+    desc.material = 99;
+    CHECK(elg_shim::window_desc(desc).material == elg::WindowMaterial::none);
+}
+
+TEST_CASE("the dock and taskbar functions need a running App", "[c-api][desktop]") {
+    const ElgStr label{"3", 1};
+    elg_set_badge(&label);
+    CHECK(take_error() == 2);
+    elg_set_badge(nullptr);
+    CHECK(take_error() == 2);
+    elg_set_progress(true, 0.5, 1);
+    CHECK(take_error() == 2);
+    elg_set_progress(false, 0, 0);
+    CHECK(take_error() == 2);
+    elg_request_attention(true);
     CHECK(take_error() == 2);
 }
