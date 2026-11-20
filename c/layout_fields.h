@@ -23,7 +23,7 @@
 #define ELG_FIELDS_ElgRect(X) X(ElgRect, x) X(ElgRect, y) X(ElgRect, width) X(ElgRect, height)
 #define ELG_FIELDS_ElgFont(X) X(ElgFont, family) X(ElgFont, size) X(ElgFont, weight) X(ElgFont, italic)
 #define ELG_FIELDS_ElgGradientStop(X) X(ElgGradientStop, color) X(ElgGradientStop, location)
-#define ELG_FIELDS_ElgShapeStyle(X) X(ElgShapeStyle, kind) X(ElgShapeStyle, color) X(ElgShapeStyle, stops) X(ElgShapeStyle, stop_count) X(ElgShapeStyle, x0) X(ElgShapeStyle, y0) X(ElgShapeStyle, x1) X(ElgShapeStyle, y1) X(ElgShapeStyle, r0) X(ElgShapeStyle, r1)
+#define ELG_FIELDS_ElgShapeStyle(X) X(ElgShapeStyle, kind) X(ElgShapeStyle, color) X(ElgShapeStyle, stops) X(ElgShapeStyle, stop_count) X(ElgShapeStyle, x0) X(ElgShapeStyle, y0) X(ElgShapeStyle, x1) X(ElgShapeStyle, y1) X(ElgShapeStyle, r0) X(ElgShapeStyle, r1) X(ElgShapeStyle, blur) X(ElgShapeStyle, saturation) X(ElgShapeStyle, brightness) X(ElgShapeStyle, noise)
 #define ELG_FIELDS_ElgEdgeInsets(X) X(ElgEdgeInsets, top) X(ElgEdgeInsets, leading) X(ElgEdgeInsets, bottom) X(ElgEdgeInsets, trailing)
 #define ELG_FIELDS_ElgProp(X) X(ElgProp, kind) X(ElgProp, theme) X(ElgProp, value) X(ElgProp, fn)
 #define ELG_FIELDS_ElgProposedSize(X) X(ElgProposedSize, has_width) X(ElgProposedSize, width) X(ElgProposedSize, has_height) X(ElgProposedSize, height)

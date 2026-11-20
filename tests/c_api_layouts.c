@@ -23,7 +23,7 @@ static const ElgFieldReference fields_ElgPoint[] = {{"x", offsetof(ElgPoint, x)}
 static const ElgFieldReference fields_ElgRect[] = {{"x", offsetof(ElgRect, x)}, {"y", offsetof(ElgRect, y)}, {"width", offsetof(ElgRect, width)}, {"height", offsetof(ElgRect, height)}};
 static const ElgFieldReference fields_ElgFont[] = {{"family", offsetof(ElgFont, family)}, {"size", offsetof(ElgFont, size)}, {"weight", offsetof(ElgFont, weight)}, {"italic", offsetof(ElgFont, italic)}};
 static const ElgFieldReference fields_ElgGradientStop[] = {{"color", offsetof(ElgGradientStop, color)}, {"location", offsetof(ElgGradientStop, location)}};
-static const ElgFieldReference fields_ElgShapeStyle[] = {{"kind", offsetof(ElgShapeStyle, kind)}, {"color", offsetof(ElgShapeStyle, color)}, {"stops", offsetof(ElgShapeStyle, stops)}, {"stop_count", offsetof(ElgShapeStyle, stop_count)}, {"x0", offsetof(ElgShapeStyle, x0)}, {"y0", offsetof(ElgShapeStyle, y0)}, {"x1", offsetof(ElgShapeStyle, x1)}, {"y1", offsetof(ElgShapeStyle, y1)}, {"r0", offsetof(ElgShapeStyle, r0)}, {"r1", offsetof(ElgShapeStyle, r1)}};
+static const ElgFieldReference fields_ElgShapeStyle[] = {{"kind", offsetof(ElgShapeStyle, kind)}, {"color", offsetof(ElgShapeStyle, color)}, {"stops", offsetof(ElgShapeStyle, stops)}, {"stop_count", offsetof(ElgShapeStyle, stop_count)}, {"x0", offsetof(ElgShapeStyle, x0)}, {"y0", offsetof(ElgShapeStyle, y0)}, {"x1", offsetof(ElgShapeStyle, x1)}, {"y1", offsetof(ElgShapeStyle, y1)}, {"r0", offsetof(ElgShapeStyle, r0)}, {"r1", offsetof(ElgShapeStyle, r1)}, {"blur", offsetof(ElgShapeStyle, blur)}, {"saturation", offsetof(ElgShapeStyle, saturation)}, {"brightness", offsetof(ElgShapeStyle, brightness)}, {"noise", offsetof(ElgShapeStyle, noise)}};
 static const ElgFieldReference fields_ElgEdgeInsets[] = {{"top", offsetof(ElgEdgeInsets, top)}, {"leading", offsetof(ElgEdgeInsets, leading)}, {"bottom", offsetof(ElgEdgeInsets, bottom)}, {"trailing", offsetof(ElgEdgeInsets, trailing)}};
 static const ElgFieldReference fields_ElgProp[] = {{"kind", offsetof(ElgProp, kind)}, {"theme", offsetof(ElgProp, theme)}, {"value", offsetof(ElgProp, value)}, {"fn", offsetof(ElgProp, fn)}};
 static const ElgFieldReference fields_ElgProposedSize[] = {{"has_width", offsetof(ElgProposedSize, has_width)}, {"width", offsetof(ElgProposedSize, width)}, {"has_height", offsetof(ElgProposedSize, has_height)}, {"height", offsetof(ElgProposedSize, height)}};
@@ -110,7 +110,7 @@ const ElgLayoutReference elg_c_api_layouts[] = {
     {"ElgRect", sizeof(ElgRect), _Alignof(ElgRect), fields_ElgRect, 4},
     {"ElgFont", sizeof(ElgFont), _Alignof(ElgFont), fields_ElgFont, 4},
     {"ElgGradientStop", sizeof(ElgGradientStop), _Alignof(ElgGradientStop), fields_ElgGradientStop, 2},
-    {"ElgShapeStyle", sizeof(ElgShapeStyle), _Alignof(ElgShapeStyle), fields_ElgShapeStyle, 10},
+    {"ElgShapeStyle", sizeof(ElgShapeStyle), _Alignof(ElgShapeStyle), fields_ElgShapeStyle, 14},
     {"ElgEdgeInsets", sizeof(ElgEdgeInsets), _Alignof(ElgEdgeInsets), fields_ElgEdgeInsets, 4},
     {"ElgProp", sizeof(ElgProp), _Alignof(ElgProp), fields_ElgProp, 4},
     {"ElgProposedSize", sizeof(ElgProposedSize), _Alignof(ElgProposedSize), fields_ElgProposedSize, 4},

@@ -1239,7 +1239,7 @@ ELG_EXPORT Shape* elg_custom_shape(ElgClosure path, int32_t fill_rule) {
 /// Wraps `Shape::fill()`.
 ///
 /// @param shape The shape (borrowed).
-/// @param style A ShapeStyle prop (ElgShapeStyle): a color or gradient.
+/// @param style A ShapeStyle prop (ElgShapeStyle): a color, a gradient, or a backdrop (kind 5).
 /// @return `shape` filled with `style` (a new Shape, owned by the caller), or null on failure.
 ELG_EXPORT Shape* elg_shape_fill(const Shape* shape, ElgProp style) {
     const Consumed consumed(style);
@@ -1881,11 +1881,11 @@ ELG_EXPORT void elg_font_assign(Font* target, const ElgFont* value) {
     ELG_CATCH_VOID
 }
 
-/// Writes a color or gradient into a closure's ShapeStyle result (the `ret` of a reactive ShapeStyle prop's
+/// Writes a color, gradient or backdrop into a closure's ShapeStyle result (the `ret` of a reactive ShapeStyle prop's
 /// closure).
 ///
 /// @param target The closure's `ret`.
-/// @param value The color or gradient (borrowed).
+/// @param value The color, gradient or backdrop (borrowed).
 ELG_EXPORT void elg_shape_style_assign(ShapeStyle* target, const ElgShapeStyle* value) {
     ELG_TRY
     *target = shape_style(*value);

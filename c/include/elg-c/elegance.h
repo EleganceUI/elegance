@@ -419,13 +419,15 @@ typedef struct ElgGradientStop {
     float location; ///< Where along the gradient, 0 to 1.
 } ElgGradientStop;
 
-/// An elg::ShapeStyle: a color or a gradient. Points are unit points of the filled shape's bounds.
+/// An elg::ShapeStyle: a color, a gradient or a backdrop. Points are unit points of the filled shape's
+/// bounds.
 ///
 /// kind 0: color; 1: linear gradient from (x0, y0) to (x1, y1); 2: radial gradient around (x0, y0)
 /// from radius r0 to r1; 3: elliptical gradient around (x0, y0) from radius fraction r0 to r1;
-/// 4: angular gradient around (x0, y0) from angle r0 to r1 (degrees).
+/// 4: angular gradient around (x0, y0) from angle r0 to r1 (degrees); 5: a backdrop (elg::BackdropFill):
+/// what's drawn behind, blurred by `blur` points, then adjusted by `saturation`, `brightness` and `noise`.
 typedef struct ElgShapeStyle {
-    int32_t kind;                 ///< 0 to 4, as above. Other values are a color.
+    int32_t kind;                 ///< 0 to 5, as above. Other values are a color.
     ElgColor color;               ///< Kind 0: the color.
     const ElgGradientStop* stops; ///< Gradients: the color stops, read during the call.
     size_t stop_count;            ///< Number of `stops`.
@@ -433,6 +435,9 @@ typedef struct ElgShapeStyle {
     /// Kinds 2 to 4: the start and end radius in points (radial), as a fraction of the bounds' size
     /// (elliptical; 0.5 reaches the edges), or the angles in degrees, clockwise from trailing (angular).
     float r0, r1;
+    /// Kind 5: the blur radius in points, the saturation (1 keeps the colors), the brightness added to each
+    /// channel (-1 to 1), and the grain (0 to 1).
+    float blur, saturation, brightness, noise;
 } ElgShapeStyle;
 
 /// An elg::EdgeInsets, in points.
@@ -2440,7 +2445,7 @@ ElgShape* elg_custom_shape(ElgClosure path, int32_t fill_rule);
 /// Wraps `Shape::fill()`.
 ///
 /// @param shape The shape (borrowed).
-/// @param style A ShapeStyle prop (ElgShapeStyle): a color or gradient.
+/// @param style A ShapeStyle prop (ElgShapeStyle): a color, a gradient, or a backdrop (kind 5).
 /// @return `shape` filled with `style` (a new Shape, owned by the caller), or null on failure.
 ElgShape* elg_shape_fill(const ElgShape* shape, ElgProp style);
 
@@ -2821,11 +2826,11 @@ void elg_register_emoji_font(ElgStr file);
 /// @param value The font (borrowed).
 void elg_font_assign(ElgCppFont* target, const ElgFont* value);
 
-/// Writes a color or gradient into a closure's ShapeStyle result (the `ret` of a reactive ShapeStyle prop's
+/// Writes a color, gradient or backdrop into a closure's ShapeStyle result (the `ret` of a reactive ShapeStyle prop's
 /// closure).
 ///
 /// @param target The closure's `ret`.
-/// @param value The color or gradient (borrowed).
+/// @param value The color, gradient or backdrop (borrowed).
 void elg_shape_style_assign(ElgCppShapeStyle* target, const ElgShapeStyle* value);
 
 // --- View modifiers ---

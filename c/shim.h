@@ -165,13 +165,15 @@ struct ElgGradientStop {
     float location; ///< Where along the gradient, 0 to 1.
 };
 
-/// An elg::ShapeStyle: a color or a gradient. Points are unit points of the filled shape's bounds.
+/// An elg::ShapeStyle: a color, a gradient or a backdrop. Points are unit points of the filled shape's
+/// bounds.
 ///
 /// kind 0: color; 1: linear gradient from (x0, y0) to (x1, y1); 2: radial gradient around (x0, y0)
 /// from radius r0 to r1; 3: elliptical gradient around (x0, y0) from radius fraction r0 to r1;
-/// 4: angular gradient around (x0, y0) from angle r0 to r1 (degrees).
+/// 4: angular gradient around (x0, y0) from angle r0 to r1 (degrees); 5: a backdrop (elg::BackdropFill):
+/// what's drawn behind, blurred by `blur` points, then adjusted by `saturation`, `brightness` and `noise`.
 struct ElgShapeStyle {
-    int32_t kind;                 ///< 0 to 4, as above. Other values are a color.
+    int32_t kind;                 ///< 0 to 5, as above. Other values are a color.
     ElgColor color;               ///< Kind 0: the color.
     const ElgGradientStop* stops; ///< Gradients: the color stops, read during the call.
     size_t stop_count;            ///< Number of `stops`.
@@ -179,6 +181,9 @@ struct ElgShapeStyle {
     /// Kinds 2 to 4: the start and end radius in points (radial), as a fraction of the bounds' size
     /// (elliptical; 0.5 reaches the edges), or the angles in degrees, clockwise from trailing (angular).
     float r0, r1;
+    /// Kind 5: the blur radius in points, the saturation (1 keeps the colors), the brightness added to each
+    /// channel (-1 to 1), and the grain (0 to 1).
+    float blur, saturation, brightness, noise;
 };
 
 /// An elg::EdgeInsets, in points.
@@ -643,6 +648,7 @@ inline elg::ShapeStyle shape_style(const ElgShapeStyle& s) {
     case 2: return elg::RadialGradient(stops(s), elg::UnitPoint{s.x0, s.y0}, s.r0, s.r1);
     case 3: return elg::EllipticalGradient(stops(s), elg::UnitPoint{s.x0, s.y0}, s.r0, s.r1);
     case 4: return elg::AngularGradient(stops(s), elg::UnitPoint{s.x0, s.y0}, s.r0, s.r1);
+    case 5: return elg::BackdropFill{s.blur, s.saturation, s.brightness, s.noise};
     default: return color(s.color);
     }
 }

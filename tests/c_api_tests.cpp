@@ -28,6 +28,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <variant>
 #include <vector>
 
 using elg::Animation;
@@ -154,6 +155,7 @@ bool elg_checkbox_style_animation(const std::shared_ptr<const elg::CheckboxStyle
 bool elg_popover_style_motion(const std::shared_ptr<const elg::PopoverStyle>* style, Transition** transition, Animation** animation);
 bool elg_tooltip_style_motion(const std::shared_ptr<const elg::TooltipStyle>* style, Transition** transition, Animation** animation);
 bool elg_menu_style_motion(const std::shared_ptr<const elg::MenuStyle>* style, Transition** transition, Animation** animation);
+void elg_shape_style_assign(elg::ShapeStyle* target, const ElgShapeStyle* value);
 }
 
 namespace {
@@ -782,4 +784,17 @@ TEST_CASE("the C API reads the animations and motions of styles", "[c-api][envir
     elg_animation_free(animation);
     elg_env_free(environment);
     CHECK(take_error() == 0);
+}
+
+TEST_CASE("a shape style of kind 5 is a backdrop", "[c-api][backdrop]") {
+    elg::ShapeStyle style(elg::Color::white);
+    const ElgShapeStyle backdrop{.kind = 5, .blur = 20, .saturation = 1.8f, .brightness = -0.1f, .noise = 0.02f};
+    elg_shape_style_assign(&style, &backdrop);
+    CHECK(take_error() == 0);
+    const auto* fill = std::get_if<elg::BackdropFill>(&style.value());
+    REQUIRE(fill);
+    CHECK(fill->blur == 20);
+    CHECK(fill->saturation == 1.8f);
+    CHECK(fill->brightness == -0.1f);
+    CHECK(fill->noise == 0.02f);
 }
