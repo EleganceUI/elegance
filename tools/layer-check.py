@@ -101,7 +101,7 @@ def source_files(*folders):
                 yield path
 
 
-# --- Standard and third-party headers (ELGSPEC-0001.R6) ---
+# --- Standard and third-party headers (ELGSPEC-0042.R3, which replaces ELGSPEC-0001.R6) ---
 
 STANDARD = set("""
 algorithm any array atomic barrier bit bitset cassert cctype cerrno cfenv cfloat charconv chrono cinttypes
@@ -131,6 +131,7 @@ THIRD_PARTY = [
     (re.compile(r"^(boost/|openssl/)"), "Boost, OpenSSL", {"Net"}),
     (re.compile(r"^(miniaudio\.h|stb_[\w]+\.h|stb/)"), "miniaudio, stb", {"Media", "Platform implementation"}),
     (re.compile(r"^(accesskit\.h|accesskit/)"), "AccessKit", PLATFORM),
+    (re.compile(r"^tracy/"), "Tracy", {"Core (profiling header)"}),
     (re.compile(r"^catch2/"), "Catch2", set()),
     (re.compile(r"^(d3d\w*\.h|dxgi\w*\.h|dcomp\w*\.h|wrl/|wrl\.h|Metal/|IOSurface/|CoreVideo/|QuartzCore/)"),
      "graphics APIs (Direct3D, DXGI, DirectComposition, Metal)", GPU_INTEROP),
@@ -169,6 +170,8 @@ def effective_layer(path):
         return {"GPU", "GPU (OS)"}
     if layer == "Render":
         return {"Render", "Render (sources)"} if path.suffix != ".h" else {"Render"}
+    if path == ROOT / "src" / "core" / "profile.h":
+        return {"Core", "Core (profiling header)"}
     return {layer} if layer else set()
 
 
@@ -359,7 +362,7 @@ def check_platform_includes(path, found):
             report(path, line, f"includes {header}, a header of the platform implementation", "ELGSPEC-0001.R5")
 
 
-# --- R6: third-party headers ---
+# --- Third-party headers (ELGSPEC-0042.R3) ---
 
 def gpu_header_reaches_webgpu(header, seen=None):
     """Whether the GPU header `header` ("gpu/x.h") includes WebGPU or Dawn, itself or through
@@ -387,9 +390,9 @@ def check_third_party(path, found):
             if library and not (layers & library[1]):
                 where = " or ".join(sorted(layers)) if layers else str(path.relative_to(ROOT).parts[0]) + "/"
                 report(path, line, f"includes {header} ({library[0]}), which {where} may not include",
-                       "ELGSPEC-0001.R6")
+                       "ELGSPEC-0042.R3")
         elif header.startswith("gpu/") and "GPU" not in layers and gpu_header_reaches_webgpu(header):
-            report(path, line, f"includes {header}, a GPU header that includes WebGPU or Dawn", "ELGSPEC-0001.R6")
+            report(path, line, f"includes {header}, a GPU header that includes WebGPU or Dawn", "ELGSPEC-0042.R3")
 
 
 # --- R7: public headers ---
@@ -545,7 +548,7 @@ def main():
     if problems:
         print(f"layer-check: {len(problems)} problem(s)", file=sys.stderr)
         return 1
-    print("layer-check: the layers follow ELGSPEC-0001.R1 to R8")
+    print("layer-check: the layers follow ELGSPEC-0001.R1 to R8 and ELGSPEC-0042.R3")
     return 0
 
 

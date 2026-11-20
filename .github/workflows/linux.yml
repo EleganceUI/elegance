@@ -41,6 +41,9 @@ jobs:
                     - { name: tsan, runner: ubuntu-24.04, toolchain: libcxx, cache: libcxx-19-tsan, presets: linux-clang-libcxx-tsan }
                     # The tests that need a GPU, a display or the internet run in a job of their own (R10).
                     - { name: gpu, runner: ubuntu-24.04, toolchain: gcc, cache: gcc-14, presets: linux-debug linux-release, gpu: true }
+                    # The profiling build (ELGSPEC-0042.R11). It reads gcc-x64's dependencies and
+                    # only builds Tracy: saving its fewer packages would replace that cache.
+                    - { name: tracy, runner: ubuntu-24.04, toolchain: gcc, cache: gcc-14, presets: linux-tracy, restore-only: true }
         runs-on: ${{ matrix.runner }}
         env:
             VCPKG_ROOT: ${{ github.workspace }}/../vcpkg
@@ -149,7 +152,7 @@ jobs:
             # Preserve completed packages even if configuration or a later build/test fails.
             - name: Save vcpkg binaries
               id: save
-              if: ${{ !cancelled() && steps.vcpkg-cache.outputs.cache-primary-key != '' }}
+              if: ${{ !cancelled() && steps.vcpkg-cache.outputs.cache-primary-key != '' && matrix.restore-only != true }}
               uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.vcpkg-cache
@@ -234,8 +237,9 @@ jobs:
               run: python3 tools/c-header.py --check
 
             # The layers' folders, dependencies, backend interfaces, OS code and includes
-            # (ELGSPEC-0001.R1 to R8); each finding names the file, what it includes and the
-            # requirement (ELGSPEC-0001.R10). ctest runs it in every job too.
+            # (ELGSPEC-0001.R1 to R8, with ELGSPEC-0042.R3 in place of R6); each finding names the
+            # file, what it includes and the requirement (ELGSPEC-0001.R10). ctest runs it in every
+            # job too.
             - name: Layers
               if: ${{ matrix.checks == true && !cancelled() }}
               run: python3 tools/layer-check.py
