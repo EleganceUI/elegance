@@ -674,25 +674,6 @@ ELG_EXPORT void elg_effects_set_allows_hit_testing(Effects* e, bool enabled) {
 
 // --- Event handlers ---
 
-/// An event for a Rust event handler (elg_mod_rust_event_modifier()): a call of one of
-/// elg::EventHandler's methods.
-struct ElgEventCall {
-    /// 0 pointer, 1 hover, 2 scroll, 3 key, 4 focusable (ret bool*), 5 focus, 6 accepts_text_input
-    /// (ret bool*), 7 text_input, 8 hover_delay (ret ElgOptHoverDelay*), 9 covers_frame (ret bool*),
-    /// 10 pointer_style (ret int32_t*), 11 magnify, 12 rotate, 13 two_finger_double_tap.
-    /// The others: ret ElgEventResult*. `frame`: pointer and scroll.
-    int32_t op;
-    ElgPointerEvent pointer;   ///< Op 0: the event.
-    ElgRect frame;             ///< Ops 0 and 2: the view's current frame, in window coordinates.
-    bool flag;                 ///< hover: inside; focus: focused
-    ElgScrollEvent scroll;     ///< Op 2: the event.
-    ElgKeyEvent key;           ///< Op 3: the event.
-    ElgTextInputEvent text;    ///< Op 7: the event; its text is valid during the call.
-    ElgPoint location;         ///< pointer_style, two_finger_double_tap
-    ElgMagnifyEvent magnify;   ///< Op 11: the event.
-    ElgRotateEvent rotate;     ///< Op 12: the event.
-};
-
 /// An optional elg::HoverDelay, an event handler's own (ElgEventCall op 8).
 struct ElgOptHoverDelay {
     bool has;            ///< false: the environment's delay.
@@ -782,6 +763,13 @@ public:
         return elg_shim::hover_delay(delay.delay);
     }
     [[nodiscard]] bool covers_frame() const override { return flag(9); }
+    [[nodiscard]] EventPhase phase() const override {
+        ElgEventCall call{};
+        call.op = 14;
+        int32_t phase = 1; // bubble, unless the handler says otherwise
+        f_->call(&call, &phase);
+        return phase == 0 ? EventPhase::capture : EventPhase::bubble;
+    }
 
 private:
     EventResult result(ElgEventCall& call) {

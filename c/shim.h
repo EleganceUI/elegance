@@ -318,6 +318,26 @@ struct ElgEventResult {
     bool cancellable;
 };
 
+/// An event for a Rust event handler (elg_mod_rust_event_modifier()): a call of one of
+/// elg::EventHandler's methods.
+struct ElgEventCall {
+    /// 0 pointer, 1 hover, 2 scroll, 3 key, 4 focusable (ret bool*), 5 focus, 6 accepts_text_input
+    /// (ret bool*), 7 text_input, 8 hover_delay (ret ElgOptHoverDelay*), 9 covers_frame (ret bool*),
+    /// 10 pointer_style (ret int32_t*), 11 magnify, 12 rotate, 13 two_finger_double_tap, 14 phase (ret
+    /// int32_t*: an elg::EventPhase, 0 capture or 1 bubble; left as it is, bubble).
+    /// The others: ret ElgEventResult*. `frame`: pointer and scroll.
+    int32_t op;
+    ElgPointerEvent pointer;   ///< Op 0: the event.
+    ElgRect frame;             ///< Ops 0 and 2: the view's current frame, in window coordinates.
+    bool flag;                 ///< hover: inside; focus: focused
+    ElgScrollEvent scroll;     ///< Op 2: the event.
+    ElgKeyEvent key;           ///< Op 3: the event.
+    ElgTextInputEvent text;    ///< Op 7: the event; its text is valid during the call.
+    ElgPoint location;         ///< pointer_style, two_finger_double_tap
+    ElgMagnifyEvent magnify;   ///< Op 11: the event.
+    ElgRotateEvent rotate;     ///< Op 12: the event.
+};
+
 /// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
 struct ElgWindowDesc {
     ElgStr title;                      ///< The window's title.

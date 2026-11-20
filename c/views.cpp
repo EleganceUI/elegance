@@ -2576,6 +2576,25 @@ ELG_EXPORT View* elg_mod_on_pointer(const View* v, ElgClosure on_pointer) {
     }));
     ELG_CATCH(nullptr)
 }
+/// Wraps `View::on_pointer_capture()`: like elg_mod_on_pointer(), in the capture phase: sees a down, up or hover
+/// on its way in, before the views inside it. Consuming a down captures the pointer here.
+///
+/// @param v The view (borrowed).
+/// @param on_pointer args: ElgPointerEvent* (in the view's coordinates), ret: bool* (true consumes it).
+///   Required: none is a usage error.
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ELG_EXPORT View* elg_mod_on_pointer_capture(const View* v, ElgClosure on_pointer) {
+    const Consumed consumed(on_pointer);
+    ELG_TRY
+    const SharedFn f = required(on_pointer, "on_pointer");
+    return out(v->on_pointer_capture([f](const PointerEvent& event) {
+        ElgPointerEvent arg = c_pointer_event(event);
+        bool handled = false;
+        f->call(&arg, &handled);
+        return handled;
+    }));
+    ELG_CATCH(nullptr)
+}
 /// Wraps `View::on_scroll()`: wheel and trackpad scrolling over the view.
 ///
 /// @param v The view (borrowed).
@@ -2587,6 +2606,25 @@ ELG_EXPORT View* elg_mod_on_scroll(const View* v, ElgClosure on_scroll) {
     ELG_TRY
     const SharedFn f = required(on_scroll, "on_scroll");
     return out(v->on_scroll([f](const ScrollEvent& event) {
+        ElgScrollEvent arg = c_scroll_event(event);
+        bool handled = false;
+        f->call(&arg, &handled);
+        return handled;
+    }));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `View::on_scroll_capture()`: like elg_mod_on_scroll(), in the capture phase: sees scrolling before the
+/// views inside it.
+///
+/// @param v The view (borrowed).
+/// @param on_scroll args: ElgScrollEvent* (in the view's coordinates), ret: bool* (true consumes it).
+///   Required: none is a usage error.
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ELG_EXPORT View* elg_mod_on_scroll_capture(const View* v, ElgClosure on_scroll) {
+    const Consumed consumed(on_scroll);
+    ELG_TRY
+    const SharedFn f = required(on_scroll, "on_scroll");
+    return out(v->on_scroll_capture([f](const ScrollEvent& event) {
         ElgScrollEvent arg = c_scroll_event(event);
         bool handled = false;
         f->call(&arg, &handled);
@@ -2606,6 +2644,25 @@ ELG_EXPORT View* elg_mod_on_text_input(const View* v, ElgClosure on_text_input) 
     ELG_TRY
     const SharedFn f = required(on_text_input, "on_text_input");
     return out(v->on_text_input([f](const TextInputEvent& event) {
+        ElgTextInputEvent arg{static_cast<int32_t>(event.kind), c_str(event.text), event.cursor};
+        bool handled = false;
+        f->call(&arg, &handled);
+        return handled;
+    }));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `View::on_text_input_capture()`: like elg_mod_on_text_input(), in the capture phase: sees the text typed
+/// into a focused view inside it, before that view. It doesn't make this view focusable.
+///
+/// @param v The view (borrowed).
+/// @param on_text_input args: ElgTextInputEvent* (its text valid during the call), ret: bool* (true: handled).
+///   Required: none is a usage error.
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ELG_EXPORT View* elg_mod_on_text_input_capture(const View* v, ElgClosure on_text_input) {
+    const Consumed consumed(on_text_input);
+    ELG_TRY
+    const SharedFn f = required(on_text_input, "on_text_input");
+    return out(v->on_text_input_capture([f](const TextInputEvent& event) {
         ElgTextInputEvent arg{static_cast<int32_t>(event.kind), c_str(event.text), event.cursor};
         bool handled = false;
         f->call(&arg, &handled);
@@ -2912,6 +2969,31 @@ ELG_EXPORT View* elg_mod_on_key(const View* v, ElgClosure on_key) {
     const Consumed consumed(on_key);
     ELG_TRY
     return out(v->on_key(key_handler(share(on_key))));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `View::on_key_press_capture()`: like elg_mod_on_key_press(), in the capture phase: runs `on_press`
+/// before the focused view inside it sees the key.
+///
+/// @param v The view (borrowed).
+/// @param key `Key`, by its position in the enum.
+/// @param on_press The action. No args.
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ELG_EXPORT View* elg_mod_on_key_press_capture(const View* v, int32_t key, ElgClosure on_press) {
+    const Consumed consumed(on_press);
+    ELG_TRY
+    return out(v->on_key_press_capture(static_cast<Key>(key), action(share(on_press))));
+    ELG_CATCH(nullptr)
+}
+/// Wraps `View::on_key_capture()`: like elg_mod_on_key(), in the capture phase: sees every key down and up
+/// before the focused view inside it.
+///
+/// @param v The view (borrowed).
+/// @param on_key args: ElgKeyEvent*, ret: bool* (true: handled).
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ELG_EXPORT View* elg_mod_on_key_capture(const View* v, ElgClosure on_key) {
+    const Consumed consumed(on_key);
+    ELG_TRY
+    return out(v->on_key_capture(key_handler(share(on_key))));
     ELG_CATCH(nullptr)
 }
 // --- Selection ---

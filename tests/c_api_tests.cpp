@@ -15,6 +15,8 @@
 #include "test_images.h"
 #include "text/text_system.h"
 #include "view/element.h"
+#include "view/event_dispatcher.h"
+#include "view/focus.h"
 #include "view/view_node.h"
 
 #include <elg/hot_reload.h>
@@ -159,6 +161,12 @@ void elg_shape_style_assign(elg::ShapeStyle* target, const ElgShapeStyle* value)
 void elg_set_badge(const ElgStr* text);
 void elg_set_progress(bool has_fraction, double fraction, int32_t state);
 void elg_request_attention(bool critical);
+View* elg_mod_on_pointer_capture(const View* v, ElgClosure on_pointer);
+View* elg_mod_on_scroll_capture(const View* v, ElgClosure on_scroll);
+View* elg_mod_on_text_input_capture(const View* v, ElgClosure on_text_input);
+View* elg_mod_on_key_press_capture(const View* v, int32_t key, ElgClosure on_press);
+View* elg_mod_on_key_capture(const View* v, ElgClosure on_key);
+View* elg_mod_rust_event_modifier(const View* v, ElgClosure make_handler);
 }
 
 namespace {
@@ -258,6 +266,60 @@ public:
         return {Transition::opacity(), Animation::linear(0.2)};
     }
 };
+
+// A view mounted in a 100-point window, with its events.
+struct EventWindow {
+    detail::FocusManager focus; // outlives the tree
+    std::unique_ptr<detail::Element> root;
+    std::unique_ptr<detail::EventDispatcher> events;
+
+    explicit EventWindow(const View& view) {
+        root = detail::lower(view.frame(100, 100), {.text = &text_system(), .focus = &focus});
+        root->size_that_fits({100.f, 100.f});
+        root->place({}, {100.f, 100.f});
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
+    }
+
+    void press() const {
+        events->pointer_button(elg::PointerEvent::Kind::down, {50, 50}, elg::MouseButton::left, 1,
+                               elg::KeyModifiers::none);
+    }
+};
+
+// What a logging closure writes to, and the name it writes on a pointer down.
+struct Logged {
+    std::vector<std::string>* log;
+    std::string name;
+    int32_t phase = -1; // a Rust handler's answer to op 14; -1: it doesn't answer
+};
+
+// A pointer handler (args: ElgPointerEvent*, ret: bool*) that logs downs and consumes nothing.
+bool log_pointer(void* data, void* args, void* ret) {
+    const auto* logged = static_cast<const Logged*>(data);
+    if (static_cast<const ElgPointerEvent*>(args)->kind == 0) {
+        logged->log->push_back(logged->name);
+    }
+    *static_cast<bool*>(ret) = false;
+    return true;
+}
+
+// A Rust event handler (args: ElgEventCall*) that logs pointer downs and answers op 14 with its phase.
+bool rust_handler(void* data, void* args, void* ret) {
+    const auto* logged = static_cast<const Logged*>(data);
+    const auto* call = static_cast<const ElgEventCall*>(args);
+    if (call->op == 14 && logged->phase >= 0) {
+        *static_cast<int32_t*>(ret) = logged->phase;
+    } else if (call->op == 0 && call->pointer.kind == 0) {
+        logged->log->push_back(logged->name);
+    }
+    return true;
+}
+
+// make_handler (ret: ElgClosure*): the handler above, borrowing `data`.
+bool make_rust_handler(void* data, void*, void* ret) {
+    *static_cast<ElgClosure*>(ret) = {data, rust_handler, nullptr};
+    return true;
+}
 
 } // namespace
 
@@ -828,4 +890,62 @@ TEST_CASE("the dock and taskbar functions need a running App", "[c-api][desktop]
     CHECK(take_error() == 2);
     elg_request_attention(true);
     CHECK(take_error() == 2);
+}
+
+TEST_CASE("capture handlers through the C API hear a press before the views inside them", "[c-api][capture-phase]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    std::vector<std::string> log;
+    const View inner = Rectangle().on_pointer([&log](const elg::PointerEvent& event) {
+        if (event.kind == elg::PointerEvent::Kind::down) {
+            log.emplace_back("inner");
+        }
+        return false;
+    });
+    Logged outer{&log, "outer"};
+    View* capturing = elg_mod_on_pointer_capture(&inner, {&outer, log_pointer, nullptr});
+    REQUIRE(capturing);
+    {
+        const EventWindow window(*capturing);
+        window.press();
+    }
+    CHECK(log == std::vector<std::string>{"outer", "inner"});
+    elg_view_free(capturing);
+
+    // The other capture handlers make views too, and take their closures.
+    Counts counts;
+    for (View* view : {elg_mod_on_scroll_capture(&inner, closure(counts)),
+                       elg_mod_on_text_input_capture(&inner, closure(counts)),
+                       elg_mod_on_key_press_capture(&inner, 0, closure(counts)),
+                       elg_mod_on_key_capture(&inner, closure(counts))}) {
+        CHECK(view != nullptr);
+        elg_view_free(view);
+    }
+    CHECK(take_error() == 0);
+    CHECK(counts.drops == 4);
+}
+
+TEST_CASE("a Rust event handler says its phase with op 14", "[c-api][capture-phase]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    std::vector<std::string> log;
+    const View inner = Rectangle().on_pointer([&log](const elg::PointerEvent& event) {
+        if (event.kind == elg::PointerEvent::Kind::down) {
+            log.emplace_back("inner");
+        }
+        return false;
+    });
+    Logged capture{&log, "capture", 0};
+    Logged silent{&log, "silent"}; // doesn't answer op 14: the bubble phase
+    View* capturing = elg_mod_rust_event_modifier(&inner, {&capture, make_rust_handler, nullptr});
+    REQUIRE(capturing);
+    View* both = elg_mod_rust_event_modifier(capturing, {&silent, make_rust_handler, nullptr});
+    REQUIRE(both);
+    {
+        const EventWindow window(*both);
+        window.press();
+    }
+    CHECK(log == std::vector<std::string>{"capture", "inner", "silent"});
+    elg_view_free(capturing);
+    elg_view_free(both);
 }

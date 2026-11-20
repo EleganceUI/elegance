@@ -572,6 +572,26 @@ typedef struct ElgEventResult {
     bool cancellable;
 } ElgEventResult;
 
+/// An event for a Rust event handler (elg_mod_rust_event_modifier()): a call of one of
+/// elg::EventHandler's methods.
+typedef struct ElgEventCall {
+    /// 0 pointer, 1 hover, 2 scroll, 3 key, 4 focusable (ret bool*), 5 focus, 6 accepts_text_input
+    /// (ret bool*), 7 text_input, 8 hover_delay (ret ElgOptHoverDelay*), 9 covers_frame (ret bool*),
+    /// 10 pointer_style (ret int32_t*), 11 magnify, 12 rotate, 13 two_finger_double_tap, 14 phase (ret
+    /// int32_t*: an elg::EventPhase, 0 capture or 1 bubble; left as it is, bubble).
+    /// The others: ret ElgEventResult*. `frame`: pointer and scroll.
+    int32_t op;
+    ElgPointerEvent pointer; ///< Op 0: the event.
+    ElgRect frame;           ///< Ops 0 and 2: the view's current frame, in window coordinates.
+    bool flag;               ///< hover: inside; focus: focused
+    ElgScrollEvent scroll;   ///< Op 2: the event.
+    ElgKeyEvent key;         ///< Op 3: the event.
+    ElgTextInputEvent text;  ///< Op 7: the event; its text is valid during the call.
+    ElgPoint location;       ///< pointer_style, two_finger_double_tap
+    ElgMagnifyEvent magnify; ///< Op 11: the event.
+    ElgRotateEvent rotate;   ///< Op 12: the event.
+} ElgEventCall;
+
 /// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
 typedef struct ElgWindowDesc {
     ElgStr title;                      ///< The window's title.
@@ -964,25 +984,6 @@ typedef struct ElgLayoutModifierCall {
     ElgRect bounds;                ///< Op 1: where the view goes, with the size reported for `proposal`.
     const ElgLayoutChild* content; ///< Ops 0 and 1: the wrapped content, valid during the call; op 2: null.
 } ElgLayoutModifierCall;
-
-/// An event for a Rust event handler (elg_mod_rust_event_modifier()): a call of one of
-/// elg::EventHandler's methods.
-typedef struct ElgEventCall {
-    /// 0 pointer, 1 hover, 2 scroll, 3 key, 4 focusable (ret bool*), 5 focus, 6 accepts_text_input
-    /// (ret bool*), 7 text_input, 8 hover_delay (ret ElgOptHoverDelay*), 9 covers_frame (ret bool*),
-    /// 10 pointer_style (ret int32_t*), 11 magnify, 12 rotate, 13 two_finger_double_tap.
-    /// The others: ret ElgEventResult*. `frame`: pointer and scroll.
-    int32_t op;
-    ElgPointerEvent pointer; ///< Op 0: the event.
-    ElgRect frame;           ///< Ops 0 and 2: the view's current frame, in window coordinates.
-    bool flag;               ///< hover: inside; focus: focused
-    ElgScrollEvent scroll;   ///< Op 2: the event.
-    ElgKeyEvent key;         ///< Op 3: the event.
-    ElgTextInputEvent text;  ///< Op 7: the event; its text is valid during the call.
-    ElgPoint location;       ///< pointer_style, two_finger_double_tap
-    ElgMagnifyEvent magnify; ///< Op 11: the event.
-    ElgRotateEvent rotate;   ///< Op 12: the event.
-} ElgEventCall;
 
 /// An optional elg::HoverDelay, an event handler's own (ElgEventCall op 8).
 typedef struct ElgOptHoverDelay {
@@ -3224,6 +3225,15 @@ ElgView* elg_mod_on_hover_change(const ElgView* v, ElgClosure on_hover);
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ElgView* elg_mod_on_pointer(const ElgView* v, ElgClosure on_pointer);
 
+/// Wraps `View::on_pointer_capture()`: like elg_mod_on_pointer(), in the capture phase: sees a down, up or hover
+/// on its way in, before the views inside it. Consuming a down captures the pointer here.
+///
+/// @param v The view (borrowed).
+/// @param on_pointer args: ElgPointerEvent* (in the view's coordinates), ret: bool* (true consumes it).
+///   Required: none is a usage error.
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_pointer_capture(const ElgView* v, ElgClosure on_pointer);
+
 /// Wraps `View::on_scroll()`: wheel and trackpad scrolling over the view.
 ///
 /// @param v The view (borrowed).
@@ -3231,6 +3241,15 @@ ElgView* elg_mod_on_pointer(const ElgView* v, ElgClosure on_pointer);
 ///   views around it then don't scroll). Required: none is a usage error.
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ElgView* elg_mod_on_scroll(const ElgView* v, ElgClosure on_scroll);
+
+/// Wraps `View::on_scroll_capture()`: like elg_mod_on_scroll(), in the capture phase: sees scrolling before the
+/// views inside it.
+///
+/// @param v The view (borrowed).
+/// @param on_scroll args: ElgScrollEvent* (in the view's coordinates), ret: bool* (true consumes it).
+///   Required: none is a usage error.
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_scroll_capture(const ElgView* v, ElgClosure on_scroll);
 
 /// Wraps `View::on_text_input()`: makes the view focusable and sees the text typed while it has focus: commits,
 /// and an IME's compositions in progress. Keys still go to elg_mod_on_key().
@@ -3240,6 +3259,15 @@ ElgView* elg_mod_on_scroll(const ElgView* v, ElgClosure on_scroll);
 ///   Required: none is a usage error.
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ElgView* elg_mod_on_text_input(const ElgView* v, ElgClosure on_text_input);
+
+/// Wraps `View::on_text_input_capture()`: like elg_mod_on_text_input(), in the capture phase: sees the text typed
+/// into a focused view inside it, before that view. It doesn't make this view focusable.
+///
+/// @param v The view (borrowed).
+/// @param on_text_input args: ElgTextInputEvent* (its text valid during the call), ret: bool* (true: handled).
+///   Required: none is a usage error.
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_text_input_capture(const ElgView* v, ElgClosure on_text_input);
 
 /// Wraps `View::on_drop()`: files or text dragged from other apps can be dropped here. The innermost view under
 /// the pointer that takes that kind of thing gets it.
@@ -3402,6 +3430,23 @@ ElgView* elg_mod_on_key_press(const ElgView* v, int32_t key, ElgClosure on_press
 /// @param on_key args: ElgKeyEvent*, ret: bool* (true: handled).
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ElgView* elg_mod_on_key(const ElgView* v, ElgClosure on_key);
+
+/// Wraps `View::on_key_press_capture()`: like elg_mod_on_key_press(), in the capture phase: runs `on_press`
+/// before the focused view inside it sees the key.
+///
+/// @param v The view (borrowed).
+/// @param key `Key`, by its position in the enum.
+/// @param on_press The action. No args.
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_key_press_capture(const ElgView* v, int32_t key, ElgClosure on_press);
+
+/// Wraps `View::on_key_capture()`: like elg_mod_on_key(), in the capture phase: sees every key down and up
+/// before the focused view inside it.
+///
+/// @param v The view (borrowed).
+/// @param on_key args: ElgKeyEvent*, ret: bool* (true: handled).
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_key_capture(const ElgView* v, ElgClosure on_key);
 
 // --- Selection ---
 
