@@ -1088,6 +1088,7 @@ elg::MouseButton::left => ElgPointerEvent.button
 elg::MouseButton::middle => ElgPointerEvent.button
 elg::MouseButton::other => ElgPointerEvent.button
 elg::MouseButton::right => ElgPointerEvent.button
+elg::MoveOnlyFunction => exempt: template
 elg::NavigationSplitView(const View &, const View &, const NavigationSplitViewOptions &) => elg_navigation_split_view
 elg::NavigationSplitView(const View &, const View &, const View &, const NavigationSplitViewOptions &) => elg_navigation_split_view
 elg::NavigationSplitViewOptions => ElgNavigationSplitViewOptions

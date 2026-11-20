@@ -123,6 +123,10 @@ def public_declarations(dc, build):
                     for value in cursor.get_children():
                         if value.kind == K.ENUM_CONSTANT_DECL:
                             add(value, "value")
+            elif kind == K.CLASS_TEMPLATE_PARTIAL_SPECIALIZATION:
+                # The template it specializes, without its members: with some standard libraries
+                # it's a template's only definition (MoveOnlyFunction, an alias with others).
+                add(cursor, "type")
             elif kind == K.FIELD_DECL:
                 add(cursor, "field")
             elif kind == K.VAR_DECL:
