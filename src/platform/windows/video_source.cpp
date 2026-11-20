@@ -9,6 +9,7 @@
 #include "platform/windows/com.h"
 
 #include "core/log.h"
+#include "core/profile.h"
 #include "core/threads.h"
 #include "core/ui_tasks.h"
 
@@ -421,6 +422,7 @@ private:
     // is: the render thread doesn't look for frames itself (ELGSPEC-0027.R4). update() transfers
     // it. From the engine's creation to its destruction.
     void tick(const std::stop_token& stop) {
+        ELG_THREAD_NAME("Elegance video");
         const ThreadSetup thread_setup; // Media Foundation's COM
         std::mutex sleeping;
         std::condition_variable_any wake;

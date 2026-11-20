@@ -4,6 +4,7 @@
 
 #include "media/audio_setup.h"
 
+#include "core/profile.h"
 #include "core/threads.h"
 
 #include <condition_variable>
@@ -60,6 +61,7 @@ private:
     ~AudioSetupThread() = default;
 
     void loop() {
+        ELG_THREAD_NAME("Elegance audio setup");
         const ThreadSetup thread_setup;
         for (;;) {
             std::function<void()> job;

@@ -6,6 +6,7 @@
 
 #include "core/crash.h"
 #include "core/log.h"
+#include "core/profile.h"
 #include "core/threads.h"
 #include "gpu/atlas_texture.h"
 #include "gpu/blur_renderer.h"
@@ -84,6 +85,7 @@ struct RenderThread::Kept {
 
 void RenderThread::run(std::promise<void> ready) noexcept {
     // Presenting and video frames use COM on Windows (DXGI, DirectComposition, Media Foundation).
+    ELG_THREAD_NAME("Elegance render");
     const ThreadSetup thread_setup;
     bool started = false;
     const auto fail = [&](const std::exception_ptr& error) {

@@ -7,6 +7,7 @@
 #include "platform/linux/glib_thread.h"
 
 #include "core/log.h"
+#include "core/profile.h"
 #include "core/ui_tasks.h"
 
 #include <SDL3/SDL.h>
@@ -62,6 +63,7 @@ private:
     GLibThread()
         : context_(g_main_context_new()), loop_(g_main_loop_new(context_, FALSE)), cancellable_(g_cancellable_new()) {
         thread_ = std::thread([this] {
+            ELG_THREAD_NAME("Elegance GLib");
             // Signals subscribed to on this thread arrive in its context.
             g_main_context_push_thread_default(context_);
             GError* error = nullptr;

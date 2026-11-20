@@ -4,6 +4,7 @@
 
 #include "gpu/external_image.h"
 
+#include "core/profile.h"
 #include "gpu/render_device.h"
 
 #include "core/threads.h"
@@ -50,6 +51,7 @@ public:
     }
 private:
     void run() {
+        ELG_THREAD_NAME("Elegance GPU retirement");
         const ThreadSetup thread_setup; // retiring an image may release Direct3D objects (COM)
         for (;;) {
             std::function<void()> job;

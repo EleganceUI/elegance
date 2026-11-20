@@ -6,6 +6,7 @@
 
 #include "core/log.h"
 #include "core/numeric.h"
+#include "core/profile.h"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -21,6 +22,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <utility>
 #include <vector>
 
@@ -388,7 +390,13 @@ void GlyphAtlas::submit(std::unique_ptr<GlyphJob> job) {
 #endif
             const unsigned count = std::clamp(std::thread::hardware_concurrency(), 2u, kMaxWorkers + 1) - 1;
             for (unsigned i = 0; i < count; ++i) {
-                workers_.emplace_back([this](const std::stop_token& stop) { work(stop); });
+                // The worker's number as an argument: only a profiling build reads it.
+                workers_.emplace_back(
+                    [this](const std::stop_token& stop, [[maybe_unused]] unsigned number) {
+                        ELG_THREAD_NAME(std::format("Elegance glyphs {}", number).c_str());
+                        work(stop);
+                    },
+                    i + 1);
             }
         }
     }
