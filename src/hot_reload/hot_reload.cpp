@@ -13,6 +13,7 @@
 #include "core/dynamic_library.h"
 #include "core/log.h"
 #include "core/os_backend.h"
+#include "core/profile.h"
 #include "core/ui_tasks.h"
 
 #include <elg/error.h>
@@ -205,6 +206,7 @@ public:
         }
         watcher_ = std::jthread([weak = weak_from_this(), options = options_, initial = initial_build_,
                                  loaded = loaded_time_](const std::stop_token& stop) {
+            ELG_THREAD_NAME("Elegance hot reload");
             watch(stop, weak, options, initial, loaded);
         });
     }

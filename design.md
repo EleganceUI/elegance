@@ -1707,7 +1707,27 @@ Separate render thread from day one (decided).
 - **Inspector** (first version done, see M5): toggled with F12, in its own window, with the view tree, each view's modifier
   chain (and what it fused into), environment values, layout proposals and sizes, the signal
   dependency graph, offscreen-pass warnings (`mask`, `blur`), and per-frame timings.
-- **Profiling**: Tracy integration behind a compile flag.
+- **Profiling** (ELGSPEC-0042): a build for the Tracy profiler, with the `ELG_TRACY` option and the
+  `profiling` vcpkg feature, which the `linux-tracy`, `windows-tracy` and `macos-tracy` presets turn on.
+  Other builds compile no Tracy code. The client is built on demand: the app sends nothing until a
+  profiler connects.
+  - **Run**: build a profiling preset and start the app, then connect Tracy's profiler at the client's
+    version (0.14.1, vcpkg's baseline): its GUI, or `tracy-capture -o app.tracy -s 10` for a file to
+    open in it later.
+  - **Read**: on the UI thread, zones split each pass of the event loop (`Events`, `Effects`,
+    `Window frame` with `Layout`, `Paint` and `Post frame`, `Wait for render`); on the render thread,
+    each batch (`Render window`, `Damage`, `Plan`, `Record`, `Submit`, `Present`). The `Frames` frame
+    set ends a frame at each pass that built one, `Render` at each batch. Plots follow each frame's
+    draw commands, glyphs and paths, the paint records reused and built again, the damage area and the
+    caches' bytes. Tracy's statistics view ranks the zones by their time.
+  - **Hot paths inside a zone**: Tracy samples call stacks where the OS lets it: on Linux as root or
+    with `kernel.perf_event_paranoid` lowered, on Windows as administrator, not on macOS. The profiling
+    presets keep debug information and frame pointers, so the samples resolve to Elegance's functions,
+    in the sampling statistics and the flame graph.
+  - **Check**: `tools/tracy-check.py build/linux-tracy` captures the sandbox and checks its zones, frame
+    sets and thread names (under `xvfb-run -a` without a display). It needs `tracy-capture` and
+    `tools/tracy-inspect`, built from Tracy's source at the client's version
+    (`tools/tracy-inspect/CMakeLists.txt` says how).
 - **Testing**: a headless mode (offscreen render target) for screenshot and golden-image tests,
   plus a synthetic input API for UI tests.
 

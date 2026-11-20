@@ -10,6 +10,7 @@
 #include "platform/windows/com.h"
 
 #include "core/log.h"
+#include "core/profile.h"
 #include "core/scope_exit.h"
 #include "core/ui_tasks.h"
 
@@ -317,6 +318,7 @@ public:
         host_->set_error(std::string());
         host_->set_playing(true);
         thread_ = std::jthread([this, weak = weak_host_](std::stop_token stop) {
+            ELG_THREAD_NAME("Elegance camera");
             // A single-threaded apartment with a message loop (capture_directshow): DirectShow
             // filters that are apartment-threaded, like OBS's virtual camera, only deliver frames
             // then. Undone as the thread ends, after capture() let go of its objects

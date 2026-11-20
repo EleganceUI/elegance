@@ -8,6 +8,7 @@
 
 #include "core/log.h"
 #include "core/os_backend.h"
+#include "core/profile.h"
 #include "gpu/instance.h"
 #include "gpu/swapchain.h"
 
@@ -240,6 +241,7 @@ wgpu::TextureView CompositionTarget::begin_frame(std::uint32_t width, std::uint3
     if (!prepare(width, height)) {
         return nullptr; // minimized
     }
+    ELG_ZONE("Acquire");
     wait_until_ready(kReadyTimeoutMs); // paced to the display
     set_background(background);
     return begin_access();
@@ -493,6 +495,7 @@ bool CompositionTarget::prepare(std::uint32_t width, std::uint32_t height) {
 }
 
 void CompositionTarget::present(std::span<const Rect> drawn) {
+    ELG_ZONE("Present");
     ComPtr<ID3D11Texture2D> back_buffer;
     check_hr(impl_->swapchain->GetBuffer(0, IID_PPV_ARGS(&back_buffer)), "get the composition back buffer");
     // The whole image: outside the drawn parts, the flip model's back buffer must hold what the
@@ -528,6 +531,7 @@ void CompositionTarget::present(std::span<const Rect> drawn) {
 }
 
 void CompositionTarget::wait_for_copy() {
+    ELG_ZONE("Wait for GPU");
     // WebGPU renders into the shared texture again next frame: let the copy finish first. A query
     // that fails (a removed device) can't say it did.
     impl_->context->End(impl_->done.Get());

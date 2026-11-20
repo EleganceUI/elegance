@@ -6,6 +6,7 @@
 
 #include "core/log.h"
 #include "core/numeric.h"
+#include "core/profile.h"
 
 #include <ft2build.h>
 #include FT_FREETYPE_H
@@ -21,6 +22,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <format>
 #include <utility>
 #include <vector>
 
@@ -311,6 +313,7 @@ struct GlyphJob {
 namespace {
 
 GlyphUpload generate(const GlyphJob& job) {
+    ELG_ZONE("Generate glyph");
     msdfgen::Bitmap<float, 4> bitmap(static_cast<int>(job.width), static_cast<int>(job.height));
     const msdfgen::Projection projection(msdfgen::Vector2(job.scale), job.translate);
     const msdfgen::SDFTransformation transformation(projection,
@@ -388,7 +391,13 @@ void GlyphAtlas::submit(std::unique_ptr<GlyphJob> job) {
 #endif
             const unsigned count = std::clamp(std::thread::hardware_concurrency(), 2u, kMaxWorkers + 1) - 1;
             for (unsigned i = 0; i < count; ++i) {
-                workers_.emplace_back([this](const std::stop_token& stop) { work(stop); });
+                // The worker's number as an argument: only a profiling build reads it.
+                workers_.emplace_back(
+                    [this](const std::stop_token& stop, [[maybe_unused]] unsigned number) {
+                        ELG_THREAD_NAME(std::format("Elegance glyphs {}", number).c_str());
+                        work(stop);
+                    },
+                    i + 1);
             }
         }
     }
@@ -453,6 +462,11 @@ std::vector<GlyphUpload> GlyphAtlas::take_uploads() {
     }
     start_over_ = false;
     return uploads;
+}
+
+std::size_t GlyphAtlas::pending() const {
+    const std::lock_guard lock(mutex_);
+    return pending_;
 }
 
 bool GlyphAtlas::has_uploads() const {
@@ -530,6 +544,7 @@ GlyphAtlas::Allocation GlyphAtlas::allocate(std::uint32_t width, std::uint32_t h
 }
 
 std::optional<AtlasGlyph> GlyphAtlas::prepare(const FontFace& face, std::uint32_t glyph_id, bool& full) {
+    ELG_ZONE("Prepare glyph");
     FT_Face ft = face.ft_face();
     if (FT_Load_Glyph(ft, glyph_id, FT_LOAD_NO_SCALE | FT_LOAD_NO_BITMAP | FT_LOAD_NO_HINTING) != 0) {
         log_warning("failed to load glyph {} of font {}", glyph_id, face.id());

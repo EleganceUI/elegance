@@ -9,6 +9,7 @@
 
 #include "net/fetch.h"
 
+#include "core/profile.h"
 #include "net/http_cache.h"
 #include "net/net_backend.h"
 #include "net/proxy.h"
@@ -127,6 +128,7 @@ public:
 
 private:
     Network() : work_(asio::make_work_guard(io_)), thread_([this] {
+        ELG_THREAD_NAME("Elegance network");
         io_.run();
         OPENSSL_thread_stop(); // this thread's OpenSSL state
     }) {

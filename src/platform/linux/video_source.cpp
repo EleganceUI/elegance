@@ -13,6 +13,7 @@
 #if defined(ELG_HAVE_GSTREAMER)
 
 #include "core/log.h"
+#include "core/profile.h"
 #include "core/ui_tasks.h"
 
 #include <gst/app/gstappsink.h>
@@ -261,6 +262,7 @@ private:
     void start_reporting() {
         stop_reporting();
         reporter_ = std::jthread([this](const std::stop_token& stop) {
+            ELG_THREAD_NAME("Elegance video");
             std::mutex mutex;
             std::condition_variable_any wake; // only for the stop request
             std::unique_lock lock(mutex);

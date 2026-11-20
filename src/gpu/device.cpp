@@ -6,6 +6,7 @@
 
 #include "core/log.h"
 #include "core/os_backend.h"
+#include "core/profile.h"
 #include "gpu/instance.h"
 #include "gpu/render_device.h"
 #include "gpu/system.h"
@@ -313,6 +314,7 @@ void Device::check() const {
 }
 
 void Device::submit(const wgpu::CommandBuffer& commands) const {
+    ELG_ZONE("Submit");
     objects_->queue.Submit(1, &commands);
     check();
 }

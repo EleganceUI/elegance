@@ -44,6 +44,18 @@
       "dependencies": [
         "catch2"
       ]
+    },
+    "profiling": {
+      "description": "Build for the Tracy profiler (ELG_TRACY)",
+      "dependencies": [
+        {
+          "name": "tracy",
+          "default-features": false,
+          "features": [
+            "on-demand"
+          ]
+        }
+      ]
     }
   }
 }

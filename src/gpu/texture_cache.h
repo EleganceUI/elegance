@@ -74,6 +74,8 @@ public:
 
     // How many images have a texture.
     [[nodiscard]] std::size_t size() const noexcept;
+    // The bytes their textures take.
+    [[nodiscard]] std::size_t bytes() const noexcept;
 
 private:
     // The image layout, the sampler, the mip pipeline, and the textures by ImagePixels::id.

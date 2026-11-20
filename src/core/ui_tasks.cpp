@@ -5,6 +5,7 @@
 #include "core/ui_tasks.h"
 
 #include "core/app_errors.h"
+#include "core/profile.h"
 
 #include <cstdint>
 #include <iterator>
@@ -111,6 +112,10 @@ bool run_ui_tasks() {
         const std::lock_guard lock(g_mutex);
         tasks.swap(g_tasks);
     }
+    if (tasks.empty()) {
+        return false;
+    }
+    ELG_ZONE("UI tasks");
     for (auto task = tasks.begin(); task != tasks.end(); ++task) {
         try {
             task->work();
@@ -125,7 +130,7 @@ bool run_ui_tasks() {
             throw;
         }
     }
-    return !tasks.empty();
+    return true;
 }
 
 void deliver_foreign_exception(const std::exception_ptr& error) noexcept {

@@ -6,6 +6,7 @@
 
 #include "core/crash.h"
 #include "core/log.h"
+#include "core/profile.h"
 #include "core/threads.h"
 #include "gpu/atlas_texture.h"
 #include "gpu/blur_renderer.h"
@@ -28,6 +29,8 @@
 #include <webgpu/webgpu_cpp.h>
 
 #include <format>
+#include <functional>
+#include <numeric>
 #include <array>
 #include <memory>
 #include <new>
@@ -84,6 +87,7 @@ struct RenderThread::Kept {
 
 void RenderThread::run(std::promise<void> ready) noexcept {
     // Presenting and video frames use COM on Windows (DXGI, DirectComposition, Media Foundation).
+    ELG_THREAD_NAME("Elegance render");
     const ThreadSetup thread_setup;
     bool started = false;
     const auto fail = [&](const std::exception_ptr& error) {
@@ -201,6 +205,7 @@ void RenderThread::draw(const gpu::Instance& instance, Kept& kept, std::promise<
     // cameras, until they do), look for their next frame every few milliseconds; otherwise
     // sleep until the UI thread posts work or a source wakes it.
     while (kept.sources.polling() ? mailbox_.take_for(batch, std::chrono::milliseconds(4)) : mailbox_.take(batch)) {
+        ELG_ZONE("Render batch");
         kept.unfinished = batch.sequence;
         for (RenderCommand& command : batch.commands) {
             std::visit(Overloaded{
@@ -215,6 +220,7 @@ void RenderThread::draw(const gpu::Instance& instance, Kept& kept, std::promise<
                                kept.sources.remove(remove.window_id);
                            },
                            [&](AtlasUploadCommand& upload) {
+                               ELG_ZONE("Atlas upload");
                                if (upload.layout != kept.atlas_layout) {
                                    kept.atlas.clear(); // the glyphs of the layout before
                                    kept.atlas_layout = upload.layout;
@@ -250,6 +256,12 @@ void RenderThread::draw(const gpu::Instance& instance, Kept& kept, std::promise<
         }
         mailbox_.mark_done(batch.sequence);
         kept.unfinished.reset();
+        ELG_PLOT("Decoded image bytes", textures.bytes());
+        ELG_PLOT("Video texture bytes", videos.bytes());
+        ELG_PLOT("Intermediate image bytes",
+                 std::transform_reduce(windows.begin(), windows.end(), std::size_t{0}, std::plus<>(),
+                                       [](const auto& entry) { return entry.second->intermediate_bytes(); }));
+        ELG_FRAME_NAMED("Render");
     }
 }
 

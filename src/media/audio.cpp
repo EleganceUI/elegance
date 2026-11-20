@@ -9,6 +9,7 @@
 
 #include "core/log.h"
 #include "core/os_backend.h"
+#include "core/profile.h"
 #include "core/threads.h"
 #include "core/ui_tasks.h"
 #include "media/audio_setup.h"
@@ -286,6 +287,7 @@ public:
 
 private:
     void run(const std::stop_token& stop) {
+        ELG_THREAD_NAME("Elegance audio");
         const ThreadSetup thread_setup; // miniaudio's output uses COM on Windows (WASAPI)
         bool was_playing = false;
         while (!stop.stop_requested()) {

@@ -12,6 +12,7 @@
 #include "media/video_backend.h"
 
 #include "core/log.h"
+#include "core/profile.h"
 #include "core/ui_tasks.h"
 
 #include <linux/videodev2.h>
@@ -145,7 +146,10 @@ public:
         host_->set_error(std::string());
         host_->set_playing(true);
         host_->set_playing_now(true);
-        thread_ = std::jthread([this, weak = weak_host_](const std::stop_token& stop) { capture(stop, weak); });
+        thread_ = std::jthread([this, weak = weak_host_](const std::stop_token& stop) {
+            ELG_THREAD_NAME("Elegance camera");
+            capture(stop, weak);
+        });
     }
 
     void stop() override {

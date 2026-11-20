@@ -230,6 +230,33 @@
                 "static",
                 "macos-release"
             ]
+        },
+        {
+            "name": "windows-tracy",
+            "displayName": "Windows, for the Tracy profiler (ELGSPEC-0042)",
+            "inherits": "windows-release",
+            "cacheVariables": {
+                "ELG_TRACY": true,
+                "VCPKG_MANIFEST_FEATURES": "tests;profiling"
+            }
+        },
+        {
+            "name": "macos-tracy",
+            "displayName": "macOS, for the Tracy profiler (ELGSPEC-0042)",
+            "inherits": "macos-release",
+            "cacheVariables": {
+                "ELG_TRACY": true,
+                "VCPKG_MANIFEST_FEATURES": "tests;profiling"
+            }
+        },
+        {
+            "name": "linux-tracy",
+            "displayName": "Linux, for the Tracy profiler (ELGSPEC-0042)",
+            "inherits": "linux-release",
+            "cacheVariables": {
+                "ELG_TRACY": true,
+                "VCPKG_MANIFEST_FEATURES": "tests;profiling"
+            }
         }
     ]
 }

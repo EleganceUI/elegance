@@ -69,6 +69,8 @@ public:
     // How many glyphs have been sent to the workers so far (UI thread): a frame that raised it
     // draws glyphs that aren't generated yet.
     std::uint64_t requested() const noexcept { return requested_; }
+    // How many glyphs are queued or being generated.
+    std::size_t pending() const;
     // Keeps generated glyphs on disk in `directory` between runs (nullopt: don't). Call before
     // the first glyph.
     void set_disk_cache(std::optional<std::filesystem::path> directory);

@@ -7,6 +7,7 @@
 #include <elg/capture.h>
 
 #include "core/log.h"
+#include "core/profile.h"
 #include "core/ui_tasks.h"
 #include "media/audio_setup.h"
 #include "media/sample_ring.h"
@@ -122,6 +123,7 @@ struct RecorderState {
 
     void start_updates() {
         updates = std::jthread([weak = self](const std::stop_token& stop) {
+            ELG_THREAD_NAME("Elegance recorder");
             std::mutex waiting;
             std::condition_variable_any wake;
             std::unique_lock lock(waiting);

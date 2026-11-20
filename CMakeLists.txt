@@ -128,6 +128,12 @@ option(ELG_ACCESSKIT_SHARED "Link AccessKit's shared library instead of its stat
 option(ELG_STATIC_EXPORTS "Static build only: keep ELG_API exported, for linking into a shared library that re-exports it"
        OFF)
 option(ELG_C_API "Compile the C API (c/), so a change that breaks it fails the build" ${PROJECT_IS_TOP_LEVEL})
+option(ELG_TRACY "Build for the Tracy profiler, which collects once a profiler connects (needs the vcpkg \"profiling\" feature)"
+       OFF)
+if (ELG_TRACY)
+    # Frame pointers, so that Tracy's call-stack sampling can walk Elegance's functions.
+    add_compile_options("$<IF:$<C_COMPILER_ID:MSVC>,/Oy-,-fno-omit-frame-pointer>")
+endif ()
 if (ELG_FUZZ AND ELG_BUILD_SHARED)
     message(FATAL_ERROR "ELG_FUZZ needs a static build (ELG_BUILD_SHARED=OFF)")
 endif ()
