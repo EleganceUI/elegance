@@ -193,9 +193,11 @@ struct ElgEdgeInsets {
 
 /// A reactive argument (an elg::Prop). kind 0: `value` points at the static value (its C form);
 /// 1: `fn` returns it (ret: a C++ T*); 2: `fn` takes the environment (args: const
-/// EnvironmentValues*); 3: the theme color `theme` (Color and ShapeStyle props).
+/// EnvironmentValues*); 3: the theme color `theme` (Color and ShapeStyle props); 4: `value` points at a
+/// prop handle of the same type (ElgPropF32 for float props, ElgPropColor for Color props), which the prop
+/// copies, reactive as it is.
 struct ElgProp {
-    int32_t kind;      ///< 0 to 3, as above.
+    int32_t kind;      ///< 0 to 4, as above.
     int32_t theme;     ///< Kind 3: an elg::ThemeColor. Props of other types get their default value.
     /// Kind 0: the value's C form (`float*`, `bool*`, `ElgStr*`, `ElgColor*`, ...), read during the
     /// call.
@@ -316,6 +318,46 @@ struct ElgEventResult {
     /// the handler then gets a cancel. For presses that are clicks; handlers that track the pointer
     /// themselves leave it false.
     bool cancellable;
+};
+
+/// An event for a Rust event handler (elg_mod_rust_event_modifier()): a call of one of
+/// elg::EventHandler's methods.
+struct ElgEventCall {
+    /// 0 pointer, 1 hover, 2 scroll, 3 key, 4 focusable (ret bool*), 5 focus, 6 accepts_text_input
+    /// (ret bool*), 7 text_input, 8 hover_delay (ret ElgOptHoverDelay*), 9 covers_frame (ret bool*),
+    /// 10 pointer_style (ret int32_t*), 11 magnify, 12 rotate, 13 two_finger_double_tap, 14 phase (ret
+    /// int32_t*: an elg::EventPhase, 0 capture or 1 bubble; left as it is, bubble).
+    /// The others: ret ElgEventResult*. `frame`: pointer and scroll.
+    int32_t op;
+    ElgPointerEvent pointer;   ///< Op 0: the event.
+    ElgRect frame;             ///< Ops 0 and 2: the view's current frame, in window coordinates.
+    bool flag;                 ///< hover: inside; focus: focused
+    ElgScrollEvent scroll;     ///< Op 2: the event.
+    ElgKeyEvent key;           ///< Op 3: the event.
+    ElgTextInputEvent text;    ///< Op 7: the event; its text is valid during the call.
+    ElgPoint location;         ///< pointer_style, two_finger_double_tap
+    ElgMagnifyEvent magnify;   ///< Op 11: the event.
+    ElgRotateEvent rotate;     ///< Op 12: the event.
+};
+
+/// An elg::MenuBarItem: a top-level menu (with a submenu), a command, a check box, or a separator (an
+/// empty title and no role). The function that takes the menus consumes its closures.
+struct ElgMenuBarItem {
+    ElgStr title;                  ///< Empty: the role's standard title, or with no role a separator.
+    ElgClosure action;             ///< Runs when chosen (`call` null: none); args and ret: null.
+    int32_t checked;               ///< -1: not a check box, 0/1: initially unchecked/checked.
+    /// Check boxes: runs when chosen, with the new state (`call` null: none); args: bool*, ret: null.
+    ElgClosure toggled;
+    bool enabled;                  ///< false: grayed out, and its shortcut does nothing.
+    bool has_shortcut;             ///< false: no shortcut.
+    int32_t shortcut_key;          ///< The shortcut's elg::Key, by its position in the enum.
+    uint32_t shortcut_modifiers;   ///< The shortcut's elg::KeyModifiers (see ElgKeyEvent).
+    /// An elg::MenuRole, by its position in the enum: 0 none, 1 app, 2 window, 3 help, 4 about, 5 settings,
+    /// 6 quit, 7 hide, 8 hide_others, 9 show_all, 10 undo, 11 redo, 12 cut, 13 copy, 14 paste, 15 select_all,
+    /// 16 minimize, 17 zoom, 18 toggle_fullscreen. Other values are none.
+    int32_t role;
+    const ElgMenuBarItem* submenu; ///< The menu's items, read during the call.
+    size_t submenu_count;          ///< Number of `submenu` items; 0: none.
 };
 
 /// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
@@ -684,6 +726,74 @@ inline elg::EdgeInsets edge_insets(ElgEdgeInsets i) {
     return {i.top, i.leading, i.bottom, i.trailing};
 }
 
+// Consumed for a menu, a tree of items (ElgTrayMenuItem or ElgMenuBarItem): take() takes the
+// closures over in order (each item's action and toggled, then its submenu's), and on return or throw
+// the destructor releases those it hasn't reached. Declare it first, like Consumed.
+template <class CItem, class Item>
+class ConsumedMenu {
+public:
+    ConsumedMenu(const CItem* items, size_t count) noexcept : items_(items), count_(count) {}
+    ~ConsumedMenu() {
+        size_t index = 0;
+        release_untaken(items_, count_, index);
+    }
+    ConsumedMenu(const ConsumedMenu&) = delete;
+    ConsumedMenu& operator=(const ConsumedMenu&) = delete;
+    ConsumedMenu(ConsumedMenu&&) = delete;
+    ConsumedMenu& operator=(ConsumedMenu&&) = delete;
+
+    std::vector<Item> take() { return menu(items_, count_); }
+
+private:
+    std::vector<Item> menu(const CItem* items, size_t count) {
+        std::vector<Item> result;
+        result.reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+            const CItem& c = items[i];
+            Item item;
+            item.title = str(c.title);
+            item.action = action(next(c.action));
+            if (c.checked >= 0) {
+                item.checked = c.checked != 0;
+            }
+            item.toggled = consumer<bool>(next(c.toggled));
+            item.enabled = c.enabled;
+            if constexpr (std::is_same_v<Item, elg::MenuBarItem>) {
+                if (c.has_shortcut) {
+                    item.shortcut = elg::KeyboardShortcut{static_cast<elg::Key>(c.shortcut_key),
+                                                          static_cast<elg::KeyModifiers>(c.shortcut_modifiers)};
+                }
+                item.role = c.role >= 0 && c.role <= static_cast<int32_t>(elg::MenuRole::toggle_fullscreen)
+                                ? static_cast<elg::MenuRole>(c.role)
+                                : elg::MenuRole::none;
+            }
+            item.submenu = menu(c.submenu, c.submenu_count);
+            result.push_back(std::move(item));
+        }
+        return result;
+    }
+    // share() for the next closure in order.
+    SharedFn next(ElgClosure closure) {
+        SharedFn f = share(closure);
+        ++taken_;
+        return f;
+    }
+    void release_untaken(const CItem* items, size_t count, size_t& index) const noexcept {
+        for (size_t i = 0; i < count; ++i) {
+            for (ElgClosure closure : {items[i].action, items[i].toggled}) {
+                if (index++ >= taken_) {
+                    release(closure);
+                }
+            }
+            release_untaken(items[i].submenu, items[i].submenu_count, index);
+        }
+    }
+
+    const CItem* items_;
+    size_t count_;
+    size_t taken_ = 0;
+};
+
 inline elg::WindowDesc window_desc(const ElgWindowDesc& d) {
     elg::WindowDesc window;
     window.title = str(d.title);
@@ -744,6 +854,10 @@ inline elg::HoverDelay hover_delay(ElgHoverDelay d) {
 
 inline elg::Shadow shadow(ElgShadow s) {
     return {color(s.color), s.radius, s.x, s.y, s.spread};
+}
+
+inline ElgShadow c_shadow(const elg::Shadow& s) {
+    return {c_color(s.color), s.radius, s.x, s.y, s.spread};
 }
 
 inline elg::StrokeStyle stroke_style(const ElgStrokeStyle& s) {
@@ -842,6 +956,10 @@ struct PropValue<int> {
     static int from(const void* v) { return *static_cast<const int32_t*>(v); }
 };
 template <>
+struct PropValue<std::int64_t> {
+    static std::int64_t from(const void* v) { return *static_cast<const int64_t*>(v); }
+};
+template <>
 struct PropValue<double> {
     static double from(const void* v) { return *static_cast<const double*>(v); }
 };
@@ -897,6 +1015,27 @@ struct PropValue<elg::HoverDelay> {
     static elg::HoverDelay from(const void* v) { return hover_delay(*static_cast<const ElgHoverDelay*>(v)); }
 };
 
+// A style (kind 0: `value` points at its handle, a std::shared_ptr<const Style>).
+template <class S>
+struct PropValue<std::shared_ptr<const S>> {
+    static std::shared_ptr<const S> from(const void* v) { return *static_cast<const std::shared_ptr<const S>*>(v); }
+};
+
+template <class T>
+struct IsSharedPtr : std::false_type {};
+template <class S>
+struct IsSharedPtr<std::shared_ptr<S>> : std::true_type {};
+
+// A reactive style's closure must write a style: one that writes none is a UsageError.
+template <class T>
+void check_written(const T& result) {
+    if constexpr (IsSharedPtr<T>::value) {
+        if (!result) {
+            throw elg::UsageError("a reactive style's fn wrote no style");
+        }
+    }
+}
+
 // ShapeStyle has no default constructor; reactive closures write into one made from a color.
 template <class T>
 T blank() {
@@ -918,6 +1057,7 @@ elg::Prop<T> prop(ElgProp& p) {
         return elg::Prop<T>([f] {
             T result = blank<T>();
             f->call(nullptr, &result);
+            check_written(result);
             return result;
         });
     }
@@ -926,9 +1066,16 @@ elg::Prop<T> prop(ElgProp& p) {
         return elg::Prop<T>([f](const elg::EnvironmentValues& environment) {
             T result = blank<T>();
             f->call(const_cast<elg::EnvironmentValues*>(&environment), &result);
+            check_written(result);
             return result;
         });
     }
+    case 4:
+        if constexpr (std::is_same_v<T, float> || std::is_same_v<T, elg::Color>) {
+            return *static_cast<const elg::Prop<T>*>(p.value);
+        } else {
+            throw elg::UsageError("a prop of kind 4 must be a float or Color prop");
+        }
     case 3:
         if constexpr (std::is_convertible_v<elg::Color, T>) {
             return elg::Prop<T>(static_cast<elg::ThemeColor>(p.theme));

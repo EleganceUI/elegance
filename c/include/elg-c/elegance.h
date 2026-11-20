@@ -121,6 +121,10 @@ typedef struct ElgPopoverStyle ElgPopoverStyle;
 typedef struct ElgProgressConfiguration ElgProgressConfiguration;
 /// A handle to a std::shared_ptr<const ProgressStyle>.
 typedef struct ElgProgressStyle ElgProgressStyle;
+/// A handle to a Prop<Color>.
+typedef struct ElgPropColor ElgPropColor;
+/// A handle to a Prop<float>.
+typedef struct ElgPropF32 ElgPropF32;
 /// A handle to an elg::RowConfiguration.
 typedef struct ElgRowConfiguration ElgRowConfiguration;
 /// A handle to a std::shared_ptr<const RowStyle>.
@@ -447,9 +451,11 @@ typedef struct ElgEdgeInsets {
 
 /// A reactive argument (an elg::Prop). kind 0: `value` points at the static value (its C form);
 /// 1: `fn` returns it (ret: a C++ T*); 2: `fn` takes the environment (args: const
-/// EnvironmentValues*); 3: the theme color `theme` (Color and ShapeStyle props).
+/// EnvironmentValues*); 3: the theme color `theme` (Color and ShapeStyle props); 4: `value` points at a
+/// prop handle of the same type (ElgPropF32 for float props, ElgPropColor for Color props), which the prop
+/// copies, reactive as it is.
 typedef struct ElgProp {
-    int32_t kind;  ///< 0 to 3, as above.
+    int32_t kind;  ///< 0 to 4, as above.
     int32_t theme; ///< Kind 3: an elg::ThemeColor. Props of other types get their default value.
     /// Kind 0: the value's C form (`float*`, `bool*`, `ElgStr*`, `ElgColor*`, ...), read during the
     /// call.
@@ -571,6 +577,46 @@ typedef struct ElgEventResult {
     /// themselves leave it false.
     bool cancellable;
 } ElgEventResult;
+
+/// An event for a Rust event handler (elg_mod_rust_event_modifier()): a call of one of
+/// elg::EventHandler's methods.
+typedef struct ElgEventCall {
+    /// 0 pointer, 1 hover, 2 scroll, 3 key, 4 focusable (ret bool*), 5 focus, 6 accepts_text_input
+    /// (ret bool*), 7 text_input, 8 hover_delay (ret ElgOptHoverDelay*), 9 covers_frame (ret bool*),
+    /// 10 pointer_style (ret int32_t*), 11 magnify, 12 rotate, 13 two_finger_double_tap, 14 phase (ret
+    /// int32_t*: an elg::EventPhase, 0 capture or 1 bubble; left as it is, bubble).
+    /// The others: ret ElgEventResult*. `frame`: pointer and scroll.
+    int32_t op;
+    ElgPointerEvent pointer; ///< Op 0: the event.
+    ElgRect frame;           ///< Ops 0 and 2: the view's current frame, in window coordinates.
+    bool flag;               ///< hover: inside; focus: focused
+    ElgScrollEvent scroll;   ///< Op 2: the event.
+    ElgKeyEvent key;         ///< Op 3: the event.
+    ElgTextInputEvent text;  ///< Op 7: the event; its text is valid during the call.
+    ElgPoint location;       ///< pointer_style, two_finger_double_tap
+    ElgMagnifyEvent magnify; ///< Op 11: the event.
+    ElgRotateEvent rotate;   ///< Op 12: the event.
+} ElgEventCall;
+
+/// An elg::MenuBarItem: a top-level menu (with a submenu), a command, a check box, or a separator (an
+/// empty title and no role). The function that takes the menus consumes its closures.
+typedef struct ElgMenuBarItem {
+    ElgStr title;                         ///< Empty: the role's standard title, or with no role a separator.
+    ElgClosure action;                    ///< Runs when chosen (`call` null: none); args and ret: null.
+    int32_t checked;                      ///< -1: not a check box, 0/1: initially unchecked/checked.
+    /// Check boxes: runs when chosen, with the new state (`call` null: none); args: bool*, ret: null.
+    ElgClosure toggled;
+    bool enabled;                         ///< false: grayed out, and its shortcut does nothing.
+    bool has_shortcut;                    ///< false: no shortcut.
+    int32_t shortcut_key;                 ///< The shortcut's elg::Key, by its position in the enum.
+    uint32_t shortcut_modifiers;          ///< The shortcut's elg::KeyModifiers (see ElgKeyEvent).
+    /// An elg::MenuRole, by its position in the enum: 0 none, 1 app, 2 window, 3 help, 4 about, 5 settings,
+    /// 6 quit, 7 hide, 8 hide_others, 9 show_all, 10 undo, 11 redo, 12 cut, 13 copy, 14 paste, 15 select_all,
+    /// 16 minimize, 17 zoom, 18 toggle_fullscreen. Other values are none.
+    int32_t role;
+    const struct ElgMenuBarItem* submenu; ///< The menu's items, read during the call.
+    size_t submenu_count;                 ///< Number of `submenu` items; 0: none.
+} ElgMenuBarItem;
 
 /// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
 typedef struct ElgWindowDesc {
@@ -965,25 +1011,6 @@ typedef struct ElgLayoutModifierCall {
     const ElgLayoutChild* content; ///< Ops 0 and 1: the wrapped content, valid during the call; op 2: null.
 } ElgLayoutModifierCall;
 
-/// An event for a Rust event handler (elg_mod_rust_event_modifier()): a call of one of
-/// elg::EventHandler's methods.
-typedef struct ElgEventCall {
-    /// 0 pointer, 1 hover, 2 scroll, 3 key, 4 focusable (ret bool*), 5 focus, 6 accepts_text_input
-    /// (ret bool*), 7 text_input, 8 hover_delay (ret ElgOptHoverDelay*), 9 covers_frame (ret bool*),
-    /// 10 pointer_style (ret int32_t*), 11 magnify, 12 rotate, 13 two_finger_double_tap.
-    /// The others: ret ElgEventResult*. `frame`: pointer and scroll.
-    int32_t op;
-    ElgPointerEvent pointer; ///< Op 0: the event.
-    ElgRect frame;           ///< Ops 0 and 2: the view's current frame, in window coordinates.
-    bool flag;               ///< hover: inside; focus: focused
-    ElgScrollEvent scroll;   ///< Op 2: the event.
-    ElgKeyEvent key;         ///< Op 3: the event.
-    ElgTextInputEvent text;  ///< Op 7: the event; its text is valid during the call.
-    ElgPoint location;       ///< pointer_style, two_finger_double_tap
-    ElgMagnifyEvent magnify; ///< Op 11: the event.
-    ElgRotateEvent rotate;   ///< Op 12: the event.
-} ElgEventCall;
-
 /// An optional elg::HoverDelay, an event handler's own (ElgEventCall op 8).
 typedef struct ElgOptHoverDelay {
     bool has;            ///< false: the environment's delay.
@@ -1355,6 +1382,88 @@ ElgEnvironmentValues* elg_env_current(void);
 /// @return The environment, owned by the caller (elg_env_free()). Null on failure.
 ElgEnvironmentValues* elg_env_new(void);
 
+/// Reads the key named `name` whose value is a bool (EnvironmentValues::get_named()): one set
+/// through elg_env_set_named_bool() or by a C++ key type with that name and value type. A tracked
+/// read; there's no default. A key of that name with a value of another type reads as unset.
+/// `environment` is borrowed. Writes the value to `value` and returns true when the key is set;
+/// otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_env_get_named_bool(const ElgEnvironmentValues* environment, ElgStr name, bool* value);
+
+/// Sets the key named `name`, whose value is a bool (EnvironmentValues::set_named()), to `value`, a
+/// prop (consumed). `environment` is borrowed.
+void elg_env_set_named_bool(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
+/// Reads the key named `name` whose value is a int (EnvironmentValues::get_named()): one set
+/// through elg_env_set_named_i32() or by a C++ key type with that name and value type. A tracked
+/// read; there's no default. A key of that name with a value of another type reads as unset.
+/// `environment` is borrowed. Writes the value to `value` and returns true when the key is set;
+/// otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_env_get_named_i32(const ElgEnvironmentValues* environment, ElgStr name, int32_t* value);
+
+/// Sets the key named `name`, whose value is a int (EnvironmentValues::set_named()), to `value`, a
+/// prop (consumed). `environment` is borrowed.
+void elg_env_set_named_i32(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
+/// Reads the key named `name` whose value is a std::int64_t (EnvironmentValues::get_named()): one
+/// set through elg_env_set_named_i64() or by a C++ key type with that name and value type. A
+/// tracked read; there's no default. A key of that name with a value of another type reads as
+/// unset. `environment` is borrowed. Writes the value to `value` and returns true when the key is
+/// set; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_env_get_named_i64(const ElgEnvironmentValues* environment, ElgStr name, int64_t* value);
+
+/// Sets the key named `name`, whose value is a std::int64_t (EnvironmentValues::set_named()), to
+/// `value`, a prop (consumed). `environment` is borrowed.
+void elg_env_set_named_i64(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
+/// Reads the key named `name` whose value is a float (EnvironmentValues::get_named()): one set
+/// through elg_env_set_named_f32() or by a C++ key type with that name and value type. A tracked
+/// read; there's no default. A key of that name with a value of another type reads as unset.
+/// `environment` is borrowed. Writes the value to `value` and returns true when the key is set;
+/// otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_env_get_named_f32(const ElgEnvironmentValues* environment, ElgStr name, float* value);
+
+/// Sets the key named `name`, whose value is a float (EnvironmentValues::set_named()), to `value`,
+/// a prop (consumed). `environment` is borrowed.
+void elg_env_set_named_f32(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
+/// Reads the key named `name` whose value is a double (EnvironmentValues::get_named()): one set
+/// through elg_env_set_named_f64() or by a C++ key type with that name and value type. A tracked
+/// read; there's no default. A key of that name with a value of another type reads as unset.
+/// `environment` is borrowed. Writes the value to `value` and returns true when the key is set;
+/// otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_env_get_named_f64(const ElgEnvironmentValues* environment, ElgStr name, double* value);
+
+/// Sets the key named `name`, whose value is a double (EnvironmentValues::set_named()), to `value`,
+/// a prop (consumed). `environment` is borrowed.
+void elg_env_set_named_f64(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
+/// Reads the key named `name` whose value is a Color (EnvironmentValues::get_named()): one set
+/// through elg_env_set_named_color() or by a C++ key type with that name and value type. A tracked
+/// read; there's no default. A key of that name with a value of another type reads as unset.
+/// `environment` is borrowed. Writes the value to `value` and returns true when the key is set;
+/// otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_env_get_named_color(const ElgEnvironmentValues* environment, ElgStr name, ElgColor* value);
+
+/// Sets the key named `name`, whose value is a Color (EnvironmentValues::set_named()), to `value`,
+/// a prop (consumed). `environment` is borrowed.
+void elg_env_set_named_color(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
+/// Like elg_env_get_named_bool(), for a key whose value is a string (EnvironmentValues::get_named()).
+///
+/// @param environment The environment (borrowed).
+/// @param name The key's name.
+/// @param out Receives the value, valid during the call, when the key is set.
+/// @param ctx Passed to `out`.
+/// @return Whether the key is set; false on failure.
+bool elg_env_get_named_string(const ElgEnvironmentValues* environment, ElgStr name, ElgStrSink out, void* ctx);
+
+/// Like elg_env_set_named_bool(), for a key whose value is a string (EnvironmentValues::set_named()).
+///
+/// @param environment The environment (borrowed).
+/// @param name The key's name.
+/// @param value A string prop (consumed).
+void elg_env_set_named_string(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
 /// Copies an environment (cheap: copies share their entries).
 ///
 /// @param environment The environment (borrowed).
@@ -1632,6 +1741,15 @@ ElgApp* elg_app_new(void);
 /// @param app The app (consumed); may be null.
 void elg_app_free(ElgApp* app);
 
+/// Wraps `App::menu_bar()`: the menu bar, its top-level menus each with its items as `submenu` (macOS: the
+/// app's menu bar; Windows: a menu bar in each window with a system title bar; Linux: a bar of menus drawn in
+/// each window). Callable while the app runs, replacing the menus. Item closures run on the UI thread.
+///
+/// @param app The app (borrowed).
+/// @param menus The top-level menus, read during the call; their closures are consumed.
+/// @param count Number of `menus`.
+void elg_app_menu_bar(ElgApp* app, const ElgMenuBarItem* menus, size_t count);
+
 /// Wraps `App::window()`: adds a window that opens when the app runs. `content` (ret: View*)
 /// builds the window's root view when it opens. Records a UsageError while the app runs.
 ///
@@ -1686,6 +1804,12 @@ const char* elg_version(void);
 ///
 /// @return The version, 1 or more; 0 on failure.
 uint32_t elg_abi_version(void);
+
+/// Wraps `primary_modifier()`: the platform's shortcut modifier. Callable from any thread.
+///
+/// @return The elg::KeyModifiers bits (see ElgKeyEvent): 8 (super, Cmd) on macOS, 2 (control) elsewhere; 0 on
+///   failure.
+uint32_t elg_primary_modifier(void);
 
 // --- Animation ---
 
@@ -3224,6 +3348,15 @@ ElgView* elg_mod_on_hover_change(const ElgView* v, ElgClosure on_hover);
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ElgView* elg_mod_on_pointer(const ElgView* v, ElgClosure on_pointer);
 
+/// Wraps `View::on_pointer_capture()`: like elg_mod_on_pointer(), in the capture phase: sees a down, up or hover
+/// on its way in, before the views inside it. Consuming a down captures the pointer here.
+///
+/// @param v The view (borrowed).
+/// @param on_pointer args: ElgPointerEvent* (in the view's coordinates), ret: bool* (true consumes it).
+///   Required: none is a usage error.
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_pointer_capture(const ElgView* v, ElgClosure on_pointer);
+
 /// Wraps `View::on_scroll()`: wheel and trackpad scrolling over the view.
 ///
 /// @param v The view (borrowed).
@@ -3231,6 +3364,15 @@ ElgView* elg_mod_on_pointer(const ElgView* v, ElgClosure on_pointer);
 ///   views around it then don't scroll). Required: none is a usage error.
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ElgView* elg_mod_on_scroll(const ElgView* v, ElgClosure on_scroll);
+
+/// Wraps `View::on_scroll_capture()`: like elg_mod_on_scroll(), in the capture phase: sees scrolling before the
+/// views inside it.
+///
+/// @param v The view (borrowed).
+/// @param on_scroll args: ElgScrollEvent* (in the view's coordinates), ret: bool* (true consumes it).
+///   Required: none is a usage error.
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_scroll_capture(const ElgView* v, ElgClosure on_scroll);
 
 /// Wraps `View::on_text_input()`: makes the view focusable and sees the text typed while it has focus: commits,
 /// and an IME's compositions in progress. Keys still go to elg_mod_on_key().
@@ -3240,6 +3382,15 @@ ElgView* elg_mod_on_scroll(const ElgView* v, ElgClosure on_scroll);
 ///   Required: none is a usage error.
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ElgView* elg_mod_on_text_input(const ElgView* v, ElgClosure on_text_input);
+
+/// Wraps `View::on_text_input_capture()`: like elg_mod_on_text_input(), in the capture phase: sees the text typed
+/// into a focused view inside it, before that view. It doesn't make this view focusable.
+///
+/// @param v The view (borrowed).
+/// @param on_text_input args: ElgTextInputEvent* (its text valid during the call), ret: bool* (true: handled).
+///   Required: none is a usage error.
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_text_input_capture(const ElgView* v, ElgClosure on_text_input);
 
 /// Wraps `View::on_drop()`: files or text dragged from other apps can be dropped here. The innermost view under
 /// the pointer that takes that kind of thing gets it.
@@ -3402,6 +3553,23 @@ ElgView* elg_mod_on_key_press(const ElgView* v, int32_t key, ElgClosure on_press
 /// @param on_key args: ElgKeyEvent*, ret: bool* (true: handled).
 /// @return `v` with the handler (a new view, owned by the caller), or null on failure.
 ElgView* elg_mod_on_key(const ElgView* v, ElgClosure on_key);
+
+/// Wraps `View::on_key_press_capture()`: like elg_mod_on_key_press(), in the capture phase: runs `on_press`
+/// before the focused view inside it sees the key.
+///
+/// @param v The view (borrowed).
+/// @param key `Key`, by its position in the enum.
+/// @param on_press The action. No args.
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_key_press_capture(const ElgView* v, int32_t key, ElgClosure on_press);
+
+/// Wraps `View::on_key_capture()`: like elg_mod_on_key(), in the capture phase: sees every key down and up
+/// before the focused view inside it.
+///
+/// @param v The view (borrowed).
+/// @param on_key args: ElgKeyEvent*, ret: bool* (true: handled).
+/// @return `v` with the handler (a new view, owned by the caller), or null on failure.
+ElgView* elg_mod_on_key_capture(const ElgView* v, ElgClosure on_key);
 
 // --- Selection ---
 
@@ -3701,6 +3869,97 @@ ElgView* elg_mod_rust_layout_value(const ElgView* v, ElgClosure owner);
 ///   null if none did, or on failure.
 const void* elg_layout_child_rust_value(const ElgLayoutChild* child);
 
+// --- Layout values shared by name ---
+
+/// Carries `value` for the key named `name` whose value is a bool, for the parent layout to read,
+/// as View::layout_value() does for a key type with that name and value type. `v` is borrowed.
+/// Returns the modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_bool(const ElgView* v, ElgStr name, bool value);
+
+/// Reads the child's value for the key named `name` whose value is a bool
+/// (LayoutChild::value_named()), set through elg_mod_layout_value_bool() or by a C++ key type with
+/// that name and value type. There's no default; a key of that name with a value of another type
+/// reads as unset. `child` is borrowed. Writes the value to `value` and returns true when the child
+/// has one; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_layout_child_value_bool(const ElgLayoutChild* child, ElgStr name, bool* value);
+
+/// Carries `value` for the key named `name` whose value is a int, for the parent layout to read, as
+/// View::layout_value() does for a key type with that name and value type. `v` is borrowed. Returns
+/// the modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_i32(const ElgView* v, ElgStr name, int32_t value);
+
+/// Reads the child's value for the key named `name` whose value is a int
+/// (LayoutChild::value_named()), set through elg_mod_layout_value_i32() or by a C++ key type with
+/// that name and value type. There's no default; a key of that name with a value of another type
+/// reads as unset. `child` is borrowed. Writes the value to `value` and returns true when the child
+/// has one; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_layout_child_value_i32(const ElgLayoutChild* child, ElgStr name, int32_t* value);
+
+/// Carries `value` for the key named `name` whose value is a std::int64_t, for the parent layout to
+/// read, as View::layout_value() does for a key type with that name and value type. `v` is
+/// borrowed. Returns the modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_i64(const ElgView* v, ElgStr name, int64_t value);
+
+/// Reads the child's value for the key named `name` whose value is a std::int64_t
+/// (LayoutChild::value_named()), set through elg_mod_layout_value_i64() or by a C++ key type with
+/// that name and value type. There's no default; a key of that name with a value of another type
+/// reads as unset. `child` is borrowed. Writes the value to `value` and returns true when the child
+/// has one; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_layout_child_value_i64(const ElgLayoutChild* child, ElgStr name, int64_t* value);
+
+/// Carries `value` for the key named `name` whose value is a float, for the parent layout to read,
+/// as View::layout_value() does for a key type with that name and value type. `v` is borrowed.
+/// Returns the modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_f32(const ElgView* v, ElgStr name, float value);
+
+/// Reads the child's value for the key named `name` whose value is a float
+/// (LayoutChild::value_named()), set through elg_mod_layout_value_f32() or by a C++ key type with
+/// that name and value type. There's no default; a key of that name with a value of another type
+/// reads as unset. `child` is borrowed. Writes the value to `value` and returns true when the child
+/// has one; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_layout_child_value_f32(const ElgLayoutChild* child, ElgStr name, float* value);
+
+/// Carries `value` for the key named `name` whose value is a double, for the parent layout to read,
+/// as View::layout_value() does for a key type with that name and value type. `v` is borrowed.
+/// Returns the modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_f64(const ElgView* v, ElgStr name, double value);
+
+/// Reads the child's value for the key named `name` whose value is a double
+/// (LayoutChild::value_named()), set through elg_mod_layout_value_f64() or by a C++ key type with
+/// that name and value type. There's no default; a key of that name with a value of another type
+/// reads as unset. `child` is borrowed. Writes the value to `value` and returns true when the child
+/// has one; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_layout_child_value_f64(const ElgLayoutChild* child, ElgStr name, double* value);
+
+/// Carries `value` for the key named `name` whose value is a Color, for the parent layout to read,
+/// as View::layout_value() does for a key type with that name and value type. `v` is borrowed.
+/// Returns the modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_color(const ElgView* v, ElgStr name, ElgColor value);
+
+/// Reads the child's value for the key named `name` whose value is a Color
+/// (LayoutChild::value_named()), set through elg_mod_layout_value_color() or by a C++ key type with
+/// that name and value type. There's no default; a key of that name with a value of another type
+/// reads as unset. `child` is borrowed. Writes the value to `value` and returns true when the child
+/// has one; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_layout_child_value_color(const ElgLayoutChild* child, ElgStr name, ElgColor* value);
+
+/// Like elg_mod_layout_value_bool(), for a key whose value is a string.
+///
+/// @param v The view to modify (borrowed).
+/// @param name The key's name.
+/// @param value The value (copied).
+/// @return The modified view, owned by the caller, or null on failure.
+ElgView* elg_mod_layout_value_string(const ElgView* v, ElgStr name, ElgStr value);
+
+/// Like elg_layout_child_value_bool(), for a key whose value is a string (LayoutChild::value_named()).
+///
+/// @param child A child (borrowed).
+/// @param name The key's name.
+/// @param out Receives the value, valid during the call, when the child has one.
+/// @param ctx Passed to `out`.
+/// @return Whether the child has a value for the key; false on failure.
+bool elg_layout_child_value_string(const ElgLayoutChild* child, ElgStr name, ElgStrSink out, void* ctx);
+
 // --- Modifiers ---
 
 /// An elg::ViewModifier implemented in Rust: `body` composes the content with other views and
@@ -3880,6 +4139,148 @@ bool elg_effects_allows_hit_testing(const ElgEffects* e);
 /// @param e The effects (borrowed).
 /// @param enabled false: the view isn't hit, and clicks go to what's behind it.
 void elg_effects_set_allows_hit_testing(ElgEffects* e, bool enabled);
+
+// --- Prop handles ---
+
+/// Reads a float prop handle (an Effects field): a tracked read.
+///
+/// @param prop The prop (borrowed).
+/// @param environment The environment it reads, for a prop that depends on one (borrowed); may be null for
+///   one that doesn't, and then such a prop is a usage error.
+/// @return The value; 0 on failure.
+float elg_prop_f32_get(const ElgPropF32* prop, const ElgEnvironmentValues* environment);
+
+/// Copies a float prop handle: both refer to the same prop, reactive as it is.
+///
+/// @param prop The prop (borrowed).
+/// @return The copy, owned by the caller (elg_prop_f32_free()). Null on failure.
+ElgPropF32* elg_prop_f32_clone(const ElgPropF32* prop);
+
+/// Frees a float prop handle.
+///
+/// @param prop The prop (consumed); may be null.
+void elg_prop_f32_free(ElgPropF32* prop);
+
+/// Reads a color prop handle (an Effects field): a tracked read.
+///
+/// @param prop The prop (borrowed).
+/// @param environment The environment it reads, for a prop that depends on one, such as a theme color
+///   (borrowed); may be null for one that doesn't, and then such a prop is a usage error.
+/// @return The color; all zeros on failure.
+ElgColor elg_prop_color_get(const ElgPropColor* prop, const ElgEnvironmentValues* environment);
+
+/// Copies a color prop handle: both refer to the same prop, reactive as it is.
+///
+/// @param prop The prop (borrowed).
+/// @return The copy, owned by the caller (elg_prop_color_free()). Null on failure.
+ElgPropColor* elg_prop_color_clone(const ElgPropColor* prop);
+
+/// Frees a color prop handle.
+///
+/// @param prop The prop (consumed); may be null.
+void elg_prop_color_free(ElgPropColor* prop);
+
+// --- Reading effects ---
+
+/// Reads Effects::opacity, so that a modifier can build on it (with an ElgProp of kind 4, or a closure that
+/// reads it).
+///
+/// @param e The effects (borrowed).
+/// @return The opacity, a prop handle owned by the caller (elg_prop_f32_free()). Null on failure.
+ElgPropF32* elg_effects_opacity(const ElgEffects* e);
+
+/// Reads Effects::offset_x and Effects::offset_y.
+///
+/// @param e The effects (borrowed).
+/// @param x Receives the horizontal offset, a prop handle owned by the caller (elg_prop_f32_free()).
+/// @param y Receives the vertical offset, likewise.
+void elg_effects_offset(const ElgEffects* e, ElgPropF32** x, ElgPropF32** y);
+
+/// Reads Effects::blur and Effects::blur_opaque.
+///
+/// @param e The effects (borrowed).
+/// @param radius Receives the radius in points, a prop handle owned by the caller (elg_prop_f32_free()), when
+///   there's a blur; left as it was otherwise.
+/// @return Whether there's a blur; false on failure.
+bool elg_effects_blur(const ElgEffects* e, ElgPropF32** radius);
+
+/// Reads Effects::blur_opaque: the content fills its bounds, so the blur's edges stay sharp.
+///
+/// @param e The effects (borrowed).
+/// @return The flag; false on failure.
+bool elg_effects_blur_opaque(const ElgEffects* e);
+
+/// Reads Effects::rotation.
+///
+/// @param e The effects (borrowed).
+/// @param degrees Receives the rotation in degrees, clockwise, a prop handle owned by the caller
+///   (elg_prop_f32_free()), when there's one; left as it was otherwise.
+/// @return Whether there's a rotation; false on failure.
+bool elg_effects_rotation(const ElgEffects* e, ElgPropF32** degrees);
+
+/// Reads Effects::scale_x and Effects::scale_y.
+///
+/// @param e The effects (borrowed).
+/// @param x Receives the horizontal scale, a prop handle owned by the caller (elg_prop_f32_free()), or null
+///   when there's none.
+/// @param y Receives the vertical scale, likewise.
+void elg_effects_scale(const ElgEffects* e, ElgPropF32** x, ElgPropF32** y);
+
+/// Reads Effects::z_index.
+///
+/// @param e The effects (borrowed).
+/// @param z Receives the stacking order, a prop handle owned by the caller (elg_prop_f32_free()), when it's
+///   set; left as it was otherwise.
+/// @return Whether it's set; false on failure.
+bool elg_effects_z_index(const ElgEffects* e, ElgPropF32** z);
+
+/// Reads Effects::clip_shape.
+///
+/// @param e The effects (borrowed).
+/// @param shape Receives the shape, owned by the caller (elg_shape_free()), when there's one; left as it was
+///   otherwise.
+/// @return Whether there's a clip shape; false on failure.
+bool elg_effects_clip_shape(const ElgEffects* e, ElgShape** shape);
+
+/// Reads Effects::content_shape: the shape hit testing uses.
+///
+/// @param e The effects (borrowed).
+/// @param shape Receives the shape, owned by the caller (elg_shape_free()), when there's one; left as it was
+///   otherwise.
+/// @return Whether there's a content shape; false on failure.
+bool elg_effects_content_shape(const ElgEffects* e, ElgShape** shape);
+
+/// Reads Effects::shadow.
+///
+/// @param e The effects (borrowed).
+/// @param shadow Receives the shadow when there's one; left as it was otherwise.
+/// @return Whether there's a shadow; false on failure.
+bool elg_effects_shadow(const ElgEffects* e, ElgShadow* shadow);
+
+/// Reads Effects::inner_shadow.
+///
+/// @param e The effects (borrowed).
+/// @param shadow Receives the shadow when there's one; left as it was otherwise.
+/// @return Whether there's an inner shadow; false on failure.
+bool elg_effects_inner_shadow(const ElgEffects* e, ElgShadow* shadow);
+
+/// Reads Effects::color_filter.
+///
+/// @param e The effects (borrowed).
+/// @param kind Receives the filter's ColorFilter::Kind, by its position in the enum, when there's one.
+/// @param amount Receives its amount, a prop handle owned by the caller (elg_prop_f32_free()), likewise.
+/// @param color Receives its color, a prop handle owned by the caller (elg_prop_color_free()), likewise.
+/// @return Whether there's a color filter; false on failure, when nothing is written.
+bool elg_effects_color_filter(const ElgEffects* e, int32_t* kind, ElgPropF32** amount, ElgPropColor** color);
+
+/// Adds to Effects::on_size_change: `on_size_change` is called after the handler the effects already have.
+/// Called after the first layout and whenever the view's size in pixels changes, on the UI thread, before
+/// paint.
+///
+/// @param e The effects (borrowed).
+/// @param on_size_change args: ElgPixelSize* (the logical size times the display scale, rounded up; may be
+///   zero). Required: none is a usage error.
+void elg_effects_add_on_size_change(ElgEffects* e, ElgClosure on_size_change);
 
 // --- Event handlers ---
 
@@ -4593,6 +4994,16 @@ void elg_button_style_free(ElgButtonStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_button_style(const ElgView* v, const ElgButtonStyle* style);
 
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_button_style_prop()). `style` is borrowed; the result shares it.
+void elg_button_style_assign(ElgButtonStyle* target, const ElgButtonStyle* style);
+
+/// Sets the environment's style of this family (ButtonStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_button_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_button_style_prop(ElgEnvironmentValues* environment, ElgProp style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgButtonConfiguration* elg_button_config_clone(const ElgButtonConfiguration* c);
@@ -4646,6 +5057,16 @@ void elg_toggle_style_free(ElgToggleStyle* s);
 /// *_style() modifiers do. Both are borrowed; the view keeps its own reference to the style.
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_toggle_style(const ElgView* v, const ElgToggleStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_toggle_style_prop()). `style` is borrowed; the result shares it.
+void elg_toggle_style_assign(ElgToggleStyle* target, const ElgToggleStyle* style);
+
+/// Sets the environment's style of this family (ToggleStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_toggle_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_toggle_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -4723,6 +5144,16 @@ ElgCheckboxStyle* elg_env_checkbox_style(const ElgEnvironmentValues* environment
 /// Sets the environment's style of this family (CheckboxStyleKey). Both are borrowed; the
 /// environment shares the style.
 void elg_env_set_checkbox_style(ElgEnvironmentValues* environment, const ElgCheckboxStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_checkbox_style_prop()). `style` is borrowed; the result shares it.
+void elg_checkbox_style_assign(ElgCheckboxStyle* target, const ElgCheckboxStyle* style);
+
+/// Sets the environment's style of this family (CheckboxStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_checkbox_style_assign(), and one that
+/// writes none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_checkbox_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -4804,6 +5235,17 @@ ElgNumberInputStyle* elg_env_number_input_style(const ElgEnvironmentValues* envi
 /// environment shares the style.
 void elg_env_set_number_input_style(ElgEnvironmentValues* environment, const ElgNumberInputStyle* style);
 
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_number_input_style_prop()). `style` is borrowed; the result shares it.
+void elg_number_input_style_assign(ElgNumberInputStyle* target, const ElgNumberInputStyle* style);
+
+/// Sets the environment's style of this family (NumberInputStyleKey) to a prop, which may be
+/// reactive. `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's
+/// handle; kinds 1 and 2: the closure writes the style with elg_number_input_style_assign(), and
+/// one that writes none is a usage error when the prop is read. Kind 3 (a theme color) is a usage
+/// error.
+void elg_env_set_number_input_style_prop(ElgEnvironmentValues* environment, ElgProp style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgNumberInputConfiguration* elg_number_input_config_clone(const ElgNumberInputConfiguration* c);
@@ -4875,6 +5317,16 @@ ElgProgressStyle* elg_env_progress_style(const ElgEnvironmentValues* environment
 /// environment shares the style.
 void elg_env_set_progress_style(ElgEnvironmentValues* environment, const ElgProgressStyle* style);
 
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_progress_style_prop()). `style` is borrowed; the result shares it.
+void elg_progress_style_assign(ElgProgressStyle* target, const ElgProgressStyle* style);
+
+/// Sets the environment's style of this family (ProgressStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_progress_style_assign(), and one that
+/// writes none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_progress_style_prop(ElgEnvironmentValues* environment, ElgProp style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgProgressConfiguration* elg_progress_config_clone(const ElgProgressConfiguration* c);
@@ -4923,6 +5375,17 @@ void elg_text_field_style_free(ElgTextFieldStyle* s);
 /// *_style() modifiers do. Both are borrowed; the view keeps its own reference to the style.
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_text_field_style(const ElgView* v, const ElgTextFieldStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_text_field_style_prop()). `style` is borrowed; the result shares it.
+void elg_text_field_style_assign(ElgTextFieldStyle* target, const ElgTextFieldStyle* style);
+
+/// Sets the environment's style of this family (TextFieldStyleKey) to a prop, which may be
+/// reactive. `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's
+/// handle; kinds 1 and 2: the closure writes the style with elg_text_field_style_assign(), and one
+/// that writes none is a usage error when the prop is read. Kind 3 (a theme color) is a usage
+/// error.
+void elg_env_set_text_field_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -4987,6 +5450,16 @@ ElgPickerStyle* elg_env_picker_style(const ElgEnvironmentValues* environment);
 /// Sets the environment's style of this family (PickerStyleKey). Both are borrowed; the environment
 /// shares the style.
 void elg_env_set_picker_style(ElgEnvironmentValues* environment, const ElgPickerStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_picker_style_prop()). `style` is borrowed; the result shares it.
+void elg_picker_style_assign(ElgPickerStyle* target, const ElgPickerStyle* style);
+
+/// Sets the environment's style of this family (PickerStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_picker_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_picker_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -5063,6 +5536,16 @@ ElgSliderStyle* elg_env_slider_style(const ElgEnvironmentValues* environment);
 /// shares the style.
 void elg_env_set_slider_style(ElgEnvironmentValues* environment, const ElgSliderStyle* style);
 
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_slider_style_prop()). `style` is borrowed; the result shares it.
+void elg_slider_style_assign(ElgSliderStyle* target, const ElgSliderStyle* style);
+
+/// Sets the environment's style of this family (SliderStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_slider_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_slider_style_prop(ElgEnvironmentValues* environment, ElgProp style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgSliderConfiguration* elg_slider_config_clone(const ElgSliderConfiguration* c);
@@ -5135,6 +5618,17 @@ ElgNavigationStackStyle* elg_env_navigation_stack_style(const ElgEnvironmentValu
 /// Sets the environment's style of this family (NavigationStackStyleKey). Both are borrowed; the
 /// environment shares the style.
 void elg_env_set_navigation_stack_style(ElgEnvironmentValues* environment, const ElgNavigationStackStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_navigation_stack_style_prop()). `style` is borrowed; the result shares it.
+void elg_navigation_stack_style_assign(ElgNavigationStackStyle* target, const ElgNavigationStackStyle* style);
+
+/// Sets the environment's style of this family (NavigationStackStyleKey) to a prop, which may be
+/// reactive. `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's
+/// handle; kinds 1 and 2: the closure writes the style with elg_navigation_stack_style_assign(),
+/// and one that writes none is a usage error when the prop is read. Kind 3 (a theme color) is a
+/// usage error.
+void elg_env_set_navigation_stack_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -5211,6 +5705,16 @@ ElgPopoverStyle* elg_env_popover_style(const ElgEnvironmentValues* environment);
 /// environment shares the style.
 void elg_env_set_popover_style(ElgEnvironmentValues* environment, const ElgPopoverStyle* style);
 
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_popover_style_prop()). `style` is borrowed; the result shares it.
+void elg_popover_style_assign(ElgPopoverStyle* target, const ElgPopoverStyle* style);
+
+/// Sets the environment's style of this family (PopoverStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_popover_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_popover_style_prop(ElgEnvironmentValues* environment, ElgProp style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgPopoverConfiguration* elg_popover_config_clone(const ElgPopoverConfiguration* c);
@@ -5286,6 +5790,16 @@ ElgTooltipStyle* elg_env_tooltip_style(const ElgEnvironmentValues* environment);
 /// environment shares the style.
 void elg_env_set_tooltip_style(ElgEnvironmentValues* environment, const ElgTooltipStyle* style);
 
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_tooltip_style_prop()). `style` is borrowed; the result shares it.
+void elg_tooltip_style_assign(ElgTooltipStyle* target, const ElgTooltipStyle* style);
+
+/// Sets the environment's style of this family (TooltipStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_tooltip_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_tooltip_style_prop(ElgEnvironmentValues* environment, ElgProp style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgTooltipConfiguration* elg_tooltip_config_clone(const ElgTooltipConfiguration* c);
@@ -5353,6 +5867,16 @@ ElgMenuStyle* elg_env_menu_style(const ElgEnvironmentValues* environment);
 /// Sets the environment's style of this family (MenuStyleKey). Both are borrowed; the environment
 /// shares the style.
 void elg_env_set_menu_style(ElgEnvironmentValues* environment, const ElgMenuStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_menu_style_prop()). `style` is borrowed; the result shares it.
+void elg_menu_style_assign(ElgMenuStyle* target, const ElgMenuStyle* style);
+
+/// Sets the environment's style of this family (MenuStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_menu_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_menu_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -5453,6 +5977,16 @@ ElgRowStyle* elg_env_row_style(const ElgEnvironmentValues* environment);
 /// Sets the environment's style of this family (RowStyleKey). Both are borrowed; the environment
 /// shares the style.
 void elg_env_set_row_style(ElgEnvironmentValues* environment, const ElgRowStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_row_style_prop()). `style` is borrowed; the result shares it.
+void elg_row_style_assign(ElgRowStyle* target, const ElgRowStyle* style);
+
+/// Sets the environment's style of this family (RowStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_row_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_row_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.

@@ -32,6 +32,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <type_traits>
+#include <string>
+#include <optional>
 #include <string_view>
 #include <utility>
 
@@ -47,7 +50,44 @@ constexpr std::uint64_t key_id(std::string_view name) noexcept {
     }
     return hash;
 }
+
+// The types a key's value may have when languages share it by name (1 to 7), or 0 for another type.
+template <class T>
+constexpr std::uint8_t value_tag() noexcept {
+    if constexpr (std::is_same_v<T, bool>) {
+        return 1;
+    } else if constexpr (std::is_same_v<T, int>) {
+        return 2;
+    } else if constexpr (std::is_same_v<T, std::int64_t>) {
+        return 3;
+    } else if constexpr (std::is_same_v<T, float>) {
+        return 4;
+    } else if constexpr (std::is_same_v<T, double>) {
+        return 5;
+    } else if constexpr (std::is_same_v<T, std::string>) {
+        return 6;
+    } else if constexpr (std::is_same_v<T, Color>) {
+        return 7;
+    } else {
+        return 0;
+    }
+}
+
+// A key's name hashed with the type of its value (value_tag()), so that keys of the same name with
+// values of different types don't see each other: one never reads the other's value as its own.
+template <class T>
+constexpr std::uint64_t typed_key(std::string_view name) noexcept {
+    const std::uint64_t key = key_id(name);
+    return value_tag<T>() == 0 ? key : key ^ (0x9e3779b97f4a7c15ULL * value_tag<T>());
+}
 } // namespace detail
+
+/// The types of value that languages share keys of by name (EnvironmentValues::get_named(),
+/// LayoutChild::value_named()).
+template <class T>
+concept SharedKeyValue = std::is_same_v<T, bool> || std::is_same_v<T, int> || std::is_same_v<T, std::int64_t> ||
+                         std::is_same_v<T, float> || std::is_same_v<T, double> || std::is_same_v<T, std::string> ||
+                         std::is_same_v<T, Color>;
 
 class ButtonStyle;
 class ToggleStyle;
@@ -74,7 +114,7 @@ public:
     /// @return The value.
     template <class Key>
     [[nodiscard]] typename Key::Value get() const {
-        constexpr std::uint64_t key = detail::key_id(Key::name);
+        constexpr std::uint64_t key = detail::typed_key<typename Key::Value>(Key::name);
         for (const Entry* entry = head_.get(); entry; entry = entry->next.get()) {
             if (entry->key == key) {
                 return static_cast<const Prop<typename Key::Value>*>(entry->value.get())->get();
@@ -101,7 +141,39 @@ public:
         // Environment-dependent values (e.g. a ThemeColor) resolve against the environment they
         // were set in, so a key's value never depends on itself.
         auto resolved = std::make_shared<const Prop<typename Key::Value>>(value.resolved_in(*this));
-        head_ = std::make_shared<const Entry>(Entry{detail::key_id(Key::name), std::move(resolved), head_});
+        head_ = std::make_shared<const Entry>(
+            Entry{detail::typed_key<typename Key::Value>(Key::name), std::move(resolved), head_});
+    }
+
+    /// The value set for the key named `name` whose value is a `T`, for language bindings, which share
+    /// keys by name: a key of that name set here or by a key type with the same `name` and `Value`. Unlike
+    /// get(), there's no default. A tracked read.
+    ///
+    /// @tparam T The value's type: bool, int, std::int64_t, float, double, std::string or Color. A key of
+    ///   the same name with a value of another type reads as unset.
+    /// @param name The key's name.
+    /// @return The value, or std::nullopt when the key isn't set.
+    template <SharedKeyValue T>
+    [[nodiscard]] std::optional<T> get_named(std::string_view name) const {
+        const std::uint64_t key = detail::typed_key<T>(name);
+        for (const Entry* entry = head_.get(); entry; entry = entry->next.get()) {
+            if (entry->key == key) {
+                return static_cast<const Prop<T>*>(entry->value.get())->get(*this);
+            }
+        }
+        return std::nullopt;
+    }
+
+    /// Sets the key named `name`, whose value is a `T`, for language bindings: as set() does for a key
+    /// type with that `name` and `Value`.
+    ///
+    /// @tparam T The value's type: bool, int, std::int64_t, float, double, std::string or Color.
+    /// @param name The key's name.
+    /// @param value A plain or reactive value, resolved as set() resolves it.
+    template <SharedKeyValue T>
+    void set_named(std::string_view name, const Prop<T>& value) {
+        auto resolved = std::make_shared<const Prop<T>>(value.resolved_in(*this));
+        head_ = std::make_shared<const Entry>(Entry{detail::typed_key<T>(name), std::move(resolved), head_});
     }
 
 private:

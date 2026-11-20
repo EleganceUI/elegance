@@ -15,9 +15,12 @@
 #include "test_images.h"
 #include "text/text_system.h"
 #include "view/element.h"
+#include "view/event_dispatcher.h"
+#include "view/focus.h"
 #include "view/view_node.h"
 
 #include <elg/hot_reload.h>
+#include <elg/layout.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -26,6 +29,7 @@
 #include <format>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
 #include <variant>
@@ -159,6 +163,95 @@ void elg_shape_style_assign(elg::ShapeStyle* target, const ElgShapeStyle* value)
 void elg_set_badge(const ElgStr* text);
 void elg_set_progress(bool has_fraction, double fraction, int32_t state);
 void elg_request_attention(bool critical);
+View* elg_mod_on_pointer_capture(const View* v, ElgClosure on_pointer);
+View* elg_mod_on_scroll_capture(const View* v, ElgClosure on_scroll);
+View* elg_mod_on_text_input_capture(const View* v, ElgClosure on_text_input);
+View* elg_mod_on_key_press_capture(const View* v, int32_t key, ElgClosure on_press);
+View* elg_mod_on_key_capture(const View* v, ElgClosure on_key);
+View* elg_mod_rust_event_modifier(const View* v, ElgClosure make_handler);
+void elg_app_menu_bar(App* app, const ElgMenuBarItem* menus, size_t count);
+uint32_t elg_primary_modifier();
+View* elg_mod_layout_value_bool(const View* v, ElgStr name, bool value);
+bool elg_layout_child_value_bool(const ElgLayoutChild* child, ElgStr name, bool* value);
+View* elg_mod_layout_value_i32(const View* v, ElgStr name, int32_t value);
+bool elg_layout_child_value_i32(const ElgLayoutChild* child, ElgStr name, int32_t* value);
+View* elg_mod_layout_value_i64(const View* v, ElgStr name, int64_t value);
+bool elg_layout_child_value_i64(const ElgLayoutChild* child, ElgStr name, int64_t* value);
+View* elg_mod_layout_value_f32(const View* v, ElgStr name, float value);
+bool elg_layout_child_value_f32(const ElgLayoutChild* child, ElgStr name, float* value);
+View* elg_mod_layout_value_f64(const View* v, ElgStr name, double value);
+bool elg_layout_child_value_f64(const ElgLayoutChild* child, ElgStr name, double* value);
+View* elg_mod_layout_value_color(const View* v, ElgStr name, ElgColor value);
+bool elg_layout_child_value_color(const ElgLayoutChild* child, ElgStr name, ElgColor* value);
+View* elg_mod_layout_value_string(const View* v, ElgStr name, ElgStr value);
+bool elg_layout_child_value_string(const ElgLayoutChild* child, ElgStr name, ElgStrSink out, void* ctx);
+bool elg_env_get_named_bool(const EnvironmentValues* environment, ElgStr name, bool* value);
+void elg_env_set_named_bool(EnvironmentValues* environment, ElgStr name, ElgProp value);
+bool elg_env_get_named_i32(const EnvironmentValues* environment, ElgStr name, int32_t* value);
+void elg_env_set_named_i32(EnvironmentValues* environment, ElgStr name, ElgProp value);
+bool elg_env_get_named_i64(const EnvironmentValues* environment, ElgStr name, int64_t* value);
+void elg_env_set_named_i64(EnvironmentValues* environment, ElgStr name, ElgProp value);
+bool elg_env_get_named_f32(const EnvironmentValues* environment, ElgStr name, float* value);
+void elg_env_set_named_f32(EnvironmentValues* environment, ElgStr name, ElgProp value);
+bool elg_env_get_named_f64(const EnvironmentValues* environment, ElgStr name, double* value);
+void elg_env_set_named_f64(EnvironmentValues* environment, ElgStr name, ElgProp value);
+bool elg_env_get_named_color(const EnvironmentValues* environment, ElgStr name, ElgColor* value);
+void elg_env_set_named_color(EnvironmentValues* environment, ElgStr name, ElgProp value);
+bool elg_env_get_named_string(const EnvironmentValues* environment, ElgStr name, ElgStrSink out, void* ctx);
+void elg_env_set_named_string(EnvironmentValues* environment, ElgStr name, ElgProp value);
+using PropF32 = elg::Prop<float>;
+using PropColor = elg::Prop<elg::Color>;
+float elg_prop_f32_get(const PropF32* prop, const EnvironmentValues* environment);
+PropF32* elg_prop_f32_clone(const PropF32* prop);
+void elg_prop_f32_free(PropF32* prop);
+ElgColor elg_prop_color_get(const PropColor* prop, const EnvironmentValues* environment);
+PropColor* elg_prop_color_clone(const PropColor* prop);
+void elg_prop_color_free(PropColor* prop);
+PropF32* elg_effects_opacity(const elg::Effects* e);
+void elg_effects_offset(const elg::Effects* e, PropF32** x, PropF32** y);
+bool elg_effects_blur(const elg::Effects* e, PropF32** radius);
+bool elg_effects_blur_opaque(const elg::Effects* e);
+bool elg_effects_rotation(const elg::Effects* e, PropF32** degrees);
+void elg_effects_scale(const elg::Effects* e, PropF32** x, PropF32** y);
+bool elg_effects_z_index(const elg::Effects* e, PropF32** z);
+bool elg_effects_clip_shape(const elg::Effects* e, elg::Shape** shape);
+bool elg_effects_content_shape(const elg::Effects* e, elg::Shape** shape);
+bool elg_effects_shadow(const elg::Effects* e, ElgShadow* shadow);
+bool elg_effects_inner_shadow(const elg::Effects* e, ElgShadow* shadow);
+bool elg_effects_color_filter(const elg::Effects* e, int32_t* kind, PropF32** amount, PropColor** color);
+void elg_effects_add_on_size_change(elg::Effects* e, ElgClosure on_size_change);
+void elg_effects_set_opacity(elg::Effects* e, ElgProp opacity);
+void elg_shape_free(elg::Shape* shape);
+void elg_button_style_assign(std::shared_ptr<const elg::ButtonStyle>* target, const std::shared_ptr<const elg::ButtonStyle>* style);
+void elg_env_set_button_style_prop(EnvironmentValues* environment, ElgProp style);
+std::shared_ptr<const elg::ButtonStyle>* elg_env_button_style(const EnvironmentValues* environment);
+void elg_button_style_free(std::shared_ptr<const elg::ButtonStyle>* style);
+void elg_toggle_style_assign(std::shared_ptr<const elg::ToggleStyle>* target, const std::shared_ptr<const elg::ToggleStyle>* style);
+void elg_env_set_toggle_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_text_field_style_assign(std::shared_ptr<const elg::TextFieldStyle>* target, const std::shared_ptr<const elg::TextFieldStyle>* style);
+void elg_env_set_text_field_style_prop(EnvironmentValues* environment, ElgProp style);
+std::shared_ptr<const elg::TextFieldStyle>* elg_env_text_field_style(const EnvironmentValues* environment);
+void elg_text_field_style_free(std::shared_ptr<const elg::TextFieldStyle>* style);
+void elg_checkbox_style_assign(std::shared_ptr<const elg::CheckboxStyle>* target, const std::shared_ptr<const elg::CheckboxStyle>* style);
+void elg_env_set_checkbox_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_number_input_style_assign(std::shared_ptr<const elg::NumberInputStyle>* target, const std::shared_ptr<const elg::NumberInputStyle>* style);
+void elg_env_set_number_input_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_progress_style_assign(std::shared_ptr<const elg::ProgressStyle>* target, const std::shared_ptr<const elg::ProgressStyle>* style);
+void elg_env_set_progress_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_picker_style_assign(std::shared_ptr<const elg::PickerStyle>* target, const std::shared_ptr<const elg::PickerStyle>* style);
+void elg_env_set_picker_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_slider_style_assign(std::shared_ptr<const elg::SliderStyle>* target, const std::shared_ptr<const elg::SliderStyle>* style);
+void elg_env_set_slider_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_navigation_stack_style_assign(std::shared_ptr<const elg::NavigationStackStyle>* target, const std::shared_ptr<const elg::NavigationStackStyle>* style);
+void elg_env_set_navigation_stack_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_popover_style_assign(std::shared_ptr<const elg::PopoverStyle>* target, const std::shared_ptr<const elg::PopoverStyle>* style);
+void elg_env_set_popover_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_tooltip_style_assign(std::shared_ptr<const elg::TooltipStyle>* target, const std::shared_ptr<const elg::TooltipStyle>* style);
+void elg_env_set_tooltip_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_menu_style_assign(std::shared_ptr<const elg::MenuStyle>* target, const std::shared_ptr<const elg::MenuStyle>* style);
+void elg_env_set_menu_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_row_style_assign(std::shared_ptr<const elg::RowStyle>* target, const std::shared_ptr<const elg::RowStyle>* style);
+void elg_env_set_row_style_prop(EnvironmentValues* environment, ElgProp style);
 }
 
 namespace {
@@ -257,6 +350,179 @@ public:
     [[nodiscard]] elg::PopupMotion motion() const override {
         return {Transition::opacity(), Animation::linear(0.2)};
     }
+};
+
+// A view mounted in a 100-point window, with its events.
+struct EventWindow {
+    detail::FocusManager focus; // outlives the tree
+    std::unique_ptr<detail::Element> root;
+    std::unique_ptr<detail::EventDispatcher> events;
+
+    explicit EventWindow(const View& view) {
+        root = detail::lower(view.frame(100, 100), {.text = &text_system(), .focus = &focus});
+        root->size_that_fits({100.f, 100.f});
+        root->place({}, {100.f, 100.f});
+        events = std::make_unique<detail::EventDispatcher>(*root, focus);
+    }
+
+    void press() const {
+        events->pointer_button(elg::PointerEvent::Kind::down, {50, 50}, elg::MouseButton::left, 1,
+                               elg::KeyModifiers::none);
+    }
+};
+
+// What a logging closure writes to, and the name it writes on a pointer down.
+struct Logged {
+    std::vector<std::string>* log;
+    std::string name;
+    int32_t phase = -1; // a Rust handler's answer to op 14; -1: it doesn't answer
+};
+
+// A pointer handler (args: ElgPointerEvent*, ret: bool*) that logs downs and consumes nothing.
+bool log_pointer(void* data, void* args, void* ret) {
+    const auto* logged = static_cast<const Logged*>(data);
+    if (static_cast<const ElgPointerEvent*>(args)->kind == 0) {
+        logged->log->push_back(logged->name);
+    }
+    *static_cast<bool*>(ret) = false;
+    return true;
+}
+
+// A Rust event handler (args: ElgEventCall*) that logs pointer downs and answers op 14 with its phase.
+bool rust_handler(void* data, void* args, void* ret) {
+    const auto* logged = static_cast<const Logged*>(data);
+    const auto* call = static_cast<const ElgEventCall*>(args);
+    if (call->op == 14 && logged->phase >= 0) {
+        *static_cast<int32_t*>(ret) = logged->phase;
+    } else if (call->op == 0 && call->pointer.kind == 0) {
+        logged->log->push_back(logged->name);
+    }
+    return true;
+}
+
+// make_handler (ret: ElgClosure*): the handler above, borrowing `data`.
+bool make_rust_handler(void* data, void*, void* ret) {
+    *static_cast<ElgClosure*>(ret) = {data, rust_handler, nullptr};
+    return true;
+}
+
+// A style prop's closure (ret: the style's handle): writes `style` with `assign`.
+template <class Style>
+struct PickStyle {
+    const std::shared_ptr<const Style>* style;
+    void (*assign)(std::shared_ptr<const Style>*, const std::shared_ptr<const Style>*);
+};
+
+template <class Style>
+bool pick_style(void* data, void*, void* ret) {
+    const auto* pick = static_cast<const PickStyle<Style>*>(data);
+    pick->assign(static_cast<std::shared_ptr<const Style>*>(ret), pick->style);
+    return true;
+}
+
+// Sets a style that isn't the default through a static prop and a reactive one, and reads it back.
+template <class Style, class Concrete>
+void check_style_prop(void (*set_prop)(EnvironmentValues*, ElgProp),
+                      void (*assign)(std::shared_ptr<const Style>*, const std::shared_ptr<const Style>*),
+                      std::shared_ptr<const Style>* (*get)(const EnvironmentValues*),
+                      void (*free_style)(std::shared_ptr<const Style>*)) {
+    EnvironmentValues* environment = elg_env_new();
+    REQUIRE(environment);
+    const std::shared_ptr<const Style> mine = std::make_shared<const Concrete>();
+    set_prop(environment, ElgProp{.kind = 0, .theme = 0, .value = &mine, .fn = {}});
+    std::shared_ptr<const Style>* read = get(environment);
+    REQUIRE(read);
+    CHECK(read->get() == mine.get());
+    free_style(read);
+
+    PickStyle<Style> pick{&mine, assign};
+    set_prop(environment, ElgProp{.kind = 1, .theme = 0, .value = nullptr, .fn = {&pick, pick_style<Style>, nullptr}});
+    read = get(environment);
+    REQUIRE(read);
+    CHECK(read->get() == mine.get());
+    free_style(read);
+    elg_env_free(environment);
+    CHECK(take_error() == 0);
+}
+
+// A key that a binding can share by name: its value is an int.
+struct RankKey {
+    using Value = int;
+    static constexpr std::string_view name = "test.rank";
+    static int default_value(const EnvironmentValues&) { return 0; }
+};
+
+// A static prop of `value` (kind 0).
+template <class C>
+ElgProp static_prop(const C& value) {
+    return ElgProp{.kind = 0, .theme = 0, .value = &value, .fn = {}};
+}
+
+ElgStr name_of(std::string_view name) {
+    return {name.data(), name.size()};
+}
+
+// What a custom layout read from its children through the C API.
+struct ChildValues {
+    bool has_rank = false;
+    int32_t rank = 0;
+    bool has_fraction = false;
+    float fraction = 0;
+    bool has_label = false;
+    std::string label;
+    bool flag = false;
+    int64_t big = 0;
+    double precise = 0;
+    ElgColor tint{};
+};
+
+struct ReadingByName final : elg::Layout {
+    explicit ReadingByName(std::shared_ptr<std::vector<ChildValues>> record) : seen(std::move(record)) {}
+    [[nodiscard]] elg::Size size_that_fits(elg::ProposedSize, std::span<const elg::LayoutChild> children) const override {
+        seen->clear();
+        for (const elg::LayoutChild& child : children) {
+            const ElgLayoutChild* c = elg_shim::c_children(&child);
+            ChildValues values;
+            values.has_rank = elg_layout_child_value_i32(c, name_of(RankKey::name), &values.rank);
+            values.has_fraction = elg_layout_child_value_f32(c, name_of(RankKey::name), &values.fraction);
+            values.has_label = elg_layout_child_value_string(c, name_of("test.label"),
+                                                             [](void* ctx, const char* ptr, size_t len) {
+                                                                 static_cast<std::string*>(ctx)->assign(ptr, len);
+                                                             },
+                                                             &values.label);
+            (void)elg_layout_child_value_bool(c, name_of("test.flag"), &values.flag);
+            (void)elg_layout_child_value_i64(c, name_of("test.big"), &values.big);
+            (void)elg_layout_child_value_f64(c, name_of("test.precise"), &values.precise);
+            (void)elg_layout_child_value_color(c, name_of("test.tint"), &values.tint);
+            seen->push_back(values);
+        }
+        return {};
+    }
+    void place_children(elg::Rect, elg::ProposedSize, std::span<const elg::LayoutChild>) const override {}
+
+    std::shared_ptr<std::vector<ChildValues>> seen;
+};
+
+// A C++ key whose value is an int, named like RankKey: what LayoutChild::value() reads.
+struct RankLayoutKey {
+    using Value = int;
+    static constexpr std::string_view name = "test.rank";
+    static int default_value() { return 0; }
+};
+
+// Reads RankLayoutKey with LayoutChild::value(), for values set from C.
+struct ReadingByKey final : elg::Layout {
+    explicit ReadingByKey(std::shared_ptr<std::vector<int>> record) : seen(std::move(record)) {}
+    [[nodiscard]] elg::Size size_that_fits(elg::ProposedSize, std::span<const elg::LayoutChild> children) const override {
+        seen->clear();
+        for (const elg::LayoutChild& child : children) {
+            seen->push_back(child.value<RankLayoutKey>());
+        }
+        return {};
+    }
+    void place_children(elg::Rect, elg::ProposedSize, std::span<const elg::LayoutChild>) const override {}
+
+    std::shared_ptr<std::vector<int>> seen;
 };
 
 } // namespace
@@ -828,4 +1094,434 @@ TEST_CASE("the dock and taskbar functions need a running App", "[c-api][desktop]
     CHECK(take_error() == 2);
     elg_request_attention(true);
     CHECK(take_error() == 2);
+}
+
+TEST_CASE("capture handlers through the C API hear a press before the views inside them", "[c-api][capture-phase]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    std::vector<std::string> log;
+    const View inner = Rectangle().on_pointer([&log](const elg::PointerEvent& event) {
+        if (event.kind == elg::PointerEvent::Kind::down) {
+            log.emplace_back("inner");
+        }
+        return false;
+    });
+    Logged outer{&log, "outer"};
+    View* capturing = elg_mod_on_pointer_capture(&inner, {&outer, log_pointer, nullptr});
+    REQUIRE(capturing);
+    {
+        const EventWindow window(*capturing);
+        window.press();
+    }
+    CHECK(log == std::vector<std::string>{"outer", "inner"});
+    elg_view_free(capturing);
+
+    // The other capture handlers make views too, and take their closures.
+    Counts counts;
+    for (View* view : {elg_mod_on_scroll_capture(&inner, closure(counts)),
+                       elg_mod_on_text_input_capture(&inner, closure(counts)),
+                       elg_mod_on_key_press_capture(&inner, 0, closure(counts)),
+                       elg_mod_on_key_capture(&inner, closure(counts))}) {
+        CHECK(view != nullptr);
+        elg_view_free(view);
+    }
+    CHECK(take_error() == 0);
+    CHECK(counts.drops == 4);
+}
+
+TEST_CASE("a Rust event handler says its phase with op 14", "[c-api][capture-phase]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    std::vector<std::string> log;
+    const View inner = Rectangle().on_pointer([&log](const elg::PointerEvent& event) {
+        if (event.kind == elg::PointerEvent::Kind::down) {
+            log.emplace_back("inner");
+        }
+        return false;
+    });
+    Logged capture{&log, "capture", 0};
+    Logged silent{&log, "silent"}; // doesn't answer op 14: the bubble phase
+    View* capturing = elg_mod_rust_event_modifier(&inner, {&capture, make_rust_handler, nullptr});
+    REQUIRE(capturing);
+    View* both = elg_mod_rust_event_modifier(capturing, {&silent, make_rust_handler, nullptr});
+    REQUIRE(both);
+    {
+        const EventWindow window(*both);
+        window.press();
+    }
+    CHECK(log == std::vector<std::string>{"capture", "inner", "silent"});
+    elg_view_free(capturing);
+    elg_view_free(both);
+}
+
+TEST_CASE("menu bar items convert from the C API, with their shortcuts, roles and submenus", "[c-api][menus]") {
+    Counts saved;
+    Counts toggled;
+    const ElgMenuBarItem file_items[] = {
+        {.title = {"Save", 4},
+         .action = closure(saved),
+         .checked = -1,
+         .enabled = true,
+         .has_shortcut = true,
+         .shortcut_key = static_cast<int32_t>(elg::Key::s),
+         .shortcut_modifiers = static_cast<uint32_t>(elg::KeyModifiers::control | elg::KeyModifiers::shift)},
+        {.checked = -1, .enabled = true}, // a separator
+        {.title = {"Wrap", 4}, .checked = 1, .toggled = closure(toggled), .enabled = false},
+        {.checked = -1, .enabled = true, .role = 6}, // quit
+        {.title = {"Odd", 3}, .checked = -1, .enabled = true, .role = 99},
+    };
+    const ElgMenuBarItem menus[] = {{.title = {"File", 4}, .checked = -1, .enabled = true, .submenu = file_items,
+                                     .submenu_count = std::size(file_items)}};
+    std::vector<elg::MenuBarItem> converted;
+    {
+        elg_shim::ConsumedMenu<ElgMenuBarItem, elg::MenuBarItem> consumed(menus, std::size(menus));
+        converted = consumed.take();
+    }
+    REQUIRE(converted.size() == 1);
+    CHECK(converted[0].title == "File");
+    REQUIRE(converted[0].submenu.size() == 5);
+    const elg::MenuBarItem& save = converted[0].submenu[0];
+    CHECK(save.shortcut == std::optional<elg::KeyboardShortcut>(elg::KeyboardShortcut{
+                               elg::Key::s, elg::KeyModifiers::control | elg::KeyModifiers::shift}));
+    CHECK_FALSE(save.checked.has_value());
+    save.action();
+    CHECK(saved.calls == 1);
+    CHECK(converted[0].submenu[1].title.empty());
+    const elg::MenuBarItem& wrap = converted[0].submenu[2];
+    CHECK(wrap.checked == std::optional<bool>(true));
+    CHECK_FALSE(wrap.enabled);
+    CHECK(wrap.toggled);
+    CHECK(converted[0].submenu[3].role == elg::MenuRole::quit);
+    CHECK(converted[0].submenu[4].role == elg::MenuRole::none);
+    converted.clear();
+    CHECK(saved.drops == 1);
+    CHECK(toggled.drops == 1);
+}
+
+TEST_CASE("elg_app_menu_bar takes the menus' closures, and elg_primary_modifier is the platform's", "[c-api][menus]") {
+    Counts quit;
+    const ElgMenuBarItem items[] = {{.title = {"Quit", 4}, .action = closure(quit), .checked = -1, .enabled = true}};
+    const ElgMenuBarItem menus[] = {
+        {.title = {"App", 3}, .checked = -1, .enabled = true, .submenu = items, .submenu_count = 1}};
+    App* app = elg_app_new();
+    REQUIRE(app);
+    elg_app_menu_bar(app, menus, std::size(menus));
+    CHECK(take_error() == 0);
+    CHECK(quit.drops == 0); // the app keeps it
+    elg_app_free(app);
+    CHECK(quit.drops == 1);
+
+    CHECK(elg_primary_modifier() == static_cast<uint32_t>(elg::primary_modifier()));
+}
+
+TEST_CASE("every style of the environment can be set to a prop through the C API", "[c-api][environment]") {
+    check_style_prop<elg::ButtonStyle, elg::BorderedButtonStyle>(elg_env_set_button_style_prop, elg_button_style_assign,
+        elg_env_button_style, elg_button_style_free);
+    check_style_prop<elg::ToggleStyle, elg::SwitchToggleStyle>(elg_env_set_toggle_style_prop, elg_toggle_style_assign,
+        elg_env_toggle_style, elg_toggle_style_free);
+    check_style_prop<elg::TextFieldStyle, elg::PlainTextFieldStyle>(elg_env_set_text_field_style_prop, elg_text_field_style_assign,
+        elg_env_text_field_style, elg_text_field_style_free);
+    check_style_prop<elg::CheckboxStyle, elg::BoxCheckboxStyle>(elg_env_set_checkbox_style_prop, elg_checkbox_style_assign,
+        elg_env_checkbox_style, elg_checkbox_style_free);
+    check_style_prop<elg::NumberInputStyle, elg::PlainNumberInputStyle>(elg_env_set_number_input_style_prop, elg_number_input_style_assign,
+        elg_env_number_input_style, elg_number_input_style_free);
+    check_style_prop<elg::ProgressStyle, elg::CircularProgressStyle>(elg_env_set_progress_style_prop, elg_progress_style_assign,
+        elg_env_progress_style, elg_progress_style_free);
+    check_style_prop<elg::PickerStyle, elg::MenuPickerStyle>(elg_env_set_picker_style_prop, elg_picker_style_assign,
+        elg_env_picker_style, elg_picker_style_free);
+    check_style_prop<elg::SliderStyle, elg::KnobSliderStyle>(elg_env_set_slider_style_prop, elg_slider_style_assign,
+        elg_env_slider_style, elg_slider_style_free);
+    check_style_prop<elg::NavigationStackStyle, elg::PlainNavigationStackStyle>(elg_env_set_navigation_stack_style_prop, elg_navigation_stack_style_assign,
+        elg_env_navigation_stack_style, elg_navigation_stack_style_free);
+    check_style_prop<elg::PopoverStyle, elg::PlainPopoverStyle>(elg_env_set_popover_style_prop, elg_popover_style_assign,
+        elg_env_popover_style, elg_popover_style_free);
+    check_style_prop<elg::TooltipStyle, elg::PlainTooltipStyle>(elg_env_set_tooltip_style_prop, elg_tooltip_style_assign,
+        elg_env_tooltip_style, elg_tooltip_style_free);
+    check_style_prop<elg::MenuStyle, elg::PlainMenuStyle>(elg_env_set_menu_style_prop, elg_menu_style_assign,
+        elg_env_menu_style, elg_menu_style_free);
+    check_style_prop<elg::RowStyle, elg::PlainRowStyle>(elg_env_set_row_style_prop, elg_row_style_assign,
+        elg_env_row_style, elg_row_style_free);
+}
+
+TEST_CASE("a reactive style follows its state, and a style prop without a style is a usage error", "[c-api][environment]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const std::shared_ptr<const elg::PickerStyle> menu = std::make_shared<const elg::MenuPickerStyle>();
+    const std::shared_ptr<const elg::PickerStyle> segmented = std::make_shared<const elg::SegmentedPickerStyle>();
+    struct Choice {
+        const elg::State<bool>* use_menu;
+        const std::shared_ptr<const elg::PickerStyle>* menu;
+        const std::shared_ptr<const elg::PickerStyle>* segmented;
+    };
+    const elg::State<bool> use_menu(true);
+    Choice choice{&use_menu, &menu, &segmented};
+    const auto choose = [](void* data, void*, void* ret) {
+        const auto* c = static_cast<const Choice*>(data);
+        elg_picker_style_assign(static_cast<std::shared_ptr<const elg::PickerStyle>*>(ret),
+                                (*c->use_menu)() ? c->menu : c->segmented);
+        return true;
+    };
+    EnvironmentValues* environment = elg_env_new();
+    REQUIRE(environment);
+    elg_env_set_picker_style_prop(environment, ElgProp{.kind = 1, .theme = 0, .value = nullptr, .fn = {&choice, choose, nullptr}});
+    std::shared_ptr<const elg::PickerStyle>* read = elg_env_picker_style(environment);
+    REQUIRE(read);
+    CHECK(read->get() == menu.get());
+    elg_picker_style_free(read);
+    use_menu.set(false);
+    read = elg_env_picker_style(environment);
+    REQUIRE(read);
+    CHECK(read->get() == segmented.get());
+    elg_picker_style_free(read);
+
+    // A theme color isn't a style; a closure that writes no style is a usage error when it's read.
+    elg_env_set_picker_style_prop(environment, ElgProp{.kind = 3, .theme = 0, .value = nullptr, .fn = {}});
+    CHECK(take_error() == 2);
+    const auto write_nothing = [](void*, void*, void*) { return true; };
+    elg_env_set_picker_style_prop(environment, ElgProp{.kind = 1, .theme = 0, .value = nullptr, .fn = {nullptr, write_nothing, nullptr}});
+    CHECK(take_error() == 0);
+    CHECK(elg_env_picker_style(environment) == nullptr);
+    CHECK(take_error() == 2);
+    elg_env_free(environment);
+}
+
+TEST_CASE("the C API reads Effects back as reactive props", "[c-api][effects]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const elg::State<float> faded(0.5f);
+    elg::Effects effects;
+    effects.opacity = elg::Prop<float>([faded] { return faded(); });
+
+    // A handle follows its prop, and a prop of kind 4 copies it, reactive as it is.
+    PropF32* opacity = elg_effects_opacity(&effects);
+    REQUIRE(opacity);
+    CHECK(elg_prop_f32_get(opacity, nullptr) == 0.5f);
+    elg::Effects other;
+    elg_effects_set_opacity(&other, ElgProp{.kind = 4, .theme = 0, .value = opacity, .fn = {}});
+    CHECK(take_error() == 0);
+    faded.set(0.25f);
+    CHECK(elg_prop_f32_get(opacity, nullptr) == 0.25f);
+    CHECK(other.opacity.get() == 0.25f);
+    PropF32* copy = elg_prop_f32_clone(opacity);
+    elg_prop_f32_free(opacity);
+    CHECK(elg_prop_f32_get(copy, nullptr) == 0.25f);
+    elg_prop_f32_free(copy);
+
+    // Kind 4 is for float and Color props only.
+    CHECK(elg_text(ElgProp{.kind = 4, .theme = 0, .value = &effects, .fn = {}}) == nullptr);
+    CHECK(take_error() == 2);
+
+    // What isn't set reads as not set; what is, reads back.
+    PropF32* prop = nullptr;
+    elg::Shape* shape = nullptr;
+    ElgShadow shadow{};
+    CHECK_FALSE(elg_effects_blur(&effects, &prop));
+    CHECK_FALSE(elg_effects_rotation(&effects, &prop));
+    CHECK_FALSE(elg_effects_z_index(&effects, &prop));
+    CHECK_FALSE(elg_effects_clip_shape(&effects, &shape));
+    CHECK_FALSE(elg_effects_content_shape(&effects, &shape));
+    CHECK_FALSE(elg_effects_shadow(&effects, &shadow));
+    CHECK_FALSE(elg_effects_inner_shadow(&effects, &shadow));
+    CHECK(prop == nullptr);
+    CHECK(shape == nullptr);
+
+    effects.blur = 4.f;
+    effects.blur_opaque = true;
+    effects.rotation = 30.f;
+    effects.scale_x = 2.f;
+    effects.z_index = 3.f;
+    effects.offset_x = 5.f;
+    effects.clip_shape = elg::Circle();
+    effects.content_shape = elg::Circle();
+    effects.shadow = elg::Shadow{.radius = 12, .y = 4};
+    effects.inner_shadow = elg::Shadow{.radius = 2};
+    REQUIRE(elg_effects_blur(&effects, &prop));
+    CHECK(elg_prop_f32_get(prop, nullptr) == 4.f);
+    elg_prop_f32_free(prop);
+    CHECK(elg_effects_blur_opaque(&effects));
+    REQUIRE(elg_effects_rotation(&effects, &prop));
+    CHECK(elg_prop_f32_get(prop, nullptr) == 30.f);
+    elg_prop_f32_free(prop);
+    REQUIRE(elg_effects_z_index(&effects, &prop));
+    CHECK(elg_prop_f32_get(prop, nullptr) == 3.f);
+    elg_prop_f32_free(prop);
+    PropF32* x = nullptr;
+    PropF32* y = nullptr;
+    elg_effects_scale(&effects, &x, &y);
+    REQUIRE(x);
+    CHECK(elg_prop_f32_get(x, nullptr) == 2.f);
+    CHECK(y == nullptr);
+    elg_prop_f32_free(x);
+    elg_effects_offset(&effects, &x, &y);
+    REQUIRE(x);
+    REQUIRE(y);
+    CHECK(elg_prop_f32_get(x, nullptr) == 5.f);
+    CHECK(elg_prop_f32_get(y, nullptr) == 0.f);
+    elg_prop_f32_free(x);
+    elg_prop_f32_free(y);
+    REQUIRE(elg_effects_clip_shape(&effects, &shape));
+    elg_shape_free(shape);
+    REQUIRE(elg_effects_content_shape(&effects, &shape));
+    elg_shape_free(shape);
+    REQUIRE(elg_effects_shadow(&effects, &shadow));
+    CHECK(shadow.radius == 12);
+    CHECK(shadow.y == 4);
+    REQUIRE(elg_effects_inner_shadow(&effects, &shadow));
+    CHECK(shadow.radius == 2);
+    CHECK(take_error() == 0);
+}
+
+TEST_CASE("a color filter's color is a prop that may need the environment", "[c-api][effects]") {
+    elg::Effects effects;
+    int32_t kind = -1;
+    PropF32* amount = nullptr;
+    PropColor* color = nullptr;
+    CHECK_FALSE(elg_effects_color_filter(&effects, &kind, &amount, &color));
+    effects.color_filter = elg::ColorFilter{.kind = elg::ColorFilter::Kind::multiply,
+                                            .amount = 0.5f,
+                                            .color = elg::Prop<elg::Color>(elg::ThemeColor::accent)};
+    REQUIRE(elg_effects_color_filter(&effects, &kind, &amount, &color));
+    CHECK(kind == static_cast<int32_t>(elg::ColorFilter::Kind::multiply));
+    CHECK(elg_prop_f32_get(amount, nullptr) == 0.5f);
+    elg_prop_color_get(color, nullptr); // a theme color needs an environment
+    CHECK(take_error() == 2);
+    EnvironmentValues* environment = elg_env_new();
+    const ElgColor accent = elg_prop_color_get(color, environment);
+    CHECK(take_error() == 0);
+    const elg::Color expected = environment->color(elg::ThemeColor::accent);
+    CHECK(accent.r == expected.r);
+    CHECK(accent.a == expected.a);
+    PropColor* copy = elg_prop_color_clone(color);
+    REQUIRE(copy);
+    elg_prop_color_free(copy);
+    elg_env_free(environment);
+    elg_prop_f32_free(amount);
+    elg_prop_color_free(color);
+}
+
+TEST_CASE("size handlers added through the C API run after the ones before them", "[c-api][effects]") {
+    std::vector<std::string> log;
+    elg::Effects effects;
+    effects.on_size_change = [&log](elg::PixelSize) { log.emplace_back("first"); };
+    Logged added{&log, "added"};
+    const auto log_size = [](void* data, void*, void*) {
+        const auto* logged = static_cast<const Logged*>(data);
+        logged->log->push_back(logged->name);
+        return true;
+    };
+    elg_effects_add_on_size_change(&effects, {&added, log_size, nullptr});
+    REQUIRE(effects.on_size_change);
+    effects.on_size_change(elg::PixelSize{10, 20});
+    CHECK(log == std::vector<std::string>{"first", "added"});
+
+    Counts none_given;
+    elg_effects_add_on_size_change(&effects, none(none_given));
+    CHECK(take_error() == 2);
+    CHECK(none_given.drops == 1);
+}
+
+TEST_CASE("environment keys are shared by name and value type between C++ and the C API", "[c-api][environment]") {
+    EnvironmentValues* environment = elg_env_new();
+    REQUIRE(environment);
+    const ElgStr rank = name_of(RankKey::name);
+    int32_t number = -1;
+    CHECK_FALSE(elg_env_get_named_i32(environment, rank, &number)); // unset: no default
+    CHECK(number == -1);
+
+    // Set from C, read by the C++ key type; and the other way round.
+    const int32_t three = 3;
+    elg_env_set_named_i32(environment, rank, static_prop(three));
+    CHECK(environment->get<RankKey>() == 3);
+    environment->set<RankKey>(5);
+    REQUIRE(elg_env_get_named_i32(environment, rank, &number));
+    CHECK(number == 5);
+
+    // The same name with another type of value is another key.
+    float fraction = -1;
+    CHECK_FALSE(elg_env_get_named_f32(environment, rank, &fraction));
+    const float half = 0.5f;
+    elg_env_set_named_f32(environment, rank, static_prop(half));
+    REQUIRE(elg_env_get_named_f32(environment, rank, &fraction));
+    CHECK(fraction == 0.5f);
+    CHECK(environment->get<RankKey>() == 5);
+
+    // Every type of value.
+    const bool yes = true;
+    const int64_t big = int64_t{1} << 40;
+    const double precise = 0.125;
+    const ElgColor red{1, 0, 0, 1};
+    const ElgStr hello = name_of("hello");
+    elg_env_set_named_bool(environment, name_of("test.flag"), static_prop(yes));
+    elg_env_set_named_i64(environment, name_of("test.big"), static_prop(big));
+    elg_env_set_named_f64(environment, name_of("test.precise"), static_prop(precise));
+    elg_env_set_named_color(environment, name_of("test.tint"), static_prop(red));
+    elg_env_set_named_string(environment, name_of("test.greeting"), static_prop(hello));
+    CHECK(take_error() == 0);
+    bool flag = false;
+    int64_t big_read = 0;
+    double precise_read = 0;
+    ElgColor tint{};
+    std::string greeting;
+    CHECK(elg_env_get_named_bool(environment, name_of("test.flag"), &flag));
+    CHECK(flag);
+    CHECK(elg_env_get_named_i64(environment, name_of("test.big"), &big_read));
+    CHECK(big_read == big);
+    CHECK(elg_env_get_named_f64(environment, name_of("test.precise"), &precise_read));
+    CHECK(precise_read == 0.125);
+    CHECK(elg_env_get_named_color(environment, name_of("test.tint"), &tint));
+    CHECK(tint.r == 1.f);
+    CHECK(elg_env_get_named_string(environment, name_of("test.greeting"),
+                                   [](void* ctx, const char* ptr, size_t len) {
+                                       static_cast<std::string*>(ctx)->assign(ptr, len);
+                                   },
+                                   &greeting));
+    CHECK(greeting == "hello");
+    CHECK_FALSE(elg_env_get_named_string(environment, name_of("test.missing"), [](void*, const char*, size_t) {}, nullptr));
+    elg_env_free(environment);
+}
+
+TEST_CASE("layout values are shared by name and value type between C++ and the C API", "[c-api][layout]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const View base = Rectangle();
+    View* ranked = elg_mod_layout_value_i32(&base, name_of(RankKey::name), 3);
+    View* fractional = elg_mod_layout_value_f32(&base, name_of(RankKey::name), 0.5f);
+    View* labeled = elg_mod_layout_value_string(&base, name_of("test.label"), name_of("gold"));
+    View* flagged = elg_mod_layout_value_bool(&base, name_of("test.flag"), true);
+    View* big = elg_mod_layout_value_i64(flagged, name_of("test.big"), int64_t{1} << 40);
+    View* precise = elg_mod_layout_value_f64(big, name_of("test.precise"), 0.125);
+    View* tinted = elg_mod_layout_value_color(precise, name_of("test.tint"), ElgColor{0, 1, 0, 1});
+    for (View* view : {ranked, fractional, labeled, flagged, big, precise, tinted}) {
+        REQUIRE(view);
+    }
+
+    // C reads what C and C++ set; another type of value under the same name reads as unset.
+    auto seen = std::make_shared<std::vector<ChildValues>>();
+    const auto root = detail::lower(ReadingByName(seen)(*ranked, *fractional, *labeled, *tinted,
+                                                        Rectangle().layout_value<RankLayoutKey>(9)),
+                                    {});
+    (void)root->size_that_fits({100.f, 100.f});
+    REQUIRE(seen->size() == 5);
+    CHECK((*seen)[0].has_rank);
+    CHECK((*seen)[0].rank == 3);
+    CHECK_FALSE((*seen)[0].has_fraction);
+    CHECK_FALSE((*seen)[1].has_rank);
+    CHECK((*seen)[1].fraction == 0.5f);
+    CHECK((*seen)[2].label == "gold");
+    CHECK((*seen)[3].flag);
+    CHECK((*seen)[3].big == int64_t{1} << 40);
+    CHECK((*seen)[3].precise == 0.125);
+    CHECK((*seen)[3].tint.g == 1.f);
+    CHECK((*seen)[4].rank == 9);
+
+    // C++ reads a value set from C with a key type of that name and value type.
+    auto ranks = std::make_shared<std::vector<int>>();
+    const auto by_key = detail::lower(ReadingByKey(ranks)(*ranked, *fractional), {});
+    (void)by_key->size_that_fits({100.f, 100.f});
+    CHECK(*ranks == std::vector<int>{3, 0});
+
+    for (View* view : {ranked, fractional, labeled, flagged, big, precise, tinted}) {
+        elg_view_free(view);
+    }
+    CHECK(take_error() == 0);
 }
