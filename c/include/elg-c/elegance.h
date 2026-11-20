@@ -4630,6 +4630,14 @@ void elg_toggle_config_free(ElgToggleConfiguration* c);
 /// or null on failure.
 ElgView* elg_toggle_style_make_body(const ElgToggleStyle* s, const ElgToggleConfiguration* c);
 
+/// Wraps `ToggleStyle::animation()`: how a toggle animates between its states.
+///
+/// @param style The style (borrowed).
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the style has
+///   one; left as it was otherwise.
+/// @return Whether the style animates; false on failure.
+bool elg_toggle_style_animation(const ElgToggleStyle* style, ElgAnimation** animation);
+
 /// A ToggleStyle implemented in Rust: its `make_body()` calls `make_body`.
 ///
 /// @param make_body Builds a toggle's body, once per toggle as it's built. args: a heap copy of the
@@ -4678,6 +4686,14 @@ void elg_checkbox_style_free(ElgCheckboxStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_checkbox_style(const ElgView* v, const ElgCheckboxStyle* style);
 
+/// Reads the environment's style of this family (CheckboxStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_checkbox_style_free()), or null on failure.
+ElgCheckboxStyle* elg_env_checkbox_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (CheckboxStyleKey). Both are borrowed; the
+/// environment shares the style.
+void elg_env_set_checkbox_style(ElgEnvironmentValues* environment, const ElgCheckboxStyle* style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgCheckboxConfiguration* elg_checkbox_config_clone(const ElgCheckboxConfiguration* c);
@@ -4690,6 +4706,14 @@ void elg_checkbox_config_free(ElgCheckboxConfiguration* c);
 /// Environment<K>() is available. `s` and `c` are borrowed. Returns the body, owned by the caller,
 /// or null on failure.
 ElgView* elg_checkbox_style_make_body(const ElgCheckboxStyle* s, const ElgCheckboxConfiguration* c);
+
+/// Wraps `CheckboxStyle::animation()`: how a checkbox animates between its states.
+///
+/// @param style The style (borrowed).
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the style has
+///   one; left as it was otherwise.
+/// @return Whether the style animates; false on failure.
+bool elg_checkbox_style_animation(const ElgCheckboxStyle* style, ElgAnimation** animation);
 
 /// A CheckboxStyle implemented in Rust: its `make_body()` calls `make_body`.
 ///
@@ -4741,6 +4765,14 @@ void elg_number_input_style_free(ElgNumberInputStyle* s);
 /// *_style() modifiers do. Both are borrowed; the view keeps its own reference to the style.
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_number_input_style(const ElgView* v, const ElgNumberInputStyle* style);
+
+/// Reads the environment's style of this family (NumberInputStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_number_input_style_free()), or null on failure.
+ElgNumberInputStyle* elg_env_number_input_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (NumberInputStyleKey). Both are borrowed; the
+/// environment shares the style.
+void elg_env_set_number_input_style(ElgEnvironmentValues* environment, const ElgNumberInputStyle* style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -4804,6 +4836,14 @@ void elg_progress_style_free(ElgProgressStyle* s);
 /// *_style() modifiers do. Both are borrowed; the view keeps its own reference to the style.
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_progress_style(const ElgView* v, const ElgProgressStyle* style);
+
+/// Reads the environment's style of this family (ProgressStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_progress_style_free()), or null on failure.
+ElgProgressStyle* elg_env_progress_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (ProgressStyleKey). Both are borrowed; the
+/// environment shares the style.
+void elg_env_set_progress_style(ElgEnvironmentValues* environment, const ElgProgressStyle* style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -4910,6 +4950,14 @@ void elg_picker_style_free(ElgPickerStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_picker_style(const ElgView* v, const ElgPickerStyle* style);
 
+/// Reads the environment's style of this family (PickerStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_picker_style_free()), or null on failure.
+ElgPickerStyle* elg_env_picker_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (PickerStyleKey). Both are borrowed; the environment
+/// shares the style.
+void elg_env_set_picker_style(ElgEnvironmentValues* environment, const ElgPickerStyle* style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgPickerConfiguration* elg_picker_config_clone(const ElgPickerConfiguration* c);
@@ -4977,6 +5025,14 @@ void elg_slider_style_free(ElgSliderStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_slider_style(const ElgView* v, const ElgSliderStyle* style);
 
+/// Reads the environment's style of this family (SliderStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_slider_style_free()), or null on failure.
+ElgSliderStyle* elg_env_slider_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (SliderStyleKey). Both are borrowed; the environment
+/// shares the style.
+void elg_env_set_slider_style(ElgEnvironmentValues* environment, const ElgSliderStyle* style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgSliderConfiguration* elg_slider_config_clone(const ElgSliderConfiguration* c);
@@ -5040,6 +5096,15 @@ void elg_navigation_stack_style_free(ElgNavigationStackStyle* s);
 /// *_style() modifiers do. Both are borrowed; the view keeps its own reference to the style.
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_navigation_stack_style(const ElgView* v, const ElgNavigationStackStyle* style);
+
+/// Reads the environment's style of this family (NavigationStackStyleKey). The environment is
+/// borrowed. Returns the style, owned by the caller (elg_navigation_stack_style_free()), or null on
+/// failure.
+ElgNavigationStackStyle* elg_env_navigation_stack_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (NavigationStackStyleKey). Both are borrowed; the
+/// environment shares the style.
+void elg_env_set_navigation_stack_style(ElgEnvironmentValues* environment, const ElgNavigationStackStyle* style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -5108,6 +5173,14 @@ void elg_popover_style_free(ElgPopoverStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_popover_style(const ElgView* v, const ElgPopoverStyle* style);
 
+/// Reads the environment's style of this family (PopoverStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_popover_style_free()), or null on failure.
+ElgPopoverStyle* elg_env_popover_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (PopoverStyleKey). Both are borrowed; the
+/// environment shares the style.
+void elg_env_set_popover_style(ElgEnvironmentValues* environment, const ElgPopoverStyle* style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgPopoverConfiguration* elg_popover_config_clone(const ElgPopoverConfiguration* c);
@@ -5120,6 +5193,16 @@ void elg_popover_config_free(ElgPopoverConfiguration* c);
 /// Environment<K>() is available. `s` and `c` are borrowed. Returns the body, owned by the caller,
 /// or null on failure.
 ElgView* elg_popover_style_make_body(const ElgPopoverStyle* s, const ElgPopoverConfiguration* c);
+
+/// Wraps `PopoverStyle::motion()`: how popovers of this style open and close.
+///
+/// @param style The style (borrowed).
+/// @param transition Receives the transition, owned by the caller (elg_transition_free()), when the motion
+///   animates; left as it was otherwise.
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the motion
+///   animates; left as it was otherwise.
+/// @return Whether the motion animates (false for PopupMotion::none()); false on failure.
+bool elg_popover_style_motion(const ElgPopoverStyle* style, ElgTransition** transition, ElgAnimation** animation);
 
 /// A PopoverStyle implemented in Rust: its `make_body()` calls `make_body`.
 ///
@@ -5165,6 +5248,14 @@ void elg_tooltip_style_free(ElgTooltipStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_tooltip_style(const ElgView* v, const ElgTooltipStyle* style);
 
+/// Reads the environment's style of this family (TooltipStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_tooltip_style_free()), or null on failure.
+ElgTooltipStyle* elg_env_tooltip_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (TooltipStyleKey). Both are borrowed; the
+/// environment shares the style.
+void elg_env_set_tooltip_style(ElgEnvironmentValues* environment, const ElgTooltipStyle* style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgTooltipConfiguration* elg_tooltip_config_clone(const ElgTooltipConfiguration* c);
@@ -5177,6 +5268,16 @@ void elg_tooltip_config_free(ElgTooltipConfiguration* c);
 /// Environment<K>() is available. `s` and `c` are borrowed. Returns the body, owned by the caller,
 /// or null on failure.
 ElgView* elg_tooltip_style_make_body(const ElgTooltipStyle* s, const ElgTooltipConfiguration* c);
+
+/// Wraps `TooltipStyle::motion()`: how tooltips of this style open and close.
+///
+/// @param style The style (borrowed).
+/// @param transition Receives the transition, owned by the caller (elg_transition_free()), when the motion
+///   animates; left as it was otherwise.
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the motion
+///   animates; left as it was otherwise.
+/// @return Whether the motion animates (false for PopupMotion::none()); false on failure.
+bool elg_tooltip_style_motion(const ElgTooltipStyle* style, ElgTransition** transition, ElgAnimation** animation);
 
 /// A TooltipStyle implemented in Rust: its `make_body()` calls `make_body`.
 ///
@@ -5215,6 +5316,14 @@ void elg_menu_style_free(ElgMenuStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_menu_style(const ElgView* v, const ElgMenuStyle* style);
 
+/// Reads the environment's style of this family (MenuStyleKey). The environment is borrowed.
+/// Returns the style, owned by the caller (elg_menu_style_free()), or null on failure.
+ElgMenuStyle* elg_env_menu_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (MenuStyleKey). Both are borrowed; the environment
+/// shares the style.
+void elg_env_set_menu_style(ElgEnvironmentValues* environment, const ElgMenuStyle* style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgMenuConfiguration* elg_menu_config_clone(const ElgMenuConfiguration* c);
@@ -5234,6 +5343,16 @@ void elg_menu_item_config_free(ElgMenuItemConfiguration* c);
 /// Environment<K>() is available. `s` and `c` are borrowed. Returns the body, owned by the caller,
 /// or null on failure.
 ElgView* elg_menu_style_make_body(const ElgMenuStyle* s, const ElgMenuConfiguration* c);
+
+/// Wraps `MenuStyle::motion()`: how menus of this style open and close.
+///
+/// @param style The style (borrowed).
+/// @param transition Receives the transition, owned by the caller (elg_transition_free()), when the motion
+///   animates; left as it was otherwise.
+/// @param animation Receives the animation, owned by the caller (elg_animation_free()), when the motion
+///   animates; left as it was otherwise.
+/// @return Whether the motion animates (false for PopupMotion::none()); false on failure.
+bool elg_menu_style_motion(const ElgMenuStyle* style, ElgTransition** transition, ElgAnimation** animation);
 
 /// A MenuStyle implemented in Rust: its `make_body()` and `make_item()` call `make_body` and `make_item`.
 ///
@@ -5296,6 +5415,14 @@ void elg_row_style_free(ElgRowStyle* s);
 /// *_style() modifiers do. Both are borrowed; the view keeps its own reference to the style.
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_row_style(const ElgView* v, const ElgRowStyle* style);
+
+/// Reads the environment's style of this family (RowStyleKey). The environment is borrowed. Returns
+/// the style, owned by the caller (elg_row_style_free()), or null on failure.
+ElgRowStyle* elg_env_row_style(const ElgEnvironmentValues* environment);
+
+/// Sets the environment's style of this family (RowStyleKey). Both are borrowed; the environment
+/// shares the style.
+void elg_env_set_row_style(ElgEnvironmentValues* environment, const ElgRowStyle* style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.

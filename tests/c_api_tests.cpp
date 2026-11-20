@@ -25,6 +25,7 @@
 #include <cstdint>
 #include <format>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -116,6 +117,43 @@ void elg_timer_cancel(const Timer* timer);
 bool elg_timer_active(const Timer* timer);
 Timer* elg_timer_clone(const Timer* timer);
 void elg_timer_free(Timer* timer);
+std::shared_ptr<const elg::CheckboxStyle>* elg_env_checkbox_style(const EnvironmentValues* environment);
+void elg_env_set_checkbox_style(EnvironmentValues* environment, const std::shared_ptr<const elg::CheckboxStyle>* style);
+void elg_checkbox_style_free(std::shared_ptr<const elg::CheckboxStyle>* style);
+std::shared_ptr<const elg::NumberInputStyle>* elg_env_number_input_style(const EnvironmentValues* environment);
+void elg_env_set_number_input_style(EnvironmentValues* environment, const std::shared_ptr<const elg::NumberInputStyle>* style);
+void elg_number_input_style_free(std::shared_ptr<const elg::NumberInputStyle>* style);
+std::shared_ptr<const elg::ProgressStyle>* elg_env_progress_style(const EnvironmentValues* environment);
+void elg_env_set_progress_style(EnvironmentValues* environment, const std::shared_ptr<const elg::ProgressStyle>* style);
+void elg_progress_style_free(std::shared_ptr<const elg::ProgressStyle>* style);
+std::shared_ptr<const elg::PickerStyle>* elg_env_picker_style(const EnvironmentValues* environment);
+void elg_env_set_picker_style(EnvironmentValues* environment, const std::shared_ptr<const elg::PickerStyle>* style);
+void elg_picker_style_free(std::shared_ptr<const elg::PickerStyle>* style);
+std::shared_ptr<const elg::SliderStyle>* elg_env_slider_style(const EnvironmentValues* environment);
+void elg_env_set_slider_style(EnvironmentValues* environment, const std::shared_ptr<const elg::SliderStyle>* style);
+void elg_slider_style_free(std::shared_ptr<const elg::SliderStyle>* style);
+std::shared_ptr<const elg::NavigationStackStyle>* elg_env_navigation_stack_style(const EnvironmentValues* environment);
+void elg_env_set_navigation_stack_style(EnvironmentValues* environment, const std::shared_ptr<const elg::NavigationStackStyle>* style);
+void elg_navigation_stack_style_free(std::shared_ptr<const elg::NavigationStackStyle>* style);
+std::shared_ptr<const elg::PopoverStyle>* elg_env_popover_style(const EnvironmentValues* environment);
+void elg_env_set_popover_style(EnvironmentValues* environment, const std::shared_ptr<const elg::PopoverStyle>* style);
+void elg_popover_style_free(std::shared_ptr<const elg::PopoverStyle>* style);
+std::shared_ptr<const elg::TooltipStyle>* elg_env_tooltip_style(const EnvironmentValues* environment);
+void elg_env_set_tooltip_style(EnvironmentValues* environment, const std::shared_ptr<const elg::TooltipStyle>* style);
+void elg_tooltip_style_free(std::shared_ptr<const elg::TooltipStyle>* style);
+std::shared_ptr<const elg::MenuStyle>* elg_env_menu_style(const EnvironmentValues* environment);
+void elg_env_set_menu_style(EnvironmentValues* environment, const std::shared_ptr<const elg::MenuStyle>* style);
+void elg_menu_style_free(std::shared_ptr<const elg::MenuStyle>* style);
+std::shared_ptr<const elg::RowStyle>* elg_env_row_style(const EnvironmentValues* environment);
+void elg_env_set_row_style(EnvironmentValues* environment, const std::shared_ptr<const elg::RowStyle>* style);
+void elg_row_style_free(std::shared_ptr<const elg::RowStyle>* style);
+std::shared_ptr<const elg::ToggleStyle>* elg_env_toggle_style(const EnvironmentValues* environment);
+void elg_toggle_style_free(std::shared_ptr<const elg::ToggleStyle>* style);
+bool elg_toggle_style_animation(const std::shared_ptr<const elg::ToggleStyle>* style, Animation** animation);
+bool elg_checkbox_style_animation(const std::shared_ptr<const elg::CheckboxStyle>* style, Animation** animation);
+bool elg_popover_style_motion(const std::shared_ptr<const elg::PopoverStyle>* style, Transition** transition, Animation** animation);
+bool elg_tooltip_style_motion(const std::shared_ptr<const elg::TooltipStyle>* style, Transition** transition, Animation** animation);
+bool elg_menu_style_motion(const std::shared_ptr<const elg::MenuStyle>* style, Transition** transition, Animation** animation);
 }
 
 namespace {
@@ -189,6 +227,32 @@ bool build_second(int32_t index, View* ret) {
     *ret = Text(std::format("second {}", index));
     return true;
 }
+
+// Sets a style that isn't the default in a new environment, and reads it back.
+template <class Style, class Concrete>
+void check_env_style(std::shared_ptr<const Style>* (*get)(const EnvironmentValues*),
+                     void (*set)(EnvironmentValues*, const std::shared_ptr<const Style>*),
+                     void (*free_style)(std::shared_ptr<const Style>*)) {
+    EnvironmentValues* environment = elg_env_new();
+    REQUIRE(environment);
+    const std::shared_ptr<const Style> mine = std::make_shared<const Concrete>();
+    set(environment, &mine);
+    std::shared_ptr<const Style>* read = get(environment);
+    REQUIRE(read);
+    CHECK(read->get() == mine.get());
+    free_style(read);
+    elg_env_free(environment);
+    CHECK(take_error() == 0);
+}
+
+// A popover style that opens with a fade.
+class FadingPopoverStyle final : public elg::PopoverStyle {
+public:
+    [[nodiscard]] View make_body(const elg::PopoverConfiguration& popover) const override { return popover.content; }
+    [[nodiscard]] elg::PopupMotion motion() const override {
+        return {Transition::opacity(), Animation::linear(0.2)};
+    }
+};
 
 } // namespace
 
@@ -648,4 +712,74 @@ TEST_CASE("timers through the C API fire, cancel, and say whether they're active
     CHECK(elg_timer_every(std::nan(""), closure(rejected)) == nullptr);
     CHECK(take_error() == 2);
     CHECK(rejected.drops == 1);
+}
+
+TEST_CASE("the C API reads and sets every style of the environment", "[c-api][environment]") {
+    check_env_style<elg::CheckboxStyle, elg::BoxCheckboxStyle>(elg_env_checkbox_style, elg_env_set_checkbox_style,
+                                                               elg_checkbox_style_free);
+    check_env_style<elg::NumberInputStyle, elg::PlainNumberInputStyle>(
+        elg_env_number_input_style, elg_env_set_number_input_style, elg_number_input_style_free);
+    check_env_style<elg::ProgressStyle, elg::CircularProgressStyle>(elg_env_progress_style, elg_env_set_progress_style,
+                                                                    elg_progress_style_free);
+    check_env_style<elg::PickerStyle, elg::MenuPickerStyle>(elg_env_picker_style, elg_env_set_picker_style,
+                                                            elg_picker_style_free);
+    check_env_style<elg::SliderStyle, elg::KnobSliderStyle>(elg_env_slider_style, elg_env_set_slider_style,
+                                                            elg_slider_style_free);
+    check_env_style<elg::NavigationStackStyle, elg::PlainNavigationStackStyle>(
+        elg_env_navigation_stack_style, elg_env_set_navigation_stack_style, elg_navigation_stack_style_free);
+    check_env_style<elg::PopoverStyle, elg::PlainPopoverStyle>(elg_env_popover_style, elg_env_set_popover_style,
+                                                               elg_popover_style_free);
+    check_env_style<elg::TooltipStyle, elg::PlainTooltipStyle>(elg_env_tooltip_style, elg_env_set_tooltip_style,
+                                                               elg_tooltip_style_free);
+    check_env_style<elg::MenuStyle, elg::PlainMenuStyle>(elg_env_menu_style, elg_env_set_menu_style,
+                                                         elg_menu_style_free);
+    check_env_style<elg::RowStyle, elg::PlainRowStyle>(elg_env_row_style, elg_env_set_row_style, elg_row_style_free);
+}
+
+TEST_CASE("the C API reads the animations and motions of styles", "[c-api][environment]") {
+    EnvironmentValues* environment = elg_env_new();
+    REQUIRE(environment);
+
+    std::shared_ptr<const elg::ToggleStyle>* toggle = elg_env_toggle_style(environment);
+    std::shared_ptr<const elg::CheckboxStyle>* checkbox = elg_env_checkbox_style(environment);
+    REQUIRE(toggle);
+    REQUIRE(checkbox);
+    Animation* animation = nullptr;
+    const std::optional<Animation> toggle_expected = (*toggle)->animation();
+    const bool toggle_animates = elg_toggle_style_animation(toggle, &animation);
+    REQUIRE(toggle_animates == toggle_expected.has_value());
+    if (toggle_expected) {
+        CHECK(elg_animation_progress(animation, 0.1) == toggle_expected->progress(0.1));
+        elg_animation_free(animation);
+    }
+    animation = nullptr;
+    const bool checkbox_animates = elg_checkbox_style_animation(checkbox, &animation);
+    REQUIRE(checkbox_animates == (*checkbox)->animation().has_value());
+    if (checkbox_animates) {
+        elg_animation_free(animation);
+    }
+    elg_toggle_style_free(toggle);
+    elg_checkbox_style_free(checkbox);
+
+    // The built-in popup styles open at once; a style with a motion gives its transition and animation.
+    Transition* transition = nullptr;
+    animation = nullptr;
+    std::shared_ptr<const elg::TooltipStyle>* tooltip = elg_env_tooltip_style(environment);
+    std::shared_ptr<const elg::MenuStyle>* menu = elg_env_menu_style(environment);
+    REQUIRE(tooltip);
+    REQUIRE(menu);
+    CHECK_FALSE(elg_tooltip_style_motion(tooltip, &transition, &animation));
+    CHECK_FALSE(elg_menu_style_motion(menu, &transition, &animation));
+    CHECK(transition == nullptr);
+    elg_tooltip_style_free(tooltip);
+    elg_menu_style_free(menu);
+    const std::shared_ptr<const elg::PopoverStyle> fading = std::make_shared<const FadingPopoverStyle>();
+    REQUIRE(elg_popover_style_motion(&fading, &transition, &animation));
+    REQUIRE(transition);
+    REQUIRE(animation);
+    CHECK(elg_animation_progress(animation, 0.1) == Animation::linear(0.2).progress(0.1));
+    elg_transition_free(transition);
+    elg_animation_free(animation);
+    elg_env_free(environment);
+    CHECK(take_error() == 0);
 }
