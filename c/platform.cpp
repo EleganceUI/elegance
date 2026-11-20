@@ -947,6 +947,17 @@ ELG_EXPORT View* elg_video_feed_view(const VideoFeed* feed, int32_t mode, bool m
     ELG_CATCH(nullptr)
 }
 
+/// Wraps `gpu_image_flipped()`: whether the image's rows start at the bottom (it was created with
+/// ELG_GPU_IMAGE_BOTTOM_LEFT). Callable from any thread.
+///
+/// @param image The image (borrowed), or null.
+/// @return Whether it's flipped; false for null.
+ELG_EXPORT bool elg_gpu_image_flipped(const ElgGpuImage* image) {
+    ELG_TRY_ANY_THREAD
+    return gpu_image_flipped(image);
+    ELG_CATCH(false)
+}
+
 // --- Desktop ---
 
 /// An elg::FileFilter: a choice in a file dialog's type list, e.g. "Images" with png and jpg.

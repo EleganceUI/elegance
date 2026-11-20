@@ -193,12 +193,14 @@ struct ElgEdgeInsets {
 
 /// A reactive argument (an elg::Prop). kind 0: `value` points at the static value (its C form);
 /// 1: `fn` returns it (ret: a C++ T*); 2: `fn` takes the environment (args: const
-/// EnvironmentValues*); 3: the theme color `theme` (Color and ShapeStyle props); 4: `value` points at a
+/// EnvironmentValues*); 3: the theme color `theme` (Color and ShapeStyle props), or the theme blur `theme`
+/// (float props); 4: `value` points at a
 /// prop handle of the same type (ElgPropF32 for float props, ElgPropColor for Color props), which the prop
 /// copies, reactive as it is.
 struct ElgProp {
     int32_t kind;      ///< 0 to 4, as above.
-    int32_t theme;     ///< Kind 3: an elg::ThemeColor. Props of other types get their default value.
+    int32_t theme;     ///< Kind 3: an elg::ThemeColor, or for float props an elg::ThemeBlur. Props of other
+                       ///< types get their default value.
     /// Kind 0: the value's C form (`float*`, `bool*`, `ElgStr*`, `ElgColor*`, ...), read during the
     /// call.
     const void* value;
@@ -306,6 +308,14 @@ struct ElgTextInputEvent {
     int32_t kind;
     ElgStr text;   ///< The text, valid during the call.
     size_t cursor; ///< Composition: the IME's caret, in bytes into `text`.
+};
+
+/// One resolved track (`GridTrack`): what elg_resolve_grid_tracks()'s `each` gets.
+struct ElgGridTrack {
+    float size;             ///< The track's size, in points.
+    float spacing;          ///< The space after it, in points.
+    bool has_alignment;     ///< `alignment` is set (its item's).
+    ElgAlignment alignment; ///< Where views sit in its cells.
 };
 
 /// An elg::EventResult: what an event handler did with an event.
@@ -1079,6 +1089,8 @@ elg::Prop<T> prop(ElgProp& p) {
     case 3:
         if constexpr (std::is_convertible_v<elg::Color, T>) {
             return elg::Prop<T>(static_cast<elg::ThemeColor>(p.theme));
+        } else if constexpr (std::is_same_v<T, float>) {
+            return elg::Prop<T>(static_cast<elg::ThemeBlur>(p.theme));
         } else {
             return elg::Prop<T>(blank<T>());
         }

@@ -37,6 +37,7 @@ static const ElgFieldReference fields_ElgDragEvent[] = {{"location", offsetof(El
 static const ElgFieldReference fields_ElgMagnifyEvent[] = {{"location", offsetof(ElgMagnifyEvent, location)}, {"scale", offsetof(ElgMagnifyEvent, scale)}, {"delta", offsetof(ElgMagnifyEvent, delta)}, {"phase", offsetof(ElgMagnifyEvent, phase)}};
 static const ElgFieldReference fields_ElgRotateEvent[] = {{"location", offsetof(ElgRotateEvent, location)}, {"degrees", offsetof(ElgRotateEvent, degrees)}, {"delta", offsetof(ElgRotateEvent, delta)}, {"phase", offsetof(ElgRotateEvent, phase)}};
 static const ElgFieldReference fields_ElgTextInputEvent[] = {{"kind", offsetof(ElgTextInputEvent, kind)}, {"text", offsetof(ElgTextInputEvent, text)}, {"cursor", offsetof(ElgTextInputEvent, cursor)}};
+static const ElgFieldReference fields_ElgGridTrack[] = {{"size", offsetof(ElgGridTrack, size)}, {"spacing", offsetof(ElgGridTrack, spacing)}, {"has_alignment", offsetof(ElgGridTrack, has_alignment)}, {"alignment", offsetof(ElgGridTrack, alignment)}};
 static const ElgFieldReference fields_ElgEventResult[] = {{"consumed", offsetof(ElgEventResult, consumed)}, {"redraw", offsetof(ElgEventResult, redraw)}, {"cancellable", offsetof(ElgEventResult, cancellable)}};
 static const ElgFieldReference fields_ElgEventCall[] = {{"op", offsetof(ElgEventCall, op)}, {"pointer", offsetof(ElgEventCall, pointer)}, {"frame", offsetof(ElgEventCall, frame)}, {"flag", offsetof(ElgEventCall, flag)}, {"scroll", offsetof(ElgEventCall, scroll)}, {"key", offsetof(ElgEventCall, key)}, {"text", offsetof(ElgEventCall, text)}, {"location", offsetof(ElgEventCall, location)}, {"magnify", offsetof(ElgEventCall, magnify)}, {"rotate", offsetof(ElgEventCall, rotate)}};
 static const ElgFieldReference fields_ElgMenuBarItem[] = {{"title", offsetof(ElgMenuBarItem, title)}, {"action", offsetof(ElgMenuBarItem, action)}, {"checked", offsetof(ElgMenuBarItem, checked)}, {"toggled", offsetof(ElgMenuBarItem, toggled)}, {"enabled", offsetof(ElgMenuBarItem, enabled)}, {"has_shortcut", offsetof(ElgMenuBarItem, has_shortcut)}, {"shortcut_key", offsetof(ElgMenuBarItem, shortcut_key)}, {"shortcut_modifiers", offsetof(ElgMenuBarItem, shortcut_modifiers)}, {"role", offsetof(ElgMenuBarItem, role)}, {"submenu", offsetof(ElgMenuBarItem, submenu)}, {"submenu_count", offsetof(ElgMenuBarItem, submenu_count)}};
@@ -77,7 +78,6 @@ static const ElgFieldReference fields_ElgItemKey[] = {{"is_string", offsetof(Elg
 static const ElgFieldReference fields_ElgItemKeys[] = {{"keys", offsetof(ElgItemKeys, keys)}, {"count", offsetof(ElgItemKeys, count)}};
 static const ElgFieldReference fields_ElgPreviewDesc[] = {{"name", offsetof(ElgPreviewDesc, name)}, {"file", offsetof(ElgPreviewDesc, file)}, {"line", offsetof(ElgPreviewDesc, line)}};
 static const ElgFieldReference fields_ElgGridItem[] = {{"kind", offsetof(ElgGridItem, kind)}, {"minimum", offsetof(ElgGridItem, minimum)}, {"maximum", offsetof(ElgGridItem, maximum)}, {"spacing", offsetof(ElgGridItem, spacing)}, {"has_alignment", offsetof(ElgGridItem, has_alignment)}, {"alignment", offsetof(ElgGridItem, alignment)}};
-static const ElgFieldReference fields_ElgGridTrack[] = {{"size", offsetof(ElgGridTrack, size)}, {"spacing", offsetof(ElgGridTrack, spacing)}, {"has_alignment", offsetof(ElgGridTrack, has_alignment)}, {"alignment", offsetof(ElgGridTrack, alignment)}};
 static const ElgFieldReference fields_ElgGridDesc[] = {{"kind", offsetof(ElgGridDesc, kind)}, {"items", offsetof(ElgGridDesc, items)}, {"item_count", offsetof(ElgGridDesc, item_count)}, {"alignment", offsetof(ElgGridDesc, alignment)}, {"spacing_a", offsetof(ElgGridDesc, spacing_a)}, {"spacing_b", offsetof(ElgGridDesc, spacing_b)}};
 static const ElgFieldReference fields_ElgLayoutCall[] = {{"op", offsetof(ElgLayoutCall, op)}, {"proposal", offsetof(ElgLayoutCall, proposal)}, {"bounds", offsetof(ElgLayoutCall, bounds)}, {"children", offsetof(ElgLayoutCall, children)}, {"count", offsetof(ElgLayoutCall, count)}, {"cache", offsetof(ElgLayoutCall, cache)}};
 static const ElgFieldReference fields_ElgLayoutModifierCall[] = {{"op", offsetof(ElgLayoutModifierCall, op)}, {"proposal", offsetof(ElgLayoutModifierCall, proposal)}, {"bounds", offsetof(ElgLayoutModifierCall, bounds)}, {"content", offsetof(ElgLayoutModifierCall, content)}};
@@ -125,6 +125,7 @@ const ElgLayoutReference elg_c_api_layouts[] = {
     {"ElgMagnifyEvent", sizeof(ElgMagnifyEvent), _Alignof(ElgMagnifyEvent), fields_ElgMagnifyEvent, 4},
     {"ElgRotateEvent", sizeof(ElgRotateEvent), _Alignof(ElgRotateEvent), fields_ElgRotateEvent, 4},
     {"ElgTextInputEvent", sizeof(ElgTextInputEvent), _Alignof(ElgTextInputEvent), fields_ElgTextInputEvent, 3},
+    {"ElgGridTrack", sizeof(ElgGridTrack), _Alignof(ElgGridTrack), fields_ElgGridTrack, 4},
     {"ElgEventResult", sizeof(ElgEventResult), _Alignof(ElgEventResult), fields_ElgEventResult, 3},
     {"ElgEventCall", sizeof(ElgEventCall), _Alignof(ElgEventCall), fields_ElgEventCall, 10},
     {"ElgMenuBarItem", sizeof(ElgMenuBarItem), _Alignof(ElgMenuBarItem), fields_ElgMenuBarItem, 11},
@@ -165,7 +166,6 @@ const ElgLayoutReference elg_c_api_layouts[] = {
     {"ElgItemKeys", sizeof(ElgItemKeys), _Alignof(ElgItemKeys), fields_ElgItemKeys, 2},
     {"ElgPreviewDesc", sizeof(ElgPreviewDesc), _Alignof(ElgPreviewDesc), fields_ElgPreviewDesc, 3},
     {"ElgGridItem", sizeof(ElgGridItem), _Alignof(ElgGridItem), fields_ElgGridItem, 6},
-    {"ElgGridTrack", sizeof(ElgGridTrack), _Alignof(ElgGridTrack), fields_ElgGridTrack, 4},
     {"ElgGridDesc", sizeof(ElgGridDesc), _Alignof(ElgGridDesc), fields_ElgGridDesc, 6},
     {"ElgLayoutCall", sizeof(ElgLayoutCall), _Alignof(ElgLayoutCall), fields_ElgLayoutCall, 6},
     {"ElgLayoutModifierCall", sizeof(ElgLayoutModifierCall), _Alignof(ElgLayoutModifierCall), fields_ElgLayoutModifierCall, 4},
