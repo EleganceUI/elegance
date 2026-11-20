@@ -4,12 +4,15 @@
 
 #include "text/styled_layout.h"
 
+#include "core/profile.h"
+
 #include <algorithm>
 
 namespace elg::detail {
 
 StyledShape shape_styled(std::string_view text, const std::vector<StyledRunSpec>& runs, const FontFace& base,
                          float size, FontLibrary& fonts) {
+    ELG_ZONE("Shape text");
     StyledShape out;
     const auto measure_face = [&](const FontFace& face) {
         out.ascent = std::max(out.ascent, face.ascender() * size);

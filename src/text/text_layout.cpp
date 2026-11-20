@@ -5,6 +5,7 @@
 #include "text/text_layout.h"
 
 #include "core/numeric.h"
+#include "core/profile.h"
 #include "core/utf8.h"
 
 #include <hb.h>
@@ -238,6 +239,7 @@ ShapedParagraph shape_with_fallback(const FontFace& face, std::string_view text,
 } // namespace
 
 std::vector<ShapedParagraph> shape_text(const FontFace& face, std::string_view text, FontLibrary* fonts) {
+    ELG_ZONE("Shape text");
     std::vector<ShapedParagraph> paragraphs;
     std::size_t start = 0;
     while (true) {
@@ -257,6 +259,7 @@ std::vector<ShapedParagraph> shape_text(const FontFace& face, std::string_view t
 }
 
 TextLayoutResult layout_text(const std::vector<ShapedParagraph>& paragraphs, const TextLayoutParams& params) {
+    ELG_ZONE("Lay out text");
     const float max_width = params.max_width && std::isfinite(*params.max_width)
                                 ? std::max(0.f, *params.max_width)
                                 : std::numeric_limits<float>::infinity();
