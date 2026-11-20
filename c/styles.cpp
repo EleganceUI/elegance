@@ -202,6 +202,29 @@ bool motion_out(const PopupMotion& motion, Transition** transition, Animation** 
         ELG_CATCH_VOID                                                                                               \
     }
 
+// PROP_STYLE(name, Style) defines:
+//   elg_<name>_style_assign(target, style): writes a style into a reactive style prop's result (the `ret` of
+//     the closure of elg_env_set_<name>_style_prop()). `style` is borrowed; the result shares it.
+//   elg_env_set_<name>_style_prop(environment, style): sets the environment's style of this family
+//     (<Style>Key) to a prop, which may be reactive. `environment` is borrowed and `style` consumed. Kind 0:
+//     `value` points at the style's handle; kinds 1 and 2: the closure writes the style with
+//     elg_<name>_style_assign(), and one that writes none is a usage error when the prop is read. Kind 3 (a
+//     theme color) is a usage error.
+#define PROP_STYLE(name, Style)                                                                                      \
+    ELG_EXPORT void elg_##name##_style_assign(std::shared_ptr<const Style>* target,                                 \
+                                              const std::shared_ptr<const Style>* style) {                          \
+        ELG_TRY *target = *style;                                                                                    \
+        ELG_CATCH_VOID                                                                                               \
+    }                                                                                                                \
+    ELG_EXPORT void elg_env_set_##name##_style_prop(EnvironmentValues* environment, ElgProp style) {               \
+        const Consumed consumed(style); ELG_TRY                                                                      \
+        if (style.kind == 3) {                                                                                       \
+            throw UsageError("a style prop can't be a theme color");                                                 \
+        }                                                                                                            \
+        environment->set<Style##Key>(prop<std::shared_ptr<const Style>>(style));                                     \
+        ELG_CATCH_VOID                                                                                               \
+    }
+
 // NOLINTEND(bugprone-macro-parentheses)
 
 #define STATE(which, member)                                                                                         \
@@ -210,6 +233,7 @@ bool motion_out(const PopupMotion& motion, Transition** transition, Animation** 
 // --- Buttons ---
 
 STYLE_HANDLE(button, ButtonStyle)
+PROP_STYLE(button, ButtonStyle)
 CONFIG_HANDLE(button, ButtonConfiguration)
 MAKE_BODY(button, ButtonStyle, ButtonConfiguration)
 RUST_STYLE(button, ButtonStyle, ButtonConfiguration)
@@ -256,6 +280,7 @@ ELG_EXPORT bool elg_button_config_state(const ButtonConfiguration* c, int32_t wh
 // --- Toggles ---
 
 STYLE_HANDLE(toggle, ToggleStyle)
+PROP_STYLE(toggle, ToggleStyle)
 CONFIG_HANDLE(toggle, ToggleConfiguration)
 MAKE_BODY(toggle, ToggleStyle, ToggleConfiguration)
 
@@ -364,6 +389,7 @@ ELG_EXPORT void elg_toggle_config_toggle(const ToggleConfiguration* c) {
 
 STYLE_HANDLE(checkbox, CheckboxStyle)
 ENV_STYLE(checkbox, CheckboxStyle)
+PROP_STYLE(checkbox, CheckboxStyle)
 CONFIG_HANDLE(checkbox, CheckboxConfiguration)
 MAKE_BODY(checkbox, CheckboxStyle, CheckboxConfiguration)
 
@@ -482,6 +508,7 @@ ELG_EXPORT void elg_checkbox_config_toggle(const CheckboxConfiguration* c) {
 
 STYLE_HANDLE(number_input, NumberInputStyle)
 ENV_STYLE(number_input, NumberInputStyle)
+PROP_STYLE(number_input, NumberInputStyle)
 CONFIG_HANDLE(number_input, NumberInputConfiguration)
 MAKE_BODY(number_input, NumberInputStyle, NumberInputConfiguration)
 RUST_STYLE(number_input, NumberInputStyle, NumberInputConfiguration)
@@ -566,6 +593,7 @@ ELG_EXPORT void elg_number_input_config_action(const NumberInputConfiguration* c
 
 STYLE_HANDLE(progress, ProgressStyle)
 ENV_STYLE(progress, ProgressStyle)
+PROP_STYLE(progress, ProgressStyle)
 CONFIG_HANDLE(progress, ProgressConfiguration)
 MAKE_BODY(progress, ProgressStyle, ProgressConfiguration)
 RUST_STYLE(progress, ProgressStyle, ProgressConfiguration)
@@ -612,6 +640,7 @@ ELG_EXPORT ElgOptLen elg_progress_config_fraction(const ProgressConfiguration* c
 // --- Text fields ---
 
 STYLE_HANDLE(text_field, TextFieldStyle)
+PROP_STYLE(text_field, TextFieldStyle)
 CONFIG_HANDLE(text_field, TextFieldConfiguration)
 MAKE_BODY(text_field, TextFieldStyle, TextFieldConfiguration)
 RUST_STYLE(text_field, TextFieldStyle, TextFieldConfiguration)
@@ -658,6 +687,7 @@ ELG_EXPORT bool elg_text_field_config_state(const TextFieldConfiguration* c, int
 
 STYLE_HANDLE(picker, PickerStyle)
 ENV_STYLE(picker, PickerStyle)
+PROP_STYLE(picker, PickerStyle)
 CONFIG_HANDLE(picker, PickerConfiguration)
 MAKE_BODY(picker, PickerStyle, PickerConfiguration)
 RUST_STYLE(picker, PickerStyle, PickerConfiguration)
@@ -721,6 +751,7 @@ ELG_EXPORT void elg_picker_config_select(const PickerConfiguration* c, size_t in
 
 STYLE_HANDLE(slider, SliderStyle)
 ENV_STYLE(slider, SliderStyle)
+PROP_STYLE(slider, SliderStyle)
 CONFIG_HANDLE(slider, SliderConfiguration)
 
 /// A SliderStyle implemented in Rust: three parts, which the slider places itself. Each builder runs once per
@@ -812,6 +843,7 @@ ELG_EXPORT bool elg_slider_config_state(const SliderConfiguration* c, int32_t wh
 
 STYLE_HANDLE(navigation_stack, NavigationStackStyle)
 ENV_STYLE(navigation_stack, NavigationStackStyle)
+PROP_STYLE(navigation_stack, NavigationStackStyle)
 CONFIG_HANDLE(navigation_stack, NavigationStackConfiguration)
 MAKE_BODY(navigation_stack, NavigationStackStyle, NavigationStackConfiguration)
 RUST_STYLE(navigation_stack, NavigationStackStyle, NavigationStackConfiguration)
@@ -893,6 +925,7 @@ ELG_EXPORT void elg_navigation_stack_config_back(const NavigationStackConfigurat
 
 STYLE_HANDLE(popover, PopoverStyle)
 ENV_STYLE(popover, PopoverStyle)
+PROP_STYLE(popover, PopoverStyle)
 CONFIG_HANDLE(popover, PopoverConfiguration)
 MAKE_BODY(popover, PopoverStyle, PopoverConfiguration)
 
@@ -962,6 +995,7 @@ ELG_EXPORT bool elg_popover_config_is_padded(const PopoverConfiguration* c) {
 
 STYLE_HANDLE(tooltip, TooltipStyle)
 ENV_STYLE(tooltip, TooltipStyle)
+PROP_STYLE(tooltip, TooltipStyle)
 CONFIG_HANDLE(tooltip, TooltipConfiguration)
 MAKE_BODY(tooltip, TooltipStyle, TooltipConfiguration)
 
@@ -1021,6 +1055,7 @@ ELG_EXPORT View* elg_tooltip_config_content(const TooltipConfiguration* c) {
 
 STYLE_HANDLE(menu, MenuStyle)
 ENV_STYLE(menu, MenuStyle)
+PROP_STYLE(menu, MenuStyle)
 CONFIG_HANDLE(menu, MenuConfiguration)
 CONFIG_HANDLE(menu_item, MenuItemConfiguration)
 MAKE_BODY(menu, MenuStyle, MenuConfiguration)
@@ -1125,6 +1160,7 @@ ELG_EXPORT bool elg_menu_item_config_state(const MenuItemConfiguration* c, int32
 
 STYLE_HANDLE(row, RowStyle)
 ENV_STYLE(row, RowStyle)
+PROP_STYLE(row, RowStyle)
 CONFIG_HANDLE(row, RowConfiguration)
 MAKE_BODY(row, RowStyle, RowConfiguration)
 RUST_STYLE(row, RowStyle, RowConfiguration)

@@ -1005,6 +1005,27 @@ struct PropValue<elg::HoverDelay> {
     static elg::HoverDelay from(const void* v) { return hover_delay(*static_cast<const ElgHoverDelay*>(v)); }
 };
 
+// A style (kind 0: `value` points at its handle, a std::shared_ptr<const Style>).
+template <class S>
+struct PropValue<std::shared_ptr<const S>> {
+    static std::shared_ptr<const S> from(const void* v) { return *static_cast<const std::shared_ptr<const S>*>(v); }
+};
+
+template <class T>
+struct IsSharedPtr : std::false_type {};
+template <class S>
+struct IsSharedPtr<std::shared_ptr<S>> : std::true_type {};
+
+// A reactive style's closure must write a style: one that writes none is a UsageError.
+template <class T>
+void check_written(const T& result) {
+    if constexpr (IsSharedPtr<T>::value) {
+        if (!result) {
+            throw elg::UsageError("a reactive style's fn wrote no style");
+        }
+    }
+}
+
 // ShapeStyle has no default constructor; reactive closures write into one made from a color.
 template <class T>
 T blank() {
@@ -1026,6 +1047,7 @@ elg::Prop<T> prop(ElgProp& p) {
         return elg::Prop<T>([f] {
             T result = blank<T>();
             f->call(nullptr, &result);
+            check_written(result);
             return result;
         });
     }
@@ -1034,6 +1056,7 @@ elg::Prop<T> prop(ElgProp& p) {
         return elg::Prop<T>([f](const elg::EnvironmentValues& environment) {
             T result = blank<T>();
             f->call(const_cast<elg::EnvironmentValues*>(&environment), &result);
+            check_written(result);
             return result;
         });
     }

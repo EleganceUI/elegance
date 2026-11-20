@@ -4673,6 +4673,16 @@ void elg_button_style_free(ElgButtonStyle* s);
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_button_style(const ElgView* v, const ElgButtonStyle* style);
 
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_button_style_prop()). `style` is borrowed; the result shares it.
+void elg_button_style_assign(ElgButtonStyle* target, const ElgButtonStyle* style);
+
+/// Sets the environment's style of this family (ButtonStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_button_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_button_style_prop(ElgEnvironmentValues* environment, ElgProp style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgButtonConfiguration* elg_button_config_clone(const ElgButtonConfiguration* c);
@@ -4726,6 +4736,16 @@ void elg_toggle_style_free(ElgToggleStyle* s);
 /// *_style() modifiers do. Both are borrowed; the view keeps its own reference to the style.
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_toggle_style(const ElgView* v, const ElgToggleStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_toggle_style_prop()). `style` is borrowed; the result shares it.
+void elg_toggle_style_assign(ElgToggleStyle* target, const ElgToggleStyle* style);
+
+/// Sets the environment's style of this family (ToggleStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_toggle_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_toggle_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -4803,6 +4823,16 @@ ElgCheckboxStyle* elg_env_checkbox_style(const ElgEnvironmentValues* environment
 /// Sets the environment's style of this family (CheckboxStyleKey). Both are borrowed; the
 /// environment shares the style.
 void elg_env_set_checkbox_style(ElgEnvironmentValues* environment, const ElgCheckboxStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_checkbox_style_prop()). `style` is borrowed; the result shares it.
+void elg_checkbox_style_assign(ElgCheckboxStyle* target, const ElgCheckboxStyle* style);
+
+/// Sets the environment's style of this family (CheckboxStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_checkbox_style_assign(), and one that
+/// writes none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_checkbox_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -4884,6 +4914,17 @@ ElgNumberInputStyle* elg_env_number_input_style(const ElgEnvironmentValues* envi
 /// environment shares the style.
 void elg_env_set_number_input_style(ElgEnvironmentValues* environment, const ElgNumberInputStyle* style);
 
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_number_input_style_prop()). `style` is borrowed; the result shares it.
+void elg_number_input_style_assign(ElgNumberInputStyle* target, const ElgNumberInputStyle* style);
+
+/// Sets the environment's style of this family (NumberInputStyleKey) to a prop, which may be
+/// reactive. `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's
+/// handle; kinds 1 and 2: the closure writes the style with elg_number_input_style_assign(), and
+/// one that writes none is a usage error when the prop is read. Kind 3 (a theme color) is a usage
+/// error.
+void elg_env_set_number_input_style_prop(ElgEnvironmentValues* environment, ElgProp style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgNumberInputConfiguration* elg_number_input_config_clone(const ElgNumberInputConfiguration* c);
@@ -4955,6 +4996,16 @@ ElgProgressStyle* elg_env_progress_style(const ElgEnvironmentValues* environment
 /// environment shares the style.
 void elg_env_set_progress_style(ElgEnvironmentValues* environment, const ElgProgressStyle* style);
 
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_progress_style_prop()). `style` is borrowed; the result shares it.
+void elg_progress_style_assign(ElgProgressStyle* target, const ElgProgressStyle* style);
+
+/// Sets the environment's style of this family (ProgressStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_progress_style_assign(), and one that
+/// writes none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_progress_style_prop(ElgEnvironmentValues* environment, ElgProp style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgProgressConfiguration* elg_progress_config_clone(const ElgProgressConfiguration* c);
@@ -5003,6 +5054,17 @@ void elg_text_field_style_free(ElgTextFieldStyle* s);
 /// *_style() modifiers do. Both are borrowed; the view keeps its own reference to the style.
 /// Returns the new view, owned by the caller, or null on failure.
 ElgView* elg_mod_text_field_style(const ElgView* v, const ElgTextFieldStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_text_field_style_prop()). `style` is borrowed; the result shares it.
+void elg_text_field_style_assign(ElgTextFieldStyle* target, const ElgTextFieldStyle* style);
+
+/// Sets the environment's style of this family (TextFieldStyleKey) to a prop, which may be
+/// reactive. `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's
+/// handle; kinds 1 and 2: the closure writes the style with elg_text_field_style_assign(), and one
+/// that writes none is a usage error when the prop is read. Kind 3 (a theme color) is a usage
+/// error.
+void elg_env_set_text_field_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -5067,6 +5129,16 @@ ElgPickerStyle* elg_env_picker_style(const ElgEnvironmentValues* environment);
 /// Sets the environment's style of this family (PickerStyleKey). Both are borrowed; the environment
 /// shares the style.
 void elg_env_set_picker_style(ElgEnvironmentValues* environment, const ElgPickerStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_picker_style_prop()). `style` is borrowed; the result shares it.
+void elg_picker_style_assign(ElgPickerStyle* target, const ElgPickerStyle* style);
+
+/// Sets the environment's style of this family (PickerStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_picker_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_picker_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -5143,6 +5215,16 @@ ElgSliderStyle* elg_env_slider_style(const ElgEnvironmentValues* environment);
 /// shares the style.
 void elg_env_set_slider_style(ElgEnvironmentValues* environment, const ElgSliderStyle* style);
 
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_slider_style_prop()). `style` is borrowed; the result shares it.
+void elg_slider_style_assign(ElgSliderStyle* target, const ElgSliderStyle* style);
+
+/// Sets the environment's style of this family (SliderStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_slider_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_slider_style_prop(ElgEnvironmentValues* environment, ElgProp style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgSliderConfiguration* elg_slider_config_clone(const ElgSliderConfiguration* c);
@@ -5215,6 +5297,17 @@ ElgNavigationStackStyle* elg_env_navigation_stack_style(const ElgEnvironmentValu
 /// Sets the environment's style of this family (NavigationStackStyleKey). Both are borrowed; the
 /// environment shares the style.
 void elg_env_set_navigation_stack_style(ElgEnvironmentValues* environment, const ElgNavigationStackStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_navigation_stack_style_prop()). `style` is borrowed; the result shares it.
+void elg_navigation_stack_style_assign(ElgNavigationStackStyle* target, const ElgNavigationStackStyle* style);
+
+/// Sets the environment's style of this family (NavigationStackStyleKey) to a prop, which may be
+/// reactive. `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's
+/// handle; kinds 1 and 2: the closure writes the style with elg_navigation_stack_style_assign(),
+/// and one that writes none is a usage error when the prop is read. Kind 3 (a theme color) is a
+/// usage error.
+void elg_env_set_navigation_stack_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -5291,6 +5384,16 @@ ElgPopoverStyle* elg_env_popover_style(const ElgEnvironmentValues* environment);
 /// environment shares the style.
 void elg_env_set_popover_style(ElgEnvironmentValues* environment, const ElgPopoverStyle* style);
 
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_popover_style_prop()). `style` is borrowed; the result shares it.
+void elg_popover_style_assign(ElgPopoverStyle* target, const ElgPopoverStyle* style);
+
+/// Sets the environment's style of this family (PopoverStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_popover_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_popover_style_prop(ElgEnvironmentValues* environment, ElgProp style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgPopoverConfiguration* elg_popover_config_clone(const ElgPopoverConfiguration* c);
@@ -5366,6 +5469,16 @@ ElgTooltipStyle* elg_env_tooltip_style(const ElgEnvironmentValues* environment);
 /// environment shares the style.
 void elg_env_set_tooltip_style(ElgEnvironmentValues* environment, const ElgTooltipStyle* style);
 
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_tooltip_style_prop()). `style` is borrowed; the result shares it.
+void elg_tooltip_style_assign(ElgTooltipStyle* target, const ElgTooltipStyle* style);
+
+/// Sets the environment's style of this family (TooltipStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_tooltip_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_tooltip_style_prop(ElgEnvironmentValues* environment, ElgProp style);
+
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
 ElgTooltipConfiguration* elg_tooltip_config_clone(const ElgTooltipConfiguration* c);
@@ -5433,6 +5546,16 @@ ElgMenuStyle* elg_env_menu_style(const ElgEnvironmentValues* environment);
 /// Sets the environment's style of this family (MenuStyleKey). Both are borrowed; the environment
 /// shares the style.
 void elg_env_set_menu_style(ElgEnvironmentValues* environment, const ElgMenuStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_menu_style_prop()). `style` is borrowed; the result shares it.
+void elg_menu_style_assign(ElgMenuStyle* target, const ElgMenuStyle* style);
+
+/// Sets the environment's style of this family (MenuStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_menu_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_menu_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.
@@ -5533,6 +5656,16 @@ ElgRowStyle* elg_env_row_style(const ElgEnvironmentValues* environment);
 /// Sets the environment's style of this family (RowStyleKey). Both are borrowed; the environment
 /// shares the style.
 void elg_env_set_row_style(ElgEnvironmentValues* environment, const ElgRowStyle* style);
+
+/// Writes a style into a reactive style prop's result (the `ret` of the closure of
+/// elg_env_set_row_style_prop()). `style` is borrowed; the result shares it.
+void elg_row_style_assign(ElgRowStyle* target, const ElgRowStyle* style);
+
+/// Sets the environment's style of this family (RowStyleKey) to a prop, which may be reactive.
+/// `environment` is borrowed and `style` consumed. Kind 0: `value` points at the style's handle;
+/// kinds 1 and 2: the closure writes the style with elg_row_style_assign(), and one that writes
+/// none is a usage error when the prop is read. Kind 3 (a theme color) is a usage error.
+void elg_env_set_row_style_prop(ElgEnvironmentValues* environment, ElgProp style);
 
 /// Copies a configuration (borrowed), e.g. to keep one past the call that got it. Returns the copy,
 /// owned by the caller, or null on failure.

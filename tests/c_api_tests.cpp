@@ -169,6 +169,36 @@ View* elg_mod_on_key_capture(const View* v, ElgClosure on_key);
 View* elg_mod_rust_event_modifier(const View* v, ElgClosure make_handler);
 void elg_app_menu_bar(App* app, const ElgMenuBarItem* menus, size_t count);
 uint32_t elg_primary_modifier();
+void elg_button_style_assign(std::shared_ptr<const elg::ButtonStyle>* target, const std::shared_ptr<const elg::ButtonStyle>* style);
+void elg_env_set_button_style_prop(EnvironmentValues* environment, ElgProp style);
+std::shared_ptr<const elg::ButtonStyle>* elg_env_button_style(const EnvironmentValues* environment);
+void elg_button_style_free(std::shared_ptr<const elg::ButtonStyle>* style);
+void elg_toggle_style_assign(std::shared_ptr<const elg::ToggleStyle>* target, const std::shared_ptr<const elg::ToggleStyle>* style);
+void elg_env_set_toggle_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_text_field_style_assign(std::shared_ptr<const elg::TextFieldStyle>* target, const std::shared_ptr<const elg::TextFieldStyle>* style);
+void elg_env_set_text_field_style_prop(EnvironmentValues* environment, ElgProp style);
+std::shared_ptr<const elg::TextFieldStyle>* elg_env_text_field_style(const EnvironmentValues* environment);
+void elg_text_field_style_free(std::shared_ptr<const elg::TextFieldStyle>* style);
+void elg_checkbox_style_assign(std::shared_ptr<const elg::CheckboxStyle>* target, const std::shared_ptr<const elg::CheckboxStyle>* style);
+void elg_env_set_checkbox_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_number_input_style_assign(std::shared_ptr<const elg::NumberInputStyle>* target, const std::shared_ptr<const elg::NumberInputStyle>* style);
+void elg_env_set_number_input_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_progress_style_assign(std::shared_ptr<const elg::ProgressStyle>* target, const std::shared_ptr<const elg::ProgressStyle>* style);
+void elg_env_set_progress_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_picker_style_assign(std::shared_ptr<const elg::PickerStyle>* target, const std::shared_ptr<const elg::PickerStyle>* style);
+void elg_env_set_picker_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_slider_style_assign(std::shared_ptr<const elg::SliderStyle>* target, const std::shared_ptr<const elg::SliderStyle>* style);
+void elg_env_set_slider_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_navigation_stack_style_assign(std::shared_ptr<const elg::NavigationStackStyle>* target, const std::shared_ptr<const elg::NavigationStackStyle>* style);
+void elg_env_set_navigation_stack_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_popover_style_assign(std::shared_ptr<const elg::PopoverStyle>* target, const std::shared_ptr<const elg::PopoverStyle>* style);
+void elg_env_set_popover_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_tooltip_style_assign(std::shared_ptr<const elg::TooltipStyle>* target, const std::shared_ptr<const elg::TooltipStyle>* style);
+void elg_env_set_tooltip_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_menu_style_assign(std::shared_ptr<const elg::MenuStyle>* target, const std::shared_ptr<const elg::MenuStyle>* style);
+void elg_env_set_menu_style_prop(EnvironmentValues* environment, ElgProp style);
+void elg_row_style_assign(std::shared_ptr<const elg::RowStyle>* target, const std::shared_ptr<const elg::RowStyle>* style);
+void elg_env_set_row_style_prop(EnvironmentValues* environment, ElgProp style);
 }
 
 namespace {
@@ -321,6 +351,45 @@ bool rust_handler(void* data, void* args, void* ret) {
 bool make_rust_handler(void* data, void*, void* ret) {
     *static_cast<ElgClosure*>(ret) = {data, rust_handler, nullptr};
     return true;
+}
+
+// A style prop's closure (ret: the style's handle): writes `style` with `assign`.
+template <class Style>
+struct PickStyle {
+    const std::shared_ptr<const Style>* style;
+    void (*assign)(std::shared_ptr<const Style>*, const std::shared_ptr<const Style>*);
+};
+
+template <class Style>
+bool pick_style(void* data, void*, void* ret) {
+    const auto* pick = static_cast<const PickStyle<Style>*>(data);
+    pick->assign(static_cast<std::shared_ptr<const Style>*>(ret), pick->style);
+    return true;
+}
+
+// Sets a style that isn't the default through a static prop and a reactive one, and reads it back.
+template <class Style, class Concrete>
+void check_style_prop(void (*set_prop)(EnvironmentValues*, ElgProp),
+                      void (*assign)(std::shared_ptr<const Style>*, const std::shared_ptr<const Style>*),
+                      std::shared_ptr<const Style>* (*get)(const EnvironmentValues*),
+                      void (*free_style)(std::shared_ptr<const Style>*)) {
+    EnvironmentValues* environment = elg_env_new();
+    REQUIRE(environment);
+    const std::shared_ptr<const Style> mine = std::make_shared<const Concrete>();
+    set_prop(environment, ElgProp{.kind = 0, .theme = 0, .value = &mine, .fn = {}});
+    std::shared_ptr<const Style>* read = get(environment);
+    REQUIRE(read);
+    CHECK(read->get() == mine.get());
+    free_style(read);
+
+    PickStyle<Style> pick{&mine, assign};
+    set_prop(environment, ElgProp{.kind = 1, .theme = 0, .value = nullptr, .fn = {&pick, pick_style<Style>, nullptr}});
+    read = get(environment);
+    REQUIRE(read);
+    CHECK(read->get() == mine.get());
+    free_style(read);
+    elg_env_free(environment);
+    CHECK(take_error() == 0);
 }
 
 } // namespace
@@ -1010,4 +1079,75 @@ TEST_CASE("elg_app_menu_bar takes the menus' closures, and elg_primary_modifier 
     CHECK(quit.drops == 1);
 
     CHECK(elg_primary_modifier() == static_cast<uint32_t>(elg::primary_modifier()));
+}
+
+TEST_CASE("every style of the environment can be set to a prop through the C API", "[c-api][environment]") {
+    check_style_prop<elg::ButtonStyle, elg::BorderedButtonStyle>(elg_env_set_button_style_prop, elg_button_style_assign,
+        elg_env_button_style, elg_button_style_free);
+    check_style_prop<elg::ToggleStyle, elg::SwitchToggleStyle>(elg_env_set_toggle_style_prop, elg_toggle_style_assign,
+        elg_env_toggle_style, elg_toggle_style_free);
+    check_style_prop<elg::TextFieldStyle, elg::PlainTextFieldStyle>(elg_env_set_text_field_style_prop, elg_text_field_style_assign,
+        elg_env_text_field_style, elg_text_field_style_free);
+    check_style_prop<elg::CheckboxStyle, elg::BoxCheckboxStyle>(elg_env_set_checkbox_style_prop, elg_checkbox_style_assign,
+        elg_env_checkbox_style, elg_checkbox_style_free);
+    check_style_prop<elg::NumberInputStyle, elg::PlainNumberInputStyle>(elg_env_set_number_input_style_prop, elg_number_input_style_assign,
+        elg_env_number_input_style, elg_number_input_style_free);
+    check_style_prop<elg::ProgressStyle, elg::CircularProgressStyle>(elg_env_set_progress_style_prop, elg_progress_style_assign,
+        elg_env_progress_style, elg_progress_style_free);
+    check_style_prop<elg::PickerStyle, elg::MenuPickerStyle>(elg_env_set_picker_style_prop, elg_picker_style_assign,
+        elg_env_picker_style, elg_picker_style_free);
+    check_style_prop<elg::SliderStyle, elg::KnobSliderStyle>(elg_env_set_slider_style_prop, elg_slider_style_assign,
+        elg_env_slider_style, elg_slider_style_free);
+    check_style_prop<elg::NavigationStackStyle, elg::PlainNavigationStackStyle>(elg_env_set_navigation_stack_style_prop, elg_navigation_stack_style_assign,
+        elg_env_navigation_stack_style, elg_navigation_stack_style_free);
+    check_style_prop<elg::PopoverStyle, elg::PlainPopoverStyle>(elg_env_set_popover_style_prop, elg_popover_style_assign,
+        elg_env_popover_style, elg_popover_style_free);
+    check_style_prop<elg::TooltipStyle, elg::PlainTooltipStyle>(elg_env_set_tooltip_style_prop, elg_tooltip_style_assign,
+        elg_env_tooltip_style, elg_tooltip_style_free);
+    check_style_prop<elg::MenuStyle, elg::PlainMenuStyle>(elg_env_set_menu_style_prop, elg_menu_style_assign,
+        elg_env_menu_style, elg_menu_style_free);
+    check_style_prop<elg::RowStyle, elg::PlainRowStyle>(elg_env_set_row_style_prop, elg_row_style_assign,
+        elg_env_row_style, elg_row_style_free);
+}
+
+TEST_CASE("a reactive style follows its state, and a style prop without a style is a usage error", "[c-api][environment]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const std::shared_ptr<const elg::PickerStyle> menu = std::make_shared<const elg::MenuPickerStyle>();
+    const std::shared_ptr<const elg::PickerStyle> segmented = std::make_shared<const elg::SegmentedPickerStyle>();
+    struct Choice {
+        const elg::State<bool>* use_menu;
+        const std::shared_ptr<const elg::PickerStyle>* menu;
+        const std::shared_ptr<const elg::PickerStyle>* segmented;
+    };
+    const elg::State<bool> use_menu(true);
+    Choice choice{&use_menu, &menu, &segmented};
+    const auto choose = [](void* data, void*, void* ret) {
+        const auto* c = static_cast<const Choice*>(data);
+        elg_picker_style_assign(static_cast<std::shared_ptr<const elg::PickerStyle>*>(ret),
+                                (*c->use_menu)() ? c->menu : c->segmented);
+        return true;
+    };
+    EnvironmentValues* environment = elg_env_new();
+    REQUIRE(environment);
+    elg_env_set_picker_style_prop(environment, ElgProp{.kind = 1, .theme = 0, .value = nullptr, .fn = {&choice, choose, nullptr}});
+    std::shared_ptr<const elg::PickerStyle>* read = elg_env_picker_style(environment);
+    REQUIRE(read);
+    CHECK(read->get() == menu.get());
+    elg_picker_style_free(read);
+    use_menu.set(false);
+    read = elg_env_picker_style(environment);
+    REQUIRE(read);
+    CHECK(read->get() == segmented.get());
+    elg_picker_style_free(read);
+
+    // A theme color isn't a style; a closure that writes no style is a usage error when it's read.
+    elg_env_set_picker_style_prop(environment, ElgProp{.kind = 3, .theme = 0, .value = nullptr, .fn = {}});
+    CHECK(take_error() == 2);
+    const auto write_nothing = [](void*, void*, void*) { return true; };
+    elg_env_set_picker_style_prop(environment, ElgProp{.kind = 1, .theme = 0, .value = nullptr, .fn = {nullptr, write_nothing, nullptr}});
+    CHECK(take_error() == 0);
+    CHECK(elg_env_picker_style(environment) == nullptr);
+    CHECK(take_error() == 2);
+    elg_env_free(environment);
 }
