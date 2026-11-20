@@ -5,6 +5,7 @@
 #include "gpu/swapchain.h"
 
 #include "core/log.h"
+#include "core/profile.h"
 #include "gpu/instance.h"
 
 #include <elg/error.h>
@@ -177,6 +178,7 @@ void Swapchain::request_copy_source() {
 }
 
 wgpu::TextureView Swapchain::acquire() {
+    ELG_ZONE("Acquire");
     wgpu::SurfaceTexture texture;
     surface_.GetCurrentTexture(&texture);
     if (lose_next_) {
@@ -209,6 +211,7 @@ wgpu::TextureView Swapchain::acquire() {
 }
 
 void Swapchain::present() {
+    ELG_ZONE("Present");
     texture_ = nullptr;
     if (surface_.Present() != wgpu::Status::Success) {
         stale_ = true;

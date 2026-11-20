@@ -4,6 +4,8 @@
 
 #include "render/frame_sources.h"
 
+#include "core/profile.h"
+
 #include <algorithm>
 #include <unordered_set>
 #include <variant>
@@ -27,6 +29,7 @@ std::vector<std::shared_ptr<FrameSource>> sources_of(const WindowFrame& frame) {
 } // namespace
 
 void FrameSources::update(std::span<const WindowFrame> incoming) {
+    ELG_ZONE("Frame sources");
     std::unordered_set<const FrameSource*> updated; // this round: once each
     const auto take = [&](const std::shared_ptr<FrameSource>& source) {
         if (!updated.insert(source.get()).second) {

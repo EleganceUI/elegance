@@ -203,6 +203,7 @@ void RenderThread::draw(const gpu::Instance& instance, Kept& kept, std::promise<
     // cameras, until they do), look for their next frame every few milliseconds; otherwise
     // sleep until the UI thread posts work or a source wakes it.
     while (kept.sources.polling() ? mailbox_.take_for(batch, std::chrono::milliseconds(4)) : mailbox_.take(batch)) {
+        ELG_ZONE("Render batch");
         kept.unfinished = batch.sequence;
         for (RenderCommand& command : batch.commands) {
             std::visit(Overloaded{
@@ -217,6 +218,7 @@ void RenderThread::draw(const gpu::Instance& instance, Kept& kept, std::promise<
                                kept.sources.remove(remove.window_id);
                            },
                            [&](AtlasUploadCommand& upload) {
+                               ELG_ZONE("Atlas upload");
                                if (upload.layout != kept.atlas_layout) {
                                    kept.atlas.clear(); // the glyphs of the layout before
                                    kept.atlas_layout = upload.layout;
@@ -252,6 +254,7 @@ void RenderThread::draw(const gpu::Instance& instance, Kept& kept, std::promise<
         }
         mailbox_.mark_done(batch.sequence);
         kept.unfinished.reset();
+        ELG_FRAME_NAMED("Render");
     }
 }
 

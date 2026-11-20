@@ -5,6 +5,7 @@
 #include "render/window_target.h"
 
 #include "core/crash.h"
+#include "core/profile.h"
 #include "gpu/blur_renderer.h"
 #include "gpu/buffer.h"
 #include "gpu/device.h"
@@ -264,16 +265,22 @@ WindowTarget::State::State(const gpu::Device& device, std::unique_ptr<gpu::Prese
 }
 
 void WindowTarget::State::render(const WindowFrame& frame, const RenderResources& resources) {
+    ELG_ZONE("Render window");
     const std::uint32_t width = window_side(frame.pixel_width);
     const std::uint32_t height = window_side(frame.pixel_height);
     const Color clear = frame.list.clear_color;
     // What changed since the last frame drawn, which the kept image holds; all of it when that's
     // no longer what the window shows (ELGSPEC-0029.R6).
-    std::vector<Footprint> now = footprints(frame.list, width, height, &path_hashes_);
     const Shown shown{width, height, frame.list.scale, clear, presenter_->surfaces_made()};
     const Rect window{0, 0, static_cast<float>(width), static_cast<float>(height)};
     bool whole = shown_ != shown || !images_.contains({ImageRole::kept, 0}) || render_settings().full_redraw;
-    std::vector<Rect> damage = whole ? std::vector<Rect>{window} : damage_between(previous_, now);
+    std::vector<Footprint> now;
+    std::vector<Rect> damage;
+    {
+        ELG_ZONE("Damage");
+        now = footprints(frame.list, width, height, &path_hashes_);
+        damage = whole ? std::vector<Rect>{window} : damage_between(previous_, now);
+    }
     if (damage.empty()) {
         // Nothing changed: nothing is drawn or presented (ELGSPEC-0029.R7). The device is still
         // looked at, so that its loss shows without a frame to draw.
@@ -306,6 +313,7 @@ void WindowTarget::State::render(const WindowFrame& frame, const RenderResources
 }
 
 void WindowTarget::State::update_tiles(const DisplayList& list) {
+    ELG_ZONE("Damage"); // the scroll views' content, and the tiles it no longer matches
     const auto release = [&](ScrollTiles& scroll, const auto& which) {
         std::erase_if(scroll.tiles, [&](const auto& tile) {
             if (!which(tile.second)) {
@@ -548,6 +556,7 @@ wgpu::CommandBuffer WindowTarget::State::record(const wgpu::TextureView& view, w
                                                 std::span<const Rect> damage, const WindowFrame& frame,
                                                 const RenderResources& resources,
                                                 std::vector<std::uint64_t>& acquired_videos) {
+    ELG_ZONE("Record");
     const gpu::CacheClock::time_point now = gpu::CacheClock::now();
     images_.begin_frame(now);
     resources.textures.begin_frame(now);

@@ -5,6 +5,7 @@
 #include "render/frame_plan.h"
 
 #include "core/numeric.h"
+#include "core/profile.h"
 #include "render/color_space.h"
 #include "text/atlas.h"
 
@@ -1063,6 +1064,7 @@ void PathHashes::end_frame() {
 FramePlan plan_frame(const DisplayList& list, std::uint32_t width, std::uint32_t height, PathHashes* paths,
                      std::uint32_t max_texture_side, std::optional<Rect> area,
                      const std::function<bool(std::uint64_t)>& kept_tiles) {
+    ELG_ZONE("Plan");
     FramePlan plan;
     PathHashes once;
     Planner(list, plan, width, height, paths ? *paths : once, max_texture_side, area, kept_tiles).run();

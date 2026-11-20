@@ -86,6 +86,7 @@ public:
     PendingValidation(wgpu::Instance instance, wgpu::Future future, std::shared_ptr<bool> valid)
         : instance_(std::move(instance)), future_(future), valid_(std::move(valid)) {}
     [[nodiscard]] bool wait() const {
+        ELG_ZONE("Wait for GPU");
         return !valid_ || (instance_.WaitAny(future_, kRetirementWaitNs) == wgpu::WaitStatus::Success && *valid_);
     }
 private:
@@ -251,6 +252,7 @@ public:
                 const bool valid = scope->finish();
                 ok = ok && valid;
                 if (ok && metal.commandsScheduledFuture.id != 0) {
+                    ELG_ZONE("Wait for GPU");
                     ok = renderer_->instance.WaitAny(metal.commandsScheduledFuture,
                         kRetirementWaitNs) == wgpu::WaitStatus::Success;
                 }

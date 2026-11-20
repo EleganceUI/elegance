@@ -4,6 +4,7 @@
 
 #include "gpu/instance.h"
 
+#include "core/profile.h"
 #include "gpu/system.h"
 #include "gpu/webgpu.h"
 
@@ -29,6 +30,7 @@ Instance::Instance() : instance_(std::make_unique<wgpu::Instance>()) {
 }
 
 void Instance::wait(wgpu::Future future) const {
+    ELG_ZONE("Wait for GPU");
     constexpr std::uint64_t kTimeout = 5'000'000'000; // nanoseconds
     const wgpu::WaitStatus status = instance_->WaitAny(future, kTimeout);
     if (status == wgpu::WaitStatus::TimedOut) {
