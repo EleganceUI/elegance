@@ -110,6 +110,16 @@ private:
     std::vector<Unused> unused_;
 };
 
+// The bytes the entries of `entries`, whose values have a CacheUse `use`, take.
+template <class Map>
+std::size_t held_bytes(const Map& entries) {
+    std::size_t bytes = 0;
+    for (const auto& entry : entries) {
+        bytes += entry.second.use.bytes;
+    }
+    return bytes;
+}
+
 // Eviction of one map. Returns the bytes its remaining entries that `frame` doesn't use take.
 template <class Map, class Pinned>
 std::size_t evict(Map& entries, const CacheFrame& frame, const CachePolicy& policy, const Pinned& pinned) {

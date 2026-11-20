@@ -7,6 +7,7 @@
 
 #include "media/image_decode.h"
 
+#include "core/profile.h"
 #include "media/image_codec_backend.h"
 #include "media/recorded_orientation.h"
 
@@ -102,6 +103,7 @@ ImageInfo probe_image(std::span<const std::uint8_t> data, const ImageLimits& lim
 }
 
 std::shared_ptr<const DecodedImage> decode_image(std::span<const std::uint8_t> data, const ImageLimits& limits) {
+    ELG_ZONE("Decode image");
     probe_within(data, limits);
     auto image = std::make_shared<DecodedImage>();
     image->id = g_next_id.fetch_add(1);

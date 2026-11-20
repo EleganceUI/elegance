@@ -29,6 +29,8 @@
 #include <webgpu/webgpu_cpp.h>
 
 #include <format>
+#include <functional>
+#include <numeric>
 #include <array>
 #include <memory>
 #include <new>
@@ -254,6 +256,11 @@ void RenderThread::draw(const gpu::Instance& instance, Kept& kept, std::promise<
         }
         mailbox_.mark_done(batch.sequence);
         kept.unfinished.reset();
+        ELG_PLOT("Decoded image bytes", textures.bytes());
+        ELG_PLOT("Video texture bytes", videos.bytes());
+        ELG_PLOT("Intermediate image bytes",
+                 std::transform_reduce(windows.begin(), windows.end(), std::size_t{0}, std::plus<>(),
+                                       [](const auto& entry) { return entry.second->intermediate_bytes(); }));
         ELG_FRAME_NAMED("Render");
     }
 }

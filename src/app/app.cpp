@@ -397,6 +397,23 @@ WindowFrame build_frame(LiveWindow& live) {
     return frame;
 }
 
+#if defined(ELG_HAVE_TRACY)
+// A window frame's plots (ELGSPEC-0042.R8), while a profiler is connected.
+void plot_frame(const DisplayList& list, const FrameWork& work, const GlyphAtlas& atlas) {
+    if (!ELG_PROFILER_CONNECTED()) {
+        return;
+    }
+    const FrameStats stats = count_frame(list, 0, work.laid_out);
+    ELG_PLOT("Elements laid out", stats.elements);
+    ELG_PLOT("Draw commands", stats.commands);
+    ELG_PLOT("Glyphs", stats.glyphs);
+    ELG_PLOT("Paths", stats.paths);
+    ELG_PLOT("Paint records reused", work.reused);
+    ELG_PLOT("Paint records built", work.rebuilt);
+    ELG_PLOT("Glyphs pending", atlas.pending());
+}
+#endif
+
 } // namespace
 
 struct App::Impl {
@@ -901,6 +918,9 @@ int App::run() {
             ++live.paint_epoch; // the glyphs the elements drew moved
         }
         WindowFrame frame = build_frame(live);
+#if defined(ELG_HAVE_TRACY)
+        plot_frame(frame.list, take_frame_work(), text.atlas);
+#endif
         if (inspected) {
             const double now = seconds_now();
             if (now - inspector->last_stats >= kInspectorStats) {

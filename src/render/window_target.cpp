@@ -31,6 +31,7 @@
 #include <cstdint>
 #include <format>
 #include <functional>
+#include <numeric>
 #include <memory>
 #include <optional>
 #include <span>
@@ -112,6 +113,7 @@ public:
     void render(const WindowFrame& frame, const RenderResources& resources);
     [[nodiscard]] int frames_presented() const noexcept { return frames_presented_; }
     [[nodiscard]] int tiles_drawn() const noexcept { return tiles_drawn_; }
+    [[nodiscard]] std::size_t intermediate_bytes() const noexcept { return images_.bytes(); }
 
 private:
     struct LayerGroups {
@@ -255,6 +257,10 @@ int WindowTarget::tiles_drawn() const noexcept {
     return state_->tiles_drawn();
 }
 
+std::size_t WindowTarget::intermediate_bytes() const noexcept {
+    return state_->intermediate_bytes();
+}
+
 void WindowTarget::render(const WindowFrame& frame, const RenderResources& resources) {
     state_->render(frame, resources);
 }
@@ -281,6 +287,9 @@ void WindowTarget::State::render(const WindowFrame& frame, const RenderResources
         now = footprints(frame.list, width, height, &path_hashes_);
         damage = whole ? std::vector<Rect>{window} : damage_between(previous_, now);
     }
+    ELG_PLOT("Damage area", std::transform_reduce(damage.begin(), damage.end(), 0.0, std::plus<>(), [](const Rect& r) {
+                 return static_cast<double>(r.width) * static_cast<double>(r.height);
+             }));
     if (damage.empty()) {
         // Nothing changed: nothing is drawn or presented (ELGSPEC-0029.R7). The device is still
         // looked at, so that its loss shows without a frame to draw.

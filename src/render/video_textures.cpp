@@ -5,6 +5,7 @@
 #include "render/video_textures.h"
 
 #include "core/log.h"
+#include "core/profile.h"
 #include "gpu/buffer.h"
 #include "gpu/device.h"
 #include "gpu/external_image.h"
@@ -125,7 +126,12 @@ std::size_t VideoTextures::size() const noexcept {
     return objects_->textures.size() + objects_->targets.size();
 }
 
+std::size_t VideoTextures::bytes() const noexcept {
+    return gpu::held_bytes(objects_->textures) + gpu::held_bytes(objects_->targets);
+}
+
 bool VideoTextures::import(const VideoFrame& frame, Texture& texture) {
+    ELG_ZONE("Import video frame");
     if (frame.kind == VideoFrame::Kind::external) {
         const gpu::ExternalImage* external = frame.external.get();
         if (!external || external->device().Get() != device_.handle().Get() || !external->texture() ||
@@ -344,6 +350,7 @@ void VideoTextures::create_target(CpuTarget& target, std::uint32_t width, std::u
 }
 
 wgpu::BindGroup VideoTextures::convert(const wgpu::CommandEncoder& encoder, const VideoFrame& frame) {
+    ELG_ZONE("Convert video frame");
     if (!frame.pixels || frame.width == 0 || frame.height == 0 ||
         frame.pixels->size() < packed_size(frame.format, frame.width, frame.height)) {
         return nullptr;

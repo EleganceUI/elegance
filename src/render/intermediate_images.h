@@ -121,6 +121,7 @@ public:
 
     [[nodiscard]] bool contains(const ImageSlot& slot) const { return images_.contains(slot); }
     [[nodiscard]] std::size_t size() const noexcept { return images_.size(); }
+    [[nodiscard]] std::size_t bytes() const noexcept { return gpu::held_bytes(images_); }
 
 private:
     gpu::CacheFrame frame_;

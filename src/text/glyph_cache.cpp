@@ -6,6 +6,7 @@
 
 #include "core/log.h"
 #include "core/os_backend.h"
+#include "core/profile.h"
 #include "text/atlas.h"
 #include "text/text_backend.h"
 
@@ -213,6 +214,7 @@ std::optional<std::vector<std::uint8_t>> GlyphDiskCache::find(const FontFace& fa
     if (!directory_) {
         return std::nullopt;
     }
+    ELG_ZONE("Glyph cache file");
     const std::lock_guard lock(mutex_);
     FontCache& cache = font(face, field);
     if (const auto it = cache.records.find(glyph); it != cache.records.end()) {
@@ -229,6 +231,7 @@ void GlyphDiskCache::store(const FontFace& face, DistanceField field, std::uint3
     if (!directory_) {
         return;
     }
+    ELG_ZONE("Glyph cache file");
     const std::lock_guard lock(mutex_);
     FontCache& cache = font(face, field);
     if (!cache.out || cache.bytes + sizeof(RecordHeader) + rgba.size() > kMaxFileBytes || cache.records.contains(glyph)) {

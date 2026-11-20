@@ -306,6 +306,16 @@ private:
     bool previous_fresh_;
 };
 
+// What layout and paint did on this thread since the last call, for the profiler's plots
+// (ELGSPEC-0042.R8): the elements laid out, and the paints that reused an element's record or
+// built it again. Only a profiling build counts (ELG_COUNT).
+struct FrameWork {
+    std::size_t laid_out = 0;
+    std::size_t reused = 0;
+    std::size_t rebuilt = 0;
+};
+FrameWork take_frame_work() noexcept;
+
 // The element with this accessibility id (Element::accessibility_id), if it still exists: a
 // screen reader's request names elements by it. UI thread.
 Element* element_with_accessibility_id(std::uint64_t id) noexcept;

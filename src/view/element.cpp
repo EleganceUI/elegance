@@ -7,6 +7,7 @@
 #include "view/event_dispatcher.h"
 
 #include "core/app_errors.h"
+#include "core/profile.h"
 
 #include "reactive/runtime.h"
 
@@ -87,6 +88,7 @@ struct PaintRecorder {
 thread_local std::vector<PaintRecorder*> g_painting;
 thread_local std::uint64_t g_paint_epoch = 0;
 thread_local bool g_fresh_paint = false;
+thread_local FrameWork g_frame_work;
 
 bool close(float a, float b) {
     return std::abs(a - b) <= 1e-3f;
@@ -151,6 +153,10 @@ void paint_changes_over_time() noexcept {
     }
 }
 
+FrameWork take_frame_work() noexcept {
+    return std::exchange(g_frame_work, {});
+}
+
 PaintScope::PaintScope(std::uint64_t epoch, bool fresh) noexcept
     : previous_epoch_(std::exchange(g_paint_epoch, epoch)), previous_fresh_(std::exchange(g_fresh_paint, fresh)) {}
 
@@ -173,8 +179,10 @@ void Element::paint(DisplayList& list) const {
     {
         const Painting painting(recorder);
         if (recorder.from_record) {
+            ELG_COUNT(g_frame_work.reused);
             paint_from_record(list);
         } else {
+            ELG_COUNT(g_frame_work.rebuilt);
             paint_impl(list);
             if (focus_manager_) {
                 paint_focus_ring(list);
@@ -373,6 +381,7 @@ void Element::place(Point position, ProposedSize proposal) {
             return;
         }
     }
+    ELG_COUNT(g_frame_work.laid_out);
     // How far it moved, for exiting children to follow. A size change moves the origin too (an
     // emptied If in an overlay shrinks toward its alignment), but that isn't movement: then it
     // moved as far as its parent did (placed first, in the same layout).

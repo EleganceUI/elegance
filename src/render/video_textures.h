@@ -69,6 +69,8 @@ public:
 
     // How many frame textures (imported or converted into) it holds.
     [[nodiscard]] std::size_t size() const noexcept;
+    // The bytes they take.
+    [[nodiscard]] std::size_t bytes() const noexcept;
 
 private:
     // A shared or external frame's texture.

@@ -13,23 +13,30 @@
 //   ELG_ZONE_TEXT(title.data(), title.size());  text for the zone of this scope
 //   ELG_FRAME();                            ends a frame of the default frame set
 //   ELG_FRAME_NAMED("Render");              ends a frame of a named frame set
-//   ELG_PLOT("Draw commands", count);       records a value
+//   ELG_PLOT("Draw commands", count);       records an integer
 //   ELG_THREAD_NAME("Elegance render");     names the calling thread
 //   ELG_MESSAGE(text.data(), text.size());  a message on the timeline
+//   ELG_COUNT(counts.reused);               adds 1 to a counter that only plots read
 //
-// Names must be string literals: Tracy keeps their addresses.
+// Names must be string literals: Tracy keeps their addresses. Arguments are evaluated in a
+// profiling build only. Code that only feeds plots goes in #if defined(ELG_HAVE_TRACY), where
+// ELG_PROFILER_CONNECTED() says whether to do it.
 
 #if defined(ELG_HAVE_TRACY)
 
 #include <tracy/Tracy.hpp> // IWYU pragma: export
 
+#include <cstdint>
+
 #define ELG_ZONE(name) ZoneScopedN(name)
 #define ELG_ZONE_TEXT(text, size) ZoneText(text, size)
 #define ELG_FRAME() FrameMark
 #define ELG_FRAME_NAMED(name) FrameMarkNamed(name)
-#define ELG_PLOT(name, value) TracyPlot(name, value)
+#define ELG_PLOT(name, value) TracyPlot(name, static_cast<std::int64_t>(value))
 #define ELG_THREAD_NAME(name) ::tracy::SetThreadName(name)
 #define ELG_MESSAGE(text, size) TracyMessage(text, size)
+#define ELG_COUNT(counter) (++(counter))
+#define ELG_PROFILER_CONNECTED() TracyIsConnected
 
 #else
 
@@ -40,6 +47,7 @@
 #define ELG_PLOT(name, value) ((void)0)
 #define ELG_THREAD_NAME(name) ((void)0)
 #define ELG_MESSAGE(text, size) ((void)0)
+#define ELG_COUNT(counter) ((void)0)
 
 #endif
 

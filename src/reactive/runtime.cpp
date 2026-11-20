@@ -324,7 +324,8 @@ void flush_effects() {
         ~Done() { g_flushing = false; }
     };
     const Done done;
-    for (int runs = 0; !g_priority_pending.empty() || !g_pending.empty(); ++runs) {
+    int runs = 0;
+    for (; !g_priority_pending.empty() || !g_pending.empty(); ++runs) {
         if (runs >= kMaxEffectRuns) {
             for (std::deque<ReactiveNode*>* queue : {&g_priority_pending, &g_pending}) {
                 for (ReactiveNode* node : *queue) {
@@ -364,6 +365,7 @@ void flush_effects() {
         }
         g_running_animation = previous;
     }
+    ELG_PLOT("Effects per flush", runs);
 }
 
 bool has_scheduled_effects() noexcept {

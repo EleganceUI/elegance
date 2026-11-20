@@ -128,6 +128,10 @@ std::size_t TextureCache::size() const noexcept {
     return objects_->textures.size();
 }
 
+std::size_t TextureCache::bytes() const noexcept {
+    return held_bytes(objects_->textures);
+}
+
 wgpu::BindGroup TextureCache::acquire(const wgpu::CommandEncoder& encoder, const ImagePixels& image) {
     if (const auto it = objects_->textures.find(image.id); it != objects_->textures.end()) {
         frame_.mark(it->second.use);
