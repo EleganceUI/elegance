@@ -672,6 +672,257 @@ ELG_EXPORT void elg_effects_set_allows_hit_testing(Effects* e, bool enabled) {
     ELG_CATCH_VOID
 }
 
+// --- Prop handles ---
+
+/// Reads a float prop handle (an Effects field): a tracked read.
+///
+/// @param prop The prop (borrowed).
+/// @param environment The environment it reads, for a prop that depends on one (borrowed); may be null for
+///   one that doesn't, and then such a prop is a usage error.
+/// @return The value; 0 on failure.
+ELG_EXPORT float elg_prop_f32_get(const Prop<float>* prop, const EnvironmentValues* environment) {
+    ELG_TRY
+    return environment ? prop->get(*environment) : prop->get();
+    ELG_CATCH(0.f)
+}
+/// Copies a float prop handle: both refer to the same prop, reactive as it is.
+///
+/// @param prop The prop (borrowed).
+/// @return The copy, owned by the caller (elg_prop_f32_free()). Null on failure.
+ELG_EXPORT Prop<float>* elg_prop_f32_clone(const Prop<float>* prop) {
+    ELG_TRY
+    return new Prop<float>(*prop);
+    ELG_CATCH(nullptr)
+}
+/// Frees a float prop handle.
+///
+/// @param prop The prop (consumed); may be null.
+ELG_EXPORT void elg_prop_f32_free(Prop<float>* prop) {
+    const Consumed consumed(prop); // freed as the call ends
+    ELG_TRY
+    ELG_CATCH_VOID
+}
+/// Reads a color prop handle (an Effects field): a tracked read.
+///
+/// @param prop The prop (borrowed).
+/// @param environment The environment it reads, for a prop that depends on one, such as a theme color
+///   (borrowed); may be null for one that doesn't, and then such a prop is a usage error.
+/// @return The color; all zeros on failure.
+ELG_EXPORT ElgColor elg_prop_color_get(const Prop<Color>* prop, const EnvironmentValues* environment) {
+    ELG_TRY
+    return c_color(environment ? prop->get(*environment) : prop->get());
+    ELG_CATCH({})
+}
+/// Copies a color prop handle: both refer to the same prop, reactive as it is.
+///
+/// @param prop The prop (borrowed).
+/// @return The copy, owned by the caller (elg_prop_color_free()). Null on failure.
+ELG_EXPORT Prop<Color>* elg_prop_color_clone(const Prop<Color>* prop) {
+    ELG_TRY
+    return new Prop<Color>(*prop);
+    ELG_CATCH(nullptr)
+}
+/// Frees a color prop handle.
+///
+/// @param prop The prop (consumed); may be null.
+ELG_EXPORT void elg_prop_color_free(Prop<Color>* prop) {
+    const Consumed consumed(prop); // freed as the call ends
+    ELG_TRY
+    ELG_CATCH_VOID
+}
+
+// --- Reading effects ---
+
+/// Reads Effects::opacity, so that a modifier can build on it (with an ElgProp of kind 4, or a closure that
+/// reads it).
+///
+/// @param e The effects (borrowed).
+/// @return The opacity, a prop handle owned by the caller (elg_prop_f32_free()). Null on failure.
+ELG_EXPORT Prop<float>* elg_effects_opacity(const Effects* e) {
+    ELG_TRY
+    return new Prop<float>(e->opacity);
+    ELG_CATCH(nullptr)
+}
+/// Reads Effects::offset_x and Effects::offset_y.
+///
+/// @param e The effects (borrowed).
+/// @param x Receives the horizontal offset, a prop handle owned by the caller (elg_prop_f32_free()).
+/// @param y Receives the vertical offset, likewise.
+ELG_EXPORT void elg_effects_offset(const Effects* e, Prop<float>** x, Prop<float>** y) {
+    ELG_TRY
+    auto offset_x = std::make_unique<Prop<float>>(e->offset_x);
+    auto offset_y = std::make_unique<Prop<float>>(e->offset_y);
+    *x = offset_x.release();
+    *y = offset_y.release();
+    ELG_CATCH_VOID
+}
+/// Reads Effects::blur and Effects::blur_opaque.
+///
+/// @param e The effects (borrowed).
+/// @param radius Receives the radius in points, a prop handle owned by the caller (elg_prop_f32_free()), when
+///   there's a blur; left as it was otherwise.
+/// @return Whether there's a blur; false on failure.
+ELG_EXPORT bool elg_effects_blur(const Effects* e, Prop<float>** radius) {
+    ELG_TRY
+    if (!e->blur) {
+        return false;
+    }
+    *radius = new Prop<float>(*e->blur);
+    return true;
+    ELG_CATCH(false)
+}
+/// Reads Effects::blur_opaque: the content fills its bounds, so the blur's edges stay sharp.
+///
+/// @param e The effects (borrowed).
+/// @return The flag; false on failure.
+ELG_EXPORT bool elg_effects_blur_opaque(const Effects* e) {
+    ELG_TRY
+    return e->blur_opaque;
+    ELG_CATCH(false)
+}
+/// Reads Effects::rotation.
+///
+/// @param e The effects (borrowed).
+/// @param degrees Receives the rotation in degrees, clockwise, a prop handle owned by the caller
+///   (elg_prop_f32_free()), when there's one; left as it was otherwise.
+/// @return Whether there's a rotation; false on failure.
+ELG_EXPORT bool elg_effects_rotation(const Effects* e, Prop<float>** degrees) {
+    ELG_TRY
+    if (!e->rotation) {
+        return false;
+    }
+    *degrees = new Prop<float>(*e->rotation);
+    return true;
+    ELG_CATCH(false)
+}
+/// Reads Effects::scale_x and Effects::scale_y.
+///
+/// @param e The effects (borrowed).
+/// @param x Receives the horizontal scale, a prop handle owned by the caller (elg_prop_f32_free()), or null
+///   when there's none.
+/// @param y Receives the vertical scale, likewise.
+ELG_EXPORT void elg_effects_scale(const Effects* e, Prop<float>** x, Prop<float>** y) {
+    ELG_TRY
+    auto scale_x = e->scale_x ? std::make_unique<Prop<float>>(*e->scale_x) : nullptr;
+    auto scale_y = e->scale_y ? std::make_unique<Prop<float>>(*e->scale_y) : nullptr;
+    *x = scale_x.release();
+    *y = scale_y.release();
+    ELG_CATCH_VOID
+}
+/// Reads Effects::z_index.
+///
+/// @param e The effects (borrowed).
+/// @param z Receives the stacking order, a prop handle owned by the caller (elg_prop_f32_free()), when it's
+///   set; left as it was otherwise.
+/// @return Whether it's set; false on failure.
+ELG_EXPORT bool elg_effects_z_index(const Effects* e, Prop<float>** z) {
+    ELG_TRY
+    if (!e->z_index) {
+        return false;
+    }
+    *z = new Prop<float>(*e->z_index);
+    return true;
+    ELG_CATCH(false)
+}
+/// Reads Effects::clip_shape.
+///
+/// @param e The effects (borrowed).
+/// @param shape Receives the shape, owned by the caller (elg_shape_free()), when there's one; left as it was
+///   otherwise.
+/// @return Whether there's a clip shape; false on failure.
+ELG_EXPORT bool elg_effects_clip_shape(const Effects* e, Shape** shape) {
+    ELG_TRY
+    if (!e->clip_shape) {
+        return false;
+    }
+    *shape = new Shape(*e->clip_shape);
+    return true;
+    ELG_CATCH(false)
+}
+/// Reads Effects::content_shape: the shape hit testing uses.
+///
+/// @param e The effects (borrowed).
+/// @param shape Receives the shape, owned by the caller (elg_shape_free()), when there's one; left as it was
+///   otherwise.
+/// @return Whether there's a content shape; false on failure.
+ELG_EXPORT bool elg_effects_content_shape(const Effects* e, Shape** shape) {
+    ELG_TRY
+    if (!e->content_shape) {
+        return false;
+    }
+    *shape = new Shape(*e->content_shape);
+    return true;
+    ELG_CATCH(false)
+}
+/// Reads Effects::shadow.
+///
+/// @param e The effects (borrowed).
+/// @param shadow Receives the shadow when there's one; left as it was otherwise.
+/// @return Whether there's a shadow; false on failure.
+ELG_EXPORT bool elg_effects_shadow(const Effects* e, ElgShadow* shadow) {
+    ELG_TRY
+    if (!e->shadow) {
+        return false;
+    }
+    *shadow = c_shadow(*e->shadow);
+    return true;
+    ELG_CATCH(false)
+}
+/// Reads Effects::inner_shadow.
+///
+/// @param e The effects (borrowed).
+/// @param shadow Receives the shadow when there's one; left as it was otherwise.
+/// @return Whether there's an inner shadow; false on failure.
+ELG_EXPORT bool elg_effects_inner_shadow(const Effects* e, ElgShadow* shadow) {
+    ELG_TRY
+    if (!e->inner_shadow) {
+        return false;
+    }
+    *shadow = c_shadow(*e->inner_shadow);
+    return true;
+    ELG_CATCH(false)
+}
+/// Reads Effects::color_filter.
+///
+/// @param e The effects (borrowed).
+/// @param kind Receives the filter's ColorFilter::Kind, by its position in the enum, when there's one.
+/// @param amount Receives its amount, a prop handle owned by the caller (elg_prop_f32_free()), likewise.
+/// @param color Receives its color, a prop handle owned by the caller (elg_prop_color_free()), likewise.
+/// @return Whether there's a color filter; false on failure, when nothing is written.
+ELG_EXPORT bool elg_effects_color_filter(const Effects* e, int32_t* kind, Prop<float>** amount, Prop<Color>** color) {
+    ELG_TRY
+    if (!e->color_filter) {
+        return false;
+    }
+    auto filter_amount = std::make_unique<Prop<float>>(e->color_filter->amount);
+    auto filter_color = std::make_unique<Prop<Color>>(e->color_filter->color);
+    *kind = static_cast<int32_t>(e->color_filter->kind);
+    *amount = filter_amount.release();
+    *color = filter_color.release();
+    return true;
+    ELG_CATCH(false)
+}
+/// Adds to Effects::on_size_change: `on_size_change` is called after the handler the effects already have.
+/// Called after the first layout and whenever the view's size in pixels changes, on the UI thread, before
+/// paint.
+///
+/// @param e The effects (borrowed).
+/// @param on_size_change args: ElgPixelSize* (the logical size times the display scale, rounded up; may be
+///   zero). Required: none is a usage error.
+ELG_EXPORT void elg_effects_add_on_size_change(Effects* e, ElgClosure on_size_change) {
+    const Consumed consumed(on_size_change);
+    ELG_TRY
+    const SharedFn f = required(on_size_change, "on_size_change");
+    e->on_size_change = [before = std::move(e->on_size_change), f](PixelSize size) {
+        if (before) {
+            before(size);
+        }
+        ElgPixelSize arg{size.width, size.height};
+        f->call(&arg, nullptr);
+    };
+    ELG_CATCH_VOID
+}
+
 // --- Event handlers ---
 
 /// An optional elg::HoverDelay, an event handler's own (ElgEventCall op 8).

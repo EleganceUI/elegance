@@ -121,6 +121,10 @@ typedef struct ElgPopoverStyle ElgPopoverStyle;
 typedef struct ElgProgressConfiguration ElgProgressConfiguration;
 /// A handle to a std::shared_ptr<const ProgressStyle>.
 typedef struct ElgProgressStyle ElgProgressStyle;
+/// A handle to a Prop<Color>.
+typedef struct ElgPropColor ElgPropColor;
+/// A handle to a Prop<float>.
+typedef struct ElgPropF32 ElgPropF32;
 /// A handle to an elg::RowConfiguration.
 typedef struct ElgRowConfiguration ElgRowConfiguration;
 /// A handle to a std::shared_ptr<const RowStyle>.
@@ -447,9 +451,11 @@ typedef struct ElgEdgeInsets {
 
 /// A reactive argument (an elg::Prop). kind 0: `value` points at the static value (its C form);
 /// 1: `fn` returns it (ret: a C++ T*); 2: `fn` takes the environment (args: const
-/// EnvironmentValues*); 3: the theme color `theme` (Color and ShapeStyle props).
+/// EnvironmentValues*); 3: the theme color `theme` (Color and ShapeStyle props); 4: `value` points at a
+/// prop handle of the same type (ElgPropF32 for float props, ElgPropColor for Color props), which the prop
+/// copies, reactive as it is.
 typedef struct ElgProp {
-    int32_t kind;  ///< 0 to 3, as above.
+    int32_t kind;  ///< 0 to 4, as above.
     int32_t theme; ///< Kind 3: an elg::ThemeColor. Props of other types get their default value.
     /// Kind 0: the value's C form (`float*`, `bool*`, `ElgStr*`, `ElgColor*`, ...), read during the
     /// call.
@@ -3960,6 +3966,148 @@ bool elg_effects_allows_hit_testing(const ElgEffects* e);
 /// @param e The effects (borrowed).
 /// @param enabled false: the view isn't hit, and clicks go to what's behind it.
 void elg_effects_set_allows_hit_testing(ElgEffects* e, bool enabled);
+
+// --- Prop handles ---
+
+/// Reads a float prop handle (an Effects field): a tracked read.
+///
+/// @param prop The prop (borrowed).
+/// @param environment The environment it reads, for a prop that depends on one (borrowed); may be null for
+///   one that doesn't, and then such a prop is a usage error.
+/// @return The value; 0 on failure.
+float elg_prop_f32_get(const ElgPropF32* prop, const ElgEnvironmentValues* environment);
+
+/// Copies a float prop handle: both refer to the same prop, reactive as it is.
+///
+/// @param prop The prop (borrowed).
+/// @return The copy, owned by the caller (elg_prop_f32_free()). Null on failure.
+ElgPropF32* elg_prop_f32_clone(const ElgPropF32* prop);
+
+/// Frees a float prop handle.
+///
+/// @param prop The prop (consumed); may be null.
+void elg_prop_f32_free(ElgPropF32* prop);
+
+/// Reads a color prop handle (an Effects field): a tracked read.
+///
+/// @param prop The prop (borrowed).
+/// @param environment The environment it reads, for a prop that depends on one, such as a theme color
+///   (borrowed); may be null for one that doesn't, and then such a prop is a usage error.
+/// @return The color; all zeros on failure.
+ElgColor elg_prop_color_get(const ElgPropColor* prop, const ElgEnvironmentValues* environment);
+
+/// Copies a color prop handle: both refer to the same prop, reactive as it is.
+///
+/// @param prop The prop (borrowed).
+/// @return The copy, owned by the caller (elg_prop_color_free()). Null on failure.
+ElgPropColor* elg_prop_color_clone(const ElgPropColor* prop);
+
+/// Frees a color prop handle.
+///
+/// @param prop The prop (consumed); may be null.
+void elg_prop_color_free(ElgPropColor* prop);
+
+// --- Reading effects ---
+
+/// Reads Effects::opacity, so that a modifier can build on it (with an ElgProp of kind 4, or a closure that
+/// reads it).
+///
+/// @param e The effects (borrowed).
+/// @return The opacity, a prop handle owned by the caller (elg_prop_f32_free()). Null on failure.
+ElgPropF32* elg_effects_opacity(const ElgEffects* e);
+
+/// Reads Effects::offset_x and Effects::offset_y.
+///
+/// @param e The effects (borrowed).
+/// @param x Receives the horizontal offset, a prop handle owned by the caller (elg_prop_f32_free()).
+/// @param y Receives the vertical offset, likewise.
+void elg_effects_offset(const ElgEffects* e, ElgPropF32** x, ElgPropF32** y);
+
+/// Reads Effects::blur and Effects::blur_opaque.
+///
+/// @param e The effects (borrowed).
+/// @param radius Receives the radius in points, a prop handle owned by the caller (elg_prop_f32_free()), when
+///   there's a blur; left as it was otherwise.
+/// @return Whether there's a blur; false on failure.
+bool elg_effects_blur(const ElgEffects* e, ElgPropF32** radius);
+
+/// Reads Effects::blur_opaque: the content fills its bounds, so the blur's edges stay sharp.
+///
+/// @param e The effects (borrowed).
+/// @return The flag; false on failure.
+bool elg_effects_blur_opaque(const ElgEffects* e);
+
+/// Reads Effects::rotation.
+///
+/// @param e The effects (borrowed).
+/// @param degrees Receives the rotation in degrees, clockwise, a prop handle owned by the caller
+///   (elg_prop_f32_free()), when there's one; left as it was otherwise.
+/// @return Whether there's a rotation; false on failure.
+bool elg_effects_rotation(const ElgEffects* e, ElgPropF32** degrees);
+
+/// Reads Effects::scale_x and Effects::scale_y.
+///
+/// @param e The effects (borrowed).
+/// @param x Receives the horizontal scale, a prop handle owned by the caller (elg_prop_f32_free()), or null
+///   when there's none.
+/// @param y Receives the vertical scale, likewise.
+void elg_effects_scale(const ElgEffects* e, ElgPropF32** x, ElgPropF32** y);
+
+/// Reads Effects::z_index.
+///
+/// @param e The effects (borrowed).
+/// @param z Receives the stacking order, a prop handle owned by the caller (elg_prop_f32_free()), when it's
+///   set; left as it was otherwise.
+/// @return Whether it's set; false on failure.
+bool elg_effects_z_index(const ElgEffects* e, ElgPropF32** z);
+
+/// Reads Effects::clip_shape.
+///
+/// @param e The effects (borrowed).
+/// @param shape Receives the shape, owned by the caller (elg_shape_free()), when there's one; left as it was
+///   otherwise.
+/// @return Whether there's a clip shape; false on failure.
+bool elg_effects_clip_shape(const ElgEffects* e, ElgShape** shape);
+
+/// Reads Effects::content_shape: the shape hit testing uses.
+///
+/// @param e The effects (borrowed).
+/// @param shape Receives the shape, owned by the caller (elg_shape_free()), when there's one; left as it was
+///   otherwise.
+/// @return Whether there's a content shape; false on failure.
+bool elg_effects_content_shape(const ElgEffects* e, ElgShape** shape);
+
+/// Reads Effects::shadow.
+///
+/// @param e The effects (borrowed).
+/// @param shadow Receives the shadow when there's one; left as it was otherwise.
+/// @return Whether there's a shadow; false on failure.
+bool elg_effects_shadow(const ElgEffects* e, ElgShadow* shadow);
+
+/// Reads Effects::inner_shadow.
+///
+/// @param e The effects (borrowed).
+/// @param shadow Receives the shadow when there's one; left as it was otherwise.
+/// @return Whether there's an inner shadow; false on failure.
+bool elg_effects_inner_shadow(const ElgEffects* e, ElgShadow* shadow);
+
+/// Reads Effects::color_filter.
+///
+/// @param e The effects (borrowed).
+/// @param kind Receives the filter's ColorFilter::Kind, by its position in the enum, when there's one.
+/// @param amount Receives its amount, a prop handle owned by the caller (elg_prop_f32_free()), likewise.
+/// @param color Receives its color, a prop handle owned by the caller (elg_prop_color_free()), likewise.
+/// @return Whether there's a color filter; false on failure, when nothing is written.
+bool elg_effects_color_filter(const ElgEffects* e, int32_t* kind, ElgPropF32** amount, ElgPropColor** color);
+
+/// Adds to Effects::on_size_change: `on_size_change` is called after the handler the effects already have.
+/// Called after the first layout and whenever the view's size in pixels changes, on the UI thread, before
+/// paint.
+///
+/// @param e The effects (borrowed).
+/// @param on_size_change args: ElgPixelSize* (the logical size times the display scale, rounded up; may be
+///   zero). Required: none is a usage error.
+void elg_effects_add_on_size_change(ElgEffects* e, ElgClosure on_size_change);
 
 // --- Event handlers ---
 

@@ -169,6 +169,29 @@ View* elg_mod_on_key_capture(const View* v, ElgClosure on_key);
 View* elg_mod_rust_event_modifier(const View* v, ElgClosure make_handler);
 void elg_app_menu_bar(App* app, const ElgMenuBarItem* menus, size_t count);
 uint32_t elg_primary_modifier();
+using PropF32 = elg::Prop<float>;
+using PropColor = elg::Prop<elg::Color>;
+float elg_prop_f32_get(const PropF32* prop, const EnvironmentValues* environment);
+PropF32* elg_prop_f32_clone(const PropF32* prop);
+void elg_prop_f32_free(PropF32* prop);
+ElgColor elg_prop_color_get(const PropColor* prop, const EnvironmentValues* environment);
+PropColor* elg_prop_color_clone(const PropColor* prop);
+void elg_prop_color_free(PropColor* prop);
+PropF32* elg_effects_opacity(const elg::Effects* e);
+void elg_effects_offset(const elg::Effects* e, PropF32** x, PropF32** y);
+bool elg_effects_blur(const elg::Effects* e, PropF32** radius);
+bool elg_effects_blur_opaque(const elg::Effects* e);
+bool elg_effects_rotation(const elg::Effects* e, PropF32** degrees);
+void elg_effects_scale(const elg::Effects* e, PropF32** x, PropF32** y);
+bool elg_effects_z_index(const elg::Effects* e, PropF32** z);
+bool elg_effects_clip_shape(const elg::Effects* e, elg::Shape** shape);
+bool elg_effects_content_shape(const elg::Effects* e, elg::Shape** shape);
+bool elg_effects_shadow(const elg::Effects* e, ElgShadow* shadow);
+bool elg_effects_inner_shadow(const elg::Effects* e, ElgShadow* shadow);
+bool elg_effects_color_filter(const elg::Effects* e, int32_t* kind, PropF32** amount, PropColor** color);
+void elg_effects_add_on_size_change(elg::Effects* e, ElgClosure on_size_change);
+void elg_effects_set_opacity(elg::Effects* e, ElgProp opacity);
+void elg_shape_free(elg::Shape* shape);
 void elg_button_style_assign(std::shared_ptr<const elg::ButtonStyle>* target, const std::shared_ptr<const elg::ButtonStyle>* style);
 void elg_env_set_button_style_prop(EnvironmentValues* environment, ElgProp style);
 std::shared_ptr<const elg::ButtonStyle>* elg_env_button_style(const EnvironmentValues* environment);
@@ -1150,4 +1173,139 @@ TEST_CASE("a reactive style follows its state, and a style prop without a style 
     CHECK(elg_env_picker_style(environment) == nullptr);
     CHECK(take_error() == 2);
     elg_env_free(environment);
+}
+
+TEST_CASE("the C API reads Effects back as reactive props", "[c-api][effects]") {
+    detail::Scope scope;
+    const detail::Scope::Use use(scope);
+    const elg::State<float> faded(0.5f);
+    elg::Effects effects;
+    effects.opacity = elg::Prop<float>([faded] { return faded(); });
+
+    // A handle follows its prop, and a prop of kind 4 copies it, reactive as it is.
+    PropF32* opacity = elg_effects_opacity(&effects);
+    REQUIRE(opacity);
+    CHECK(elg_prop_f32_get(opacity, nullptr) == 0.5f);
+    elg::Effects other;
+    elg_effects_set_opacity(&other, ElgProp{.kind = 4, .theme = 0, .value = opacity, .fn = {}});
+    CHECK(take_error() == 0);
+    faded.set(0.25f);
+    CHECK(elg_prop_f32_get(opacity, nullptr) == 0.25f);
+    CHECK(other.opacity.get() == 0.25f);
+    PropF32* copy = elg_prop_f32_clone(opacity);
+    elg_prop_f32_free(opacity);
+    CHECK(elg_prop_f32_get(copy, nullptr) == 0.25f);
+    elg_prop_f32_free(copy);
+
+    // Kind 4 is for float and Color props only.
+    CHECK(elg_text(ElgProp{.kind = 4, .theme = 0, .value = &effects, .fn = {}}) == nullptr);
+    CHECK(take_error() == 2);
+
+    // What isn't set reads as not set; what is, reads back.
+    PropF32* prop = nullptr;
+    elg::Shape* shape = nullptr;
+    ElgShadow shadow{};
+    CHECK_FALSE(elg_effects_blur(&effects, &prop));
+    CHECK_FALSE(elg_effects_rotation(&effects, &prop));
+    CHECK_FALSE(elg_effects_z_index(&effects, &prop));
+    CHECK_FALSE(elg_effects_clip_shape(&effects, &shape));
+    CHECK_FALSE(elg_effects_content_shape(&effects, &shape));
+    CHECK_FALSE(elg_effects_shadow(&effects, &shadow));
+    CHECK_FALSE(elg_effects_inner_shadow(&effects, &shadow));
+    CHECK(prop == nullptr);
+    CHECK(shape == nullptr);
+
+    effects.blur = 4.f;
+    effects.blur_opaque = true;
+    effects.rotation = 30.f;
+    effects.scale_x = 2.f;
+    effects.z_index = 3.f;
+    effects.offset_x = 5.f;
+    effects.clip_shape = elg::Circle();
+    effects.content_shape = elg::Circle();
+    effects.shadow = elg::Shadow{.radius = 12, .y = 4};
+    effects.inner_shadow = elg::Shadow{.radius = 2};
+    REQUIRE(elg_effects_blur(&effects, &prop));
+    CHECK(elg_prop_f32_get(prop, nullptr) == 4.f);
+    elg_prop_f32_free(prop);
+    CHECK(elg_effects_blur_opaque(&effects));
+    REQUIRE(elg_effects_rotation(&effects, &prop));
+    CHECK(elg_prop_f32_get(prop, nullptr) == 30.f);
+    elg_prop_f32_free(prop);
+    REQUIRE(elg_effects_z_index(&effects, &prop));
+    CHECK(elg_prop_f32_get(prop, nullptr) == 3.f);
+    elg_prop_f32_free(prop);
+    PropF32* x = nullptr;
+    PropF32* y = nullptr;
+    elg_effects_scale(&effects, &x, &y);
+    REQUIRE(x);
+    CHECK(elg_prop_f32_get(x, nullptr) == 2.f);
+    CHECK(y == nullptr);
+    elg_prop_f32_free(x);
+    elg_effects_offset(&effects, &x, &y);
+    REQUIRE(x);
+    REQUIRE(y);
+    CHECK(elg_prop_f32_get(x, nullptr) == 5.f);
+    CHECK(elg_prop_f32_get(y, nullptr) == 0.f);
+    elg_prop_f32_free(x);
+    elg_prop_f32_free(y);
+    REQUIRE(elg_effects_clip_shape(&effects, &shape));
+    elg_shape_free(shape);
+    REQUIRE(elg_effects_content_shape(&effects, &shape));
+    elg_shape_free(shape);
+    REQUIRE(elg_effects_shadow(&effects, &shadow));
+    CHECK(shadow.radius == 12);
+    CHECK(shadow.y == 4);
+    REQUIRE(elg_effects_inner_shadow(&effects, &shadow));
+    CHECK(shadow.radius == 2);
+    CHECK(take_error() == 0);
+}
+
+TEST_CASE("a color filter's color is a prop that may need the environment", "[c-api][effects]") {
+    elg::Effects effects;
+    int32_t kind = -1;
+    PropF32* amount = nullptr;
+    PropColor* color = nullptr;
+    CHECK_FALSE(elg_effects_color_filter(&effects, &kind, &amount, &color));
+    effects.color_filter = elg::ColorFilter{.kind = elg::ColorFilter::Kind::multiply,
+                                            .amount = 0.5f,
+                                            .color = elg::Prop<elg::Color>(elg::ThemeColor::accent)};
+    REQUIRE(elg_effects_color_filter(&effects, &kind, &amount, &color));
+    CHECK(kind == static_cast<int32_t>(elg::ColorFilter::Kind::multiply));
+    CHECK(elg_prop_f32_get(amount, nullptr) == 0.5f);
+    elg_prop_color_get(color, nullptr); // a theme color needs an environment
+    CHECK(take_error() == 2);
+    EnvironmentValues* environment = elg_env_new();
+    const ElgColor accent = elg_prop_color_get(color, environment);
+    CHECK(take_error() == 0);
+    const elg::Color expected = environment->color(elg::ThemeColor::accent);
+    CHECK(accent.r == expected.r);
+    CHECK(accent.a == expected.a);
+    PropColor* copy = elg_prop_color_clone(color);
+    REQUIRE(copy);
+    elg_prop_color_free(copy);
+    elg_env_free(environment);
+    elg_prop_f32_free(amount);
+    elg_prop_color_free(color);
+}
+
+TEST_CASE("size handlers added through the C API run after the ones before them", "[c-api][effects]") {
+    std::vector<std::string> log;
+    elg::Effects effects;
+    effects.on_size_change = [&log](elg::PixelSize) { log.emplace_back("first"); };
+    Logged added{&log, "added"};
+    const auto log_size = [](void* data, void*, void*) {
+        const auto* logged = static_cast<const Logged*>(data);
+        logged->log->push_back(logged->name);
+        return true;
+    };
+    elg_effects_add_on_size_change(&effects, {&added, log_size, nullptr});
+    REQUIRE(effects.on_size_change);
+    effects.on_size_change(elg::PixelSize{10, 20});
+    CHECK(log == std::vector<std::string>{"first", "added"});
+
+    Counts none_given;
+    elg_effects_add_on_size_change(&effects, none(none_given));
+    CHECK(take_error() == 2);
+    CHECK(none_given.drops == 1);
 }

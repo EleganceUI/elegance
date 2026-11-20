@@ -193,9 +193,11 @@ struct ElgEdgeInsets {
 
 /// A reactive argument (an elg::Prop). kind 0: `value` points at the static value (its C form);
 /// 1: `fn` returns it (ret: a C++ T*); 2: `fn` takes the environment (args: const
-/// EnvironmentValues*); 3: the theme color `theme` (Color and ShapeStyle props).
+/// EnvironmentValues*); 3: the theme color `theme` (Color and ShapeStyle props); 4: `value` points at a
+/// prop handle of the same type (ElgPropF32 for float props, ElgPropColor for Color props), which the prop
+/// copies, reactive as it is.
 struct ElgProp {
-    int32_t kind;      ///< 0 to 3, as above.
+    int32_t kind;      ///< 0 to 4, as above.
     int32_t theme;     ///< Kind 3: an elg::ThemeColor. Props of other types get their default value.
     /// Kind 0: the value's C form (`float*`, `bool*`, `ElgStr*`, `ElgColor*`, ...), read during the
     /// call.
@@ -854,6 +856,10 @@ inline elg::Shadow shadow(ElgShadow s) {
     return {color(s.color), s.radius, s.x, s.y, s.spread};
 }
 
+inline ElgShadow c_shadow(const elg::Shadow& s) {
+    return {c_color(s.color), s.radius, s.x, s.y, s.spread};
+}
+
 inline elg::StrokeStyle stroke_style(const ElgStrokeStyle& s) {
     elg::StrokeStyle result;
     result.width = s.width;
@@ -1060,6 +1066,12 @@ elg::Prop<T> prop(ElgProp& p) {
             return result;
         });
     }
+    case 4:
+        if constexpr (std::is_same_v<T, float> || std::is_same_v<T, elg::Color>) {
+            return *static_cast<const elg::Prop<T>*>(p.value);
+        } else {
+            throw elg::UsageError("a prop of kind 4 must be a float or Color prop");
+        }
     case 3:
         if constexpr (std::is_convertible_v<elg::Color, T>) {
             return elg::Prop<T>(static_cast<elg::ThemeColor>(p.theme));
