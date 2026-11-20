@@ -5,6 +5,7 @@
 #include "reactive/timers.h"
 
 #include "core/app_errors.h"
+#include "core/profile.h"
 
 #include <elg/error.h>
 #include <elg/reactive.h>
@@ -78,6 +79,10 @@ bool run_due_timers(double now) {
             due.push_back(timer);
         }
     }
+    if (due.empty()) {
+        return false;
+    }
+    ELG_ZONE("Timers");
     std::ranges::stable_sort(due, {}, &TimerState::due);
     for (const auto& timer : due) {
         if (timer->done) {
@@ -94,7 +99,7 @@ bool run_due_timers(double now) {
         const std::function<void()> action = timer->action;
         run_app_code(AppCode::timer, action);
     }
-    return !due.empty();
+    return true;
 }
 
 void cancel_all_timers() noexcept {
@@ -113,6 +118,10 @@ bool has_lifecycle_actions() noexcept {
 }
 
 bool run_lifecycle_actions() {
+    if (g_lifecycle.empty()) {
+        return false;
+    }
+    ELG_ZONE("Lifecycle actions");
     bool ran = false;
     while (!g_lifecycle.empty()) {
         std::vector<std::function<void()>> actions;

@@ -4,6 +4,8 @@
 
 #include "render/frame_mailbox.h"
 
+#include "core/profile.h"
+
 #include <algorithm>
 #include <utility>
 
@@ -35,6 +37,7 @@ std::uint64_t FrameMailbox::post(WindowFrame frame) {
 }
 
 bool FrameMailbox::wait_until_done(std::uint64_t sequence, std::chrono::milliseconds timeout) {
+    ELG_ZONE("Wait for render");
     std::unique_lock lock(mutex_);
     return work_done_.wait_for(lock, timeout, [&] { return closed_ || done_ >= sequence; });
 }

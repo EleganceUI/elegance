@@ -11,6 +11,7 @@
 #include "reactive/runtime.h"
 
 #include "core/app_errors.h"
+#include "core/profile.h"
 #include "core/scope_exit.h"
 
 #include <elg/error.h>
@@ -309,6 +310,10 @@ void flush_effects() {
     if (g_batch_depth > 0 || g_running > 0 || g_flushing) {
         return;
     }
+    if (g_priority_pending.empty() && g_pending.empty()) {
+        return; // nothing to run
+    }
+    ELG_ZONE("Effects");
     g_flushing = true;
     struct Done {
         Done() = default;

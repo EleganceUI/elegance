@@ -8,6 +8,7 @@
 #include "core/app_errors.h"
 #include "core/crash.h"
 #include "core/log.h"
+#include "core/profile.h"
 #include "core/scope_exit.h"
 #include "reactive/timers.h"
 #include "platform/desktop.h"
@@ -380,10 +381,14 @@ WindowFrame build_frame(LiveWindow& live) {
     const Size size = live.fit ? live.fit->size : live.window.logical_size();
     const ProposedSize proposal{size.width, size.height};
     const LayoutScaleScope layout_scale(frame.scale);
-    const Size fitted = live.root->size_that_fits(proposal);
-    live.root->place(aligned_position({0, 0, size.width, size.height}, fitted, Alignment::center), proposal);
-    live.root->notify_render_size(frame.scale);
     {
+        ELG_ZONE("Layout");
+        const Size fitted = live.root->size_that_fits(proposal);
+        live.root->place(aligned_position({0, 0, size.width, size.height}, fitted, Alignment::center), proposal);
+        live.root->notify_render_size(frame.scale);
+    }
+    {
+        ELG_ZONE("Paint");
         const PathCache::Use paths(live.paths);
         const PaintScope paint(live.paint_epoch);
         add_reads(*live.paint_reads, [&] { live.root->paint(frame.list); });
@@ -879,7 +884,11 @@ int App::run() {
     };
 
     // Builds and posts a window's frame. Glyphs it used for the first time go to the atlas first.
+    bool frame_built = false; // in this pass of the loop: it ends a frame for the profiler
     const auto post_frame = [&](LiveWindow& live) {
+        ELG_ZONE("Window frame");
+        ELG_ZONE_TEXT(live.entry->desc.title.data(), live.entry->desc.title.size());
+        frame_built = true;
         const DeferEffects drawing; // what layout and paint write waits for the next flush
         // Cleared first: layout may ask for another frame (lazy stacks measuring new items,
         // ScrollPosition requests settling), and that request must survive.
@@ -918,6 +927,7 @@ int App::run() {
             // during bursts of frames it's at most every kAccessibilityInterval, and once after.
             const double now = seconds_now();
             if (now >= live.accessibility_next) {
+                ELG_ZONE("Accessibility");
                 live.accessibility->update();
                 live.accessibility_next = now + kAccessibilityInterval;
                 live.accessibility_stale = false;
@@ -925,14 +935,17 @@ int App::run() {
                 live.accessibility_stale = true; // sent by the main loop when it's time
             }
         }
-        if (text.atlas.requested() != glyphs_requested) {
-            text.atlas.wait_idle(kGlyphFrameHold);
+        {
+            ELG_ZONE("Post frame");
+            if (text.atlas.requested() != glyphs_requested) {
+                text.atlas.wait_idle(kGlyphFrameHold);
+            }
+            const std::uint64_t layout = text.atlas.layout(); // what the uploads taken now are for
+            if (std::vector<GlyphUpload> uploads = text.atlas.take_uploads(); !uploads.empty()) {
+                mailbox.post(AtlasUploadCommand{std::move(uploads), layout});
+            }
+            live.last_frame = mailbox.post(std::move(frame));
         }
-        const std::uint64_t layout = text.atlas.layout(); // what the uploads taken now are for
-        if (std::vector<GlyphUpload> uploads = text.atlas.take_uploads(); !uploads.empty()) {
-            mailbox.post(AtlasUploadCommand{std::move(uploads), layout});
-        }
-        live.last_frame = mailbox.post(std::move(frame));
         return live.last_frame;
     };
     // Hidden and minimized windows don't draw new frames of videos; shown again, a new frame
@@ -1204,6 +1217,10 @@ int App::run() {
     // Carries out queued requests: closes, then actions of chosen items, then opens.
     bool check_popup_focus = false;
     const auto process_popups = [&] {
+        if (!pending.any() && !check_popup_focus) {
+            return;
+        }
+        ELG_ZONE("Popups");
         while (pending.any()) {
             if (const std::optional<int> level = std::exchange(pending.close_level, std::nullopt)) {
                 close_menus_from(*level);
@@ -1631,6 +1648,7 @@ int App::run() {
         // Idle: block until something happens. Animating: keep drawing, picking up events as
         // they come.
         const bool animating = std::ranges::any_of(windows, [](const auto& live) { return live->animating; });
+        std::optional<platform::Event> waited;
         if (!animating && !pending.any() && !has_lifecycle_actions() && !has_scheduled_effects()) {
             // Wake for the next timer or pending hover change (hover delays), else sleep until an
             // event.
@@ -1647,10 +1665,17 @@ int App::run() {
                     }
                 }
             }
-            deliver(deadline ? platform.wait_event(*deadline - seconds_now()) : platform.wait_event());
+            ELG_ZONE("Idle");
+            waited.emplace(deadline ? platform.wait_event(*deadline - seconds_now()) : platform.wait_event());
         }
-        while (auto event = platform.poll_event()) {
-            deliver(*event);
+        {
+            ELG_ZONE("Events");
+            if (waited) {
+                deliver(*waited);
+            }
+            while (auto event = platform.poll_event()) {
+                deliver(*event);
+            }
         }
         if (text.atlas.has_uploads()) {
             for (const auto& live : windows) {
@@ -1667,6 +1692,7 @@ int App::run() {
             // A coalesced accessibility update, once frames stopped coming (no need to draw).
             if (live->accessibility_stale && !live->dirty && !live->animating &&
                 seconds_now() >= live->accessibility_next) {
+                ELG_ZONE("Accessibility");
                 live->accessibility_stale = false;
                 live->accessibility_next = seconds_now() + kAccessibilityInterval;
                 live->accessibility->update();
@@ -1778,6 +1804,9 @@ int App::run() {
             if (live->animating) {
                 mailbox.wait_until_done(live->last_frame, kAnimationFrameTimeout);
             }
+        }
+        if (std::exchange(frame_built, false)) {
+            ELG_FRAME();
         }
     }
     if (exit_error) {
