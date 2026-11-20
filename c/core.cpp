@@ -1104,6 +1104,20 @@ ELG_EXPORT void elg_app_free(App* app) {
     ELG_CATCH_VOID
 }
 
+/// Wraps `App::menu_bar()`: the menu bar, its top-level menus each with its items as `submenu` (macOS: the
+/// app's menu bar; Windows: a menu bar in each window with a system title bar; Linux: a bar of menus drawn in
+/// each window). Callable while the app runs, replacing the menus. Item closures run on the UI thread.
+///
+/// @param app The app (borrowed).
+/// @param menus The top-level menus, read during the call; their closures are consumed.
+/// @param count Number of `menus`.
+ELG_EXPORT void elg_app_menu_bar(App* app, const ElgMenuBarItem* menus, size_t count) {
+    ELG_TRY
+    ConsumedMenu<ElgMenuBarItem, MenuBarItem> consumed(menus, count);
+    app->menu_bar(consumed.take());
+    ELG_CATCH_VOID
+}
+
 /// Wraps `App::window()`: adds a window that opens when the app runs. `content` (ret: View*)
 /// builds the window's root view when it opens. Records a UsageError while the app runs.
 ///
@@ -1209,6 +1223,16 @@ constexpr std::uint32_t kAbiVersion = 4;
 ELG_EXPORT uint32_t elg_abi_version() {
     ELG_TRY_ANY_THREAD
     return kAbiVersion;
+    ELG_CATCH(0)
+}
+
+/// Wraps `primary_modifier()`: the platform's shortcut modifier. Callable from any thread.
+///
+/// @return The elg::KeyModifiers bits (see ElgKeyEvent): 8 (super, Cmd) on macOS, 2 (control) elsewhere; 0 on
+///   failure.
+ELG_EXPORT uint32_t elg_primary_modifier() {
+    ELG_TRY_ANY_THREAD
+    return static_cast<uint32_t>(primary_modifier());
     ELG_CATCH(0)
 }
 
@@ -1601,6 +1625,7 @@ ELG_EXPORT void elg_layouts_core(ElgStrSink out, void* ctx) {
     ELG_LAYOUT(ElgTheme);
     ELG_LAYOUT(ElgLayoutChild);
     ELG_LAYOUT(ElgWindowDesc);
+    ELG_LAYOUT(ElgMenuBarItem);
     ELG_LAYOUT(ElgPose);
     ELG_CATCH_VOID
 }

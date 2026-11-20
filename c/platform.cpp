@@ -1109,67 +1109,6 @@ struct ElgTrayMenuItem {
     size_t submenu_count;           ///< Number of `submenu` items; 0: no submenu.
 };
 
-namespace {
-
-// Consumed for a menu, a tree of items: take() takes the closures over in order (each item's
-// action and toggled, then its submenu's), and on return or throw the destructor releases those it
-// hasn't reached. Declare it first, like Consumed.
-class ConsumedMenu {
-public:
-    ConsumedMenu(const ElgTrayMenuItem* items, size_t count) noexcept : items_(items), count_(count) {}
-    ~ConsumedMenu() {
-        size_t index = 0;
-        release_untaken(items_, count_, index);
-    }
-    ConsumedMenu(const ConsumedMenu&) = delete;
-    ConsumedMenu& operator=(const ConsumedMenu&) = delete;
-    ConsumedMenu(ConsumedMenu&&) = delete;
-    ConsumedMenu& operator=(ConsumedMenu&&) = delete;
-
-    std::vector<TrayMenuItem> take() { return menu(items_, count_); }
-
-private:
-    std::vector<TrayMenuItem> menu(const ElgTrayMenuItem* items, size_t count) {
-        std::vector<TrayMenuItem> result;
-        result.reserve(count);
-        for (size_t i = 0; i < count; ++i) {
-            TrayMenuItem item;
-            item.title = str(items[i].title);
-            item.action = action(next(items[i].action));
-            if (items[i].checked >= 0) {
-                item.checked = items[i].checked != 0;
-            }
-            item.toggled = consumer<bool>(next(items[i].toggled));
-            item.enabled = items[i].enabled;
-            item.submenu = menu(items[i].submenu, items[i].submenu_count);
-            result.push_back(std::move(item));
-        }
-        return result;
-    }
-    // share() for the next closure in order.
-    SharedFn next(ElgClosure closure) {
-        SharedFn f = share(closure);
-        ++taken_;
-        return f;
-    }
-    void release_untaken(const ElgTrayMenuItem* items, size_t count, size_t& index) const noexcept {
-        for (size_t i = 0; i < count; ++i) {
-            for (ElgClosure closure : {items[i].action, items[i].toggled}) {
-                if (index++ >= taken_) {
-                    release(closure);
-                }
-            }
-            release_untaken(items[i].submenu, items[i].submenu_count, index);
-        }
-    }
-
-    const ElgTrayMenuItem* items_;
-    size_t count_;
-    size_t taken_ = 0;
-};
-
-} // namespace
-
 /// Wraps `TrayIcon(TrayIconOptions)`: an icon in the system tray (Windows: the notification area)
 /// with a menu, shown while any copy lives. Call it while an App runs; otherwise it records a
 /// UsageError.
@@ -1182,7 +1121,7 @@ private:
 /// @return The tray icon, owned by the caller (elg_tray_icon_free()), or nullptr on failure.
 ELG_EXPORT TrayIcon* elg_tray_icon_new(const ElgImageSource* icon, ElgStr tooltip, const ElgTrayMenuItem* menu, size_t count) {
     ELG_TRY
-    ConsumedMenu consumed(menu, count);
+    ConsumedMenu<ElgTrayMenuItem, TrayMenuItem> consumed(menu, count);
     return new TrayIcon({image_source(*icon), str(tooltip), consumed.take()});
     ELG_CATCH(nullptr)
 }
@@ -1219,7 +1158,7 @@ ELG_EXPORT void elg_tray_icon_set_tooltip(const TrayIcon* icon, ElgStr tooltip) 
 /// @param count Number of `menu` items.
 ELG_EXPORT void elg_tray_icon_set_menu(const TrayIcon* icon, const ElgTrayMenuItem* menu, size_t count) {
     ELG_TRY
-    ConsumedMenu consumed(menu, count);
+    ConsumedMenu<ElgTrayMenuItem, TrayMenuItem> consumed(menu, count);
     icon->set_menu(consumed.take());
     ELG_CATCH_VOID
 }

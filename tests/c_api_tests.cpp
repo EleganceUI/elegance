@@ -167,6 +167,8 @@ View* elg_mod_on_text_input_capture(const View* v, ElgClosure on_text_input);
 View* elg_mod_on_key_press_capture(const View* v, int32_t key, ElgClosure on_press);
 View* elg_mod_on_key_capture(const View* v, ElgClosure on_key);
 View* elg_mod_rust_event_modifier(const View* v, ElgClosure make_handler);
+void elg_app_menu_bar(App* app, const ElgMenuBarItem* menus, size_t count);
+uint32_t elg_primary_modifier();
 }
 
 namespace {
@@ -948,4 +950,64 @@ TEST_CASE("a Rust event handler says its phase with op 14", "[c-api][capture-pha
     CHECK(log == std::vector<std::string>{"capture", "inner", "silent"});
     elg_view_free(capturing);
     elg_view_free(both);
+}
+
+TEST_CASE("menu bar items convert from the C API, with their shortcuts, roles and submenus", "[c-api][menus]") {
+    Counts saved;
+    Counts toggled;
+    const ElgMenuBarItem file_items[] = {
+        {.title = {"Save", 4},
+         .action = closure(saved),
+         .checked = -1,
+         .enabled = true,
+         .has_shortcut = true,
+         .shortcut_key = static_cast<int32_t>(elg::Key::s),
+         .shortcut_modifiers = static_cast<uint32_t>(elg::KeyModifiers::control | elg::KeyModifiers::shift)},
+        {.checked = -1, .enabled = true}, // a separator
+        {.title = {"Wrap", 4}, .checked = 1, .toggled = closure(toggled), .enabled = false},
+        {.checked = -1, .enabled = true, .role = 6}, // quit
+        {.title = {"Odd", 3}, .checked = -1, .enabled = true, .role = 99},
+    };
+    const ElgMenuBarItem menus[] = {{.title = {"File", 4}, .checked = -1, .enabled = true, .submenu = file_items,
+                                     .submenu_count = std::size(file_items)}};
+    std::vector<elg::MenuBarItem> converted;
+    {
+        elg_shim::ConsumedMenu<ElgMenuBarItem, elg::MenuBarItem> consumed(menus, std::size(menus));
+        converted = consumed.take();
+    }
+    REQUIRE(converted.size() == 1);
+    CHECK(converted[0].title == "File");
+    REQUIRE(converted[0].submenu.size() == 5);
+    const elg::MenuBarItem& save = converted[0].submenu[0];
+    CHECK(save.shortcut == std::optional<elg::KeyboardShortcut>(elg::KeyboardShortcut{
+                               elg::Key::s, elg::KeyModifiers::control | elg::KeyModifiers::shift}));
+    CHECK_FALSE(save.checked.has_value());
+    save.action();
+    CHECK(saved.calls == 1);
+    CHECK(converted[0].submenu[1].title.empty());
+    const elg::MenuBarItem& wrap = converted[0].submenu[2];
+    CHECK(wrap.checked == std::optional<bool>(true));
+    CHECK_FALSE(wrap.enabled);
+    CHECK(wrap.toggled);
+    CHECK(converted[0].submenu[3].role == elg::MenuRole::quit);
+    CHECK(converted[0].submenu[4].role == elg::MenuRole::none);
+    converted.clear();
+    CHECK(saved.drops == 1);
+    CHECK(toggled.drops == 1);
+}
+
+TEST_CASE("elg_app_menu_bar takes the menus' closures, and elg_primary_modifier is the platform's", "[c-api][menus]") {
+    Counts quit;
+    const ElgMenuBarItem items[] = {{.title = {"Quit", 4}, .action = closure(quit), .checked = -1, .enabled = true}};
+    const ElgMenuBarItem menus[] = {
+        {.title = {"App", 3}, .checked = -1, .enabled = true, .submenu = items, .submenu_count = 1}};
+    App* app = elg_app_new();
+    REQUIRE(app);
+    elg_app_menu_bar(app, menus, std::size(menus));
+    CHECK(take_error() == 0);
+    CHECK(quit.drops == 0); // the app keeps it
+    elg_app_free(app);
+    CHECK(quit.drops == 1);
+
+    CHECK(elg_primary_modifier() == static_cast<uint32_t>(elg::primary_modifier()));
 }

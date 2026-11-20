@@ -592,6 +592,26 @@ typedef struct ElgEventCall {
     ElgRotateEvent rotate;   ///< Op 12: the event.
 } ElgEventCall;
 
+/// An elg::MenuBarItem: a top-level menu (with a submenu), a command, a check box, or a separator (an
+/// empty title and no role). The function that takes the menus consumes its closures.
+typedef struct ElgMenuBarItem {
+    ElgStr title;                         ///< Empty: the role's standard title, or with no role a separator.
+    ElgClosure action;                    ///< Runs when chosen (`call` null: none); args and ret: null.
+    int32_t checked;                      ///< -1: not a check box, 0/1: initially unchecked/checked.
+    /// Check boxes: runs when chosen, with the new state (`call` null: none); args: bool*, ret: null.
+    ElgClosure toggled;
+    bool enabled;                         ///< false: grayed out, and its shortcut does nothing.
+    bool has_shortcut;                    ///< false: no shortcut.
+    int32_t shortcut_key;                 ///< The shortcut's elg::Key, by its position in the enum.
+    uint32_t shortcut_modifiers;          ///< The shortcut's elg::KeyModifiers (see ElgKeyEvent).
+    /// An elg::MenuRole, by its position in the enum: 0 none, 1 app, 2 window, 3 help, 4 about, 5 settings,
+    /// 6 quit, 7 hide, 8 hide_others, 9 show_all, 10 undo, 11 redo, 12 cut, 13 copy, 14 paste, 15 select_all,
+    /// 16 minimize, 17 zoom, 18 toggle_fullscreen. Other values are none.
+    int32_t role;
+    const struct ElgMenuBarItem* submenu; ///< The menu's items, read during the call.
+    size_t submenu_count;                 ///< Number of `submenu` items; 0: none.
+} ElgMenuBarItem;
+
 /// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
 typedef struct ElgWindowDesc {
     ElgStr title;                      ///< The window's title.
@@ -1633,6 +1653,15 @@ ElgApp* elg_app_new(void);
 /// @param app The app (consumed); may be null.
 void elg_app_free(ElgApp* app);
 
+/// Wraps `App::menu_bar()`: the menu bar, its top-level menus each with its items as `submenu` (macOS: the
+/// app's menu bar; Windows: a menu bar in each window with a system title bar; Linux: a bar of menus drawn in
+/// each window). Callable while the app runs, replacing the menus. Item closures run on the UI thread.
+///
+/// @param app The app (borrowed).
+/// @param menus The top-level menus, read during the call; their closures are consumed.
+/// @param count Number of `menus`.
+void elg_app_menu_bar(ElgApp* app, const ElgMenuBarItem* menus, size_t count);
+
 /// Wraps `App::window()`: adds a window that opens when the app runs. `content` (ret: View*)
 /// builds the window's root view when it opens. Records a UsageError while the app runs.
 ///
@@ -1687,6 +1716,12 @@ const char* elg_version(void);
 ///
 /// @return The version, 1 or more; 0 on failure.
 uint32_t elg_abi_version(void);
+
+/// Wraps `primary_modifier()`: the platform's shortcut modifier. Callable from any thread.
+///
+/// @return The elg::KeyModifiers bits (see ElgKeyEvent): 8 (super, Cmd) on macOS, 2 (control) elsewhere; 0 on
+///   failure.
+uint32_t elg_primary_modifier(void);
 
 // --- Animation ---
 

@@ -338,6 +338,26 @@ struct ElgEventCall {
     ElgRotateEvent rotate;     ///< Op 12: the event.
 };
 
+/// An elg::MenuBarItem: a top-level menu (with a submenu), a command, a check box, or a separator (an
+/// empty title and no role). The function that takes the menus consumes its closures.
+struct ElgMenuBarItem {
+    ElgStr title;                  ///< Empty: the role's standard title, or with no role a separator.
+    ElgClosure action;             ///< Runs when chosen (`call` null: none); args and ret: null.
+    int32_t checked;               ///< -1: not a check box, 0/1: initially unchecked/checked.
+    /// Check boxes: runs when chosen, with the new state (`call` null: none); args: bool*, ret: null.
+    ElgClosure toggled;
+    bool enabled;                  ///< false: grayed out, and its shortcut does nothing.
+    bool has_shortcut;             ///< false: no shortcut.
+    int32_t shortcut_key;          ///< The shortcut's elg::Key, by its position in the enum.
+    uint32_t shortcut_modifiers;   ///< The shortcut's elg::KeyModifiers (see ElgKeyEvent).
+    /// An elg::MenuRole, by its position in the enum: 0 none, 1 app, 2 window, 3 help, 4 about, 5 settings,
+    /// 6 quit, 7 hide, 8 hide_others, 9 show_all, 10 undo, 11 redo, 12 cut, 13 copy, 14 paste, 15 select_all,
+    /// 16 minimize, 17 zoom, 18 toggle_fullscreen. Other values are none.
+    int32_t role;
+    const ElgMenuBarItem* submenu; ///< The menu's items, read during the call.
+    size_t submenu_count;          ///< Number of `submenu` items; 0: none.
+};
+
 /// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
 struct ElgWindowDesc {
     ElgStr title;                      ///< The window's title.
@@ -703,6 +723,74 @@ inline elg::ShapeStyle shape_style(const ElgShapeStyle& s) {
 inline elg::EdgeInsets edge_insets(ElgEdgeInsets i) {
     return {i.top, i.leading, i.bottom, i.trailing};
 }
+
+// Consumed for a menu, a tree of items (ElgTrayMenuItem or ElgMenuBarItem): take() takes the
+// closures over in order (each item's action and toggled, then its submenu's), and on return or throw
+// the destructor releases those it hasn't reached. Declare it first, like Consumed.
+template <class CItem, class Item>
+class ConsumedMenu {
+public:
+    ConsumedMenu(const CItem* items, size_t count) noexcept : items_(items), count_(count) {}
+    ~ConsumedMenu() {
+        size_t index = 0;
+        release_untaken(items_, count_, index);
+    }
+    ConsumedMenu(const ConsumedMenu&) = delete;
+    ConsumedMenu& operator=(const ConsumedMenu&) = delete;
+    ConsumedMenu(ConsumedMenu&&) = delete;
+    ConsumedMenu& operator=(ConsumedMenu&&) = delete;
+
+    std::vector<Item> take() { return menu(items_, count_); }
+
+private:
+    std::vector<Item> menu(const CItem* items, size_t count) {
+        std::vector<Item> result;
+        result.reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+            const CItem& c = items[i];
+            Item item;
+            item.title = str(c.title);
+            item.action = action(next(c.action));
+            if (c.checked >= 0) {
+                item.checked = c.checked != 0;
+            }
+            item.toggled = consumer<bool>(next(c.toggled));
+            item.enabled = c.enabled;
+            if constexpr (std::is_same_v<Item, elg::MenuBarItem>) {
+                if (c.has_shortcut) {
+                    item.shortcut = elg::KeyboardShortcut{static_cast<elg::Key>(c.shortcut_key),
+                                                          static_cast<elg::KeyModifiers>(c.shortcut_modifiers)};
+                }
+                item.role = c.role >= 0 && c.role <= static_cast<int32_t>(elg::MenuRole::toggle_fullscreen)
+                                ? static_cast<elg::MenuRole>(c.role)
+                                : elg::MenuRole::none;
+            }
+            item.submenu = menu(c.submenu, c.submenu_count);
+            result.push_back(std::move(item));
+        }
+        return result;
+    }
+    // share() for the next closure in order.
+    SharedFn next(ElgClosure closure) {
+        SharedFn f = share(closure);
+        ++taken_;
+        return f;
+    }
+    void release_untaken(const CItem* items, size_t count, size_t& index) const noexcept {
+        for (size_t i = 0; i < count; ++i) {
+            for (ElgClosure closure : {items[i].action, items[i].toggled}) {
+                if (index++ >= taken_) {
+                    release(closure);
+                }
+            }
+            release_untaken(items[i].submenu, items[i].submenu_count, index);
+        }
+    }
+
+    const CItem* items_;
+    size_t count_;
+    size_t taken_ = 0;
+};
 
 inline elg::WindowDesc window_desc(const ElgWindowDesc& d) {
     elg::WindowDesc window;
