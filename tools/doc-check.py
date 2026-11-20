@@ -61,7 +61,8 @@ def load_libclang():
 
 def compile_commands(build):
     """Each source's compiler arguments without the compiler, the source, the output, and -Werror:
-    this check decides what fails (documentation warnings and errors), not the build's warnings."""
+    this check decides what fails (documentation warnings and errors), not the build's warnings.
+    Without GCC's module-scanning flags either, which CMake adds and libclang rejects as errors."""
     commands = {}
     for entry in json.loads((build / "compile_commands.json").read_text()):
         source = pathlib.Path(entry["directory"], entry["file"]).resolve()
@@ -73,6 +74,8 @@ def compile_commands(build):
             elif arg in ("-o", "-c", "-MF", "-MT", "-MQ"):
                 skip = arg != "-c"
             elif arg == "-Werror" or arg.startswith("-Werror="):
+                continue
+            elif arg == "-fmodules-ts" or arg.startswith(("-fmodule-mapper=", "-fdeps-")):
                 continue
             elif pathlib.Path(entry["directory"], arg).resolve() != source:
                 kept.append(arg)
