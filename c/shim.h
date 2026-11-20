@@ -956,6 +956,10 @@ struct PropValue<int> {
     static int from(const void* v) { return *static_cast<const int32_t*>(v); }
 };
 template <>
+struct PropValue<std::int64_t> {
+    static std::int64_t from(const void* v) { return *static_cast<const int64_t*>(v); }
+};
+template <>
 struct PropValue<double> {
     static double from(const void* v) { return *static_cast<const double*>(v); }
 };

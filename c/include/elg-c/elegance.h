@@ -1382,6 +1382,88 @@ ElgEnvironmentValues* elg_env_current(void);
 /// @return The environment, owned by the caller (elg_env_free()). Null on failure.
 ElgEnvironmentValues* elg_env_new(void);
 
+/// Reads the key named `name` whose value is a bool (EnvironmentValues::get_named()): one set
+/// through elg_env_set_named_bool() or by a C++ key type with that name and value type. A tracked
+/// read; there's no default. A key of that name with a value of another type reads as unset.
+/// `environment` is borrowed. Writes the value to `value` and returns true when the key is set;
+/// otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_env_get_named_bool(const ElgEnvironmentValues* environment, ElgStr name, bool* value);
+
+/// Sets the key named `name`, whose value is a bool (EnvironmentValues::set_named()), to `value`, a
+/// prop (consumed). `environment` is borrowed.
+void elg_env_set_named_bool(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
+/// Reads the key named `name` whose value is a int (EnvironmentValues::get_named()): one set
+/// through elg_env_set_named_i32() or by a C++ key type with that name and value type. A tracked
+/// read; there's no default. A key of that name with a value of another type reads as unset.
+/// `environment` is borrowed. Writes the value to `value` and returns true when the key is set;
+/// otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_env_get_named_i32(const ElgEnvironmentValues* environment, ElgStr name, int32_t* value);
+
+/// Sets the key named `name`, whose value is a int (EnvironmentValues::set_named()), to `value`, a
+/// prop (consumed). `environment` is borrowed.
+void elg_env_set_named_i32(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
+/// Reads the key named `name` whose value is a std::int64_t (EnvironmentValues::get_named()): one
+/// set through elg_env_set_named_i64() or by a C++ key type with that name and value type. A
+/// tracked read; there's no default. A key of that name with a value of another type reads as
+/// unset. `environment` is borrowed. Writes the value to `value` and returns true when the key is
+/// set; otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_env_get_named_i64(const ElgEnvironmentValues* environment, ElgStr name, int64_t* value);
+
+/// Sets the key named `name`, whose value is a std::int64_t (EnvironmentValues::set_named()), to
+/// `value`, a prop (consumed). `environment` is borrowed.
+void elg_env_set_named_i64(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
+/// Reads the key named `name` whose value is a float (EnvironmentValues::get_named()): one set
+/// through elg_env_set_named_f32() or by a C++ key type with that name and value type. A tracked
+/// read; there's no default. A key of that name with a value of another type reads as unset.
+/// `environment` is borrowed. Writes the value to `value` and returns true when the key is set;
+/// otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_env_get_named_f32(const ElgEnvironmentValues* environment, ElgStr name, float* value);
+
+/// Sets the key named `name`, whose value is a float (EnvironmentValues::set_named()), to `value`,
+/// a prop (consumed). `environment` is borrowed.
+void elg_env_set_named_f32(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
+/// Reads the key named `name` whose value is a double (EnvironmentValues::get_named()): one set
+/// through elg_env_set_named_f64() or by a C++ key type with that name and value type. A tracked
+/// read; there's no default. A key of that name with a value of another type reads as unset.
+/// `environment` is borrowed. Writes the value to `value` and returns true when the key is set;
+/// otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_env_get_named_f64(const ElgEnvironmentValues* environment, ElgStr name, double* value);
+
+/// Sets the key named `name`, whose value is a double (EnvironmentValues::set_named()), to `value`,
+/// a prop (consumed). `environment` is borrowed.
+void elg_env_set_named_f64(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
+/// Reads the key named `name` whose value is a Color (EnvironmentValues::get_named()): one set
+/// through elg_env_set_named_color() or by a C++ key type with that name and value type. A tracked
+/// read; there's no default. A key of that name with a value of another type reads as unset.
+/// `environment` is borrowed. Writes the value to `value` and returns true when the key is set;
+/// otherwise returns false, leaving `value` as it was (also on failure).
+bool elg_env_get_named_color(const ElgEnvironmentValues* environment, ElgStr name, ElgColor* value);
+
+/// Sets the key named `name`, whose value is a Color (EnvironmentValues::set_named()), to `value`,
+/// a prop (consumed). `environment` is borrowed.
+void elg_env_set_named_color(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
+/// Like elg_env_get_named_bool(), for a key whose value is a string (EnvironmentValues::get_named()).
+///
+/// @param environment The environment (borrowed).
+/// @param name The key's name.
+/// @param out Receives the value, valid during the call, when the key is set.
+/// @param ctx Passed to `out`.
+/// @return Whether the key is set; false on failure.
+bool elg_env_get_named_string(const ElgEnvironmentValues* environment, ElgStr name, ElgStrSink out, void* ctx);
+
+/// Like elg_env_set_named_bool(), for a key whose value is a string (EnvironmentValues::set_named()).
+///
+/// @param environment The environment (borrowed).
+/// @param name The key's name.
+/// @param value A string prop (consumed).
+void elg_env_set_named_string(ElgEnvironmentValues* environment, ElgStr name, ElgProp value);
+
 /// Copies an environment (cheap: copies share their entries).
 ///
 /// @param environment The environment (borrowed).

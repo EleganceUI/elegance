@@ -652,6 +652,76 @@ ELG_EXPORT EnvironmentValues* elg_env_new() {
     ELG_CATCH(nullptr)
 }
 
+// NAMED_ENV(suffix, T, CType) defines, for keys shared across languages by name, whose values are `T`
+// (`CType` in C):
+//   elg_env_get_named_<suffix>(environment, name, value): reads the key named `name` whose value is a <T>
+//     (EnvironmentValues::get_named()): one set through elg_env_set_named_<suffix>() or by a C++ key type
+//     with that name and value type. A tracked read; there's no default. A key of that name with a value of
+//     another type reads as unset. `environment` is borrowed. Writes the value to `value` and returns true
+//     when the key is set; otherwise returns false, leaving `value` as it was (also on failure).
+//   elg_env_set_named_<suffix>(environment, name, value): sets the key named `name`, whose value is a <T>
+//     (EnvironmentValues::set_named()), to `value`, a prop (consumed). `environment` is borrowed.
+// NOLINTBEGIN(bugprone-macro-parentheses)
+#define NAMED_ENV(suffix, T, CType, to_c)                                                                           \
+    ELG_EXPORT bool elg_env_get_named_##suffix(const EnvironmentValues* environment, ElgStr name, CType* value) {   \
+        ELG_TRY const std::optional<T> found = environment->get_named<T>(std::string_view(name.ptr, name.len));   \
+        if (found) {                                                                                                 \
+            *value = to_c(*found);                                                                                   \
+        }                                                                                                            \
+        return found.has_value();                                                                                    \
+        ELG_CATCH(false)                                                                                             \
+    }                                                                                                                \
+    ELG_EXPORT void elg_env_set_named_##suffix(EnvironmentValues* environment, ElgStr name, ElgProp value) {       \
+        const Consumed consumed(value); ELG_TRY                                                                      \
+        environment->set_named<T>(str(name), prop<T>(value));                                                        \
+        ELG_CATCH_VOID                                                                                               \
+    }
+// NOLINTEND(bugprone-macro-parentheses)
+
+namespace {
+
+template <class T>
+T same(T value) {
+    return value;
+}
+
+} // namespace
+
+NAMED_ENV(bool, bool, bool, same)
+NAMED_ENV(i32, int, int32_t, same)
+NAMED_ENV(i64, std::int64_t, int64_t, same)
+NAMED_ENV(f32, float, float, same)
+NAMED_ENV(f64, double, double, same)
+NAMED_ENV(color, Color, ElgColor, c_color)
+
+/// Like elg_env_get_named_bool(), for a key whose value is a string (EnvironmentValues::get_named()).
+///
+/// @param environment The environment (borrowed).
+/// @param name The key's name.
+/// @param out Receives the value, valid during the call, when the key is set.
+/// @param ctx Passed to `out`.
+/// @return Whether the key is set; false on failure.
+ELG_EXPORT bool elg_env_get_named_string(const EnvironmentValues* environment, ElgStr name, ElgStrSink out, void* ctx) {
+    ELG_TRY
+    const std::optional<std::string> found = environment->get_named<std::string>(std::string_view(name.ptr, name.len));
+    if (found) {
+        out(ctx, found->data(), found->size());
+    }
+    return found.has_value();
+    ELG_CATCH(false)
+}
+/// Like elg_env_set_named_bool(), for a key whose value is a string (EnvironmentValues::set_named()).
+///
+/// @param environment The environment (borrowed).
+/// @param name The key's name.
+/// @param value A string prop (consumed).
+ELG_EXPORT void elg_env_set_named_string(EnvironmentValues* environment, ElgStr name, ElgProp value) {
+    const Consumed consumed(value);
+    ELG_TRY
+    environment->set_named<std::string>(str(name), prop<std::string>(value));
+    ELG_CATCH_VOID
+}
+
 /// Copies an environment (cheap: copies share their entries).
 ///
 /// @param environment The environment (borrowed).

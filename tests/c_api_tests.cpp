@@ -169,6 +169,20 @@ View* elg_mod_on_key_capture(const View* v, ElgClosure on_key);
 View* elg_mod_rust_event_modifier(const View* v, ElgClosure make_handler);
 void elg_app_menu_bar(App* app, const ElgMenuBarItem* menus, size_t count);
 uint32_t elg_primary_modifier();
+bool elg_env_get_named_bool(const EnvironmentValues* environment, ElgStr name, bool* value);
+void elg_env_set_named_bool(EnvironmentValues* environment, ElgStr name, ElgProp value);
+bool elg_env_get_named_i32(const EnvironmentValues* environment, ElgStr name, int32_t* value);
+void elg_env_set_named_i32(EnvironmentValues* environment, ElgStr name, ElgProp value);
+bool elg_env_get_named_i64(const EnvironmentValues* environment, ElgStr name, int64_t* value);
+void elg_env_set_named_i64(EnvironmentValues* environment, ElgStr name, ElgProp value);
+bool elg_env_get_named_f32(const EnvironmentValues* environment, ElgStr name, float* value);
+void elg_env_set_named_f32(EnvironmentValues* environment, ElgStr name, ElgProp value);
+bool elg_env_get_named_f64(const EnvironmentValues* environment, ElgStr name, double* value);
+void elg_env_set_named_f64(EnvironmentValues* environment, ElgStr name, ElgProp value);
+bool elg_env_get_named_color(const EnvironmentValues* environment, ElgStr name, ElgColor* value);
+void elg_env_set_named_color(EnvironmentValues* environment, ElgStr name, ElgProp value);
+bool elg_env_get_named_string(const EnvironmentValues* environment, ElgStr name, ElgStrSink out, void* ctx);
+void elg_env_set_named_string(EnvironmentValues* environment, ElgStr name, ElgProp value);
 using PropF32 = elg::Prop<float>;
 using PropColor = elg::Prop<elg::Color>;
 float elg_prop_f32_get(const PropF32* prop, const EnvironmentValues* environment);
@@ -413,6 +427,23 @@ void check_style_prop(void (*set_prop)(EnvironmentValues*, ElgProp),
     free_style(read);
     elg_env_free(environment);
     CHECK(take_error() == 0);
+}
+
+// A key that a binding can share by name: its value is an int.
+struct RankKey {
+    using Value = int;
+    static constexpr std::string_view name = "test.rank";
+    static int default_value(const EnvironmentValues&) { return 0; }
+};
+
+// A static prop of `value` (kind 0).
+template <class C>
+ElgProp static_prop(const C& value) {
+    return ElgProp{.kind = 0, .theme = 0, .value = &value, .fn = {}};
+}
+
+ElgStr name_of(std::string_view name) {
+    return {name.data(), name.size()};
 }
 
 } // namespace
@@ -1308,4 +1339,64 @@ TEST_CASE("size handlers added through the C API run after the ones before them"
     elg_effects_add_on_size_change(&effects, none(none_given));
     CHECK(take_error() == 2);
     CHECK(none_given.drops == 1);
+}
+
+TEST_CASE("environment keys are shared by name and value type between C++ and the C API", "[c-api][environment]") {
+    EnvironmentValues* environment = elg_env_new();
+    REQUIRE(environment);
+    const ElgStr rank = name_of(RankKey::name);
+    int32_t number = -1;
+    CHECK_FALSE(elg_env_get_named_i32(environment, rank, &number)); // unset: no default
+    CHECK(number == -1);
+
+    // Set from C, read by the C++ key type; and the other way round.
+    const int32_t three = 3;
+    elg_env_set_named_i32(environment, rank, static_prop(three));
+    CHECK(environment->get<RankKey>() == 3);
+    environment->set<RankKey>(5);
+    REQUIRE(elg_env_get_named_i32(environment, rank, &number));
+    CHECK(number == 5);
+
+    // The same name with another type of value is another key.
+    float fraction = -1;
+    CHECK_FALSE(elg_env_get_named_f32(environment, rank, &fraction));
+    const float half = 0.5f;
+    elg_env_set_named_f32(environment, rank, static_prop(half));
+    REQUIRE(elg_env_get_named_f32(environment, rank, &fraction));
+    CHECK(fraction == 0.5f);
+    CHECK(environment->get<RankKey>() == 5);
+
+    // Every type of value.
+    const bool yes = true;
+    const int64_t big = int64_t{1} << 40;
+    const double precise = 0.125;
+    const ElgColor red{1, 0, 0, 1};
+    const ElgStr hello = name_of("hello");
+    elg_env_set_named_bool(environment, name_of("test.flag"), static_prop(yes));
+    elg_env_set_named_i64(environment, name_of("test.big"), static_prop(big));
+    elg_env_set_named_f64(environment, name_of("test.precise"), static_prop(precise));
+    elg_env_set_named_color(environment, name_of("test.tint"), static_prop(red));
+    elg_env_set_named_string(environment, name_of("test.greeting"), static_prop(hello));
+    CHECK(take_error() == 0);
+    bool flag = false;
+    int64_t big_read = 0;
+    double precise_read = 0;
+    ElgColor tint{};
+    std::string greeting;
+    CHECK(elg_env_get_named_bool(environment, name_of("test.flag"), &flag));
+    CHECK(flag);
+    CHECK(elg_env_get_named_i64(environment, name_of("test.big"), &big_read));
+    CHECK(big_read == big);
+    CHECK(elg_env_get_named_f64(environment, name_of("test.precise"), &precise_read));
+    CHECK(precise_read == 0.125);
+    CHECK(elg_env_get_named_color(environment, name_of("test.tint"), &tint));
+    CHECK(tint.r == 1.f);
+    CHECK(elg_env_get_named_string(environment, name_of("test.greeting"),
+                                   [](void* ctx, const char* ptr, size_t len) {
+                                       static_cast<std::string*>(ctx)->assign(ptr, len);
+                                   },
+                                   &greeting));
+    CHECK(greeting == "hello");
+    CHECK_FALSE(elg_env_get_named_string(environment, name_of("test.missing"), [](void*, const char*, size_t) {}, nullptr));
+    elg_env_free(environment);
 }

@@ -103,10 +103,24 @@ public:
     /// @return The child's value for `Key`.
     template <class Key>
     [[nodiscard]] typename Key::Value value() const {
-        if (const void* found = layout_value(detail::key_id(Key::name))) {
+        if (const void* found = layout_value(detail::typed_key<typename Key::Value>(Key::name))) {
             return *static_cast<const typename Key::Value*>(found);
         }
         return Key::default_value();
+    }
+    /// The value set on this child for the key named `name` whose value is a `T`, for language
+    /// bindings, which share keys by name. Unlike value(), there's no default.
+    ///
+    /// @tparam T The value's type: bool, int, std::int64_t, float, double, std::string or Color. A key of
+    ///   the same name with a value of another type reads as unset.
+    /// @param name The key's name.
+    /// @return The value, or std::nullopt when the child has none.
+    template <SharedKeyValue T>
+    [[nodiscard]] std::optional<T> value_named(std::string_view name) const {
+        if (const void* found = layout_value(detail::typed_key<T>(name))) {
+            return *static_cast<const T*>(found);
+        }
+        return std::nullopt;
     }
 
 private:
@@ -163,7 +177,8 @@ public:
     }
     /// The value for `key`, if this modifier carries it.
     ///
-    /// @param key The key's name as detail::key_id() hashes it: `detail::key_id(Key::name)`.
+    /// @param key The key's name and value type as detail::typed_key() hashes them:
+    ///   `detail::typed_key<Key::Value>(Key::name)`.
     /// @return A pointer to the `Key::Value` this modifier holds, or nullptr for another key.
     [[nodiscard]] virtual const void* value_for(std::uint64_t key) const noexcept = 0;
 };
@@ -178,10 +193,10 @@ public:
     explicit LayoutValueModifier(typename Key::Value value) : value_(std::move(value)) {}
     /// The value for `key`, if it's `Key`.
     ///
-    /// @param key A key's name as detail::key_id() hashes it.
-    /// @return The value for `Key` if `key` is `detail::key_id(Key::name)`, else nullptr.
+    /// @param key A key's name and value type as detail::typed_key() hashes them.
+    /// @return The value for `Key` if `key` is `detail::typed_key<Key::Value>(Key::name)`, else nullptr.
     [[nodiscard]] const void* value_for(std::uint64_t key) const noexcept override {
-        return key == detail::key_id(Key::name) ? &value_ : nullptr;
+        return key == detail::typed_key<typename Key::Value>(Key::name) ? &value_ : nullptr;
     }
 
 private:
