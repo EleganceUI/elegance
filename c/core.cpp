@@ -1086,30 +1086,6 @@ ELG_EXPORT View* elg_window_controls(int32_t style, bool minimize, bool maximize
 
 // --- App ---
 
-/// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
-struct ElgWindowDesc {
-    ElgStr title;                      ///< The window's title.
-    int32_t width;                     ///< Initial width.
-    int32_t height;                    ///< Initial height.
-    bool resizable;                    ///< Whether the user can resize it.
-    bool has_min_size;                 ///< false: no minimum size.
-    ElgSize min_size;                  ///< Smallest size the user can resize to, if `has_min_size`.
-    /// false: the default background, the theme's (ThemeColor::background), or clear for
-    /// transparent windows.
-    bool has_background;
-    ElgColor background;               ///< Shown where no view draws, if `has_background`.
-    int32_t title_bar;                 ///< An elg::TitleBar: 0 system, 1 hidden, 2 integrated.
-    bool has_system_controls_position; ///< false: the system's window controls go where it puts them.
-    /// TitleBar::integrated on macOS: where the system's window controls go, as the first one's
-    /// top-left corner in points from the window's top-left corner.
-    ElgPoint system_controls_position;
-    bool transparent;                  ///< The desktop shows through where the content isn't opaque.
-    float opacity;                     ///< The whole window's opacity, 0 to 1.
-    /// Covers the whole display it opens on, without a frame. `width` and `height` are its size
-    /// when it leaves fullscreen.
-    bool fullscreen;
-};
-
 /// Wraps `App()`: owns the application's lifetime, windows, event loop, and render thread.
 ///
 /// @return The new app, owned by the caller (elg_app_free()), or nullptr on failure.
@@ -1138,24 +1114,7 @@ ELG_EXPORT void elg_app_free(App* app) {
 ELG_EXPORT void elg_app_window(App* app, const ElgWindowDesc* desc, ElgClosure content) {
     const Consumed consumed(content);
     ELG_TRY
-    WindowDesc window;
-    window.title = str(desc->title);
-    window.width = desc->width;
-    window.height = desc->height;
-    window.resizable = desc->resizable;
-    if (desc->has_min_size) {
-        window.min_size = size(desc->min_size);
-    }
-    if (desc->has_background) {
-        window.background = color(desc->background);
-    }
-    window.title_bar = static_cast<TitleBar>(desc->title_bar);
-    if (desc->has_system_controls_position) {
-        window.system_controls_position = point(desc->system_controls_position);
-    }
-    window.transparent = desc->transparent;
-    window.opacity = desc->opacity;
-    window.fullscreen = desc->fullscreen;
+    WindowDesc window = window_desc(*desc);
     const SharedFn f = required(content, "content");
     app->window(std::move(window), [f]() -> View {
         View result;

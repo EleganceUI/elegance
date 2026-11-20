@@ -156,6 +156,9 @@ bool elg_popover_style_motion(const std::shared_ptr<const elg::PopoverStyle>* st
 bool elg_tooltip_style_motion(const std::shared_ptr<const elg::TooltipStyle>* style, Transition** transition, Animation** animation);
 bool elg_menu_style_motion(const std::shared_ptr<const elg::MenuStyle>* style, Transition** transition, Animation** animation);
 void elg_shape_style_assign(elg::ShapeStyle* target, const ElgShapeStyle* value);
+void elg_set_badge(const ElgStr* text);
+void elg_set_progress(bool has_fraction, double fraction, int32_t state);
+void elg_request_attention(bool critical);
 }
 
 namespace {
@@ -797,4 +800,32 @@ TEST_CASE("a shape style of kind 5 is a backdrop", "[c-api][backdrop]") {
     CHECK(fill->saturation == 1.8f);
     CHECK(fill->brightness == -0.1f);
     CHECK(fill->noise == 0.02f);
+}
+
+TEST_CASE("a window description's material comes through the C API", "[c-api][window]") {
+    ElgWindowDesc desc{};
+    desc.title = {"Window", 6};
+    desc.width = 400;
+    desc.height = 300;
+    desc.opacity = 1;
+    desc.material = 4;
+    CHECK(elg_shim::window_desc(desc).material == elg::WindowMaterial::acrylic);
+    desc.material = 2;
+    CHECK(elg_shim::window_desc(desc).material == elg::WindowMaterial::under_window);
+    desc.material = 99;
+    CHECK(elg_shim::window_desc(desc).material == elg::WindowMaterial::none);
+}
+
+TEST_CASE("the dock and taskbar functions need a running App", "[c-api][desktop]") {
+    const ElgStr label{"3", 1};
+    elg_set_badge(&label);
+    CHECK(take_error() == 2);
+    elg_set_badge(nullptr);
+    CHECK(take_error() == 2);
+    elg_set_progress(true, 0.5, 1);
+    CHECK(take_error() == 2);
+    elg_set_progress(false, 0, 0);
+    CHECK(take_error() == 2);
+    elg_request_attention(true);
+    CHECK(take_error() == 2);
 }

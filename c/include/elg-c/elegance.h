@@ -572,6 +572,33 @@ typedef struct ElgEventResult {
     bool cancellable;
 } ElgEventResult;
 
+/// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
+typedef struct ElgWindowDesc {
+    ElgStr title;                      ///< The window's title.
+    int32_t width;                     ///< Initial width.
+    int32_t height;                    ///< Initial height.
+    bool resizable;                    ///< Whether the user can resize it.
+    bool has_min_size;                 ///< false: no minimum size.
+    ElgSize min_size;                  ///< Smallest size the user can resize to, if `has_min_size`.
+    /// false: the default background, the theme's (ThemeColor::background), or clear for
+    /// transparent windows.
+    bool has_background;
+    ElgColor background;               ///< Shown where no view draws, if `has_background`.
+    int32_t title_bar;                 ///< An elg::TitleBar: 0 system, 1 hidden, 2 integrated.
+    bool has_system_controls_position; ///< false: the system's window controls go where it puts them.
+    /// TitleBar::integrated on macOS: where the system's window controls go, as the first one's
+    /// top-left corner in points from the window's top-left corner.
+    ElgPoint system_controls_position;
+    bool transparent;                  ///< The desktop shows through where the content isn't opaque.
+    /// An elg::WindowMaterial behind the content: 0 none, 1 sidebar, 2 under_window, 3 mica, 4 acrylic. Other
+    /// values are none.
+    int32_t material;
+    float opacity;                     ///< The whole window's opacity, 0 to 1.
+    /// Covers the whole display it opens on, without a frame. `width` and `height` are its size
+    /// when it leaves fullscreen.
+    bool fullscreen;
+} ElgWindowDesc;
+
 /// elg::FloatingPlacement: edge (FloatingEdge), alignment (FloatingAlignment), and an optional
 /// position instead of an edge.
 typedef struct ElgFloatingPlacement {
@@ -660,30 +687,6 @@ typedef struct ElgTheme {
 typedef struct ElgLayoutChild {
     void* element; ///< Elegance's.
 } ElgLayoutChild;
-
-/// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
-typedef struct ElgWindowDesc {
-    ElgStr title;                      ///< The window's title.
-    int32_t width;                     ///< Initial width.
-    int32_t height;                    ///< Initial height.
-    bool resizable;                    ///< Whether the user can resize it.
-    bool has_min_size;                 ///< false: no minimum size.
-    ElgSize min_size;                  ///< Smallest size the user can resize to, if `has_min_size`.
-    /// false: the default background, the theme's (ThemeColor::background), or clear for
-    /// transparent windows.
-    bool has_background;
-    ElgColor background;               ///< Shown where no view draws, if `has_background`.
-    int32_t title_bar;                 ///< An elg::TitleBar: 0 system, 1 hidden, 2 integrated.
-    bool has_system_controls_position; ///< false: the system's window controls go where it puts them.
-    /// TitleBar::integrated on macOS: where the system's window controls go, as the first one's
-    /// top-left corner in points from the window's top-left corner.
-    ElgPoint system_controls_position;
-    bool transparent;                  ///< The desktop shows through where the content isn't opaque.
-    float opacity;                     ///< The whole window's opacity, 0 to 1.
-    /// Covers the whole display it opens on, without a frame. `width` and `height` are its size
-    /// when it leaves fullscreen.
-    bool fullscreen;
-} ElgWindowDesc;
 
 /// A Transition::Pose: how a view looks partway through a transition.
 typedef struct ElgPose {
@@ -4507,6 +4510,28 @@ void elg_choose_folders(ElgStr directory, bool multiple, ElgClosure done);
 /// @param on_click Optional consumed closure (`call` null: none), run on the UI thread when the
 ///   notification is clicked; args and ret: null.
 void elg_notify(ElgStr title, ElgStr body, ElgClosure on_click);
+
+/// Wraps `set_badge()`: a short label on the app's icon, like an unread count (macOS: the Dock; Windows: a
+/// badge over the taskbar button; Linux: a number, where the launcher supports it). Call it on the UI
+/// thread of a running App; otherwise it records a UsageError.
+///
+/// @param text The label (borrowed); null removes it.
+void elg_set_badge(const ElgStr* text);
+
+/// Wraps `set_progress()`: a progress bar on the app's icon. Call it on the UI thread of a running App;
+/// otherwise it records a UsageError.
+///
+/// @param has_fraction false removes the bar.
+/// @param fraction How far along, 0 to 1 (clamped; not finite counts as 0).
+/// @param state An elg::ProgressState: 0 normal, 1 paused, 2 error, 3 indeterminate. Other values are
+///   normal.
+void elg_set_progress(bool has_fraction, double fraction, int32_t state);
+
+/// Wraps `request_attention()`: while the app is in the background, the Dock icon bounces or the taskbar
+/// button flashes. Call it on the UI thread of a running App; otherwise it records a UsageError.
+///
+/// @param critical Keep asking until the app is active, rather than once.
+void elg_request_attention(bool critical);
 
 /// Wraps `TrayIcon(TrayIconOptions)`: an icon in the system tray (Windows: the notification area)
 /// with a menu, shown while any copy lives. Call it while an App runs; otherwise it records a

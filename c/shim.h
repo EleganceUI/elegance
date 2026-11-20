@@ -318,6 +318,33 @@ struct ElgEventResult {
     bool cancellable;
 };
 
+/// An elg::WindowDesc: how a window opens (elg_app_window()). Sizes are in logical points.
+struct ElgWindowDesc {
+    ElgStr title;                      ///< The window's title.
+    int32_t width;                     ///< Initial width.
+    int32_t height;                    ///< Initial height.
+    bool resizable;                    ///< Whether the user can resize it.
+    bool has_min_size;                 ///< false: no minimum size.
+    ElgSize min_size;                  ///< Smallest size the user can resize to, if `has_min_size`.
+    /// false: the default background, the theme's (ThemeColor::background), or clear for
+    /// transparent windows.
+    bool has_background;
+    ElgColor background;               ///< Shown where no view draws, if `has_background`.
+    int32_t title_bar;                 ///< An elg::TitleBar: 0 system, 1 hidden, 2 integrated.
+    bool has_system_controls_position; ///< false: the system's window controls go where it puts them.
+    /// TitleBar::integrated on macOS: where the system's window controls go, as the first one's
+    /// top-left corner in points from the window's top-left corner.
+    ElgPoint system_controls_position;
+    bool transparent;                  ///< The desktop shows through where the content isn't opaque.
+    /// An elg::WindowMaterial behind the content: 0 none, 1 sidebar, 2 under_window, 3 mica, 4 acrylic. Other
+    /// values are none.
+    int32_t material;
+    float opacity;                     ///< The whole window's opacity, 0 to 1.
+    /// Covers the whole display it opens on, without a frame. `width` and `height` are its size
+    /// when it leaves fullscreen.
+    bool fullscreen;
+};
+
 /// elg::FloatingPlacement: edge (FloatingEdge), alignment (FloatingAlignment), and an optional
 /// position instead of an edge.
 struct ElgFloatingPlacement {
@@ -655,6 +682,30 @@ inline elg::ShapeStyle shape_style(const ElgShapeStyle& s) {
 
 inline elg::EdgeInsets edge_insets(ElgEdgeInsets i) {
     return {i.top, i.leading, i.bottom, i.trailing};
+}
+
+inline elg::WindowDesc window_desc(const ElgWindowDesc& d) {
+    elg::WindowDesc window;
+    window.title = str(d.title);
+    window.width = d.width;
+    window.height = d.height;
+    window.resizable = d.resizable;
+    if (d.has_min_size) {
+        window.min_size = size(d.min_size);
+    }
+    if (d.has_background) {
+        window.background = color(d.background);
+    }
+    window.title_bar = static_cast<elg::TitleBar>(d.title_bar);
+    if (d.has_system_controls_position) {
+        window.system_controls_position = point(d.system_controls_position);
+    }
+    window.transparent = d.transparent;
+    window.material = d.material >= 0 && d.material <= 4 ? static_cast<elg::WindowMaterial>(d.material)
+                                                         : elg::WindowMaterial::none;
+    window.opacity = d.opacity;
+    window.fullscreen = d.fullscreen;
+    return window;
 }
 
 inline elg::FloatingPlacement placement(const ElgFloatingPlacement& p) {
