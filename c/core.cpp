@@ -1296,6 +1296,41 @@ ELG_EXPORT uint32_t elg_abi_version() {
     ELG_CATCH(0)
 }
 
+/// A text style of `Font` (`Font::large_title`, `Font::title`, ...): its family, size, weight and italics.
+/// Callable from any thread.
+///
+/// @param style 0 large_title, 1 title, 2 title2, 3 title3, 4 headline, 5 body, 6 callout, 7 subheadline,
+///   8 footnote, 9 caption, 10 caption2. Other values are body.
+/// @return The style's font; its `family` is empty (the system font).
+ELG_EXPORT ElgFont elg_font_text_style(int32_t style) {
+    ELG_TRY_ANY_THREAD
+    static const Font* const styles[] = {&Font::large_title, &Font::title,       &Font::title2,   &Font::title3,
+                                         &Font::headline,    &Font::body,        &Font::callout,  &Font::subheadline,
+                                         &Font::footnote,    &Font::caption,     &Font::caption2};
+    const Font& font = style >= 0 && style < static_cast<int32_t>(std::size(styles)) ? *styles[style] : Font::body;
+    return {c_str(font.family()), font.size(), static_cast<int32_t>(font.weight()), font.is_italic()};
+    ELG_CATCH({})
+}
+
+/// Wraps `current_platform()`: the platform the app was built for. Callable from any thread.
+///
+/// @return An elg::Platform: 0 windows, 1 macos, 2 linux.
+ELG_EXPORT int32_t elg_current_platform() {
+    ELG_TRY_ANY_THREAD
+    return static_cast<int32_t>(current_platform());
+    ELG_CATCH(0)
+}
+
+/// `default_stack_spacing`: the space between the children of stacks and grids that set none. Callable from any
+/// thread.
+///
+/// @return The spacing, in points.
+ELG_EXPORT float elg_default_stack_spacing() {
+    ELG_TRY_ANY_THREAD
+    return default_stack_spacing;
+    ELG_CATCH(0.f)
+}
+
 /// Wraps `primary_modifier()`: the platform's shortcut modifier. Callable from any thread.
 ///
 /// @return The elg::KeyModifiers bits (see ElgKeyEvent): 8 (super, Cmd) on macOS, 2 (control) elsewhere; 0 on

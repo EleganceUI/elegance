@@ -451,12 +451,14 @@ typedef struct ElgEdgeInsets {
 
 /// A reactive argument (an elg::Prop). kind 0: `value` points at the static value (its C form);
 /// 1: `fn` returns it (ret: a C++ T*); 2: `fn` takes the environment (args: const
-/// EnvironmentValues*); 3: the theme color `theme` (Color and ShapeStyle props); 4: `value` points at a
+/// EnvironmentValues*); 3: the theme color `theme` (Color and ShapeStyle props), or the theme blur `theme`
+/// (float props); 4: `value` points at a
 /// prop handle of the same type (ElgPropF32 for float props, ElgPropColor for Color props), which the prop
 /// copies, reactive as it is.
 typedef struct ElgProp {
     int32_t kind;  ///< 0 to 4, as above.
-    int32_t theme; ///< Kind 3: an elg::ThemeColor. Props of other types get their default value.
+    int32_t theme; ///< Kind 3: an elg::ThemeColor, or for float props an elg::ThemeBlur. Props of other
+                       ///< types get their default value.
     /// Kind 0: the value's C form (`float*`, `bool*`, `ElgStr*`, `ElgColor*`, ...), read during the
     /// call.
     const void* value;
@@ -565,6 +567,14 @@ typedef struct ElgTextInputEvent {
     ElgStr text;   ///< The text, valid during the call.
     size_t cursor; ///< Composition: the IME's caret, in bytes into `text`.
 } ElgTextInputEvent;
+
+/// One resolved track (`GridTrack`): what elg_resolve_grid_tracks()'s `each` gets.
+typedef struct ElgGridTrack {
+    float size;             ///< The track's size, in points.
+    float spacing;          ///< The space after it, in points.
+    bool has_alignment;     ///< `alignment` is set (its item's).
+    ElgAlignment alignment; ///< Where views sit in its cells.
+} ElgGridTrack;
 
 /// An elg::EventResult: what an event handler did with an event.
 typedef struct ElgEventResult {
@@ -965,14 +975,6 @@ typedef struct ElgGridItem {
     bool has_alignment;     ///< `alignment` is set; otherwise the grid's.
     ElgAlignment alignment; ///< Where views sit in this track's cells.
 } ElgGridItem;
-
-/// One resolved track (`GridTrack`): what elg_resolve_grid_tracks()'s `each` gets.
-typedef struct ElgGridTrack {
-    float size;             ///< The track's size, in points.
-    float spacing;          ///< The space after it, in points.
-    bool has_alignment;     ///< `alignment` is set (its item's).
-    ElgAlignment alignment; ///< Where views sit in its cells.
-} ElgGridTrack;
 
 /// A VGrid or HGrid (kind 0 or 1: tracks `items`, `spacing_a` between lines) or a Grid (kind 2: `spacing_a`
 /// between columns, `spacing_b` between rows).
@@ -1805,6 +1807,25 @@ const char* elg_version(void);
 /// @return The version, 1 or more; 0 on failure.
 uint32_t elg_abi_version(void);
 
+/// A text style of `Font` (`Font::large_title`, `Font::title`, ...): its family, size, weight and italics.
+/// Callable from any thread.
+///
+/// @param style 0 large_title, 1 title, 2 title2, 3 title3, 4 headline, 5 body, 6 callout, 7 subheadline,
+///   8 footnote, 9 caption, 10 caption2. Other values are body.
+/// @return The style's font; its `family` is empty (the system font).
+ElgFont elg_font_text_style(int32_t style);
+
+/// Wraps `current_platform()`: the platform the app was built for. Callable from any thread.
+///
+/// @return An elg::Platform: 0 windows, 1 macos, 2 linux.
+int32_t elg_current_platform(void);
+
+/// `default_stack_spacing`: the space between the children of stacks and grids that set none. Callable from any
+/// thread.
+///
+/// @return The spacing, in points.
+float elg_default_stack_spacing(void);
+
 /// Wraps `primary_modifier()`: the platform's shortcut modifier. Callable from any thread.
 ///
 /// @return The elg::KeyModifiers bits (see ElgKeyEvent): 8 (super, Cmd) on macOS, 2 (control) elsewhere; 0 on
@@ -2094,6 +2115,13 @@ ElgView* elg_empty_view(void);
 /// @param a How the child lines up in `container`.
 /// @return The child's top-leading corner, in `container`'s coordinates. Zero on failure.
 ElgPoint elg_aligned_position(ElgRect container, ElgSize content, ElgAlignment a);
+
+/// Wraps `spacer_axis()` of `VStackLayout`, `HStackLayout` or `ZStackLayout`: the axis along which their Spacer
+/// children expand, for custom layouts that act as a stack does. Callable from any thread.
+///
+/// @param kind 0: `VStackLayout`; 1: `HStackLayout`; anything else: `ZStackLayout`.
+/// @return -1 for none, else an elg::Axis: 0 horizontal, 1 vertical.
+int32_t elg_stack_layout_spacer_axis(int32_t kind);
 
 /// Wraps `size_that_fits()` of `VStackLayout`, `HStackLayout` or `ZStackLayout`, for custom layouts that
 /// measure their children as a stack does.
@@ -3752,6 +3780,13 @@ ElgView* elg_grid_row(int32_t row_alignment, ElgView** cells, size_t count);
 ///   usage error.
 void elg_resolve_grid_tracks(const ElgGridItem* items, size_t count, bool has_length, float length_value, ElgOptLen spacing, ElgClosure each);
 
+/// Wraps `grid_tracks_length()`: the space the tracks take, with the spacing between them.
+///
+/// @param tracks Tracks from elg_resolve_grid_tracks(), read during the call.
+/// @param count How many `tracks` there are.
+/// @return The total length in points; 0 for no tracks, and on failure.
+float elg_grid_tracks_length(const ElgGridTrack* tracks, size_t count);
+
 /// Wraps `View::grid_cell_columns()`: a Grid cell that spans `count` columns.
 ///
 /// @param v The cell (borrowed).
@@ -4867,6 +4902,13 @@ bool elg_video_feed_has_frame(const ElgVideoFeed* feed);
 /// @param mirrored Whether to show it flipped left to right (someone's own camera).
 /// @return The new view, owned by the caller, or nullptr on failure.
 ElgView* elg_video_feed_view(const ElgVideoFeed* feed, int32_t mode, bool mirrored);
+
+/// Wraps `gpu_image_flipped()`: whether the image's rows start at the bottom (it was created with
+/// ELG_GPU_IMAGE_BOTTOM_LEFT). Callable from any thread.
+///
+/// @param image The image (borrowed), or null.
+/// @return Whether it's flipped; false for null.
+bool elg_gpu_image_flipped(const ElgGpuImage* image);
 
 // --- Desktop ---
 

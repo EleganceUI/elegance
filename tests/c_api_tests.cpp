@@ -171,6 +171,13 @@ View* elg_mod_on_key_capture(const View* v, ElgClosure on_key);
 View* elg_mod_rust_event_modifier(const View* v, ElgClosure make_handler);
 void elg_app_menu_bar(App* app, const ElgMenuBarItem* menus, size_t count);
 uint32_t elg_primary_modifier();
+ElgFont elg_font_text_style(int32_t style);
+int32_t elg_current_platform();
+float elg_default_stack_spacing();
+int32_t elg_stack_layout_spacer_axis(int32_t kind);
+float elg_grid_tracks_length(const ElgGridTrack* tracks, size_t count);
+bool elg_gpu_image_flipped(const ElgGpuImage* image);
+void elg_effects_set_blur(elg::Effects* e, const ElgProp* radius, bool opaque);
 View* elg_mod_layout_value_bool(const View* v, ElgStr name, bool value);
 bool elg_layout_child_value_bool(const ElgLayoutChild* child, ElgStr name, bool* value);
 View* elg_mod_layout_value_i32(const View* v, ElgStr name, int32_t value);
@@ -1524,4 +1531,46 @@ TEST_CASE("layout values are shared by name and value type between C++ and the C
         elg_view_free(view);
     }
     CHECK(take_error() == 0);
+}
+
+TEST_CASE("the C API gives the font text styles, the platform, and the stacks' constants", "[c-api]") {
+    const elg::Font* const styles[] = {&elg::Font::large_title, &elg::Font::title,    &elg::Font::title2,
+                                       &elg::Font::title3,      &elg::Font::headline, &elg::Font::body,
+                                       &elg::Font::callout,     &elg::Font::subheadline, &elg::Font::footnote,
+                                       &elg::Font::caption,     &elg::Font::caption2};
+    for (int32_t i = 0; i < static_cast<int32_t>(std::size(styles)); ++i) {
+        const ElgFont font = elg_font_text_style(i);
+        CHECK(font.size == styles[i]->size());
+        CHECK(font.weight == static_cast<int32_t>(styles[i]->weight()));
+        CHECK(font.italic == styles[i]->is_italic());
+        CHECK(font.family.len == styles[i]->family().size());
+    }
+    CHECK(elg_font_text_style(99).size == elg::Font::body.size());
+
+    CHECK(elg_current_platform() == static_cast<int32_t>(elg::current_platform()));
+    CHECK(elg_default_stack_spacing() == elg::default_stack_spacing);
+    CHECK(elg_stack_layout_spacer_axis(0) == static_cast<int32_t>(elg::Axis::vertical));
+    CHECK(elg_stack_layout_spacer_axis(1) == static_cast<int32_t>(elg::Axis::horizontal));
+    CHECK(elg_stack_layout_spacer_axis(2) == -1);
+    CHECK_FALSE(elg_gpu_image_flipped(nullptr));
+    CHECK(take_error() == 0);
+}
+
+TEST_CASE("the C API measures grid tracks as resolve_grid_tracks lays them out", "[c-api][grid]") {
+    const ElgGridTrack tracks[] = {{.size = 40, .spacing = 8}, {.size = 60, .spacing = 4}, {.size = 20, .spacing = 8}};
+    const std::vector<elg::GridTrack> cpp = {{.size = 40, .spacing = 8}, {.size = 60, .spacing = 4}, {.size = 20, .spacing = 8}};
+    CHECK(elg_grid_tracks_length(tracks, std::size(tracks)) == elg::grid_tracks_length(cpp));
+    CHECK(elg_grid_tracks_length(nullptr, 0) == 0);
+}
+
+TEST_CASE("a float prop of kind 3 is a theme blur", "[c-api][effects]") {
+    elg::Effects effects;
+    const ElgProp blur{.kind = 3, .theme = static_cast<int32_t>(elg::ThemeBlur::xl), .value = nullptr, .fn = {}};
+    elg_effects_set_blur(&effects, &blur, false);
+    REQUIRE(take_error() == 0);
+    REQUIRE(effects.blur.has_value());
+    const EnvironmentValues environment;
+    if (effects.blur) {
+        CHECK(effects.blur->get(environment) == elg::detail::resolve_theme_blur(environment, elg::ThemeBlur::xl));
+    }
 }

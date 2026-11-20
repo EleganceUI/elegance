@@ -147,6 +147,22 @@ ELG_EXPORT ElgPoint elg_aligned_position(ElgRect container, ElgSize content, Elg
     ELG_CATCH({})
 }
 
+/// Wraps `spacer_axis()` of `VStackLayout`, `HStackLayout` or `ZStackLayout`: the axis along which their Spacer
+/// children expand, for custom layouts that act as a stack does. Callable from any thread.
+///
+/// @param kind 0: `VStackLayout`; 1: `HStackLayout`; anything else: `ZStackLayout`.
+/// @return -1 for none, else an elg::Axis: 0 horizontal, 1 vertical.
+ELG_EXPORT int32_t elg_stack_layout_spacer_axis(int32_t kind) {
+    ELG_TRY_ANY_THREAD
+    std::optional<Axis> axis;
+    switch (kind) {
+    case 0: axis = VStackLayout().spacer_axis(); break;
+    case 1: axis = HStackLayout().spacer_axis(); break;
+    default: axis = ZStackLayout().spacer_axis(); break;
+    }
+    return axis ? static_cast<int32_t>(*axis) : -1;
+    ELG_CATCH(-1)
+}
 /// Wraps `size_that_fits()` of `VStackLayout`, `HStackLayout` or `ZStackLayout`, for custom layouts that
 /// measure their children as a stack does.
 ///
@@ -3351,14 +3367,6 @@ struct ElgGridItem {
     ElgAlignment alignment; ///< Where views sit in this track's cells.
 };
 
-/// One resolved track (`GridTrack`): what elg_resolve_grid_tracks()'s `each` gets.
-struct ElgGridTrack {
-    float size;             ///< The track's size, in points.
-    float spacing;          ///< The space after it, in points.
-    bool has_alignment;     ///< `alignment` is set (its item's).
-    ElgAlignment alignment; ///< Where views sit in its cells.
-};
-
 /// A VGrid or HGrid (kind 0 or 1: tracks `items`, `spacing_a` between lines) or a Grid (kind 2: `spacing_a`
 /// between columns, `spacing_b` between rows).
 struct ElgGridDesc {
@@ -3484,6 +3492,27 @@ ELG_EXPORT void elg_resolve_grid_tracks(const ElgGridItem* items, size_t count, 
         f->call(&arg, nullptr);
     }
     ELG_CATCH_VOID
+}
+/// Wraps `grid_tracks_length()`: the space the tracks take, with the spacing between them.
+///
+/// @param tracks Tracks from elg_resolve_grid_tracks(), read during the call.
+/// @param count How many `tracks` there are.
+/// @return The total length in points; 0 for no tracks, and on failure.
+ELG_EXPORT float elg_grid_tracks_length(const ElgGridTrack* tracks, size_t count) {
+    ELG_TRY
+    std::vector<GridTrack> list;
+    list.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        GridTrack track;
+        track.size = tracks[i].size;
+        track.spacing = tracks[i].spacing;
+        if (tracks[i].has_alignment) {
+            track.alignment = alignment(tracks[i].alignment);
+        }
+        list.push_back(track);
+    }
+    return grid_tracks_length(list);
+    ELG_CATCH(0.f)
 }
 
 /// Wraps `View::grid_cell_columns()`: a Grid cell that spans `count` columns.

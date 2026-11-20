@@ -216,6 +216,12 @@ jobs:
               if: ${{ matrix.checks == true && !cancelled() && steps.configure.outcome == 'success' }}
               run: python3 tools/doc-check.py build/linux-release
 
+            # Every public declaration of the C++ API is in tools/c-api-coverage.txt, with the C API
+            # that offers it or an exemption (ELGSPEC-0007.R20). Uses libclang 19, installed above.
+            - name: C API coverage
+              if: ${{ matrix.checks == true && !cancelled() && steps.configure.outcome == 'success' }}
+              run: python3 tools/c-api-coverage.py build/linux-release
+
             # Every function the C API exports catches C++ exceptions (R11).
             - name: C API exceptions
               if: ${{ matrix.checks == true && !cancelled() }}
