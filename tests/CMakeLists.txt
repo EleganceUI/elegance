@@ -131,9 +131,14 @@ set_tests_properties(internal_error_fails_its_test PROPERTIES WILL_FAIL TRUE TIM
 # object file it needs has to be there: a layer without tests of its own still gets one, which
 # shows that it links on its own.
 function(elg_layer_tests layer)
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "OBJECTS")
     set(target elegance_${layer}_tests)
-    add_executable(${target} test_setup.cpp ${ARGN})
-    get_target_property(objects elegance_${layer} ELG_OBJECTS)
+    add_executable(${target} test_setup.cpp ${arg_UNPARSED_ARGUMENTS})
+    if (arg_OBJECTS)
+        set(objects ${arg_OBJECTS})
+    else ()
+        get_target_property(objects elegance_${layer} ELG_OBJECTS)
+    endif ()
     target_link_libraries(${target} PRIVATE ${objects} Catch2::Catch2)
     target_include_directories(${target} PRIVATE ${PROJECT_SOURCE_DIR}/apps/common)
     elegance_warnings(${target})
@@ -159,6 +164,15 @@ if (NOT (WIN32 AND ELG_BUILD_SHARED))
     elg_layer_tests(gpu render_device_lifetime_tests.cpp)
     elg_layer_tests(render frame_source_tests.cpp)
     elg_layer_tests(platform menu_bar_tests.cpp)
+
+    # Media and Net as the Mikros build has them (ELGSPEC-0040.R21), each with the layers below it only, and
+    # the views over both with the whole library but for the real Media and Net.
+    elg_layer_tests(media_mikros mikros_media_tests.cpp)
+    elg_layer_tests(net_mikros mikros_net_tests.cpp)
+    get_target_property(mikros_view_objects elegance_app ELG_OBJECTS)
+    list(REMOVE_ITEM mikros_view_objects elegance_media elegance_media_os elegance_net elegance_net_os)
+    elg_layer_tests(mikros_view mikros_view_tests.cpp
+                    OBJECTS elegance_media_mikros elegance_net_mikros ${mikros_view_objects})
 endif ()
 
 # Compile the public FFI surface as real C, not merely as C++ with extern "C" declarations.

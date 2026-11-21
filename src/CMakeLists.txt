@@ -195,7 +195,7 @@ endif ()
 # every layer below it, for an executable that links the layer on its own (its tests,
 # ELGSPEC-0001.R9): object libraries add their objects only where they're linked directly.
 function(elg_layer name)
-    cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "SOURCES;NOT_MIKROS;WINDOWS;APPLE;LINUX;MIKROS;DEPENDS;LIBRARIES")
+    cmake_parse_arguments(PARSE_ARGV 1 arg "TEST_ONLY" "" "SOURCES;NOT_MIKROS;WINDOWS;APPLE;LINUX;MIKROS;DEPENDS;LIBRARIES")
     set(target elegance_${name})
     set(sources ${arg_SOURCES})
     # NOT_MIKROS names what every system builds but Mikros, which has its own files in MIKROS.
@@ -240,8 +240,11 @@ function(elg_layer name)
         set_target_properties(${target} PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
     endif ()
     elegance_warnings(${target})
-    set_property(GLOBAL APPEND PROPERTY ELG_LAYERS ${target})
-    set_property(GLOBAL APPEND PROPERTY ELG_LAYER_LIBRARIES ${arg_LIBRARIES})
+    # A layer that is only for tests (TEST_ONLY) is no part of the library.
+    if (NOT arg_TEST_ONLY)
+        set_property(GLOBAL APPEND PROPERTY ELG_LAYERS ${target})
+        set_property(GLOBAL APPEND PROPERTY ELG_LAYER_LIBRARIES ${arg_LIBRARIES})
+    endif ()
 endfunction()
 
 # The backends' implementations (ELGSPEC-0001.R4), each with the layer whose backend it is.
@@ -270,16 +273,22 @@ elg_layer(text
         DEPENDS core geometry reactive text_os
         LIBRARIES Freetype::Freetype harfbuzz::harfbuzz msdfgen::msdfgen-core)
 
+# What the Mikros build has for Media and Net, which the tests build on every system too (below).
+set(elg_media_sources media/camera.cpp media/frame_source.cpp media/image_decode.cpp media/recorded_orientation.cpp
+                      media/video_feed.cpp media/video_source.cpp)
+set(elg_mikros_media_os platform/linux/image_codec.cpp platform/mikros/audio.cpp platform/mikros/camera.cpp
+                        platform/mikros/video_source.cpp)
+set(elg_mikros_net_os platform/mikros/net.cpp)
+set(elg_mikros_net net/fetch_unavailable.cpp)
+
 elg_layer(media_os
         WINDOWS platform/windows/camera.cpp platform/windows/image_codec.cpp platform/windows/video_source.cpp
         APPLE platform/macos/camera.mm platform/macos/image_codec.cpp platform/macos/pixel_buffer.cpp
               platform/macos/video_source.mm
         LINUX platform/linux/camera.cpp platform/linux/image_codec.cpp platform/linux/video_source.cpp
-        MIKROS platform/linux/image_codec.cpp platform/mikros/audio.cpp platform/mikros/camera.cpp
-               platform/mikros/video_source.cpp)
+        MIKROS ${elg_mikros_media_os})
 elg_layer(media
-        SOURCES media/camera.cpp media/frame_source.cpp media/image_decode.cpp media/recorded_orientation.cpp
-                media/video_feed.cpp media/video_source.cpp
+        SOURCES ${elg_media_sources}
         NOT_MIKROS media/audio.cpp media/audio_setup.cpp media/audio_stream.cpp media/miniaudio.cpp media/recorder.cpp
         DEPENDS core geometry reactive media_os)
 if (NOT elg_mikros)
@@ -292,16 +301,22 @@ elg_layer(net_os
         WINDOWS platform/windows/net.cpp platform/windows/proxy.cpp
         APPLE platform/macos/net.cpp platform/macos/proxy.cpp
         LINUX platform/linux/net.cpp platform/linux/proxy.cpp
-        MIKROS platform/mikros/net.cpp)
+        MIKROS ${elg_mikros_net_os})
 set(elg_net_libraries "")
 if (NOT elg_mikros)
     set(elg_net_libraries Boost::beast Boost::url OpenSSL::SSL OpenSSL::Crypto)
 endif ()
 elg_layer(net
         NOT_MIKROS net/fetch.cpp net/http_cache.cpp net/proxy.cpp
-        MIKROS net/fetch_unavailable.cpp
+        MIKROS ${elg_mikros_net}
         DEPENDS core net_os
         LIBRARIES ${elg_net_libraries})
+if (ELG_BUILD_TESTS AND NOT elg_mikros)
+    # Media and Net as the Mikros build has them, for the tests: their files define what the library's own
+    # do, so a program links these or those, never both.
+    elg_layer(media_mikros TEST_ONLY SOURCES ${elg_media_sources} ${elg_mikros_media_os} DEPENDS core geometry reactive)
+    elg_layer(net_mikros TEST_ONLY SOURCES ${elg_mikros_net} ${elg_mikros_net_os} DEPENDS core)
+endif ()
 
 elg_layer(display SOURCES display/display_list.cpp DEPENDS core geometry)
 
