@@ -8,12 +8,14 @@
 // the Mikros platform, with a maintainer's permission.
 
 #include "platform/mikros/font_files.h"
+#include "text/text_backend.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <optional>
 #include <random>
 #include <stdexcept>
@@ -320,6 +322,22 @@ TEST_CASE("on Mikros, family names are compared without case or spaces", "[mikro
     const FontCatalog catalog(folder.path());
     const Strings spelled{"dejavusans mono"};
     CHECK(names(catalog.candidates(spelled, 400, false)).front() == "c.ttf");
+}
+
+TEST_CASE("on Mikros, the glyph cache is in the app's cache folder, and nowhere else", "[mikros]") {
+    const auto folder_for = [](const std::map<std::string, std::string>& environment) {
+        return elg::detail::glyph_cache_folder([&](const char* name) -> std::optional<std::string> {
+            const auto found = environment.find(name);
+            return found == environment.end() ? std::nullopt : std::optional(found->second);
+        });
+    };
+    const fs::path cache = required(folder_for({{"HOME", "/apps/app"}, {"XDG_CACHE_HOME", "/apps/app/cache"}}));
+    CHECK(cache.generic_string() == "/apps/app/cache/elegance/glyphs");
+    // HOME is the data folder: no cache there, and none for a cache folder that isn't absolute.
+    CHECK_FALSE(folder_for({{"HOME", "/apps/app"}}));
+    CHECK_FALSE(folder_for({{"HOME", "/apps/app"}, {"XDG_CACHE_HOME", ""}}));
+    CHECK_FALSE(folder_for({{"HOME", "/apps/app"}, {"XDG_CACHE_HOME", "relative/cache"}}));
+    CHECK_FALSE(folder_for({}));
 }
 
 TEST_CASE("on Mikros, a reference that is no character stays as it was written", "[mikros]") {

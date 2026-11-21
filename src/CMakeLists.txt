@@ -267,7 +267,8 @@ elg_layer(animation SOURCES animation/animation.cpp animation/frame_clock.cpp DE
 elg_layer(text_os
         WINDOWS platform/windows/fonts.cpp
         APPLE platform/macos/fonts.cpp
-        LINUX platform/linux/fonts.cpp)
+        LINUX platform/linux/fonts.cpp
+        MIKROS platform/mikros/font_files.cpp platform/mikros/fonts.cpp)
 elg_layer(text
         SOURCES text/color_glyph.cpp text/font_library.cpp text/glyph_atlas.cpp text/glyph_cache.cpp
                 text/styled_layout.cpp text/text_boundaries.cpp text/text_layout.cpp
@@ -329,7 +330,7 @@ if (ELG_BUILD_TESTS AND NOT elg_mikros)
     elg_layer(net_mikros TEST_ONLY SOURCES ${elg_mikros_net} ${elg_mikros_net_os} DEPENDS core)
     elg_layer(platform_mikros TEST_ONLY SOURCES platform/mikros/native.cpp DEPENDS core geometry
               LIBRARIES SDL3::SDL3)
-    elg_layer(text_mikros TEST_ONLY SOURCES platform/mikros/font_files.cpp DEPENDS core)
+    elg_layer(text_mikros TEST_ONLY SOURCES platform/mikros/font_files.cpp platform/mikros/fonts.cpp DEPENDS core)
 endif ()
 
 elg_layer(display SOURCES display/display_list.cpp DEPENDS core geometry)
