@@ -41,6 +41,10 @@ namespace {
 
 namespace elg {
 
+// These define members of the public classes, which can't be static, with the parameters of their
+// declarations, which nothing here uses.
+// NOLINTBEGIN(readability-convert-member-functions-to-static,performance-unnecessary-value-param)
+
 std::vector<AudioDevice> audio_output_devices() {
     return {};
 }
@@ -210,5 +214,7 @@ std::vector<unsigned char> AudioRecorder::wav() const {
 Sound AudioRecorder::sound() const {
     detail::no_audio_input();
 }
+
+// NOLINTEND(readability-convert-member-functions-to-static,performance-unnecessary-value-param)
 
 } // namespace elg

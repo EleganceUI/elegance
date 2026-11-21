@@ -29,7 +29,7 @@ constexpr const char* offered = "Mikros doesn't offer";
 
 // The message of the PlatformError that `action` throws; empty if it throws nothing else.
 template <typename Action>
-std::string platform_error_of(Action&& action) {
+std::string platform_error_of(const Action& action) {
     try {
         action();
     } catch (const PlatformError& error) {

@@ -14,6 +14,7 @@
 
 namespace elg::detail::net {
 
+// NOLINTNEXTLINE(performance-unnecessary-value-param): the declaration's parameters, unused here.
 FetchTask fetch(std::string, std::function<void(FetchResult)>, FetchOptions) {
     networking_unavailable();
 }

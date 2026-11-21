@@ -39,6 +39,7 @@ std::vector<CameraInfo> system_cameras() {
     return {};
 }
 
+// NOLINTNEXTLINE(performance-unnecessary-value-param): the declaration's parameter, unused here.
 std::unique_ptr<CameraEngine> create_camera_engine(CameraRequest) {
     return std::make_unique<UnavailableCameraEngine>();
 }

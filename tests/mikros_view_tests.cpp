@@ -41,7 +41,7 @@ AsyncImagePhase show_async_image(const std::string& url, AsyncImageOptions optio
 }
 
 template <typename Action>
-std::string platform_error_of(Action&& action) {
+std::string platform_error_of(const Action& action) {
     try {
         action();
     } catch (const PlatformError& error) {
