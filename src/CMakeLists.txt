@@ -253,6 +253,7 @@ elg_layer(core_os
         WINDOWS platform/windows/os.cpp
         APPLE platform/macos/os.cpp
         LINUX platform/linux/os.cpp
+        MIKROS platform/mikros/os.cpp
         LIBRARIES SDL3::SDL3)
 elg_layer(core
         SOURCES core/app_errors.cpp core/child_process.cpp core/crash.cpp core/dynamic_library.cpp core/error.cpp

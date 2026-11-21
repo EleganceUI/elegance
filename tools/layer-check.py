@@ -145,7 +145,7 @@ THIRD_PARTY = [
                 r"gst/|glib\.h|glib/|gio/|gobject/|"
                 r"[A-Z]\w*/[A-Z]\w*\.h$|objc/|"  # Apple's frameworks: Name/Name.h
                 r"mach/|mach-o/|dlfcn\.h|unistd\.h|sys/|pthread\.h|fcntl\.h|spawn\.h|signal\.h|poll\.h|"
-                r"execinfo\.h|crt_externs\.h|linux/|asm/|"
+                r"execinfo\.h|unwind\.h|crt_externs\.h|linux/|asm/|mikros/|"
                 r"fontconfig/|X11/|wayland-)"),
      "operating-system libraries", PLATFORM),
 ]
