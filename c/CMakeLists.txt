@@ -163,7 +163,8 @@ elseif (CMAKE_SYSTEM_NAME STREQUAL "Mikros")
     # dynamically (ELGSPEC-0037.R10), and it exports only the C API.
     # The major is the library's version's until the ABI has a number of its own (ELGSPEC-0037.R8). Elegance's
     # project() sets it in its own folder only.
-    get_directory_property(elg_version_major DIRECTORY "${ELEGANCE_ROOT}" DEFINITION Elegance_VERSION_MAJOR)
+    get_filename_component(elg_root "${ELEGANCE_ROOT}" REALPATH)
+    get_directory_property(elg_version_major DIRECTORY "${elg_root}" DEFINITION Elegance_VERSION_MAJOR)
     if (elg_version_major STREQUAL "")
         message(FATAL_ERROR "Elegance's version has no major number, which the library's name carries.")
     endif ()
