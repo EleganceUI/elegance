@@ -329,6 +329,7 @@ if (ELG_BUILD_TESTS AND NOT elg_mikros)
     elg_layer(net_mikros TEST_ONLY SOURCES ${elg_mikros_net} ${elg_mikros_net_os} DEPENDS core)
     elg_layer(platform_mikros TEST_ONLY SOURCES platform/mikros/native.cpp DEPENDS core geometry
               LIBRARIES SDL3::SDL3)
+    elg_layer(text_mikros TEST_ONLY SOURCES platform/mikros/font_files.cpp DEPENDS core)
 endif ()
 
 elg_layer(display SOURCES display/display_list.cpp DEPENDS core geometry)

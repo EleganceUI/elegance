@@ -170,6 +170,7 @@ if (NOT (WIN32 AND ELG_BUILD_SHARED))
     elg_layer_tests(media_mikros mikros_media_tests.cpp)
     elg_layer_tests(net_mikros mikros_net_tests.cpp)
     elg_layer_tests(platform_mikros mikros_platform_tests.cpp)
+    elg_layer_tests(text_mikros mikros_text_tests.cpp)
     get_target_property(mikros_view_objects elegance_app ELG_OBJECTS)
     list(REMOVE_ITEM mikros_view_objects elegance_media elegance_media_os elegance_net elegance_net_os)
     elg_layer_tests(mikros_view mikros_view_tests.cpp
