@@ -24,3 +24,10 @@ vcpkg port at vcpkg.json's builtin-baseline, plus Elegance's patches.
   portal's requests or killing zenity. Elegance closes its dialogs when `App::run` returns
   (ELGSPEC-0018.R4); SDL has no way to close one. Not upstream. When updating the baseline, copy
   vcpkg's new sdl3 port here and reapply the patch, or drop the overlay once SDL can do this itself.
+
+**Mikros** (the `x64-mikros` triplet, ELGSPEC-0040.R16): the dawn and sdl3 ports build the forks that
+the Mikros project maintains, each pinned by commit and archive hash in its portfile, instead of the
+upstream release. Elegance's patches above are commits of the forks, so the Mikros branch of dawn
+leaves out `010` and the one of sdl3 applies no patch of its own. Both ports also turn on what vcpkg's
+default features leave off for a system it doesn't know: Wayland and Vulkan. To move to a new fork
+commit, change `REF` and set `SHA512` to `0`: vcpkg's error prints the right hash.
