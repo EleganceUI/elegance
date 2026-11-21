@@ -316,6 +316,8 @@ if (ELG_BUILD_TESTS AND NOT elg_mikros)
     # do, so a program links these or those, never both.
     elg_layer(media_mikros TEST_ONLY SOURCES ${elg_media_sources} ${elg_mikros_media_os} DEPENDS core geometry reactive)
     elg_layer(net_mikros TEST_ONLY SOURCES ${elg_mikros_net} ${elg_mikros_net_os} DEPENDS core)
+    elg_layer(platform_mikros TEST_ONLY SOURCES platform/mikros/native.cpp DEPENDS core geometry
+              LIBRARIES SDL3::SDL3)
 endif ()
 
 elg_layer(display SOURCES display/display_list.cpp DEPENDS core geometry)
