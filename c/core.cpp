@@ -1314,7 +1314,9 @@ ELG_EXPORT ElgFont elg_font_text_style(int32_t style) {
 
 /// Wraps `current_platform()`: the platform the app was built for. Callable from any thread.
 ///
-/// @return An elg::Platform: 0 windows, 1 macos, 2 linux.
+/// Later ABI levels of the library may add platforms: treat a value you don't know as a platform you don't know.
+///
+/// @return An elg::Platform: 0 windows, 1 macos, 2 linux, 3 mikros.
 ELG_EXPORT int32_t elg_current_platform() {
     ELG_TRY_ANY_THREAD
     return static_cast<int32_t>(current_platform());
