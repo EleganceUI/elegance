@@ -4627,7 +4627,8 @@ void elg_audio_recorder_samples(const ElgAudioRecorder* recorder, ElgClosure eac
 /// Wraps `AudioRecorder::save_wav()`: writes the recording as a 16-bit WAV file.
 ///
 /// @param recorder The recorder (borrowed).
-/// @param file The file's path. A ResourceError is recorded if it can't be written.
+/// @param file The file's path. A ResourceError is recorded if it can't be written (on Mikros, a
+///   PlatformError).
 void elg_audio_recorder_save_wav(const ElgAudioRecorder* recorder, ElgStr file);
 
 /// Wraps `AudioRecorder::wav()`: calls `each` (args: ElgBytes*) once with the WAV file's bytes
@@ -4635,13 +4636,14 @@ void elg_audio_recorder_save_wav(const ElgAudioRecorder* recorder, ElgStr file);
 ///
 /// @param recorder The recorder (borrowed).
 /// @param each Borrowed closure, called once before this returns; args: `ElgBytes*`, ret: null.
-///   Required: none is a usage error.
+///   Required: none is a usage error. On Mikros, a PlatformError is recorded.
 void elg_audio_recorder_wav(const ElgAudioRecorder* recorder, ElgClosure each);
 
 /// Wraps `AudioRecorder::sound()`: the recording as a Sound, to play it back.
 ///
 /// @param recorder The recorder (borrowed).
-/// @return The sound, owned by the caller (elg_sound_free()), or nullptr on failure.
+/// @return The sound, owned by the caller (elg_sound_free()), or nullptr on failure (on Mikros
+///   with a PlatformError).
 ElgSound* elg_audio_recorder_sound(const ElgAudioRecorder* recorder);
 
 /// Wraps `camera_devices()`: the system's cameras.

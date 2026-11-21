@@ -506,7 +506,8 @@ ELG_EXPORT void elg_audio_recorder_samples(const AudioRecorder* recorder, ElgClo
 /// Wraps `AudioRecorder::save_wav()`: writes the recording as a 16-bit WAV file.
 ///
 /// @param recorder The recorder (borrowed).
-/// @param file The file's path. A ResourceError is recorded if it can't be written.
+/// @param file The file's path. A ResourceError is recorded if it can't be written (on Mikros, a
+///   PlatformError).
 ELG_EXPORT void elg_audio_recorder_save_wav(const AudioRecorder* recorder, ElgStr file) {
     ELG_TRY
     recorder->save_wav(path(file));
@@ -517,7 +518,7 @@ ELG_EXPORT void elg_audio_recorder_save_wav(const AudioRecorder* recorder, ElgSt
 ///
 /// @param recorder The recorder (borrowed).
 /// @param each Borrowed closure, called once before this returns; args: `ElgBytes*`, ret: null.
-///   Required: none is a usage error.
+///   Required: none is a usage error. On Mikros, a PlatformError is recorded.
 ELG_EXPORT void elg_audio_recorder_wav(const AudioRecorder* recorder, ElgClosure each) {
     const Consumed consumed(each);
     ELG_TRY
@@ -530,7 +531,8 @@ ELG_EXPORT void elg_audio_recorder_wav(const AudioRecorder* recorder, ElgClosure
 /// Wraps `AudioRecorder::sound()`: the recording as a Sound, to play it back.
 ///
 /// @param recorder The recorder (borrowed).
-/// @return The sound, owned by the caller (elg_sound_free()), or nullptr on failure.
+/// @return The sound, owned by the caller (elg_sound_free()), or nullptr on failure (on Mikros
+///   with a PlatformError).
 ELG_EXPORT Sound* elg_audio_recorder_sound(const AudioRecorder* recorder) {
     ELG_TRY
     return new Sound(recorder->sound());

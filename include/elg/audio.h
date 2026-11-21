@@ -177,7 +177,7 @@ struct AudioStreamOptions {
 /// goes.
 class ELG_API AudioStream {
 public:
-    /// Opens the output and starts playing. Failing to doesn't throw, except on Mikros: error() says why.
+    /// Opens the output and starts playing. Failing to doesn't throw: error() says why. On Mikros it throws.
     ///
     /// @param options The device, format, and an optional render callback.
     /// @throws PlatformError On Mikros, which offers no audio output.

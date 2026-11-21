@@ -18,7 +18,8 @@
 
 namespace elg::detail {
 
-// What an AudioRecorder reports: the format asked for, clamped as other systems clamp it.
+// What an AudioRecorder reports: the format asked for, clamped as other systems clamp it. This is
+// media/recorder.cpp's RecorderState, which a build that has that file doesn't have this one with.
 struct RecorderState {
     std::uint32_t sample_rate = 0;
     std::uint32_t channels = 0;

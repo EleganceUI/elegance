@@ -107,12 +107,15 @@ public:
     ///
     /// @param file Where to write it; an existing file is replaced.
     /// @throws ResourceError If the file can't be written.
+    /// @throws PlatformError On Mikros, which offers no audio recording.
     void save_wav(const std::filesystem::path& file) const;
     /// @return The recording as a 16-bit WAV file, in memory.
+    /// @throws PlatformError On Mikros, which offers no audio recording.
     [[nodiscard]] std::vector<unsigned char> wav() const;
     /// To play it back.
     ///
     /// @return The recording so far, as a Sound.
+    /// @throws PlatformError On Mikros, which offers no audio recording.
     [[nodiscard]] Sound sound() const;
 
 private:
