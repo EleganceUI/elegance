@@ -10,7 +10,7 @@
       "features": [
         {
           "name": "wayland",
-          "platform": "linux | freebsd | openbsd"
+          "platform": "linux | freebsd | openbsd | mikros"
         }
       ]
     },

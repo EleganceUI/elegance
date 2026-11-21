@@ -173,13 +173,6 @@ vcpkg_check_features(
         tint-tools  TINT_BUILD_CMD_TOOLS
 )
 
-if (VCPKG_CMAKE_SYSTEM_NAME STREQUAL "Mikros")
-    # vcpkg's default features follow its own list of systems, which has no Mikros, so this turns the Vulkan
-    # backend and Wayland on and X11 off itself (ELGSPEC-0040.R4).
-    set(DAWN_ENABLE_VULKAN ON)
-    vcpkg_list(APPEND FEATURE_OPTIONS -DDAWN_ENABLE_VULKAN=ON -DDAWN_USE_WAYLAND=ON -DDAWN_USE_X11=OFF)
-endif ()
-
 set(DAWN_USE_BUILT_DXC OFF)
 if(DAWN_ENABLE_D3D12)
     set(DAWN_USE_BUILT_DXC ON)
