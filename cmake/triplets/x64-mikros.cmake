@@ -12,4 +12,4 @@ if (NOT DEFINED ENV{MIKROS_SYSROOT})
     message(FATAL_ERROR "The x64-mikros triplet needs the environment variable MIKROS_SYSROOT, the path of "
                         "Mikros's sysroot.")
 endif ()
-set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "$ENV{MIKROS_SYSROOT}/x86_64-unknown-mikros.cmake")
+set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${CMAKE_CURRENT_LIST_DIR}/mikros-toolchain.cmake")
