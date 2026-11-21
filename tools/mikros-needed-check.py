@@ -7,7 +7,7 @@
 # - its file name is eleganceui.<major>.dlib, and its DT_SONAME is that name;
 # - every library it needs (DT_NEEDED) is a system library of MIKSPEC-0068.R5, under its DT_SONAME;
 # - it needs the system's C++ standard library and its C library.
-# Fails, saying what, if one doesn't hold. CI runs it after building for Mikros.
+# Fails, saying what, if one doesn't hold. Run it on the library after building for Mikros.
 #
 #   python3 tools/mikros-needed-check.py <path of eleganceui.<major>.dlib>
 
@@ -89,7 +89,7 @@ def main():
         problems.append(f"the file's name is {path.name}, not eleganceui.<major>.dlib")
     try:
         soname, needed = dynamic_names(path.read_bytes())
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, IndexError, struct.error) as error:
         print(f"{path}: {error}")
         return 1
     if soname != path.name:
