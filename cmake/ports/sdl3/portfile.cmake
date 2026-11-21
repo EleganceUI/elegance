@@ -70,8 +70,8 @@ if ("libusb" IN_LIST FEATURES)
 endif()
 
 if (VCPKG_CMAKE_SYSTEM_NAME STREQUAL "Mikros")
-    # vcpkg's default features follow its list of systems, which has no Mikros: Wayland and Vulkan are all
-    # that Mikros offers (ELGSPEC-0040.R3).
+    # vcpkg's default features follow its own list of systems, which has no Mikros, so this turns Wayland and
+    # Vulkan on and X11, D-Bus, IBus and ALSA off itself (ELGSPEC-0040.R3).
     vcpkg_list(APPEND FEATURE_OPTIONS -DSDL_WAYLAND=ON -DSDL_VULKAN=ON -DSDL_X11=OFF -DSDL_DBUS=OFF -DSDL_IBUS=OFF
                -DSDL_ALSA=OFF)
 endif ()

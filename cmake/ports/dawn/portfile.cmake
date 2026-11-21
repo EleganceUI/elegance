@@ -174,8 +174,8 @@ vcpkg_check_features(
 )
 
 if (VCPKG_CMAKE_SYSTEM_NAME STREQUAL "Mikros")
-    # vcpkg's default features follow its list of systems, which has no Mikros: Vulkan and Wayland are the
-    # backends Mikros has (ELGSPEC-0040.R4).
+    # vcpkg's default features follow its own list of systems, which has no Mikros, so this turns the Vulkan
+    # backend and Wayland on and X11 off itself (ELGSPEC-0040.R4).
     set(DAWN_ENABLE_VULKAN ON)
     vcpkg_list(APPEND FEATURE_OPTIONS -DDAWN_ENABLE_VULKAN=ON -DDAWN_USE_WAYLAND=ON -DDAWN_USE_X11=OFF)
 endif ()
