@@ -53,7 +53,7 @@ endif ()
 # The system's GStreamer plays video, and GIO talks to the notification server (Linux and other
 # Unix desktops); each is optional (pkg-config), and without it that feature reports it isn't
 # available.
-if (UNIX AND NOT APPLE)
+if (UNIX AND NOT APPLE AND NOT elg_mikros)
     find_package(PkgConfig)
     if (PkgConfig_FOUND)
         pkg_check_modules(ELG_GSTREAMER IMPORTED_TARGET gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0)
@@ -275,7 +275,8 @@ elg_layer(media_os
         APPLE platform/macos/camera.mm platform/macos/image_codec.cpp platform/macos/pixel_buffer.cpp
               platform/macos/video_source.mm
         LINUX platform/linux/camera.cpp platform/linux/image_codec.cpp platform/linux/video_source.cpp
-        MIKROS platform/mikros/audio.cpp)
+        MIKROS platform/linux/image_codec.cpp platform/mikros/audio.cpp platform/mikros/camera.cpp
+               platform/mikros/video_source.cpp)
 elg_layer(media
         SOURCES media/camera.cpp media/frame_source.cpp media/image_decode.cpp media/recorded_orientation.cpp
                 media/video_feed.cpp media/video_source.cpp

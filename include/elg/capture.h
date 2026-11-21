@@ -153,6 +153,8 @@ public:
     explicit Camera(CameraOptions options = {});
 
     /// Starts capturing. Failures (no camera, access denied) show in error().
+    ///
+    /// @throws PlatformError On Mikros, which offers no cameras.
     void start() const;
     /// Stops capturing.
     void stop() const;

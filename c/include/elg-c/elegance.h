@@ -4671,7 +4671,7 @@ ElgCamera* elg_camera_clone(const ElgCamera* camera);
 /// @param camera The camera (consumed); may be null.
 void elg_camera_free(ElgCamera* camera);
 
-/// Wraps `Camera::start()` and `stop()`.
+/// Wraps `Camera::start()` and `stop()`. On Mikros, starting fails with a PlatformError.
 ///
 /// @param camera The camera (borrowed).
 /// @param start true to start, false to stop.
@@ -4746,7 +4746,7 @@ ElgVideoPlayer* elg_video_player_clone(const ElgVideoPlayer* player);
 void elg_video_player_free(ElgVideoPlayer* player);
 
 /// Wraps `VideoPlayer::play()`, `pause()`, `toggle()` and `stop()` (which pauses and goes back to
-/// the start).
+/// the start). On Mikros, playing fails with a PlatformError.
 ///
 /// @param player The player (borrowed).
 /// @param op 0 play, 1 pause, 2 toggle, 3 stop.

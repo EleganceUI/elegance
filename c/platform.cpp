@@ -579,7 +579,7 @@ ELG_EXPORT void elg_camera_free(Camera* camera) {
     ELG_TRY
     ELG_CATCH_VOID
 }
-/// Wraps `Camera::start()` and `stop()`.
+/// Wraps `Camera::start()` and `stop()`. On Mikros, starting fails with a PlatformError.
 ///
 /// @param camera The camera (borrowed).
 /// @param start true to start, false to stop.
@@ -701,7 +701,7 @@ ELG_EXPORT void elg_video_player_free(VideoPlayer* player) {
     ELG_CATCH_VOID
 }
 /// Wraps `VideoPlayer::play()`, `pause()`, `toggle()` and `stop()` (which pauses and goes back to
-/// the start).
+/// the start). On Mikros, playing fails with a PlatformError.
 ///
 /// @param player The player (borrowed).
 /// @param op 0 play, 1 pause, 2 toggle, 3 stop.
