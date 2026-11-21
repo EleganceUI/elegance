@@ -46,7 +46,7 @@
     },
     {
       "name": "vulkan",
-      "platform": "(windows & !uwp) | android | linux | freebsd | openbsd | mikros"
+      "platform": "(windows & !uwp) | android | linux | freebsd | openbsd | (!windows & !osx & !ios & !android & !linux & !freebsd & !openbsd & !emscripten & !uwp)"
     },
     {
       "name": "x11",
@@ -94,7 +94,7 @@
     },
     "vulkan": {
       "description": "Vulkan backend support",
-      "supports": "(windows & !uwp) | android | linux | freebsd | openbsd | mikros",
+      "supports": "(windows & !uwp) | android | linux | freebsd | openbsd | (!windows & !osx & !ios & !android & !linux & !freebsd & !openbsd & !emscripten & !uwp)",
       "dependencies": [
         "vulkan-headers",
         "vulkan-utility-libraries"
@@ -102,7 +102,7 @@
     },
     "wayland": {
       "description": "Wayland support",
-      "supports": "linux | freebsd | openbsd | mikros"
+      "supports": "linux | freebsd | openbsd | (!windows & !osx & !ios & !android & !linux & !freebsd & !openbsd & !emscripten & !uwp)"
     },
     "x11": {
       "description": "X11 support",

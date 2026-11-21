@@ -32,6 +32,7 @@ vcpkg port at vcpkg.json's builtin-baseline, plus Elegance's patches.
 the Mikros project maintains, each pinned by commit and archive hash in its portfile, instead of the
 upstream release. Elegance's patches above are commits of the forks, so the Mikros branch of dawn
 leaves out `010` and the one of sdl3 applies no patch of its own. The vcpkg patches of the abseil and dawn
-ports still apply to their forks. Both ports turn on what vcpkg's default features leave off for a system
-it doesn't know: Wayland and Vulkan (sdl3 in its portfile, dawn through its features, which name `mikros`).
+ports still apply to their forks. The sdl3 and dawn ports turn on what vcpkg's default features leave off for a
+system it doesn't know: Wayland and Vulkan (sdl3 in its portfile, dawn through its features, whose platforms
+name the systems vcpkg doesn't know).
 To move to a new fork commit, change `REF` and set `SHA512` to `0`: vcpkg's error prints the right hash.

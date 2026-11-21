@@ -10,9 +10,8 @@ set(VCPKG_CMAKE_SYSTEM_NAME Mikros)
 # The libraries are linked into a shared library, so their code has to be position independent.
 set(VCPKG_C_FLAGS "-fPIC")
 set(VCPKG_CXX_FLAGS "-fPIC")
-# Lets a manifest's "platform" say `mikros` (and `!mikros`) for what the triplet builds. vcpkg calls this variable
-# experimental: check it when the baseline moves.
-set(VCPKG_DEP_INFO_OVERRIDE_VARS "mikros")
+# vcpkg has no identifier for Mikros in a manifest's "platform", and none of its systems is true for it: the
+# manifests name Mikros as "none of the systems vcpkg knows".
 set(VCPKG_ENV_PASSTHROUGH MIKROS_SYSROOT)
 if (NOT DEFINED ENV{MIKROS_SYSROOT})
     message(FATAL_ERROR "The x64-mikros triplet needs the environment variable MIKROS_SYSROOT, the path of "

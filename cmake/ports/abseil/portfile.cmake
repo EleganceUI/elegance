@@ -9,8 +9,7 @@ set(ELG_ABSEIL_PATCHES
     fix-gcc13-constexpr-function-pointer.patch
 )
 if (VCPKG_CMAKE_SYSTEM_NAME STREQUAL "Mikros")
-    # Mikros's fork is the same release with the changes that make Mikros a platform with mmap
-    # (ELGSPEC-0040.R16); the patches of the other branch apply to it as well.
+    # Mikros's fork, pinned (ELGSPEC-0040.R16); the patches of the other branch apply to it as well.
     vcpkg_from_github(
         OUT_SOURCE_PATH SOURCE_PATH
         REPO GetMikros/abseil-cpp
