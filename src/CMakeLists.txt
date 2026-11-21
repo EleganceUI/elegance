@@ -13,10 +13,17 @@ find_package(Dawn CONFIG REQUIRED) # WebGPU (design.md §5)
 find_package(Freetype REQUIRED)
 find_package(harfbuzz CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
-# AsyncImage downloads (net/)
-find_package(boost_beast CONFIG REQUIRED)
-find_package(boost_url CONFIG REQUIRED)
-find_package(OpenSSL REQUIRED)
+# Mikros has none of the services that Boost and OpenSSL are for.
+set(elg_mikros OFF)
+if (CMAKE_SYSTEM_NAME STREQUAL "Mikros")
+    set(elg_mikros ON)
+endif ()
+if (NOT elg_mikros)
+    # AsyncImage downloads (net/)
+    find_package(boost_beast CONFIG REQUIRED)
+    find_package(boost_url CONFIG REQUIRED)
+    find_package(OpenSSL REQUIRED)
+endif ()
 # miniaudio is a single header (design.md §13.3).
 find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
 
@@ -186,11 +193,17 @@ endif ()
 # every layer below it, for an executable that links the layer on its own (its tests,
 # ELGSPEC-0001.R9): object libraries add their objects only where they're linked directly.
 function(elg_layer name)
-    cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "SOURCES;WINDOWS;APPLE;LINUX;MIKROS;DEPENDS;LIBRARIES")
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "SOURCES;NOT_MIKROS;WINDOWS;APPLE;LINUX;MIKROS;DEPENDS;LIBRARIES")
     set(target elegance_${name})
     set(sources ${arg_SOURCES})
-    if (CMAKE_SYSTEM_NAME STREQUAL "Mikros")
+    # NOT_MIKROS names what every system builds but Mikros, which has its own files in MIKROS.
+    if (elg_mikros)
         list(APPEND sources ${arg_MIKROS})
+    else ()
+        list(APPEND sources ${arg_NOT_MIKROS})
+    endif ()
+    if (elg_mikros)
+        # Nothing of the others.
     elseif (WIN32)
         list(APPEND sources ${arg_WINDOWS})
     elseif (APPLE)
@@ -273,11 +286,17 @@ target_include_directories(elegance_media SYSTEM PRIVATE "${MINIAUDIO_INCLUDE_DI
 elg_layer(net_os
         WINDOWS platform/windows/net.cpp platform/windows/proxy.cpp
         APPLE platform/macos/net.cpp platform/macos/proxy.cpp
-        LINUX platform/linux/net.cpp platform/linux/proxy.cpp)
+        LINUX platform/linux/net.cpp platform/linux/proxy.cpp
+        MIKROS platform/mikros/net.cpp)
+set(elg_net_libraries "")
+if (NOT elg_mikros)
+    set(elg_net_libraries Boost::beast Boost::url OpenSSL::SSL OpenSSL::Crypto)
+endif ()
 elg_layer(net
-        SOURCES net/fetch.cpp net/http_cache.cpp net/proxy.cpp
+        NOT_MIKROS net/fetch.cpp net/http_cache.cpp net/proxy.cpp
+        MIKROS net/fetch_unavailable.cpp
         DEPENDS core net_os
-        LIBRARIES Boost::beast Boost::url OpenSSL::SSL OpenSSL::Crypto)
+        LIBRARIES ${elg_net_libraries})
 
 elg_layer(display SOURCES display/display_list.cpp DEPENDS core geometry)
 

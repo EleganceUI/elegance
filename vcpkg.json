@@ -19,11 +19,21 @@
       "default-features": false,
       "features": [
         "ssl"
-      ]
+      ],
+      "platform": "windows | osx | ios | android | linux | freebsd | openbsd | emscripten | uwp"
     },
-    "boost-beast",
-    "boost-url",
-    "openssl",
+    {
+      "name": "boost-beast",
+      "platform": "windows | osx | ios | android | linux | freebsd | openbsd | emscripten | uwp"
+    },
+    {
+      "name": "boost-url",
+      "platform": "windows | osx | ios | android | linux | freebsd | openbsd | emscripten | uwp"
+    },
+    {
+      "name": "openssl",
+      "platform": "windows | osx | ios | android | linux | freebsd | openbsd | emscripten | uwp"
+    },
     "freetype",
     "harfbuzz",
     "miniaudio",
