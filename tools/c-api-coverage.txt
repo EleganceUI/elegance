@@ -1251,6 +1251,7 @@ elg::PlainTooltipStyle::make_body(const TooltipConfiguration &) => elg_tooltip_s
 elg::Platform => elg_current_platform
 elg::Platform::linux => elg_current_platform
 elg::Platform::macos => elg_current_platform
+elg::Platform::mikros => elg_current_platform
 elg::Platform::windows => elg_current_platform
 elg::PlatformError => elg_take_error
 elg::PlayOptions => elg_sound_play

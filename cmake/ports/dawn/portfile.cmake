@@ -32,25 +32,41 @@ if (VCPKG_TARGET_IS_EMSCRIPTEN)
     return()
 endif()
 
-vcpkg_from_github(
-    OUT_SOURCE_PATH SOURCE_PATH
-    REPO google/dawn
-    REF "v${VERSION}"
-    SHA512 3c1c2f71508547adbe564dc0da8215e6d54c64176e611ba7e597db2f38d93cba2e735dc6f672585da8ed7ae0ad0c0784f02adcdda85026fe6def3b87fc4349d5
-    HEAD_REF master
-    PATCHES
-        # DAWN_BUILD_MONOLITHIC_LIBRARY SHARED/STATIC requires BUILD_SHARED_LIBS=OFF
-        001-fix-linkage.patch
-        002-fix-windows-build.patch
-        003-force-disable-cxx-module.patch
-        004-deps.patch
-        005-bsd-support.patch
-        006-fix-header-bsd.patch
-        008-wrong-dxcapi-include.patch
-        009-fix-tint-install.patch
-        # Elegance: honor the requested composite alpha mode on Vulkan (transparent windows)
-        010-vulkan-honor-alpha-mode.patch
+set(ELG_DAWN_PATCHES
+    # DAWN_BUILD_MONOLITHIC_LIBRARY SHARED/STATIC requires BUILD_SHARED_LIBS=OFF
+    001-fix-linkage.patch
+    002-fix-windows-build.patch
+    003-force-disable-cxx-module.patch
+    004-deps.patch
+    005-bsd-support.patch
+    006-fix-header-bsd.patch
+    008-wrong-dxcapi-include.patch
+    009-fix-tint-install.patch
 )
+if (VCPKG_CMAKE_SYSTEM_NAME STREQUAL "Mikros")
+    # Mikros's fork is the same tag with Mikros's build changes, and with the patch that the other branch
+    # applies as the last one (ELGSPEC-0040.R16).
+    vcpkg_from_github(
+        OUT_SOURCE_PATH SOURCE_PATH
+        REPO GetMikros/dawn
+        REF a93757a59da05dd3e09185f151a4af3a9d7a4e88
+        SHA512 64314b7c3b61094bdf3a5b1a78d205f844b0d832e06061f2e493cd05d12cecc18884cb14dc47255a37d0f33ad9435586d1a74441a33ac343cf7e5db3c8f50e59
+        HEAD_REF mikros
+        PATCHES ${ELG_DAWN_PATCHES}
+    )
+else ()
+    vcpkg_from_github(
+        OUT_SOURCE_PATH SOURCE_PATH
+        REPO google/dawn
+        REF "v${VERSION}"
+        SHA512 3c1c2f71508547adbe564dc0da8215e6d54c64176e611ba7e597db2f38d93cba2e735dc6f672585da8ed7ae0ad0c0784f02adcdda85026fe6def3b87fc4349d5
+        HEAD_REF master
+        PATCHES
+            ${ELG_DAWN_PATCHES}
+            # Elegance: honor the requested composite alpha mode on Vulkan (transparent windows)
+            010-vulkan-honor-alpha-mode.patch
+    )
+endif ()
 
 function(z_vcpkg_from_github_to_path)
     cmake_parse_arguments(PARSE_ARGV 0 arg "" "OUT_SOURCE_PATH;REPO;REF;SHA512;HEAD_REF" "PATCHES")

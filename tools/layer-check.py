@@ -40,7 +40,7 @@ LAYER_FOLDERS = {
     "app": "App",
     "hot_reload": "Hot reload",
 }
-OS_FOLDERS = {"linux", "macos", "windows"}
+OS_FOLDERS = {"linux", "macos", "mikros", "windows"}
 PLATFORM_IMPLEMENTATION_FOLDERS = OS_FOLDERS | {"sdl"}
 SOURCE_SUFFIXES = {".h", ".hpp", ".cpp", ".cc", ".c", ".mm", ".m", ".inl"}
 

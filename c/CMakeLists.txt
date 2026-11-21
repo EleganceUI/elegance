@@ -158,6 +158,21 @@ elseif (APPLE)
     # aren't built with hidden visibility. Leave room for bindings to rewrite the install name.
     target_link_options(elegance_c PRIVATE
             "-Wl,-exported_symbol,_elg_*" -Wl,-headerpad_max_install_names -Wl,-dead_strip)
+elseif (CMAKE_SYSTEM_NAME STREQUAL "Mikros")
+    # The system's library, eleganceui.<major>.dlib (ELGSPEC-0040.R2): its libc++ is the system's, linked
+    # dynamically (ELGSPEC-0037.R10), and it exports only the C API.
+    # The major is the library's version's until the ABI has a number of its own (ELGSPEC-0037.R8). Elegance's
+    # project() sets it in its own folder only.
+    get_filename_component(elg_root "${ELEGANCE_ROOT}" REALPATH)
+    get_directory_property(elg_version_major DIRECTORY "${elg_root}" DEFINITION Elegance_VERSION_MAJOR)
+    if (elg_version_major STREQUAL "")
+        message(FATAL_ERROR "Elegance's version has no major number, which the library's name carries.")
+    endif ()
+    set_target_properties(elegance_c PROPERTIES
+            OUTPUT_NAME "eleganceui.${elg_version_major}" PREFIX "" SUFFIX ".dlib")
+    target_link_options(elegance_c PRIVATE
+            "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/exports.map" -Wl,--gc-sections -Wl,-z,defs)
+    set_property(TARGET elegance_c APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/exports.map")
 else ()
     # Carry libstdc++ and libgcc; export only the C API.
     target_link_options(elegance_c PRIVATE

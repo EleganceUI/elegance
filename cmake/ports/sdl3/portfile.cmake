@@ -1,13 +1,25 @@
-vcpkg_from_github(
-    OUT_SOURCE_PATH SOURCE_PATH
-    REPO libsdl-org/SDL
-    REF "release-${VERSION}"
-    SHA512 12fcb5592016b27922b08d1580d75f5f15c72e67cf04415e2bd824dc7563ac940c25bbe368b03d0a755f5832803049467e3d0ee6784ed3684792bc4d7741af50
-    HEAD_REF main
-    PATCHES
-        fix-freebsd.patch
-        100-close-file-dialogs.patch # Elegance: SDL_CloseFileDialogs() (cmake/ports/README.md)
-)
+if (VCPKG_CMAKE_SYSTEM_NAME STREQUAL "Mikros")
+    # Mikros's fork has the build changes for Mikros, and the patch that the other branch applies, at its own
+    # version (ELGSPEC-0040.R16).
+    vcpkg_from_github(
+        OUT_SOURCE_PATH SOURCE_PATH
+        REPO GetMikros/SDL
+        REF eab5c87b6c7f7faa585d2f013b8c2d865b136498
+        SHA512 fdaab71b34f2ce550857028beaa432cad5e01d16ff827608b5a115dad23b81224ecb65af7dff3511cc55b25c0fa67c617405088a8263a07c0e6a32fda009bbb2
+        HEAD_REF mikros
+    )
+else ()
+    vcpkg_from_github(
+        OUT_SOURCE_PATH SOURCE_PATH
+        REPO libsdl-org/SDL
+        REF "release-${VERSION}"
+        SHA512 12fcb5592016b27922b08d1580d75f5f15c72e67cf04415e2bd824dc7563ac940c25bbe368b03d0a755f5832803049467e3d0ee6784ed3684792bc4d7741af50
+        HEAD_REF main
+        PATCHES
+            fix-freebsd.patch
+            100-close-file-dialogs.patch # Elegance: SDL_CloseFileDialogs() (cmake/ports/README.md)
+    )
+endif ()
 
 string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "static" SDL_STATIC)
 string(COMPARE EQUAL "${VCPKG_LIBRARY_LINKAGE}" "dynamic" SDL_SHARED)
@@ -56,6 +68,13 @@ if ("libusb" IN_LIST FEATURES)
         vcpkg_list(APPEND FEATURE_OPTIONS "-DSDL_HIDAPI_LIBUSB_SHARED=OFF")
     endif()
 endif()
+
+if (VCPKG_CMAKE_SYSTEM_NAME STREQUAL "Mikros")
+    # vcpkg's default features follow its own list of systems, which has no Mikros, so this turns Wayland and
+    # Vulkan on and X11, D-Bus, IBus and ALSA off itself (ELGSPEC-0040.R3).
+    vcpkg_list(APPEND FEATURE_OPTIONS -DSDL_WAYLAND=ON -DSDL_VULKAN=ON -DSDL_X11=OFF -DSDL_DBUS=OFF -DSDL_IBUS=OFF
+               -DSDL_ALSA=OFF)
+endif ()
 
 # option for not need to show windows
 list(APPEND FEATURE_OPTIONS -DSDL_UNIX_CONSOLE_BUILD=ON)

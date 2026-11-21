@@ -170,6 +170,34 @@
             }
         },
         {
+            "name": "mikros-base",
+            "hidden": true,
+            "inherits": "base",
+            "description": "Mikros, cross-built with the sysroot that MIKROS_SYSROOT names. Configure with the CMake that has Mikros's patches ($MIKROS_SYSROOT/../cmake/install/bin/cmake in a Mikros checkout).",
+            "cacheVariables": {
+                "VCPKG_TARGET_TRIPLET": "x64-mikros",
+                "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/triplets/mikros-toolchain.cmake",
+                "ELG_BUILD_TESTS": false,
+                "ELG_BUILD_SANDBOX": false
+            }
+        },
+        {
+            "name": "mikros-debug",
+            "displayName": "Mikros Debug (cross-built)",
+            "inherits": "mikros-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug"
+            }
+        },
+        {
+            "name": "mikros-release",
+            "displayName": "Mikros Release (cross-built)",
+            "inherits": "mikros-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+            }
+        },
+        {
             "name": "static",
             "hidden": true,
             "description": "Elegance as a static library, linked into each app (no hot reload)",

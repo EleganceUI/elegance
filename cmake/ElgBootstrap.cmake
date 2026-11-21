@@ -151,6 +151,20 @@ if (elg_host_os STREQUAL "Linux")
     endif ()
 endif ()
 
+# --- Mikros ------------------------------------------------------------------------------------------------
+
+# The x64-mikros triplet lives next to the libc++ ones, and needs the sysroot to build anything.
+if (VCPKG_TARGET_TRIPLET STREQUAL "x64-mikros")
+    if (NOT DEFINED ENV{MIKROS_SYSROOT} OR NOT EXISTS "$ENV{MIKROS_SYSROOT}/x86_64-unknown-mikros.cmake")
+        message(FATAL_ERROR "Elegance: building for Mikros needs the environment variable MIKROS_SYSROOT to name "
+                            "Mikros's sysroot, the folder that holds x86_64-unknown-mikros.cmake.")
+    endif ()
+    if (NOT "${CMAKE_CURRENT_LIST_DIR}/triplets" IN_LIST VCPKG_OVERLAY_TRIPLETS)
+        list(APPEND VCPKG_OVERLAY_TRIPLETS "${CMAKE_CURRENT_LIST_DIR}/triplets")
+        set(VCPKG_OVERLAY_TRIPLETS "${VCPKG_OVERLAY_TRIPLETS}" CACHE STRING "" FORCE)
+    endif ()
+endif ()
+
 # --- Ninja -------------------------------------------------------------------------------------------------
 
 if (CMAKE_GENERATOR MATCHES "Ninja" AND NOT CMAKE_MAKE_PROGRAM)
