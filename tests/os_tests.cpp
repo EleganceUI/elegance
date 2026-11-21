@@ -161,6 +161,7 @@ TEST_CASE("the image cache is in the user's cache folder, by the program's name"
         CHECK(image_cache_folder("app", environment({{"HOME", "/home/me"}, {"XDG_CACHE_HOME", ""}})) ==
               fs::path("/home/me") / ".cache" / "elegance" / "app" / "images");
         break;
+    case Platform::mikros: break; // the tests are not built for Mikros
     }
     CHECK_FALSE(image_cache_folder("app", environment({})).has_value());
 }
@@ -189,6 +190,7 @@ TEST_CASE("the glyph cache is in the user's cache folder", "[os]") {
                   fs::path("/home/me") / ".cache" / "elegance" / "app" / "images");
         }
         break;
+    case Platform::mikros: break;
     }
     CHECK_FALSE(glyph_cache_folder(environment({})).has_value());
 }

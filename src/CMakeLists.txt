@@ -186,10 +186,12 @@ endif ()
 # every layer below it, for an executable that links the layer on its own (its tests,
 # ELGSPEC-0001.R9): object libraries add their objects only where they're linked directly.
 function(elg_layer name)
-    cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "SOURCES;WINDOWS;APPLE;LINUX;DEPENDS;LIBRARIES")
+    cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "SOURCES;WINDOWS;APPLE;LINUX;MIKROS;DEPENDS;LIBRARIES")
     set(target elegance_${name})
     set(sources ${arg_SOURCES})
-    if (WIN32)
+    if (CMAKE_SYSTEM_NAME STREQUAL "Mikros")
+        list(APPEND sources ${arg_MIKROS})
+    elseif (WIN32)
         list(APPEND sources ${arg_WINDOWS})
     elseif (APPLE)
         list(APPEND sources ${arg_APPLE})
@@ -315,6 +317,7 @@ elg_layer(platform
               platform/macos/native.cpp platform/macos/notifications.mm platform/macos/title_bar.mm
         LINUX platform/linux/appearance.cpp platform/linux/dock.cpp platform/linux/glib_thread.cpp
               platform/linux/menu_bar.cpp platform/linux/native.cpp platform/linux/notifications.cpp
+        MIKROS platform/mikros/native.cpp
         DEPENDS core geometry
         LIBRARIES SDL3::SDL3 ${elg_accesskit})
 
