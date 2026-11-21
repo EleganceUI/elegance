@@ -74,10 +74,14 @@ public:
     explicit AudioRecorder(AudioRecorderOptions options = {});
 
     /// Starts recording, after what's already recorded. On failure, error() says why.
+    ///
+    /// @throws PlatformError On Mikros, which offers no audio recording.
     void start() const;
     /// Stops recording, keeping what was recorded.
     void stop() const;
     /// Stops while recording, starts otherwise.
+    ///
+    /// @throws PlatformError On Mikros, which offers no audio recording.
     void toggle() const;
     /// Drops what was recorded.
     void clear() const;

@@ -4354,7 +4354,7 @@ void elg_audio_output_devices(ElgClosure each);
 ///
 /// @param file The file's path.
 /// @return The sound, owned by the caller (elg_sound_free()), or nullptr with a ResourceError if
-///   the file can't be read or decoded.
+///   the file can't be read or decoded, or a PlatformError on Mikros.
 ElgSound* elg_sound_load_file(ElgStr file);
 
 /// Wraps `Sound::load()` for encoded audio in memory.
@@ -4362,7 +4362,7 @@ ElgSound* elg_sound_load_file(ElgStr file);
 ///
 /// @param data The encoded audio (WAV, FLAC, or MP3), read during the call.
 /// @return The sound, owned by the caller (elg_sound_free()), or nullptr with a ResourceError if
-///   it can't be decoded.
+///   it can't be decoded, or a PlatformError on Mikros.
 ElgSound* elg_sound_load_data(ElgBytes data);
 
 /// Copies a sound; copies share the decoded audio.
@@ -4399,7 +4399,7 @@ double elg_sound_duration(const ElgSound* sound);
 ///
 /// @param file The file's path (WAV, FLAC, or MP3).
 /// @return The player, owned by the caller (elg_audio_player_free()), or nullptr with a
-///   ResourceError if the file can't be opened or isn't audio.
+///   ResourceError if the file can't be opened or isn't audio, or a PlatformError on Mikros.
 ElgAudioPlayer* elg_audio_player_new(ElgStr file);
 
 /// Copies a player; copies control the same player.

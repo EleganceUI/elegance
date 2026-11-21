@@ -66,12 +66,14 @@ public:
     /// @param file The file.
     /// @return The sound.
     /// @throws ResourceError If the file can't be read or decoded.
+    /// @throws PlatformError On Mikros, which offers no audio output.
     static Sound load(const std::filesystem::path& file);
     /// Decodes encoded audio in memory (copied).
     ///
     /// @param data The encoded audio (WAV, FLAC or MP3).
     /// @return The sound.
     /// @throws ResourceError If the data can't be decoded.
+    /// @throws PlatformError On Mikros, which offers no audio output.
     static Sound load(std::span<const unsigned char> data);
 
     /// Plays the sound from the start in a new voice, over any that are still playing. Returns at
@@ -97,6 +99,7 @@ public:
     ///
     /// @param file A WAV, FLAC or MP3 file.
     /// @throws ResourceError If the file can't be opened or isn't audio.
+    /// @throws PlatformError On Mikros, which offers no audio output.
     explicit AudioPlayer(const std::filesystem::path& file);
 
     /// Starts or resumes playing; from the start again if it had played to the end.
@@ -174,9 +177,10 @@ struct AudioStreamOptions {
 /// goes.
 class ELG_API AudioStream {
 public:
-    /// Opens the output and starts playing. Failing to doesn't throw: error() says why.
+    /// Opens the output and starts playing. Failing to doesn't throw, except on Mikros: error() says why.
     ///
     /// @param options The device, format, and an optional render callback.
+    /// @throws PlatformError On Mikros, which offers no audio output.
     explicit AudioStream(AudioStreamOptions options = {});
 
     /// Queues interleaved samples (without on_render). Any thread. Beyond about a second queued,

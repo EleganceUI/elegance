@@ -36,7 +36,10 @@
     },
     "freetype",
     "harfbuzz",
-    "miniaudio",
+    {
+      "name": "miniaudio",
+      "platform": "windows | osx | ios | android | linux | freebsd | openbsd | emscripten | uwp"
+    },
     {
       "name": "msdfgen",
       "default-features": false

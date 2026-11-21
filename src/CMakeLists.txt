@@ -24,8 +24,10 @@ if (NOT elg_mikros)
     find_package(boost_url CONFIG REQUIRED)
     find_package(OpenSSL REQUIRED)
 endif ()
-# miniaudio is a single header (design.md §13.3).
-find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
+if (NOT elg_mikros)
+    # miniaudio is a single header (design.md §13.3).
+    find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
+endif ()
 
 # Accessibility (design.md §12): AccessKit's C library (MIT / Apache-2.0), from vcpkg (the
 # accesskit-c overlay port, cmake/ports). Global: the macOS bundle step (EleganceApplication.cmake)
@@ -201,15 +203,13 @@ function(elg_layer name)
         list(APPEND sources ${arg_MIKROS})
     else ()
         list(APPEND sources ${arg_NOT_MIKROS})
-    endif ()
-    if (elg_mikros)
-        # Nothing of the others.
-    elseif (WIN32)
-        list(APPEND sources ${arg_WINDOWS})
-    elseif (APPLE)
-        list(APPEND sources ${arg_APPLE})
-    else ()
-        list(APPEND sources ${arg_LINUX})
+        if (WIN32)
+            list(APPEND sources ${arg_WINDOWS})
+        elseif (APPLE)
+            list(APPEND sources ${arg_APPLE})
+        else ()
+            list(APPEND sources ${arg_LINUX})
+        endif ()
     endif ()
     add_library(${target} OBJECT ${sources})
     if (APPLE)
@@ -274,14 +274,18 @@ elg_layer(media_os
         WINDOWS platform/windows/camera.cpp platform/windows/image_codec.cpp platform/windows/video_source.cpp
         APPLE platform/macos/camera.mm platform/macos/image_codec.cpp platform/macos/pixel_buffer.cpp
               platform/macos/video_source.mm
-        LINUX platform/linux/camera.cpp platform/linux/image_codec.cpp platform/linux/video_source.cpp)
+        LINUX platform/linux/camera.cpp platform/linux/image_codec.cpp platform/linux/video_source.cpp
+        MIKROS platform/mikros/audio.cpp)
 elg_layer(media
-        SOURCES media/audio.cpp media/audio_setup.cpp media/audio_stream.cpp media/camera.cpp media/frame_source.cpp media/image_decode.cpp media/recorded_orientation.cpp
-                media/miniaudio.cpp media/recorder.cpp media/video_feed.cpp media/video_source.cpp
+        SOURCES media/camera.cpp media/frame_source.cpp media/image_decode.cpp media/recorded_orientation.cpp
+                media/video_feed.cpp media/video_source.cpp
+        NOT_MIKROS media/audio.cpp media/audio_setup.cpp media/audio_stream.cpp media/miniaudio.cpp media/recorder.cpp
         DEPENDS core geometry reactive media_os)
-# A system folder, so that miniaudio.h is held to no warnings of ours: on macOS, nothing else this
-# layer uses adds vcpkg's include folder as one.
-target_include_directories(elegance_media SYSTEM PRIVATE "${MINIAUDIO_INCLUDE_DIR}")
+if (NOT elg_mikros)
+    # A system folder, so that miniaudio.h is held to no warnings of ours: on macOS, nothing else this
+    # layer uses adds vcpkg's include folder as one.
+    target_include_directories(elegance_media SYSTEM PRIVATE "${MINIAUDIO_INCLUDE_DIR}")
+endif ()
 
 elg_layer(net_os
         WINDOWS platform/windows/net.cpp platform/windows/proxy.cpp

@@ -55,7 +55,7 @@ ELG_EXPORT void elg_audio_output_devices(ElgClosure each) {
 ///
 /// @param file The file's path.
 /// @return The sound, owned by the caller (elg_sound_free()), or nullptr with a ResourceError if
-///   the file can't be read or decoded.
+///   the file can't be read or decoded, or a PlatformError on Mikros.
 ELG_EXPORT Sound* elg_sound_load_file(ElgStr file) {
     ELG_TRY_ANY_THREAD
     return new Sound(Sound::load(path(file)));
@@ -66,7 +66,7 @@ ELG_EXPORT Sound* elg_sound_load_file(ElgStr file) {
 ///
 /// @param data The encoded audio (WAV, FLAC, or MP3), read during the call.
 /// @return The sound, owned by the caller (elg_sound_free()), or nullptr with a ResourceError if
-///   it can't be decoded.
+///   it can't be decoded, or a PlatformError on Mikros.
 ELG_EXPORT Sound* elg_sound_load_data(ElgBytes data) {
     ELG_TRY_ANY_THREAD
     return new Sound(Sound::load(bytes(data)));
@@ -119,7 +119,7 @@ ELG_EXPORT double elg_sound_duration(const Sound* sound) {
 ///
 /// @param file The file's path (WAV, FLAC, or MP3).
 /// @return The player, owned by the caller (elg_audio_player_free()), or nullptr with a
-///   ResourceError if the file can't be opened or isn't audio.
+///   ResourceError if the file can't be opened or isn't audio, or a PlatformError on Mikros.
 ELG_EXPORT AudioPlayer* elg_audio_player_new(ElgStr file) {
     ELG_TRY
     return new AudioPlayer(path(file));
