@@ -7,6 +7,12 @@ set(VCPKG_CRT_LINKAGE dynamic)
 set(VCPKG_LIBRARY_LINKAGE static)
 
 set(VCPKG_CMAKE_SYSTEM_NAME Mikros)
+# The libraries are linked into a shared library, so their code has to be position independent.
+set(VCPKG_C_FLAGS "-fPIC")
+set(VCPKG_CXX_FLAGS "-fPIC")
+# Lets a manifest's "platform" say `mikros` (and `!mikros`) for what the triplet builds. vcpkg calls this variable
+# experimental: check it when the baseline moves.
+set(VCPKG_DEP_INFO_OVERRIDE_VARS "mikros")
 set(VCPKG_ENV_PASSTHROUGH MIKROS_SYSROOT)
 if (NOT DEFINED ENV{MIKROS_SYSROOT})
     message(FATAL_ERROR "The x64-mikros triplet needs the environment variable MIKROS_SYSROOT, the path of "
