@@ -102,6 +102,7 @@ struct Notification {
 ///
 /// @param notification What it says, and what clicking it does.
 /// @throws UsageError When no App is running.
+/// @throws PlatformError On Mikros, which offers no notifications.
 ELG_API void notify(const Notification& notification);
 
 // --- Dock and taskbar ---
@@ -165,6 +166,7 @@ public:
     ///
     /// @param options The icon, tooltip and menu.
     /// @throws UsageError When no App is running.
+    /// @throws PlatformError On Mikros, which offers no tray icons.
     explicit TrayIcon(TrayIconOptions options);
 
     /// @param tooltip The new tooltip.

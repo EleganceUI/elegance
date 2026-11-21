@@ -1058,7 +1058,8 @@ ELG_EXPORT void elg_choose_folders(ElgStr directory, bool multiple, ElgClosure d
 }
 
 /// Wraps `notify()`: shows a system notification (Windows: a toast, also kept in the notification
-/// center). Call it on the UI thread of a running App; otherwise it records a UsageError.
+/// center). Call it on the UI thread of a running App; otherwise it records a UsageError. On Mikros
+/// it records a PlatformError.
 ///
 /// @param title The notification's title.
 /// @param body Its text.
@@ -1129,7 +1130,8 @@ struct ElgTrayMenuItem {
 /// @param tooltip Shown when the pointer rests on the icon.
 /// @param menu The menu's items, read during the call; their closures are consumed.
 /// @param count Number of `menu` items.
-/// @return The tray icon, owned by the caller (elg_tray_icon_free()), or nullptr on failure.
+/// @return The tray icon, owned by the caller (elg_tray_icon_free()), or nullptr on failure (on
+///   Mikros with a PlatformError).
 ELG_EXPORT TrayIcon* elg_tray_icon_new(const ElgImageSource* icon, ElgStr tooltip, const ElgTrayMenuItem* menu, size_t count) {
     ELG_TRY
     ConsumedMenu<ElgTrayMenuItem, TrayMenuItem> consumed(menu, count);

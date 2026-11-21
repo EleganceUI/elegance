@@ -66,6 +66,9 @@ void remove_input_monitor(void* monitor);
 // Shows a system notification (platform/<os>/notifications.*). UI thread, while an App runs.
 void show_notification(const Notification& notification);
 
+// Throws elg::PlatformError on a system without tray icons; does nothing elsewhere. UI thread.
+void require_tray_icons();
+
 // --- Dock and taskbar (platform/<os>/dock.*). UI thread, while an App runs. ---
 
 void set_badge(const std::optional<std::string>& text);

@@ -359,6 +359,7 @@ void remove_tray_icons() {
 }
 
 std::shared_ptr<TrayIcon::State> create_tray_icon(TrayIconOptions options, std::optional<TrayIconPicture> picture) {
+    native::require_tray_icons();
     auto state = std::make_shared<TrayIcon::State>();
     make_valid_utf8(options);
     state->options = std::move(options);
