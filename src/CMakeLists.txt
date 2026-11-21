@@ -276,8 +276,17 @@ elg_layer(text
 # What the Mikros build has for Media and Net, which the tests build on every system too (below).
 set(elg_media_sources media/camera.cpp media/frame_source.cpp media/image_decode.cpp media/recorded_orientation.cpp
                       media/video_feed.cpp media/video_source.cpp)
-set(elg_mikros_media_os platform/linux/image_codec.cpp platform/mikros/audio.cpp platform/mikros/camera.cpp
-                        platform/mikros/video_source.cpp)
+set(elg_mikros_media_stand_ins platform/mikros/audio.cpp platform/mikros/camera.cpp platform/mikros/video_source.cpp)
+set(elg_mikros_media_os platform/linux/image_codec.cpp ${elg_mikros_media_stand_ins})
+# The tests build Media with the image codec of the system they run on: stb, which the Linux one uses, isn't
+# installed on Windows and macOS.
+if (WIN32)
+    set(elg_host_image_codec platform/windows/image_codec.cpp)
+elseif (APPLE)
+    set(elg_host_image_codec platform/macos/image_codec.cpp)
+else ()
+    set(elg_host_image_codec platform/linux/image_codec.cpp)
+endif ()
 set(elg_mikros_net_os platform/mikros/net.cpp)
 set(elg_mikros_net net/fetch_unavailable.cpp)
 
@@ -314,7 +323,8 @@ elg_layer(net
 if (ELG_BUILD_TESTS AND NOT elg_mikros)
     # Media and Net as the Mikros build has them, for the tests: their files define what the library's own
     # do, so a program links these or those, never both.
-    elg_layer(media_mikros TEST_ONLY SOURCES ${elg_media_sources} ${elg_mikros_media_os} DEPENDS core geometry reactive)
+    elg_layer(media_mikros TEST_ONLY SOURCES ${elg_media_sources} ${elg_mikros_media_stand_ins}
+              ${elg_host_image_codec} DEPENDS core geometry reactive)
     elg_layer(net_mikros TEST_ONLY SOURCES ${elg_mikros_net} ${elg_mikros_net_os} DEPENDS core)
     elg_layer(platform_mikros TEST_ONLY SOURCES platform/mikros/native.cpp DEPENDS core geometry
               LIBRARIES SDL3::SDL3)
