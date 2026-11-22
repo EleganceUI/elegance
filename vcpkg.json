@@ -49,7 +49,10 @@
       "platform": "!windows & !osx"
     },
     "sdl3",
-    "accesskit-c"
+    {
+      "name": "accesskit-c",
+      "platform": "(windows & !uwp & !mingw) | osx | linux"
+    }
   ],
   "features": {
     "tests": {

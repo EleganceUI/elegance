@@ -43,7 +43,7 @@ enum class TitleBar {
 ///   mica           under-window background  Mica
 ///   acrylic        HUD window               Acrylic
 /// @endverbatim
-/// Elsewhere (Windows 10, Linux) the window stays opaque and draws its background as usual.
+/// Elsewhere (Windows 10, Linux, and for now Mikros) the window stays opaque and draws its background as usual.
 enum class WindowMaterial { none, sidebar, under_window, mica, acrylic };
 
 /// How App::window() opens a window. Sizes are in logical points.

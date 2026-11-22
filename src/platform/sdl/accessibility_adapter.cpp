@@ -5,7 +5,8 @@
 // AccessKit (design.md §12): each window's tree, as AccessKit nodes, to the screen readers of its
 // platform (ELGSPEC-0020.R1): UI Automation on Windows and NSAccessibility on macOS, whose
 // subclassing adapters hook the window and call back on the UI thread, and AT-SPI on Linux, whose
-// adapter talks to the bus on a thread of its own. The same nodes go to each (ELGSPEC-0020.R2).
+// adapter talks to the bus on a thread of its own. The same nodes go to each (ELGSPEC-0020.R2). A build for Mikros has
+// no AccessKit, so this file is only the stub there (ELGSPEC-0040.R14 isn't implemented).
 
 #include "platform/accessibility_adapter.h"
 

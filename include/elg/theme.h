@@ -199,7 +199,7 @@ struct Theme {
 };
 
 /// The accent color the person chose in the system's settings, or nullopt where there's none
-/// (or the platform doesn't say: Linux desktops through the settings portal, if at all).
+/// (or the platform doesn't say: Linux desktops through the settings portal, if at all, and for now Mikros).
 /// Reactive: reads update when it changes. UI thread, while an App runs; without one it asks the
 /// system each time, and the read isn't tracked.
 ///

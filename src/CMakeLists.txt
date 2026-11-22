@@ -18,6 +18,12 @@ set(elg_mikros OFF)
 if (CMAKE_SYSTEM_NAME STREQUAL "Mikros")
     set(elg_mikros ON)
 endif ()
+# AccessKit has no Mikros backend: until ELGSPEC-0040.R14 is implemented, a Mikros build has no screen reader
+# support. vcpkg doesn't install accesskit-c for Mikros either (vcpkg.json).
+if (elg_mikros AND ELG_ACCESSIBILITY)
+    message(STATUS "Elegance: no screen reader support on Mikros yet: ELG_ACCESSIBILITY is off")
+    set(ELG_ACCESSIBILITY OFF)
+endif ()
 if (NOT elg_mikros)
     # AsyncImage downloads (net/)
     find_package(boost_beast CONFIG REQUIRED)
@@ -298,6 +304,12 @@ elg_layer(media_os
               platform/macos/video_source.mm
         LINUX platform/linux/camera.cpp platform/linux/image_codec.cpp platform/linux/video_source.cpp
         MIKROS ${elg_mikros_media_os})
+if (NOT WIN32 AND NOT APPLE)
+    # stb, which the image codec of Linux and Mikros uses: its folder is named here, not left to whatever else
+    # puts vcpkg's include folder on the path (Linux has GStreamer's, and Mikros has nothing).
+    find_package(Stb REQUIRED)
+    target_include_directories(elegance_media_os SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
+endif ()
 elg_layer(media
         SOURCES ${elg_media_sources}
         NOT_MIKROS media/audio.cpp media/audio_setup.cpp media/audio_stream.cpp media/miniaudio.cpp media/recorder.cpp
@@ -327,6 +339,9 @@ if (ELG_BUILD_TESTS AND NOT elg_mikros)
     # do, so a program links these or those, never both.
     elg_layer(media_mikros TEST_ONLY SOURCES ${elg_media_sources} ${elg_mikros_media_stand_ins}
               ${elg_host_image_codec} DEPENDS core geometry reactive)
+    if (NOT WIN32 AND NOT APPLE)
+        target_include_directories(elegance_media_mikros SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
+    endif ()
     elg_layer(net_mikros TEST_ONLY SOURCES ${elg_mikros_net} ${elg_mikros_net_os} DEPENDS core)
     elg_layer(platform_mikros TEST_ONLY SOURCES platform/mikros/native.cpp platform/mikros/pipeline_cache.cpp
               DEPENDS core geometry
@@ -351,6 +366,9 @@ elg_layer(gpu
         WINDOWS gpu/native_image.cpp gpu/windows/composition.cpp gpu/windows/system.cpp
         APPLE gpu/macos/native_image.mm gpu/presenter.cpp gpu/system.cpp
         LINUX gpu/native_image.cpp gpu/presenter.cpp gpu/system.cpp
+        # Mikros presents through WebGPU's surface of the window's wl_surface, as Linux does, and has nothing of
+        # the system's to import images from yet.
+        MIKROS gpu/native_image.cpp gpu/presenter.cpp gpu/system.cpp
         DEPENDS core geometry gpu_os
         LIBRARIES dawn::webgpu_dawn)
 # What this build's WebGPU implementation is, for the identity of the pipeline cache's entries: a hash of the
@@ -395,7 +413,9 @@ elg_layer(platform
               platform/macos/native.cpp platform/macos/notifications.mm platform/macos/title_bar.mm
         LINUX platform/linux/appearance.cpp platform/linux/dock.cpp platform/linux/glib_thread.cpp
               platform/linux/menu_bar.cpp platform/linux/native.cpp platform/linux/notifications.cpp
-        MIKROS platform/mikros/native.cpp
+        # Mikros draws the menu bar in each window, as Linux does, until it exports menus to the compositor, and
+        # has no materials and no accent color, as Linux has without GIO, until it takes them from the compositor.
+        MIKROS platform/mikros/native.cpp platform/linux/appearance.cpp platform/linux/menu_bar.cpp
         DEPENDS core geometry
         LIBRARIES SDL3::SDL3 ${elg_accesskit})
 

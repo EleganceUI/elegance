@@ -137,6 +137,13 @@ if (ELG_C_STATIC)
     return()
 endif ()
 
+if (CMAKE_SYSTEM_NAME STREQUAL "Mikros")
+    # CMake's platform file for Mikros has no WHOLE_ARCHIVE link feature, and its linker, lld, takes the options that
+    # the feature is made of on Linux.
+    set(CMAKE_CXX_LINK_LIBRARY_USING_WHOLE_ARCHIVE
+        "LINKER:--push-state,--whole-archive" "<LINK_ITEM>" "LINKER:--pop-state")
+    set(CMAKE_CXX_LINK_LIBRARY_USING_WHOLE_ARCHIVE_SUPPORTED TRUE)
+endif ()
 add_library(elegance_c SHARED ${C_API_SOURCES})
 elegance_c_api_warnings(elegance_c)
 add_executable(elegance_c_link_check link_check.cpp)

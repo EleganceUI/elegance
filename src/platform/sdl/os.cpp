@@ -9,7 +9,9 @@
 
 #include <SDL3/SDL.h>
 
+#include <cerrno>
 #include <string_view>
+#include <system_error>
 
 namespace elg::detail::os {
 
@@ -18,6 +20,55 @@ std::optional<std::string> environment_variable(const char* name) {
         return std::string(value);
     }
     return std::nullopt;
+}
+
+namespace {
+
+struct ThreadStart {
+    void (*entry)(void*);
+    void* argument;
+};
+
+int SDLCALL run_thread(void* start) {
+    const ThreadStart thread = *static_cast<ThreadStart*>(start);
+    SDL_free(start);
+    thread.entry(thread.argument);
+    return 0;
+}
+
+} // namespace
+
+void* start_thread_with_stack(std::size_t stack_size, void (*entry)(void*), void* argument) {
+    // The start is copied by SDL's own allocator: the new thread may run before this call returns.
+    auto* start = static_cast<ThreadStart*>(SDL_malloc(sizeof(ThreadStart)));
+    if (start == nullptr) {
+        throw std::system_error(ENOMEM, std::generic_category(), "a thread");
+    }
+    *start = {entry, argument};
+    const SDL_PropertiesID properties = SDL_CreateProperties();
+    SDL_SetPointerProperty(properties, SDL_PROP_THREAD_CREATE_ENTRY_FUNCTION_POINTER,
+                           reinterpret_cast<void*>(&run_thread));
+    SDL_SetPointerProperty(properties, SDL_PROP_THREAD_CREATE_USERDATA_POINTER, start);
+    SDL_SetNumberProperty(properties, SDL_PROP_THREAD_CREATE_STACKSIZE_NUMBER, static_cast<Sint64>(stack_size));
+    // SDL's macro for this function casts its own arguments in the C style.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#endif
+    SDL_Thread* thread = SDL_CreateThreadWithProperties(properties);
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
+    SDL_DestroyProperties(properties);
+    if (thread == nullptr) {
+        SDL_free(start);
+        throw std::system_error(EAGAIN, std::generic_category(), "a thread");
+    }
+    return thread;
+}
+
+void join_thread(void* thread) noexcept {
+    SDL_WaitThread(static_cast<SDL_Thread*>(thread), nullptr);
 }
 
 std::filesystem::path pref_path() {
