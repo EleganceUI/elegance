@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <map>
 #include <memory>
 #include <optional>
 #include <random>
@@ -393,4 +394,110 @@ TEST_CASE("two caches on one folder, from several threads, read only whole entri
     for (int i = 0; i < keys; ++i) {
         CHECK(lookup(later, i) == value_of(i));
     }
+}
+
+namespace {
+
+// Every file of a folder with its contents and the time it was written.
+std::map<std::string, std::pair<std::vector<char>, fs::file_time_type>> snapshot(const Folder& folder) {
+    std::map<std::string, std::pair<std::vector<char>, fs::file_time_type>> files;
+    std::error_code error;
+    for (const fs::directory_entry& entry : fs::directory_iterator(folder.path(), error)) {
+        std::ifstream in(entry.path(), std::ios::binary);
+        files[entry.path().filename().string()] = {std::vector<char>(std::istreambuf_iterator<char>(in), {}),
+                                                   fs::last_write_time(entry.path())};
+    }
+    return files;
+}
+
+// A cache to ship: made as a run makes its own, and not used after.
+void make_shipped(const Folder& folder, int count, int salt = 0) {
+    PipelineCache cache({.directory = folder.path()});
+    for (int i = 0; i < count; ++i) {
+        cache.store(identity, key_of(i), value_of(i + salt));
+    }
+    cache.flush();
+}
+
+} // namespace
+
+TEST_CASE("an entry in the shipped folder is found there, and not stored again", "[pipeline-cache]") {
+    const Folder shipped;
+    const Folder own;
+    make_shipped(shipped, 4);
+    const auto before = snapshot(shipped);
+    {
+        PipelineCache cache({.directory = own.path(), .shipped = shipped.path()});
+        for (int i = 0; i < 4; ++i) {
+            CHECK(lookup(cache, i) == value_of(i));
+        }
+        cache.flush();
+        const PipelineCacheStats stats = cache.stats();
+        CHECK(stats.found == 4);
+        CHECK(stats.found_shipped == 4);
+        CHECK(stats.stored == 0);
+    }
+    CHECK_FALSE(fs::exists(own.path()));
+    CHECK(snapshot(shipped) == before);
+}
+
+TEST_CASE("the shipped folder is looked in first, and the app's own after it", "[pipeline-cache]") {
+    const Folder shipped;
+    const Folder own;
+    make_shipped(shipped, 2);        // entries 0 and 1, as shipped
+    make_shipped(own, 4, 1000);      // entries 0 to 3, of another run, with other values
+    PipelineCache cache({.directory = own.path(), .shipped = shipped.path()});
+    CHECK(lookup(cache, 0) == value_of(0));
+    CHECK(lookup(cache, 1) == value_of(1));
+    CHECK(lookup(cache, 2) == value_of(2 + 1000));
+    CHECK(lookup(cache, 3) == value_of(3 + 1000));
+    CHECK(cache.stats().found_shipped == 2);
+}
+
+TEST_CASE("a damaged entry in the shipped folder is a miss, and stays where it is", "[pipeline-cache]") {
+    const Folder shipped;
+    const Folder own;
+    make_shipped(shipped, 2);
+    fs::resize_file(file_of(shipped, 0), 30);
+    {
+        std::fstream changed(file_of(shipped, 1), std::ios::in | std::ios::out | std::ios::binary);
+        changed.seekp(100);
+        changed.put('\x7f');
+    }
+    const auto before = snapshot(shipped);
+    const std::size_t warnings = warnings_of_damage();
+    PipelineCache cache({.directory = own.path(), .shipped = shipped.path()});
+    CHECK_FALSE(lookup(cache, 0).has_value());
+    CHECK_FALSE(lookup(cache, 1).has_value());
+    CHECK(cache.stats().damaged == 2);
+    CHECK(warnings_of_damage() == warnings + 1);
+    CHECK(snapshot(shipped) == before);
+    // What the own folder has of the same entry is found.
+    cache.store(identity, key_of(0), value_of(0));
+    cache.flush();
+    CHECK(lookup(cache, 0) == value_of(0));
+    CHECK(cache.stats().found_shipped == 0);
+}
+
+TEST_CASE("what is stored goes to the app's own folder only, and a shipped folder that isn't there stays so", "[pipeline-cache]") {
+    const Folder shipped;
+    const Folder own;
+    PipelineCache cache({.directory = own.path(), .shipped = shipped.path()});
+    cache.store(identity, key_of(1), value_of(1));
+    cache.flush();
+    CHECK(lookup(cache, 1) == value_of(1));
+    CHECK(fs::exists(file_of(own, 1)));
+    CHECK_FALSE(fs::exists(shipped.path()));
+}
+
+TEST_CASE("a cache with only a shipped folder reads it, and keeps nothing", "[pipeline-cache]") {
+    const Folder shipped;
+    make_shipped(shipped, 1);
+    const auto before = snapshot(shipped);
+    PipelineCache cache({.shipped = shipped.path()});
+    CHECK(lookup(cache, 0) == value_of(0));
+    cache.store(identity, key_of(5), value_of(5));
+    cache.flush();
+    CHECK(cache.stats().stored == 0);
+    CHECK(snapshot(shipped) == before);
 }

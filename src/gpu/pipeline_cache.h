@@ -36,6 +36,10 @@ namespace elg::detail::gpu {
 struct PipelineCacheSettings {
     // The folder of this app's entries, or nullopt: no cache.
     std::optional<std::filesystem::path> directory;
+    // A folder of entries that ship with the app, in the same format, or nullopt: none. Entries are looked
+    // for there first, and then in `directory`. It is only read: nothing is written to it, removed from it or
+    // made in it, and an entry in it that is damaged is a miss that stays where it is.
+    std::optional<std::filesystem::path> shipped;
     // The most that the entries in the folder take on disk, as the sizes of their files: 32 MiB unless set.
     // When an entry would take it over, the entries used least recently are removed first, judged by the
     // time their files were written or last used, and one that is larger than the limit is not kept.
@@ -46,6 +50,7 @@ struct PipelineCacheSettings {
 struct PipelineCacheStats {
     std::uint64_t asked = 0;          // lookups that asked for the size of an entry
     std::uint64_t found = 0;          // of them, those that found it
+    std::uint64_t found_shipped = 0;  // and, of those, the ones that were found in the shipped folder
     std::uint64_t missing = 0;        // and those that didn't, damaged ones included
     std::uint64_t damaged = 0;        // files that were removed, or left where they were, as damaged
     std::uint64_t stored = 0;         // entries written
@@ -82,6 +87,8 @@ private:
     using File = std::vector<std::byte>;
 
     std::optional<File> find_value(const std::string& name, std::string_view identity, std::span<const std::byte> key);
+    std::optional<File> read_entry(const std::filesystem::path& directory, bool own, const std::string& name,
+                                   std::string_view identity, std::span<const std::byte> key);
     bool write_entry(const std::string& name, const File& file);
     void write_loop();
     void warn_once(std::string_view what) noexcept;
@@ -120,6 +127,7 @@ private:
     std::atomic<std::uint64_t> next_temporary_{0};
     std::atomic<std::uint64_t> asked_{0};
     std::atomic<std::uint64_t> found_{0};
+    std::atomic<std::uint64_t> found_shipped_{0};
     std::atomic<std::uint64_t> missing_{0};
     std::atomic<std::uint64_t> damaged_{0};
     std::atomic<std::uint64_t> stored_{0};

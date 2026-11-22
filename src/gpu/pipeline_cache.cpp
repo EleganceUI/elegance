@@ -82,7 +82,7 @@ void PipelineCache::warn_once(std::string_view what) noexcept {
 }
 
 PipelineCacheStats PipelineCache::stats() const {
-    return {asked_, found_, missing_, damaged_, stored_, dropped_, evicted_, write_failures_};
+    return {asked_, found_, found_shipped_, missing_, damaged_, stored_, dropped_, evicted_, write_failures_};
 }
 
 // --- Reading ---
@@ -99,10 +99,24 @@ std::optional<PipelineCache::File> PipelineCache::find_value(const std::string& 
             return std::nullopt;
         }
     }
-    if (!settings_.directory) {
-        return std::nullopt;
+    if (settings_.shipped) {
+        if (std::optional<File> value = read_entry(*settings_.shipped, false, name, identity, key)) {
+            found_shipped_.fetch_add(1);
+            return value;
+        }
     }
-    const fs::path path = *settings_.directory / name;
+    if (settings_.directory) {
+        return read_entry(*settings_.directory, true, name, identity, key);
+    }
+    return std::nullopt;
+}
+
+// The value of the entry in a file of `directory`, or nullopt. In the app's own folder, an entry that is damaged is
+// removed, and one that is found counts as used. A shipped folder is only read.
+std::optional<PipelineCache::File> PipelineCache::read_entry(const fs::path& directory, bool own,
+                                                             const std::string& name, std::string_view identity,
+                                                             std::span<const std::byte> key) {
+    const fs::path path = directory / name;
     std::error_code error;
     const std::uintmax_t size = fs::file_size(path, error);
     if (error) {
@@ -117,16 +131,22 @@ std::optional<PipelineCache::File> PipelineCache::find_value(const std::string& 
     if (file) {
         entry = decode_pipeline_cache_entry(*file, identity, key);
         if (entry.state == PipelineCacheEntryState::found) {
-            request_touch(name);
+            if (own) {
+                request_touch(name);
+            }
             return File(entry.value.begin(), entry.value.end());
         }
         if (entry.state == PipelineCacheEntryState::other_entry) {
             return std::nullopt;
         }
     }
-    // It can't be read whole, or it doesn't match its checksum: it is removed, unless it was written again
-    // since it was looked at.
+    // It can't be read whole, or it doesn't match its checksum.
     damaged_.fetch_add(1);
+    if (!own) {
+        warn_once("a damaged entry was found in the shipped folder, and is left there");
+        return std::nullopt;
+    }
+    // In the app's own folder it is removed, unless it was written again since it was looked at.
     warn_once("a damaged entry was found and removed");
     std::error_code again;
     if (fs::file_size(path, again) == size && !again && fs::last_write_time(path, again) == time && !again) {
