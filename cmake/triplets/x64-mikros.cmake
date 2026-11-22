@@ -18,3 +18,31 @@ if (NOT DEFINED ENV{MIKROS_SYSROOT})
                         "Mikros's sysroot.")
 endif ()
 set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${CMAKE_CURRENT_LIST_DIR}/mikros-toolchain.cmake")
+
+# Meson ports (HarfBuzz) need the sysroot's Meson file with its folder filled in, and the word that the
+# programs they build for Mikros can't run on the build machine.
+file(READ "$ENV{MIKROS_SYSROOT}/x86_64-unknown-mikros.meson" elg_meson)
+string(REPLACE "@DIRNAME@" "$ENV{MIKROS_SYSROOT}" elg_meson "${elg_meson}")
+string(REPLACE "[properties]\n" "[properties]\nneeds_exe_wrapper = true\n" elg_meson "${elg_meson}")
+# Its sys_root would make pkg-config put the sysroot's folder before vcpkg's, where the ports' files are.
+string(REGEX REPLACE "\nsys_root[^\n]*" "" elg_meson "${elg_meson}")
+string(REGEX REPLACE "\npkg_config_libdir[^\n]*" "" elg_meson "${elg_meson}")
+# pkg-config is given the sysroot's folder to put before every path it prints, which suits the sysroot's own
+# libraries and breaks the ones that vcpkg built (they are in the build's own folder): it runs without it.
+string(REPLACE "pkg-config = 'pkg-config'"
+       "pkg-config = ['env', '-u', 'PKG_CONFIG_SYSROOT_DIR', '-u', 'PKG_CONFIG_LIBDIR', 'pkg-config']"
+       elg_meson "${elg_meson}")
+# The libraries are static, as the triplet says; as the cross file is the target's, the option goes in it.
+string(APPEND elg_meson "\n[built-in options]\ndefault_library = 'static'\n")
+# HarfBuzz's command-line programs link with -l<name>, which Mikros's compiler looks for among the sysroot's
+# libraries and so can't find the static ones of vcpkg: they aren't built.
+string(APPEND elg_meson "\n[project options]\nutilities = 'disabled'\n")
+if (DEFINED ENV{TMPDIR})
+    set(elg_meson_folder "$ENV{TMPDIR}")
+else ()
+    set(elg_meson_folder "/tmp")
+endif ()
+# One file for each sysroot, as builds with different ones may run at once.
+string(MD5 elg_meson_hash "$ENV{MIKROS_SYSROOT}")
+set(VCPKG_MESON_CROSS_FILE "${elg_meson_folder}/elegance-x64-mikros-${elg_meson_hash}.meson")
+file(WRITE "${VCPKG_MESON_CROSS_FILE}" "${elg_meson}")
