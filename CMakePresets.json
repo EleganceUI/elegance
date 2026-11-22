@@ -177,6 +177,7 @@
             "cacheVariables": {
                 "VCPKG_TARGET_TRIPLET": "x64-mikros",
                 "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "${sourceDir}/cmake/triplets/mikros-toolchain.cmake",
+                "CMAKE_CXX_SCAN_FOR_MODULES": false,
                 "ELG_BUILD_TESTS": false,
                 "ELG_BUILD_SANDBOX": false
             }
