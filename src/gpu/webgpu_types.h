@@ -35,6 +35,7 @@ class Texture;
 class TextureView;
 // NOLINTEND(bugprone-forward-declaration-namespace)
 
+struct DeviceDescriptor;
 struct Future;
 struct InstanceDescriptor;
 struct StringView;

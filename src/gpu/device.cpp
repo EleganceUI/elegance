@@ -7,6 +7,7 @@
 #include "core/log.h"
 #include "core/os_backend.h"
 #include "core/profile.h"
+#include "gpu/dawn_cache.h"
 #include "gpu/instance.h"
 #include "gpu/render_device.h"
 #include "gpu/system.h"
@@ -90,7 +91,7 @@ std::shared_ptr<RenderDevice> render_device() {
     return g_render_device.lock();
 }
 
-Device::Device(const Instance& instance)
+Device::Device(const Instance& instance, std::shared_ptr<PipelineCache> cache)
     : instance_(instance), errors_(std::make_shared<Errors>()), objects_(std::make_unique<Objects>()) {
     wgpu::RequestAdapterOptions options;
     options.powerPreference = wgpu::PowerPreference::HighPerformance;
@@ -169,6 +170,11 @@ Device::Device(const Instance& instance)
         device_toggles.enabledToggles = labels;
         descriptor.nextInChain = &device_toggles;
         log_info("GPU objects carry their labels in the backend (ELG_GPU_LABELS)");
+    }
+    // The cache's callbacks go first in the chain, in front of the toggles.
+    if (cache) {
+        dawn_cache_ = std::make_unique<DawnCache>(std::move(cache), objects_->adapter);
+        dawn_cache_->attach(descriptor);
     }
     descriptor.SetDeviceLostCallback(
         wgpu::CallbackMode::AllowSpontaneous,

@@ -15,16 +15,19 @@
 
 namespace elg::detail::gpu {
 
+class DawnCache;     // gpu/dawn_cache.h
 class Instance;
+class PipelineCache; // gpu/pipeline_cache.h
 struct RenderDevice; // gpu/render_device.h
 
 // The adapter (GPU), the device and its queue. Owned by the render thread.
 // ELG_GPU_BACKEND=d3d12|d3d11|vulkan|metal|opengl picks the API Dawn runs on; by default it picks
 // the best one the platform has (Direct3D 12 on Windows, Metal on macOS, Vulkan on Linux). While
-// it lives, it's published as render_device().
+// it lives, it's published as render_device(). With a `cache`, the shaders and pipelines that Dawn compiles
+// are kept in it between runs, and read from it; without, they aren't.
 class Device {
 public:
-    explicit Device(const Instance& instance);
+    explicit Device(const Instance& instance, std::shared_ptr<PipelineCache> cache = nullptr);
     ~Device();
 
     Device(const Device&) = delete;
@@ -70,6 +73,7 @@ private:
     const Instance& instance_;
     std::shared_ptr<Errors> errors_;
     std::unique_ptr<Objects> objects_;
+    std::unique_ptr<DawnCache> dawn_cache_; // after objects_: gone before the device it serves
     std::shared_ptr<RenderDevice> published_;
     std::string name_;
     wgpu::BackendType backend_{}; // Undefined until the adapter is found
