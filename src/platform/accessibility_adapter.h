@@ -22,7 +22,8 @@ struct AccessRequest {
 // Connects one window to the platform's screen readers (design.md §12, ELGSPEC-0020.R1) through
 // AccessKit: UI Automation on Windows, NSAccessibility on macOS, AT-SPI on Linux. It stays
 // dormant, costing nothing, until assistive technology asks for the window's tree; from then on
-// update() sends what changed after each frame. Without AccessKit in the build it does nothing.
+// update() sends what changed after each frame. Without AccessKit in the build, as on Mikros for now
+// (ELGSPEC-0040.R14), it does nothing.
 class AccessibilityAdapter {
 public:
     struct Callbacks {

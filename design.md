@@ -1066,6 +1066,8 @@ host once views render. Restoring state by identity is another 1–2 weeks plus 
   - Linux (AT-SPI, under X11 and Wayland): the Unix adapter, whose activation comes on its own
     thread; when it can't hand over the tree there, the UI thread sends it whole. An AT-SPI bus
     that isn't there doesn't hold up the window.
+  - Mikros: none yet. A build for Mikros leaves AccessKit out (`ELG_ACCESSIBILITY` is turned off, and vcpkg
+    doesn't install accesskit-c), so its apps have no screen reader support until ELGSPEC-0040.R14 is implemented.
   - Once active, the whole tree is rebuilt from current values after each frame and sent, and
     AccessKit diffs it. No bookkeeping to keep in sync, and nothing at all while no screen
     reader is listening (idle CPU stays 0).
@@ -2288,6 +2290,7 @@ Separate render thread from day one (decided).
   built-in view; `.accessibility_*` modifiers; on-demand tree with actions. Verified through UI
   Automation and tested.
 - [x] Accessibility on macOS (NSAccessibility) and Linux (AT-SPI), through AccessKit's adapters.
+- [ ] Accessibility on Mikros (ELGSPEC-0040.R14): none until it is implemented, and not through AccessKit.
 - [ ] Accessibility follow-ups:
   - Popups and menus as their own trees (menu, menu item roles).
   - Live regions (announcements).
