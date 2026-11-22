@@ -5,6 +5,7 @@
 #ifndef ELG_RENDER_RENDER_THREAD_H
 #define ELG_RENDER_RENDER_THREAD_H
 
+#include "core/threads.h"
 #include "render/frame_mailbox.h"
 
 #include <elg/move_only_function.h>
@@ -15,7 +16,6 @@
 #include <future>
 #include <memory>
 #include <mutex>
-#include <thread>
 
 namespace elg::detail {
 
@@ -67,7 +67,7 @@ private:
     std::exception_ptr error_;
     std::atomic<int> devices_made_{0};
     std::atomic<int> frames_drawn_{0};
-    std::thread thread_;
+    StackThread thread_;
 };
 
 } // namespace elg::detail

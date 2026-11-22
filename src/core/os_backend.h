@@ -58,6 +58,12 @@ bool threads_end_before_static_destruction() noexcept;
 bool begin_elegance_thread() noexcept;
 // Undoes begin_elegance_thread(), on the same thread, as it ends.
 void end_elegance_thread(bool begun) noexcept;
+// Starts a thread that runs `entry(argument)` with a stack of `stack_size` bytes, where the system's default for a
+// thread is less than the thread needs; returns a handle that join_thread() frees. Throws std::system_error if the
+// thread can't start.
+void* start_thread_with_stack(std::size_t stack_size, void (*entry)(void*), void* argument);
+// Waits for the thread to end, and frees the handle.
+void join_thread(void* thread) noexcept;
 
 // --- Crash reports ---
 

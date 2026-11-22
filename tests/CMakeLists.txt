@@ -153,7 +153,7 @@ endfunction()
 # classes, and an exported class has all its inline members, and its vtable, in every object file
 # that includes it, whichever layer they refer to. Windows' static build has them.
 if (NOT (WIN32 AND ELG_BUILD_SHARED))
-    elg_layer_tests(core ui_release_tests.cpp ui_task_tests.cpp)
+    elg_layer_tests(core thread_tests.cpp ui_release_tests.cpp ui_task_tests.cpp)
     elg_layer_tests(geometry path_tests.cpp)
     elg_layer_tests(reactive reactive_tests.cpp)
     elg_layer_tests(animation)

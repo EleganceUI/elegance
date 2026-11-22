@@ -50,11 +50,19 @@ struct Overloaded : Fs... {
 
 } // namespace
 
+namespace {
+
+// The render thread makes the GPU's device, which takes a deep stack in the drivers (lavapipe, for one): it is given
+// the stack that Linux gives a thread, not the system's default, which is 128 KiB on Mikros.
+constexpr std::size_t kStackSize = std::size_t{8} << 20;
+
+} // namespace
+
 RenderThread::RenderThread(FrameMailbox& mailbox, MoveOnlyFunction<void()> on_error)
     : mailbox_(mailbox), on_error_(std::move(on_error)) {
     std::promise<void> ready;
     std::future<void> initialized = ready.get_future();
-    thread_ = std::thread(&RenderThread::run, this, std::move(ready));
+    thread_ = StackThread(kStackSize, [this, ready = std::move(ready)]() mutable { run(std::move(ready)); });
     try {
         initialized.get();
     } catch (...) {
