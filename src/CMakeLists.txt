@@ -18,6 +18,12 @@ set(elg_mikros OFF)
 if (CMAKE_SYSTEM_NAME STREQUAL "Mikros")
     set(elg_mikros ON)
 endif ()
+# AccessKit has no Mikros backend: until ELGSPEC-0040.R14 is implemented, a Mikros build has no screen reader
+# support. vcpkg doesn't install accesskit-c for Mikros either (vcpkg.json).
+if (elg_mikros AND ELG_ACCESSIBILITY)
+    message(STATUS "Elegance: no screen reader support on Mikros yet: ELG_ACCESSIBILITY is off")
+    set(ELG_ACCESSIBILITY OFF)
+endif ()
 if (NOT elg_mikros)
     # AsyncImage downloads (net/)
     find_package(boost_beast CONFIG REQUIRED)
