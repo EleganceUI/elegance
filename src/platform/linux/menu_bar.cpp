@@ -2,8 +2,9 @@
 // If a copy of the MPL was not distributed with this file, You can obtain one at
 // https://mozilla.org/MPL/2.0/.
 
-// The menu bar on Linux (App::menu_bar): there's no global menu to rely on, so the app draws it
-// at the top of each window's content (menu_bar_view) and matches its shortcuts itself.
+// The menu bar on Linux, and on Mikros while it exports no menus to the compositor (App::menu_bar): there's no
+// global menu to rely on, so the app draws it at the top of each window's content (menu_bar_view) and matches
+// its shortcuts itself.
 
 #include "platform/sdl/native.h"
 
