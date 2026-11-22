@@ -299,6 +299,24 @@ drag & drop, IME composition, cursors, native file dialogs, multi-window, and th
   VMA, and MoltenVK on macOS.)
 - Use bindless descriptor indexing for textures, which allows one big draw for many images.
 
+### Pipeline cache
+- Dawn compiles shaders and pipelines each run. The render thread makes a `PipelineCache` (`src/gpu/pipeline_cache.h`)
+  and gives it to every device it makes; `gpu::DawnCache` joins it to Dawn's cache callbacks. Dawn asks in two calls
+  (the size, then the value), on the thread that creates the shader or pipeline, and the cache reads the file there. A
+  thread of the cache's own writes every entry, to a temporary name that it renames, so no wait for the disk is on
+  the render thread and no run reads half an entry. The UI thread waits for the first device, and reads no file.
+- An entry is a file, `<hash>.elgpc`, with a checksum, under an identity: the Elegance version, a hash of the files of
+  the dawn port that builds Dawn (`ELG_DAWN_BUILD`, which changes with a new pin or patch), the graphics API, and the
+  GPU and driver. A file that doesn't read whole or doesn't match is a miss and is removed; no failure to read or
+  write stops a frame, and the first of a run is logged.
+- The entries take at most 32 MiB (`ELG_PIPELINE_CACHE_LIMIT`, such as `64M`); the ones used least recently, by file
+  time, go first. The folder is the system's cache folder for the app: `$XDG_CACHE_HOME/elegance/<app>/pipelines`
+  (or `~/.cache`) on Linux, `~/Library/Caches/Elegance/<app>/Pipelines` on macOS, `%LOCALAPPDATA%\Elegance\<app>\Pipelines`
+  on Windows, and on Mikros the app's `$XDG_CACHE_HOME/elegance/pipelines`. `ELG_PIPELINE_CACHE` moves it, or turns the
+  cache off with `off` or an empty value.
+- A folder of entries in the app's package (`package/pipelines` on Mikros) is read first and never written to: an
+  entry in it that is damaged stays where it is.
+
 ### Primitives
 Everything the UI draws comes down to a small set of primitives:
 1. **Rect**: fill (solid, linear, radial, or conic gradient), per-corner radii, border (per-side

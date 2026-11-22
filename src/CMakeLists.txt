@@ -328,23 +328,47 @@ if (ELG_BUILD_TESTS AND NOT elg_mikros)
     elg_layer(media_mikros TEST_ONLY SOURCES ${elg_media_sources} ${elg_mikros_media_stand_ins}
               ${elg_host_image_codec} DEPENDS core geometry reactive)
     elg_layer(net_mikros TEST_ONLY SOURCES ${elg_mikros_net} ${elg_mikros_net_os} DEPENDS core)
-    elg_layer(platform_mikros TEST_ONLY SOURCES platform/mikros/native.cpp DEPENDS core geometry
+    elg_layer(platform_mikros TEST_ONLY SOURCES platform/mikros/native.cpp platform/mikros/pipeline_cache.cpp
+              DEPENDS core geometry
               LIBRARIES SDL3::SDL3)
     elg_layer(text_mikros TEST_ONLY SOURCES platform/mikros/font_files.cpp platform/mikros/fonts.cpp DEPENDS core)
 endif ()
 
 elg_layer(display SOURCES display/display_list.cpp DEPENDS core geometry)
 
+elg_layer(gpu_os
+        WINDOWS platform/windows/pipeline_cache.cpp
+        APPLE platform/macos/pipeline_cache.cpp
+        LINUX platform/linux/pipeline_cache.cpp
+        MIKROS platform/mikros/pipeline_cache.cpp
+        DEPENDS core)
 elg_layer(gpu
         SOURCES gpu/atlas_texture.cpp gpu/blur_renderer.cpp gpu/buffer.cpp gpu/device.cpp gpu/external_image.cpp
                 gpu/instance.cpp gpu/path_renderer.cpp gpu/quad_renderer.cpp gpu/render_image.cpp gpu/swapchain.cpp
-                gpu/texture_cache.cpp gpu/webgpu.cpp
+                gpu/dawn_cache.cpp gpu/pipeline_cache.cpp gpu/pipeline_cache_format.cpp gpu/texture_cache.cpp
+                gpu/webgpu.cpp
         # Each OS's interop with its graphics APIs (gpu/<os>), and what stands in for it elsewhere.
         WINDOWS gpu/native_image.cpp gpu/windows/composition.cpp gpu/windows/system.cpp
         APPLE gpu/macos/native_image.mm gpu/presenter.cpp gpu/system.cpp
         LINUX gpu/native_image.cpp gpu/presenter.cpp gpu/system.cpp
-        DEPENDS core geometry
+        DEPENDS core geometry gpu_os
         LIBRARIES dawn::webgpu_dawn)
+# What this build's WebGPU implementation is, for the identity of the pipeline cache's entries: a hash of the
+# files of the dawn port that builds it, which hold its version, its patches and the fork it is pinned to. A new
+# pin or patch is a new identity, so what an older one cached is not read. A change to one of the files, or a new
+# one, configures the build again.
+file(GLOB elg_dawn_port_files CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/cmake/ports/dawn/*)
+list(SORT elg_dawn_port_files)
+set(elg_dawn_port_text "")
+foreach (file IN LISTS elg_dawn_port_files)
+    get_filename_component(file_name ${file} NAME)
+    file(READ ${file} file_content HEX)
+    string(APPEND elg_dawn_port_text "${file_name}\n${file_content}\n")
+endforeach ()
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${elg_dawn_port_files})
+string(SHA256 elg_dawn_build "${elg_dawn_port_text}")
+string(SUBSTRING "${elg_dawn_build}" 0 16 elg_dawn_build)
+set_source_files_properties(gpu/dawn_cache.cpp PROPERTIES COMPILE_DEFINITIONS ELG_DAWN_BUILD="${elg_dawn_build}")
 elg_add_shaders(elegance_gpu
         ${PROJECT_SOURCE_DIR}/shaders/ui.wgsl
         ${PROJECT_SOURCE_DIR}/shaders/blur.wgsl
