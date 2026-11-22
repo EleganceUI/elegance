@@ -90,6 +90,8 @@ void detach_ime(SDL_Window*) {
     // Secure Event Input turns the IME off.
 }
 
+void require_tray_icons() {}
+
 void set_secure_event_input(bool on) {
     macos::set_secure_event_input(on);
 }

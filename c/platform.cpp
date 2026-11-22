@@ -55,7 +55,7 @@ ELG_EXPORT void elg_audio_output_devices(ElgClosure each) {
 ///
 /// @param file The file's path.
 /// @return The sound, owned by the caller (elg_sound_free()), or nullptr with a ResourceError if
-///   the file can't be read or decoded.
+///   the file can't be read or decoded, or a PlatformError on Mikros.
 ELG_EXPORT Sound* elg_sound_load_file(ElgStr file) {
     ELG_TRY_ANY_THREAD
     return new Sound(Sound::load(path(file)));
@@ -66,7 +66,7 @@ ELG_EXPORT Sound* elg_sound_load_file(ElgStr file) {
 ///
 /// @param data The encoded audio (WAV, FLAC, or MP3), read during the call.
 /// @return The sound, owned by the caller (elg_sound_free()), or nullptr with a ResourceError if
-///   it can't be decoded.
+///   it can't be decoded, or a PlatformError on Mikros.
 ELG_EXPORT Sound* elg_sound_load_data(ElgBytes data) {
     ELG_TRY_ANY_THREAD
     return new Sound(Sound::load(bytes(data)));
@@ -119,7 +119,7 @@ ELG_EXPORT double elg_sound_duration(const Sound* sound) {
 ///
 /// @param file The file's path (WAV, FLAC, or MP3).
 /// @return The player, owned by the caller (elg_audio_player_free()), or nullptr with a
-///   ResourceError if the file can't be opened or isn't audio.
+///   ResourceError if the file can't be opened or isn't audio, or a PlatformError on Mikros.
 ELG_EXPORT AudioPlayer* elg_audio_player_new(ElgStr file) {
     ELG_TRY
     return new AudioPlayer(path(file));
@@ -506,7 +506,8 @@ ELG_EXPORT void elg_audio_recorder_samples(const AudioRecorder* recorder, ElgClo
 /// Wraps `AudioRecorder::save_wav()`: writes the recording as a 16-bit WAV file.
 ///
 /// @param recorder The recorder (borrowed).
-/// @param file The file's path. A ResourceError is recorded if it can't be written.
+/// @param file The file's path. A ResourceError is recorded if it can't be written (on Mikros, a
+///   PlatformError).
 ELG_EXPORT void elg_audio_recorder_save_wav(const AudioRecorder* recorder, ElgStr file) {
     ELG_TRY
     recorder->save_wav(path(file));
@@ -517,7 +518,7 @@ ELG_EXPORT void elg_audio_recorder_save_wav(const AudioRecorder* recorder, ElgSt
 ///
 /// @param recorder The recorder (borrowed).
 /// @param each Borrowed closure, called once before this returns; args: `ElgBytes*`, ret: null.
-///   Required: none is a usage error.
+///   Required: none is a usage error. On Mikros, a PlatformError is recorded.
 ELG_EXPORT void elg_audio_recorder_wav(const AudioRecorder* recorder, ElgClosure each) {
     const Consumed consumed(each);
     ELG_TRY
@@ -530,7 +531,8 @@ ELG_EXPORT void elg_audio_recorder_wav(const AudioRecorder* recorder, ElgClosure
 /// Wraps `AudioRecorder::sound()`: the recording as a Sound, to play it back.
 ///
 /// @param recorder The recorder (borrowed).
-/// @return The sound, owned by the caller (elg_sound_free()), or nullptr on failure.
+/// @return The sound, owned by the caller (elg_sound_free()), or nullptr on failure (on Mikros
+///   with a PlatformError).
 ELG_EXPORT Sound* elg_audio_recorder_sound(const AudioRecorder* recorder) {
     ELG_TRY
     return new Sound(recorder->sound());
@@ -579,7 +581,7 @@ ELG_EXPORT void elg_camera_free(Camera* camera) {
     ELG_TRY
     ELG_CATCH_VOID
 }
-/// Wraps `Camera::start()` and `stop()`.
+/// Wraps `Camera::start()` and `stop()`. On Mikros, starting fails with a PlatformError.
 ///
 /// @param camera The camera (borrowed).
 /// @param start true to start, false to stop.
@@ -701,7 +703,7 @@ ELG_EXPORT void elg_video_player_free(VideoPlayer* player) {
     ELG_CATCH_VOID
 }
 /// Wraps `VideoPlayer::play()`, `pause()`, `toggle()` and `stop()` (which pauses and goes back to
-/// the start).
+/// the start). On Mikros, playing fails with a PlatformError.
 ///
 /// @param player The player (borrowed).
 /// @param op 0 play, 1 pause, 2 toggle, 3 stop.
@@ -1058,7 +1060,8 @@ ELG_EXPORT void elg_choose_folders(ElgStr directory, bool multiple, ElgClosure d
 }
 
 /// Wraps `notify()`: shows a system notification (Windows: a toast, also kept in the notification
-/// center). Call it on the UI thread of a running App; otherwise it records a UsageError.
+/// center). Call it on the UI thread of a running App; otherwise it records a UsageError. On Mikros
+/// it records a PlatformError.
 ///
 /// @param title The notification's title.
 /// @param body Its text.
@@ -1129,7 +1132,8 @@ struct ElgTrayMenuItem {
 /// @param tooltip Shown when the pointer rests on the icon.
 /// @param menu The menu's items, read during the call; their closures are consumed.
 /// @param count Number of `menu` items.
-/// @return The tray icon, owned by the caller (elg_tray_icon_free()), or nullptr on failure.
+/// @return The tray icon, owned by the caller (elg_tray_icon_free()), or nullptr on failure (on
+///   Mikros with a PlatformError).
 ELG_EXPORT TrayIcon* elg_tray_icon_new(const ElgImageSource* icon, ElgStr tooltip, const ElgTrayMenuItem* menu, size_t count) {
     ELG_TRY
     ConsumedMenu<ElgTrayMenuItem, TrayMenuItem> consumed(menu, count);

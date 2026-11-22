@@ -60,6 +60,12 @@ using SystemProxy = std::variant<std::monostate, SystemProxyServer, SystemProxyL
 // Blocks (PAC scripts, WPAD).
 SystemProxy system_proxy(std::string_view scheme, std::string_view host, std::string_view port);
 
+// --- Where there is no networking ---
+
+// Throws elg::PlatformError, saying that the system doesn't offer networking. Defined only for
+// the system whose build has net/fetch_unavailable.cpp in place of the downloads (Mikros).
+[[noreturn]] void networking_unavailable();
+
 } // namespace elg::detail::net
 
 #endif // ELG_NET_NET_BACKEND_H

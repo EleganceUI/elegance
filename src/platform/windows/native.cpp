@@ -141,6 +141,8 @@ void detach_ime(SDL_Window* window) {
     }
 }
 
+void require_tray_icons() {}
+
 void set_secure_event_input(bool) {}
 
 void* install_input_monitor(const InputSink&) {

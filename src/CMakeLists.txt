@@ -13,12 +13,21 @@ find_package(Dawn CONFIG REQUIRED) # WebGPU (design.md §5)
 find_package(Freetype REQUIRED)
 find_package(harfbuzz CONFIG REQUIRED)
 find_package(msdfgen CONFIG REQUIRED)
-# AsyncImage downloads (net/)
-find_package(boost_beast CONFIG REQUIRED)
-find_package(boost_url CONFIG REQUIRED)
-find_package(OpenSSL REQUIRED)
-# miniaudio is a single header (design.md §13.3).
-find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
+# Mikros has none of the services that Boost and OpenSSL are for.
+set(elg_mikros OFF)
+if (CMAKE_SYSTEM_NAME STREQUAL "Mikros")
+    set(elg_mikros ON)
+endif ()
+if (NOT elg_mikros)
+    # AsyncImage downloads (net/)
+    find_package(boost_beast CONFIG REQUIRED)
+    find_package(boost_url CONFIG REQUIRED)
+    find_package(OpenSSL REQUIRED)
+endif ()
+if (NOT elg_mikros)
+    # miniaudio is a single header (design.md §13.3).
+    find_path(MINIAUDIO_INCLUDE_DIR miniaudio.h REQUIRED)
+endif ()
 
 # Accessibility (design.md §12): AccessKit's C library (MIT / Apache-2.0), from vcpkg (the
 # accesskit-c overlay port, cmake/ports). Global: the macOS bundle step (EleganceApplication.cmake)
@@ -44,7 +53,7 @@ endif ()
 # The system's GStreamer plays video, and GIO talks to the notification server (Linux and other
 # Unix desktops); each is optional (pkg-config), and without it that feature reports it isn't
 # available.
-if (UNIX AND NOT APPLE)
+if (UNIX AND NOT APPLE AND NOT elg_mikros)
     find_package(PkgConfig)
     if (PkgConfig_FOUND)
         pkg_check_modules(ELG_GSTREAMER IMPORTED_TARGET gstreamer-1.0 gstreamer-app-1.0 gstreamer-video-1.0)
@@ -186,17 +195,21 @@ endif ()
 # every layer below it, for an executable that links the layer on its own (its tests,
 # ELGSPEC-0001.R9): object libraries add their objects only where they're linked directly.
 function(elg_layer name)
-    cmake_parse_arguments(PARSE_ARGV 1 arg "" "" "SOURCES;WINDOWS;APPLE;LINUX;MIKROS;DEPENDS;LIBRARIES")
+    cmake_parse_arguments(PARSE_ARGV 1 arg "TEST_ONLY" "" "SOURCES;NOT_MIKROS;WINDOWS;APPLE;LINUX;MIKROS;DEPENDS;LIBRARIES")
     set(target elegance_${name})
     set(sources ${arg_SOURCES})
-    if (CMAKE_SYSTEM_NAME STREQUAL "Mikros")
+    # NOT_MIKROS names what every system builds but Mikros, which has its own files in MIKROS.
+    if (elg_mikros)
         list(APPEND sources ${arg_MIKROS})
-    elseif (WIN32)
-        list(APPEND sources ${arg_WINDOWS})
-    elseif (APPLE)
-        list(APPEND sources ${arg_APPLE})
     else ()
-        list(APPEND sources ${arg_LINUX})
+        list(APPEND sources ${arg_NOT_MIKROS})
+        if (WIN32)
+            list(APPEND sources ${arg_WINDOWS})
+        elseif (APPLE)
+            list(APPEND sources ${arg_APPLE})
+        else ()
+            list(APPEND sources ${arg_LINUX})
+        endif ()
     endif ()
     add_library(${target} OBJECT ${sources})
     if (APPLE)
@@ -227,8 +240,11 @@ function(elg_layer name)
         set_target_properties(${target} PROPERTIES CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
     endif ()
     elegance_warnings(${target})
-    set_property(GLOBAL APPEND PROPERTY ELG_LAYERS ${target})
-    set_property(GLOBAL APPEND PROPERTY ELG_LAYER_LIBRARIES ${arg_LIBRARIES})
+    # A layer that is only for tests (TEST_ONLY) is no part of the library.
+    if (NOT arg_TEST_ONLY)
+        set_property(GLOBAL APPEND PROPERTY ELG_LAYERS ${target})
+        set_property(GLOBAL APPEND PROPERTY ELG_LAYER_LIBRARIES ${arg_LIBRARIES})
+    endif ()
 endfunction()
 
 # The backends' implementations (ELGSPEC-0001.R4), each with the layer whose backend it is.
@@ -257,27 +273,62 @@ elg_layer(text
         DEPENDS core geometry reactive text_os
         LIBRARIES Freetype::Freetype harfbuzz::harfbuzz msdfgen::msdfgen-core)
 
+# What the Mikros build has for Media and Net, which the tests build on every system too (below).
+set(elg_media_sources media/camera.cpp media/frame_source.cpp media/image_decode.cpp media/recorded_orientation.cpp
+                      media/video_feed.cpp media/video_source.cpp)
+set(elg_mikros_media_stand_ins platform/mikros/audio.cpp platform/mikros/camera.cpp platform/mikros/video_source.cpp)
+set(elg_mikros_media_os platform/linux/image_codec.cpp ${elg_mikros_media_stand_ins})
+# The tests build Media with the image codec of the system they run on: stb, which the Linux one uses, isn't
+# installed on Windows and macOS.
+if (WIN32)
+    set(elg_host_image_codec platform/windows/image_codec.cpp)
+elseif (APPLE)
+    set(elg_host_image_codec platform/macos/image_codec.cpp)
+else ()
+    set(elg_host_image_codec platform/linux/image_codec.cpp)
+endif ()
+set(elg_mikros_net_os platform/mikros/net.cpp)
+set(elg_mikros_net net/fetch_unavailable.cpp)
+
 elg_layer(media_os
         WINDOWS platform/windows/camera.cpp platform/windows/image_codec.cpp platform/windows/video_source.cpp
         APPLE platform/macos/camera.mm platform/macos/image_codec.cpp platform/macos/pixel_buffer.cpp
               platform/macos/video_source.mm
-        LINUX platform/linux/camera.cpp platform/linux/image_codec.cpp platform/linux/video_source.cpp)
+        LINUX platform/linux/camera.cpp platform/linux/image_codec.cpp platform/linux/video_source.cpp
+        MIKROS ${elg_mikros_media_os})
 elg_layer(media
-        SOURCES media/audio.cpp media/audio_setup.cpp media/audio_stream.cpp media/camera.cpp media/frame_source.cpp media/image_decode.cpp media/recorded_orientation.cpp
-                media/miniaudio.cpp media/recorder.cpp media/video_feed.cpp media/video_source.cpp
+        SOURCES ${elg_media_sources}
+        NOT_MIKROS media/audio.cpp media/audio_setup.cpp media/audio_stream.cpp media/miniaudio.cpp media/recorder.cpp
         DEPENDS core geometry reactive media_os)
-# A system folder, so that miniaudio.h is held to no warnings of ours: on macOS, nothing else this
-# layer uses adds vcpkg's include folder as one.
-target_include_directories(elegance_media SYSTEM PRIVATE "${MINIAUDIO_INCLUDE_DIR}")
+if (NOT elg_mikros)
+    # A system folder, so that miniaudio.h is held to no warnings of ours: on macOS, nothing else this
+    # layer uses adds vcpkg's include folder as one.
+    target_include_directories(elegance_media SYSTEM PRIVATE "${MINIAUDIO_INCLUDE_DIR}")
+endif ()
 
 elg_layer(net_os
         WINDOWS platform/windows/net.cpp platform/windows/proxy.cpp
         APPLE platform/macos/net.cpp platform/macos/proxy.cpp
-        LINUX platform/linux/net.cpp platform/linux/proxy.cpp)
+        LINUX platform/linux/net.cpp platform/linux/proxy.cpp
+        MIKROS ${elg_mikros_net_os})
+set(elg_net_libraries "")
+if (NOT elg_mikros)
+    set(elg_net_libraries Boost::beast Boost::url OpenSSL::SSL OpenSSL::Crypto)
+endif ()
 elg_layer(net
-        SOURCES net/fetch.cpp net/http_cache.cpp net/proxy.cpp
+        NOT_MIKROS net/fetch.cpp net/http_cache.cpp net/proxy.cpp
+        MIKROS ${elg_mikros_net}
         DEPENDS core net_os
-        LIBRARIES Boost::beast Boost::url OpenSSL::SSL OpenSSL::Crypto)
+        LIBRARIES ${elg_net_libraries})
+if (ELG_BUILD_TESTS AND NOT elg_mikros)
+    # Media and Net as the Mikros build has them, for the tests: their files define what the library's own
+    # do, so a program links these or those, never both.
+    elg_layer(media_mikros TEST_ONLY SOURCES ${elg_media_sources} ${elg_mikros_media_stand_ins}
+              ${elg_host_image_codec} DEPENDS core geometry reactive)
+    elg_layer(net_mikros TEST_ONLY SOURCES ${elg_mikros_net} ${elg_mikros_net_os} DEPENDS core)
+    elg_layer(platform_mikros TEST_ONLY SOURCES platform/mikros/native.cpp DEPENDS core geometry
+              LIBRARIES SDL3::SDL3)
+endif ()
 
 elg_layer(display SOURCES display/display_list.cpp DEPENDS core geometry)
 

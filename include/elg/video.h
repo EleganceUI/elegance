@@ -54,10 +54,14 @@ public:
     explicit VideoPlayer(const char* source) : VideoPlayer(std::string(source)) {}
 
     /// Starts or resumes playing.
+    ///
+    /// @throws PlatformError On Mikros, which offers no video playback.
     void play() const;
     /// Pauses, keeping the position.
     void pause() const;
     /// Pauses while playing, plays otherwise.
+    ///
+    /// @throws PlatformError On Mikros, which offers no video playback, when it would play.
     void toggle() const;
     /// Pauses and goes back to the start.
     void stop() const;

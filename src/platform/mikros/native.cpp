@@ -7,6 +7,9 @@
 
 #include "platform/sdl/native.h"
 
+#include "platform/mikros/unavailable.h"
+#include "platform/system.h"
+
 #include <elg/events.h>
 #include <elg/platform.h>
 
@@ -54,6 +57,20 @@ bool in_move_size_loop() {
 void detach_ime(SDL_Window*) {}
 
 void set_secure_event_input(bool) {}
+
+void require_tray_icons() {
+    mikros::unavailable("tray icons");
+}
+
+void show_notification(const Notification&) {
+    mikros::unavailable("notifications");
+}
+
+void set_badge(const std::optional<std::string>&) {}
+
+void set_progress(std::optional<double>, ProgressState) {}
+
+void forget_notification_handlers() {}
 
 void* install_input_monitor(const InputSink&) {
     return nullptr;

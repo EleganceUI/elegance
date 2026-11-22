@@ -160,12 +160,16 @@ struct Loader {
             return;
         }
         generation = DownloadCache::instance().generation();
-        task = net::fetch(
-            url,
-            [weak = std::weak_ptr(self)](net::FetchResult result) {
-                post_ui_task([weak, result = std::move(result)] { finish(weak, result); });
-            },
-            {.cache = disk_cache ? DiskCache::instance().get() : nullptr});
+        try {
+            task = net::fetch(
+                url,
+                [weak = std::weak_ptr(self)](net::FetchResult result) {
+                    post_ui_task([weak, result = std::move(result)] { finish(weak, result); });
+                },
+                {.cache = disk_cache ? DiskCache::instance().get() : nullptr});
+        } catch (const PlatformError& failure) {
+            fail(failure.what()); // a system without networking
+        }
     }
 
     static void finish(const std::weak_ptr<Loader>& weak, const net::FetchResult& result) {
