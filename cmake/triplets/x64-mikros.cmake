@@ -19,8 +19,18 @@ if (NOT DEFINED ENV{MIKROS_SYSROOT})
 endif ()
 set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${CMAKE_CURRENT_LIST_DIR}/mikros-toolchain.cmake")
 
-# Meson ports (HarfBuzz) need the sysroot's Meson file with its folder filled in, and the word that the
-# programs they build for Mikros can't run on the build machine.
+# Meson ports (HarfBuzz) run the Meson that Mikros builds next to its sysroot, which names the static libraries as
+# CMake looks for them on Mikros (lib<name>.slib), and not the Meson that vcpkg downloads, which names them lib<name>.a.
+file(GLOB elg_mikros_meson "$ENV{MIKROS_SYSROOT}/../meson/meson-*/meson.py")
+list(SORT elg_mikros_meson)
+if (elg_mikros_meson)
+    list(GET elg_mikros_meson -1 SCRIPT_MESON)
+else ()
+    message(FATAL_ERROR "The x64-mikros triplet needs Mikros's Meson, which is in the folder meson beside the "
+                        "sysroot's ($ENV{MIKROS_SYSROOT}/../meson).")
+endif ()
+# They also need the sysroot's Meson file with its folder filled in, and the word that the programs they build for
+# Mikros can't run on the build machine.
 file(READ "$ENV{MIKROS_SYSROOT}/x86_64-unknown-mikros.meson" elg_meson)
 string(REPLACE "@DIRNAME@" "$ENV{MIKROS_SYSROOT}" elg_meson "${elg_meson}")
 string(REPLACE "[properties]\n" "[properties]\nneeds_exe_wrapper = true\n" elg_meson "${elg_meson}")
