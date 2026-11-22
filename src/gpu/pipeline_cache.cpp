@@ -27,6 +27,8 @@ namespace fs = std::filesystem;
 constexpr std::size_t max_pending_bytes = std::size_t{16} << 20;
 constexpr std::uint64_t max_file_size = std::uint64_t{256} << 20;
 constexpr auto drain_time = std::chrono::seconds(2);
+// A temporary file that old is the leftover of a run that ended in the middle of writing it.
+constexpr auto stale_temporary_age = std::chrono::minutes(10);
 
 // The value that a first call of load() found, for the second call on the same thread.
 struct FoundValue {
@@ -80,7 +82,7 @@ void PipelineCache::warn_once(std::string_view what) noexcept {
 }
 
 PipelineCacheStats PipelineCache::stats() const {
-    return {asked_, found_, missing_, damaged_, stored_, dropped_, write_failures_};
+    return {asked_, found_, missing_, damaged_, stored_, dropped_, evicted_, write_failures_};
 }
 
 // --- Reading ---
@@ -115,6 +117,7 @@ std::optional<PipelineCache::File> PipelineCache::find_value(const std::string& 
     if (file) {
         entry = decode_pipeline_cache_entry(*file, identity, key);
         if (entry.state == PipelineCacheEntryState::found) {
+            request_touch(name);
             return File(entry.value.begin(), entry.value.end());
         }
         if (entry.state == PipelineCacheEntryState::other_entry) {
@@ -169,6 +172,83 @@ std::size_t PipelineCache::load(std::string_view identity, std::span<const std::
 }
 
 // --- Writing ---
+
+void PipelineCache::request_touch(const std::string& name) {
+    {
+        const std::lock_guard lock(mutex_);
+        if (!touched_.insert(name).second) {
+            return; // once for each entry in a run
+        }
+        touches_.push_back(name);
+        if (!writer_.joinable() && !stopping_) {
+            writer_ = std::thread([this] { write_loop(); });
+        }
+    }
+    wake_.notify_one();
+}
+
+// Reads the folder: the sizes and times of its entries, and the removal of temporary files that are old.
+void PipelineCache::scan() {
+    files_.clear();
+    total_ = 0;
+    written_since_scan_ = 0;
+    scanned_ = true;
+    std::error_code error;
+    const auto now = fs::file_time_type::clock::now();
+    fs::directory_iterator it(settings_.directory.value_or(fs::path()), error);
+    for (const fs::directory_iterator end; !error && it != end; it.increment(error)) {
+        std::error_code entry_error;
+        if (!it->is_regular_file(entry_error)) {
+            continue;
+        }
+        const fs::path& path = it->path();
+        const fs::file_time_type time = fs::last_write_time(path, entry_error);
+        if (entry_error) {
+            continue;
+        }
+        if (path.extension() == ".tmp") {
+            if (now - time > stale_temporary_age) {
+                fs::remove(path, entry_error);
+            }
+            continue;
+        }
+        const std::uintmax_t size = fs::file_size(path, entry_error);
+        if (entry_error || path.extension().string() != pipeline_cache_extension) {
+            continue;
+        }
+        files_.push_back({path, size, time});
+        total_ += size;
+    }
+}
+
+// Whether an entry of `incoming` bytes fits in the limit, after removing the entries used least recently
+// that it takes to make room for it, and no more.
+bool PipelineCache::make_room(std::uint64_t incoming) {
+    const std::uint64_t limit = settings_.limit;
+    if (incoming > limit) {
+        return false;
+    }
+    // Another run may have written meanwhile: the folder is read again after a part of the limit was written.
+    if (!scanned_ || written_since_scan_ > limit / 16 || total_ + incoming > limit) {
+        scan();
+    }
+    if (total_ + incoming <= limit) {
+        return true;
+    }
+    std::ranges::sort(files_, [](const KnownFile& a, const KnownFile& b) {
+        return a.time != b.time ? a.time < b.time : a.path.filename() < b.path.filename();
+    });
+    std::size_t removed = 0;
+    for (; removed < files_.size() && total_ + incoming > limit; ++removed) {
+        std::error_code error;
+        if (fs::remove(files_[removed].path, error) || !fs::exists(files_[removed].path)) {
+            total_ -= files_[removed].size;
+            evicted_.fetch_add(1);
+        }
+    }
+    files_.erase(files_.begin(), files_.begin() + static_cast<std::ptrdiff_t>(removed));
+    return total_ + incoming <= limit;
+}
 
 void PipelineCache::store(std::string_view identity, std::span<const std::byte> key,
                           std::span<const std::byte> value) noexcept {
@@ -235,8 +315,8 @@ bool PipelineCache::write_entry(const std::string& name, const File& file) {
 void PipelineCache::write_loop() {
     std::unique_lock lock(mutex_);
     for (;;) {
-        wake_.wait(lock, [this] { return !pending_.empty() || stopping_; });
-        if (pending_.empty()) {
+        wake_.wait(lock, [this] { return !pending_.empty() || !touches_.empty() || stopping_; });
+        if (pending_.empty() && touches_.empty()) {
             idle_.notify_all();
             if (stopping_) {
                 return;
@@ -246,17 +326,39 @@ void PipelineCache::write_loop() {
         if (stopping_ && std::chrono::steady_clock::now() >= deadline_) {
             return; // what is left isn't written: the program is ending
         }
+        if (!touches_.empty()) {
+            const std::vector<std::string> touches = std::move(touches_);
+            touches_.clear();
+            writing_ = true;
+            lock.unlock();
+            for (const std::string& name : touches) {
+                std::error_code error;
+                fs::last_write_time(settings_.directory.value_or(fs::path()) / name, fs::file_time_type::clock::now(), error);
+            }
+            lock.lock();
+            writing_ = false;
+            idle_.notify_all();
+            continue;
+        }
         const std::string name = pending_.begin()->first;
         const std::shared_ptr<const File> file = pending_.begin()->second;
         writing_ = true;
         lock.unlock();
         bool written = false;
+        bool kept = true;
         try {
-            written = write_entry(name, *file);
+            kept = make_room(file->size());
+            written = kept && write_entry(name, *file);
+            if (written) {
+                total_ += file->size();
+                written_since_scan_ += file->size();
+            }
         } catch (...) {
             written = false;
         }
-        if (written) {
+        if (!kept) {
+            dropped_.fetch_add(1); // larger than the limit, or the room couldn't be made
+        } else if (written) {
             stored_.fetch_add(1);
         } else {
             write_failures_.fetch_add(1);
@@ -275,7 +377,7 @@ void PipelineCache::write_loop() {
 
 void PipelineCache::flush() {
     std::unique_lock lock(mutex_);
-    idle_.wait(lock, [this] { return pending_.empty() && !writing_; });
+    idle_.wait(lock, [this] { return pending_.empty() && touches_.empty() && !writing_; });
 }
 
 } // namespace elg::detail::gpu

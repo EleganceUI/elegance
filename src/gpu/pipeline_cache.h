@@ -24,6 +24,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -35,6 +36,10 @@ namespace elg::detail::gpu {
 struct PipelineCacheSettings {
     // The folder of this app's entries, or nullopt: no cache.
     std::optional<std::filesystem::path> directory;
+    // The most that the entries in the folder take on disk, as the sizes of their files: 32 MiB unless set.
+    // When an entry would take it over, the entries used least recently are removed first, judged by the
+    // time their files were written or last used, and one that is larger than the limit is not kept.
+    std::uint64_t limit = std::uint64_t{32} << 20;
 };
 
 // What a cache has done, for the tests.
@@ -44,7 +49,8 @@ struct PipelineCacheStats {
     std::uint64_t missing = 0;        // and those that didn't, damaged ones included
     std::uint64_t damaged = 0;        // files that were removed, or left where they were, as damaged
     std::uint64_t stored = 0;         // entries written
-    std::uint64_t dropped = 0;        // entries not kept for writing: too many waiting
+    std::uint64_t dropped = 0;        // entries not kept for writing: too many waiting, or too large
+    std::uint64_t evicted = 0;        // files removed to keep to the limit
     std::uint64_t write_failures = 0; // entries that couldn't be written
 };
 
@@ -79,6 +85,16 @@ private:
     bool write_entry(const std::string& name, const File& file);
     void write_loop();
     void warn_once(std::string_view what) noexcept;
+    void request_touch(const std::string& name);
+    void scan();
+    bool make_room(std::uint64_t incoming);
+
+    // A file of the folder, as the last scan saw it.
+    struct KnownFile {
+        std::filesystem::path path;
+        std::uint64_t size = 0;
+        std::filesystem::file_time_type time;
+    };
 
     const PipelineCacheSettings settings_;
 
@@ -87,10 +103,18 @@ private:
     std::condition_variable idle_;
     std::map<std::string, std::shared_ptr<const File>> pending_; // offered, not written yet
     std::size_t pending_bytes_ = 0;
+    std::vector<std::string> touches_;  // files used, which get the time of their use
+    std::set<std::string> touched_;     // the files that this run has asked to touch
     bool stopping_ = false;
     bool writing_ = false;
     std::chrono::steady_clock::time_point deadline_;
     std::thread writer_;
+
+    // The writer's own: what the folder took at the last scan, and what was written since.
+    bool scanned_ = false;
+    std::uint64_t total_ = 0;
+    std::uint64_t written_since_scan_ = 0;
+    std::vector<KnownFile> files_;
 
     std::atomic<bool> warned_{false};
     std::atomic<std::uint64_t> next_temporary_{0};
@@ -100,6 +124,7 @@ private:
     std::atomic<std::uint64_t> damaged_{0};
     std::atomic<std::uint64_t> stored_{0};
     std::atomic<std::uint64_t> dropped_{0};
+    std::atomic<std::uint64_t> evicted_{0};
     std::atomic<std::uint64_t> write_failures_{0};
 };
 

@@ -13,6 +13,8 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -22,6 +24,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 using namespace elg::detail::gpu;
@@ -243,4 +246,151 @@ TEST_CASE("a cache without a folder finds nothing and keeps nothing", "[pipeline
     cache.flush();
     CHECK_FALSE(lookup(cache, 1).has_value());
     CHECK(cache.stats().stored == 0);
+}
+
+namespace {
+
+constexpr std::uint64_t four_kib = 4096;
+constexpr std::uint64_t eight_kib = 8192;
+constexpr std::size_t large_value = 8192;
+
+std::uint64_t size_of_entries(const Folder& folder) {
+    std::uint64_t total = 0;
+    std::error_code error;
+    for (const fs::directory_entry& entry : fs::directory_iterator(folder.path(), error)) {
+        if (entry.path().extension() == pipeline_cache_extension) {
+            total += entry.file_size();
+        }
+    }
+    return total;
+}
+
+// The entries' files, newest last, from times that the test sets: the clock of the disk can't tell entries that
+// were written within the same moment.
+void set_age(const Folder& folder, int index, int seconds_ago) {
+    std::error_code error;
+    fs::last_write_time(file_of(folder, index), fs::file_time_type::clock::now() - std::chrono::seconds(seconds_ago),
+                        error);
+}
+
+} // namespace
+
+TEST_CASE("the entries stay within the limit, and the ones used least recently go first", "[pipeline-cache]") {
+    const Folder folder;
+    PipelineCache cache({.directory = folder.path(), .limit = eight_kib});
+    constexpr int count = 16;
+    for (int i = 0; i < count; ++i) {
+        cache.store(identity, key_of(i), value_of(i, 1024));
+        cache.flush();
+        set_age(folder, i, (count - i) * 10); // each one newer than the one before
+        CHECK(size_of_entries(folder) <= eight_kib);
+    }
+    CHECK(cache.stats().evicted > 0);
+    CHECK_FALSE(fs::exists(file_of(folder, 0)));
+    CHECK(fs::exists(file_of(folder, count - 1)));
+    CHECK(fs::exists(file_of(folder, count - 2)));
+    // Those that are left are the newest ones, without a gap.
+    int oldest_left = count;
+    for (int i = 0; i < count; ++i) {
+        if (fs::exists(file_of(folder, i))) {
+            oldest_left = std::min(oldest_left, i);
+        }
+    }
+    for (int i = oldest_left; i < count; ++i) {
+        CHECK(fs::exists(file_of(folder, i)));
+    }
+}
+
+TEST_CASE("an entry that is used survives the entries that were used before it", "[pipeline-cache]") {
+    const Folder folder;
+    constexpr int count = 6;
+    {
+        PipelineCache cache({.directory = folder.path(), .limit = eight_kib});
+        for (int i = 0; i < count; ++i) {
+            cache.store(identity, key_of(i), value_of(i, 1024));
+            cache.flush();
+        }
+    }
+    for (int i = 0; i < count; ++i) {
+        set_age(folder, i, 1000 - i); // entry 0 is the oldest
+    }
+    PipelineCache cache({.directory = folder.path(), .limit = eight_kib});
+    CHECK(lookup(cache, 0) == value_of(0, 1024)); // used: it is as new as now
+    cache.flush();
+    for (int i = count; i < count + 4; ++i) {
+        cache.store(identity, key_of(i), value_of(i, 1024));
+        cache.flush();
+    }
+    CHECK(fs::exists(file_of(folder, 0)));
+    CHECK_FALSE(fs::exists(file_of(folder, 1)));
+    CHECK(size_of_entries(folder) <= eight_kib);
+}
+
+TEST_CASE("an entry larger than the limit is not kept, and doesn't take the others with it", "[pipeline-cache]") {
+    const Folder folder;
+    PipelineCache cache({.directory = folder.path(), .limit = four_kib});
+    cache.store(identity, key_of(1), value_of(1, 1024));
+    cache.flush();
+    cache.store(identity, key_of(2), value_of(2, large_value));
+    cache.flush();
+    CHECK(cache.stats().dropped == 1);
+    CHECK(fs::exists(file_of(folder, 1)));
+    CHECK_FALSE(fs::exists(file_of(folder, 2)));
+}
+
+TEST_CASE("temporary files are removed when they are old, and not when a run may still be writing them",
+          "[pipeline-cache]") {
+    const Folder folder;
+    fs::create_directories(folder.path());
+    const fs::path old_file = folder.path() / "entry.1.1.tmp";
+    const fs::path new_file = folder.path() / "entry.2.1.tmp";
+    for (const fs::path& file : {old_file, new_file}) {
+        std::ofstream(file) << "half an entry";
+    }
+    fs::last_write_time(old_file, fs::file_time_type::clock::now() - std::chrono::hours(1));
+    PipelineCache cache({.directory = folder.path()});
+    cache.store(identity, key_of(1), value_of(1));
+    cache.flush();
+    CHECK_FALSE(fs::exists(old_file));
+    CHECK(fs::exists(new_file));
+}
+
+TEST_CASE("two caches on one folder, from several threads, read only whole entries and lose none", "[pipeline-cache]") {
+    const Folder folder;
+    constexpr int keys = 40;
+    constexpr int threads = 4;
+    std::atomic<int> wrong{0};
+    {
+        PipelineCache first({.directory = folder.path()});
+        PipelineCache second({.directory = folder.path()});
+        std::vector<std::thread> workers;
+        workers.reserve(threads);
+        for (int t = 0; t < threads; ++t) {
+            workers.emplace_back([&, t] {
+                PipelineCache& cache = t % 2 == 0 ? first : second;
+                for (int round = 0; round < 3; ++round) {
+                    for (int i = 0; i < keys; ++i) {
+                        const int index = (i + t * 7) % keys; // the threads overlap on every key
+                        cache.store(identity, key_of(index), value_of(index));
+                        if (const auto value = lookup(cache, (index + 3) % keys);
+                            value && *value != value_of((index + 3) % keys)) {
+                            wrong.fetch_add(1);
+                        }
+                    }
+                }
+            });
+        }
+        for (std::thread& worker : workers) {
+            worker.join();
+        }
+        first.flush();
+        second.flush();
+        CHECK(first.stats().damaged == 0);
+        CHECK(second.stats().damaged == 0);
+    }
+    CHECK(wrong == 0);
+    PipelineCache later({.directory = folder.path()});
+    for (int i = 0; i < keys; ++i) {
+        CHECK(lookup(later, i) == value_of(i));
+    }
 }
