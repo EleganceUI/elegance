@@ -13,6 +13,7 @@
 #include "gpu/device.h"
 #include "gpu/instance.h"
 #include "gpu/path_renderer.h"
+#include "gpu/pipeline_cache.h"
 #include "gpu/quad_renderer.h"
 #include "gpu/texture_cache.h"
 #include "gpu/webgpu.h"
@@ -85,6 +86,22 @@ struct RenderThread::Kept {
     std::optional<std::uint64_t> unfinished; // the batch a lost device didn't finish
 };
 
+namespace {
+
+// The pipeline cache of the app's settings. Without one, the shaders are compiled each run, as with no cache.
+std::shared_ptr<gpu::PipelineCache> make_pipeline_cache() {
+    try {
+        return std::make_shared<gpu::PipelineCache>(gpu::pipeline_cache_settings_from_environment());
+    } catch (const std::bad_alloc&) {
+        throw;
+    } catch (const std::exception& e) {
+        log_warning("pipeline cache: not used, because its settings couldn't be read: {}", e.what());
+        return nullptr;
+    }
+}
+
+} // namespace
+
 void RenderThread::run(std::promise<void> ready) noexcept {
     // Presenting and video frames use COM on Windows (DXGI, DirectComposition, Media Foundation).
     ELG_THREAD_NAME("Elegance render");
@@ -107,6 +124,8 @@ void RenderThread::run(std::promise<void> ready) noexcept {
         // exists and while it runs.
         set_native_frame_importer({&imports_native_frames, &import_native_frame, &imported_frame_current});
         const gpu::Instance instance;
+        // Made here, on this thread, and ended with it: nothing waits for the files.
+        const std::shared_ptr<gpu::PipelineCache> cache = make_pipeline_cache();
         Kept kept;
         // Devices lost in a row before they drew anything: a GPU that loses every new device
         // can't draw, as if none could be made.
@@ -115,7 +134,7 @@ void RenderThread::run(std::promise<void> ready) noexcept {
         for (;;) {
             const int drawn = frames_drawn_.load();
             try {
-                draw(instance, kept, ready, started);
+                draw(instance, cache, kept, ready, started);
                 break; // the mailbox closed
             } catch (const gpu::DeviceLost& lost) {
                 if (!started) {
@@ -144,10 +163,11 @@ void RenderThread::run(std::promise<void> ready) noexcept {
     mailbox_.close();
 }
 
-void RenderThread::draw(const gpu::Instance& instance, Kept& kept, std::promise<void>& ready, bool& started) {
+void RenderThread::draw(const gpu::Instance& instance, const std::shared_ptr<gpu::PipelineCache>& cache, Kept& kept,
+                        std::promise<void>& ready, bool& started) {
     // Declaration order is destruction order in reverse: windows, then pipelines and the atlas,
     // then the device.
-    const gpu::Device device(instance);
+    const gpu::Device device(instance, cache);
     devices_made_.fetch_add(1);
     set_max_texture_side(device.max_texture_side()); // images decode to fit this device's textures
     const wgpu::BindGroupLayout image_layout = gpu::create_image_layout(device.handle());

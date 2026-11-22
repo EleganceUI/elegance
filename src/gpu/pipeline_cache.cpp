@@ -8,6 +8,7 @@
 
 #include "core/log.h"
 #include "core/os_backend.h"
+#include "core/profile.h"
 #include "gpu/pipeline_cache_backend.h"
 #include "gpu/pipeline_cache_format.h"
 
@@ -395,6 +396,7 @@ bool PipelineCache::write_entry(const std::string& name, const File& file) {
 }
 
 void PipelineCache::write_loop() {
+    ELG_THREAD_NAME("Elegance pipeline cache");
     std::unique_lock lock(mutex_);
     for (;;) {
         wake_.wait(lock, [this] { return !pending_.empty() || !touches_.empty() || stopping_; });

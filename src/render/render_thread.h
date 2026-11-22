@@ -13,6 +13,7 @@
 #include <exception>
 #include <functional>
 #include <future>
+#include <memory>
 #include <mutex>
 #include <thread>
 
@@ -20,12 +21,15 @@ namespace elg::detail {
 
 namespace gpu {
 class Instance;
+class PipelineCache;
 }
 
 // Owns the WebGPU instance, the device, and every GPU resource, window surfaces included;
 // consumes work from the FrameMailbox (design.md §15). The UI thread never touches GPU objects.
 // When the device is lost, it starts over on a new one, which draws every window again
-// (ELGSPEC-0025.R4); only when no new device can be made does an error stop it.
+// (ELGSPEC-0025.R4); only when no new device can be made does an error stop it. It makes the pipeline cache,
+// which every device it makes shares, and which reads and writes files; the UI thread, which waits for the
+// first device, never does (ELGSPEC-0036.R9).
 class RenderThread {
 public:
     // Starts the thread and blocks until the GPU is initialized; rethrows initialization
@@ -54,7 +58,8 @@ private:
     void run(std::promise<void> ready) noexcept;
     // Draws with a device of its own until the mailbox closes; throws gpu::DeviceLost when the
     // device is lost. The first device signals `ready` once it can draw (`started`).
-    void draw(const gpu::Instance& instance, Kept& kept, std::promise<void>& ready, bool& started);
+    void draw(const gpu::Instance& instance, const std::shared_ptr<gpu::PipelineCache>& cache, Kept& kept,
+              std::promise<void>& ready, bool& started);
 
     FrameMailbox& mailbox_;
     MoveOnlyFunction<void()> on_error_;

@@ -8,6 +8,8 @@
 
 #include "core/log.h"
 
+#include <SDL3/SDL_stdinc.h>
+
 #include <catch2/catch_session.hpp>
 #include <catch2/catch_test_case_info.hpp>
 #include <catch2/reporters/catch_reporter_event_listener.hpp>
@@ -25,6 +27,16 @@ namespace {
 // Nobody is there to close a dialog: failed checks and crashes fail the test, on stderr.
 const bool g_no_dialogs = [] {
     elegance_apps::no_error_dialogs();
+    return true;
+}();
+
+// The tests don't read or write the pipeline cache of whoever runs them: an app that a test starts would keep its
+// shaders in their folder, and runs would change each other. The one test of the cache gives it a folder of its
+// own (ELGSPEC-0036.R4). A setting that the person running the tests made is left alone.
+const bool g_no_pipeline_cache = [] {
+    // Through SDL, which reads its own copy of the environment: the cache's folder is chosen from that one. A
+    // setting that is there is left (the last argument).
+    SDL_setenv_unsafe("ELG_PIPELINE_CACHE", "off", 0);
     return true;
 }();
 
