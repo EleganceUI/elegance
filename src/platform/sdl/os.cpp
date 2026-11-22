@@ -50,7 +50,15 @@ void* start_thread_with_stack(std::size_t stack_size, void (*entry)(void*), void
                            reinterpret_cast<void*>(&run_thread));
     SDL_SetPointerProperty(properties, SDL_PROP_THREAD_CREATE_USERDATA_POINTER, start);
     SDL_SetNumberProperty(properties, SDL_PROP_THREAD_CREATE_STACKSIZE_NUMBER, static_cast<Sint64>(stack_size));
+    // SDL's macro for this function casts its own arguments in the C style.
+#if defined(__clang__)
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wold-style-cast"
+#endif
     SDL_Thread* thread = SDL_CreateThreadWithProperties(properties);
+#if defined(__clang__)
+#pragma clang diagnostic pop
+#endif
     SDL_DestroyProperties(properties);
     if (thread == nullptr) {
         SDL_free(start);
