@@ -8,7 +8,9 @@
 
 #include "core/log.h"
 
+#if !defined(_WIN32)
 #include <SDL3/SDL_stdinc.h>
+#endif
 
 #include <catch2/catch_session.hpp>
 #include <catch2/catch_test_case_info.hpp>
@@ -16,7 +18,9 @@
 #include <catch2/reporters/catch_reporter_registrars.hpp>
 
 #include <atomic>
+#include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <mutex>
 #include <print>
 #include <string>
@@ -34,9 +38,19 @@ const bool g_no_dialogs = [] {
 // shaders in their folder, and runs would change each other. The one test of the cache gives it a folder of its
 // own (ELGSPEC-0036.R4). A setting that the person running the tests made is left alone.
 const bool g_no_pipeline_cache = [] {
+#if defined(_WIN32)
+    // The tests link no SDL here (it is inside the library): the process's environment is set, which SDL copies at
+    // its first use, later than this. A setting that is there is left.
+    std::size_t size = 0;
+    getenv_s(&size, nullptr, 0, "ELG_PIPELINE_CACHE");
+    if (size == 0) {
+        _putenv_s("ELG_PIPELINE_CACHE", "off");
+    }
+#else
     // Through SDL, which reads its own copy of the environment: the cache's folder is chosen from that one. A
     // setting that is there is left (the last argument).
     SDL_setenv_unsafe("ELG_PIPELINE_CACHE", "off", 0);
+#endif
     return true;
 }();
 
