@@ -46,17 +46,15 @@ TEST_CASE("a stack thread can be moved, and the one that was moved from has noth
 #if !defined(_WIN32)
 namespace {
 
-// Where the last block was, so that the compiler keeps every block in the stack, and doesn't turn the calls into a loop.
-volatile const void* g_last_block = nullptr;
-
 // Uses `depth` blocks of 64 KiB of the stack, and writes to every page of each, so that a stack that is too small
-// has its guard page touched and not jumped over; it returns the number of blocks it used.
+// has its guard page touched and not jumped over; it returns the number of blocks it used. The empty statement of
+// assembly that is given the block makes the compiler keep it in the stack, and not turn the calls into a loop.
 std::size_t use_stack(std::size_t depth) {
     volatile unsigned char block[std::size_t{64} << 10];
-    g_last_block = &block[0];
     for (std::size_t at = 0; at < sizeof block; at += 4096) {
         block[at] = 1;
     }
+    asm volatile("" : : "r"(&block[0]) : "memory");
     return depth == 0 ? std::size_t{block[0]} : use_stack(depth - 1) + std::size_t{block[0]};
 }
 
