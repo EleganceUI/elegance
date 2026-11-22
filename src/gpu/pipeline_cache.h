@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -30,6 +31,8 @@
 #include <string_view>
 #include <thread>
 #include <vector>
+
+#include "gpu/pipeline_cache_backend.h"
 
 namespace elg::detail::gpu {
 
@@ -58,6 +61,30 @@ struct PipelineCacheStats {
     std::uint64_t evicted = 0;        // files removed to keep to the limit
     std::uint64_t write_failures = 0; // entries that couldn't be written
 };
+
+// The name of the folder of the app that runs `executable`, in the system's cache folder: the program's name, and
+// eight hexadecimal digits of a hash of its path, so that two apps with one name don't share a cache.
+std::string pipeline_cache_app_name(const std::filesystem::path& executable);
+
+// A limit as the setting writes it: a number of bytes, with K, M or G after it for units of 1024, 1024 squared or
+// cubed. nullopt for anything else.
+std::optional<std::uint64_t> parse_pipeline_cache_limit(std::string_view text);
+
+// The settings of the app that runs `executable`, from the environment variables that `get` reads:
+//   ELG_PIPELINE_CACHE        the cache's folder, in place of the system's for this app. `off`, or empty: no
+//                             cache, and no shipped one either.
+//   ELG_PIPELINE_CACHE_LIMIT  the limit on the entries' size on disk (PipelineCacheSettings::limit), such as
+//                             `64M`; 32M by default. A value that isn't one is logged and not used.
+// The folders that the system names (gpu/pipeline_cache_backend.h) are the default.
+PipelineCacheSettings pipeline_cache_settings(const std::filesystem::path& executable,
+                                              const std::function<std::optional<std::string>(const char*)>& get);
+
+// The same, from folders that are already named, for the tests of what the settings do to them.
+PipelineCacheSettings pipeline_cache_settings(const PipelineCacheFolders& folders,
+                                              const std::function<std::optional<std::string>(const char*)>& get);
+
+// The same, for this program, from its environment.
+PipelineCacheSettings pipeline_cache_settings_from_environment();
 
 class PipelineCache {
 public:

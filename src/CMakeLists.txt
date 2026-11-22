@@ -328,13 +328,20 @@ if (ELG_BUILD_TESTS AND NOT elg_mikros)
     elg_layer(media_mikros TEST_ONLY SOURCES ${elg_media_sources} ${elg_mikros_media_stand_ins}
               ${elg_host_image_codec} DEPENDS core geometry reactive)
     elg_layer(net_mikros TEST_ONLY SOURCES ${elg_mikros_net} ${elg_mikros_net_os} DEPENDS core)
-    elg_layer(platform_mikros TEST_ONLY SOURCES platform/mikros/native.cpp DEPENDS core geometry
+    elg_layer(platform_mikros TEST_ONLY SOURCES platform/mikros/native.cpp platform/mikros/pipeline_cache.cpp
+              DEPENDS core geometry
               LIBRARIES SDL3::SDL3)
     elg_layer(text_mikros TEST_ONLY SOURCES platform/mikros/font_files.cpp platform/mikros/fonts.cpp DEPENDS core)
 endif ()
 
 elg_layer(display SOURCES display/display_list.cpp DEPENDS core geometry)
 
+elg_layer(gpu_os
+        WINDOWS platform/windows/pipeline_cache.cpp
+        APPLE platform/macos/pipeline_cache.cpp
+        LINUX platform/linux/pipeline_cache.cpp
+        MIKROS platform/mikros/pipeline_cache.cpp
+        DEPENDS core)
 elg_layer(gpu
         SOURCES gpu/atlas_texture.cpp gpu/blur_renderer.cpp gpu/buffer.cpp gpu/device.cpp gpu/external_image.cpp
                 gpu/instance.cpp gpu/path_renderer.cpp gpu/quad_renderer.cpp gpu/render_image.cpp gpu/swapchain.cpp
@@ -343,7 +350,7 @@ elg_layer(gpu
         WINDOWS gpu/native_image.cpp gpu/windows/composition.cpp gpu/windows/system.cpp
         APPLE gpu/macos/native_image.mm gpu/presenter.cpp gpu/system.cpp
         LINUX gpu/native_image.cpp gpu/presenter.cpp gpu/system.cpp
-        DEPENDS core geometry
+        DEPENDS core geometry gpu_os
         LIBRARIES dawn::webgpu_dawn)
 elg_add_shaders(elegance_gpu
         ${PROJECT_SOURCE_DIR}/shaders/ui.wgsl

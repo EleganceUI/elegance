@@ -1,0 +1,19 @@
+// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0.
+// If a copy of the MPL was not distributed with this file, You can obtain one at
+// https://mozilla.org/MPL/2.0/.
+
+// GPU's backend (gpu/pipeline_cache_backend.h) on Windows.
+
+#include "gpu/pipeline_cache_backend.h"
+
+namespace elg::detail::gpu {
+
+PipelineCacheFolders pipeline_cache_folders(std::string_view app,
+                                            const std::function<std::optional<std::string>(const char*)>& get) {
+    if (const auto base = get("LOCALAPPDATA"); base && !base->empty()) {
+        return {std::filesystem::path(*base) / "Elegance" / app / "Pipelines", std::nullopt};
+    }
+    return {};
+}
+
+} // namespace elg::detail::gpu

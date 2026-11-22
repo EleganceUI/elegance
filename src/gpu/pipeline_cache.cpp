@@ -8,6 +8,7 @@
 
 #include "core/log.h"
 #include "core/os_backend.h"
+#include "gpu/pipeline_cache_backend.h"
 #include "gpu/pipeline_cache_format.h"
 
 #include <algorithm>
@@ -56,6 +57,67 @@ std::optional<std::vector<std::byte>> read_file(const fs::path& path, std::uint6
 }
 
 } // namespace
+
+std::string pipeline_cache_app_name(const fs::path& executable) {
+    std::uint64_t hash = 14695981039346656037ULL;
+    for (const char c : executable.generic_string()) {
+        hash = (hash ^ static_cast<unsigned char>(c)) * 1099511628211ULL;
+    }
+    return std::format("{}-{:08x}", executable.stem().string(), static_cast<std::uint32_t>(hash ^ (hash >> 32)));
+}
+
+std::optional<std::uint64_t> parse_pipeline_cache_limit(std::string_view text) {
+    std::uint64_t unit = 1;
+    if (!text.empty() && (text.back() == 'K' || text.back() == 'k')) {
+        unit = std::uint64_t{1} << 10;
+    } else if (!text.empty() && (text.back() == 'M' || text.back() == 'm')) {
+        unit = std::uint64_t{1} << 20;
+    } else if (!text.empty() && (text.back() == 'G' || text.back() == 'g')) {
+        unit = std::uint64_t{1} << 30;
+    }
+    const std::string_view digits = unit == 1 ? text : text.substr(0, text.size() - 1);
+    if (digits.empty() || digits.size() > 15 || digits.find_first_not_of("0123456789") != std::string_view::npos) {
+        return std::nullopt;
+    }
+    std::uint64_t number = 0;
+    for (const char c : digits) {
+        number = number * 10 + static_cast<std::uint64_t>(c - '0');
+    }
+    return number * unit; // at most 10^15 * 2^30: it fits
+}
+
+PipelineCacheSettings pipeline_cache_settings(const fs::path& executable,
+                                              const std::function<std::optional<std::string>(const char*)>& get) {
+    return pipeline_cache_settings(pipeline_cache_folders(pipeline_cache_app_name(executable), get), get);
+}
+
+PipelineCacheSettings pipeline_cache_settings(const PipelineCacheFolders& folders,
+                                              const std::function<std::optional<std::string>(const char*)>& get) {
+    PipelineCacheSettings settings;
+    settings.directory = folders.own;
+    settings.shipped = folders.shipped;
+    if (const std::optional<std::string> setting = get("ELG_PIPELINE_CACHE")) {
+        if (setting->empty() || *setting == "off") {
+            settings.directory = std::nullopt;
+            settings.shipped = std::nullopt;
+        } else {
+            settings.directory = fs::path(*setting);
+        }
+    }
+    if (const std::optional<std::string> setting = get("ELG_PIPELINE_CACHE_LIMIT")) {
+        if (const std::optional<std::uint64_t> limit = parse_pipeline_cache_limit(*setting); limit && *limit > 0) {
+            settings.limit = *limit;
+        } else {
+            log_warning("pipeline cache: ELG_PIPELINE_CACHE_LIMIT \"{}\" isn't a size above zero, such as 64M: the limit is {} bytes",
+                        *setting, settings.limit);
+        }
+    }
+    return settings;
+}
+
+PipelineCacheSettings pipeline_cache_settings_from_environment() {
+    return pipeline_cache_settings(os::executable_path(), os::environment_variable);
+}
 
 PipelineCache::PipelineCache(PipelineCacheSettings settings) : settings_(std::move(settings)) {}
 
