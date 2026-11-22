@@ -304,6 +304,12 @@ elg_layer(media_os
               platform/macos/video_source.mm
         LINUX platform/linux/camera.cpp platform/linux/image_codec.cpp platform/linux/video_source.cpp
         MIKROS ${elg_mikros_media_os})
+if (NOT WIN32 AND NOT APPLE)
+    # stb, which the image codec of Linux and Mikros uses: its folder is named here, not left to whatever else
+    # puts vcpkg's include folder on the path (Linux has GStreamer's, and Mikros has nothing).
+    find_package(Stb REQUIRED)
+    target_include_directories(elegance_media_os SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
+endif ()
 elg_layer(media
         SOURCES ${elg_media_sources}
         NOT_MIKROS media/audio.cpp media/audio_setup.cpp media/audio_stream.cpp media/miniaudio.cpp media/recorder.cpp
@@ -333,6 +339,9 @@ if (ELG_BUILD_TESTS AND NOT elg_mikros)
     # do, so a program links these or those, never both.
     elg_layer(media_mikros TEST_ONLY SOURCES ${elg_media_sources} ${elg_mikros_media_stand_ins}
               ${elg_host_image_codec} DEPENDS core geometry reactive)
+    if (NOT WIN32 AND NOT APPLE)
+        target_include_directories(elegance_media_mikros SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
+    endif ()
     elg_layer(net_mikros TEST_ONLY SOURCES ${elg_mikros_net} ${elg_mikros_net_os} DEPENDS core)
     elg_layer(platform_mikros TEST_ONLY SOURCES platform/mikros/native.cpp platform/mikros/pipeline_cache.cpp
               DEPENDS core geometry
