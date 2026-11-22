@@ -161,7 +161,7 @@ if (NOT (WIN32 AND ELG_BUILD_SHARED))
     elg_layer_tests(media sample_ring_tests.cpp)
     elg_layer_tests(net)
     elg_layer_tests(display)
-    elg_layer_tests(gpu render_device_lifetime_tests.cpp pipeline_cache_format_tests.cpp)
+    elg_layer_tests(gpu render_device_lifetime_tests.cpp pipeline_cache_format_tests.cpp pipeline_cache_tests.cpp)
     elg_layer_tests(render frame_source_tests.cpp)
     elg_layer_tests(platform menu_bar_tests.cpp)
 

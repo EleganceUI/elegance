@@ -338,7 +338,7 @@ elg_layer(display SOURCES display/display_list.cpp DEPENDS core geometry)
 elg_layer(gpu
         SOURCES gpu/atlas_texture.cpp gpu/blur_renderer.cpp gpu/buffer.cpp gpu/device.cpp gpu/external_image.cpp
                 gpu/instance.cpp gpu/path_renderer.cpp gpu/quad_renderer.cpp gpu/render_image.cpp gpu/swapchain.cpp
-                gpu/pipeline_cache_format.cpp gpu/texture_cache.cpp gpu/webgpu.cpp
+                gpu/pipeline_cache.cpp gpu/pipeline_cache_format.cpp gpu/texture_cache.cpp gpu/webgpu.cpp
         # Each OS's interop with its graphics APIs (gpu/<os>), and what stands in for it elsewhere.
         WINDOWS gpu/native_image.cpp gpu/windows/composition.cpp gpu/windows/system.cpp
         APPLE gpu/macos/native_image.mm gpu/presenter.cpp gpu/system.cpp
