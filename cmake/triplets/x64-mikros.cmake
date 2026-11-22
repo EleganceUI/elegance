@@ -21,8 +21,9 @@ set(VCPKG_CHAINLOAD_TOOLCHAIN_FILE "${CMAKE_CURRENT_LIST_DIR}/mikros-toolchain.c
 
 # Meson ports (HarfBuzz) run the Meson that Mikros builds next to its sysroot, which names the static libraries as
 # CMake looks for them on Mikros (lib<name>.slib), and not the Meson that vcpkg downloads, which names them lib<name>.a.
+# vcpkg's own patches to its Meson are not applied to it: only HarfBuzz has been built this way.
 file(GLOB elg_mikros_meson "$ENV{MIKROS_SYSROOT}/../meson/meson-*/meson.py")
-list(SORT elg_mikros_meson)
+list(SORT elg_mikros_meson COMPARE NATURAL)
 if (elg_mikros_meson)
     list(GET elg_mikros_meson -1 SCRIPT_MESON)
 else ()
@@ -45,8 +46,22 @@ string(REPLACE "pkg-config = 'pkg-config'"
 # The libraries are static, as the triplet says; as the cross file is the target's, the option goes in it.
 string(APPEND elg_meson "\n[built-in options]\ndefault_library = 'static'\n")
 # HarfBuzz's command-line programs link with -l<name>, which Mikros's compiler looks for among the sysroot's
-# libraries and so can't find the static ones of vcpkg: they aren't built.
+# libraries and so can't find the static ones of vcpkg: they aren't built. As the cross file is every Meson port's,
+# the option is given to every one that has it.
 string(APPEND elg_meson "\n[project options]\nutilities = 'disabled'\n")
+# The changes above are made by text, and do nothing if the sysroot's file changes: they are checked.
+foreach (elg_expected "needs_exe_wrapper = true" "'env', '-u', 'PKG_CONFIG_SYSROOT_DIR'")
+    string(FIND "${elg_meson}" "${elg_expected}" elg_found)
+    if (elg_found EQUAL -1)
+        message(FATAL_ERROR "The x64-mikros triplet could not change $ENV{MIKROS_SYSROOT}/x86_64-unknown-mikros.meson: "
+                            "\"${elg_expected}\" is not in the result.")
+    endif ()
+endforeach ()
+string(FIND "${elg_meson}" "sys_root" elg_found)
+if (NOT elg_found EQUAL -1)
+    message(FATAL_ERROR "The x64-mikros triplet could not remove sys_root from "
+                        "$ENV{MIKROS_SYSROOT}/x86_64-unknown-mikros.meson.")
+endif ()
 if (DEFINED ENV{TMPDIR})
     set(elg_meson_folder "$ENV{TMPDIR}")
 else ()
@@ -55,4 +70,11 @@ endif ()
 # One file for each sysroot, as builds with different ones may run at once.
 string(MD5 elg_meson_hash "$ENV{MIKROS_SYSROOT}")
 set(VCPKG_MESON_CROSS_FILE "${elg_meson_folder}/elegance-x64-mikros-${elg_meson_hash}.meson")
-file(WRITE "${VCPKG_MESON_CROSS_FILE}" "${elg_meson}")
+# Every load of the triplet makes it, and builds for one sysroot can run at once: it is written only if it differs.
+set(elg_meson_current "")
+if (EXISTS "${VCPKG_MESON_CROSS_FILE}")
+    file(READ "${VCPKG_MESON_CROSS_FILE}" elg_meson_current)
+endif ()
+if (NOT elg_meson_current STREQUAL elg_meson)
+    file(WRITE "${VCPKG_MESON_CROSS_FILE}" "${elg_meson}")
+endif ()
