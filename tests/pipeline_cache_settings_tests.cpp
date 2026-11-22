@@ -61,7 +61,10 @@ TEST_CASE("the limit is a number of bytes, with K, M or G for units", "[pipeline
     CHECK(parse_pipeline_cache_limit("64M") == std::uint64_t{64} << 20);
     CHECK(parse_pipeline_cache_limit("2G") == std::uint64_t{2} << 30);
     CHECK(parse_pipeline_cache_limit("0") == 0);
-    for (const char* bad : {"", "K", "M", "-5", "5X", "5 M", "1.5M", "M5", "5MM", "99999999999999999999"}) {
+    // The largest size in bytes that fits is a limit; one more unit is not, and doesn't wrap around to a small one.
+    CHECK(parse_pipeline_cache_limit("17179869183G") == (std::uint64_t{17179869183} << 30));
+    for (const char* bad : {"17179869184G", "17179869185G", "999999999999999G", "999999999999999M", "",
+                            "K", "M", "-5", "5X", "5 M", "1.5M", "M5", "5MM", "99999999999999999999"}) {
         CHECK_FALSE(parse_pipeline_cache_limit(bad).has_value());
     }
 }
@@ -136,4 +139,21 @@ TEST_CASE("the system's folder for the app's pipelines is in its cache folder", 
     }
     CHECK_FALSE(pipeline_cache_folders("app", reading({})).own.has_value());
 #endif
+}
+
+TEST_CASE("the folders are named from the environment's UTF-8 text, as the paths it names", "[pipeline-cache]") {
+    // The environment's text is UTF-8: where the system reads paths in a code page, it must not be taken as one.
+    const Environment accented{{"HOME", "/home/\xC3\xA9"},
+                               {"XDG_CACHE_HOME", "/xdg/\xC3\xA9"},
+                               {"LOCALAPPDATA", "C:/Local/\xC3\xA9"}};
+    const fs::path own = required(pipeline_cache_folders("app-\xC3\xA9", reading(accented)).own);
+#if defined(_WIN32)
+    CHECK(own.generic_u8string() == u8"C:/Local/\u00e9/Elegance/app-\u00e9/Pipelines");
+#elif defined(__APPLE__)
+    CHECK(own.generic_u8string() == u8"/home/\u00e9/Library/Caches/Elegance/app-\u00e9/Pipelines");
+#else
+    CHECK(own.generic_u8string() == u8"/xdg/\u00e9/elegance/app-\u00e9/pipelines");
+#endif
+    // And the app's name is the program's name as that text.
+    CHECK(pipeline_cache_app_name(fs::path(u8"/apps/\u00e9/player-\u00e9")).starts_with("player-\xC3\xA9-"));
 }

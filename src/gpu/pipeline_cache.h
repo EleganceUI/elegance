@@ -116,10 +116,10 @@ private:
     std::optional<File> find_value(const std::string& name, std::string_view identity, std::span<const std::byte> key);
     std::optional<File> read_entry(const std::filesystem::path& directory, bool own, const std::string& name,
                                    std::string_view identity, std::span<const std::byte> key);
-    bool write_entry(const std::string& name, const File& file);
+    bool write_entry(const std::string& name, const File& file, std::uint64_t& replaced);
     void write_loop();
     void warn_once(std::string_view what) noexcept;
-    void request_touch(const std::string& name);
+    void request_touch(const std::string& name) noexcept;
     void scan();
     bool make_room(std::uint64_t incoming);
 
@@ -131,6 +131,7 @@ private:
     };
 
     const PipelineCacheSettings settings_;
+    const std::uint64_t serial_; // told apart from every other cache of the run, whatever the address
 
     std::mutex mutex_;
     std::condition_variable wake_;
@@ -151,7 +152,6 @@ private:
     std::vector<KnownFile> files_;
 
     std::atomic<bool> warned_{false};
-    std::atomic<std::uint64_t> next_temporary_{0};
     std::atomic<std::uint64_t> asked_{0};
     std::atomic<std::uint64_t> found_{0};
     std::atomic<std::uint64_t> found_shipped_{0};

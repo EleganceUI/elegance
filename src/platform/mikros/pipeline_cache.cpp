@@ -15,7 +15,7 @@ namespace {
 
 std::optional<std::filesystem::path> path_on_mikros(const std::optional<std::string>& path) {
     if (path && !path->empty() && path->front() == '/') {
-        return std::filesystem::path(*path);
+        return path_from_utf8(*path);
     }
     return std::nullopt;
 }

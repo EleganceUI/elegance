@@ -11,11 +11,11 @@ namespace elg::detail::gpu {
 PipelineCacheFolders pipeline_cache_folders(std::string_view app,
                                             const std::function<std::optional<std::string>(const char*)>& get) {
     // An empty or relative XDG_CACHE_HOME counts as unset (the XDG Base Directory spec).
-    if (const auto xdg = get("XDG_CACHE_HOME"); xdg && std::filesystem::path(*xdg).is_absolute()) {
-        return {std::filesystem::path(*xdg) / "elegance" / app / "pipelines", std::nullopt};
+    if (const auto xdg = get("XDG_CACHE_HOME"); xdg && path_from_utf8(*xdg).is_absolute()) {
+        return {path_from_utf8(*xdg) / "elegance" / path_from_utf8(app) / "pipelines", std::nullopt};
     }
     if (const auto home = get("HOME"); home && !home->empty()) {
-        return {std::filesystem::path(*home) / ".cache" / "elegance" / app / "pipelines", std::nullopt};
+        return {path_from_utf8(*home) / ".cache" / "elegance" / path_from_utf8(app) / "pipelines", std::nullopt};
     }
     return {};
 }

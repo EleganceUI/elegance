@@ -16,6 +16,12 @@
 
 namespace elg::detail::gpu {
 
+// The path that the UTF-8 text names. The environment's text is UTF-8 (core/os_backend.h), and a path made from it
+// as it is would be read in the system's code page on Windows.
+inline std::filesystem::path path_from_utf8(std::string_view text) {
+    return std::filesystem::path(std::u8string_view(reinterpret_cast<const char8_t*>(text.data()), text.size()));
+}
+
 struct PipelineCacheFolders {
     // The folder of the app's own entries, in the user's cache folder, or nullopt when the system names none.
     std::optional<std::filesystem::path> own;

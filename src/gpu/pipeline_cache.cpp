@@ -13,9 +13,11 @@
 #include "gpu/pipeline_cache_format.h"
 
 #include <algorithm>
+#include <atomic>
 #include <format>
 #include <fstream>
 #include <ios>
+#include <new>
 #include <system_error>
 #include <utility>
 
@@ -34,7 +36,7 @@ constexpr auto stale_temporary_age = std::chrono::minutes(10);
 
 // The value that a first call of load() found, for the second call on the same thread.
 struct FoundValue {
-    const PipelineCache* cache = nullptr;
+    std::uint64_t cache = 0; // the serial of the cache that found it; none has 0
     std::string name;
     std::vector<std::byte> value;
 };
@@ -42,6 +44,42 @@ struct FoundValue {
 FoundValue& found_value() {
     thread_local FoundValue found;
     return found;
+}
+
+// Every cache of the run has a serial of its own, and every temporary file a number of its own: two caches on one
+// folder, in one process, must not write to one file.
+std::uint64_t next_serial() {
+    static std::atomic<std::uint64_t> serial{0};
+    return serial.fetch_add(1) + 1;
+}
+
+std::uint64_t next_temporary() {
+    static std::atomic<std::uint64_t> number{0};
+    return number.fetch_add(1);
+}
+
+// Whether `inner` is `folder`, or in it, by the names alone.
+bool is_in_folder(const fs::path& folder, const fs::path& inner) {
+    const auto plain = [](fs::path path) {
+        path = path.lexically_normal();
+        return path.has_filename() ? path : path.parent_path();
+    };
+    const fs::path relative = plain(inner).lexically_relative(plain(folder));
+    return !relative.empty() && *relative.begin() != "..";
+}
+
+// The settings, with no folder of the app's own where it is the shipped folder or in it: the shipped folder is
+// never written to, removed from or touched.
+PipelineCacheSettings apart_from_shipped(PipelineCacheSettings settings) {
+    if (settings.directory && settings.shipped && is_in_folder(*settings.shipped, *settings.directory)) {
+        settings.directory = std::nullopt;
+        try {
+            log_warning("pipeline cache: the app's folder is the shipped folder, or in it, so nothing is kept");
+        } catch (...) {
+            // Swallowed: not being able to log is no reason for there to be no cache.
+        }
+    }
+    return settings;
 }
 
 std::optional<std::vector<std::byte>> read_file(const fs::path& path, std::uint64_t size) {
@@ -61,10 +99,12 @@ std::optional<std::vector<std::byte>> read_file(const fs::path& path, std::uint6
 
 std::string pipeline_cache_app_name(const fs::path& executable) {
     std::uint64_t hash = 14695981039346656037ULL;
-    for (const char c : executable.generic_string()) {
+    for (const char8_t c : executable.generic_u8string()) {
         hash = (hash ^ static_cast<unsigned char>(c)) * 1099511628211ULL;
     }
-    return std::format("{}-{:08x}", executable.stem().string(), static_cast<std::uint32_t>(hash ^ (hash >> 32)));
+    const std::u8string stem = executable.stem().u8string();
+    return std::format("{}-{:08x}", std::string(reinterpret_cast<const char*>(stem.data()), stem.size()),
+                       static_cast<std::uint32_t>(hash ^ (hash >> 32)));
 }
 
 std::optional<std::uint64_t> parse_pipeline_cache_limit(std::string_view text) {
@@ -82,9 +122,12 @@ std::optional<std::uint64_t> parse_pipeline_cache_limit(std::string_view text) {
     }
     std::uint64_t number = 0;
     for (const char c : digits) {
-        number = number * 10 + static_cast<std::uint64_t>(c - '0');
+        number = number * 10 + static_cast<std::uint64_t>(c - '0'); // at most 15 digits: it fits
     }
-    return number * unit; // at most 10^15 * 2^30: it fits
+    if (number > UINT64_MAX / unit) {
+        return std::nullopt; // the size in bytes doesn't fit
+    }
+    return number * unit;
 }
 
 PipelineCacheSettings pipeline_cache_settings(const fs::path& executable,
@@ -102,7 +145,7 @@ PipelineCacheSettings pipeline_cache_settings(const PipelineCacheFolders& folder
             settings.directory = std::nullopt;
             settings.shipped = std::nullopt;
         } else {
-            settings.directory = fs::path(*setting);
+            settings.directory = path_from_utf8(*setting);
         }
     }
     if (const std::optional<std::string> setting = get("ELG_PIPELINE_CACHE_LIMIT")) {
@@ -120,7 +163,8 @@ PipelineCacheSettings pipeline_cache_settings_from_environment() {
     return pipeline_cache_settings(os::executable_path(), os::environment_variable);
 }
 
-PipelineCache::PipelineCache(PipelineCacheSettings settings) : settings_(std::move(settings)) {}
+PipelineCache::PipelineCache(PipelineCacheSettings settings)
+    : settings_(apart_from_shipped(std::move(settings))), serial_(next_serial()) {}
 
 PipelineCache::~PipelineCache() {
     {
@@ -233,11 +277,11 @@ std::size_t PipelineCache::load(std::string_view identity, std::span<const std::
             }
             found_.fetch_add(1);
             const std::size_t size = entry->size();
-            found = {this, name, std::move(*entry)};
+            found = {serial_, name, std::move(*entry)};
             return size;
         }
         // The second call: the value of the first call, if that is what is asked for.
-        if (found.cache == this && found.name == name && found.value.size() == value.size()) {
+        if (found.cache == serial_ && found.name == name && found.value.size() == value.size()) {
             std::ranges::copy(found.value, value.begin());
             found = {};
             return value.size();
@@ -256,18 +300,23 @@ std::size_t PipelineCache::load(std::string_view identity, std::span<const std::
 
 // --- Writing ---
 
-void PipelineCache::request_touch(const std::string& name) {
-    {
-        const std::lock_guard lock(mutex_);
-        if (!touched_.insert(name).second) {
-            return; // once for each entry in a run
+void PipelineCache::request_touch(const std::string& name) noexcept {
+    try {
+        {
+            const std::lock_guard lock(mutex_);
+            if (touched_.contains(name)) {
+                return; // once for each entry in a run
+            }
+            if (!writer_.joinable() && !stopping_) {
+                writer_ = std::thread([this] { write_loop(); });
+            }
+            touched_.insert(name);
+            touches_.push_back(name);
         }
-        touches_.push_back(name);
-        if (!writer_.joinable() && !stopping_) {
-            writer_ = std::thread([this] { write_loop(); });
-        }
+        wake_.notify_one();
+    } catch (...) {
+        // Swallowed: an entry that isn't touched is only taken for older than it is, and it was found.
     }
-    wake_.notify_one();
 }
 
 // Reads the folder: the sizes and times of its entries, and the removal of temporary files that are old.
@@ -349,11 +398,12 @@ void PipelineCache::store(std::string_view identity, std::span<const std::byte> 
                 dropped_.fetch_add(1);
                 return;
             }
-            pending_bytes_ = pending_bytes_ - replaced + file->size();
-            pending_[std::move(name)] = std::move(file);
+            // The writer starts first: if it can't, nothing is left waiting for it.
             if (!writer_.joinable() && !stopping_) {
                 writer_ = std::thread([this] { write_loop(); });
             }
+            pending_bytes_ = pending_bytes_ - replaced + file->size();
+            pending_[std::move(name)] = std::move(file);
         }
         wake_.notify_one();
     } catch (...) {
@@ -361,21 +411,27 @@ void PipelineCache::store(std::string_view identity, std::span<const std::byte> 
     }
 }
 
-bool PipelineCache::write_entry(const std::string& name, const File& file) {
+// `replaced` is the size of the file that this entry replaces, or 0.
+bool PipelineCache::write_entry(const std::string& name, const File& file, std::uint64_t& replaced) {
     const fs::path directory = settings_.directory.value_or(fs::path()); // store() keeps entries only with a folder
     const fs::path path = directory / name;
     std::error_code error;
-    // An entry that is already there with these bytes is not written again.
-    if (fs::file_size(path, error) == file.size() && !error) {
-        if (const std::optional<File> existing = read_file(path, file.size()); existing && *existing == file) {
-            return true;
+    replaced = 0;
+    const std::uintmax_t there = fs::file_size(path, error);
+    if (!error) {
+        replaced = there;
+        // An entry that is already there with these bytes is not written again.
+        if (there == file.size()) {
+            if (const std::optional<File> existing = read_file(path, file.size()); existing && *existing == file) {
+                return true;
+            }
         }
     }
     for (int attempt = 0; attempt < 2; ++attempt) {
         // The folder may be made, or made again after the system emptied it, between the attempts.
         fs::create_directories(directory, error);
         const fs::path temporary =
-            directory / std::format("{}.{}.{}.tmp", name, os::process_id(), next_temporary_.fetch_add(1));
+            directory / std::format("{}.{}.{}.tmp", name, os::process_id(), next_temporary());
         {
             std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
             out.write(reinterpret_cast<const char*>(file.data()), static_cast<std::streamsize>(file.size()));
@@ -415,26 +471,44 @@ void PipelineCache::write_loop() {
             touches_.clear();
             writing_ = true;
             lock.unlock();
-            for (const std::string& name : touches) {
-                std::error_code error;
-                fs::last_write_time(settings_.directory.value_or(fs::path()) / name, fs::file_time_type::clock::now(), error);
+            try {
+                for (const std::string& name : touches) {
+                    std::error_code error;
+                    fs::last_write_time(settings_.directory.value_or(fs::path()) / name,
+                                        fs::file_time_type::clock::now(), error);
+                }
+            } catch (...) {
+                // Swallowed: an entry that isn't touched is only taken for older than it is.
             }
             lock.lock();
             writing_ = false;
             idle_.notify_all();
             continue;
         }
-        const std::string name = pending_.begin()->first;
-        const std::shared_ptr<const File> file = pending_.begin()->second;
+        std::string name;
+        std::shared_ptr<const File> file;
+        try {
+            name = pending_.begin()->first;
+            file = pending_.begin()->second;
+        } catch (...) {
+            // Not even a name could be copied: what is waiting is not kept, and the thread goes on.
+            dropped_.fetch_add(pending_.size());
+            pending_.clear();
+            pending_bytes_ = 0;
+            idle_.notify_all(); // a flush() that waits for what was dropped
+            continue;
+        }
         writing_ = true;
         lock.unlock();
         bool written = false;
         bool kept = true;
         try {
+            std::uint64_t replaced = 0;
             kept = make_room(file->size());
-            written = kept && write_entry(name, *file);
+            written = kept && write_entry(name, *file, replaced);
             if (written) {
-                total_ += file->size();
+                // The file that it replaced took room that it takes now.
+                total_ = total_ + file->size() >= replaced ? total_ + file->size() - replaced : 0;
                 written_since_scan_ += file->size();
             }
         } catch (...) {

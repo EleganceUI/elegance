@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <optional>
@@ -128,7 +129,7 @@ TEST_CASE("a second run finds every entry that the first stored", "[pipeline-cac
     CHECK_FALSE(lookup(second, 100).has_value());
 }
 
-TEST_CASE("an entry that was offered is found before it is written", "[pipeline-cache]") {
+TEST_CASE("an entry that was offered is found, before it is written and after", "[pipeline-cache]") {
     const Folder folder;
     PipelineCache cache({.directory = folder.path()});
     cache.store(identity, key_of(1), value_of(1));
@@ -138,7 +139,7 @@ TEST_CASE("an entry that was offered is found before it is written", "[pipeline-
     CHECK(fs::exists(file_of(folder, 1)));
 }
 
-TEST_CASE("a lookup's second call gets the value of its first, and a size that changed is a miss", "[pipeline-cache]") {
+TEST_CASE("a lookup's two calls give the entry's value, and a value of another size is a miss", "[pipeline-cache]") {
     const Folder folder;
     PipelineCache cache({.directory = folder.path()});
     cache.store(identity, key_of(1), value_of(1, 100));
@@ -421,7 +422,7 @@ void make_shipped(const Folder& folder, int count, int salt = 0) {
 
 } // namespace
 
-TEST_CASE("an entry in the shipped folder is found there, and not stored again", "[pipeline-cache]") {
+TEST_CASE("an entry in the shipped folder is found there, and nothing is made of the app's own", "[pipeline-cache]") {
     const Folder shipped;
     const Folder own;
     make_shipped(shipped, 4);
@@ -500,4 +501,36 @@ TEST_CASE("a cache with only a shipped folder reads it, and keeps nothing", "[pi
     cache.flush();
     CHECK(cache.stats().stored == 0);
     CHECK(snapshot(shipped) == before);
+}
+
+TEST_CASE("a folder of the app's own that is the shipped folder, or in it, is not used", "[pipeline-cache]") {
+    const Folder shipped;
+    make_shipped(shipped, 3);
+    // One entry that is damaged: the app's own folder would remove it.
+    {
+        std::ofstream damaged(file_of(shipped, 1), std::ios::binary | std::ios::trunc);
+        damaged << "not an entry";
+    }
+    const auto before = snapshot(shipped);
+    const fs::path inside = shipped.path() / "sub" / "folder";
+    const fs::path same_with_dots = shipped.path() / "." / "nested" / "..";
+    for (const fs::path& own : {shipped.path(), inside, same_with_dots}) {
+        PipelineCache cache({.directory = own, .shipped = shipped.path()});
+        CHECK(lookup(cache, 0) == value_of(0));
+        CHECK_FALSE(lookup(cache, 1).has_value());
+        cache.store(identity, key_of(7), value_of(7));
+        cache.flush();
+        const PipelineCacheStats stats = cache.stats();
+        CHECK(stats.stored == 0);
+        CHECK(stats.damaged == 1);
+    }
+    // Nothing was written, removed or touched, and no folder was made.
+    CHECK(snapshot(shipped) == before);
+    CHECK_FALSE(fs::exists(inside));
+    // A folder beside it is another folder.
+    const Folder beside;
+    PipelineCache cache({.directory = beside.path(), .shipped = shipped.path()});
+    cache.store(identity, key_of(7), value_of(7));
+    cache.flush();
+    CHECK(cache.stats().stored == 1);
 }
