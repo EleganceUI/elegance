@@ -413,8 +413,9 @@ elg_layer(platform
               platform/macos/native.cpp platform/macos/notifications.mm platform/macos/title_bar.mm
         LINUX platform/linux/appearance.cpp platform/linux/dock.cpp platform/linux/glib_thread.cpp
               platform/linux/menu_bar.cpp platform/linux/native.cpp platform/linux/notifications.cpp
-        # Mikros draws the menu bar in each window, as Linux does, until it exports menus to the compositor.
-        MIKROS platform/mikros/native.cpp platform/linux/menu_bar.cpp
+        # Mikros draws the menu bar in each window, as Linux does, until it exports menus to the compositor, and
+        # has no materials and no accent color, as Linux has without GIO, until it takes them from the compositor.
+        MIKROS platform/mikros/native.cpp platform/linux/appearance.cpp platform/linux/menu_bar.cpp
         DEPENDS core geometry
         LIBRARIES SDL3::SDL3 ${elg_accesskit})
 

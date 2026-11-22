@@ -5,7 +5,8 @@
 // Appearance on Linux (platform/sdl/native.h): no window materials (compositors don't offer
 // a blurred backdrop to clients). The accent color comes from the settings portal
 // (org.freedesktop.appearance accent-color), read on the GLib thread and kept here; a change
-// reaches the app as a system theme event. Without GIO, there's none.
+// reaches the app as a system theme event. Without GIO, there's none: that is also what a build for Mikros has,
+// which doesn't define ELG_HAVE_GIO.
 
 #include "platform/sdl/native.h"
 
