@@ -253,6 +253,10 @@ void RenderThread::draw(const gpu::Instance& instance, const std::shared_ptr<gpu
                                    kept.atlas.clear(); // the glyphs of the layout before
                                    kept.atlas_layout = upload.layout;
                                }
+                               // The windows' next frames draw the glyphs that show what is new in the atlas.
+                               for (auto& window : windows) {
+                                   window.second->atlas_uploaded(upload.uploads);
+                               }
                                for (GlyphUpload& glyphs : upload.uploads) {
                                    atlas.upload(glyphs.x, glyphs.y, glyphs.width, glyphs.height, glyphs.rgba);
                                    kept.atlas.push_back(std::move(glyphs));

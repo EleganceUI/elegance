@@ -104,6 +104,25 @@ void render_offscreen(const wgpu::CommandEncoder& encoder, const RenderImage& ta
     pass.End();
 }
 
+// The footprints of `commands`, with those of the glyphs that show an area of the atlas that got pixels (`fresh`, in
+// normalized coordinates) changed: as the footprint of a glyph is its quad and where it is in the atlas, it is the same
+// before the glyph's pixels are in the atlas and after, and the frames that show it would not be told apart.
+std::vector<Footprint> with_fresh_glyphs(std::span<const Footprint> before, std::span<const DrawCommand> commands,
+                                         std::span<const Rect> fresh) {
+    constexpr std::uint64_t kFresh = 0x9e3779b97f4a7c15ULL;
+    std::vector<Footprint> footprints(before.begin(), before.end());
+    for (std::size_t i = 0; i < footprints.size() && i < commands.size(); ++i) {
+        const auto* glyph = std::get_if<GlyphCommand>(&commands[i]);
+        if (glyph != nullptr && std::ranges::any_of(fresh, [&](const Rect& r) {
+                const Rect& uv = glyph->uv;
+                return uv.x < r.max_x() && r.x < uv.max_x() && uv.y < r.max_y() && r.y < uv.max_y();
+            })) {
+            footprints[i].key ^= kFresh;
+        }
+    }
+    return footprints;
+}
+
 } // namespace
 
 class WindowTarget::State {
@@ -111,6 +130,7 @@ public:
     State(const gpu::Device& device, std::unique_ptr<gpu::Presenter> presenter);
 
     void render(const WindowFrame& frame, const RenderResources& resources);
+    void atlas_uploaded(std::span<const GlyphUpload> uploads);
     [[nodiscard]] int frames_presented() const noexcept { return frames_presented_; }
     [[nodiscard]] int tiles_drawn() const noexcept { return tiles_drawn_; }
     [[nodiscard]] std::size_t intermediate_bytes() const noexcept { return images_.bytes(); }
@@ -231,6 +251,9 @@ private:
     // The window's last frame drawn, which its kept image holds: its commands' footprints, and
     // what it showed.
     std::vector<Footprint> previous_;
+    // The areas of the glyph atlas that got pixels since its last frame, in normalized coordinates, which the glyphs of
+    // its next frame that show them are drawn again for.
+    std::vector<Rect> fresh_glyphs_;
     std::optional<Shown> shown_;
     int frames_presented_ = 0;
     // Its scroll views' tiles, by the scroll view's id (ELGSPEC-0029.R13).
@@ -265,9 +288,26 @@ void WindowTarget::render(const WindowFrame& frame, const RenderResources& resou
     state_->render(frame, resources);
 }
 
+void WindowTarget::atlas_uploaded(std::span<const GlyphUpload> uploads) {
+    state_->atlas_uploaded(uploads);
+}
+
 WindowTarget::State::State(const gpu::Device& device, std::unique_ptr<gpu::Presenter> presenter)
     : device_(device), presenter_(std::move(presenter)),
       sampler_(gpu::create_linear_sampler(device.handle())), overlay_(device.handle(), wgpu::BufferUsage::Vertex) {
+}
+
+void WindowTarget::State::atlas_uploaded(std::span<const GlyphUpload> uploads) {
+    constexpr std::size_t kMost = 64; // a window that draws no frames doesn't keep them all
+    constexpr auto size = static_cast<float>(kAtlasSize);
+    for (const GlyphUpload& glyph : uploads) {
+        if (fresh_glyphs_.size() >= kMost) {
+            fresh_glyphs_ = {Rect{0, 0, 1, 1}}; // all of the atlas
+            return;
+        }
+        fresh_glyphs_.push_back(Rect{static_cast<float>(glyph.x) / size, static_cast<float>(glyph.y) / size,
+                                     static_cast<float>(glyph.width) / size, static_cast<float>(glyph.height) / size});
+    }
 }
 
 void WindowTarget::State::render(const WindowFrame& frame, const RenderResources& resources) {
@@ -285,7 +325,13 @@ void WindowTarget::State::render(const WindowFrame& frame, const RenderResources
     {
         ELG_ZONE("Damage");
         now = footprints(frame.list, width, height, &path_hashes_);
-        damage = whole ? std::vector<Rect>{window} : damage_between(previous_, now);
+        if (whole) {
+            damage = {window};
+        } else if (fresh_glyphs_.empty()) {
+            damage = damage_between(previous_, now);
+        } else {
+            damage = damage_between(previous_, with_fresh_glyphs(now, frame.list.commands, fresh_glyphs_));
+        }
     }
     ELG_PLOT("Damage area", std::transform_reduce(damage.begin(), damage.end(), 0.0, std::plus<>(), [](const Rect& r) {
                  return static_cast<double>(r.width) * static_cast<double>(r.height);
@@ -294,6 +340,7 @@ void WindowTarget::State::render(const WindowFrame& frame, const RenderResources
         // Nothing changed: nothing is drawn or presented (ELGSPEC-0029.R7). The device is still
         // looked at, so that its loss shows without a frame to draw.
         path_hashes_.end_frame();
+        // The areas stay for the next frame that is drawn: the tiles of its scroll views have not seen them.
         device_.tick();
         return;
     }
@@ -317,6 +364,7 @@ void WindowTarget::State::render(const WindowFrame& frame, const RenderResources
     presenter_->end_frame(false, drawn);
     device_.tick();
     previous_ = std::move(now);
+    fresh_glyphs_.clear();
     shown_ = Shown{width, height, frame.list.scale, clear, presenter_->surfaces_made()};
     ++frames_presented_;
 }
@@ -337,7 +385,15 @@ void WindowTarget::State::update_tiles(const DisplayList& list) {
     for (ScrollContent& content : scroll_contents(list, &path_hashes_)) {
         const auto found = scrolls_.find(content.id);
         ScrollTiles scroll = found != scrolls_.end() ? std::move(found->second) : ScrollTiles{};
-        const std::vector<Rect> changed = full ? std::vector<Rect>{} : damage_between(scroll.content, content.footprints);
+        const std::span<const DrawCommand> commands = std::span(list.commands).subspan(content.push + 1, content.footprints.size());
+        std::vector<Rect> changed;
+        if (full) {
+            // every tile goes
+        } else if (fresh_glyphs_.empty()) {
+            changed = damage_between(scroll.content, content.footprints);
+        } else {
+            changed = damage_between(scroll.content, with_fresh_glyphs(content.footprints, commands, fresh_glyphs_));
+        }
         release(scroll, [&](const Rect& shows) {
             return full || std::ranges::any_of(changed, [&](const Rect& r) {
                        return r.x < shows.max_x() && shows.x < r.max_x() && r.y < shows.max_y() && shows.y < r.max_y();

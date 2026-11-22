@@ -175,6 +175,108 @@ TEST_CASE("a frame in which nothing changed is neither drawn nor presented", "[.
     CHECK(renderer.frames_presented() == 2);
 }
 
+TEST_CASE("a glyph that is ready after the frame that has its quad is drawn by the next frame", "[.gpu][damage][glyphs]") {
+    // The glyph's quad is in every frame, from the first, and its pixels reach the atlas later (a worker generates
+    // them): the display list does not change, and the frame that follows the upload must still show them.
+    PixelRenderer renderer;
+    using detail::GlyphUpload;
+    constexpr std::uint32_t side = 48;
+    constexpr auto atlas = static_cast<float>(detail::kAtlasSize);
+    const Rect uv{0, 0, static_cast<float>(side) / atlas, static_cast<float>(side) / atlas};
+    const Rect quad{20, 20, 48, 48};
+    detail::DisplayList list;
+    list.clear_color = Color::white;
+    list.commands.emplace_back(detail::GlyphCommand{.quad = quad, .uv = uv, .color = Color{1, 0, 0, 1}, .em_size = 48});
+    // A rect that never changes, so that the window is not the glyph alone.
+    list.commands.emplace_back(detail::RectCommand{.rect = {100, 100, 20, 20}, .fill = fill(0, 0, 1)});
+
+    const Pixels before = renderer.draw(list, 200, 160);
+    CHECK(renderer.frames_presented() == 1);
+    // Nothing has arrived, and nothing changed: nothing is drawn.
+    renderer.draw(list, 200, 160);
+    CHECK(renderer.frames_presented() == 1);
+
+    // The glyph arrives: a signed distance field that is inside everywhere (all of the three channels and the alpha).
+    renderer.upload_glyph(GlyphUpload{0, 0, side, side, std::vector<std::uint8_t>(std::size_t{side} * side * 4, 255)});
+    const Pixels after = renderer.draw(list, 200, 160);
+    CHECK(renderer.frames_presented() == 2);
+    if (renderer.draws()) {
+        // Where the glyph is, its color shows now, and nothing else changed.
+        CHECK(before.at(40, 40) == std::array<int, 4>{255, 255, 255, 255});
+        CHECK(after.at(40, 40)[0] == 255);
+        CHECK(after.at(40, 40)[1] < 128);
+        CHECK(after.at(110, 110) == before.at(110, 110));
+        CHECK(after.at(150, 20) == before.at(150, 20));
+    }
+    // The next frame, with nothing new, draws nothing.
+    renderer.draw(list, 200, 160);
+    CHECK(renderer.frames_presented() == 2);
+}
+
+TEST_CASE("a glyph in a scroll view that is ready after its frame is drawn by the next frame", "[.gpu][damage][glyphs][tiles]") {
+    // The scroll view keeps its content in tiles, which a glyph that arrives later must not be missing from.
+    PixelRenderer renderer;
+    using detail::GlyphUpload;
+    constexpr std::uint32_t side = 40;
+    constexpr auto atlas = static_cast<float>(detail::kAtlasSize);
+    detail::DisplayList list;
+    list.clear_color = Color::white;
+    list.commands.emplace_back(detail::PushScrollCommand{.id = 3, .viewport = {20, 20, 100, 100}, .origin = {20, 20}});
+    list.commands.emplace_back(detail::GlyphCommand{.quad = {30, 30, 40, 40},
+                                                    .uv = {0, 0, static_cast<float>(side) / atlas, static_cast<float>(side) / atlas},
+                                                    .color = Color{0, 0, 1, 1},
+                                                    .em_size = 40});
+    list.commands.emplace_back(detail::PopScrollCommand{});
+
+    const Pixels before = renderer.draw(list, 200, 160);
+    CHECK(renderer.frames_presented() == 1);
+    renderer.upload_glyph(GlyphUpload{0, 0, side, side, std::vector<std::uint8_t>(std::size_t{side} * side * 4, 255)});
+    const Pixels after = renderer.draw(list, 200, 160);
+    CHECK(renderer.frames_presented() == 2);
+    if (renderer.draws()) {
+        CHECK(before.at(50, 50) == std::array<int, 4>{255, 255, 255, 255});
+        CHECK(after.at(50, 50)[2] == 255);
+        CHECK(after.at(50, 50)[0] < 128); // blue where the glyph is
+        CHECK(after.at(150, 20) == before.at(150, 20));
+    }
+}
+
+TEST_CASE("a glyph that is ready while its scroll view shows it nowhere is drawn when it scrolls into view",
+          "[.gpu][damage][glyphs][tiles]") {
+    // The frame in which the pixels arrive has no damage (the glyph is below what the view shows), and the tiles of the
+    // view, which keep its content, must still learn of them.
+    PixelRenderer renderer;
+    using detail::GlyphUpload;
+    constexpr std::uint32_t side = 40;
+    constexpr auto atlas = static_cast<float>(detail::kAtlasSize);
+    const auto scroll_to = [&](float offset) {
+        detail::DisplayList list;
+        list.clear_color = Color::white;
+        list.commands.emplace_back(detail::PushScrollCommand{.id = 4, .viewport = {20, 20, 100, 60}, .origin = {20, 20 - offset}});
+        list.commands.emplace_back(detail::RectCommand{.rect = {0, 0, 100, 10}, .fill = fill(0, 0.6f, 0)});
+        // In the content's own coordinates: 100 points below the view's top, which shows 60.
+        list.commands.emplace_back(detail::GlyphCommand{.quad = {10, 100, 40, 40},
+                                                        .uv = {0, 0, static_cast<float>(side) / atlas, static_cast<float>(side) / atlas},
+                                                        .color = Color{0, 0, 1, 1},
+                                                        .em_size = 40});
+        list.commands.emplace_back(detail::PopScrollCommand{});
+        return list;
+    };
+
+    renderer.draw(scroll_to(0), 200, 160); // the glyph is below the view's bottom edge
+    CHECK(renderer.frames_presented() == 1);
+    renderer.upload_glyph(GlyphUpload{0, 0, side, side, std::vector<std::uint8_t>(std::size_t{side} * side * 4, 255)});
+    renderer.draw(scroll_to(0), 200, 160); // no damage: nothing shows the glyph
+    CHECK(renderer.frames_presented() == 1);
+    const Pixels scrolled = renderer.draw(scroll_to(60), 200, 160); // the glyph is in view now
+    CHECK(renderer.frames_presented() == 2);
+    if (renderer.draws()) {
+        // Scrolled 60 points, the glyph is 40 points down in the view (rows 60 to 80 of the window show it).
+        CHECK(scrolled.at(30, 70)[2] == 255);
+        CHECK(scrolled.at(30, 70)[0] < 128); // blue: the glyph's pixels, not nothing
+    }
+}
+
 TEST_CASE("a frame presents the area it drew", "[.gpu][damage]") {
     PixelRenderer renderer;
     if (!renderer.draws()) {

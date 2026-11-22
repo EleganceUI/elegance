@@ -10,6 +10,7 @@
 #include "render/frame_mailbox.h"
 
 #include <memory>
+#include <span>
 
 namespace elg::detail {
 
@@ -56,6 +57,10 @@ public:
 
     // Renders and presents the frame. Does nothing while the window is minimized.
     void render(const WindowFrame& frame, const RenderResources& resources);
+    // Tells it that these glyphs' pixels were put in the atlas. The glyphs of its frames that show them are drawn again
+    // in the next frame: a glyph's quad is in the frames from the one that asks for it, and its pixels may reach the
+    // atlas after the frame that was drawn without them, which has nothing else to tell the two frames apart by.
+    void atlas_uploaded(std::span<const GlyphUpload> uploads);
     // How many frames it presented: frames without damage aren't (ELGSPEC-0029.R7).
     [[nodiscard]] int frames_presented() const noexcept;
     // How many tiles of scroll views it drew: kept tiles aren't drawn again (ELGSPEC-0029.R13).
