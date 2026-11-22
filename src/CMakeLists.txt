@@ -351,6 +351,9 @@ elg_layer(gpu
         WINDOWS gpu/native_image.cpp gpu/windows/composition.cpp gpu/windows/system.cpp
         APPLE gpu/macos/native_image.mm gpu/presenter.cpp gpu/system.cpp
         LINUX gpu/native_image.cpp gpu/presenter.cpp gpu/system.cpp
+        # Mikros presents through WebGPU's surface of the window's wl_surface, as Linux does, and has nothing of
+        # the system's to import images from yet.
+        MIKROS gpu/native_image.cpp gpu/presenter.cpp gpu/system.cpp
         DEPENDS core geometry gpu_os
         LIBRARIES dawn::webgpu_dawn)
 # What this build's WebGPU implementation is, for the identity of the pipeline cache's entries: a hash of the
