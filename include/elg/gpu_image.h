@@ -84,14 +84,17 @@ typedef struct ElgGpuImageFrame {
     uint32_t width;  ///< The texture's width in pixels; not 0.
     uint32_t height; ///< The texture's height in pixels; not 0.
     void* handle;    ///< IOSurfaceRef (not IOSurfaceID), or DXGI texture NT HANDLE
-    /// Vulkan only: the allocation's opaque FD; not negative. On Mikros a C library descriptor, of the
-    /// allocation's memory object or of a buffer token.
+    /// Vulkan only: the allocation's opaque FD; not negative. On Mikros a C library descriptor of the
+    /// allocation's memory object.
     int memory_fd;
     /// Vulkan only: exact VkImageCreateInfo including its pNext chain, matching the exported
     /// image bound at allocation offset zero (no suballocations). Borrowed for publish() only.
     /// Same physical device/compatible memory type required. The image is sampled through an sRGB view,
     /// so it must have been created with VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT and a
-    /// VkImageFormatListCreateInfo that names both its UNORM format and the sRGB one.
+    /// VkImageFormatListCreateInfo that names both its UNORM format and the sRGB one. On Linux and
+    /// Mikros the chain has a VkExternalMemoryImageCreateInfo whose handleTypes include
+    /// VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT (other types may be listed next to it), and no
+    /// structure but that one and the format list. The usage has VK_IMAGE_USAGE_TRANSFER_DST_BIT.
     const void* vk_image_create_info;
     uint32_t vk_memory_type_index;    ///< Vulkan only: the allocation's memory type index.
     uint64_t vk_allocation_size;      ///< Vulkan only: the allocation's size in bytes; not 0.
