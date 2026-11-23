@@ -9,6 +9,7 @@
 // frames, into an offscreen image, and reads its pixels back.
 
 #include "display/display_list.h"
+#include "text/atlas.h"
 
 #include <webgpu/webgpu_cpp.h>
 
@@ -45,6 +46,9 @@ public:
     // Draws `list` into a `width` x `height` image, at `scale` pixels a point, and reads it back.
     // Each draws over the last one, as a window's frames do: only what changed is drawn again.
     Pixels draw(const elg::detail::DisplayList& list, int width, int height, float scale = 1);
+    // Puts a glyph's pixels in the glyph atlas, as the render thread does when the UI thread posts them: after the
+    // frames that were drawn without them, which draw them in the next.
+    void upload_glyph(const elg::detail::GlyphUpload& glyph);
     // How many of those frames were drawn and presented: not those in which nothing changed.
     [[nodiscard]] int frames_presented() const;
     // The parts of the image the last frame presented drew (pixels), as its presenter got them.

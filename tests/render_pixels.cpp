@@ -24,6 +24,7 @@
 
 #include <cstring>
 #include <memory>
+#include <span>
 #include <utility>
 
 namespace elg_tests {
@@ -110,6 +111,11 @@ bool PixelRenderer::draws() const {
 
 const wgpu::Device& PixelRenderer::device() const {
     return objects_->device.handle();
+}
+
+void PixelRenderer::upload_glyph(const GlyphUpload& glyph) {
+    objects_->atlas.upload(glyph.x, glyph.y, glyph.width, glyph.height, glyph.rgba);
+    objects_->target->atlas_uploaded(std::span(&glyph, 1));
 }
 
 int PixelRenderer::frames_presented() const {
