@@ -8,6 +8,7 @@
 
 #include "core/ui_tasks.h"
 #include "gpu/external_image.h"
+#include "gpu/fence_backend.h"
 #include "gpu/native_image.h"
 #include "media/video_source.h"
 
@@ -52,6 +53,10 @@ bool imported_frame_current(const VideoFrame& frame) {
     return frame.external && gpu::in_current_device(*frame.external);
 }
 
+bool valid_vulkan_fence_value(std::uint64_t value, bool timeline) noexcept {
+    return timeline ? value >= 1 : value == 1;
+}
+
 
 // A GPU image's frames: the last published one, until it's cleared. Publishing and clearing wake
 // the render thread: it never looks for frames on its own.
@@ -80,7 +85,9 @@ public:
         // Transport tags intentionally match their corresponding fence tags.
         if (fence.type != ELG_GPU_IMAGE_FENCE_NONE &&
             (fence.type != input.transport ||
-             (fence.type == ELG_GPU_IMAGE_FENCE_VK_OPAQUE_FD ? fence.fd < 0 || fence.value != 1 : !fence.handle))) {
+             (fence.type == ELG_GPU_IMAGE_FENCE_VK_OPAQUE_FD
+                  ? fence.fd < 0 || !valid_vulkan_fence_value(fence.value, gpu::vulkan_fences_are_timelines())
+                  : !fence.handle))) {
             return ELG_GPU_IMAGE_INVALID_ARGUMENT;
         }
         std::shared_ptr<gpu::ExternalImage> external;

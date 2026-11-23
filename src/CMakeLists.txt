@@ -343,7 +343,8 @@ if (ELG_BUILD_TESTS AND NOT elg_mikros)
         target_include_directories(elegance_media_mikros SYSTEM PRIVATE "${Stb_INCLUDE_DIR}")
     endif ()
     elg_layer(net_mikros TEST_ONLY SOURCES ${elg_mikros_net} ${elg_mikros_net_os} DEPENDS core)
-    elg_layer(platform_mikros TEST_ONLY SOURCES platform/mikros/native.cpp platform/mikros/pipeline_cache.cpp
+    elg_layer(platform_mikros TEST_ONLY SOURCES platform/mikros/gpu_fences.cpp platform/mikros/native.cpp
+              platform/mikros/pipeline_cache.cpp
               DEPENDS core geometry
               LIBRARIES SDL3::SDL3)
     elg_layer(text_mikros TEST_ONLY SOURCES platform/mikros/font_files.cpp platform/mikros/fonts.cpp DEPENDS core)
@@ -352,10 +353,10 @@ endif ()
 elg_layer(display SOURCES display/display_list.cpp DEPENDS core geometry)
 
 elg_layer(gpu_os
-        WINDOWS platform/windows/pipeline_cache.cpp
-        APPLE platform/macos/pipeline_cache.cpp
-        LINUX platform/linux/pipeline_cache.cpp
-        MIKROS platform/mikros/pipeline_cache.cpp
+        WINDOWS platform/windows/gpu_fences.cpp platform/windows/pipeline_cache.cpp
+        APPLE platform/macos/gpu_fences.cpp platform/macos/pipeline_cache.cpp
+        LINUX platform/linux/gpu_fences.cpp platform/linux/pipeline_cache.cpp
+        MIKROS platform/mikros/gpu_fences.cpp platform/mikros/pipeline_cache.cpp
         DEPENDS core)
 elg_layer(gpu
         SOURCES gpu/atlas_texture.cpp gpu/blur_renderer.cpp gpu/buffer.cpp gpu/device.cpp gpu/external_image.cpp

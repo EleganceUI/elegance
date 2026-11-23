@@ -6,6 +6,7 @@
 // called directly: notify() and TrayIcon reach them only inside a running App (ELGSPEC-0040.R21). This is
 // the one test that includes the SDL platform's header, with a maintainer's permission.
 
+#include "gpu/fence_backend.h"
 #include "gpu/pipeline_cache_backend.h"
 #include "platform/sdl/native.h"
 
@@ -81,4 +82,8 @@ TEST_CASE("on Mikros, the pipeline cache is in the app's cache folder, and the s
     CHECK_FALSE(folders_for({{"HOME", "/apps/app"}, {"XDG_CACHE_HOME", "relative"}}).own.has_value());
     CHECK_FALSE(folders_for({{"XDG_CACHE_HOME", "/apps/app/cache"}}).shipped.has_value());
     CHECK_FALSE(folders_for({}).own.has_value());
+}
+
+TEST_CASE("on Mikros, the Vulkan fences that a producer shares are timelines", "[mikros]") {
+    CHECK(elg::detail::gpu::vulkan_fences_are_timelines());
 }

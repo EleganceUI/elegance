@@ -205,8 +205,12 @@ typedef struct ElgGpuImage ElgGpuImage;
 typedef struct ElgGpuImageFence {
     uint32_t type;  ///< One of the ELG_GPU_IMAGE_FENCE_* tags; the frame's must match its transport.
     void* handle;   ///< id<MTLSharedEvent> or shared D3D fence NT HANDLE; not a WebGPU handle
-    int fd;         ///< VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT, binary semaphore
-    uint64_t value; ///< Metal/D3D timeline value; Vulkan binary semaphore: 1
+    /// VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT: a binary semaphore, except on Mikros, where it is a
+    /// timeline semaphore, the descriptor of its kernel timeline.
+    int fd;
+    /// Metal/D3D timeline value; Vulkan binary semaphore: 1; Vulkan on Mikros: the timeline value that the
+    /// producer's writes signal (at least 1), and in a release the value to wait for.
+    uint64_t value;
 } ElgGpuImageFence;
 
 /// What the release callback gets once Elegance submits no more GPU work that reads a published
@@ -241,10 +245,14 @@ typedef struct ElgGpuImageFrame {
     uint32_t width;  ///< The texture's width in pixels; not 0.
     uint32_t height; ///< The texture's height in pixels; not 0.
     void* handle;    ///< IOSurfaceRef (not IOSurfaceID), or DXGI texture NT HANDLE
-    int memory_fd;   ///< Vulkan only: the allocation's opaque FD; not negative.
+    /// Vulkan only: the allocation's opaque FD; not negative. On Mikros a C library descriptor, of the
+    /// allocation's memory object or of a buffer token.
+    int memory_fd;
     /// Vulkan only: exact VkImageCreateInfo including its pNext chain, matching the exported
     /// image bound at allocation offset zero (no suballocations). Borrowed for publish() only.
-    /// Same physical device/compatible memory type required.
+    /// Same physical device/compatible memory type required. The image is sampled through an sRGB view,
+    /// so it must have been created with VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT and a
+    /// VkImageFormatListCreateInfo that names both its UNORM format and the sRGB one.
     const void* vk_image_create_info;
     uint32_t vk_memory_type_index;    ///< Vulkan only: the allocation's memory type index.
     uint64_t vk_allocation_size;      ///< Vulkan only: the allocation's size in bytes; not 0.
@@ -289,7 +297,11 @@ void elg_gpu_image_destroy(ElgGpuImage* image);
 /// outstanding allocation. Stop all producer writes before publication. Supply its producer
 /// fence, or NONE as an explicit assertion that producer GPU writes have ALREADY COMPLETED.
 /// Handles/FDs are borrowed, never closed/released by Elegance; keep them and the allocation
-/// alive until release. A Vulkan semaphore must be exportable/importable as a BINARY semaphore.
+/// alive until release. A Vulkan semaphore must be exportable/importable as a BINARY semaphore, except on
+/// Mikros, where it must be a TIMELINE semaphore that is exportable and importable as OPAQUE_FD: its descriptor
+/// is the fence's `fd`, and the producer's writes signal it to the fence's `value`. On Mikros, the fence of a
+/// release is Elegance's own timeline semaphore, and its `value` is the value to wait for, on a semaphore that was
+/// imported (permanently) from a duplicate of the descriptor.
 /// Producer must release external queue-family ownership as required by Dawn's Vulkan sharing
 /// contract and supply the corresponding old/new layouts. Elegance returns the reverse layout
 /// transition at retirement; producer must acquire ownership before accessing the image again.
