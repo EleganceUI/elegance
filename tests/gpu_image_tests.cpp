@@ -3,10 +3,13 @@
 // https://mozilla.org/MPL/2.0/.
 
 #include "core/ui_tasks.h"
+#include "gpu/fence_backend.h"
 #include "media/video_source.h"
+#include "render/gpu_image.h"
 #include <catch2/catch_test_macros.hpp>
 #include <elg/gpu_image.h>
 
+#include <cstdint>
 #include <memory>
 #include <type_traits>
 
@@ -42,6 +45,44 @@ TEST_CASE("GPU image C handles and view references", "[gpu-image]") {
   elg_gpu_image_destroy(image);
   // Native views and their source survive destruction of the FFI handle.
   CHECK(source.use_count() >= 3);
+}
+
+TEST_CASE("a Vulkan fence is signaled to 1, and on Mikros to any value above 0", "[gpu-image]") {
+  using elg::detail::valid_vulkan_fence_value;
+  // A binary semaphore signals 1.
+  CHECK(valid_vulkan_fence_value(1, false));
+  CHECK_FALSE(valid_vulkan_fence_value(0, false));
+  CHECK_FALSE(valid_vulkan_fence_value(2, false));
+  // A timeline, any value above 0.
+  CHECK(valid_vulkan_fence_value(1, true));
+  CHECK(valid_vulkan_fence_value(2, true));
+  CHECK(valid_vulkan_fence_value(~std::uint64_t{0}, true));
+  CHECK_FALSE(valid_vulkan_fence_value(0, true));
+
+  // Publication applies it as the system has it: this frame is valid but for its value, and has no renderer to
+  // import it.
+  auto image = std::unique_ptr<ElgGpuImage, decltype(&elg_gpu_image_destroy)>(
+      elg_gpu_image_create(16, 16, ELG_GPU_IMAGE_TOP_LEFT), elg_gpu_image_destroy);
+  REQUIRE(image);
+  const int fake_create_info = 0; // never read: there is no renderer
+  ElgGpuImageFrame frame{};
+  frame.width = frame.height = 16;
+  frame.transport = ELG_GPU_IMAGE_VULKAN_OPAQUE_FD;
+  frame.format = ELG_GPU_IMAGE_BGRA8;
+  frame.memory_fd = 3;
+  frame.vk_image_create_info = &fake_create_info;
+  frame.vk_allocation_size = 4096;
+  frame.release = [](void *, const ElgGpuImageRelease *) {};
+  frame.producer_fence.type = ELG_GPU_IMAGE_FENCE_VK_OPAQUE_FD;
+  frame.producer_fence.fd = 4;
+  frame.producer_fence.value = 1;
+  CHECK(elg_gpu_image_publish(image.get(), &frame) == ELG_GPU_IMAGE_DEVICE_UNAVAILABLE);
+  frame.producer_fence.value = 0;
+  CHECK(elg_gpu_image_publish(image.get(), &frame) == ELG_GPU_IMAGE_INVALID_ARGUMENT);
+  frame.producer_fence.value = 2;
+  CHECK(elg_gpu_image_publish(image.get(), &frame) ==
+        (elg::detail::gpu::vulkan_fences_are_timelines() ? ELG_GPU_IMAGE_DEVICE_UNAVAILABLE
+                                                         : ELG_GPU_IMAGE_INVALID_ARGUMENT));
 }
 
 TEST_CASE("rejected GPU image publications never transfer ownership",

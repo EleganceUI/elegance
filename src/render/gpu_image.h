@@ -10,6 +10,7 @@
 
 #include "media/video_frame.h"
 
+#include <cstdint>
 #include <optional>
 
 namespace elg::detail {
@@ -22,6 +23,10 @@ std::optional<VideoFrame> import_native_frame(const VideoFrame& frame);
 // Whether `frame`, which import_native_frame() made, is in the renderer's device: false once that
 // device was lost. Any thread.
 bool imported_frame_current(const VideoFrame& frame);
+
+// Whether `value` can be the value of a producer's Vulkan fence: a binary semaphore signals 1, and a timeline (gpu/
+// fence_backend.h) is signaled to any value above 0 (include/elg/gpu_image.h).
+bool valid_vulkan_fence_value(std::uint64_t value, bool timeline) noexcept;
 
 } // namespace elg::detail
 
