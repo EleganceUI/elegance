@@ -84,8 +84,8 @@ typedef struct ElgGpuImageFrame {
     uint32_t width;  ///< The texture's width in pixels; not 0.
     uint32_t height; ///< The texture's height in pixels; not 0.
     void* handle;    ///< IOSurfaceRef (not IOSurfaceID), or DXGI texture NT HANDLE
-    /// Vulkan only: the allocation's opaque FD; not negative. On Mikros a C library descriptor of the
-    /// allocation's memory object.
+    /// Vulkan only: the allocation's opaque FD; not negative. On Mikros a C library descriptor, the
+    /// one that vkGetMemoryFdKHR gave for the allocation.
     int memory_fd;
     /// Vulkan only: exact VkImageCreateInfo including its pNext chain, matching the exported
     /// image bound at allocation offset zero (no suballocations). Borrowed for publish() only.
