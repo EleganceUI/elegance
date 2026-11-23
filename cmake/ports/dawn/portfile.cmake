@@ -45,13 +45,14 @@ set(ELG_DAWN_PATCHES
 )
 if (VCPKG_CMAKE_SYSTEM_NAME STREQUAL "Mikros")
     # Mikros's fork is the same tag with Mikros's build changes, and with the patch that the other branch
-    # applies as the last one (ELGSPEC-0040.R16).
+    # applies as the last one (ELGSPEC-0040.R16). The branch mikros-shared also has the Vulkan backend's timeline
+    # semaphores for shared textures, which the fence of a published GPU image on Mikros needs (ELGSPEC-0040.R6).
     vcpkg_from_github(
         OUT_SOURCE_PATH SOURCE_PATH
         REPO GetMikros/dawn
-        REF a93757a59da05dd3e09185f151a4af3a9d7a4e88
-        SHA512 64314b7c3b61094bdf3a5b1a78d205f844b0d832e06061f2e493cd05d12cecc18884cb14dc47255a37d0f33ad9435586d1a74441a33ac343cf7e5db3c8f50e59
-        HEAD_REF mikros
+        REF ab53c47f8d3b0f7d3460822c33e895e61a75eea5
+        SHA512 319adb1551bff6bf06637b4a922f1b1047ac94cabf7903e12b4924eb32b0dd0ab48969956f2382b5083000147c2262f1444744009163fb10ff301a537f892c2d
+        HEAD_REF mikros-shared
         PATCHES ${ELG_DAWN_PATCHES}
     )
 else ()
