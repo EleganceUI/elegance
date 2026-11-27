@@ -57,12 +57,13 @@ jobs:
             - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             # The dependencies build with the cross compiler; these are the build machine's tools that their build
-            # systems call (the sysroot ships Mikros's CMake and Meson).
+            # systems call (the sysroot ships Mikros's CMake and Meson). SDL's build drops its Wayland video driver,
+            # without a word, when wayland-scanner is not on the machine: libwayland-bin has it.
             - name: Install tools
               run: |
                   sudo apt-get update
                   sudo apt-get install -y --no-install-recommends \
-                    ninja-build pkg-config autoconf autoconf-archive automake libtool libltdl-dev python3-jinja2 zstd
+                    ninja-build pkg-config autoconf autoconf-archive automake libtool libltdl-dev python3-jinja2 zstd libwayland-bin
 
             - name: Restore the Mikros sysroot and toolchain
               id: mikros-cache
@@ -115,10 +116,10 @@ jobs:
               uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
               with:
                   path: ${{ github.workspace }}/.vcpkg-cache
-                  key: vcpkg-v2-mikros-${{ env.MIKROS_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake', 'cmake/ports/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  key: vcpkg-v3-mikros-${{ env.MIKROS_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake', 'cmake/ports/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
                   restore-keys: |
-                      vcpkg-v2-mikros-${{ env.MIKROS_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake', 'cmake/ports/**') }}-
-                      vcpkg-v2-mikros-${{ env.MIKROS_COMMIT }}-
+                      vcpkg-v3-mikros-${{ env.MIKROS_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake', 'cmake/ports/**') }}-
+                      vcpkg-v3-mikros-${{ env.MIKROS_COMMIT }}-
 
             # Configure every preset before saving their dependencies.
             - name: Configure (build or restore dependencies)
@@ -157,7 +158,7 @@ jobs:
                   GH_TOKEN: ${{ github.token }}
                   CURRENT: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
               run: |
-                  gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "vcpkg-v2-mikros-${{ env.MIKROS_COMMIT }}-" \
+                  gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "vcpkg-v3-mikros-${{ env.MIKROS_COMMIT }}-" \
                     --limit 100 --json id,key --jq ".[] | select(.key != \"$CURRENT\") | .id" |
                     while read -r id; do gh cache delete "$id" --repo "$GITHUB_REPOSITORY"; done
                   gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "mikros-sysroot-" \
@@ -189,6 +190,15 @@ jobs:
             # The library's file name, DT_SONAME and DT_NEEDED, before anything is packed or published.
             - name: Check the library
               run: python3 tools/mikros-needed-check.py dist/lib/eleganceui.*.dlib
+
+            # The window system (ELGSPEC-0040.R3): without SDL's Wayland driver the library needs neither of these, and
+            # the check above passes all the same.
+            - name: Check that the library has its window system
+              run: |
+                  needed=$(readelf -d dist/lib/eleganceui.*.dlib)
+                  for lib in libwayland.dlib libxkbcommon.dlib; do
+                    grep -q "Shared library: \[$lib\]" <<< "$needed" || { echo "The library does not need $lib"; exit 1; }
+                  done
 
             # BUILDINFO: one "key value" line each. The Mikros commit is the pinned release's own, from the manifests
             # that its two archives carry, which must agree with each other and with MIKROS_COMMIT.
