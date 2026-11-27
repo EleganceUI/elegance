@@ -1,0 +1,167 @@
+# Builds Elegance for Mikros with its two presets (mikros-debug, mikros-release), cross-built with the sysroot
+# and toolchain of one pinned Mikros release (ELGSPEC-0040.R23). The release's two archives are downloaded once,
+# checked against the SHA-256 below, and kept in a cache keyed by the Mikros commit; the tests do not run.
+#
+# To move to another Mikros commit, change MIKROS_COMMIT and the two checksums (the release's .sha256 files):
+# https://github.com/GetMikros/mikros/releases. Releases are named sysroot-<commit, 12 hex digits>; never
+# sysroot-latest, which moves.
+name: Mikros
+
+on:
+    push:
+        branches: [main]
+        paths-ignore: [design/**, "**.md"]
+    pull_request:
+        paths-ignore: [design/**, "**.md"]
+    workflow_dispatch:
+
+permissions:
+    contents: read
+
+# One run at a time per branch, so each starts from the previous one's cache (pull requests:
+# replace the older run).
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+    MIKROS_COMMIT: 32a3874874f4
+    MIKROS_SYSROOT_SHA256: 4f883e93bebd175b68ddd83d4f4d845f6af78c604cee5b03170f266f9a4466ec
+    MIKROS_TOOLCHAIN_SHA256: 885a93cf376431cdae68ba8f1e350e010ec287acd120d7ea5b860ba8bdfcca47
+
+jobs:
+    build:
+        name: mikros
+        # The toolchain's programs need glibc 2.38 or later: Ubuntu 24.04 has it, 22.04 does not.
+        runs-on: ubuntu-24.04
+        # A hung build of the dependencies must not hold the runner for the default six hours.
+        timeout-minutes: 240
+        permissions:
+            contents: read
+            actions: write # deleting superseded caches
+        env:
+            PRESETS: mikros-debug mikros-release
+            MIKROS_ROOT: ${{ github.workspace }}/.mikros
+            MIKROS_SYSROOT: ${{ github.workspace }}/.mikros/sysroot
+            VCPKG_ROOT: ${{ github.workspace }}/../vcpkg
+            # Inside the workspace: actions/cache rejects paths with "..", and saved nothing.
+            VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            # The dependencies build with the cross compiler; these are the build machine's tools that their build
+            # systems call (the sysroot ships Mikros's CMake and Meson).
+            - name: Install tools
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y --no-install-recommends \
+                    ninja-build pkg-config autoconf autoconf-archive automake libtool libltdl-dev python3-jinja2 zstd
+
+            - name: Restore the Mikros sysroot and toolchain
+              id: mikros-cache
+              uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ${{ github.workspace }}/.mikros
+                  key: mikros-sysroot-${{ env.MIKROS_COMMIT }}
+
+            - name: Download the Mikros sysroot and toolchain
+              id: mikros-download
+              if: steps.mikros-cache.outputs.cache-hit != 'true'
+              shell: bash # with pipefail: a failing zstd must fail the step
+              run: |
+                  base="https://github.com/GetMikros/mikros/releases/download/sysroot-$MIKROS_COMMIT"
+                  mkdir -p "$MIKROS_ROOT" "$RUNNER_TEMP/mikros"
+                  for part in sysroot toolchain; do
+                    archive="mikros-$part-$MIKROS_COMMIT.tar.zst"
+                    curl -fsSL --retry 3 -o "$RUNNER_TEMP/mikros/$archive" "$base/$archive"
+                    expected=$(printenv "MIKROS_${part^^}_SHA256")
+                    echo "$expected  $RUNNER_TEMP/mikros/$archive" | sha256sum --check
+                    zstd -dc "$RUNNER_TEMP/mikros/$archive" | tar -x -C "$MIKROS_ROOT"
+                  done
+                  ls "$MIKROS_ROOT"
+
+            # Saved as soon as it is unpacked, so that a later failure does not download it again.
+            - name: Save the Mikros sysroot and toolchain
+              if: steps.mikros-download.outcome == 'success'
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ${{ github.workspace }}/.mikros
+                  key: mikros-sysroot-${{ env.MIKROS_COMMIT }}
+
+            # Mikros's CMake, with its platform patches, configures and builds every preset.
+            - name: Use Mikros's CMake
+              run: |
+                  echo "$MIKROS_ROOT/cmake/install/bin" >> "$GITHUB_PATH"
+                  "$MIKROS_ROOT/cmake/install/bin/cmake" --version
+
+            - name: Set up vcpkg
+              run: |
+                  git clone https://github.com/microsoft/vcpkg "$VCPKG_ROOT"
+                  baseline=$(python3 -c 'import json; print(json.load(open("vcpkg.json"))["builtin-baseline"])')
+                  git -C "$VCPKG_ROOT" checkout "$baseline"
+                  "$VCPKG_ROOT/bootstrap-vcpkg.sh" -disableMetrics
+                  mkdir -p "$VCPKG_DEFAULT_BINARY_CACHE"
+
+            # Unique save keys allow ABI changes to refresh the binary cache.
+            - name: Restore vcpkg binaries
+              id: vcpkg-cache
+              uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ${{ github.workspace }}/.vcpkg-cache
+                  key: vcpkg-v2-mikros-${{ env.MIKROS_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake', 'cmake/ports/**') }}-${{ github.run_id }}-${{ github.run_attempt }}
+                  restore-keys: |
+                      vcpkg-v2-mikros-${{ env.MIKROS_COMMIT }}-${{ hashFiles('vcpkg.json', 'cmake/triplets/*.cmake', 'cmake/ports/**') }}-
+                      vcpkg-v2-mikros-${{ env.MIKROS_COMMIT }}-
+
+            # Configure every preset before saving their dependencies.
+            - name: Configure (build or restore dependencies)
+              id: configure
+              run: |
+                  for preset in $PRESETS; do
+                    cmake --preset "$preset" -DELG_WARNINGS_AS_ERRORS=ON
+                  done
+
+            # Keep only the archives this build installed (each is named after the SHA-256 of its
+            # package's vcpkg_abi_info.txt), so that superseded builds don't fill GitHub's cache.
+            - name: Prune vcpkg binaries
+              if: ${{ steps.configure.outcome == 'success' }}
+              run: |
+                  keep=$(for f in build/*/vcpkg_installed/*/share/*/vcpkg_abi_info.txt; do sha256sum "$f" | cut -c1-64; done)
+                  [ -n "$keep" ] || { echo "No installed packages found: not pruning"; exit 0; }
+                  find "$VCPKG_DEFAULT_BINARY_CACHE" -name '*.zip' | while read -r zip; do
+                    grep -qx "$(basename "$zip" .zip)" <<< "$keep" || rm -f "$zip"
+                  done
+                  du -sh "$VCPKG_DEFAULT_BINARY_CACHE"
+
+            # Preserve completed packages even if configuration or the build fails.
+            - name: Save vcpkg binaries
+              id: save
+              if: ${{ !cancelled() && steps.vcpkg-cache.outputs.cache-primary-key != '' }}
+              uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+              with:
+                  path: ${{ github.workspace }}/.vcpkg-cache
+                  key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+
+            # Each run saves under a new key: drop the older ones, so main keeps one (and the sysroot of one Mikros
+            # commit).
+            - name: Delete superseded vcpkg caches
+              if: ${{ steps.save.outcome == 'success' && github.ref == 'refs/heads/main' }}
+              env:
+                  GH_TOKEN: ${{ github.token }}
+                  CURRENT: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+              run: |
+                  gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "vcpkg-v2-mikros-${{ env.MIKROS_COMMIT }}-" \
+                    --limit 100 --json id,key --jq ".[] | select(.key != \"$CURRENT\") | .id" |
+                    while read -r id; do gh cache delete "$id" --repo "$GITHUB_REPOSITORY"; done
+                  gh cache list --repo "$GITHUB_REPOSITORY" --ref "$GITHUB_REF" --key "mikros-sysroot-" \
+                    --limit 100 --json id,key --jq ".[] | select(.key != \"mikros-sysroot-${{ env.MIKROS_COMMIT }}\") | .id" |
+                    while read -r id; do gh cache delete "$id" --repo "$GITHUB_REPOSITORY"; done
+
+            # Every preset builds even when one fails, so a run reports all of their errors.
+            - name: Build
+              run: |
+                  status=0
+                  for preset in $PRESETS; do
+                    cmake --build "build/$preset" -- -k 0 || status=1
+                  done
+                  exit $status
