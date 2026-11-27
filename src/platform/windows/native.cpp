@@ -179,6 +179,10 @@ void wait_for_compositor() {
     DwmFlush();
 }
 
+bool presents_unchanged_exposes() {
+    return false;
+}
+
 std::optional<std::filesystem::path> caption_icon_font() {
     wchar_t windows[MAX_PATH] = L"C:\\Windows";
     GetWindowsDirectoryW(windows, MAX_PATH);

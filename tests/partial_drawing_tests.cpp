@@ -175,6 +175,37 @@ TEST_CASE("a frame in which nothing changed is neither drawn nor presented", "[.
     CHECK(renderer.frames_presented() == 2);
 }
 
+TEST_CASE("a frame in which nothing changed shows the window again when it asks to", "[.gpu][damage]") {
+    PixelRenderer renderer;
+    if (!renderer.draws()) {
+        SKIP("the GPU here draws nothing");
+    }
+    const detail::DisplayList list = scene(0);
+    const Pixels first = renderer.draw(list, 200, 160);
+    CHECK(renderer.frames_presented() == 1);
+    // Asked for, the same frame is presented again, whole, with the pixels it had.
+    CHECK(renderer.kept_shown() == 0);
+    CHECK(largest_difference(renderer.draw(list, 200, 160, 1, true), first) == 0);
+    CHECK(renderer.frames_presented() == 2);
+    CHECK(renderer.kept_shown() == 1); // the kept image, shown as it was: nothing was drawn over it
+    const std::vector<Rect> shown = renderer.presented_area();
+    REQUIRE(shown.size() == 1);
+    CHECK(shown.front().x == 0);
+    CHECK(shown.front().y == 0);
+    CHECK(shown.front().width == 200);
+    CHECK(shown.front().height == 160);
+    // Not asked for, it is not.
+    CHECK(largest_difference(renderer.draw(list, 200, 160), first) == 0);
+    CHECK(renderer.frames_presented() == 2);
+    CHECK(renderer.kept_shown() == 1);
+    // A frame with damage draws what changed, as it does without the request.
+    detail::DisplayList changed = list;
+    changed.commands.emplace_back(detail::RectCommand{.rect = {20, 140, 10, 10}, .fill = fill(1, 0, 0)});
+    CHECK(renderer.draw(changed, 200, 160, 1, true).at(25, 145) == std::array<int, 4>{255, 0, 0, 255});
+    CHECK(renderer.frames_presented() == 3);
+    CHECK(renderer.kept_shown() == 1);
+}
+
 TEST_CASE("a glyph that is ready after the frame that has its quad is drawn by the next frame", "[.gpu][damage][glyphs]") {
     // The glyph's quad is in every frame, from the first, and its pixels reach the atlas later (a worker generates
     // them): the display list does not change, and the frame that follows the upload must still show them.

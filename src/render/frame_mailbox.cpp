@@ -28,6 +28,7 @@ std::uint64_t FrameMailbox::post(WindowFrame frame) {
     }
     auto pending = std::ranges::find(frames_, frame.window_id, &WindowFrame::window_id);
     if (pending != frames_.end()) {
+        frame.show_again = frame.show_again || pending->show_again; // the one it replaces asked for it
         *pending = std::move(frame);
     } else {
         frames_.push_back(std::move(frame));

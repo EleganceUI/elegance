@@ -65,6 +65,8 @@ public:
     [[nodiscard]] int frames_presented() const noexcept;
     // How many tiles of scroll views it drew: kept tiles aren't drawn again (ELGSPEC-0029.R13).
     [[nodiscard]] int tiles_drawn() const noexcept;
+    // How many frames showed the kept image again, drawing nothing (WindowFrame::show_again).
+    [[nodiscard]] int kept_shown() const noexcept;
     // The bytes its intermediate images take.
     [[nodiscard]] std::size_t intermediate_bytes() const noexcept;
 

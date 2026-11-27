@@ -219,6 +219,10 @@ std::uint32_t focused_window_id();
 // elsewhere). During a live resize this lets a just-presented frame reach the screen before the
 // window is resized again, so the compositor doesn't stretch an old frame.
 void wait_for_compositor();
+// Whether the app asks for the window's kept image again (WindowFrame::show_again) in the frame that follows
+// EventType::window_exposed (ELGSPEC-0040.R25): true on Mikros, where SDL applies a new size only after the window
+// commits a frame; false elsewhere.
+bool presents_unchanged_exposes();
 std::string clipboard_text();
 void set_clipboard_text(const std::string& text);
 // The pointer's shape (automatic: the arrow).

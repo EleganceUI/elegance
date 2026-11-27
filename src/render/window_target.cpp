@@ -133,6 +133,7 @@ public:
     void atlas_uploaded(std::span<const GlyphUpload> uploads);
     [[nodiscard]] int frames_presented() const noexcept { return frames_presented_; }
     [[nodiscard]] int tiles_drawn() const noexcept { return tiles_drawn_; }
+    [[nodiscard]] int kept_shown() const noexcept { return kept_shown_; }
     [[nodiscard]] std::size_t intermediate_bytes() const noexcept { return images_.bytes(); }
 
 private:
@@ -203,6 +204,12 @@ private:
                                std::uint32_t height, std::span<const Rect> drawn, std::span<const Rect> damage,
                                const WindowFrame& frame, const RenderResources& resources,
                                std::vector<std::uint64_t>& acquired_videos);
+    // Records the pass that puts the kept image onto the window's `view`, with the `damage` tinted when that's on.
+    void record_window_pass(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& view,
+                            wgpu::TextureFormat format, std::uint32_t width, std::uint32_t height,
+                            std::span<const Rect> damage, const RenderResources& resources, const RenderImage& kept);
+    // Presents the kept image again onto `view`, drawing nothing (WindowFrame::show_again).
+    void show_kept(const wgpu::TextureView& view, const RenderResources& resources);
     // Records the plan of one drawn rect into `target`, the kept image.
     void record_plan(const wgpu::CommandEncoder& encoder, const FramePlan& plan, PlanBuffers& buffers,
                      const PassTarget& target, const RenderResources& resources,
@@ -259,6 +266,8 @@ private:
     // Its scroll views' tiles, by the scroll view's id (ELGSPEC-0029.R13).
     std::unordered_map<std::uint64_t, ScrollTiles> scrolls_;
     int tiles_drawn_ = 0;
+    int kept_shown_ = 0;
+    bool show_again_ = false; // a frame asked for the kept image again, and it was not shown yet
     std::optional<RenderImage> empty_;    // bound where no second image is
     wgpu::BindGroup empty_group_;
 };
@@ -278,6 +287,10 @@ int WindowTarget::frames_presented() const noexcept {
 
 int WindowTarget::tiles_drawn() const noexcept {
     return state_->tiles_drawn();
+}
+
+int WindowTarget::kept_shown() const noexcept {
+    return state_->kept_shown();
 }
 
 std::size_t WindowTarget::intermediate_bytes() const noexcept {
@@ -336,7 +349,8 @@ void WindowTarget::State::render(const WindowFrame& frame, const RenderResources
     ELG_PLOT("Damage area", std::transform_reduce(damage.begin(), damage.end(), 0.0, std::plus<>(), [](const Rect& r) {
                  return static_cast<double>(r.width) * static_cast<double>(r.height);
              }));
-    if (damage.empty()) {
+    show_again_ = show_again_ || frame.show_again; // until a frame presents: this one may find no image to draw on
+    if (damage.empty() && !show_again_) {
         // Nothing changed: nothing is drawn or presented (ELGSPEC-0029.R7). The device is still
         // looked at, so that its loss shows without a frame to draw.
         path_hashes_.end_frame();
@@ -352,6 +366,12 @@ void WindowTarget::State::render(const WindowFrame& frame, const RenderResources
     if (presenter_->surfaces_made() != shown.surfaces && !whole) {
         whole = true; // a new surface, made just now
         damage = {window};
+    }
+    show_again_ = false; // this frame presents
+    if (damage.empty()) {
+        // A frame without damage, with WindowFrame::show_again: the kept image is shown as it is (ELGSPEC-0040.R25).
+        show_kept(view, resources);
+        return;
     }
     const std::vector<Rect> drawn = whole ? std::vector<Rect>{window} : drawn_area(damage);
     update_tiles(frame.list);
@@ -650,19 +670,51 @@ wgpu::CommandBuffer WindowTarget::State::record(const wgpu::TextureView& view, w
     resources.textures.end_frame();
     resources.videos.end_frame();
 
+    record_window_pass(encoder, view, format, width, height, damage, resources, kept);
+    // Releases what this frame didn't use, as kIntermediateImagePolicy says. (WebGPU keeps an
+    // image alive for frames still on the GPU, so releasing one is always safe.)
+    images_.end_frame();
+    return encoder.Finish();
+}
+
+void WindowTarget::State::record_window_pass(const wgpu::CommandEncoder& encoder, const wgpu::TextureView& view,
+                                             wgpu::TextureFormat format, std::uint32_t width, std::uint32_t height,
+                                             std::span<const Rect> damage, const RenderResources& resources,
+                                             const RenderImage& kept) {
     // The kept image onto the window, and the damage tinted (ELGSPEC-0029.R11).
     const std::vector<gpu::QuadInstance> overlay =
         window_overlay(width, height, render_settings().show_damage ? damage : std::span<const Rect>());
     overlay_.write(std::as_bytes(std::span(overlay)));
+    if (plan_buffers_.empty()) {
+        plan_buffers_.push_back(std::make_unique<PlanBuffers>(device_.handle())); // for its (empty) stops
+    }
     const wgpu::RenderPassEncoder pass = begin_pass(encoder, view, wgpu::Color{0, 0, 0, 0}, "window");
     resources.quads.begin(pass, format, width, height, overlay_.handle(), image_group(resources, kept.view()),
                           resources.quads.stops_group(plan_buffers_[0]->stops.handle()), empty_group(resources));
     resources.quads.draw(pass, 0, static_cast<std::uint32_t>(overlay.size()));
     pass.End();
-    // Releases what this frame didn't use, as kIntermediateImagePolicy says. (WebGPU keeps an
-    // image alive for frames still on the GPU, so releasing one is always safe.)
-    images_.end_frame();
-    return encoder.Finish();
+}
+
+void WindowTarget::State::show_kept(const wgpu::TextureView& view, const RenderResources& resources) {
+    ELG_ZONE("Show kept image");
+    path_hashes_.end_frame();
+    // The image the last frame left, as it is: no plan is drawn over it, and the images that no plan used this time
+    // stay (no end_frame() of the pool, which would count this frame against them). It is there: a frame is whole
+    // without it.
+    const auto* kept = images_.find({ImageRole::kept, 0});
+    if (!kept) {
+        return;
+    }
+    const std::uint32_t width = presenter_->width();
+    const std::uint32_t height = presenter_->height();
+    const wgpu::CommandEncoder encoder = device_.handle().CreateCommandEncoder();
+    record_window_pass(encoder, view, presenter_->view_format(), width, height, {}, resources, kept->image);
+    device_.submit(encoder.Finish());
+    const Rect window{0, 0, static_cast<float>(width), static_cast<float>(height)};
+    presenter_->end_frame(false, std::span(&window, 1));
+    device_.tick();
+    ++frames_presented_;
+    ++kept_shown_;
 }
 
 void WindowTarget::State::record_plan(const wgpu::CommandEncoder& encoder, const FramePlan& plan,

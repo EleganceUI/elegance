@@ -7,10 +7,12 @@
 
 #include "display/display_list.h"
 #include "render/damage.h"
+#include "render/frame_mailbox.h"
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <memory>
+#include <utility>
 #include <vector>
 
 using namespace elg;
@@ -222,5 +224,25 @@ TEST_CASE("the drawn area merges the damage into at most 4 rectangles", "[damage
     }
     SECTION("nothing to draw") {
         CHECK(detail::drawn_area({}).empty());
+    }
+}
+
+TEST_CASE("a frame that replaces another in the mailbox keeps the request to show the window again", "[damage]") {
+    detail::FrameMailbox mailbox;
+    detail::WindowFrame exposed;
+    exposed.window_id = 1;
+    exposed.show_again = true;
+    detail::WindowFrame later;
+    later.window_id = 1;
+    detail::WindowFrame other;
+    other.window_id = 2;
+    mailbox.post(std::move(exposed));
+    mailbox.post(std::move(later));
+    mailbox.post(std::move(other));
+    detail::RenderBatch batch;
+    REQUIRE(mailbox.take(batch));
+    REQUIRE(batch.frames.size() == 2);
+    for (const detail::WindowFrame& frame : batch.frames) {
+        CHECK(frame.show_again == (frame.window_id == 1));
     }
 }

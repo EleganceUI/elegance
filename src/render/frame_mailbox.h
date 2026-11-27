@@ -24,6 +24,9 @@ struct WindowFrame {
     int pixel_width = 0;
     int pixel_height = 0;
     float scale = 1; // pixels per logical point
+    // Presents the window's kept image again when this frame has no damage (ELGSPEC-0040.R25); one without
+    // damage presents nothing otherwise.
+    bool show_again = false;
     DisplayList list;
 };
 

@@ -8,6 +8,7 @@
 
 #include "gpu/fence_backend.h"
 #include "gpu/pipeline_cache_backend.h"
+#include "platform/platform.h"
 #include "platform/sdl/native.h"
 
 #include <elg/desktop.h>
@@ -86,4 +87,8 @@ TEST_CASE("on Mikros, the pipeline cache is in the app's cache folder, and the s
 
 TEST_CASE("on Mikros, the Vulkan fences that a producer shares are timelines", "[mikros]") {
     CHECK(elg::detail::gpu::vulkan_fences_are_timelines());
+}
+
+TEST_CASE("on Mikros, the app asks for the kept image again in the frame after an expose", "[mikros]") {
+    CHECK(elg::detail::platform::presents_unchanged_exposes());
 }

@@ -130,12 +130,17 @@ int PixelRenderer::tiles_drawn() const {
     return objects_->target->tiles_drawn();
 }
 
-Pixels PixelRenderer::draw(const DisplayList& list, int width, int height, float scale) {
+int PixelRenderer::kept_shown() const {
+    return objects_->target->kept_shown();
+}
+
+Pixels PixelRenderer::draw(const DisplayList& list, int width, int height, float scale, bool show_again) {
     WindowFrame frame;
     frame.window_id = 1;
     frame.pixel_width = width;
     frame.pixel_height = height;
     frame.scale = scale;
+    frame.show_again = show_again;
     frame.list = list;
     frame.list.scale = scale;
     objects_->target->render(frame, objects_->resources);

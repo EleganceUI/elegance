@@ -204,8 +204,8 @@ Event translate(const SDL_Event& event, std::uint32_t wake_event) {
     switch (event.type) {
     case SDL_EVENT_QUIT: return {EventType::quit};
     case SDL_EVENT_WINDOW_EXPOSED:
-        // Live-resize exposes were already handled by the event watch.
-        return event.window.data1 == 1 ? Event{} : Event{EventType::window_exposed, event.window.windowID};
+        // Live-resize exposes (data1 == 1) were already handled by the event watch.
+        return event.window.data1 == 0 ? Event{EventType::window_exposed, event.window.windowID} : Event{};
     case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
         return {EventType::window_resized, event.window.windowID};
     case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
