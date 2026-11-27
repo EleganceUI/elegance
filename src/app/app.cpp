@@ -327,6 +327,7 @@ struct LiveWindow {
     std::optional<PopupFit> fit;
     std::shared_ptr<WindowState> state; // behind this window's WindowHandles
     bool dirty = true;
+    bool exposed = false;      // the window was exposed since the last frame posted (platform::presents_unchanged_exposes())
     bool tree_changed = false; // If/ForEach added or removed elements
     bool animating = false;    // the last frame had animations in progress
     bool visible = true;       // as the render thread was last told
@@ -918,6 +919,7 @@ int App::run() {
             ++live.paint_epoch; // the glyphs the elements drew moved
         }
         WindowFrame frame = build_frame(live);
+        frame.show_again = std::exchange(live.exposed, false);
 #if defined(ELG_HAVE_TRACY)
         plot_frame(frame.list, take_frame_work(), text.atlas);
 #endif
@@ -1379,6 +1381,11 @@ int App::run() {
             self.quit_requested = true;
             break;
         case platform::EventType::window_exposed:
+            if (auto it = find_window(event.window_id); it != windows.end()) {
+                (*it)->dirty = true;
+                (*it)->exposed = platform::presents_unchanged_exposes(); // its frame shows the last one again if nothing changed
+            }
+            break;
         case platform::EventType::window_resized:
         case platform::EventType::window_scale_changed:
             if (auto it = find_window(event.window_id); it != windows.end()) {

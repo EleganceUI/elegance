@@ -277,8 +277,9 @@ void RenderThread::draw(const gpu::Instance& instance, const std::shared_ptr<gpu
                 continue;
             }
             const std::uint32_t id = frame.window_id;
-            const WindowFrame& last = kept.last_frames.insert_or_assign(id, std::move(frame)).first->second;
+            WindowFrame& last = kept.last_frames.insert_or_assign(id, std::move(frame)).first->second;
             render(last);
+            last.show_again = false; // the frames kept for replays don't show the window again
             kept.sources.drew(last);
         }
         for (const std::uint32_t id : kept.sources.stale()) {

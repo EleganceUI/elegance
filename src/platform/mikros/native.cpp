@@ -88,6 +88,10 @@ void end_run(bool) noexcept {}
 
 void wait_for_compositor() {}
 
+bool presents_unchanged_exposes() {
+    return true;
+}
+
 std::optional<std::filesystem::path> caption_icon_font() {
     return std::nullopt;
 }
