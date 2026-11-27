@@ -2,6 +2,12 @@
 # and toolchain of one pinned Mikros release (ELGSPEC-0040.R23). The release's two archives are downloaded once,
 # checked against the SHA-256 below, and kept in a cache keyed by the Mikros commit; the tests do not run.
 #
+# It also builds the C library (c/) for Mikros in release and packs it (ELGSPEC-0040.R27): the shared package
+# elegance-c-x86_64-unknown-mikros.tar.gz, with lib/, include/elg-c/elegance.h, LICENSE-elegance and BUILDINFO.
+# A pull request builds it; a push to main publishes it to the prerelease c-<commit, 12 hex digits>, and a tag
+# v* to the release of that tag (the other targets' packages, c-api.yml, go to the same releases), once the
+# checks of the library (tools/mikros-needed-check.py) passed.
+#
 # To move to another Mikros commit, change MIKROS_COMMIT and the two checksums (the release's .sha256 files):
 # https://github.com/GetMikros/mikros/releases. Releases are named sysroot-<commit, 12 hex digits>; never
 # sysroot-latest, which moves.
@@ -10,6 +16,7 @@ name: Mikros
 on:
     push:
         branches: [main]
+        tags: ["v*"]
         paths-ignore: [design/**, "**.md"]
     pull_request:
         paths-ignore: [design/**, "**.md"]
@@ -165,3 +172,74 @@ jobs:
                     cmake --build "build/$preset" -- -k 0 || status=1
                   done
                   exit $status
+
+            # The C library for Mikros (c/, ELGSPEC-0040.R2) in release, with the dependencies the presets built.
+            - name: Build the C library
+              run: |
+                  cmake -S c -B build/c -G Ninja -DCMAKE_BUILD_TYPE=Release \
+                    -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+                    -DVCPKG_MANIFEST_DIR="$PWD" -DVCPKG_TARGET_TRIPLET=x64-mikros \
+                    -DVCPKG_OVERLAY_TRIPLETS="$PWD/cmake/triplets" \
+                    -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE="$PWD/cmake/triplets/mikros-toolchain.cmake" \
+                    -DCMAKE_CXX_SCAN_FOR_MODULES=OFF
+                  cmake --build build/c -- -k 0
+                  cmake --install build/c --prefix dist
+                  find dist -type f | sort
+
+            # The library's file name, DT_SONAME and DT_NEEDED, before anything is packed or published.
+            - name: Check the library
+              run: python3 tools/mikros-needed-check.py dist/lib/eleganceui.*.dlib
+
+            # BUILDINFO: one "key value" line each. The Mikros commit is the pinned release's own, from the manifests
+            # that its two archives carry, which must agree with each other and with MIKROS_COMMIT.
+            - name: Package
+              run: |
+                  sysroot=$(sed -n 's/^commit: //p' "$MIKROS_ROOT/sysroot-manifest.yaml")
+                  toolchain=$(sed -n 's/^commit: //p' "$MIKROS_ROOT/toolchain-manifest.yaml")
+                  [ "$sysroot" = "$toolchain" ] || { echo "The manifests name $sysroot and $toolchain"; exit 1; }
+                  case "$sysroot" in
+                    "$MIKROS_COMMIT"*) ;;
+                    *) echo "The toolchain's manifest names $sysroot, not $MIKROS_COMMIT"; exit 1 ;;
+                  esac
+                  [ "${#sysroot}" = 40 ] || { echo "The manifest's commit is not 40 digits: $sysroot"; exit 1; }
+                  printf 'target x86_64-unknown-mikros\nelegance %s\nrun %s\nsysroot %s\n' "$GITHUB_SHA" \
+                    "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$sysroot" > dist/BUILDINFO
+                  cat dist/BUILDINFO
+                  tar -czf elegance-c-x86_64-unknown-mikros.tar.gz -C dist .
+            - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+              with:
+                  name: elegance-c-x86_64-unknown-mikros
+                  path: elegance-c-x86_64-unknown-mikros.tar.gz
+
+    # Only when every check passed, and only for main and tags v* (not pull requests, nor a run by hand). The release is the one the other targets' packages
+    # go to (c-api.yml makes it too, whichever workflow gets there first).
+    publish:
+        needs: build
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        timeout-minutes: 30
+        permissions:
+            contents: write # the release
+        runs-on: ubuntu-latest
+        env:
+            GH_TOKEN: ${{ github.token }}
+            GH_REPO: ${{ github.repository }}
+        steps:
+            - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+              with:
+                  path: archives
+                  merge-multiple: true
+            - name: Publish
+              run: |
+                  ls archives
+                  if [ "${{ github.ref_type }}" = tag ]; then
+                    tag="${{ github.ref_name }}"
+                    gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --verify-tag --title "$tag" --generate-notes ||
+                      gh release view "$tag" >/dev/null
+                  else
+                    tag="c-${GITHUB_SHA:0:12}"
+                    gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --prerelease --target "$GITHUB_SHA" \
+                      --title "C library ${GITHUB_SHA:0:12}" \
+                      --notes "The prebuilt C library (c/) for $GITHUB_SHA: a shared and a static package per target. Published automatically." ||
+                      gh release view "$tag" >/dev/null
+                  fi
+                  gh release upload "$tag" archives/*.tar.gz --clobber
