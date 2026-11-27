@@ -2,11 +2,12 @@
 # and toolchain of one pinned Mikros release (ELGSPEC-0040.R23). The release's two archives are downloaded once,
 # checked against the SHA-256 below, and kept in a cache keyed by the Mikros commit; the tests do not run.
 #
-# It also builds the C library (c/) for Mikros in release and packs it (ELGSPEC-0040.R27): the shared package
-# elegance-c-x86_64-unknown-mikros.tar.gz, with lib/, include/elg-c/elegance.h, LICENSE-elegance and BUILDINFO.
+# It also builds the C library (c/) for Mikros in release and packs it (ELGSPEC-0040.R28): the shared package
+# elegance-c-x86_64-unknown-mikros.tar.gz, laid out as /system: libraries/, include/elg-c/elegance.h and
+# share/doc/elegance/ with LICENSE-elegance and BUILDINFO.
 # A pull request builds it; a push to main publishes it to the prerelease c-<commit, 12 hex digits>, and a tag
 # v* to the release of that tag (the other targets' packages, c-api.yml, go to the same releases), once the
-# checks of the library (tools/mikros-needed-check.py) passed.
+# checks of the library (tools/mikros-needed-check.py) and of the package (tools/mikros-package-check.py) passed.
 #
 # To move to another Mikros commit, change MIKROS_COMMIT and the two checksums (the release's .sha256 files):
 # https://github.com/GetMikros/mikros/releases. Releases are named sysroot-<commit, 12 hex digits>; never
@@ -200,8 +201,9 @@ jobs:
                     grep -q "Shared library: \[$lib\]" <<< "$needed" || { echo "The library does not need $lib"; exit 1; }
                   done
 
-            # BUILDINFO: one "key value" line each. The Mikros commit is the pinned release's own, from the manifests
-            # that its two archives carry, which must agree with each other and with MIKROS_COMMIT.
+            # The package is laid out as /system. BUILDINFO: one "key value" line each. The commits of the sysroot and
+            # of the toolchain are the pinned release's own, from the manifests that its two archives carry, which must
+            # agree with each other and with MIKROS_COMMIT. The package is checked as packed, before it is uploaded.
             - name: Package
               run: |
                   sysroot=$(sed -n 's/^commit: //p' "$MIKROS_ROOT/sysroot-manifest.yaml")
@@ -209,13 +211,20 @@ jobs:
                   [ "$sysroot" = "$toolchain" ] || { echo "The manifests name $sysroot and $toolchain"; exit 1; }
                   case "$sysroot" in
                     "$MIKROS_COMMIT"*) ;;
-                    *) echo "The toolchain's manifest names $sysroot, not $MIKROS_COMMIT"; exit 1 ;;
+                    *) echo "The manifests name $sysroot, not $MIKROS_COMMIT"; exit 1 ;;
                   esac
                   [ "${#sysroot}" = 40 ] || { echo "The manifest's commit is not 40 digits: $sysroot"; exit 1; }
-                  printf 'target x86_64-unknown-mikros\nelegance %s\nrun %s\nsysroot %s\n' "$GITHUB_SHA" \
-                    "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$sysroot" > dist/BUILDINFO
-                  cat dist/BUILDINFO
-                  tar -czf elegance-c-x86_64-unknown-mikros.tar.gz -C dist .
+                  mkdir -p pkg/libraries pkg/include/elg-c pkg/share/doc/elegance
+                  cp dist/lib/eleganceui.*.dlib pkg/libraries/
+                  cp dist/include/elg-c/elegance.h pkg/include/elg-c/
+                  cp dist/LICENSE-elegance pkg/share/doc/elegance/
+                  printf 'target x86_64-unknown-mikros\nelegance %s\nrun %s\nsysroot %s\ntoolchain %s\n' "$GITHUB_SHA" \
+                    "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" "$sysroot" "$toolchain" \
+                    > pkg/share/doc/elegance/BUILDINFO
+                  cat pkg/share/doc/elegance/BUILDINFO
+                  tar -czf elegance-c-x86_64-unknown-mikros.tar.gz -C pkg .
+                  python3 tools/mikros-package-check.py elegance-c-x86_64-unknown-mikros.tar.gz "$MIKROS_SYSROOT" \
+                    --elegance-commit "$GITHUB_SHA" --sysroot-commit "$sysroot" --toolchain-commit "$toolchain"
             - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
               with:
                   name: elegance-c-x86_64-unknown-mikros
